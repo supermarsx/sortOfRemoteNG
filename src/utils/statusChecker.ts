@@ -97,12 +97,13 @@ export class StatusChecker {
 
   private async checkSocket(hostname: string, port: number, timeout: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error('Connection timeout'));
-      }, timeout);
-
       // Use WebSocket for socket checking (limited but works for many protocols)
       const ws = new WebSocket(`ws://${hostname}:${port}`);
+
+      const timeoutId = setTimeout(() => {
+        ws.close();
+        reject(new Error('Connection timeout'));
+      }, timeout);
       
       ws.onopen = () => {
         clearTimeout(timeoutId);
@@ -112,6 +113,7 @@ export class StatusChecker {
 
       ws.onerror = () => {
         clearTimeout(timeoutId);
+        ws.close();
         reject(new Error('Connection failed'));
       };
 
