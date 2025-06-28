@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useEffect, useState } from 'react';
 import { Connection, ConnectionSession, ConnectionFilter } from '../types/connection';
-import { SecureStorage, StorageData } from '../utils/storage';
+import { CollectionManager } from '../utils/collectionManager';
+import { StorageData } from '../utils/storage';
 
 interface ConnectionState {
   connections: Connection[];
@@ -32,6 +33,7 @@ const initialState: ConnectionState = {
     searchTerm: '',
     protocols: [],
     tags: [],
+    colorTags: [],
     showRecent: false,
     showFavorites: false,
   },
@@ -101,6 +103,7 @@ export const useConnections = () => {
 
 export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(connectionReducer, initialState);
+  const collectionManager = CollectionManager.getInstance();
 
   const saveData = async (usePassword: boolean = false) => {
     try {
@@ -110,7 +113,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         timestamp: Date.now(),
       };
       
-      await SecureStorage.saveData(data, usePassword);
+      await collectionManager.saveCurrentCollectionData(data);
     } catch (error) {
       console.error('Failed to save data:', error);
       throw error;
@@ -119,7 +122,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const loadData = async () => {
     try {
-      const data = await SecureStorage.loadData();
+      const data = await collectionManager.loadCurrentCollectionData();
       if (data && data.connections) {
         // Convert date strings back to Date objects
         const connections = data.connections.map((conn: any) => ({
@@ -138,17 +141,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Auto-save when connections change
   useEffect(() => {
-    if (state.connections.length > 0 && SecureStorage.isStorageUnlocked()) {
-      saveData(SecureStorage.isStorageEncrypted()).catch(console.error);
+    if (state.connections.length > 0 && collectionManager.getCurrentCollection()) {
+      saveData().catch(console.error);
     }
   }, [state.connections]);
-
-  // Load data on mount
-  useEffect(() => {
-    if (SecureStorage.hasStoredData() && !SecureStorage.isStorageEncrypted()) {
-      loadData().catch(console.error);
-    }
-  }, []);
 
   return (
     <ConnectionContext.Provider value={{ state, dispatch, saveData, loadData }}>

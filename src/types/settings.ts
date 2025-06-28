@@ -1,7 +1,7 @@
 export interface GlobalSettings {
   // General Settings
   language: string;
-  theme: 'dark' | 'light' | 'auto' | 'darkest';
+  theme: 'dark' | 'light' | 'auto' | 'darkest' | 'oled';
   colorScheme: 'blue' | 'green' | 'purple' | 'red' | 'orange' | 'teal';
   singleWindowMode: boolean;
   singleConnectionMode: boolean;
@@ -79,6 +79,10 @@ export interface GlobalSettings {
   enableActionLog: boolean;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   maxLogEntries: number;
+  
+  // Export Settings
+  exportEncryption: boolean;
+  exportPassword?: string;
 }
 
 export interface ProxyConfig {

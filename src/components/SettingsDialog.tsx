@@ -3,6 +3,7 @@ import { X, Save, RotateCcw, Globe, Shield, Zap, Monitor, Code, Wifi } from 'luc
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
+import { ThemeManager } from '../utils/themeManager';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const settingsManager = SettingsManager.getInstance();
+  const themeManager = ThemeManager.getInstance();
 
   useEffect(() => {
     if (isOpen) {
@@ -37,6 +39,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       if (settings.language !== i18n.language) {
         i18n.changeLanguage(settings.language);
       }
+      
+      // Apply theme changes
+      themeManager.applyTheme(settings.theme, settings.colorScheme);
       
       onClose();
     } catch (error) {
@@ -160,7 +165,27 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       >
                         <option value="dark">Dark</option>
                         <option value="light">Light</option>
+                        <option value="darkest">Darkest</option>
+                        <option value="oled">OLED Black</option>
                         <option value="auto">Auto</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Color Scheme
+                      </label>
+                      <select
+                        value={settings.colorScheme}
+                        onChange={(e) => updateSettings({ colorScheme: e.target.value as any })}
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                      >
+                        <option value="blue">Blue</option>
+                        <option value="green">Green</option>
+                        <option value="purple">Purple</option>
+                        <option value="red">Red</option>
+                        <option value="orange">Orange</option>
+                        <option value="teal">Teal</option>
                       </select>
                     </div>
 

@@ -8,15 +8,18 @@ import {
   ShieldAlert,
   Globe,
   Lock,
-  AlertTriangle
+  AlertTriangle,
+  User
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
+import { useConnections } from '../contexts/ConnectionContext';
 
 interface WebBrowserProps {
   session: ConnectionSession;
 }
 
 export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
+  const { state } = useConnections();
   const [currentUrl, setCurrentUrl] = useState(() => {
     const protocol = session.protocol === 'https' ? 'https' : 'http';
     const port = session.protocol === 'https' ? 443 : 80;
@@ -28,6 +31,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const [loadError, setLoadError] = useState<string>('');
   const [isSecure, setIsSecure] = useState(session.protocol === 'https');
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Get connection details for authentication
+  const connection = state.connections.find(c => c.id === session.connectionId);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,11 +53,25 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const handleIframeLoad = () => {
     setIsLoading(false);
     setLoadError('');
+
+    // Handle basic authentication if configured
+    if (connection?.authType === 'basic' && connection.basicAuthUsername && connection.basicAuthPassword) {
+      try {
+        const iframe = iframeRef.current;
+        if (iframe && iframe.contentWindow) {
+          // Note: Due to CORS restrictions, we can't directly inject auth headers
+          // This would need to be handled by a proxy server or browser extension
+          console.log('Basic auth configured for:', connection.basicAuthUsername);
+        }
+      } catch (error) {
+        console.warn('Cannot access iframe content due to CORS restrictions');
+      }
+    }
   };
 
   const handleIframeError = () => {
     setIsLoading(false);
-    setLoadError('Failed to load the webpage. This might be due to CORS restrictions or the site being unavailable.');
+    setLoadError('Failed to load the webpage. This might be due to CORS restrictions, authentication requirements, or the site being unavailable.');
   };
 
   const handleRefresh = () => {
@@ -83,7 +103,21 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   };
 
   const handleOpenExternal = () => {
-    window.open(currentUrl, '_blank', 'noopener,noreferrer');
+    let urlToOpen = currentUrl;
+    
+    // Add basic auth to URL if configured
+    if (connection?.authType === 'basic' && connection.basicAuthUsername && connection.basicAuthPassword) {
+      try {
+        const url = new URL(currentUrl);
+        url.username = connection.basicAuthUsername;
+        url.password = connection.basicAuthPassword;
+        urlToOpen = url.toString();
+      } catch (error) {
+        console.error('Failed to add basic auth to URL:', error);
+      }
+    }
+    
+    window.open(urlToOpen, '_blank', 'noopener,noreferrer');
   };
 
   const getSecurityIcon = () => {
@@ -92,6 +126,13 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     } else {
       return <ShieldAlert size={14} className="text-yellow-400" />;
     }
+  };
+
+  const getAuthIcon = () => {
+    if (connection?.authType === 'basic') {
+      return <User size={14} className="text-blue-400" title="Basic Authentication" />;
+    }
+    return null;
   };
 
   return (
@@ -129,13 +170,14 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             <div className="flex-1 relative">
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
                 {getSecurityIcon()}
+                {getAuthIcon()}
                 <Globe size={14} className="text-gray-400" />
               </div>
               <input
                 type="text"
                 value={inputUrl}
                 onChange={(e) => setInputUrl(e.target.value)}
-                className="w-full pl-12 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full pl-16 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 placeholder="Enter URL..."
               />
             </div>
@@ -165,6 +207,12 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           )}
           <span className="text-gray-500">•</span>
           <span className="text-gray-400">Connected to {session.hostname}</span>
+          {connection?.authType === 'basic' && (
+            <>
+              <span className="text-gray-500">•</span>
+              <span className="text-blue-400">Basic Auth: {connection.basicAuthUsername}</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -196,6 +244,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <ul className="list-disc list-inside mt-1 space-y-1">
                   <li>The website blocks embedding (X-Frame-Options)</li>
                   <li>CORS restrictions prevent loading</li>
+                  <li>Authentication required</li>
                   <li>The server is not responding</li>
                   <li>Invalid URL or hostname</li>
                 </ul>

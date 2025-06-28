@@ -8,11 +8,14 @@ import { SessionTabs } from './components/SessionTabs';
 import { SessionViewer } from './components/SessionViewer';
 import { QuickConnect } from './components/QuickConnect';
 import { PasswordDialog } from './components/PasswordDialog';
+import { CollectionSelector } from './components/CollectionSelector';
 import { Connection, ConnectionSession } from './types/connection';
 import { SecureStorage } from './utils/storage';
 import { SettingsManager } from './utils/settingsManager';
 import { StatusChecker } from './utils/statusChecker';
 import { ScriptEngine } from './utils/scriptEngine';
+import { CollectionManager } from './utils/collectionManager';
+import { ThemeManager } from './utils/themeManager';
 
 const AppContent: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -21,14 +24,18 @@ const AppContent: React.FC = () => {
   const [showConnectionEditor, setShowConnectionEditor] = useState(false);
   const [showQuickConnect, setShowQuickConnect] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [showCollectionSelector, setShowCollectionSelector] = useState(false);
   const [passwordDialogMode, setPasswordDialogMode] = useState<'setup' | 'unlock'>('setup');
   const [passwordError, setPasswordError] = useState<string>('');
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
   const [isInitialized, setIsInitialized] = useState(false);
+  const [reconnectingSessions, setReconnectingSessions] = useState<Set<string>>(new Set());
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
   const scriptEngine = ScriptEngine.getInstance();
+  const collectionManager = CollectionManager.getInstance();
+  const themeManager = ThemeManager.getInstance();
 
   // Initialize application
   useEffect(() => {
@@ -63,26 +70,42 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  // Check if we need to show password dialog on startup
+  // Check if we need to show collection selector or password dialog on startup
   useEffect(() => {
-    if (isInitialized && SecureStorage.hasStoredData() && SecureStorage.isStorageEncrypted() && !SecureStorage.isStorageUnlocked()) {
-      setPasswordDialogMode('unlock');
-      setShowPasswordDialog(true);
+    if (isInitialized) {
+      const currentCollection = collectionManager.getCurrentCollection();
+      if (!currentCollection) {
+        setShowCollectionSelector(true);
+      } else if (currentCollection.isEncrypted && !SecureStorage.isStorageUnlocked()) {
+        setPasswordDialogMode('unlock');
+        setShowPasswordDialog(true);
+      }
     }
   }, [isInitialized]);
 
-  // Reconnect sessions on reload if enabled
+  // Reconnect sessions on reload if enabled (fixed to prevent loop)
   useEffect(() => {
     const settings = settingsManager.getSettings();
-    if (settings.reconnectOnReload && isInitialized) {
-      const savedSessions = localStorage.getItem('mremote-active-sessions');
+    if (settings.reconnectOnReload && isInitialized && state.connections.length > 0) {
+      const savedSessions = sessionStorage.getItem('mremote-active-sessions');
       if (savedSessions) {
         try {
           const sessions = JSON.parse(savedSessions);
+          // Clear the saved sessions to prevent reconnection loop
+          sessionStorage.removeItem('mremote-active-sessions');
+          
           sessions.forEach((sessionData: any) => {
             const connection = state.connections.find(c => c.id === sessionData.connectionId);
-            if (connection) {
-              handleConnect(connection);
+            if (connection && !reconnectingSessions.has(connection.id)) {
+              setReconnectingSessions(prev => new Set(prev).add(connection.id));
+              setTimeout(() => {
+                handleConnect(connection);
+                setReconnectingSessions(prev => {
+                  const newSet = new Set(prev);
+                  newSet.delete(connection.id);
+                  return newSet;
+                });
+              }, 1000);
             }
           });
         } catch (error) {
@@ -92,21 +115,27 @@ const AppContent: React.FC = () => {
     }
   }, [isInitialized, state.connections]);
 
-  // Save active sessions for reconnection
+  // Save active sessions for reconnection (only save when sessions change, not on reload)
   useEffect(() => {
     const settings = settingsManager.getSettings();
-    if (settings.reconnectOnReload) {
+    if (settings.reconnectOnReload && state.sessions.length > 0) {
       const sessionData = state.sessions.map(session => ({
         connectionId: session.connectionId,
         name: session.name,
       }));
-      localStorage.setItem('mremote-active-sessions', JSON.stringify(sessionData));
+      sessionStorage.setItem('mremote-active-sessions', JSON.stringify(sessionData));
+    } else if (state.sessions.length === 0) {
+      sessionStorage.removeItem('mremote-active-sessions');
     }
   }, [state.sessions]);
 
   const initializeApp = async () => {
     try {
       await settingsManager.initialize();
+      
+      // Apply theme
+      themeManager.loadSavedTheme();
+      themeManager.injectThemeCSS();
       
       // Apply language setting
       const settings = settingsManager.getSettings();
@@ -119,6 +148,18 @@ const AppContent: React.FC = () => {
     } catch (error) {
       console.error('Failed to initialize application:', error);
       settingsManager.logAction('error', 'Application initialization failed', undefined, error instanceof Error ? error.message : 'Unknown error');
+    }
+  };
+
+  const handleCollectionSelect = async (collectionId: string, password?: string) => {
+    try {
+      await collectionManager.selectCollection(collectionId, password);
+      await loadData();
+      setShowCollectionSelector(false);
+      settingsManager.logAction('info', 'Collection selected', undefined, `Collection: ${collectionManager.getCurrentCollection()?.name}`);
+    } catch (error) {
+      console.error('Failed to select collection:', error);
+      alert('Failed to access collection. Please check your password.');
     }
   };
 
@@ -406,6 +447,11 @@ const AppContent: React.FC = () => {
           <Monitor size={20} className="text-blue-400" />
           <span className="font-semibold">{t('app.title')}</span>
           <span className="text-sm text-gray-400">{t('app.subtitle')}</span>
+          {collectionManager.getCurrentCollection() && (
+            <span className="text-xs text-blue-400 bg-blue-900/30 px-2 py-1 rounded">
+              {collectionManager.getCurrentCollection()?.name}
+            </span>
+          )}
         </div>
         
         <div className="flex items-center space-x-2">
@@ -429,7 +475,11 @@ const AppContent: React.FC = () => {
             </select>
           </div>
           
-          <button className="p-2 hover:bg-gray-700 rounded transition-colors">
+          <button 
+            onClick={() => setShowCollectionSelector(true)}
+            className="p-2 hover:bg-gray-700 rounded transition-colors"
+            title="Switch Collection"
+          >
             <Menu size={16} />
           </button>
         </div>
@@ -487,6 +537,12 @@ const AppContent: React.FC = () => {
       </div>
 
       {/* Modals */}
+      <CollectionSelector
+        isOpen={showCollectionSelector}
+        onCollectionSelect={handleCollectionSelect}
+        onClose={() => setShowCollectionSelector(false)}
+      />
+
       <ConnectionEditor
         connection={editingConnection}
         isOpen={showConnectionEditor}

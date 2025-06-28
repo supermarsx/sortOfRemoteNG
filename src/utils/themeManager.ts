@@ -61,6 +61,22 @@ export class ThemeManager {
         error: '#ef4444',
       },
     },
+    oled: {
+      name: 'OLED Black',
+      colors: {
+        primary: '#3b82f6',
+        secondary: '#374151',
+        accent: '#10b981',
+        background: '#000000',
+        surface: '#000000',
+        text: '#ffffff',
+        textSecondary: '#6b7280',
+        border: '#111111',
+        success: '#10b981',
+        warning: '#f59e0b',
+        error: '#ef4444',
+      },
+    },
   };
 
   private colorSchemes: Record<string, Record<string, string>> = {

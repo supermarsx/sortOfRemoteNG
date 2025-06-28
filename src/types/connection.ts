@@ -33,6 +33,8 @@ export interface Connection {
   totpSecret?: string;
   httpHeaders?: Record<string, string>;
   basicAuthRealm?: string;
+  basicAuthUsername?: string;
+  basicAuthPassword?: string;
   
   // Database specific
   database?: string;
@@ -221,6 +223,16 @@ export interface FileTransferSession {
   endTime?: Date;
   totalSize: number;
   transferredSize: number;
+}
+
+export interface ConnectionCollection {
+  id: string;
+  name: string;
+  description?: string;
+  isEncrypted: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  lastAccessed: Date;
 }
 
 import { ProxyConfig } from './settings';

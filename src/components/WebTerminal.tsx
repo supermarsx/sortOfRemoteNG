@@ -23,7 +23,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    // Initialize terminal
+    // Initialize terminal with better formatting
     terminal.current = new Terminal({
       theme: {
         background: '#1f2937',
@@ -47,13 +47,19 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         brightCyan: '#22d3ee',
         brightWhite: '#ffffff',
       },
-      fontFamily: 'Monaco, Menlo, "Ubuntu Mono", monospace',
+      fontFamily: 'Monaco, Menlo, "Ubuntu Mono", "Courier New", monospace',
       fontSize: 14,
       lineHeight: 1.2,
       cursorBlink: true,
       cursorStyle: 'block',
-      scrollback: 1000,
+      scrollback: 10000,
       tabStopWidth: 4,
+      convertEol: true,
+      allowTransparency: false,
+      bellStyle: 'none',
+      fastScrollModifier: 'alt',
+      fastScrollSensitivity: 5,
+      scrollSensitivity: 1,
     });
 
     fitAddon.current = new FitAddon();
@@ -68,9 +74,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       initializeSSHConnection();
     } else {
       // For other protocols, show a simple terminal interface
-      terminal.current.writeln('Terminal ready for ' + session.protocol.toUpperCase() + ' session');
-      terminal.current.writeln('Connected to: ' + session.hostname);
-      terminal.current.write('$ ');
+      terminal.current.writeln('\x1b[32m' + 'Terminal ready for ' + session.protocol.toUpperCase() + ' session' + '\x1b[0m');
+      terminal.current.writeln('\x1b[36m' + 'Connected to: ' + session.hostname + '\x1b[0m');
+      terminal.current.write('\x1b[33m$ \x1b[0m');
       setIsConnected(true);
     }
 
@@ -79,8 +85,15 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       if (sshClient.current && isConnected) {
         sshClient.current.sendData(data);
       } else {
-        // Echo input for non-SSH connections
-        terminal.current?.write(data);
+        // Echo input for non-SSH connections with proper formatting
+        if (data === '\r') {
+          terminal.current?.write('\r\n\x1b[33m$ \x1b[0m');
+        } else if (data === '\u007f') {
+          // Backspace
+          terminal.current?.write('\b \b');
+        } else {
+          terminal.current?.write(data);
+        }
       }
     });
 
@@ -113,8 +126,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     if (!terminal.current) return;
 
     try {
-      terminal.current.writeln('Connecting to SSH server...');
-      terminal.current.writeln(`Host: ${session.hostname}`);
+      terminal.current.writeln('\x1b[36mConnecting to SSH server...\x1b[0m');
+      terminal.current.writeln('\x1b[90mHost: ' + session.hostname + '\x1b[0m');
       
       sshClient.current = new SSHClient({
         host: session.hostname,
@@ -124,29 +137,33 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       });
 
       sshClient.current.onData((data) => {
-        terminal.current?.write(data);
+        // Process data to ensure proper formatting
+        const processedData = data
+          .replace(/\r\n/g, '\r\n')
+          .replace(/\n/g, '\r\n');
+        terminal.current?.write(processedData);
       });
 
       sshClient.current.onConnect(() => {
         setIsConnected(true);
         setConnectionError('');
-        terminal.current?.writeln('\r\nSSH connection established!');
+        terminal.current?.writeln('\r\n\x1b[32mSSH connection established!\x1b[0m');
       });
 
       sshClient.current.onError((error) => {
         setConnectionError(error);
-        terminal.current?.writeln(`\r\nConnection error: ${error}`);
+        terminal.current?.writeln('\r\n\x1b[31mConnection error: ' + error + '\x1b[0m');
       });
 
       sshClient.current.onClose(() => {
         setIsConnected(false);
-        terminal.current?.writeln('\r\nConnection closed');
+        terminal.current?.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
       });
 
       await sshClient.current.connect();
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : 'Connection failed');
-      terminal.current.writeln(`\r\nFailed to connect: ${error}`);
+      terminal.current.writeln('\r\n\x1b[31mFailed to connect: ' + error + '\x1b[0m');
     }
   };
 

@@ -9,10 +9,13 @@ import {
   AlertCircle,
   X,
   File,
-  FolderOpen
+  FolderOpen,
+  Lock
 } from 'lucide-react';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/ConnectionContext';
+import { CollectionManager } from '../utils/collectionManager';
+import CryptoJS from 'crypto-js';
 
 interface ImportExportProps {
   isOpen: boolean;
@@ -30,11 +33,23 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
   const { state, dispatch } = useConnections();
   const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
   const [exportFormat, setExportFormat] = useState<'json' | 'xml' | 'csv'>('json');
+  const [exportEncrypted, setExportEncrypted] = useState(false);
+  const [exportPassword, setExportPassword] = useState('');
+  const [includePasswords, setIncludePasswords] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleExport = () => {
+  const collectionManager = CollectionManager.getInstance();
+
+  const generateExportFilename = (format: string): string => {
+    const now = new Date();
+    const datetime = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const randomHex = Math.random().toString(16).substring(2, 8);
+    return `sortofremoteng-exports-${datetime}-${randomHex}.${format}`;
+  };
+
+  const handleExport = async () => {
     setIsProcessing(true);
     
     try {
@@ -42,24 +57,39 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
       let filename: string;
       let mimeType: string;
 
+      const currentCollection = collectionManager.getCurrentCollection();
+      if (!currentCollection) {
+        throw new Error('No collection selected');
+      }
+
       switch (exportFormat) {
         case 'json':
-          content = exportToJSON();
-          filename = `mremote-connections-${new Date().toISOString().split('T')[0]}.json`;
+          content = await collectionManager.exportCollection(
+            currentCollection.id, 
+            includePasswords, 
+            exportEncrypted ? exportPassword : undefined
+          );
+          filename = generateExportFilename('json');
           mimeType = 'application/json';
           break;
         case 'xml':
           content = exportToXML();
-          filename = `mremote-connections-${new Date().toISOString().split('T')[0]}.xml`;
+          filename = generateExportFilename('xml');
           mimeType = 'application/xml';
           break;
         case 'csv':
           content = exportToCSV();
-          filename = `mremote-connections-${new Date().toISOString().split('T')[0]}.csv`;
+          filename = generateExportFilename('csv');
           mimeType = 'text/csv';
           break;
         default:
           throw new Error('Unsupported export format');
+      }
+
+      // Apply additional encryption if requested and not JSON with built-in encryption
+      if (exportEncrypted && exportPassword && exportFormat !== 'json') {
+        content = CryptoJS.AES.encrypt(content, exportPassword).toString();
+        filename = filename.replace(/\.[^.]+$/, '.encrypted$&');
       }
 
       downloadFile(content, filename, mimeType);
@@ -69,19 +99,6 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  const exportToJSON = (): string => {
-    const exportData = {
-      version: '1.0',
-      exportDate: new Date().toISOString(),
-      connections: state.connections.map(conn => ({
-        ...conn,
-        // Remove sensitive data for security
-        password: conn.password ? '***ENCRYPTED***' : undefined
-      }))
-    };
-    return JSON.stringify(exportData, null, 2);
   };
 
   const exportToXML = (): string => {
@@ -209,7 +226,26 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
     const errors: string[] = [];
 
     try {
-      switch (extension) {
+      // Check if file is encrypted
+      if (filename.includes('.encrypted.') || extension === 'encrypted') {
+        const password = prompt('Enter decryption password:');
+        if (!password) {
+          throw new Error('Password required for encrypted file');
+        }
+        
+        try {
+          content = CryptoJS.AES.decrypt(content, password).toString(CryptoJS.enc.Utf8);
+          if (!content) {
+            throw new Error('Invalid password or corrupted file');
+          }
+        } catch (error) {
+          throw new Error('Failed to decrypt file. Check your password.');
+        }
+      }
+
+      const actualExtension = filename.replace('.encrypted', '').split('.').pop()?.toLowerCase();
+      
+      switch (actualExtension) {
         case 'json':
           connections = await importFromJSON(content);
           break;
@@ -220,7 +256,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
           connections = await importFromCSV(content);
           break;
         default:
-          throw new Error(`Unsupported file format: ${extension}`);
+          throw new Error(`Unsupported file format: ${actualExtension}`);
       }
 
       return {
@@ -405,7 +441,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
               <div>
                 <h3 className="text-lg font-medium text-white mb-4">Export Connections</h3>
                 <p className="text-gray-400 mb-4">
-                  Export your connections to a file. Passwords will be excluded for security.
+                  Export your connections to a file. Configure encryption and password options below.
                 </p>
                 
                 <div className="bg-gray-700 rounded-lg p-4 mb-4">
@@ -449,9 +485,47 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
                 </div>
               </div>
 
+              <div className="space-y-4">
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={includePasswords}
+                    onChange={(e) => setIncludePasswords(e.target.checked)}
+                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  />
+                  <span className="text-gray-300">Include passwords in export</span>
+                </label>
+
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={exportEncrypted}
+                    onChange={(e) => setExportEncrypted(e.target.checked)}
+                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  />
+                  <span className="text-gray-300">Encrypt export file</span>
+                  <Lock size={16} className="text-yellow-400" />
+                </label>
+
+                {exportEncrypted && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Encryption Password
+                    </label>
+                    <input
+                      type="password"
+                      value={exportPassword}
+                      onChange={(e) => setExportPassword(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter encryption password"
+                    />
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={handleExport}
-                disabled={isProcessing || state.connections.length === 0}
+                disabled={isProcessing || state.connections.length === 0 || (exportEncrypted && !exportPassword)}
                 className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
               >
                 {isProcessing ? (
@@ -475,7 +549,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
               <div>
                 <h3 className="text-lg font-medium text-white mb-4">Import Connections</h3>
                 <p className="text-gray-400 mb-4">
-                  Import connections from JSON, XML, or CSV files. Supported formats include sortOfRemoteNG exports.
+                  Import connections from JSON, XML, or CSV files. Encrypted files are automatically detected.
                 </p>
               </div>
 
@@ -501,7 +575,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
                     )}
                   </button>
                   <p className="text-xs text-gray-500 mt-2">
-                    Supported formats: .json, .xml, .csv
+                    Supported formats: .json, .xml, .csv (encrypted files supported)
                   </p>
                 </div>
               )}
@@ -575,7 +649,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".json,.xml,.csv"
+                accept=".json,.xml,.csv,.encrypted"
                 onChange={handleFileSelect}
                 className="hidden"
               />
