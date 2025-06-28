@@ -18,6 +18,8 @@ export class SSHClient {
   private callbacks: Partial<SSHClientCallbacks> = {};
   private websocket: WebSocket | null = null;
   private isConnected = false;
+  private commandBuffer = '';
+  private currentDirectory = '~';
 
   constructor(config: SSHConfig) {
     this.config = config;
@@ -41,9 +43,6 @@ export class SSHClient {
 
   async connect(): Promise<void> {
     try {
-      // In a real implementation, you would connect to a WebSocket server
-      // that handles SSH connections. For now, we'll simulate the connection.
-      
       // Simulate connection delay
       await new Promise(resolve => setTimeout(resolve, 1000));
       
@@ -60,29 +59,29 @@ export class SSHClient {
     this.isConnected = true;
     this.callbacks.onConnect?.();
     
-    // Send welcome message
+    // Send welcome message with proper formatting
     setTimeout(() => {
       this.callbacks.onData?.('\r\n');
       this.callbacks.onData?.(`Welcome to ${this.config.host}\r\n`);
       this.callbacks.onData?.(this.getMotd());
-      this.callbacks.onData?.(`${this.config.username}@${this.config.host}:~$ `);
+      this.callbacks.onData?.(`\x1b[32m${this.config.username}@${this.config.host}\x1b[0m:\x1b[34m${this.currentDirectory}\x1b[0m$ `);
     }, 500);
   }
 
   private getMotd(): string {
-    return `
-Last login: ${new Date().toLocaleString()}
+    const now = new Date();
+    return `Last login: ${now.toLocaleString()}
 Ubuntu 22.04.3 LTS
 
  * Documentation:  https://help.ubuntu.com
  * Management:     https://landscape.canonical.com
  * Support:        https://ubuntu.com/advantage
 
-System information as of ${new Date().toLocaleString()}:
+System information as of ${now.toLocaleString()}:
 
   System load:  0.08              Processes:             123
   Usage of /:   45.2% of 9.78GB   Users logged in:       1
-  Memory usage: 23%               IPv4 address for eth0: 192.168.1.100
+  Memory usage: 23%               IPv4 address for eth0: ${this.config.host}
   Swap usage:   0%
 
 `;
@@ -91,56 +90,115 @@ System information as of ${new Date().toLocaleString()}:
   sendData(data: string): void {
     if (!this.isConnected) return;
 
-    // Handle special keys and commands
-    if (data === '\r') {
-      // Enter key - process command
-      this.processCommand();
-    } else if (data === '\u007f') {
-      // Backspace
-      this.callbacks.onData?.('\b \b');
-    } else if (data === '\u0003') {
-      // Ctrl+C
-      this.callbacks.onData?.('^C\r\n');
-      this.callbacks.onData?.(`${this.config.username}@${this.config.host}:~$ `);
-    } else if (data === '\u0004') {
-      // Ctrl+D (EOF)
-      this.callbacks.onData?.('logout\r\n');
-      this.disconnect();
-    } else {
-      // Regular character
-      this.callbacks.onData?.(data);
+    // Process each character
+    for (let i = 0; i < data.length; i++) {
+      const char = data[i];
+      const charCode = char.charCodeAt(0);
+
+      switch (charCode) {
+        case 13: // Enter (CR)
+          this.callbacks.onData?.('\r\n');
+          this.processCommand(this.commandBuffer.trim());
+          this.commandBuffer = '';
+          break;
+        case 127: // Backspace
+          if (this.commandBuffer.length > 0) {
+            this.commandBuffer = this.commandBuffer.slice(0, -1);
+            this.callbacks.onData?.('\b \b');
+          }
+          break;
+        case 3: // Ctrl+C
+          this.callbacks.onData?.('^C\r\n');
+          this.commandBuffer = '';
+          this.showPrompt();
+          break;
+        case 4: // Ctrl+D (EOF)
+          if (this.commandBuffer.length === 0) {
+            this.callbacks.onData?.('logout\r\n');
+            this.disconnect();
+            return;
+          }
+          break;
+        case 9: // Tab
+          this.handleTabCompletion();
+          break;
+        case 27: // Escape sequences (arrow keys, etc.)
+          this.handleEscapeSequence(data, i);
+          break;
+        default:
+          if (charCode >= 32 && charCode <= 126) { // Printable characters
+            this.commandBuffer += char;
+            this.callbacks.onData?.(char);
+          }
+          break;
+      }
     }
   }
 
-  private currentCommand = '';
+  private handleEscapeSequence(data: string, index: number): void {
+    // Handle arrow keys and other escape sequences
+    if (index + 2 < data.length && data[index + 1] === '[') {
+      const key = data[index + 2];
+      switch (key) {
+        case 'A': // Up arrow
+          // TODO: Implement command history
+          break;
+        case 'B': // Down arrow
+          // TODO: Implement command history
+          break;
+        case 'C': // Right arrow
+          // TODO: Implement cursor movement
+          break;
+        case 'D': // Left arrow
+          // TODO: Implement cursor movement
+          break;
+      }
+    }
+  }
 
-  private processCommand(): void {
-    this.callbacks.onData?.('\r\n');
+  private handleTabCompletion(): void {
+    // Simple tab completion for common commands
+    const commonCommands = ['ls', 'cd', 'pwd', 'cat', 'grep', 'find', 'mkdir', 'rm', 'cp', 'mv'];
+    const matches = commonCommands.filter(cmd => cmd.startsWith(this.commandBuffer));
     
-    const command = this.currentCommand.trim();
-    this.currentCommand = '';
+    if (matches.length === 1) {
+      const completion = matches[0].substring(this.commandBuffer.length);
+      this.commandBuffer += completion;
+      this.callbacks.onData?.(completion);
+    } else if (matches.length > 1) {
+      this.callbacks.onData?.('\r\n');
+      this.callbacks.onData?.(matches.join('  ') + '\r\n');
+      this.showPrompt();
+      this.callbacks.onData?.(this.commandBuffer);
+    }
+  }
 
+  private processCommand(command: string): void {
     if (command === '') {
-      this.callbacks.onData?.(`${this.config.username}@${this.config.host}:~$ `);
+      this.showPrompt();
       return;
     }
 
-    // Simulate command execution
+    // Simulate command execution delay
     setTimeout(() => {
       this.executeCommand(command);
-    }, 100);
+    }, 50);
   }
 
   private executeCommand(command: string): void {
-    const parts = command.split(' ');
+    const parts = command.split(' ').filter(part => part.length > 0);
     const cmd = parts[0];
+    const args = parts.slice(1);
 
     switch (cmd) {
       case 'ls':
-        this.callbacks.onData?.('Desktop  Documents  Downloads  Pictures  Videos\r\n');
+        this.handleLsCommand(args);
         break;
       case 'pwd':
-        this.callbacks.onData?.(`/home/${this.config.username}\r\n`);
+        this.callbacks.onData?.(`${this.currentDirectory}\r\n`);
+        break;
+      case 'cd':
+        this.handleCdCommand(args);
         break;
       case 'whoami':
         this.callbacks.onData?.(`${this.config.username}\r\n`);
@@ -149,20 +207,23 @@ System information as of ${new Date().toLocaleString()}:
         this.callbacks.onData?.(`${new Date().toString()}\r\n`);
         break;
       case 'uname':
-        if (parts[1] === '-a') {
+        if (args.includes('-a')) {
           this.callbacks.onData?.('Linux ubuntu 5.15.0-72-generic #79-Ubuntu SMP Wed Apr 19 08:22:18 UTC 2023 x86_64 x86_64 x86_64 GNU/Linux\r\n');
         } else {
           this.callbacks.onData?.('Linux\r\n');
         }
         break;
       case 'echo':
-        this.callbacks.onData?.(`${parts.slice(1).join(' ')}\r\n`);
+        this.callbacks.onData?.(`${args.join(' ')}\r\n`);
+        break;
+      case 'cat':
+        this.handleCatCommand(args);
         break;
       case 'clear':
         this.callbacks.onData?.('\x1b[2J\x1b[H');
         break;
       case 'help':
-        this.callbacks.onData?.('Available commands: ls, pwd, whoami, date, uname, echo, clear, help, exit\r\n');
+        this.callbacks.onData?.('Available commands: ls, pwd, cd, whoami, date, uname, echo, cat, clear, help, exit, logout\r\n');
         break;
       case 'exit':
       case 'logout':
@@ -174,7 +235,80 @@ System information as of ${new Date().toLocaleString()}:
         break;
     }
 
-    this.callbacks.onData?.(`${this.config.username}@${this.config.host}:~$ `);
+    this.showPrompt();
+  }
+
+  private handleLsCommand(args: string[]): void {
+    const showHidden = args.includes('-a') || args.includes('-la') || args.includes('-al');
+    const longFormat = args.includes('-l') || args.includes('-la') || args.includes('-al');
+
+    let files = ['Desktop', 'Documents', 'Downloads', 'Pictures', 'Videos', 'Music'];
+    
+    if (showHidden) {
+      files = ['.', '..', '.bashrc', '.profile', '.ssh', ...files];
+    }
+
+    if (longFormat) {
+      this.callbacks.onData?.('total 24\r\n');
+      files.forEach(file => {
+        const isHidden = file.startsWith('.');
+        const permissions = isHidden ? '-rw-r--r--' : 'drwxr-xr-x';
+        const size = isHidden ? '1024' : '4096';
+        const date = 'Jan 15 10:30';
+        this.callbacks.onData?.(`${permissions} 1 ${this.config.username} ${this.config.username} ${size.padStart(8)} ${date} ${file}\r\n`);
+      });
+    } else {
+      this.callbacks.onData?.(`${files.join('  ')}\r\n`);
+    }
+  }
+
+  private handleCdCommand(args: string[]): void {
+    if (args.length === 0) {
+      this.currentDirectory = '~';
+    } else {
+      const path = args[0];
+      if (path === '..') {
+        if (this.currentDirectory !== '~' && this.currentDirectory !== '/') {
+          const parts = this.currentDirectory.split('/');
+          parts.pop();
+          this.currentDirectory = parts.join('/') || '/';
+        }
+      } else if (path.startsWith('/')) {
+        this.currentDirectory = path;
+      } else {
+        if (this.currentDirectory === '~') {
+          this.currentDirectory = `~/${path}`;
+        } else {
+          this.currentDirectory = `${this.currentDirectory}/${path}`;
+        }
+      }
+    }
+  }
+
+  private handleCatCommand(args: string[]): void {
+    if (args.length === 0) {
+      this.callbacks.onData?.('cat: missing file operand\r\n');
+      return;
+    }
+
+    const filename = args[0];
+    switch (filename) {
+      case '.bashrc':
+        this.callbacks.onData?.('# ~/.bashrc: executed by bash(1) for non-login shells.\r\n');
+        this.callbacks.onData?.('# see /usr/share/doc/bash/examples/startup-files\r\n');
+        break;
+      case '/etc/passwd':
+        this.callbacks.onData?.(`root:x:0:0:root:/root:/bin/bash\r\n`);
+        this.callbacks.onData?.(`${this.config.username}:x:1000:1000::/home/${this.config.username}:/bin/bash\r\n`);
+        break;
+      default:
+        this.callbacks.onData?.(`cat: ${filename}: No such file or directory\r\n`);
+        break;
+    }
+  }
+
+  private showPrompt(): void {
+    this.callbacks.onData?.(`\x1b[32m${this.config.username}@${this.config.host}\x1b[0m:\x1b[34m${this.currentDirectory}\x1b[0m$ `);
   }
 
   resize(cols: number, rows: number): void {

@@ -5,6 +5,7 @@ import { WebLinksAddon } from 'xterm-addon-web-links';
 import { ConnectionSession } from '../types/connection';
 import { SSHClient } from '../utils/sshClient';
 import { Maximize2, Minimize2, Copy, Download, Upload } from 'lucide-react';
+import { useConnections } from '../contexts/ConnectionContext';
 
 interface WebTerminalProps {
   session: ConnectionSession;
@@ -12,6 +13,7 @@ interface WebTerminalProps {
 }
 
 export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
+  const { state } = useConnections();
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const fitAddon = useRef<FitAddon | null>(null);
@@ -19,11 +21,15 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
+  const [currentLine, setCurrentLine] = useState('');
+
+  // Get connection details
+  const connection = state.connections.find(c => c.id === session.connectionId);
 
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    // Initialize terminal with better formatting
+    // Initialize terminal with proper settings for SSH
     terminal.current = new Terminal({
       theme: {
         background: '#1f2937',
@@ -47,19 +53,22 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         brightCyan: '#22d3ee',
         brightWhite: '#ffffff',
       },
-      fontFamily: 'Monaco, Menlo, "Ubuntu Mono", "Courier New", monospace',
+      fontFamily: '"Cascadia Code", "Fira Code", Monaco, Menlo, "Ubuntu Mono", "Courier New", monospace',
       fontSize: 14,
       lineHeight: 1.2,
       cursorBlink: true,
       cursorStyle: 'block',
       scrollback: 10000,
       tabStopWidth: 4,
-      convertEol: true,
+      convertEol: false, // Let SSH handle line endings
       allowTransparency: false,
       bellStyle: 'none',
       fastScrollModifier: 'alt',
       fastScrollSensitivity: 5,
       scrollSensitivity: 1,
+      macOptionIsMeta: true,
+      rightClickSelectsWord: false,
+      wordSeparator: ' ()[]{}\'"`',
     });
 
     fitAddon.current = new FitAddon();
@@ -74,8 +83,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       initializeSSHConnection();
     } else {
       // For other protocols, show a simple terminal interface
-      terminal.current.writeln('\x1b[32m' + 'Terminal ready for ' + session.protocol.toUpperCase() + ' session' + '\x1b[0m');
-      terminal.current.writeln('\x1b[36m' + 'Connected to: ' + session.hostname + '\x1b[0m');
+      terminal.current.writeln('\x1b[32mTerminal ready for ' + session.protocol.toUpperCase() + ' session\x1b[0m');
+      terminal.current.writeln('\x1b[36mConnected to: ' + session.hostname + '\x1b[0m');
       terminal.current.write('\x1b[33m$ \x1b[0m');
       setIsConnected(true);
     }
@@ -83,17 +92,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     // Handle terminal input
     terminal.current.onData((data) => {
       if (sshClient.current && isConnected) {
+        // Send data directly to SSH client
         sshClient.current.sendData(data);
       } else {
-        // Echo input for non-SSH connections with proper formatting
-        if (data === '\r') {
-          terminal.current?.write('\r\n\x1b[33m$ \x1b[0m');
-        } else if (data === '\u007f') {
-          // Backspace
-          terminal.current?.write('\b \b');
-        } else {
-          terminal.current?.write(data);
-        }
+        // Handle non-SSH protocols with proper line handling
+        handleNonSSHInput(data);
       }
     });
 
@@ -122,6 +125,93 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     };
   }, [session]);
 
+  const handleNonSSHInput = (data: string) => {
+    if (!terminal.current) return;
+
+    for (let i = 0; i < data.length; i++) {
+      const char = data[i];
+      const charCode = char.charCodeAt(0);
+
+      switch (charCode) {
+        case 13: // Enter (CR)
+          terminal.current.write('\r\n');
+          processCommand(currentLine);
+          setCurrentLine('');
+          break;
+        case 127: // Backspace
+          if (currentLine.length > 0) {
+            setCurrentLine(currentLine.slice(0, -1));
+            terminal.current.write('\b \b');
+          }
+          break;
+        case 3: // Ctrl+C
+          terminal.current.write('^C\r\n\x1b[33m$ \x1b[0m');
+          setCurrentLine('');
+          break;
+        case 4: // Ctrl+D
+          terminal.current.write('logout\r\n');
+          break;
+        default:
+          if (charCode >= 32 && charCode <= 126) { // Printable characters
+            setCurrentLine(currentLine + char);
+            terminal.current.write(char);
+          }
+          break;
+      }
+    }
+  };
+
+  const processCommand = (command: string) => {
+    if (!terminal.current) return;
+
+    const cmd = command.trim();
+    if (cmd === '') {
+      terminal.current.write('\x1b[33m$ \x1b[0m');
+      return;
+    }
+
+    // Simulate command execution
+    setTimeout(() => {
+      executeCommand(cmd);
+    }, 50);
+  };
+
+  const executeCommand = (command: string) => {
+    if (!terminal.current) return;
+
+    const parts = command.split(' ');
+    const cmd = parts[0];
+
+    switch (cmd) {
+      case 'ls':
+        terminal.current.writeln('Desktop  Documents  Downloads  Pictures  Videos');
+        break;
+      case 'pwd':
+        terminal.current.writeln('/home/user');
+        break;
+      case 'whoami':
+        terminal.current.writeln('user');
+        break;
+      case 'date':
+        terminal.current.writeln(new Date().toString());
+        break;
+      case 'clear':
+        terminal.current.clear();
+        break;
+      case 'help':
+        terminal.current.writeln('Available commands: ls, pwd, whoami, date, clear, help, exit');
+        break;
+      case 'exit':
+        terminal.current.writeln('logout');
+        return;
+      default:
+        terminal.current.writeln(`bash: ${cmd}: command not found`);
+        break;
+    }
+
+    terminal.current.write('\x1b[33m$ \x1b[0m');
+  };
+
   const initializeSSHConnection = async () => {
     if (!terminal.current) return;
 
@@ -129,41 +219,57 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       terminal.current.writeln('\x1b[36mConnecting to SSH server...\x1b[0m');
       terminal.current.writeln('\x1b[90mHost: ' + session.hostname + '\x1b[0m');
       
+      // Get SSH library preference from connection
+      let sshLibrary = 'websocket';
+      if (connection?.description) {
+        const match = connection.description.match(/\[SSH_LIBRARY:([^\]]+)\]/);
+        if (match) {
+          sshLibrary = match[1];
+        }
+      }
+
       sshClient.current = new SSHClient({
         host: session.hostname,
-        port: 22, // Default SSH port
-        username: 'user', // This should come from connection config
-        password: 'password', // This should come from connection config
+        port: connection?.port || 22,
+        username: connection?.username || 'user',
+        password: connection?.password || 'password',
       });
 
       sshClient.current.onData((data) => {
-        // Process data to ensure proper formatting
-        const processedData = data
-          .replace(/\r\n/g, '\r\n')
-          .replace(/\n/g, '\r\n');
-        terminal.current?.write(processedData);
+        // Handle SSH data with proper formatting
+        if (terminal.current) {
+          terminal.current.write(data);
+        }
       });
 
       sshClient.current.onConnect(() => {
         setIsConnected(true);
         setConnectionError('');
-        terminal.current?.writeln('\r\n\x1b[32mSSH connection established!\x1b[0m');
+        if (terminal.current) {
+          terminal.current.writeln('\r\n\x1b[32mSSH connection established!\x1b[0m');
+        }
       });
 
       sshClient.current.onError((error) => {
         setConnectionError(error);
-        terminal.current?.writeln('\r\n\x1b[31mConnection error: ' + error + '\x1b[0m');
+        if (terminal.current) {
+          terminal.current.writeln('\r\n\x1b[31mConnection error: ' + error + '\x1b[0m');
+        }
       });
 
       sshClient.current.onClose(() => {
         setIsConnected(false);
-        terminal.current?.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
+        if (terminal.current) {
+          terminal.current.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
+        }
       });
 
       await sshClient.current.connect();
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : 'Connection failed');
-      terminal.current.writeln('\r\n\x1b[31mFailed to connect: ' + error + '\x1b[0m');
+      if (terminal.current) {
+        terminal.current.writeln('\r\n\x1b[31mFailed to connect: ' + error + '\x1b[0m');
+      }
     }
   };
 
@@ -188,8 +294,13 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const pasteFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (terminal.current) {
-        terminal.current.paste(text);
+      if (terminal.current && sshClient.current && isConnected) {
+        sshClient.current.sendData(text);
+      } else if (terminal.current) {
+        // For non-SSH, handle paste character by character
+        for (const char of text) {
+          handleNonSSHInput(char);
+        }
       }
     } catch (error) {
       console.error('Failed to paste from clipboard:', error);
@@ -217,6 +328,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
           {connectionError && (
             <span className="text-xs text-red-400 bg-red-400/20 px-2 py-1 rounded">
               Error: {connectionError}
+            </span>
+          )}
+          {connection && session.protocol === 'ssh' && (
+            <span className="text-xs text-blue-400 bg-blue-400/20 px-2 py-1 rounded">
+              SSH Library: {connection.description?.match(/\[SSH_LIBRARY:([^\]]+)\]/)?.[1] || 'websocket'}
             </span>
           )}
         </div>

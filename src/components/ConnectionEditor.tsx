@@ -61,9 +61,18 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
 
   useEffect(() => {
     if (connection) {
+      // Extract SSH library from description if it exists
+      let sshLibrary: SSHLibraryType = 'websocket';
+      if (connection.description) {
+        const match = connection.description.match(/\[SSH_LIBRARY:([^\]]+)\]/);
+        if (match) {
+          sshLibrary = match[1] as SSHLibraryType;
+        }
+      }
+
       setFormData({
         ...connection,
-        sshLibrary: 'websocket', // Default SSH library
+        sshLibrary,
         basicAuthUsername: connection.basicAuthUsername || '',
         basicAuthPassword: connection.basicAuthPassword || '',
         basicAuthRealm: connection.basicAuthRealm || '',
@@ -96,6 +105,18 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     e.preventDefault();
     
     const now = new Date();
+    
+    // Prepare description with SSH library info
+    let description = formData.description || '';
+    
+    // Remove existing SSH library marker
+    description = description.replace(/\[SSH_LIBRARY:[^\]]+\]\s*/g, '').trim();
+    
+    // Add SSH library marker if SSH protocol and library is selected
+    if (formData.protocol === 'ssh' && formData.sshLibrary && formData.sshLibrary !== 'websocket') {
+      description = description ? `${description}\n[SSH_LIBRARY:${formData.sshLibrary}]` : `[SSH_LIBRARY:${formData.sshLibrary}]`;
+    }
+
     const connectionData: Connection = {
       id: connection?.id || crypto.randomUUID(),
       name: formData.name || 'New Connection',
@@ -105,7 +126,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       username: formData.username,
       password: formData.password,
       domain: formData.domain,
-      description: formData.description,
+      description,
       isGroup: formData.isGroup || false,
       tags: formData.tags || [],
       parentId: formData.parentId,
@@ -117,12 +138,6 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       basicAuthRealm: formData.basicAuthRealm,
       httpHeaders: formData.httpHeaders,
     };
-
-    // Store SSH library preference in connection metadata
-    if (formData.protocol === 'ssh' && formData.sshLibrary) {
-      connectionData.description = (connectionData.description || '') + 
-        `\n[SSH_LIBRARY:${formData.sshLibrary}]`;
-    }
 
     if (connection) {
       dispatch({ type: 'UPDATE_CONNECTION', payload: connectionData });
