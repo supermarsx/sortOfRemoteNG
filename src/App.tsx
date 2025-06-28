@@ -49,7 +49,7 @@ const AppContent: React.FC = () => {
     // Single window mode check
     const checkSingleWindow = () => {
       if (!settingsManager.checkSingleWindow()) {
-        alert('Another mRemoteNG window is already open. Only one instance is allowed.');
+        alert('Another sortOfRemoteNG window is already open. Only one instance is allowed.');
         window.close();
       }
     };
@@ -115,7 +115,7 @@ const AppContent: React.FC = () => {
       }
       
       setIsInitialized(true);
-      settingsManager.logAction('info', 'Application initialized', undefined, 'mRemoteNG started successfully');
+      settingsManager.logAction('info', 'Application initialized', undefined, 'sortOfRemoteNG started successfully');
     } catch (error) {
       console.error('Failed to initialize application:', error);
       settingsManager.logAction('error', 'Application initialization failed', undefined, error instanceof Error ? error.message : 'Unknown error');
