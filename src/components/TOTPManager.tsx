@@ -16,7 +16,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({ isOpen, onClose, conne
   const [totpConfigs, setTotpConfigs] = useState<TOTPConfig[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newConfig, setNewConfig] = useState<Partial<TOTPConfig>>({
-    issuer: 'mRemoteNG',
+    issuer: 'sortOfRemoteNG',
     account: '',
     digits: 6,
     period: 30,
@@ -57,7 +57,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({ isOpen, onClose, conne
     const secret = totpService.generateSecret();
     const config: TOTPConfig = {
       secret,
-      issuer: newConfig.issuer || 'mRemoteNG',
+      issuer: newConfig.issuer || 'sortOfRemoteNG',
       account: newConfig.account,
       digits: newConfig.digits || 6,
       period: newConfig.period || 30,
@@ -76,7 +76,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({ isOpen, onClose, conne
     totpService.saveConfig(config);
     setTotpConfigs([...totpConfigs, config]);
     setNewConfig({
-      issuer: 'mRemoteNG',
+      issuer: 'sortOfRemoteNG',
       account: '',
       digits: 6,
       period: 30,
@@ -155,7 +155,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({ isOpen, onClose, conne
                     value={newConfig.issuer || ''}
                     onChange={(e) => setNewConfig({ ...newConfig, issuer: e.target.value })}
                     className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
-                    placeholder="mRemoteNG"
+                    placeholder="sortOfRemoteNG"
                   />
                 </div>
                 

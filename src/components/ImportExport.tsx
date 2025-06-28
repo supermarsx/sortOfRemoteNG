@@ -86,7 +86,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
 
   const exportToXML = (): string => {
     const xmlHeader = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    const xmlRoot = '<mRemoteNG>\n';
+    const xmlRoot = '<sortOfRemoteNG>\n';
     const xmlConnections = state.connections.map(conn => {
       const attributes = [
         `Id="${conn.id}"`,
@@ -106,7 +106,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
       
       return `  <Connection ${attributes} />`;
     }).join('\n');
-    const xmlFooter = '\n</mRemoteNG>';
+    const xmlFooter = '\n</sortOfRemoteNG>';
     
     return xmlHeader + xmlRoot + xmlConnections + xmlFooter;
   };
@@ -429,7 +429,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
                 <div className="grid grid-cols-3 gap-3">
                   {[
                     { value: 'json', label: 'JSON', icon: FileText, desc: 'Structured data format' },
-                    { value: 'xml', label: 'XML', icon: Database, desc: 'mRemoteNG compatible' },
+                    { value: 'xml', label: 'XML', icon: Database, desc: 'sortOfRemoteNG compatible' },
                     { value: 'csv', label: 'CSV', icon: Settings, desc: 'Spreadsheet format' }
                   ].map(format => (
                     <button
@@ -475,7 +475,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
               <div>
                 <h3 className="text-lg font-medium text-white mb-4">Import Connections</h3>
                 <p className="text-gray-400 mb-4">
-                  Import connections from JSON, XML, or CSV files. Supported formats include mRemoteNG exports.
+                  Import connections from JSON, XML, or CSV files. Supported formats include sortOfRemoteNG exports.
                 </p>
               </div>
 
