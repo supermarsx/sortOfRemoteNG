@@ -1,0 +1,217 @@
+import { CustomScript } from '../types/settings';
+import { Connection, ConnectionSession } from '../types/connection';
+import { SettingsManager } from './settingsManager';
+
+export class ScriptEngine {
+  private static instance: ScriptEngine;
+  private settingsManager = SettingsManager.getInstance();
+
+  static getInstance(): ScriptEngine {
+    if (!ScriptEngine.instance) {
+      ScriptEngine.instance = new ScriptEngine();
+    }
+    return ScriptEngine.instance;
+  }
+
+  async executeScript(
+    script: CustomScript,
+    context: {
+      connection?: Connection;
+      session?: ConnectionSession;
+      trigger: 'onConnect' | 'onDisconnect' | 'manual';
+      [key: string]: any;
+    }
+  ): Promise<any> {
+    if (!script.enabled) {
+      throw new Error('Script is disabled');
+    }
+
+    const startTime = Date.now();
+    this.settingsManager.logAction(
+      'info',
+      'Script execution started',
+      context.connection?.id,
+      `Script: ${script.name}, Trigger: ${context.trigger}`
+    );
+
+    try {
+      const result = await this.runScript(script, context);
+      
+      const duration = Date.now() - startTime;
+      this.settingsManager.logAction(
+        'info',
+        'Script execution completed',
+        context.connection?.id,
+        `Script: ${script.name}, Duration: ${duration}ms`,
+        duration
+      );
+
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.settingsManager.logAction(
+        'error',
+        'Script execution failed',
+        context.connection?.id,
+        `Script: ${script.name}, Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        duration
+      );
+      throw error;
+    }
+  }
+
+  private async runScript(script: CustomScript, context: any): Promise<any> {
+    // Create a safe execution environment
+    const scriptContext = {
+      // Connection context
+      connection: context.connection,
+      session: context.session,
+      trigger: context.trigger,
+      
+      // Utility functions
+      console: {
+        log: (...args: any[]) => this.scriptLog('info', script.name, args.join(' ')),
+        warn: (...args: any[]) => this.scriptLog('warn', script.name, args.join(' ')),
+        error: (...args: any[]) => this.scriptLog('error', script.name, args.join(' ')),
+      },
+      
+      // HTTP utilities
+      http: {
+        get: (url: string, options?: RequestInit) => this.httpRequest('GET', url, options),
+        post: (url: string, data?: any, options?: RequestInit) => this.httpRequest('POST', url, { ...options, body: JSON.stringify(data) }),
+        put: (url: string, data?: any, options?: RequestInit) => this.httpRequest('PUT', url, { ...options, body: JSON.stringify(data) }),
+        delete: (url: string, options?: RequestInit) => this.httpRequest('DELETE', url, options),
+      },
+      
+      // SSH utilities (if SSH session)
+      ssh: context.session?.protocol === 'ssh' ? {
+        execute: (command: string) => this.sshExecute(context.session, command),
+        sendKeys: (keys: string) => this.sshSendKeys(context.session, keys),
+      } : undefined,
+      
+      // Utility functions
+      sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)),
+      uuid: () => crypto.randomUUID(),
+      timestamp: () => new Date().toISOString(),
+      
+      // Settings access
+      getSetting: (key: string) => this.getSetting(key),
+      setSetting: (key: string, value: any) => this.setSetting(key, value),
+    };
+
+    // Execute the script
+    if (script.type === 'javascript') {
+      return this.executeJavaScript(script.content, scriptContext);
+    } else if (script.type === 'typescript') {
+      // For TypeScript, we'd need to transpile first
+      // For now, treat as JavaScript
+      return this.executeJavaScript(script.content, scriptContext);
+    } else {
+      throw new Error(`Unsupported script type: ${script.type}`);
+    }
+  }
+
+  private async executeJavaScript(code: string, context: any): Promise<any> {
+    // Create a function with the script code
+    const scriptFunction = new Function(
+      ...Object.keys(context),
+      `
+      "use strict";
+      return (async function() {
+        ${code}
+      })();
+      `
+    );
+
+    // Execute with context
+    return await scriptFunction(...Object.values(context));
+  }
+
+  private async httpRequest(method: string, url: string, options: RequestInit = {}): Promise<any> {
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+      ...options,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return await response.json();
+    } else {
+      return await response.text();
+    }
+  }
+
+  private async sshExecute(session: ConnectionSession, command: string): Promise<string> {
+    // This would integrate with the SSH client to execute commands
+    // For now, return a placeholder
+    this.settingsManager.logAction(
+      'debug',
+      'SSH command executed',
+      session.connectionId,
+      `Command: ${command}`
+    );
+    return `Executed: ${command}`;
+  }
+
+  private async sshSendKeys(session: ConnectionSession, keys: string): Promise<void> {
+    // This would integrate with the SSH client to send key sequences
+    this.settingsManager.logAction(
+      'debug',
+      'SSH keys sent',
+      session.connectionId,
+      `Keys: ${keys}`
+    );
+  }
+
+  private scriptLog(level: 'info' | 'warn' | 'error', scriptName: string, message: string): void {
+    this.settingsManager.logAction(level, 'Script log', undefined, `[${scriptName}] ${message}`);
+  }
+
+  private getSetting(key: string): any {
+    const settings = this.settingsManager.getSettings();
+    return (settings as any)[key];
+  }
+
+  private setSetting(key: string, value: any): void {
+    this.settingsManager.saveSettings({ [key]: value });
+  }
+
+  // Get scripts for a specific trigger and protocol
+  getScriptsForTrigger(
+    trigger: 'onConnect' | 'onDisconnect' | 'manual',
+    protocol?: string
+  ): CustomScript[] {
+    return this.settingsManager.getCustomScripts().filter(script => 
+      script.enabled &&
+      script.trigger === trigger &&
+      (!script.protocol || !protocol || script.protocol === protocol)
+    );
+  }
+
+  // Execute all scripts for a trigger
+  async executeScriptsForTrigger(
+    trigger: 'onConnect' | 'onDisconnect',
+    context: {
+      connection: Connection;
+      session: ConnectionSession;
+    }
+  ): Promise<void> {
+    const scripts = this.getScriptsForTrigger(trigger, context.connection.protocol);
+    
+    for (const script of scripts) {
+      try {
+        await this.executeScript(script, { ...context, trigger });
+      } catch (error) {
+        console.error(`Script execution failed: ${script.name}`, error);
+      }
+    }
+  }
+}
