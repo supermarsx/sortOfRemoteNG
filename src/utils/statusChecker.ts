@@ -136,7 +136,7 @@ export class StatusChecker {
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await fetch(url, {
+      await fetch(url, {
         method: 'HEAD',
         signal: controller.signal,
         mode: 'no-cors', // Avoid CORS issues
