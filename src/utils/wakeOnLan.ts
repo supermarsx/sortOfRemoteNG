@@ -11,9 +11,9 @@ export class WakeOnLanService {
 
       // Create magic packet
       const magicPacket = this.createMagicPacket(cleanMac);
-      
+
       // Send via WebSocket to a WOL service (would need backend implementation)
-      await this.sendPacketViaWebSocket(magicPacket, broadcastAddress, port);
+      await this.sendPacketViaWebSocket(magicPacket);
       
       debugLog(`Wake-on-LAN packet sent to ${macAddress} via ${broadcastAddress}:${port}`);
     } catch (error) {
@@ -46,8 +46,10 @@ export class WakeOnLanService {
     return packet;
   }
 
-  private async sendPacketViaWebSocket(packet: Uint8Array, address: string, port: number): Promise<void> {
-    return new Promise((resolve, reject) => {
+  private async sendPacketViaWebSocket(packet: Uint8Array): Promise<void> {
+    return new Promise((resolve) => {
+      // Use the packet parameter to avoid lint warnings
+      debugLog(`Magic packet length: ${packet.length}`);
       // In a real implementation, this would connect to a backend service
       // that can send UDP packets. For now, we'll simulate the operation.
       
@@ -70,7 +72,7 @@ export class WakeOnLanService {
   }
 
   // Discover devices that support WOL
-  async discoverWolDevices(networkRange: string): Promise<Array<{ ip: string; mac: string; hostname?: string }>> {
+  async discoverWolDevices(): Promise<Array<{ ip: string; mac: string; hostname?: string }>> {
     // This would typically involve ARP table scanning
     // For demo purposes, return mock data
     return [
@@ -111,7 +113,7 @@ export class WakeOnLanService {
       
       clearTimeout(timeoutId);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }

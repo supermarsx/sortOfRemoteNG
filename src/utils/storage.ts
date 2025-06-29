@@ -4,9 +4,11 @@ const STORAGE_KEY = 'mremote-connections';
 const STORAGE_META_KEY = 'mremote-storage-meta';
 const OLD_STORAGE_META_KEY = 'mremote-settings';
 
+import { Connection } from '../types/connection';
+
 export interface StorageData {
-  connections: any[];
-  settings: any;
+  connections: Connection[];
+  settings: Record<string, unknown>;
   timestamp: number;
 }
 
@@ -77,7 +79,7 @@ export class SecureStorage {
           timestamp: Date.now()
         }));
       }
-    } catch (error) {
+    } catch {
       throw new Error('Failed to save data');
     }
   }
@@ -102,7 +104,7 @@ export class SecureStorage {
       }
 
       return JSON.parse(storedData);
-    } catch (error) {
+    } catch {
       throw new Error('Failed to load data or invalid password');
     }
   }
