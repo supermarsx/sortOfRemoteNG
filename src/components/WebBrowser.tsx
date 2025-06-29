@@ -20,11 +20,37 @@ interface WebBrowserProps {
 
 export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const { state } = useConnections();
+  const connection = state.connections.find(c => c.id === session.connectionId);
+
+  // Build a URL and apply basic auth credentials if configured
+  const buildUrlWithAuth = (url: string): string => {
+    if (
+      connection?.authType === 'basic' &&
+      connection.basicAuthUsername &&
+      connection.basicAuthPassword
+    ) {
+      try {
+        const parsed = new URL(url);
+
+        // Only inject credentials if not already present
+        if (!parsed.username && !parsed.password) {
+          parsed.username = connection.basicAuthUsername;
+          parsed.password = connection.basicAuthPassword;
+        }
+        return parsed.toString();
+      } catch (error) {
+        console.error('Failed to apply basic auth to URL:', error);
+      }
+    }
+    return url;
+  };
+
   const [currentUrl, setCurrentUrl] = useState(() => {
     const protocol = session.protocol === 'https' ? 'https' : 'http';
     const port = session.protocol === 'https' ? 443 : 80;
     const urlPort = port === 80 || port === 443 ? '' : `:${port}`;
-    return `${protocol}://${session.hostname}${urlPort}`;
+    const baseUrl = `${protocol}://${session.hostname}${urlPort}`;
+    return buildUrlWithAuth(baseUrl);
   });
   const [inputUrl, setInputUrl] = useState(currentUrl);
   const [isLoading, setIsLoading] = useState(false);
@@ -32,18 +58,18 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const [isSecure, setIsSecure] = useState(session.protocol === 'https');
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Get connection details for authentication
-  const connection = state.connections.find(c => c.id === session.connectionId);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     let url = inputUrl.trim();
-    
+
     // Add protocol if missing
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = `http://${url}`;
     }
-    
+
+    url = buildUrlWithAuth(url);
+
     setCurrentUrl(url);
     setIsSecure(url.startsWith('https://'));
     setLoadError('');
@@ -103,20 +129,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   };
 
   const handleOpenExternal = () => {
-    let urlToOpen = currentUrl;
-    
-    // Add basic auth to URL if configured
-    if (connection?.authType === 'basic' && connection.basicAuthUsername && connection.basicAuthPassword) {
-      try {
-        const url = new URL(currentUrl);
-        url.username = connection.basicAuthUsername;
-        url.password = connection.basicAuthPassword;
-        urlToOpen = url.toString();
-      } catch (error) {
-        console.error('Failed to add basic auth to URL:', error);
-      }
-    }
-    
+    const urlToOpen = buildUrlWithAuth(currentUrl);
     window.open(urlToOpen, '_blank', 'noopener,noreferrer');
   };
 
