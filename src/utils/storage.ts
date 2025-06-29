@@ -1,7 +1,8 @@
 import CryptoJS from 'crypto-js';
 
 const STORAGE_KEY = 'mremote-connections';
-const SETTINGS_KEY = 'mremote-settings';
+const STORAGE_META_KEY = 'mremote-storage-meta';
+const OLD_STORAGE_META_KEY = 'mremote-settings';
 
 export interface StorageData {
   connections: any[];
@@ -12,6 +13,15 @@ export interface StorageData {
 export class SecureStorage {
   private static password: string | null = null;
   private static isUnlocked: boolean = false;
+
+  // Migrate old metadata key to the new one if needed
+  private static migrateMetaKey(): void {
+    const oldData = localStorage.getItem(OLD_STORAGE_META_KEY);
+    if (oldData && !localStorage.getItem(STORAGE_META_KEY)) {
+      localStorage.setItem(STORAGE_META_KEY, oldData);
+      localStorage.removeItem(OLD_STORAGE_META_KEY);
+    }
+  }
 
   static setPassword(password: string): void {
     this.password = password;
@@ -32,7 +42,8 @@ export class SecureStorage {
   }
 
   static isStorageEncrypted(): boolean {
-    const settings = localStorage.getItem(SETTINGS_KEY);
+    this.migrateMetaKey();
+    const settings = localStorage.getItem(STORAGE_META_KEY);
     if (settings) {
       try {
         const parsed = JSON.parse(settings);
@@ -50,15 +61,17 @@ export class SecureStorage {
       
       if (usePassword && this.password) {
         const encrypted = CryptoJS.AES.encrypt(dataToStore, this.password).toString();
+        this.migrateMetaKey();
         localStorage.setItem(STORAGE_KEY, encrypted);
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ 
+        localStorage.setItem(STORAGE_META_KEY, JSON.stringify({
           isEncrypted: true, 
           hasPassword: true,
           timestamp: Date.now()
         }));
       } else {
+        this.migrateMetaKey();
         localStorage.setItem(STORAGE_KEY, dataToStore);
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify({ 
+        localStorage.setItem(STORAGE_META_KEY, JSON.stringify({
           isEncrypted: false, 
           hasPassword: false,
           timestamp: Date.now()
@@ -71,8 +84,9 @@ export class SecureStorage {
 
   static async loadData(): Promise<StorageData | null> {
     try {
+      this.migrateMetaKey();
       const storedData = localStorage.getItem(STORAGE_KEY);
-      const settings = localStorage.getItem(SETTINGS_KEY);
+      const settings = localStorage.getItem(STORAGE_META_KEY);
       
       if (!storedData) return null;
 
@@ -94,8 +108,9 @@ export class SecureStorage {
   }
 
   static clearStorage(): void {
+    this.migrateMetaKey();
     localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(SETTINGS_KEY);
+    localStorage.removeItem(STORAGE_META_KEY);
     this.clearPassword();
   }
 }
