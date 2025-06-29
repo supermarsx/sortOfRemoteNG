@@ -103,7 +103,9 @@
     "advanced": "Advanced",
     "save": "Save",
     "cancel": "Cancel",
-    "reset": "Reset to Defaults"
+    "reset": "Reset to Defaults",
+    "autoSaveSuccess": "Options saved",
+    "autoSaveError": "Auto save failed"
   },
   "tabs": {
     "groupBy": "Group By",
