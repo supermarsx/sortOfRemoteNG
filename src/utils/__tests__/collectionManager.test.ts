@@ -42,4 +42,12 @@ describe('CollectionManager', () => {
     expect(stored[0].name).toBe('Updated');
     expect(stored[0].description).toBe('changed');
   });
+
+  it('updates currentCollection when editing selected collection', async () => {
+    const col = await manager.createCollection('A');
+    await manager.selectCollection(col.id);
+    const updated = { ...col, name: 'B' };
+    manager.updateCollection(updated);
+    expect(manager.getCurrentCollection()?.name).toBe('B');
+  });
 });

@@ -103,6 +103,9 @@ export class CollectionManager {
     if (index >= 0) {
       collections[index] = { ...collection, updatedAt: new Date() };
       this.saveCollections(collections);
+      if (this.currentCollection?.id === collection.id) {
+        this.currentCollection = { ...collections[index] };
+      }
     }
   }
 
