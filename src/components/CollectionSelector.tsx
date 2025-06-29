@@ -27,6 +27,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     password: '',
     confirmPassword: '',
   });
+  const [editingCollection, setEditingCollection] = useState<ConnectionCollection | null>(null);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -123,6 +124,28 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
       } catch (error) {
         setError(error instanceof Error ? error.message : 'Failed to delete collection');
       }
+    }
+  };
+
+  const handleEditCollection = (collection: ConnectionCollection) => {
+    setEditingCollection({ ...collection });
+    setError('');
+  };
+
+  const handleUpdateCollection = () => {
+    if (!editingCollection) return;
+    if (!editingCollection.name.trim()) {
+      setError('Collection name is required');
+      return;
+    }
+
+    try {
+      collectionManager.updateCollection(editingCollection);
+      setCollections(collections.map(c => c.id === editingCollection.id ? editingCollection : c));
+      setEditingCollection(null);
+      setError('');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to update collection');
     }
   };
 
@@ -308,6 +331,60 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
             </div>
           )}
 
+          {/* Edit Collection Form */}
+          {editingCollection && (
+            <div className="bg-gray-700 rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-white mb-4">Edit Collection</h3>
+
+              {error && (
+                <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
+                  <p className="text-red-300 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Collection Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={editingCollection.name}
+                    onChange={(e) => setEditingCollection({ ...editingCollection, name: e.target.value })}
+                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Description
+                  </label>
+                  <textarea
+                    value={editingCollection.description || ''}
+                    onChange={(e) => setEditingCollection({ ...editingCollection, description: e.target.value })}
+                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white resize-none"
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => { setEditingCollection(null); setError(''); }}
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdateCollection}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                  >
+                    Update
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Collections List */}
           <div className="space-y-3">
             {collections.length === 0 ? (
@@ -346,7 +423,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          // TODO: Implement edit functionality
+                          handleEditCollection(collection);
                         }}
                         className="p-2 hover:bg-gray-600 rounded transition-colors text-gray-400 hover:text-white"
                         title="Edit"

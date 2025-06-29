@@ -32,4 +32,14 @@ describe('CollectionManager', () => {
     expect(b).toMatch(/sortofremoteng-exports-.*\.json/);
     expect(a).not.toBe(b);
   });
+
+  it('updates and persists changes to a collection', async () => {
+    const col = await manager.createCollection('Initial', 'desc');
+    const updated = { ...col, name: 'Updated', description: 'changed' };
+    manager.updateCollection(updated);
+
+    const stored = JSON.parse(localStorage.getItem('mremote-collections')!);
+    expect(stored[0].name).toBe('Updated');
+    expect(stored[0].description).toBe('changed');
+  });
 });
