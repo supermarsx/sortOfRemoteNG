@@ -3,6 +3,18 @@ import { TOTPConfig } from '../types/settings';
 
 export class TOTPService {
   private readonly storageKey = 'mremote-totp-configs';
+  private qrCodeModulePromise?: Promise<typeof import('qrcode')>;
+
+  private importQRCode() {
+    return import('qrcode');
+  }
+
+  private loadQRCodeModule() {
+    if (!this.qrCodeModulePromise) {
+      this.qrCodeModulePromise = this.importQRCode();
+    }
+    return this.qrCodeModulePromise;
+  }
 
   generateSecret(): string {
     return authenticator.generateSecret();
@@ -71,7 +83,7 @@ export class TOTPService {
 
   // Generate QR code data URL
   async generateQRCode(config: TOTPConfig): Promise<string> {
-    const QRCode = await import('qrcode');
+    const QRCode = await this.loadQRCodeModule();
     const otpAuthUrl = this.generateOTPAuthURL(config);
     return QRCode.toDataURL(otpAuthUrl);
   }

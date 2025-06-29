@@ -1,6 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { authenticator } from 'otplib';
 import { TOTPService } from '../src/utils/totpService';
+
+vi.mock('qrcode', () => ({
+  toDataURL: vi.fn(async () => 'data:url')
+}));
 
 describe('TOTPService', () => {
   let service: TOTPService;
@@ -45,5 +49,22 @@ describe('TOTPService', () => {
       .generate(secret);
 
     expect(service.verifyToken(oldToken, secret)).toBe(true);
+  });
+
+  it('loads qrcode module only once when generating multiple QR codes', async () => {
+    const spy = vi.spyOn(service as any, 'importQRCode');
+    const config = {
+      secret: 'S',
+      issuer: 'iss',
+      account: 'acc',
+      digits: 6,
+      period: 30,
+      algorithm: 'SHA1' as const
+    };
+
+    await service.generateQRCode(config);
+    await service.generateQRCode(config);
+
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });
