@@ -127,7 +127,11 @@ export class NetworkScanner {
     return Array.from(ports).sort((a, b) => a - b);
   }
 
-  private async scanPort(ip: string, port: number, timeout: number): Promise<{ isOpen: boolean; banner?: string }> {
+  private async scanPort(
+    ip: string,
+    port: number,
+    timeout: number
+  ): Promise<{ isOpen: boolean; banner?: string; elapsed: number }> {
     return new Promise((resolve) => {
       const startTime = Date.now();
       
@@ -136,26 +140,26 @@ export class NetworkScanner {
       
       const timeoutId = setTimeout(() => {
         ws.close();
-        resolve({ isOpen: false });
+        resolve({ isOpen: false, elapsed: Date.now() - startTime });
       }, timeout);
 
       ws.onopen = () => {
         clearTimeout(timeoutId);
         ws.close();
-        resolve({ isOpen: true });
+        resolve({ isOpen: true, elapsed: Date.now() - startTime });
       };
 
       ws.onerror = () => {
         clearTimeout(timeoutId);
-        resolve({ isOpen: false });
+        resolve({ isOpen: false, elapsed: Date.now() - startTime });
       };
 
       ws.onclose = (event) => {
         clearTimeout(timeoutId);
         if (event.wasClean) {
-          resolve({ isOpen: true });
+          resolve({ isOpen: true, elapsed: Date.now() - startTime });
         } else {
-          resolve({ isOpen: false });
+          resolve({ isOpen: false, elapsed: Date.now() - startTime });
         }
       };
     });
