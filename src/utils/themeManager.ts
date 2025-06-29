@@ -38,7 +38,7 @@ export class ThemeManager {
         accent: '#10b981',
         background: '#ffffff',
         surface: '#f9fafb',
-        text: '#111827',
+        text: '#000000',
         textSecondary: '#6b7280',
         border: '#e5e7eb',
         success: '#10b981',
