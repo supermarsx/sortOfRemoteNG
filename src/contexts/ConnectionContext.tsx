@@ -86,7 +86,7 @@ const connectionReducer = (state: ConnectionState, action: ConnectionAction): Co
   }
 };
 
-const ConnectionContext = createContext<{
+export const ConnectionContext = createContext<{
   state: ConnectionState;
   dispatch: React.Dispatch<ConnectionAction>;
   saveData: (usePassword?: boolean) => Promise<void>;
