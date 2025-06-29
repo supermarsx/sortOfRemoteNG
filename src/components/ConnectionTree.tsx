@@ -167,7 +167,12 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                // TODO: Implement duplicate functionality
+                const now = new Date();
+                const newConnection = structuredClone(connection);
+                newConnection.id = crypto.randomUUID();
+                newConnection.createdAt = now;
+                newConnection.updatedAt = now;
+                dispatch({ type: 'ADD_CONNECTION', payload: newConnection });
                 setShowMenu(false);
               }}
               className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"

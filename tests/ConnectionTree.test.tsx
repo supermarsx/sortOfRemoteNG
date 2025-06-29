@@ -82,4 +82,25 @@ describe('ConnectionTree', () => {
 
     expect(selectedId).toBe('item1');
   });
+
+  it('duplicates a connection when Duplicate is clicked', async () => {
+    render(
+      <ConnectionProvider>
+        <InitConnections connections={mockConnections} />
+      </ConnectionProvider>
+    );
+
+    const groupRow = screen.getByText('Group 1').closest('.group') as HTMLElement;
+    const toggleButton = within(groupRow).getAllByRole('button')[0];
+    fireEvent.click(toggleButton);
+
+    const itemGroup = screen.getByText('Item 1').closest('.group') as HTMLElement;
+    const menuButton = within(itemGroup).getAllByRole('button')[1];
+    fireEvent.click(menuButton);
+
+    const duplicateButton = screen.getByText('Duplicate');
+    fireEvent.click(duplicateButton);
+
+    expect(await screen.findAllByText('Item 1')).toHaveLength(2);
+  });
 });
