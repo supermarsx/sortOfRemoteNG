@@ -1,4 +1,5 @@
-import { NetworkDiscoveryConfig, DiscoveredHost, DiscoveredService } from '../types/connection';
+import { DiscoveredHost, DiscoveredService } from '../types/connection';
+import { NetworkDiscoveryConfig } from '../types/settings';
 
 export class NetworkScanner {
   async scanNetwork(
