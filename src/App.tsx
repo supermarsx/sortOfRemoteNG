@@ -186,6 +186,89 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const connectSession = async (session: ConnectionSession, connection: Connection) => {
+    const settings = settingsManager.getSettings();
+    const startTime = Date.now();
+
+    settingsManager.logAction('info', 'Connection initiated', connection.id, `Connecting to ${connection.hostname}:${connection.port}`);
+
+    try {
+      await scriptEngine.executeScriptsForTrigger('onConnect', { connection, session });
+    } catch (error) {
+      console.error('Script execution failed:', error);
+    }
+
+    if (connection.statusCheck?.enabled) {
+      statusChecker.startChecking(connection);
+    }
+
+    const timeout = (connection.timeout || settings.connectionTimeout) * 1000;
+    const connectionPromise = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        const connectionTime = Date.now() - startTime;
+
+        settingsManager.recordPerformanceMetric({
+          connectionTime,
+          dataTransferred: 0,
+          latency: Math.random() * 50 + 10,
+          throughput: Math.random() * 1000 + 500,
+          cpuUsage: Math.random() * 30 + 10,
+          memoryUsage: Math.random() * 50 + 20,
+          timestamp: Date.now(),
+        });
+
+        dispatch({
+          type: 'UPDATE_SESSION',
+          payload: {
+            ...session,
+            status: 'connected',
+            metrics: {
+              connectionTime,
+              dataTransferred: 0,
+              latency: Math.random() * 50 + 10,
+              throughput: Math.random() * 1000 + 500,
+            },
+          },
+        });
+
+        dispatch({
+          type: 'UPDATE_CONNECTION',
+          payload: {
+            ...connection,
+            lastConnected: new Date(),
+            connectionCount: (connection.connectionCount || 0) + 1,
+          },
+        });
+
+        settingsManager.logAction('info', 'Connection established', connection.id, `Connected successfully in ${connectionTime}ms`, connectionTime);
+        resolve();
+      }, 2000);
+    });
+
+    const timeoutPromise = new Promise<void>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Connection timeout'));
+      }, timeout);
+    });
+
+    try {
+      await Promise.race([connectionPromise, timeoutPromise]);
+    } catch (error) {
+      dispatch({
+        type: 'UPDATE_SESSION',
+        payload: { ...session, status: 'error' },
+      });
+
+      settingsManager.logAction('error', 'Connection failed', connection.id, error instanceof Error ? error.message : 'Unknown error');
+
+      if ((session.reconnectAttempts || 0) < (session.maxReconnectAttempts || 0)) {
+        setTimeout(() => {
+          handleReconnect(session);
+        }, connection.retryDelay || settings.retryDelay);
+      }
+    }
+  };
+
   const handleConnect = async (connection: Connection) => {
     const settings = settingsManager.getSettings();
     
@@ -206,8 +289,6 @@ const AppContent: React.FC = () => {
       return;
     }
 
-    const startTime = Date.now();
-    
     // Create a new session
     const session: ConnectionSession = {
       id: crypto.randomUUID(),
@@ -224,107 +305,34 @@ const AppContent: React.FC = () => {
     dispatch({ type: 'ADD_SESSION', payload: session });
     setActiveSessionId(session.id);
 
-    settingsManager.logAction('info', 'Connection initiated', connection.id, `Connecting to ${connection.hostname}:${connection.port}`);
+    await connectSession(session, connection);
+  };
 
-    // Execute onConnect scripts
-    try {
-      await scriptEngine.executeScriptsForTrigger('onConnect', { connection, session });
-    } catch (error) {
-      console.error('Script execution failed:', error);
-    }
+  const reconnectSession = async (session: ConnectionSession, connection: Connection) => {
+    const updatedSession: ConnectionSession = {
+      ...session,
+      status: 'reconnecting',
+      reconnectAttempts: (session.reconnectAttempts || 0) + 1,
+      startTime: new Date(),
+    };
 
-    // Start status checking
-    if (connection.statusCheck?.enabled) {
-      statusChecker.startChecking(connection);
-    }
+    dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
+    settingsManager.logAction(
+      'info',
+      'Reconnection attempt',
+      connection.id,
+      `Attempt ${updatedSession.reconnectAttempts}/${updatedSession.maxReconnectAttempts}`
+    );
 
-    // Simulate connection process with timeout
-    const timeout = (connection.timeout || settings.connectionTimeout) * 1000;
-    const connectionPromise = new Promise<void>((resolve, reject) => {
-      setTimeout(() => {
-        const connectionTime = Date.now() - startTime;
-        
-        // Record performance metrics
-        settingsManager.recordPerformanceMetric({
-          connectionTime,
-          dataTransferred: 0,
-          latency: Math.random() * 50 + 10,
-          throughput: Math.random() * 1000 + 500,
-          cpuUsage: Math.random() * 30 + 10,
-          memoryUsage: Math.random() * 50 + 20,
-          timestamp: Date.now(),
-        });
-
-        dispatch({
-          type: 'UPDATE_SESSION',
-          payload: { 
-            ...session, 
-            status: 'connected',
-            metrics: {
-              connectionTime,
-              dataTransferred: 0,
-              latency: Math.random() * 50 + 10,
-              throughput: Math.random() * 1000 + 500,
-            }
-          }
-        });
-
-        // Update connection last connected time
-        dispatch({
-          type: 'UPDATE_CONNECTION',
-          payload: {
-            ...connection,
-            lastConnected: new Date(),
-            connectionCount: (connection.connectionCount || 0) + 1,
-          }
-        });
-
-        settingsManager.logAction('info', 'Connection established', connection.id, `Connected successfully in ${connectionTime}ms`, connectionTime);
-        resolve();
-      }, 2000);
-    });
-
-    const timeoutPromise = new Promise<void>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error('Connection timeout'));
-      }, timeout);
-    });
-
-    try {
-      await Promise.race([connectionPromise, timeoutPromise]);
-    } catch (error) {
-      dispatch({
-        type: 'UPDATE_SESSION',
-        payload: { ...session, status: 'error' }
-      });
-      
-      settingsManager.logAction('error', 'Connection failed', connection.id, error instanceof Error ? error.message : 'Unknown error');
-      
-      // Attempt reconnection if configured
-      if (session.reconnectAttempts! < session.maxReconnectAttempts!) {
-        setTimeout(() => {
-          handleReconnect(session);
-        }, connection.retryDelay || settings.retryDelay);
-      }
-    }
+    await connectSession(updatedSession, connection);
   };
 
   const handleReconnect = async (session: ConnectionSession) => {
     const connection = state.connections.find(c => c.id === session.connectionId);
     if (!connection) return;
 
-    const updatedSession = {
-      ...session,
-      status: 'reconnecting' as const,
-      reconnectAttempts: (session.reconnectAttempts || 0) + 1,
-    };
-
-    dispatch({ type: 'UPDATE_SESSION', payload: updatedSession });
-    settingsManager.logAction('info', 'Reconnection attempt', connection.id, `Attempt ${updatedSession.reconnectAttempts}/${updatedSession.maxReconnectAttempts}`);
-
-    // Retry connection logic (simplified)
     setTimeout(() => {
-      handleConnect(connection);
+      reconnectSession(session, connection);
     }, 2000);
   };
 
