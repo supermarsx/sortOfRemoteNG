@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "npx vitest"
   },
   "dependencies": {
     "crypto-js": "^4.2.0",
