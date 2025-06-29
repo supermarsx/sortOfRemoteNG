@@ -51,6 +51,13 @@ describe('TOTPService', () => {
     expect(service.verifyToken(oldToken, secret)).toBe(true);
   });
 
+  it('does not mutate global authenticator when using custom options', () => {
+    const original = { ...authenticator.options };
+    const secret = service.generateSecret();
+    service.generateToken(secret, { digits: 8 });
+    expect(authenticator.options).toEqual(original);
+  });
+
   it('loads qrcode module only once when generating multiple QR codes', async () => {
     const spy = vi.spyOn(service as any, 'importQRCode');
     const config = {
