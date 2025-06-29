@@ -20,3 +20,33 @@ describe('NetworkScanner helper methods', () => {
     expect(version).toBe('8.6');
   });
 });
+
+describe('NetworkScanner.scanPort', () => {
+  it('resolves and closes the socket on error', async () => {
+    const OriginalWebSocket = (global as any).WebSocket;
+    let closed = false;
+
+    class MockWebSocket {
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: ((event: { wasClean: boolean }) => void) | null = null;
+      constructor(url: string) {
+        setTimeout(() => {
+          this.onerror?.();
+        }, 0);
+      }
+      close() {
+        closed = true;
+      }
+    }
+
+    (global as any).WebSocket = MockWebSocket as any;
+
+    const result = await scanner.scanPort('127.0.0.1', 1234, 1000);
+
+    (global as any).WebSocket = OriginalWebSocket;
+
+    expect(result.isOpen).toBe(false);
+    expect(closed).toBe(true);
+  });
+});

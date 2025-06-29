@@ -127,35 +127,41 @@ export class NetworkScanner {
     return Array.from(ports).sort((a, b) => a - b);
   }
 
-  private async scanPort(ip: string, port: number, timeout: number): Promise<{ isOpen: boolean; banner?: string }> {
+  private async scanPort(ip: string, port: number, timeout: number): Promise<{ isOpen: boolean; banner?: string; duration: number }> {
     return new Promise((resolve) => {
       const startTime = Date.now();
-      
+
       // Use WebSocket for port scanning (limited but works for many services)
       const ws = new WebSocket(`ws://${ip}:${port}`);
-      
+
+      const finish = (result: { isOpen: boolean; banner?: string }) => {
+        const duration = Date.now() - startTime;
+        resolve({ ...result, duration });
+      };
+
       const timeoutId = setTimeout(() => {
         ws.close();
-        resolve({ isOpen: false });
+        finish({ isOpen: false });
       }, timeout);
 
       ws.onopen = () => {
         clearTimeout(timeoutId);
         ws.close();
-        resolve({ isOpen: true });
+        finish({ isOpen: true });
       };
 
       ws.onerror = () => {
         clearTimeout(timeoutId);
-        resolve({ isOpen: false });
+        ws.close();
+        finish({ isOpen: false });
       };
 
       ws.onclose = (event) => {
         clearTimeout(timeoutId);
         if (event.wasClean) {
-          resolve({ isOpen: true });
+          finish({ isOpen: true });
         } else {
-          resolve({ isOpen: false });
+          finish({ isOpen: false });
         }
       };
     });
