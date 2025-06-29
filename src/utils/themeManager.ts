@@ -4,6 +4,7 @@ export class ThemeManager {
   private static instance: ThemeManager;
   private currentTheme: string = 'dark';
   private currentColorScheme: string = 'blue';
+  private systemThemeStop?: () => void;
 
   static getInstance(): ThemeManager {
     if (!ThemeManager.instance) {
@@ -112,10 +113,7 @@ export class ThemeManager {
     },
   };
 
-  applyTheme(themeName: string, colorScheme: string): void {
-    this.currentTheme = themeName;
-    this.currentColorScheme = colorScheme;
-
+  private applyResolvedTheme(themeName: string, colorScheme: string): void {
     const theme = this.themes[themeName];
     const colors = this.colorSchemes[colorScheme];
 
@@ -124,25 +122,41 @@ export class ThemeManager {
       return;
     }
 
-    // Apply theme to CSS custom properties
     const root = document.documentElement;
-    
-    // Base theme colors
+
     Object.entries(theme.colors).forEach(([key, value]) => {
       root.style.setProperty(`--color-${key}`, value);
     });
 
-    // Color scheme overrides
     root.style.setProperty('--color-primary', colors.primary);
     root.style.setProperty('--color-secondary', colors.secondary);
     root.style.setProperty('--color-accent', colors.accent);
 
-    // Update body class for theme-specific styles
     document.body.className = document.body.className
       .replace(/theme-\w+/g, '')
       .replace(/scheme-\w+/g, '');
-    
+
     document.body.classList.add(`theme-${themeName}`, `scheme-${colorScheme}`);
+  }
+
+  applyTheme(themeName: string, colorScheme: string): void {
+    this.currentTheme = themeName;
+    this.currentColorScheme = colorScheme;
+
+    if (this.systemThemeStop) {
+      this.systemThemeStop();
+      this.systemThemeStop = undefined;
+    }
+
+    if (themeName === 'auto') {
+      const systemTheme = this.detectSystemTheme();
+      this.applyResolvedTheme(systemTheme, colorScheme);
+      this.systemThemeStop = this.watchSystemTheme((theme) => {
+        this.applyResolvedTheme(theme, colorScheme);
+      });
+    } else {
+      this.applyResolvedTheme(themeName, colorScheme);
+    }
 
     // Store in localStorage
     localStorage.setItem('mremote-theme', themeName);
@@ -181,7 +195,7 @@ export class ThemeManager {
   }
 
   // Listen for system theme changes
-  watchSystemTheme(callback: (theme: string) => void): void {
+  watchSystemTheme(callback: (theme: string) => void): (() => void) | undefined {
     if (window.matchMedia) {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
       

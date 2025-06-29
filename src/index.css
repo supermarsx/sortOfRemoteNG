@@ -1,3 +1,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Default color variables so the UI has sensible colors before the ThemeManager runs */
+:root {
+  --color-primary: #3b82f6;
+  --color-secondary: #6b7280;
+  --color-accent: #10b981;
+  --color-background: #111827;
+  --color-surface: #1f2937;
+  --color-text: #f9fafb;
+  --color-textSecondary: #d1d5db;
+  --color-border: #374151;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+}
