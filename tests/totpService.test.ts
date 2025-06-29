@@ -13,7 +13,7 @@ describe('TOTPService', () => {
     const secret = service.generateSecret();
     const token = service.generateToken(secret);
 
-    // authenticator uses same default options after generateToken
+    // authenticator default options match service defaults
     const expected = authenticator.generate(secret);
     expect(token).toBe(expected);
     expect(service.verifyToken(token, secret)).toBe(true);
@@ -25,13 +25,13 @@ describe('TOTPService', () => {
 
     const token = service.generateToken(secret, options);
 
-    authenticator.options = {
-      digits: options.digits,
-      step: options.period,
-      algorithm: options.algorithm.toLowerCase(),
-      window: 1,
-    };
-    const expected = authenticator.generate(secret);
+    const expected = authenticator
+      .clone({
+        digits: options.digits,
+        step: options.period,
+        algorithm: options.algorithm.toLowerCase(),
+      })
+      .generate(secret);
     expect(token).toBe(expected);
     expect(service.verifyToken(token, secret, options)).toBe(true);
   });
@@ -40,8 +40,9 @@ describe('TOTPService', () => {
     const secret = service.generateSecret();
     const step = 30;
 
-    authenticator.options = { digits: 6, step, algorithm: 'sha1', epoch: Date.now() - step * 1000 };
-    const oldToken = authenticator.generate(secret);
+    const oldToken = authenticator
+      .clone({ digits: 6, step, algorithm: 'sha1', epoch: Date.now() - step * 1000 })
+      .generate(secret);
 
     expect(service.verifyToken(oldToken, secret)).toBe(true);
   });
