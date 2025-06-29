@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -57,6 +57,14 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const [loadError, setLoadError] = useState<string>('');
   const [isSecure, setIsSecure] = useState(session.protocol === 'https');
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Rebuild URL with credentials when connection data becomes available
+  useEffect(() => {
+    if (connection) {
+      setCurrentUrl(prev => buildUrlWithAuth(prev));
+      setInputUrl(prev => buildUrlWithAuth(prev));
+    }
+  }, [connection]);
 
 
   const handleUrlSubmit = (e: React.FormEvent) => {
