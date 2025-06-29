@@ -119,13 +119,19 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       window.removeEventListener('resize', handleResize);
       if (sshClient.current) {
         sshClient.current.disconnect();
+        sshClient.current = null;
       }
       if (terminal.current) {
         terminal.current.dispose();
       }
-      terminalRef.current!.innerHTML = '';
+      if (terminalRef.current) {
+        terminalRef.current.innerHTML = '';
+      }
       terminal.current = null;
       fitAddon.current = null;
+      setIsConnected(false);
+      setConnectionError('');
+      setCurrentLine('');
     };
   }, [session.id]);
 
