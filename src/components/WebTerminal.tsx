@@ -76,6 +76,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     terminal.current.loadAddon(new WebLinksAddon());
 
     terminal.current.open(terminalRef.current);
+    terminal.current.focus();
     fitAddon.current.fit();
 
     // Initialize SSH connection for SSH protocol
@@ -122,8 +123,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       if (terminal.current) {
         terminal.current.dispose();
       }
+      terminalRef.current!.innerHTML = '';
+      terminal.current = null;
+      fitAddon.current = null;
     };
-  }, [session]);
+  }, [session.id]);
 
   const handleNonSSHInput = (data: string) => {
     if (!terminal.current) return;
