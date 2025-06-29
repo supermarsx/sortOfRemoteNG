@@ -141,7 +141,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Auto-save when connections change
   useEffect(() => {
-    if (state.connections.length > 0 && collectionManager.getCurrentCollection()) {
+    if (collectionManager.getCurrentCollection()) {
       saveData().catch(console.error);
     }
   }, [state.connections]);
