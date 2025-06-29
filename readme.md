@@ -5,13 +5,13 @@ A sort of remoteNG inspired web app that runs on the browser. Very broken and no
 ## Testing
 
 
-To run the unit tests, first install dependencies:
+To run the unit tests, you **must** install dependencies first:
 
 ```bash
 npm install
 ```
 
-Then execute:
+Then execute the tests:
 
 ```bash
 npm test
