@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { debugLog } from '../utils/debugLogger';
 import { ConnectionSession } from '../types/connection';
 import { 
   Monitor, 
@@ -186,7 +187,7 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     const canvasX = x * scaleX;
     const canvasY = y * scaleY;
     
-    console.log(`RDP Click at: ${canvasX}, ${canvasY}`);
+    debugLog(`RDP Click at: ${canvasX}, ${canvasY}`);
     
     // Simulate click response
     const ctx = canvas.getContext('2d');
@@ -206,11 +207,11 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     if (!isConnected) return;
     
     event.preventDefault();
-    console.log(`RDP Key: ${event.key}`);
+    debugLog(`RDP Key: ${event.key}`);
     
     // Handle special key combinations
     if (event.ctrlKey && event.altKey && event.key === 'Delete') {
-      console.log('Ctrl+Alt+Del sent to remote session');
+      debugLog('Ctrl+Alt+Del sent to remote session');
     }
   };
 

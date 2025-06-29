@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { debugLog } from '../utils/debugLogger';
 import { ConnectionSession } from '../types/connection';
 import { 
   Monitor, 
@@ -262,7 +263,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     const canvasX = x * scaleX;
     const canvasY = y * scaleY;
     
-    console.log(`VNC Click at: ${canvasX}, ${canvasY}`);
+    debugLog(`VNC Click at: ${canvasX}, ${canvasY}`);
     
     // Send mouse click to VNC server
     if (rfb) {
@@ -295,7 +296,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
       rfb.sendKey(event.keyCode, 'KeyDown');
     }
     
-    console.log(`VNC Key: ${event.key}`);
+    debugLog(`VNC Key: ${event.key}`);
   };
 
   const handleKeyUp = (event: React.KeyboardEvent) => {

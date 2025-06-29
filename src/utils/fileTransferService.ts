@@ -1,4 +1,5 @@
 import { FileTransferSession } from '../types/connection';
+import { debugLog } from './debugLogger';
 
 interface FileItem {
   name: string;
@@ -181,7 +182,7 @@ export class FileTransferService {
   async deleteFile(connectionId: string, remotePath: string): Promise<void> {
     // Simulate file deletion
     await new Promise(resolve => setTimeout(resolve, 500));
-    console.log(`Deleted file: ${remotePath}`);
+    debugLog(`Deleted file: ${remotePath}`);
   }
 
   getActiveTransfers(connectionId: string): FileTransferSession[] {
@@ -204,17 +205,17 @@ export class FileTransferService {
   // SFTP specific methods
   async createDirectory(connectionId: string, path: string): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 300));
-    console.log(`Created directory: ${path}`);
+    debugLog(`Created directory: ${path}`);
   }
 
   async renameFile(connectionId: string, oldPath: string, newPath: string): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 300));
-    console.log(`Renamed ${oldPath} to ${newPath}`);
+    debugLog(`Renamed ${oldPath} to ${newPath}`);
   }
 
   async changePermissions(connectionId: string, path: string, permissions: string): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 300));
-    console.log(`Changed permissions of ${path} to ${permissions}`);
+    debugLog(`Changed permissions of ${path} to ${permissions}`);
   }
 
   // SCP specific methods

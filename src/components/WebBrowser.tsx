@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { debugLog } from '../utils/debugLogger';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -95,7 +96,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         if (iframe && iframe.contentWindow) {
           // Note: Due to CORS restrictions, we can't directly inject auth headers
           // This would need to be handled by a proxy server or browser extension
-          console.log('Basic auth configured for:', connection.basicAuthUsername);
+          debugLog('Basic auth configured for:', connection.basicAuthUsername);
         }
       } catch (error) {
         console.warn('Cannot access iframe content due to CORS restrictions');
