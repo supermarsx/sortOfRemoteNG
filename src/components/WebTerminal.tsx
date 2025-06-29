@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Terminal, type IDisposable } from 'xterm';
-import { FitAddon } from 'xterm-addon-fit';
-import { WebLinksAddon } from 'xterm-addon-web-links';
+import { Terminal, type IDisposable } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ConnectionSession } from '../types/connection';
 import { SSHClient } from '../utils/sshClient';
 import { Maximize2, Minimize2, Copy, Download, Upload } from 'lucide-react';
