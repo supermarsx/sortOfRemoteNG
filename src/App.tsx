@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Monitor, Zap, Menu, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionProvider, useConnections } from './contexts/ConnectionContext';
@@ -30,6 +30,7 @@ const AppContent: React.FC = () => {
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
   const [isInitialized, setIsInitialized] = useState(false);
   const [reconnectingSessions, setReconnectingSessions] = useState<Set<string>>(new Set());
+  const hasReconnected = useRef<boolean>(false);
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
@@ -88,12 +89,12 @@ const AppContent: React.FC = () => {
     const settings = settingsManager.getSettings();
     if (settings.reconnectOnReload && isInitialized && state.connections.length > 0) {
       const savedSessions = sessionStorage.getItem('mremote-active-sessions');
-      if (savedSessions) {
+      if (savedSessions && !hasReconnected.current) {
         try {
           const sessions = JSON.parse(savedSessions);
           // Clear the saved sessions to prevent reconnection loop
           sessionStorage.removeItem('mremote-active-sessions');
-          
+
           sessions.forEach((sessionData: any) => {
             const connection = state.connections.find(c => c.id === sessionData.connectionId);
             if (connection && !reconnectingSessions.has(connection.id)) {
@@ -111,6 +112,7 @@ const AppContent: React.FC = () => {
         } catch (error) {
           console.error('Failed to restore sessions:', error);
         }
+        hasReconnected.current = true;
       }
     }
   }, [isInitialized, state.connections]);
