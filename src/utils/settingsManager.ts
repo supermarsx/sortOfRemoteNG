@@ -4,6 +4,7 @@ import { SecureStorage } from './storage';
 const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
   theme: 'dark',
+  colorScheme: 'blue',
   singleWindowMode: false,
   singleConnectionMode: false,
   reconnectOnReload: true,
