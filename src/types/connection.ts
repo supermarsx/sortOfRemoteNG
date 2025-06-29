@@ -1,3 +1,4 @@
+import { ProxyConfig } from "./settings";
 export interface Connection {
   id: string;
   name: string;
@@ -235,4 +236,3 @@ export interface ConnectionCollection {
   lastAccessed: Date;
 }
 
-import { ProxyConfig } from './settings';
