@@ -14,8 +14,12 @@ export class TOTPService {
       step: config?.period || 30,
       algorithm: (config?.algorithm || 'SHA1').toLowerCase(),
     };
+    authenticator.options = {
+      ...options,
+      algorithm: options.algorithm.toLowerCase(),
+    };
 
-    authenticator.options = options;
+
     return authenticator.generate(secret);
   }
 
@@ -26,8 +30,11 @@ export class TOTPService {
       algorithm: (config?.algorithm || 'SHA1').toLowerCase(),
       window: 1, // Allow 1 step tolerance
     };
+    authenticator.options = {
+      ...options,
+      algorithm: options.algorithm.toLowerCase(),
+    };
 
-    authenticator.options = options;
     return authenticator.verify({ token, secret });
   }
 
