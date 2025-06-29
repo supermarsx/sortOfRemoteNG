@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Terminal } from 'xterm';
+import { Terminal, type IDisposable } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { WebLinksAddon } from 'xterm-addon-web-links';
 import { ConnectionSession } from '../types/connection';
@@ -18,6 +18,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const terminal = useRef<Terminal | null>(null);
   const fitAddon = useRef<FitAddon | null>(null);
   const sshClient = useRef<SSHClient | null>(null);
+  const isConnectedRef = useRef<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
@@ -88,11 +89,12 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       terminal.current.writeln('\x1b[36mConnected to: ' + session.hostname + '\x1b[0m');
       terminal.current.write('\x1b[33m$ \x1b[0m');
       setIsConnected(true);
+      isConnectedRef.current = true;
     }
 
     // Handle terminal input
-    terminal.current.onData((data) => {
-      if (sshClient.current && isConnected) {
+    const dataDisposable = terminal.current.onData((data) => {
+      if (sshClient.current && isConnectedRef.current) {
         // Send data directly to SSH client
         sshClient.current.sendData(data);
       } else {
@@ -117,6 +119,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      dataDisposable.dispose();
       if (sshClient.current) {
         sshClient.current.disconnect();
         sshClient.current = null;
@@ -130,10 +133,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       terminal.current = null;
       fitAddon.current = null;
       setIsConnected(false);
+      isConnectedRef.current = false;
       setConnectionError('');
       setCurrentLine('');
     };
-  }, [session.id]);
+  }, [session.id, session.protocol]);
 
   const handleNonSSHInput = (data: string) => {
     if (!terminal.current) return;
@@ -254,6 +258,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
       sshClient.current.onConnect(() => {
         setIsConnected(true);
+        isConnectedRef.current = true;
         setConnectionError('');
         if (terminal.current) {
           terminal.current.writeln('\r\n\x1b[32mSSH connection established!\x1b[0m');
@@ -269,6 +274,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
       sshClient.current.onClose(() => {
         setIsConnected(false);
+        isConnectedRef.current = false;
         if (terminal.current) {
           terminal.current.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
         }
