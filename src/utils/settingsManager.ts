@@ -10,24 +10,89 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   reconnectOnReload: true,
   warnOnClose: true,
   warnOnExit: true,
+
+  autoLock: {
+    enabled: false,
+    timeoutMinutes: 10,
+    lockOnIdle: true,
+    lockOnSuspend: true,
+    requirePassword: true,
+  },
+
   maxConcurrentConnections: 10,
   connectionTimeout: 30,
   retryAttempts: 3,
   retryDelay: 5000,
   enablePerformanceTracking: true,
+
   encryptionAlgorithm: 'AES-256-GCM',
   blockCipherMode: 'GCM',
   keyDerivationIterations: 100000,
   autoBenchmarkIterations: true,
   benchmarkTimeSeconds: 1,
+
+  totpEnabled: false,
+  totpIssuer: 'sortOfRemoteNG',
+  totpDigits: 6,
+  totpPeriod: 30,
+
+  globalProxy: {
+    type: 'http',
+    host: '',
+    port: 8080,
+    enabled: false,
+  },
+
   tabGrouping: 'none',
   hostnameOverride: false,
+  defaultTabLayout: 'tabs',
+  enableTabDetachment: false,
+  enableTabResize: true,
+  enableZoom: true,
+  colorTags: {},
+
   enableStatusChecking: true,
   statusCheckInterval: 30,
   statusCheckMethod: 'socket',
+
+  networkDiscovery: {
+    enabled: false,
+    ipRange: '192.168.1.0/24',
+    portRanges: ['22', '80', '443', '3389', '5900'],
+    protocols: ['ssh', 'http', 'https', 'rdp', 'vnc'],
+    timeout: 5000,
+    maxConcurrent: 50,
+    customPorts: {
+      ssh: [22],
+      http: [80, 8080, 8000],
+      https: [443, 8443],
+      rdp: [3389],
+      vnc: [5900, 5901, 5902],
+      mysql: [3306],
+      ftp: [21],
+      telnet: [23],
+    },
+  },
+
+  restApi: {
+    enabled: false,
+    port: 8080,
+    authentication: false,
+    apiKey: '',
+    corsEnabled: true,
+    rateLimiting: true,
+  },
+
+  wolEnabled: false,
+  wolPort: 9,
+  wolBroadcastAddress: '255.255.255.255',
+
   enableActionLog: true,
   logLevel: 'info',
   maxLogEntries: 1000,
+
+  exportEncryption: false,
+  exportPassword: undefined,
 };
 
 export class SettingsManager {
