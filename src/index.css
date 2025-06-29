@@ -70,6 +70,10 @@ body {
   color: var(--color-textSecondary) !important;
 }
 
+.text-white {
+  color: var(--color-text) !important;
+}
+
 .text-blue-200,
 .text-blue-300,
 .text-blue-400,
