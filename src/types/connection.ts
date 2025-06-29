@@ -152,13 +152,6 @@ export interface TabLayout {
   }[];
 }
 
-export interface AutoLockConfig {
-  enabled: boolean;
-  timeoutMinutes: number;
-  lockOnIdle: boolean;
-  lockOnSuspend: boolean;
-  requirePassword: boolean;
-}
 
 export interface ConnectionFilter {
   searchTerm: string;
@@ -184,15 +177,6 @@ export interface ConnectionStatus {
   error?: string;
 }
 
-export interface NetworkDiscoveryConfig {
-  enabled: boolean;
-  ipRange: string;
-  portRanges: string[];
-  protocols: string[];
-  timeout: number;
-  maxConcurrent: number;
-  customPorts: Record<string, number[]>;
-}
 
 export interface DiscoveredHost {
   ip: string;

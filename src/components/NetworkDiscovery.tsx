@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, Wifi, Monitor, Database, HardDrive, Globe, Play, Plus, Settings, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { NetworkDiscoveryConfig, DiscoveredHost, DiscoveredService } from '../types/connection';
+import { DiscoveredHost, DiscoveredService } from '../types/connection';
+import { NetworkDiscoveryConfig } from '../types/settings';
 import { NetworkScanner } from '../utils/networkScanner';
 import { useConnections } from '../contexts/ConnectionContext';
 
