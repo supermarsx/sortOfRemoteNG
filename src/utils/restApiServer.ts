@@ -5,6 +5,7 @@ import { RateLimiterMemory } from 'rate-limiter-flexible';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { Connection, ConnectionSession } from '../types/connection';
+import { debugLog } from './debugLogger';
 
 interface ApiConfig {
   port: number;
@@ -320,7 +321,7 @@ export class RestApiServer {
     return new Promise((resolve, reject) => {
       try {
         this.server = this.app.listen(this.config.port, () => {
-          console.log(`REST API server started on port ${this.config.port}`);
+          debugLog(`REST API server started on port ${this.config.port}`);
           resolve();
         });
       } catch (error) {
@@ -333,7 +334,7 @@ export class RestApiServer {
     return new Promise((resolve) => {
       if (this.server) {
         this.server.close(() => {
-          console.log('REST API server stopped');
+          debugLog('REST API server stopped');
           resolve();
         });
       } else {

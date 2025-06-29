@@ -1,3 +1,5 @@
+import { debugLog } from './debugLogger';
+
 export class WakeOnLanService {
   async sendWakePacket(macAddress: string, broadcastAddress: string = '255.255.255.255', port: number = 9): Promise<void> {
     try {
@@ -13,7 +15,7 @@ export class WakeOnLanService {
       // Send via WebSocket to a WOL service (would need backend implementation)
       await this.sendPacketViaWebSocket(magicPacket, broadcastAddress, port);
       
-      console.log(`Wake-on-LAN packet sent to ${macAddress} via ${broadcastAddress}:${port}`);
+      debugLog(`Wake-on-LAN packet sent to ${macAddress} via ${broadcastAddress}:${port}`);
     } catch (error) {
       console.error('Failed to send Wake-on-LAN packet:', error);
       throw error;
@@ -91,7 +93,7 @@ export class WakeOnLanService {
       this.sendWakePacket(macAddress, broadcastAddress);
     }, delay);
     
-    console.log(`Wake-on-LAN scheduled for ${wakeTime.toLocaleString()}`);
+    debugLog(`Wake-on-LAN scheduled for ${wakeTime.toLocaleString()}`);
   }
 
   // Test if device is awake

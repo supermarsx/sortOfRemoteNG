@@ -1,3 +1,4 @@
+import { debugLog } from './debugLogger';
 // SSH Library Abstraction Layer
 export interface SSHLibraryConfig {
   host: string;
@@ -280,12 +281,12 @@ export class SimpleSSHClient extends BaseSSHClient {
     if (this.ssh && this.isConnected) {
       // Simple-SSH doesn't support interactive shell input in the same way
       // This is a limitation of the library
-      console.log('Simple-SSH: Sending data:', data);
+      debugLog('Simple-SSH: Sending data:', data);
     }
   }
 
   resize(cols: number, rows: number): void {
-    console.log(`Simple-SSH: Terminal resized to ${cols}x${rows}`);
+    debugLog(`Simple-SSH: Terminal resized to ${cols}x${rows}`);
   }
 
   disconnect(): void {
