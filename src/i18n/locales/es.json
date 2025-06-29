@@ -103,7 +103,9 @@
     "advanced": "Avanzado",
     "save": "Guardar",
     "cancel": "Cancelar",
-    "reset": "Restablecer Valores Predeterminados"
+    "reset": "Restablecer Valores Predeterminados",
+    "autoSaveSuccess": "Opciones guardadas",
+    "autoSaveError": "Error al guardar"
   },
   "tabs": {
     "groupBy": "Agrupar Por",
