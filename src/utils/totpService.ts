@@ -10,32 +10,23 @@ export class TOTPService {
 
   generateToken(secret: string, config?: Partial<TOTPConfig>): string {
     const options = {
-      digits: config?.digits || 6,
-      step: config?.period || 30,
-      algorithm: (config?.algorithm || 'SHA1').toLowerCase(),
-    };
-    authenticator.options = {
-      ...options,
-      algorithm: options.algorithm.toLowerCase(),
+      digits: config?.digits ?? 6,
+      step: config?.period ?? 30,
+      algorithm: (config?.algorithm ?? 'SHA1').toLowerCase(),
     };
 
-
-    return authenticator.generate(secret);
+    return authenticator.clone(options).generate(secret);
   }
 
   verifyToken(token: string, secret: string, config?: Partial<TOTPConfig>): boolean {
     const options = {
-      digits: config?.digits || 6,
-      step: config?.period || 30,
-      algorithm: (config?.algorithm || 'SHA1').toLowerCase(),
+      digits: config?.digits ?? 6,
+      step: config?.period ?? 30,
+      algorithm: (config?.algorithm ?? 'SHA1').toLowerCase(),
       window: 1, // Allow 1 step tolerance
     };
-    authenticator.options = {
-      ...options,
-      algorithm: options.algorithm.toLowerCase(),
-    };
 
-    return authenticator.verify({ token, secret });
+    return authenticator.clone(options).verify({ token, secret });
   }
 
   generateOTPAuthURL(config: TOTPConfig): string {
