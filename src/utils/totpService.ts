@@ -1,4 +1,5 @@
 import { authenticator } from 'otplib';
+import { Authenticator } from '@otplib/core';
 import { TOTPConfig } from '../types/settings';
 
 export class TOTPService {
@@ -17,36 +18,36 @@ export class TOTPService {
   }
 
   generateSecret(): string {
-    return authenticator.generateSecret();
+    const instance = new Authenticator(authenticator.options);
+    return instance.generateSecret();
   }
 
   generateToken(secret: string, config?: Partial<TOTPConfig>): string {
-    const options = {
+    const instance = new Authenticator(authenticator.options);
+    instance.options = {
+      ...instance.options,
       digits: config?.digits ?? 6,
       step: config?.period ?? 30,
       algorithm: (config?.algorithm ?? 'SHA1').toLowerCase(),
     };
-
-    return authenticator.clone(options).generate(secret);
+    return instance.generate(secret);
   }
 
   verifyToken(token: string, secret: string, config?: Partial<TOTPConfig>): boolean {
-    const options = {
+    const instance = new Authenticator(authenticator.options);
+    instance.options = {
+      ...instance.options,
       digits: config?.digits ?? 6,
       step: config?.period ?? 30,
       algorithm: (config?.algorithm ?? 'SHA1').toLowerCase(),
       window: 1, // Allow 1 step tolerance
     };
-
-    return authenticator.clone(options).verify({ token, secret });
+    return instance.verify({ token, secret });
   }
 
   generateOTPAuthURL(config: TOTPConfig): string {
-    return authenticator.keyuri(
-      config.account,
-      config.issuer,
-      config.secret
-    );
+    const instance = new Authenticator(authenticator.options);
+    return instance.keyuri(config.account, config.issuer, config.secret);
   }
 
   saveConfig(config: TOTPConfig): void {
