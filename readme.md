@@ -1,5 +1,7 @@
 sortOfRemoteNG
 
+A sort of remoteNG inspired web app that runs on the browser. Very broken and non functional though, is an experiment.
+
 ## Testing
 
 
