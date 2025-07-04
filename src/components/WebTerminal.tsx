@@ -247,6 +247,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         port: connection?.port || 22,
         username: connection?.username || 'user',
         password: connection?.password || 'password',
+        privateKey: connection?.privateKey,
+        passphrase: connection?.passphrase,
         library: sshLibrary,
       });
 
