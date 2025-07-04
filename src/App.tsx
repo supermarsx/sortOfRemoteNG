@@ -451,6 +451,9 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="h-screen bg-gray-900 text-white flex flex-col">
+      {!isInitialized && (
+        <div className="fixed inset-0 bg-black z-50" />
+      )}
       {/* Title Bar */}
       <div className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4">
         <div className="flex items-center space-x-3">

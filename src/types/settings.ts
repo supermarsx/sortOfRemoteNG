@@ -1,7 +1,7 @@
 export interface GlobalSettings {
   // General Settings
   language: string;
-  theme: 'dark' | 'light' | 'auto' | 'darkest' | 'oled' | 'semilight' | 'rainbow';
+  theme: 'dark' | 'light' | 'auto' | 'darkest' | 'oled' | 'semilight';
   colorScheme: 'blue' | 'green' | 'purple' | 'red' | 'orange' | 'teal' | 'grey';
   singleWindowMode: boolean;
   singleConnectionMode: boolean;

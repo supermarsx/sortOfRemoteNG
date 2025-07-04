@@ -39,6 +39,14 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     httpHeaders: {},
   });
 
+  const handlePrivateKeyFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const text = await file.text();
+      setFormData(prev => ({ ...prev, privateKey: text }));
+    }
+  };
+
   const protocolPorts: Record<string, number> = {
     rdp: 3389,
     ssh: 22,
@@ -447,13 +455,19 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                           <label className="block text-sm font-medium text-gray-300 mb-2">
                             Private Key
                           </label>
-                          <textarea
-                            value={formData.privateKey || ''}
-                            onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
-                            rows={4}
-                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                            placeholder="-----BEGIN PRIVATE KEY-----"
-                          />
+                        <textarea
+                          value={formData.privateKey || ''}
+                          onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
+                          rows={4}
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                          placeholder="-----BEGIN PRIVATE KEY-----"
+                        />
+                        <input
+                          type="file"
+                          accept=".key,.pem,.ppk"
+                          onChange={handlePrivateKeyFileChange}
+                          className="mt-2 text-sm text-gray-300"
+                        />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-300 mb-2">
