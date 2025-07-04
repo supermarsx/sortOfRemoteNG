@@ -76,9 +76,13 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     terminal.current.loadAddon(fitAddon.current);
     terminal.current.loadAddon(new WebLinksAddon());
 
-    terminal.current.open(terminalRef.current);
-    terminal.current.focus();
-    fitAddon.current.fit();
+    if (terminalRef.current?.parentElement) {
+      terminal.current.open(terminalRef.current);
+      terminal.current.focus();
+      fitAddon.current.fit();
+    } else {
+      console.error('Terminal requires parent element');
+    }
 
     // Initialize SSH connection for SSH protocol
     if (session.protocol === 'ssh') {
@@ -94,11 +98,12 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
     // Handle terminal input
     const dataDisposable = terminal.current.onData((data) => {
-      if (sshClient.current && isConnectedRef.current) {
-        // Send data directly to SSH client
-        sshClient.current.sendData(data);
+      if (session.protocol === 'ssh') {
+        if (sshClient.current && isConnectedRef.current) {
+          sshClient.current.sendData(data);
+        }
+        // ignore input while connecting
       } else {
-        // Handle non-SSH protocols with proper line handling
         handleNonSSHInput(data);
       }
     });

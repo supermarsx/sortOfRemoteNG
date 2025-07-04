@@ -94,22 +94,6 @@ export class ThemeManager {
         error: '#ef4444',
       },
     },
-    rainbow: {
-      name: 'Rainbow',
-      colors: {
-        primary: '#ff0000',
-        secondary: '#ff7f00',
-        accent: '#ffff00',
-        background: '#ffffff',
-        surface: '#f9fafb',
-        text: '#000000',
-        textSecondary: '#555555',
-        border: '#cccccc',
-        success: '#00ff00',
-        warning: '#ff7f00',
-        error: '#ff0000',
-      },
-    },
   };
 
   private colorSchemes: Record<string, Record<string, string>> = {

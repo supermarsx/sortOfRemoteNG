@@ -234,7 +234,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                         <option value="darkest">Darkest</option>
                         <option value="oled">OLED Black</option>
                         <option value="semilight">Semi Light</option>
-                        <option value="rainbow">Rainbow</option>
                         <option value="auto">Auto</option>
                       </select>
                     </div>
