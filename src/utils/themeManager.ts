@@ -78,6 +78,38 @@ export class ThemeManager {
         error: '#ef4444',
       },
     },
+    semilight: {
+      name: 'Semi Light',
+      colors: {
+        primary: '#3b82f6',
+        secondary: '#6b7280',
+        accent: '#10b981',
+        background: '#f3f4f6',
+        surface: '#e5e7eb',
+        text: '#000000',
+        textSecondary: '#374151',
+        border: '#d1d5db',
+        success: '#10b981',
+        warning: '#f59e0b',
+        error: '#ef4444',
+      },
+    },
+    rainbow: {
+      name: 'Rainbow',
+      colors: {
+        primary: '#ff0000',
+        secondary: '#ff7f00',
+        accent: '#ffff00',
+        background: '#ffffff',
+        surface: '#f9fafb',
+        text: '#000000',
+        textSecondary: '#555555',
+        border: '#cccccc',
+        success: '#00ff00',
+        warning: '#ff7f00',
+        error: '#ff0000',
+      },
+    },
   };
 
   private colorSchemes: Record<string, Record<string, string>> = {
