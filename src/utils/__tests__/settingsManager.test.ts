@@ -29,4 +29,15 @@ describe('SettingsManager colorScheme', () => {
     const loaded = await again.loadSettings();
     expect(loaded.colorScheme).toBe('green');
   });
+
+  it('accepts grey colorScheme', async () => {
+    const manager = SettingsManager.getInstance();
+    await manager.loadSettings();
+    await manager.saveSettings({ colorScheme: 'grey' });
+
+    (SettingsManager as any).instance = undefined;
+    const again = SettingsManager.getInstance();
+    const loaded = await again.loadSettings();
+    expect(loaded.colorScheme).toBe('grey');
+  });
 });

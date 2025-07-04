@@ -252,6 +252,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                         <option value="red">Red</option>
                         <option value="orange">Orange</option>
                         <option value="teal">Teal</option>
+                        <option value="grey">Grey</option>
                       </select>
                     </div>
 

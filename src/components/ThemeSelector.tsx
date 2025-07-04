@@ -24,6 +24,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
     { name: 'red', colors: ['#ef4444', '#dc2626', '#b91c1c'] },
     { name: 'orange', colors: ['#f97316', '#ea580c', '#c2410c'] },
     { name: 'teal', colors: ['#14b8a6', '#0d9488', '#0f766e'] },
+    { name: 'grey', colors: ['#9ca3af', '#6b7280', '#4b5563'] },
   ];
 
   return (
