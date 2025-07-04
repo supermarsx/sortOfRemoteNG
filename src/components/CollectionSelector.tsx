@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Database, Plus, Lock, Unlock, Trash2, Edit, Eye, EyeOff } from 'lucide-react';
+import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionCollection } from '../types/connection';
 import { CollectionManager } from '../utils/collectionManager';
@@ -19,6 +19,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   const [collections, setCollections] = useState<ConnectionCollection[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [passwordAction, setPasswordAction] = useState<'unlock' | 'remove'>('unlock');
   const [selectedCollection, setSelectedCollection] = useState<ConnectionCollection | null>(null);
   const [newCollection, setNewCollection] = useState({
     name: '',
@@ -95,6 +96,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   const handleSelectCollection = (collection: ConnectionCollection) => {
     if (collection.isEncrypted) {
       setSelectedCollection(collection);
+      setPasswordAction('unlock');
       setShowPasswordDialog(true);
       setPassword('');
       setError('');
@@ -103,11 +105,27 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     }
   };
 
-  const handlePasswordSubmit = () => {
+  const handleRemovePassword = (collection: ConnectionCollection) => {
+    setSelectedCollection(collection);
+    setPasswordAction('remove');
+    setShowPasswordDialog(true);
+    setPassword('');
+    setError('');
+  };
+
+  const handlePasswordSubmit = async () => {
     if (!selectedCollection) return;
 
     try {
-      onCollectionSelect(selectedCollection.id, password);
+      if (passwordAction === 'unlock') {
+        onCollectionSelect(selectedCollection.id, password);
+      } else {
+        await collectionManager.removePasswordFromCollection(selectedCollection.id, password);
+        setCollections(collections.map(c => c.id === selectedCollection.id ? { ...c, isEncrypted: false } : c));
+        if (editingCollection && editingCollection.id === selectedCollection.id) {
+          setEditingCollection({ ...editingCollection, isEncrypted: false });
+        }
+      }
       setShowPasswordDialog(false);
       setPassword('');
       setError('');
@@ -277,7 +295,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
           {showPasswordDialog && selectedCollection && (
             <div className="bg-gray-700 rounded-lg p-6 mb-6">
               <h3 className="text-lg font-medium text-white mb-4">
-                Unlock Collection: {selectedCollection.name}
+                {passwordAction === 'unlock'
+                  ? `Unlock Collection: ${selectedCollection.name}`
+                  : `Remove Password From: ${selectedCollection.name}`}
               </h3>
               
               {error && (
@@ -324,7 +344,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     onClick={handlePasswordSubmit}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
                   >
-                    Unlock
+                    {passwordAction === 'unlock' ? 'Unlock' : 'Remove'}
                   </button>
                 </div>
               </div>
@@ -366,6 +386,16 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     rows={3}
                   />
                 </div>
+
+                {editingCollection.isEncrypted && (
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePassword(editingCollection)}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
+                  >
+                    Remove Password
+                  </button>
+                )}
 
                 <div className="flex justify-end space-x-3">
                   <button
