@@ -111,6 +111,11 @@ export class ThemeManager {
       secondary: '#0d9488',
       accent: '#0f766e',
     },
+    grey: {
+      primary: '#9ca3af',
+      secondary: '#6b7280',
+      accent: '#4b5563',
+    },
   };
 
   private applyResolvedTheme(themeName: string, colorScheme: string): void {
