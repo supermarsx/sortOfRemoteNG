@@ -55,8 +55,12 @@ export class NodeSSHClient extends BaseSSHClient {
 
   async connect(): Promise<void> {
     try {
-      // Import node-ssh dynamically
-      const { NodeSSH } = await import('node-ssh');
+      if (typeof window !== 'undefined') {
+        this.callbacks.onError?.('NodeSSHClient is not supported in the browser');
+        return;
+      }
+      // Import node-ssh dynamically (ignored by Vite to avoid bundling)
+      const { NodeSSH } = await import(/* @vite-ignore */ 'node-ssh');
       this.ssh = new NodeSSH();
 
       const connectionConfig: any = {
@@ -135,8 +139,12 @@ export class SSH2Client extends BaseSSHClient {
 
   async connect(): Promise<void> {
     try {
-      // Import ssh2 dynamically
-      const { Client } = await import('ssh2');
+      if (typeof window !== 'undefined') {
+        this.callbacks.onError?.('SSH2Client is not supported in the browser');
+        return;
+      }
+      // Import ssh2 dynamically (ignored by Vite to avoid bundling)
+      const { Client } = await import(/* @vite-ignore */ 'ssh2');
       this.connection = new Client();
 
       const connectionConfig: any = {
@@ -222,8 +230,12 @@ export class SimpleSSHClient extends BaseSSHClient {
 
   async connect(): Promise<void> {
     try {
-      // Import simple-ssh dynamically
-      const SSH = await import('simple-ssh');
+      if (typeof window !== 'undefined') {
+        this.callbacks.onError?.('SimpleSSHClient is not supported in the browser');
+        return;
+      }
+      // Import simple-ssh dynamically (ignored by Vite to avoid bundling)
+      const SSH = await import(/* @vite-ignore */ 'simple-ssh');
       
       const connectionConfig: any = {
         host: this.config.host,
@@ -379,6 +391,11 @@ export type SSHLibraryType = 'node-ssh' | 'ssh2' | 'simple-ssh' | 'websocket';
 
 export class SSHLibraryFactory {
   static createClient(type: SSHLibraryType, config: SSHLibraryConfig): BaseSSHClient {
+    const isBrowser = typeof window !== 'undefined';
+    if (isBrowser && type !== 'websocket') {
+      console.warn(`SSH library "${type}" is not supported in the browser, falling back to websocket`);
+      type = 'websocket';
+    }
     switch (type) {
       case 'node-ssh':
         return new NodeSSHClient(config);
