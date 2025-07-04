@@ -18,7 +18,7 @@ export class SSHClient {
 
   constructor(config: SSHConfig) {
     this.config = config;
-    this.client = SSHLibraryFactory.createClient(config.library || 'node-ssh', config);
+    this.client = SSHLibraryFactory.createClient(config.library || 'webssh', config);
   }
 
   onData(callback: (data: string) => void) {

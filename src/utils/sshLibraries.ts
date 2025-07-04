@@ -386,15 +386,74 @@ export class WebSocketSSHClient extends BaseSSHClient {
   }
 }
 
+// WebSSH2 Frontend Implementation
+export class WebSSHClientFrontend extends BaseSSHClient {
+  private terminal: any = null;
+
+  async connect(): Promise<void> {
+    try {
+      if (typeof window === 'undefined') {
+        this.callbacks.onError?.('WebSSHClientFrontend is only supported in the browser');
+        return;
+      }
+
+      const { WebSSHTerminal } = await import('webssh2-frontend');
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+
+      this.terminal = new WebSSHTerminal(container, {
+        socketUrl: `http://${this.config.host}:${this.config.port || 22}`,
+        host: this.config.host,
+        port: this.config.port,
+        username: this.config.username,
+        password: this.config.password,
+        privateKey: this.config.privateKey,
+        onConnected: () => {
+          this.isConnected = true;
+          this.callbacks.onConnect?.();
+        },
+        onDisconnected: () => {
+          this.isConnected = false;
+          this.callbacks.onClose?.();
+        },
+        onError: (err: string) => {
+          this.callbacks.onError?.(err);
+        },
+        onData: (data: string) => {
+          this.callbacks.onData?.(data);
+        }
+      });
+
+      this.terminal.connect();
+    } catch (error) {
+      this.callbacks.onError?.(error instanceof Error ? error.message : 'WebSSH connection failed');
+    }
+  }
+
+  sendData(data: string): void {
+    this.terminal?.sendData(data);
+  }
+
+  resize(cols: number, rows: number): void {
+    this.terminal?.resize();
+  }
+
+  disconnect(): void {
+    this.terminal?.disconnect();
+    this.isConnected = false;
+    this.callbacks.onClose?.();
+  }
+}
+
 // SSH Library Factory
-export type SSHLibraryType = 'node-ssh' | 'ssh2' | 'simple-ssh' | 'websocket';
+export type SSHLibraryType = 'node-ssh' | 'ssh2' | 'simple-ssh' | 'websocket' | 'webssh';
 
 export class SSHLibraryFactory {
   static createClient(type: SSHLibraryType, config: SSHLibraryConfig): BaseSSHClient {
     const isBrowser = typeof window !== 'undefined';
-    if (isBrowser && type !== 'websocket') {
-      console.warn(`SSH library "${type}" is not supported in the browser, falling back to websocket`);
-      type = 'websocket';
+    if (isBrowser && type !== 'webssh') {
+      console.warn(`SSH library "${type}" is not supported in the browser, falling back to webssh`);
+      type = 'webssh';
     }
     switch (type) {
       case 'node-ssh':
@@ -403,6 +462,8 @@ export class SSHLibraryFactory {
         return new SSH2Client(config);
       case 'simple-ssh':
         return new SimpleSSHClient(config);
+      case 'webssh':
+        return new WebSSHClientFrontend(config);
       case 'websocket':
       default:
         return new WebSocketSSHClient(config);

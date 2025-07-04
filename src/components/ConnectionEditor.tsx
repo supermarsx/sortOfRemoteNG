@@ -29,7 +29,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     isGroup: false,
     tags: [],
     parentId: undefined,
-    sshLibrary: 'websocket',
+    sshLibrary: 'webssh',
     authType: 'password',
     basicAuthUsername: '',
     basicAuthPassword: '',
@@ -62,7 +62,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   useEffect(() => {
     if (connection) {
       // Extract SSH library from description if it exists
-      let sshLibrary: SSHLibraryType = 'websocket';
+      let sshLibrary: SSHLibraryType = 'webssh';
       if (connection.description) {
         const match = connection.description.match(/\[SSH_LIBRARY:([^\]]+)\]/);
         if (match) {
@@ -91,7 +91,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         isGroup: false,
         tags: [],
         parentId: undefined,
-        sshLibrary: 'websocket',
+        sshLibrary: 'webssh',
         authType: 'password',
         basicAuthUsername: '',
         basicAuthPassword: '',
@@ -113,7 +113,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     description = description.replace(/\[SSH_LIBRARY:[^\]]+\]\s*/g, '').trim();
     
     // Add SSH library marker if SSH protocol and library is selected
-    if (formData.protocol === 'ssh' && formData.sshLibrary && formData.sshLibrary !== 'websocket') {
+    if (formData.protocol === 'ssh' && formData.sshLibrary && formData.sshLibrary !== 'webssh') {
       description = description ? `${description}\n[SSH_LIBRARY:${formData.sshLibrary}]` : `[SSH_LIBRARY:${formData.sshLibrary}]`;
     }
 
@@ -288,7 +288,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                       onChange={(e) => setFormData({ ...formData, sshLibrary: e.target.value as SSHLibraryType })}
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
-                      <option value="websocket">WebSocket SSH (Default)</option>
+                      <option value="webssh">WebSSH Library (Default)</option>
                       <option value="ssh2">SSH2 Library</option>
                       <option value="node-ssh">Node-SSH Library</option>
                       <option value="simple-ssh">Simple-SSH Library</option>
