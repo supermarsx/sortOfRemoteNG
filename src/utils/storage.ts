@@ -35,6 +35,10 @@ export class SecureStorage {
     this.isUnlocked = false;
   }
 
+  static verifyPassword(password: string): boolean {
+    return this.password === password;
+  }
+
   static isStorageUnlocked(): boolean {
     return this.isUnlocked;
   }

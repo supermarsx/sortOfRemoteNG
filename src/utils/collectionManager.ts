@@ -211,6 +211,23 @@ export class CollectionManager {
     return jsonData;
   }
 
+  async removePasswordFromCollection(collectionId: string, password: string): Promise<void> {
+    const collection = this.getCollection(collectionId);
+    if (!collection) throw new Error('Collection not found');
+
+    const data = await this.loadCollectionData(collectionId, password);
+    if (data === null) throw new Error('Invalid password');
+
+    await this.saveCollectionData(collectionId, data);
+    collection.isEncrypted = false;
+    this.updateCollection(collection);
+
+    if (this.currentCollection?.id === collectionId) {
+      this.currentPassword = null;
+      this.currentCollection = { ...collection };
+    }
+  }
+
   // Generate export filename
   generateExportFilename(): string {
     const now = new Date();
