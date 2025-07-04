@@ -5,6 +5,17 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    exclude: ['lucide-react'],
+    exclude: [
+      'lucide-react',
+      'ssh2',
+      'node-ssh',
+      'simple-ssh',
+      'cpu-features',
+    ],
+  },
+  build: {
+    rollupOptions: {
+      external: ['ssh2', 'node-ssh', 'simple-ssh', 'cpu-features'],
+    },
   },
 });
