@@ -234,7 +234,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       terminal.current.writeln('\x1b[90mHost: ' + session.hostname + '\x1b[0m');
       
       // Get SSH library preference from connection
-      let sshLibrary: 'node-ssh' | 'ssh2' | 'simple-ssh' | 'websocket' = 'node-ssh';
+      let sshLibrary: 'node-ssh' | 'ssh2' | 'simple-ssh' | 'websocket' | 'webssh' = 'webssh';
       if (connection?.description) {
         const match = connection.description.match(/\[SSH_LIBRARY:([^\]]+)\]/);
         if (match) {
@@ -349,7 +349,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
           )}
           {connection && session.protocol === 'ssh' && (
             <span className="text-xs text-blue-400 bg-blue-400/20 px-2 py-1 rounded">
-              SSH Library: {connection.description?.match(/\[SSH_LIBRARY:([^\]]+)\]/)?.[1] || 'node-ssh'}
+              SSH Library: {connection.description?.match(/\[SSH_LIBRARY:([^\]]+)\]/)?.[1] || 'webssh'}
             </span>
           )}
         </div>
