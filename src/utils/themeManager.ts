@@ -1,4 +1,5 @@
 import { ThemeConfig, Theme, ColorScheme } from '../types/settings';
+import { LocalStorageService } from './localStorageService';
 
 export class ThemeManager {
   private static instance: ThemeManager;
@@ -180,8 +181,8 @@ export class ThemeManager {
     }
 
     // Store in localStorage
-    localStorage.setItem('mremote-theme', themeName);
-    localStorage.setItem('mremote-color-scheme', colorScheme);
+    LocalStorageService.setItem('mremote-theme', themeName);
+    LocalStorageService.setItem('mremote-color-scheme', colorScheme);
   }
 
   getCurrentTheme(): Theme {
@@ -201,9 +202,9 @@ export class ThemeManager {
   }
 
   loadSavedTheme(): void {
-    const savedTheme = (localStorage.getItem('mremote-theme') || 'dark') as Theme;
+    const savedTheme = (LocalStorageService.getItem('mremote-theme') || 'dark') as Theme;
     const savedColorScheme = (
-      localStorage.getItem('mremote-color-scheme') || 'blue'
+      LocalStorageService.getItem('mremote-color-scheme') || 'blue'
     ) as ColorScheme;
 
     this.applyTheme(savedTheme, savedColorScheme);

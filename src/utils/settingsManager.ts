@@ -1,5 +1,6 @@
 import { GlobalSettings, ActionLogEntry, PerformanceMetrics, CustomScript } from '../types/settings';
 import { SecureStorage } from './storage';
+import { LocalStorageService } from './localStorageService';
 
 const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
@@ -111,9 +112,9 @@ export class SettingsManager {
 
   async loadSettings(): Promise<GlobalSettings> {
     try {
-      const stored = localStorage.getItem('mremote-settings');
+      const stored = LocalStorageService.getItem<GlobalSettings>('mremote-settings');
       if (stored) {
-        this.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+        this.settings = { ...DEFAULT_SETTINGS, ...stored };
       }
       return this.settings;
     } catch (error) {
@@ -125,7 +126,7 @@ export class SettingsManager {
   async saveSettings(settings: Partial<GlobalSettings>): Promise<void> {
     try {
       this.settings = { ...this.settings, ...settings };
-      localStorage.setItem('mremote-settings', JSON.stringify(this.settings));
+      LocalStorageService.setItem('mremote-settings', this.settings);
       this.logAction('info', 'Settings updated', undefined, 'Settings saved successfully');
     } catch (error) {
       console.error('Failed to save settings:', error);
@@ -180,7 +181,7 @@ export class SettingsManager {
 
   private saveActionLog(): void {
     try {
-      localStorage.setItem('mremote-action-log', JSON.stringify(this.actionLog));
+      LocalStorageService.setItem('mremote-action-log', this.actionLog);
     } catch (error) {
       console.error('Failed to save action log:', error);
     }
@@ -188,9 +189,9 @@ export class SettingsManager {
 
   private loadActionLog(): void {
     try {
-      const stored = localStorage.getItem('mremote-action-log');
+      const stored = LocalStorageService.getItem<any[]>('mremote-action-log');
       if (stored) {
-        this.actionLog = JSON.parse(stored).map((entry: any) => ({
+        this.actionLog = stored.map((entry: any) => ({
           ...entry,
           timestamp: new Date(entry.timestamp),
         }));
@@ -220,7 +221,7 @@ export class SettingsManager {
 
   private savePerformanceMetrics(): void {
     try {
-      localStorage.setItem('mremote-performance-metrics', JSON.stringify(this.performanceMetrics));
+      LocalStorageService.setItem('mremote-performance-metrics', this.performanceMetrics);
     } catch (error) {
       console.error('Failed to save performance metrics:', error);
     }
@@ -228,9 +229,9 @@ export class SettingsManager {
 
   private loadPerformanceMetrics(): void {
     try {
-      const stored = localStorage.getItem('mremote-performance-metrics');
+      const stored = LocalStorageService.getItem<PerformanceMetrics[]>('mremote-performance-metrics');
       if (stored) {
-        this.performanceMetrics = JSON.parse(stored);
+        this.performanceMetrics = stored;
       }
     } catch (error) {
       console.error('Failed to load performance metrics:', error);
@@ -279,7 +280,7 @@ export class SettingsManager {
 
   private saveCustomScripts(): void {
     try {
-      localStorage.setItem('mremote-custom-scripts', JSON.stringify(this.customScripts));
+      LocalStorageService.setItem('mremote-custom-scripts', this.customScripts);
     } catch (error) {
       console.error('Failed to save custom scripts:', error);
     }
@@ -287,9 +288,9 @@ export class SettingsManager {
 
   private loadCustomScripts(): void {
     try {
-      const stored = localStorage.getItem('mremote-custom-scripts');
+      const stored = LocalStorageService.getItem<any[]>('mremote-custom-scripts');
       if (stored) {
-        this.customScripts = JSON.parse(stored).map((script: any) => ({
+        this.customScripts = stored.map((script: any) => ({
           ...script,
           createdAt: new Date(script.createdAt),
           updatedAt: new Date(script.updatedAt),
@@ -348,12 +349,12 @@ export class SettingsManager {
     if (!this.settings.singleWindowMode) return true;
 
     const windowId = sessionStorage.getItem('mremote-window-id');
-    const activeWindowId = localStorage.getItem('mremote-active-window');
+    const activeWindowId = LocalStorageService.getItem<string>('mremote-active-window');
 
     if (!windowId) {
       const newWindowId = crypto.randomUUID();
       sessionStorage.setItem('mremote-window-id', newWindowId);
-      localStorage.setItem('mremote-active-window', newWindowId);
+      LocalStorageService.setItem('mremote-active-window', newWindowId);
       return true;
     }
 
@@ -361,7 +362,7 @@ export class SettingsManager {
       return false; // Another window is active
     }
 
-    localStorage.setItem('mremote-active-window', windowId);
+    LocalStorageService.setItem('mremote-active-window', windowId);
     return true;
   }
 
