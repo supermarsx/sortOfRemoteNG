@@ -375,7 +375,7 @@ const AppContent: React.FC = () => {
         await loadData();
       } else {
         // Setup mode - save current data with password
-        await saveData(true);
+        await saveData();
       }
 
       setShowPasswordDialog(false);
@@ -390,7 +390,7 @@ const AppContent: React.FC = () => {
   const handlePasswordCancel = () => {
     if (passwordDialogMode === 'setup') {
       // Save without password
-      saveData(false).catch(console.error);
+      saveData().catch(console.error);
     }
     setShowPasswordDialog(false);
     setPasswordError('');
