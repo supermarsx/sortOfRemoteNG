@@ -1,6 +1,7 @@
 import { authenticator } from 'otplib';
 import { Authenticator } from '@otplib/core';
 import { TOTPConfig } from '../types/settings';
+import { LocalStorageService } from './localStorageService';
 
 export class TOTPService {
   private readonly storageKey = 'mremote-totp-configs';
@@ -60,13 +61,13 @@ export class TOTPService {
       configs.push(config);
     }
     
-    localStorage.setItem(this.storageKey, JSON.stringify(configs));
+    LocalStorageService.setItem(this.storageKey, configs);
   }
 
   getAllConfigs(): TOTPConfig[] {
     try {
-      const stored = localStorage.getItem(this.storageKey);
-      return stored ? JSON.parse(stored) : [];
+      const stored = LocalStorageService.getItem<TOTPConfig[]>(this.storageKey);
+      return stored ? stored : [];
     } catch (error) {
       console.error('Failed to load TOTP configs:', error);
       return [];
@@ -79,7 +80,7 @@ export class TOTPService {
 
   deleteConfig(secret: string): void {
     const configs = this.getAllConfigs().filter(config => config.secret !== secret);
-    localStorage.setItem(this.storageKey, JSON.stringify(configs));
+    LocalStorageService.setItem(this.storageKey, configs);
   }
 
   // Generate QR code data URL
@@ -125,7 +126,7 @@ export class TOTPService {
         }
       });
       
-      localStorage.setItem(this.storageKey, JSON.stringify(configs));
+      LocalStorageService.setItem(this.storageKey, configs);
     } catch (error) {
       throw new Error('Failed to import TOTP configurations: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
