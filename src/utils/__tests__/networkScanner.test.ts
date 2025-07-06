@@ -19,4 +19,14 @@ describe('NetworkScanner helper methods', () => {
     const version = scanner.extractVersion('OpenSSH_8.6p1');
     expect(version).toBe('8.6');
   });
+
+  it('throws on malformed CIDR strings', () => {
+    expect(() => scanner.generateIPRange('192.168.0.0')).toThrow();
+    expect(() => scanner.generateIPRange('192.168.0.0/abc')).toThrow();
+  });
+
+  it('throws when prefix is outside supported range', () => {
+    expect(() => scanner.generateIPRange('192.168.0.0/23')).toThrow();
+    expect(() => scanner.generateIPRange('192.168.0.0/31')).toThrow();
+  });
 });
