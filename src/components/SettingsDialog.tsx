@@ -13,7 +13,13 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { GlobalSettings, ProxyConfig } from '../types/settings';
+import {
+  GlobalSettings,
+  ProxyConfig,
+  Theme,
+  ColorScheme,
+  StatusCheckMethod,
+} from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
 import { ThemeManager } from '../utils/themeManager';
 
@@ -226,7 +232,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       </label>
                       <select
                         value={settings.theme}
-                        onChange={(e) => updateSettings({ theme: e.target.value as any })}
+                        onChange={(e) => updateSettings({ theme: e.target.value as Theme })}
                         className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                       >
                         <option value="dark">Dark</option>
@@ -244,7 +250,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       </label>
                       <select
                         value={settings.colorScheme}
-                        onChange={(e) => updateSettings({ colorScheme: e.target.value as any })}
+                        onChange={(e) => updateSettings({ colorScheme: e.target.value as ColorScheme })}
                         className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                       >
                         <option value="blue">Blue</option>
@@ -482,7 +488,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       </label>
                       <select
                         value={settings.statusCheckMethod}
-                        onChange={(e) => updateSettings({ statusCheckMethod: e.target.value as any })}
+                        onChange={(e) =>
+                          updateSettings({ statusCheckMethod: e.target.value as StatusCheckMethod })
+                        }
                         className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                       >
                         <option value="socket">Socket</option>

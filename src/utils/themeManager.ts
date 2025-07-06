@@ -1,9 +1,9 @@
-import { ThemeConfig } from '../types/settings';
+import { ThemeConfig, Theme, ColorScheme } from '../types/settings';
 
 export class ThemeManager {
   private static instance: ThemeManager;
-  private currentTheme: string = 'dark';
-  private currentColorScheme: string = 'blue';
+  private currentTheme: Theme = 'dark';
+  private currentColorScheme: ColorScheme = 'blue';
   private systemThemeStop?: () => void;
 
   static getInstance(): ThemeManager {
@@ -160,7 +160,7 @@ export class ThemeManager {
     document.body.classList.add(`theme-${themeName}`, `scheme-${colorScheme}`);
   }
 
-  applyTheme(themeName: string, colorScheme: string): void {
+  applyTheme(themeName: Theme, colorScheme: ColorScheme): void {
     this.currentTheme = themeName;
     this.currentColorScheme = colorScheme;
 
@@ -184,26 +184,28 @@ export class ThemeManager {
     localStorage.setItem('mremote-color-scheme', colorScheme);
   }
 
-  getCurrentTheme(): string {
+  getCurrentTheme(): Theme {
     return this.currentTheme;
   }
 
-  getCurrentColorScheme(): string {
+  getCurrentColorScheme(): ColorScheme {
     return this.currentColorScheme;
   }
 
-  getAvailableThemes(): string[] {
-    return Object.keys(this.themes);
+  getAvailableThemes(): Theme[] {
+    return Object.keys(this.themes) as Theme[];
   }
 
-  getAvailableColorSchemes(): string[] {
-    return Object.keys(this.colorSchemes);
+  getAvailableColorSchemes(): ColorScheme[] {
+    return Object.keys(this.colorSchemes) as ColorScheme[];
   }
 
   loadSavedTheme(): void {
-    const savedTheme = localStorage.getItem('mremote-theme') || 'dark';
-    const savedColorScheme = localStorage.getItem('mremote-color-scheme') || 'blue';
-    
+    const savedTheme = (localStorage.getItem('mremote-theme') || 'dark') as Theme;
+    const savedColorScheme = (
+      localStorage.getItem('mremote-color-scheme') || 'blue'
+    ) as ColorScheme;
+
     this.applyTheme(savedTheme, savedColorScheme);
   }
 
@@ -216,7 +218,7 @@ export class ThemeManager {
   }
 
   // Listen for system theme changes
-  watchSystemTheme(callback: (theme: string) => void): (() => void) | undefined {
+  watchSystemTheme(callback: (theme: 'dark' | 'light') => void): (() => void) | undefined {
     if (window.matchMedia) {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
       
