@@ -35,9 +35,19 @@ export class NetworkScanner {
   }
 
   private generateIPRange(cidr: string): string[] {
-    const [network, prefixLength] = cidr.split('/');
-    const prefix = parseInt(prefixLength);
-    
+    const parts = cidr.split('/');
+    if (parts.length !== 2) {
+      throw new Error(`Malformed CIDR string: ${cidr}`);
+    }
+
+    const [network, prefixLength] = parts;
+
+    if (!prefixLength || isNaN(Number(prefixLength))) {
+      throw new Error(`Invalid prefix length in CIDR: ${cidr}`);
+    }
+
+    const prefix = parseInt(prefixLength, 10);
+
     if (prefix < 24 || prefix > 30) {
       throw new Error('Only /24 to /30 networks are supported');
     }
