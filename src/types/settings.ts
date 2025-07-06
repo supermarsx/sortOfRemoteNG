@@ -1,8 +1,32 @@
+export const Themes = [
+  'dark',
+  'light',
+  'auto',
+  'darkest',
+  'oled',
+  'semilight',
+] as const;
+export type Theme = typeof Themes[number];
+
+export const ColorSchemes = [
+  'blue',
+  'green',
+  'purple',
+  'red',
+  'orange',
+  'teal',
+  'grey',
+] as const;
+export type ColorScheme = typeof ColorSchemes[number];
+
+export const StatusCheckMethods = ['ping', 'socket', 'http'] as const;
+export type StatusCheckMethod = typeof StatusCheckMethods[number];
+
 export interface GlobalSettings {
   // General Settings
   language: string;
-  theme: 'dark' | 'light' | 'auto' | 'darkest' | 'oled' | 'semilight';
-  colorScheme: 'blue' | 'green' | 'purple' | 'red' | 'orange' | 'teal' | 'grey';
+  theme: Theme;
+  colorScheme: ColorScheme;
   singleWindowMode: boolean;
   singleConnectionMode: boolean;
   reconnectOnReload: boolean;
@@ -55,7 +79,7 @@ export interface GlobalSettings {
   // Status Checking
   enableStatusChecking: boolean;
   statusCheckInterval: number;
-  statusCheckMethod: 'ping' | 'socket' | 'http';
+  statusCheckMethod: StatusCheckMethod;
   
   // Network Discovery
   networkDiscovery: NetworkDiscoveryConfig;

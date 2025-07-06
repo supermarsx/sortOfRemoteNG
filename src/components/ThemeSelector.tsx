@@ -1,12 +1,13 @@
 import React from 'react';
 import { Palette, Sun, Moon, Monitor } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Theme, ColorScheme } from '../types/settings';
 
 interface ThemeSelectorProps {
-  theme: 'dark' | 'light' | 'auto';
-  colorScheme: string;
-  onThemeChange: (theme: 'dark' | 'light' | 'auto') => void;
-  onColorSchemeChange: (scheme: string) => void;
+  theme: Theme;
+  colorScheme: ColorScheme;
+  onThemeChange: (theme: Theme) => void;
+  onColorSchemeChange: (scheme: ColorScheme) => void;
 }
 
 export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
@@ -42,7 +43,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
           ].map(({ value, label, icon: Icon }) => (
             <button
               key={value}
-              onClick={() => onThemeChange(value as any)}
+              onClick={() => onThemeChange(value as Theme)}
               className={`p-4 rounded-lg border-2 transition-colors flex flex-col items-center space-y-2 ${
                 theme === value
                   ? 'border-blue-500 bg-blue-500/20'
@@ -65,7 +66,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
           {colorSchemes.map(scheme => (
             <button
               key={scheme.name}
-              onClick={() => onColorSchemeChange(scheme.name)}
+              onClick={() => onColorSchemeChange(scheme.name as ColorScheme)}
               className={`p-4 rounded-lg border-2 transition-colors ${
                 colorScheme === scheme.name
                   ? 'border-blue-500 bg-blue-500/20'
