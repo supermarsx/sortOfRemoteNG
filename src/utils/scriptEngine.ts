@@ -96,7 +96,7 @@ export class ScriptEngine {
       
       // Settings access
       getSetting: (key: string) => this.getSetting(key),
-      setSetting: (key: string, value: any) => this.setSetting(key, value),
+      setSetting: async (key: string, value: any) => this.setSetting(key, value),
     };
 
     // Execute the script
@@ -180,8 +180,8 @@ export class ScriptEngine {
     return (settings as any)[key];
   }
 
-  private setSetting(key: string, value: any): void {
-    this.settingsManager.saveSettings({ [key]: value });
+  private async setSetting(key: string, value: any): Promise<void> {
+    await this.settingsManager.saveSettings({ [key]: value });
   }
 
   // Get scripts for a specific trigger and protocol
