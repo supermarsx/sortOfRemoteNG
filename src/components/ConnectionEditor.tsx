@@ -4,6 +4,7 @@ import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/ConnectionContext';
 import { TagManager } from './TagManager';
 import { SSHLibraryType } from '../utils/sshLibraries';
+import { getDefaultPort } from '../utils/defaultPorts';
 
 interface ConnectionEditorProps {
   connection?: Connection;
@@ -47,15 +48,6 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     }
   };
 
-  const protocolPorts: Record<string, number> = {
-    rdp: 3389,
-    ssh: 22,
-    vnc: 5900,
-    http: 80,
-    https: 443,
-    telnet: 23,
-    rlogin: 513,
-  };
 
   // Get all available tags from existing connections
   const allTags = Array.from(
@@ -136,7 +128,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       name: formData.name || 'New Connection',
       protocol: formData.protocol as Connection['protocol'],
       hostname: formData.hostname || '',
-      port: formData.port || protocolPorts[formData.protocol as string] || 22,
+      port: formData.port || getDefaultPort(formData.protocol as string),
       username: formData.username,
       password: formData.password,
       privateKey: formData.privateKey,
@@ -168,7 +160,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     setFormData({
       ...formData,
       protocol: protocol as Connection['protocol'],
-      port: protocolPorts[protocol] || 22,
+      port: getDefaultPort(protocol),
       authType: ['http', 'https'].includes(protocol) ? 'basic' : 'password',
     });
   };
