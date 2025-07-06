@@ -5,6 +5,7 @@ import { Connection, ConnectionSession } from '../types/connection';
 import { SettingsManager } from '../utils/settingsManager';
 import { StatusChecker } from '../utils/statusChecker';
 import { ScriptEngine } from '../utils/scriptEngine';
+import { getDefaultPort } from '../utils/defaultPorts';
 
 export const useSessionManager = () => {
   const { t } = useTranslation();
@@ -175,19 +176,6 @@ export const useSessionManager = () => {
     };
 
     handleConnect(tempConnection);
-  };
-
-  const getDefaultPort = (protocol: string): number => {
-    const ports: Record<string, number> = {
-      rdp: 3389,
-      ssh: 22,
-      vnc: 5900,
-      http: 80,
-      https: 443,
-      telnet: 23,
-      rlogin: 513,
-    };
-    return ports[protocol] || 22;
   };
 
   const handleSessionClose = async (sessionId: string) => {
