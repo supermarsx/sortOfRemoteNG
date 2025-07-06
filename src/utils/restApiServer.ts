@@ -3,7 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { Server } from 'http';
 import { Connection, ConnectionSession } from '../types/connection';
 import { debugLog } from './debugLogger';
 
@@ -16,9 +17,13 @@ interface ApiConfig {
   jwtSecret: string;
 }
 
+interface AuthRequest extends express.Request {
+  user?: jwt.JwtPayload | string;
+}
+
 export class RestApiServer {
   private app: express.Application;
-  private server: any;
+  private server?: Server;
   private config: ApiConfig;
   private rateLimiter?: RateLimiterMemory;
   private connections: Connection[] = [];
@@ -57,7 +62,7 @@ export class RestApiServer {
             await this.rateLimiter.consume(req.ip);
           }
           next();
-        } catch (rejRes) {
+        } catch {
           res.status(429).json({ error: 'Too many requests' });
         }
       });
@@ -97,9 +102,9 @@ export class RestApiServer {
       
       try {
         const decoded = jwt.verify(token, this.config.jwtSecret);
-        (req as any).user = decoded;
+        (req as AuthRequest).user = decoded;
         next();
-      } catch (error) {
+      } catch {
         res.status(401).json({ error: 'Invalid token' });
       }
     } else {
@@ -293,6 +298,7 @@ export class RestApiServer {
     this.app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
       console.error('API Error:', err);
       res.status(500).json({ error: 'Internal server error' });
+      next();
     });
 
     // 404 handler
