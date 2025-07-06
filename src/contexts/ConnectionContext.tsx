@@ -89,7 +89,7 @@ const connectionReducer = (state: ConnectionState, action: ConnectionAction): Co
 export const ConnectionContext = createContext<{
   state: ConnectionState;
   dispatch: React.Dispatch<ConnectionAction>;
-  saveData: (usePassword?: boolean) => Promise<void>;
+  saveData: () => Promise<void>;
   loadData: () => Promise<void>;
 } | null>(null);
 
@@ -105,14 +105,14 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [state, dispatch] = useReducer(connectionReducer, initialState);
   const collectionManager = CollectionManager.getInstance();
 
-  const saveData = async (usePassword: boolean = false) => {
+  const saveData = async () => {
     try {
       const data: StorageData = {
         connections: state.connections,
         settings: {},
         timestamp: Date.now(),
       };
-      
+
       await collectionManager.saveCurrentCollectionData(data);
     } catch (error) {
       console.error('Failed to save data:', error);
