@@ -1,5 +1,6 @@
 import { DiscoveredHost, DiscoveredService } from '../types/connection';
 import { NetworkDiscoveryConfig } from '../types/settings';
+import { Semaphore } from './semaphore';
 
 export class NetworkScanner {
   async scanNetwork(
@@ -262,42 +263,13 @@ export class NetworkScanner {
   private compareIPs(a: string, b: string): number {
     const aParts = a.split('.').map(Number);
     const bParts = b.split('.').map(Number);
-    
+
     for (let i = 0; i < 4; i++) {
       if (aParts[i] !== bParts[i]) {
         return aParts[i] - bParts[i];
       }
     }
-    
+
     return 0;
-  }
-}
-
-class Semaphore {
-  private permits: number;
-  private waiting: (() => void)[] = [];
-
-  constructor(permits: number) {
-    this.permits = permits;
-  }
-
-  async acquire(): Promise<void> {
-    if (this.permits > 0) {
-      this.permits--;
-      return;
-    }
-
-    return new Promise(resolve => {
-      this.waiting.push(resolve);
-    });
-  }
-
-  release(): void {
-    if (this.waiting.length > 0) {
-      const resolve = this.waiting.shift()!;
-      resolve();
-    } else {
-      this.permits++;
-    }
   }
 }
