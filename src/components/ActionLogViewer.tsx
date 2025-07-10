@@ -1,8 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, Filter, Trash2, Search, Clock, AlertCircle, Info, AlertTriangle, Bug } from 'lucide-react';
+import {
+  X,
+  Download,
+  Filter,
+  Trash2,
+  Search,
+  Clock,
+  AlertCircle,
+  Info,
+  AlertTriangle,
+  Bug,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ActionLogEntry } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
+
+const LEVEL_ICONS: Record<string, JSX.Element> = {
+  debug: <Bug className="text-gray-400" size={14} />,
+  info: <Info className="text-blue-400" size={14} />,
+  warn: <AlertTriangle className="text-yellow-400" size={14} />,
+  error: <AlertCircle className="text-red-400" size={14} />,
+};
+
+const DEFAULT_ICON = <Info className="text-gray-400" size={14} />;
+
+const LEVEL_COLORS: Record<string, string> = {
+  debug: 'text-gray-400',
+  info: 'text-blue-400',
+  warn: 'text-yellow-400',
+  error: 'text-red-400',
+};
 
 interface ActionLogViewerProps {
   isOpen: boolean;
@@ -79,34 +106,10 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({ isOpen, onClos
     URL.revokeObjectURL(url);
   };
 
-  const getLevelIcon = (level: string) => {
-    switch (level) {
-      case 'debug':
-        return <Bug className="text-gray-400" size={14} />;
-      case 'info':
-        return <Info className="text-blue-400" size={14} />;
-      case 'warn':
-        return <AlertTriangle className="text-yellow-400" size={14} />;
-      case 'error':
-        return <AlertCircle className="text-red-400" size={14} />;
-      default:
-        return <Info className="text-gray-400" size={14} />;
-    }
-  };
+  const getLevelIcon = (level: string) => LEVEL_ICONS[level] ?? DEFAULT_ICON;
 
   const getLevelColor = (level: string) => {
-    switch (level) {
-      case 'debug':
-        return 'text-gray-400';
-      case 'info':
-        return 'text-blue-400';
-      case 'warn':
-        return 'text-yellow-400';
-      case 'error':
-        return 'text-red-400';
-      default:
-        return 'text-gray-400';
-    }
+    return LEVEL_COLORS[level] ?? 'text-gray-400';
   };
 
   if (!isOpen) return null;
