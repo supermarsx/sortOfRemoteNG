@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   ChevronRight, 
   ChevronDown, 
@@ -208,15 +208,18 @@ interface ConnectionTreeProps {
 export const ConnectionTree: React.FC<ConnectionTreeProps> = ({ onConnect, onEdit, onDelete }) => {
   const { state } = useConnections();
 
-  const buildTree = (connections: Connection[], parentId?: string): Connection[] => {
-    return connections
-      .filter(conn => conn.parentId === parentId)
-      .sort((a, b) => {
-        if (a.isGroup && !b.isGroup) return -1;
-        if (!a.isGroup && b.isGroup) return 1;
-        return a.name.localeCompare(b.name);
-      });
-  };
+  const buildTree = useMemo(
+    () =>
+      (connections: Connection[], parentId?: string): Connection[] =>
+        connections
+          .filter(conn => conn.parentId === parentId)
+          .sort((a, b) => {
+            if (a.isGroup && !b.isGroup) return -1;
+            if (!a.isGroup && b.isGroup) return 1;
+            return a.name.localeCompare(b.name);
+          }),
+    [state.connections, state.filter]
+  );
 
   const renderTree = (connections: Connection[], level: number = 0): React.ReactNode => {
     return connections.map(connection => (
@@ -237,17 +240,19 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({ onConnect, onEdi
     ));
   };
 
-  const filteredConnections = state.connections.filter(conn => {
-    if (state.filter.searchTerm) {
-      const searchLower = state.filter.searchTerm.toLowerCase();
-      return (
-        conn.name.toLowerCase().includes(searchLower) ||
-        conn.hostname?.toLowerCase().includes(searchLower) ||
-        conn.description?.toLowerCase().includes(searchLower)
-      );
-    }
-    return true;
-  });
+  const filteredConnections = useMemo(() => {
+    return state.connections.filter(conn => {
+      if (state.filter.searchTerm) {
+        const searchLower = state.filter.searchTerm.toLowerCase();
+        return (
+          conn.name.toLowerCase().includes(searchLower) ||
+          conn.hostname?.toLowerCase().includes(searchLower) ||
+          conn.description?.toLowerCase().includes(searchLower)
+        );
+      }
+      return true;
+    });
+  }, [state.connections, state.filter]);
 
   return (
     <div className="flex-1 overflow-y-auto">
