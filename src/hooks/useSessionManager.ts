@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnections } from '../contexts/ConnectionContext';
 import { Connection, ConnectionSession } from '../types/connection';
@@ -6,6 +6,7 @@ import { SettingsManager } from '../utils/settingsManager';
 import { StatusChecker } from '../utils/statusChecker';
 import { ScriptEngine } from '../utils/scriptEngine';
 import { getDefaultPort } from '../utils/defaultPorts';
+import { raceWithTimeout } from '../utils/raceWithTimeout';
 
 export const useSessionManager = () => {
   const { t } = useTranslation();
@@ -16,6 +17,20 @@ export const useSessionManager = () => {
   const scriptEngine = ScriptEngine.getInstance();
 
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const startTimer = (fn: () => void, delay: number) => {
+    const id = setTimeout(fn, delay);
+    timers.current.push(id);
+    return id;
+  };
+
+  useEffect(() => {
+    return () => {
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
+    };
+  }, []);
 
   const connectSession = async (session: ConnectionSession, connection: Connection) => {
     const settings = settingsManager.getSettings();
@@ -34,8 +49,9 @@ export const useSessionManager = () => {
     }
 
     const timeout = (connection.timeout || settings.connectionTimeout) * 1000;
-    const connectionPromise = new Promise<void>((resolve) => {
-      setTimeout(() => {
+    let connectionTimer: ReturnType<typeof setTimeout>;
+    const connectionPromise = new Promise<void>(resolve => {
+      connectionTimer = startTimer(() => {
         const connectionTime = Date.now() - startTime;
 
         settingsManager.recordPerformanceMetric({
@@ -75,15 +91,15 @@ export const useSessionManager = () => {
         resolve();
       }, 2000);
     });
-
-    const timeoutPromise = new Promise<void>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error('Connection timeout'));
-      }, timeout);
-    });
+    const { promise: raced, timer: timeoutTimer } = raceWithTimeout(
+      connectionPromise,
+      timeout,
+      () => clearTimeout(connectionTimer),
+    );
+    timers.current.push(timeoutTimer);
 
     try {
-      await Promise.race([connectionPromise, timeoutPromise]);
+      await raced;
     } catch (error) {
       dispatch({
         type: 'UPDATE_SESSION',
@@ -93,7 +109,7 @@ export const useSessionManager = () => {
       settingsManager.logAction('error', 'Connection failed', connection.id, error instanceof Error ? error.message : 'Unknown error');
 
       if ((session.reconnectAttempts || 0) < (session.maxReconnectAttempts || 0)) {
-        setTimeout(() => {
+        startTimer(() => {
           handleReconnect(session);
         }, connection.retryDelay || settings.retryDelay);
       }
@@ -158,7 +174,7 @@ export const useSessionManager = () => {
     const connection = state.connections.find(c => c.id === session.connectionId);
     if (!connection) return;
 
-    setTimeout(() => {
+    startTimer(() => {
       reconnectSession(session, connection);
     }, 2000);
   };
