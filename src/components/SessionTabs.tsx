@@ -1,21 +1,21 @@
 import React from 'react';
 import { X, Monitor, Terminal, Eye, Globe, Phone, Wifi, WifiOff } from 'lucide-react';
-import { ConnectionSession } from '../types/connection';
+import { ConnectionSession, Protocol } from '../types/connection';
 import { useConnections } from '../contexts/ConnectionContext';
 
-const getProtocolIcon = (protocol: string) => {
+const getProtocolIcon = (protocol: Protocol) => {
   switch (protocol) {
-    case 'rdp':
+    case Protocol.RDP:
       return Monitor;
-    case 'ssh':
+    case Protocol.SSH:
       return Terminal;
-    case 'vnc':
+    case Protocol.VNC:
       return Eye;
-    case 'http':
-    case 'https':
+    case Protocol.HTTP:
+    case Protocol.HTTPS:
       return Globe;
-    case 'telnet':
-    case 'rlogin':
+    case Protocol.TELNET:
+    case Protocol.RLOGIN:
       return Phone;
     default:
       return Monitor;
@@ -76,7 +76,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   return (
     <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center overflow-x-auto">
       {state.sessions.map((session) => {
-        const ProtocolIcon = getProtocolIcon(session.protocol);
+        const ProtocolIcon = getProtocolIcon(session.protocol as Protocol);
         const StatusIcon = getStatusIcon(session.status);
         const isActive = session.id === activeSessionId;
 

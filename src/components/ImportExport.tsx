@@ -12,7 +12,7 @@ import {
   FolderOpen,
   Lock
 } from 'lucide-react';
-import { Connection } from '../types/connection';
+import { Connection, Protocol } from '../types/connection';
 import { useConnections } from '../contexts/ConnectionContext';
 import { CollectionManager } from '../utils/collectionManager';
 import CryptoJS from 'crypto-js';
@@ -302,7 +302,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
       const conn: Connection = {
         id: node.getAttribute('Id') || crypto.randomUUID(),
         name: node.getAttribute('Name') || 'Imported Connection',
-        protocol: (node.getAttribute('Type')?.toLowerCase() || 'rdp') as Connection['protocol'],
+        protocol: (node.getAttribute('Type')?.toLowerCase() || Protocol.RDP) as Protocol,
         hostname: node.getAttribute('Server') || '',
         port: parseInt(node.getAttribute('Port') || '3389'),
         username: node.getAttribute('Username') || undefined,
@@ -339,7 +339,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
       connections.push({
         id: conn.ID || crypto.randomUUID(),
         name: conn.Name || 'Imported Connection',
-        protocol: (conn.Protocol?.toLowerCase() || 'rdp') as Connection['protocol'],
+        protocol: (conn.Protocol?.toLowerCase() || Protocol.RDP) as Protocol,
         hostname: conn.Hostname || '',
         port: parseInt(conn.Port || '3389'),
         username: conn.Username || undefined,

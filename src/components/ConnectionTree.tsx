@@ -15,22 +15,22 @@ import {
   Copy,
   Play
 } from 'lucide-react';
-import { Connection } from '../types/connection';
+import { Connection, Protocol } from '../types/connection';
 import { useConnections } from '../contexts/ConnectionContext';
 
-const getProtocolIcon = (protocol: string) => {
+const getProtocolIcon = (protocol: Protocol) => {
   switch (protocol) {
-    case 'rdp':
+    case Protocol.RDP:
       return Monitor;
-    case 'ssh':
+    case Protocol.SSH:
       return Terminal;
-    case 'vnc':
+    case Protocol.VNC:
       return Eye;
-    case 'http':
-    case 'https':
+    case Protocol.HTTP:
+    case Protocol.HTTPS:
       return Globe;
-    case 'telnet':
-    case 'rlogin':
+    case Protocol.TELNET:
+    case Protocol.RLOGIN:
       return Phone;
     default:
       return Monitor;

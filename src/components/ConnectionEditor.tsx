@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
-import { Connection } from '../types/connection';
+import { Connection, Protocol } from '../types/connection';
 import { useConnections } from '../contexts/ConnectionContext';
 import { TagManager } from './TagManager';
 import { SSHLibraryType } from '../utils/sshLibraries';
@@ -23,7 +23,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   const { state, dispatch } = useConnections();
   const [formData, setFormData] = useState<Partial<Connection & { sshLibrary?: SSHLibraryType }>>({
     name: '',
-    protocol: 'rdp',
+    protocol: Protocol.RDP,
     hostname: '',
     port: 3389,
     username: '',
@@ -79,7 +79,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     } else {
       setFormData({
         name: '',
-        protocol: 'rdp',
+        protocol: Protocol.RDP,
         hostname: '',
         port: 3389,
         username: '',
@@ -120,7 +120,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     const connectionData: Connection = {
       id: connection?.id || crypto.randomUUID(),
       name: formData.name || 'New Connection',
-      protocol: formData.protocol as Connection['protocol'],
+      protocol: formData.protocol as Protocol,
       hostname: formData.hostname || '',
       port: formData.port || getDefaultPort(formData.protocol as string),
       username: formData.username,

@@ -3,13 +3,13 @@ import { describe, it, expect } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import { ConnectionTree } from '../src/components/ConnectionTree';
 import { ConnectionProvider, useConnections } from '../src/contexts/ConnectionContext';
-import { Connection } from '../src/types/connection';
+import { Connection, Protocol } from '../src/types/connection';
 
 const mockConnections: Connection[] = [
   {
     id: 'group1',
     name: 'Group 1',
-    protocol: 'rdp',
+    protocol: Protocol.RDP,
     hostname: '',
     port: 0,
     isGroup: true,
@@ -20,7 +20,7 @@ const mockConnections: Connection[] = [
   {
     id: 'item1',
     name: 'Item 1',
-    protocol: 'rdp',
+    protocol: Protocol.RDP,
     hostname: 'host',
     port: 3389,
     parentId: 'group1',

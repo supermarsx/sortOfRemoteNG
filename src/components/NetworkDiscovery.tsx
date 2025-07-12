@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, Wifi, Monitor, Database, HardDrive, Globe, Play, Plus, Settings, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { DiscoveredHost, DiscoveredService } from '../types/connection';
+import { DiscoveredHost, DiscoveredService, Protocol } from '../types/connection';
 import { NetworkDiscoveryConfig } from '../types/settings';
 import { NetworkScanner } from '../utils/networkScanner';
 import { useConnections } from '../contexts/ConnectionContext';
@@ -18,7 +18,13 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
     enabled: true,
     ipRange: '192.168.1.0/24',
     portRanges: ['22', '80', '443', '3389', '5900'],
-    protocols: ['ssh', 'http', 'https', 'rdp', 'vnc'],
+    protocols: [
+      Protocol.SSH,
+      Protocol.HTTP,
+      Protocol.HTTPS,
+      Protocol.RDP,
+      Protocol.VNC,
+    ],
     timeout: 5000,
     maxConcurrent: 50,
     customPorts: {
@@ -66,7 +72,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
         const connection = {
           id: crypto.randomUUID(),
           name: `${host.hostname || host.ip} (${service.service})`,
-          protocol: service.protocol as any,
+          protocol: service.protocol as Protocol,
           hostname: host.ip,
           port: service.port,
           isGroup: false,
@@ -86,11 +92,11 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
 
   const getServiceIcon = (service: string) => {
     switch (service.toLowerCase()) {
-      case 'ssh': return Monitor;
-      case 'http':
-      case 'https': return Globe;
-      case 'rdp': return Monitor;
-      case 'vnc': return Monitor;
+      case Protocol.SSH: return Monitor;
+      case Protocol.HTTP:
+      case Protocol.HTTPS: return Globe;
+      case Protocol.RDP: return Monitor;
+      case Protocol.VNC: return Monitor;
       case 'mysql': return Database;
       case 'ftp':
       case 'sftp': return HardDrive;
@@ -206,7 +212,16 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
                       Protocols to Detect
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {['ssh', 'http', 'https', 'rdp', 'vnc', 'mysql', 'ftp', 'telnet'].map(protocol => (
+                      {[
+                        Protocol.SSH,
+                        Protocol.HTTP,
+                        Protocol.HTTPS,
+                        Protocol.RDP,
+                        Protocol.VNC,
+                        'mysql',
+                        'ftp',
+                        Protocol.TELNET,
+                      ].map(protocol => (
                         <label key={protocol} className="flex items-center space-x-2">
                           <input
                             type="checkbox"

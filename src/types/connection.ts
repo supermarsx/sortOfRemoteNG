@@ -1,8 +1,25 @@
 import { ProxyConfig } from "./settings";
+
+export enum Protocol {
+  RDP = 'rdp',
+  SSH = 'ssh',
+  VNC = 'vnc',
+  HTTP = 'http',
+  HTTPS = 'https',
+  TELNET = 'telnet',
+  RLOGIN = 'rlogin',
+  MYSQL = 'mysql',
+  FTP = 'ftp',
+  SFTP = 'sftp',
+  SCP = 'scp',
+  WINRM = 'winrm',
+  RUSTDESK = 'rustdesk',
+  SMB = 'smb',
+}
 export interface Connection {
   id: string;
   name: string;
-  protocol: 'rdp' | 'ssh' | 'vnc' | 'http' | 'https' | 'telnet' | 'rlogin' | 'mysql' | 'ftp' | 'sftp' | 'scp' | 'winrm' | 'rustdesk' | 'smb';
+  protocol: Protocol;
   hostname: string;
   port: number;
   username?: string;

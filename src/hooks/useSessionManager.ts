@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnections } from '../contexts/ConnectionContext';
-import { Connection, ConnectionSession } from '../types/connection';
+import { Connection, ConnectionSession, Protocol } from '../types/connection';
 import { SettingsManager } from '../utils/settingsManager';
 import { StatusChecker } from '../utils/statusChecker';
 import { ScriptEngine } from '../utils/scriptEngine';
@@ -183,7 +183,7 @@ export const useSessionManager = () => {
     const tempConnection: Connection = {
       id: crypto.randomUUID(),
       name: `${t('connections.quickConnect')} - ${hostname}`,
-      protocol: protocol as Connection['protocol'],
+      protocol: protocol as Protocol,
       hostname,
       port: getDefaultPort(protocol),
       isGroup: false,

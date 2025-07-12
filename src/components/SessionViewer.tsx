@@ -1,6 +1,6 @@
 import React from 'react';
 import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield } from 'lucide-react';
-import { ConnectionSession } from '../types/connection';
+import { ConnectionSession, Protocol } from '../types/connection';
 import { WebTerminal } from './WebTerminal';
 import { WebBrowser } from './WebBrowser';
 import { RDPClient } from './RDPClient';
@@ -25,20 +25,20 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session }) => {
 
       case 'connected':
         // Route to appropriate viewer based on protocol
-        switch (session.protocol) {
-          case 'ssh':
-          case 'telnet':
-          case 'rlogin':
+        switch (session.protocol as Protocol) {
+          case Protocol.SSH:
+          case Protocol.TELNET:
+          case Protocol.RLOGIN:
             return <WebTerminal session={session} />;
-          
-          case 'http':
-          case 'https':
+
+          case Protocol.HTTP:
+          case Protocol.HTTPS:
             return <WebBrowser session={session} />;
-          
-          case 'rdp':
+
+          case Protocol.RDP:
             return <RDPClient session={session} />;
-          
-          case 'vnc':
+
+          case Protocol.VNC:
             return (
               <div className="flex flex-col items-center justify-center h-full text-blue-400">
                 <Monitor size={48} className="mb-4" />

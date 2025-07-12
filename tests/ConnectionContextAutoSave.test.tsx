@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ConnectionProvider, useConnections } from '../src/contexts/ConnectionContext';
 import { CollectionManager } from '../src/utils/collectionManager';
-import { Connection } from '../src/types/connection';
+import { Connection, Protocol } from '../src/types/connection';
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <ConnectionProvider>{children}</ConnectionProvider>;
@@ -28,7 +28,7 @@ describe('ConnectionProvider auto-save', () => {
     const conn: Connection = {
       id: 'c1',
       name: 'c1',
-      protocol: 'ssh',
+      protocol: Protocol.SSH,
       hostname: 'host',
       port: 22,
       isGroup: false,

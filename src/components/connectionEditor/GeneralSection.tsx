@@ -1,5 +1,5 @@
 import React from 'react';
-import { Connection } from '../../types/connection';
+import { Connection, Protocol } from '../../types/connection';
 import { SSHLibraryType } from '../../utils/sshLibraries';
 import { getDefaultPort } from '../../utils/defaultPorts';
 
@@ -10,10 +10,10 @@ interface GeneralSectionProps {
 }
 
 export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFormData, availableGroups }) => {
-  const handleProtocolChange = (protocol: string) => {
+  const handleProtocolChange = (protocol: Protocol) => {
     setFormData(prev => ({
       ...prev,
-      protocol: protocol as Connection['protocol'],
+      protocol,
       port: getDefaultPort(protocol),
       authType: ['http', 'https'].includes(protocol) ? 'basic' : 'password',
     }));
