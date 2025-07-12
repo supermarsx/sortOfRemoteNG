@@ -110,6 +110,10 @@ export class SettingsManager {
     return SettingsManager.instance;
   }
 
+  static resetInstance(): void {
+    (SettingsManager as any).instance = undefined;
+  }
+
   async loadSettings(): Promise<GlobalSettings> {
     try {
       const stored = LocalStorageService.getItem<GlobalSettings>('mremote-settings');

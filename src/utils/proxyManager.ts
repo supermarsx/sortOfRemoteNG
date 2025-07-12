@@ -12,6 +12,10 @@ export class ProxyManager {
     return ProxyManager.instance;
   }
 
+  static resetInstance(): void {
+    (ProxyManager as any).instance = undefined;
+  }
+
   async createProxiedConnection(
     targetHost: string,
     targetPort: number,

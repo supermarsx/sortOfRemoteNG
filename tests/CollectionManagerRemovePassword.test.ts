@@ -10,7 +10,7 @@ describe('CollectionManager remove password', () => {
 
   beforeEach(async () => {
     localStorage.clear();
-    (CollectionManager as any).instance = undefined;
+    CollectionManager.resetInstance();
     manager = CollectionManager.getInstance();
     const col = await manager.createCollection('Secure', 'desc', true, 'secret');
     collectionId = col.id;

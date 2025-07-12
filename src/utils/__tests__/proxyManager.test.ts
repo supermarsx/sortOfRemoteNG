@@ -26,7 +26,7 @@ describe('ProxyManager.createProxiedConnection', () => {
   beforeEach(() => {
     (global as any).WebSocket = MockWebSocket;
     MockWebSocket.instances = [];
-    (ProxyManager as any).instance = undefined;
+    ProxyManager.resetInstance();
     (SettingsManager as any).instance = {
       getSettings: () => ({ globalProxy: { enabled: false } }),
       logAction: vi.fn()

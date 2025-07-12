@@ -11,8 +11,8 @@ beforeEach(() => {
   (global as any).window = dom.window;
   (global as any).document = dom.window.document;
   localStorage.clear();
-  (SettingsManager as any).instance = undefined;
-  (ScriptEngine as any).instance = undefined;
+  SettingsManager.resetInstance();
+  ScriptEngine.resetInstance();
 });
 
 describe('ScriptEngine.setSetting', () => {
@@ -34,7 +34,7 @@ describe('ScriptEngine.setSetting', () => {
 
     await engine.executeScript(script, { trigger: 'manual' });
 
-    (SettingsManager as any).instance = undefined;
+    SettingsManager.resetInstance();
     const again = SettingsManager.getInstance();
     const loaded = await again.loadSettings();
     expect(loaded.colorScheme).toBe('purple');
