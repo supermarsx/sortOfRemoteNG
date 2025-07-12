@@ -36,10 +36,12 @@ describe('FileTransferService activeTransfers', () => {
     // jsdom does not implement URL.createObjectURL so mock it
     const originalCreate = URL.createObjectURL;
     const originalRevoke = URL.revokeObjectURL;
+    const originalClick = HTMLAnchorElement.prototype.click;
     // @ts-ignore
     URL.createObjectURL = vi.fn(() => 'blob:mock');
     // @ts-ignore
     URL.revokeObjectURL = vi.fn();
+    HTMLAnchorElement.prototype.click = vi.fn();
 
     const promise = service.downloadFile('c2', '/remote/file.bin', 'file.bin');
 
@@ -59,5 +61,6 @@ describe('FileTransferService activeTransfers', () => {
     // restore URL functions
     URL.createObjectURL = originalCreate;
     URL.revokeObjectURL = originalRevoke;
-  });
+    HTMLAnchorElement.prototype.click = originalClick;
+  }, 10000);
 });

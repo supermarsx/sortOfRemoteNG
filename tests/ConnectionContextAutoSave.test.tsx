@@ -44,7 +44,9 @@ describe('ConnectionProvider auto-save', () => {
 
     await Promise.resolve();
 
-    let stored = LocalStorageService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
+    let stored = await LocalStorageService.getItem<StorageData>(
+      `mremote-collection-${collectionId}`
+    );
     expect(stored.connections).toHaveLength(1);
 
     await act(async () => {
@@ -53,7 +55,9 @@ describe('ConnectionProvider auto-save', () => {
 
     await Promise.resolve();
 
-    stored = LocalStorageService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
+    stored = await LocalStorageService.getItem<StorageData>(
+      `mremote-collection-${collectionId}`
+    );
     expect(stored.connections).toEqual([]);
   });
 });

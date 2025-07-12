@@ -18,9 +18,9 @@ describe('SecureStorage encryption', () => {
 
     await SecureStorage.saveData(data, true);
 
-    const stored = LocalStorageService.getItem<string>('mremote-connections');
+    const stored = await LocalStorageService.getItem<string>('mremote-connections');
     expect(typeof stored).toBe('string');
-    const meta = LocalStorageService.getItem<{ isEncrypted: boolean }>('mremote-storage-meta');
+    const meta = await LocalStorageService.getItem<{ isEncrypted: boolean }>('mremote-storage-meta');
     expect(meta.isEncrypted).toBe(true);
   });
 });

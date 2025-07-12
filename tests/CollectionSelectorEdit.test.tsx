@@ -21,7 +21,7 @@ describe('CollectionSelector editing', () => {
     await manager.createCollection('First', 'desc');
   });
 
-  it('persists edited name and description', () => {
+  it('persists edited name and description', async () => {
     render(
       <CollectionSelector isOpen onCollectionSelect={() => {}} onClose={() => {}} />
     );
@@ -34,7 +34,7 @@ describe('CollectionSelector editing', () => {
 
     fireEvent.click(screen.getByText('Update'));
 
-    const stored = LocalStorageService.getItem<ConnectionCollection[]>('mremote-collections')!;
+    const stored = await LocalStorageService.getItem<ConnectionCollection[]>('mremote-collections');
     expect(stored[0].name).toBe('Renamed');
     expect(stored[0].description).toBe('updated');
   });
