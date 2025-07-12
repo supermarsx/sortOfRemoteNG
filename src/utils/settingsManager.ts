@@ -327,11 +327,7 @@ export class SettingsManager {
         break;
       }
 
-      if (duration < targetTimeSeconds) {
-        iterations = Math.floor(iterations * (targetTimeSeconds / duration));
-      } else {
-        iterations = Math.floor(iterations * (targetTimeSeconds / duration));
-      }
+      iterations = Math.floor(iterations * (targetTimeSeconds / duration));
 
       // Prevent infinite loop
       if (Math.abs(duration - lastTime) < 0.01) {
