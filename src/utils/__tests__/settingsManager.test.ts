@@ -41,3 +41,16 @@ describe('SettingsManager colorScheme', () => {
     expect(loaded.colorScheme).toBe('grey');
   });
 });
+
+describe('SettingsManager.benchmarkKeyDerivation', () => {
+  it('returns a positive iteration count and logs completion', async () => {
+    const manager = SettingsManager.getInstance();
+    await manager.loadSettings();
+
+    const iterations = await manager.benchmarkKeyDerivation(0.01);
+
+    expect(iterations).toBeGreaterThan(0);
+    const [last] = manager.getActionLog();
+    expect(last.action).toBe('Key derivation benchmark completed');
+  });
+});
