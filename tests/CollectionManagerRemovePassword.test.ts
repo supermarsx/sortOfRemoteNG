@@ -18,14 +18,20 @@ describe('CollectionManager remove password', () => {
 
   it('removes encryption with correct password', async () => {
     await manager.selectCollection(collectionId, 'secret');
-    const storedBefore = LocalStorageService.getItem<string>(`mremote-collection-${collectionId}`);
+    const storedBefore = await LocalStorageService.getItem<string>(
+      `mremote-collection-${collectionId}`
+    );
     expect(typeof storedBefore).toBe('string');
 
     await manager.removePasswordFromCollection(collectionId, 'secret');
-    const storedAfter = LocalStorageService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
+    const storedAfter = await LocalStorageService.getItem<StorageData>(
+      `mremote-collection-${collectionId}`
+    );
     expect(storedAfter.connections).toBeTruthy();
 
-    const meta = LocalStorageService.getItem<ConnectionCollection[]>('mremote-collections')![0];
+    const meta = (await LocalStorageService.getItem<ConnectionCollection[]>(
+      'mremote-collections'
+    ))![0];
     expect(meta.isEncrypted).toBe(false);
   });
 

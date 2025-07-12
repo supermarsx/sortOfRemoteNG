@@ -6,16 +6,16 @@ beforeEach(() => {
 });
 
 describe('LocalStorageService', () => {
-  it('stores and retrieves objects', () => {
+  it('stores and retrieves objects', async () => {
     const value = { a: 1, b: 'two' };
-    LocalStorageService.setItem('obj', value);
-    const result = LocalStorageService.getItem<typeof value>('obj');
+    await LocalStorageService.setItem('obj', value);
+    const result = await LocalStorageService.getItem<typeof value>('obj');
     expect(result).toEqual(value);
   });
 
-  it('returns null for invalid JSON', () => {
+  it('returns null for invalid JSON', async () => {
     localStorage.setItem('bad', 'notjson');
-    const result = LocalStorageService.getItem('bad');
+    const result = await LocalStorageService.getItem('bad');
     expect(result).toBeNull();
   });
 });
