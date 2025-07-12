@@ -12,14 +12,14 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { GlobalSettings, ProxyConfig } from '../types/settings';
-import GeneralSettings from './settings/GeneralSettings';
-import SecuritySettings from './settings/SecuritySettings';
-import PerformanceSettings from './settings/PerformanceSettings';
-import ProxySettings from './settings/ProxySettings';
-import AdvancedSettings from './settings/AdvancedSettings';
-import { SettingsManager } from '../utils/settingsManager';
-import { ThemeManager } from '../utils/themeManager';
+import { GlobalSettings, ProxyConfig } from '../../types/settings';
+import GeneralSettings from './sections/GeneralSettings';
+import SecuritySettings from './sections/SecuritySettings';
+import PerformanceSettings from './sections/PerformanceSettings';
+import ProxySettings from './sections/ProxySettings';
+import AdvancedSettings from './sections/AdvancedSettings';
+import { SettingsManager } from '../../utils/settingsManager';
+import { ThemeManager } from '../../utils/themeManager';
 
 interface SettingsDialogProps {
   isOpen: boolean;

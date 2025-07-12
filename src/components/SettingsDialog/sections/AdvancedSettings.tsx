@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { GlobalSettings } from '../../types/settings';
+import { GlobalSettings } from '../../../types/settings';
 
 interface AdvancedSettingsProps {
   settings: GlobalSettings;

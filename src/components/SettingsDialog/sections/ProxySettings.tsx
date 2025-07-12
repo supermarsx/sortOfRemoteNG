@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { GlobalSettings, ProxyConfig } from '../../types/settings';
+import { GlobalSettings, ProxyConfig } from '../../../types/settings';
 
 interface ProxySettingsProps {
   settings: GlobalSettings;
