@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SecureStorage, StorageData } from '../src/utils/storage';
+import { LocalStorageService } from '../src/utils/localStorageService';
 
 
 describe('SecureStorage encryption', () => {
@@ -17,9 +18,9 @@ describe('SecureStorage encryption', () => {
 
     await SecureStorage.saveData(data, true);
 
-    const stored = localStorage.getItem('mremote-connections')!;
-    expect(() => JSON.parse(stored)).toThrow();
-    const meta = JSON.parse(localStorage.getItem('mremote-storage-meta')!);
+    const stored = LocalStorageService.getItem<string>('mremote-connections');
+    expect(typeof stored).toBe('string');
+    const meta = LocalStorageService.getItem<{ isEncrypted: boolean }>('mremote-storage-meta');
     expect(meta.isEncrypted).toBe(true);
   });
 });

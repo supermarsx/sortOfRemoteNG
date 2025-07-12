@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, screen } from '@testing-library/react';
 import { CollectionSelector } from '../src/components/CollectionSelector';
 import { CollectionManager } from '../src/utils/collectionManager';
+import { LocalStorageService } from '../src/utils/localStorageService';
+import { ConnectionCollection } from '../src/types/connection';
 
 // simple i18n mock for components using react-i18next
 vi.mock('react-i18next', () => ({
@@ -11,14 +13,12 @@ vi.mock('react-i18next', () => ({
 
 describe('CollectionSelector editing', () => {
   let manager: CollectionManager;
-  let collectionId: string;
 
   beforeEach(async () => {
     localStorage.clear();
     (CollectionManager as any).instance = undefined;
     manager = CollectionManager.getInstance();
-    const col = await manager.createCollection('First', 'desc');
-    collectionId = col.id;
+    await manager.createCollection('First', 'desc');
   });
 
   it('persists edited name and description', () => {
@@ -34,7 +34,7 @@ describe('CollectionSelector editing', () => {
 
     fireEvent.click(screen.getByText('Update'));
 
-    const stored = JSON.parse(localStorage.getItem('mremote-collections')!);
+    const stored = LocalStorageService.getItem<ConnectionCollection[]>('mremote-collections')!;
     expect(stored[0].name).toBe('Renamed');
     expect(stored[0].description).toBe('updated');
   });
