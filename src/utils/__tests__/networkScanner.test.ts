@@ -29,4 +29,16 @@ describe('NetworkScanner helper methods', () => {
     expect(() => scanner.generateIPRange('192.168.0.0/23')).toThrow();
     expect(() => scanner.generateIPRange('192.168.0.0/31')).toThrow();
   });
+
+  it('identifyService returns mapped values', () => {
+    const result = scanner.identifyService(22);
+    expect(result.service).toBe('ssh');
+    expect(result.protocol).toBe('ssh');
+  });
+
+  it('identifyService handles unknown ports', () => {
+    const result = scanner.identifyService(9999);
+    expect(result.service).toBe('unknown');
+    expect(result.protocol).toBe('unknown');
+  });
 });
