@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { GlobalSettings, StatusCheckMethod } from '../../types/settings';
+import { GlobalSettings, StatusCheckMethod } from '../../../types/settings';
 
 interface PerformanceSettingsProps {
   settings: GlobalSettings;
