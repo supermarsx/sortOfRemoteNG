@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SecureStorage, StorageData } from '../src/utils/storage';
-import { LocalStorageService } from '../src/utils/localStorageService';
+import 'fake-indexeddb/auto';
+import { IndexedDbService } from '../src/utils/indexedDbService';
 
 
 describe('SecureStorage encryption', () => {
@@ -18,9 +19,9 @@ describe('SecureStorage encryption', () => {
 
     await SecureStorage.saveData(data, true);
 
-    const stored = LocalStorageService.getItem<string>('mremote-connections');
+    const stored = await IndexedDbService.getItem<string>('mremote-connections');
     expect(typeof stored).toBe('string');
-    const meta = LocalStorageService.getItem<{ isEncrypted: boolean }>('mremote-storage-meta');
+    const meta = await IndexedDbService.getItem<{ isEncrypted: boolean }>('mremote-storage-meta');
     expect(meta.isEncrypted).toBe(true);
   });
 });

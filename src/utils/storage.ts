@@ -5,6 +5,7 @@ const STORAGE_META_KEY = 'mremote-storage-meta';
 const OLD_STORAGE_META_KEY = 'mremote-settings';
 
 import { Connection } from '../types/connection';
+import { IndexedDbService } from './indexedDbService';
 import { LocalStorageService } from './localStorageService';
 
 export interface StorageData {
@@ -18,10 +19,11 @@ export class SecureStorage {
   private static isUnlocked: boolean = false;
 
   // Migrate old metadata key to the new one if needed
-  private static migrateMetaKey(): void {
+  private static async migrateMetaKey(): Promise<void> {
     const oldData = LocalStorageService.getItem<any>(OLD_STORAGE_META_KEY);
-    if (oldData && !LocalStorageService.getItem(STORAGE_META_KEY)) {
-      LocalStorageService.setItem(STORAGE_META_KEY, oldData);
+    const existing = await IndexedDbService.getItem(STORAGE_META_KEY);
+    if (oldData && !existing) {
+      await IndexedDbService.setItem(STORAGE_META_KEY, oldData);
       LocalStorageService.removeItem(OLD_STORAGE_META_KEY);
     }
   }
@@ -44,13 +46,13 @@ export class SecureStorage {
     return this.isUnlocked;
   }
 
-  static hasStoredData(): boolean {
-    return LocalStorageService.getItem(STORAGE_KEY) !== null;
+  static async hasStoredData(): Promise<boolean> {
+    return (await IndexedDbService.getItem(STORAGE_KEY)) !== null;
   }
 
-  static isStorageEncrypted(): boolean {
-    this.migrateMetaKey();
-    const settings = LocalStorageService.getItem<any>(STORAGE_META_KEY);
+  static async isStorageEncrypted(): Promise<boolean> {
+    await this.migrateMetaKey();
+    const settings = await IndexedDbService.getItem<any>(STORAGE_META_KEY);
     if (settings) {
       try {
         return settings.isEncrypted === true;
@@ -67,17 +69,17 @@ export class SecureStorage {
 
       if (usePassword && this.password) {
         const encrypted = CryptoJS.AES.encrypt(serialized, this.password).toString();
-        this.migrateMetaKey();
-        LocalStorageService.setItem(STORAGE_KEY, encrypted);
-        LocalStorageService.setItem(STORAGE_META_KEY, {
+        await this.migrateMetaKey();
+        await IndexedDbService.setItem(STORAGE_KEY, encrypted);
+        await IndexedDbService.setItem(STORAGE_META_KEY, {
           isEncrypted: true,
           hasPassword: true,
           timestamp: Date.now()
         });
       } else {
-        this.migrateMetaKey();
-        LocalStorageService.setItem(STORAGE_KEY, data);
-        LocalStorageService.setItem(STORAGE_META_KEY, {
+        await this.migrateMetaKey();
+        await IndexedDbService.setItem(STORAGE_KEY, data);
+        await IndexedDbService.setItem(STORAGE_META_KEY, {
           isEncrypted: false,
           hasPassword: false,
           timestamp: Date.now()
@@ -90,9 +92,9 @@ export class SecureStorage {
 
   static async loadData(): Promise<StorageData | null> {
     try {
-      this.migrateMetaKey();
-      const storedData = LocalStorageService.getItem<any>(STORAGE_KEY);
-      const settings = LocalStorageService.getItem<any>(STORAGE_META_KEY);
+      await this.migrateMetaKey();
+      const storedData = await IndexedDbService.getItem<any>(STORAGE_KEY);
+      const settings = await IndexedDbService.getItem<any>(STORAGE_META_KEY);
       
       if (!storedData) return null;
 
@@ -113,10 +115,10 @@ export class SecureStorage {
     }
   }
 
-  static clearStorage(): void {
-    this.migrateMetaKey();
-    LocalStorageService.removeItem(STORAGE_KEY);
-    LocalStorageService.removeItem(STORAGE_META_KEY);
+  static async clearStorage(): Promise<void> {
+    await this.migrateMetaKey();
+    await IndexedDbService.removeItem(STORAGE_KEY);
+    await IndexedDbService.removeItem(STORAGE_META_KEY);
     this.clearPassword();
   }
 }

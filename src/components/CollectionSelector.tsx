@@ -41,8 +41,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     }
   }, [isOpen]);
 
-  const loadCollections = () => {
-    const allCollections = collectionManager.getAllCollections();
+  const loadCollections = async () => {
+    const allCollections = await collectionManager.getAllCollections();
     setCollections(allCollections);
   };
 
@@ -150,7 +150,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     setError('');
   };
 
-  const handleUpdateCollection = () => {
+  const handleUpdateCollection = async () => {
     if (!editingCollection) return;
     if (!editingCollection.name.trim()) {
       setError('Collection name is required');
@@ -158,7 +158,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     }
 
     try {
-      collectionManager.updateCollection(editingCollection);
+      await collectionManager.updateCollection(editingCollection);
       setCollections(collections.map(c => c.id === editingCollection.id ? editingCollection : c));
       setEditingCollection(null);
       setError('');

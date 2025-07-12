@@ -3,7 +3,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ConnectionProvider, useConnections } from '../src/contexts/ConnectionContext';
 import { CollectionManager } from '../src/utils/collectionManager';
-import { LocalStorageService } from '../src/utils/localStorageService';
+import 'fake-indexeddb/auto';
+import { IndexedDbService } from '../src/utils/indexedDbService';
 import { Connection } from '../src/types/connection';
 import { StorageData } from '../src/utils/storage';
 
@@ -44,7 +45,7 @@ describe('ConnectionProvider auto-save', () => {
 
     await Promise.resolve();
 
-    let stored = LocalStorageService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
+    let stored = await IndexedDbService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
     expect(stored.connections).toHaveLength(1);
 
     await act(async () => {
@@ -53,7 +54,7 @@ describe('ConnectionProvider auto-save', () => {
 
     await Promise.resolve();
 
-    stored = LocalStorageService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
+    stored = await IndexedDbService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
     expect(stored.connections).toEqual([]);
   });
 });
