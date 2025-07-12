@@ -3,7 +3,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ConnectionProvider, useConnections } from '../src/contexts/ConnectionContext';
 import { CollectionManager } from '../src/utils/collectionManager';
+import { LocalStorageService } from '../src/utils/localStorageService';
 import { Connection } from '../src/types/connection';
+import { StorageData } from '../src/utils/storage';
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <ConnectionProvider>{children}</ConnectionProvider>;
@@ -42,7 +44,7 @@ describe('ConnectionProvider auto-save', () => {
 
     await Promise.resolve();
 
-    let stored = JSON.parse(localStorage.getItem(`mremote-collection-${collectionId}`)!);
+    let stored = LocalStorageService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
     expect(stored.connections).toHaveLength(1);
 
     await act(async () => {
@@ -51,7 +53,7 @@ describe('ConnectionProvider auto-save', () => {
 
     await Promise.resolve();
 
-    stored = JSON.parse(localStorage.getItem(`mremote-collection-${collectionId}`)!);
+    stored = LocalStorageService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
     expect(stored.connections).toEqual([]);
   });
 });

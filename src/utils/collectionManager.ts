@@ -1,6 +1,7 @@
 import CryptoJS from 'crypto-js';
 import { ConnectionCollection } from '../types/connection';
 import { StorageData } from './storage';
+import { LocalStorageService } from './localStorageService';
 
 export class CollectionManager {
   private static instance: CollectionManager;
@@ -47,9 +48,10 @@ export class CollectionManager {
 
   getAllCollections(): ConnectionCollection[] {
     try {
-      const stored = localStorage.getItem(this.collectionsKey);
-      if (stored) {
-        const collections = JSON.parse(stored);
+      const collections = LocalStorageService.getItem<ConnectionCollection[]>(
+        this.collectionsKey
+      );
+      if (collections) {
         return collections.map((c: any) => ({
           ...c,
           createdAt: new Date(c.createdAt),
@@ -115,7 +117,7 @@ export class CollectionManager {
     this.saveCollections(filteredCollections);
 
     // Remove collection data
-    localStorage.removeItem(`mremote-collection-${id}`);
+    LocalStorageService.removeItem(`mremote-collection-${id}`);
 
     if (this.currentCollection?.id === id) {
       this.currentCollection = null;
@@ -124,25 +126,24 @@ export class CollectionManager {
   }
 
   private saveCollections(collections: ConnectionCollection[]): void {
-    localStorage.setItem(this.collectionsKey, JSON.stringify(collections));
+    LocalStorageService.setItem(this.collectionsKey, collections);
   }
 
   // Collection data management
   async saveCollectionData(collectionId: string, data: StorageData, password?: string): Promise<void> {
     const key = `mremote-collection-${collectionId}`;
-    const dataToStore = JSON.stringify(data);
 
     if (password) {
-      const encrypted = CryptoJS.AES.encrypt(dataToStore, password).toString();
-      localStorage.setItem(key, encrypted);
+      const encrypted = CryptoJS.AES.encrypt(JSON.stringify(data), password).toString();
+      LocalStorageService.setItem(key, encrypted);
     } else {
-      localStorage.setItem(key, dataToStore);
+      LocalStorageService.setItem(key, data);
     }
   }
 
   async loadCollectionData(collectionId: string, password?: string): Promise<StorageData | null> {
     const key = `mremote-collection-${collectionId}`;
-    const stored = localStorage.getItem(key);
+    const stored = LocalStorageService.getItem<any>(key);
 
     if (!stored) return null;
 
@@ -154,7 +155,7 @@ export class CollectionManager {
         }
         return JSON.parse(decrypted);
       } else {
-        return JSON.parse(stored);
+        return stored as StorageData;
       }
     } catch (error) {
       throw new Error('Failed to load collection data or invalid password');

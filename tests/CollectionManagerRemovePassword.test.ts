@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CollectionManager } from '../src/utils/collectionManager';
+import { LocalStorageService } from '../src/utils/localStorageService';
+import { StorageData } from '../src/utils/storage';
+import { ConnectionCollection } from '../src/types/connection';
 
 describe('CollectionManager remove password', () => {
   let manager: CollectionManager;
@@ -15,14 +18,14 @@ describe('CollectionManager remove password', () => {
 
   it('removes encryption with correct password', async () => {
     await manager.selectCollection(collectionId, 'secret');
-    const storedBefore = localStorage.getItem(`mremote-collection-${collectionId}`)!;
-    expect(() => JSON.parse(storedBefore)).toThrow();
+    const storedBefore = LocalStorageService.getItem<string>(`mremote-collection-${collectionId}`);
+    expect(typeof storedBefore).toBe('string');
 
     await manager.removePasswordFromCollection(collectionId, 'secret');
-    const storedAfter = localStorage.getItem(`mremote-collection-${collectionId}`)!;
-    expect(JSON.parse(storedAfter)).toBeTruthy();
+    const storedAfter = LocalStorageService.getItem<StorageData>(`mremote-collection-${collectionId}`)!;
+    expect(storedAfter.connections).toBeTruthy();
 
-    const meta = JSON.parse(localStorage.getItem('mremote-collections')!)[0];
+    const meta = LocalStorageService.getItem<ConnectionCollection[]>('mremote-collections')![0];
     expect(meta.isEncrypted).toBe(false);
   });
 

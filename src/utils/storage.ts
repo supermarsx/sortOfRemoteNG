@@ -5,6 +5,7 @@ const STORAGE_META_KEY = 'mremote-storage-meta';
 const OLD_STORAGE_META_KEY = 'mremote-settings';
 
 import { Connection } from '../types/connection';
+import { LocalStorageService } from './localStorageService';
 
 export interface StorageData {
   connections: Connection[];
@@ -18,10 +19,10 @@ export class SecureStorage {
 
   // Migrate old metadata key to the new one if needed
   private static migrateMetaKey(): void {
-    const oldData = localStorage.getItem(OLD_STORAGE_META_KEY);
-    if (oldData && !localStorage.getItem(STORAGE_META_KEY)) {
-      localStorage.setItem(STORAGE_META_KEY, oldData);
-      localStorage.removeItem(OLD_STORAGE_META_KEY);
+    const oldData = LocalStorageService.getItem<any>(OLD_STORAGE_META_KEY);
+    if (oldData && !LocalStorageService.getItem(STORAGE_META_KEY)) {
+      LocalStorageService.setItem(STORAGE_META_KEY, oldData);
+      LocalStorageService.removeItem(OLD_STORAGE_META_KEY);
     }
   }
 
@@ -44,16 +45,15 @@ export class SecureStorage {
   }
 
   static hasStoredData(): boolean {
-    return localStorage.getItem(STORAGE_KEY) !== null;
+    return LocalStorageService.getItem(STORAGE_KEY) !== null;
   }
 
   static isStorageEncrypted(): boolean {
     this.migrateMetaKey();
-    const settings = localStorage.getItem(STORAGE_META_KEY);
+    const settings = LocalStorageService.getItem<any>(STORAGE_META_KEY);
     if (settings) {
       try {
-        const parsed = JSON.parse(settings);
-        return parsed.isEncrypted === true;
+        return settings.isEncrypted === true;
       } catch {
         return false;
       }
@@ -63,25 +63,25 @@ export class SecureStorage {
 
   static async saveData(data: StorageData, usePassword: boolean = false): Promise<void> {
     try {
-      const dataToStore = JSON.stringify(data);
-      
+      const serialized = JSON.stringify(data);
+
       if (usePassword && this.password) {
-        const encrypted = CryptoJS.AES.encrypt(dataToStore, this.password).toString();
+        const encrypted = CryptoJS.AES.encrypt(serialized, this.password).toString();
         this.migrateMetaKey();
-        localStorage.setItem(STORAGE_KEY, encrypted);
-        localStorage.setItem(STORAGE_META_KEY, JSON.stringify({
-          isEncrypted: true, 
+        LocalStorageService.setItem(STORAGE_KEY, encrypted);
+        LocalStorageService.setItem(STORAGE_META_KEY, {
+          isEncrypted: true,
           hasPassword: true,
           timestamp: Date.now()
-        }));
+        });
       } else {
         this.migrateMetaKey();
-        localStorage.setItem(STORAGE_KEY, dataToStore);
-        localStorage.setItem(STORAGE_META_KEY, JSON.stringify({
-          isEncrypted: false, 
+        LocalStorageService.setItem(STORAGE_KEY, data);
+        LocalStorageService.setItem(STORAGE_META_KEY, {
+          isEncrypted: false,
           hasPassword: false,
           timestamp: Date.now()
-        }));
+        });
       }
     } catch {
       throw new Error('Failed to save data');
@@ -91,15 +91,15 @@ export class SecureStorage {
   static async loadData(): Promise<StorageData | null> {
     try {
       this.migrateMetaKey();
-      const storedData = localStorage.getItem(STORAGE_KEY);
-      const settings = localStorage.getItem(STORAGE_META_KEY);
+      const storedData = LocalStorageService.getItem<any>(STORAGE_KEY);
+      const settings = LocalStorageService.getItem<any>(STORAGE_META_KEY);
       
       if (!storedData) return null;
 
       if (settings) {
-        const parsedSettings = JSON.parse(settings);
+        const parsedSettings = settings;
         if (parsedSettings.isEncrypted && this.password) {
-          const decrypted = CryptoJS.AES.decrypt(storedData, this.password).toString(CryptoJS.enc.Utf8);
+          const decrypted = CryptoJS.AES.decrypt(storedData as string, this.password).toString(CryptoJS.enc.Utf8);
           if (!decrypted) {
             throw new Error('Invalid password');
           }
@@ -107,7 +107,7 @@ export class SecureStorage {
         }
       }
 
-      return JSON.parse(storedData);
+      return storedData as StorageData;
     } catch {
       throw new Error('Failed to load data or invalid password');
     }
@@ -115,8 +115,8 @@ export class SecureStorage {
 
   static clearStorage(): void {
     this.migrateMetaKey();
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(STORAGE_META_KEY);
+    LocalStorageService.removeItem(STORAGE_KEY);
+    LocalStorageService.removeItem(STORAGE_META_KEY);
     this.clearPassword();
   }
 }
