@@ -1,12 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CollectionManager } from '../src/utils/collectionManager';
+import 'fake-indexeddb/auto';
+import { openDB } from 'idb';
+import { IndexedDbService } from '../src/utils/indexedDbService';
 
 describe('CollectionManager remove password', () => {
   let manager: CollectionManager;
   let collectionId: string;
 
   beforeEach(async () => {
-    localStorage.clear();
+    await IndexedDbService.init();
+    const db = await openDB('mremote-keyval', 1);
+    await db.clear('keyval');
     (CollectionManager as any).instance = undefined;
     manager = CollectionManager.getInstance();
     const col = await manager.createCollection('Secure', 'desc', true, 'secret');
@@ -15,14 +20,14 @@ describe('CollectionManager remove password', () => {
 
   it('removes encryption with correct password', async () => {
     await manager.selectCollection(collectionId, 'secret');
-    const storedBefore = localStorage.getItem(`mremote-collection-${collectionId}`)!;
-    expect(() => JSON.parse(storedBefore)).toThrow();
+    const storedBefore = await IndexedDbService.getItem<string>(`mremote-collection-${collectionId}`);
+    expect(() => JSON.parse(storedBefore!)).toThrow();
 
     await manager.removePasswordFromCollection(collectionId, 'secret');
-    const storedAfter = localStorage.getItem(`mremote-collection-${collectionId}`)!;
-    expect(JSON.parse(storedAfter)).toBeTruthy();
+    const storedAfter = await IndexedDbService.getItem<string>(`mremote-collection-${collectionId}`);
+    expect(JSON.parse(storedAfter!)).toBeTruthy();
 
-    const meta = JSON.parse(localStorage.getItem('mremote-collections')!)[0];
+    const meta = (await IndexedDbService.getItem<any[]>('mremote-collections'))![0];
     expect(meta.isEncrypted).toBe(false);
   });
 

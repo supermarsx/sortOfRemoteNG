@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, FolderPlus, Settings, Download, Upload, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, FileText, Expand as ExpandAll, ListCollapse as CollapseAll, BarChart3, ScrollText, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionTree } from './ConnectionTree';
@@ -110,7 +110,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const isStorageUnlocked = SecureStorage.isStorageUnlocked();
-  const isStorageEncrypted = SecureStorage.isStorageEncrypted();
+  const [isStorageEncrypted, setIsStorageEncrypted] = useState(false);
+
+  useEffect(() => {
+    SecureStorage.isStorageEncrypted().then(setIsStorageEncrypted);
+  }, []);
 
   return (
     <>

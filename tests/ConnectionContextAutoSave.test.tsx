@@ -3,6 +3,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ConnectionProvider, useConnections } from '../src/contexts/ConnectionContext';
 import { CollectionManager } from '../src/utils/collectionManager';
+import 'fake-indexeddb/auto';
+import { openDB } from 'idb';
+import { IndexedDbService } from '../src/utils/indexedDbService';
 import { Connection } from '../src/types/connection';
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -14,7 +17,9 @@ describe('ConnectionProvider auto-save', () => {
   let collectionId: string;
 
   beforeEach(async () => {
-    localStorage.clear();
+    await IndexedDbService.init();
+    const db = await openDB('mremote-keyval', 1);
+    await db.clear('keyval');
     (CollectionManager as any).instance = undefined;
     manager = CollectionManager.getInstance();
     const col = await manager.createCollection('Test');
@@ -42,7 +47,8 @@ describe('ConnectionProvider auto-save', () => {
 
     await Promise.resolve();
 
-    let stored = JSON.parse(localStorage.getItem(`mremote-collection-${collectionId}`)!);
+    let stored = await IndexedDbService.getItem<any>(`mremote-collection-${collectionId}`);
+    stored = JSON.parse(stored!);
     expect(stored.connections).toHaveLength(1);
 
     await act(async () => {
@@ -51,7 +57,8 @@ describe('ConnectionProvider auto-save', () => {
 
     await Promise.resolve();
 
-    stored = JSON.parse(localStorage.getItem(`mremote-collection-${collectionId}`)!);
+    stored = await IndexedDbService.getItem<any>(`mremote-collection-${collectionId}`);
+    stored = JSON.parse(stored!);
     expect(stored.connections).toEqual([]);
   });
 });
