@@ -9,7 +9,7 @@ beforeEach(() => {
   (global as any).window = dom.window;
   (global as any).document = dom.window.document;
   localStorage.clear();
-  (SettingsManager as any).instance = undefined;
+  SettingsManager.resetInstance();
 });
 
 describe('SettingsManager colorScheme', () => {
@@ -24,7 +24,7 @@ describe('SettingsManager colorScheme', () => {
     await manager.loadSettings();
     await manager.saveSettings({ colorScheme: 'green' });
 
-    (SettingsManager as any).instance = undefined;
+    SettingsManager.resetInstance();
     const again = SettingsManager.getInstance();
     const loaded = await again.loadSettings();
     expect(loaded.colorScheme).toBe('green');
@@ -35,7 +35,7 @@ describe('SettingsManager colorScheme', () => {
     await manager.loadSettings();
     await manager.saveSettings({ colorScheme: 'grey' });
 
-    (SettingsManager as any).instance = undefined;
+    SettingsManager.resetInstance();
     const again = SettingsManager.getInstance();
     const loaded = await again.loadSettings();
     expect(loaded.colorScheme).toBe('grey');

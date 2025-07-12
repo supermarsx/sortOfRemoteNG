@@ -14,6 +14,10 @@ export class StatusChecker {
     return StatusChecker.instance;
   }
 
+  static resetInstance(): void {
+    (StatusChecker as any).instance = undefined;
+  }
+
   startChecking(connection: Connection): void {
     if (!this.settingsManager.getSettings().enableStatusChecking) return;
     if (!connection.statusCheck?.enabled) return;

@@ -15,6 +15,10 @@ export class CollectionManager {
     return CollectionManager.instance;
   }
 
+  static resetInstance(): void {
+    (CollectionManager as any).instance = undefined;
+  }
+
   async createCollection(
     name: string,
     description?: string,

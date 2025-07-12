@@ -13,6 +13,10 @@ export class ScriptEngine {
     return ScriptEngine.instance;
   }
 
+  static resetInstance(): void {
+    (ScriptEngine as any).instance = undefined;
+  }
+
   async executeScript(
     script: CustomScript,
     context: {

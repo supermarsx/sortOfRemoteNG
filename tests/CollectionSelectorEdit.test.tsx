@@ -15,7 +15,7 @@ describe('CollectionSelector editing', () => {
 
   beforeEach(async () => {
     localStorage.clear();
-    (CollectionManager as any).instance = undefined;
+    CollectionManager.resetInstance();
     manager = CollectionManager.getInstance();
     const col = await manager.createCollection('First', 'desc');
     collectionId = col.id;

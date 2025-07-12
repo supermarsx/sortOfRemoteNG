@@ -14,6 +14,10 @@ export class ThemeManager {
     return ThemeManager.instance;
   }
 
+  static resetInstance(): void {
+    (ThemeManager as any).instance = undefined;
+  }
+
   private themes: Record<string, ThemeConfig> = {
     dark: {
       name: 'Dark',
