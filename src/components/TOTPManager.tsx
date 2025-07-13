@@ -35,8 +35,8 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({ isOpen, onClose, conne
     }
   }, [isOpen]);
 
-  const loadTOTPConfigs = () => {
-    const configs = totpService.getAllConfigs();
+  const loadTOTPConfigs = async () => {
+    const configs = await totpService.getAllConfigs();
     setTotpConfigs(configs);
     updateCurrentCodes();
   };
@@ -73,7 +73,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({ isOpen, onClose, conne
       console.error('Failed to generate QR code:', error);
     }
 
-    totpService.saveConfig(config);
+    await totpService.saveConfig(config);
     setTotpConfigs([...totpConfigs, config]);
     setNewConfig({
       issuer: 'sortOfRemoteNG',
@@ -85,9 +85,9 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({ isOpen, onClose, conne
     setShowAddForm(false);
   };
 
-  const handleDeleteConfig = (secret: string) => {
+  const handleDeleteConfig = async (secret: string) => {
     if (confirm('Are you sure you want to delete this TOTP configuration?')) {
-      totpService.deleteConfig(secret);
+      await totpService.deleteConfig(secret);
       setTotpConfigs(totpConfigs.filter(config => config.secret !== secret));
     }
   };

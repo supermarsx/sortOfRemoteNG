@@ -21,8 +21,8 @@ i18n
       escapeValue: false,
     },
     detection: {
-      order: ['localStorage', 'navigator', 'htmlTag'],
-      caches: ['localStorage'],
+      order: ['navigator', 'htmlTag'],
+      caches: [],
     },
   });
 

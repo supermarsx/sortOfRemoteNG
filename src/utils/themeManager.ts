@@ -1,5 +1,5 @@
 import { ThemeConfig, Theme, ColorScheme } from '../types/settings';
-import { LocalStorageService } from './localStorageService';
+import { IndexedDbService } from './indexedDbService';
 
 export class ThemeManager {
   private static instance: ThemeManager;
@@ -184,9 +184,9 @@ export class ThemeManager {
       this.applyResolvedTheme(themeName, colorScheme);
     }
 
-    // Store in localStorage
-    LocalStorageService.setItem('mremote-theme', themeName);
-    LocalStorageService.setItem('mremote-color-scheme', colorScheme);
+    // Persist to IndexedDB
+    void IndexedDbService.setItem('mremote-theme', themeName);
+    void IndexedDbService.setItem('mremote-color-scheme', colorScheme);
   }
 
   getCurrentTheme(): Theme {
@@ -205,11 +205,9 @@ export class ThemeManager {
     return Object.keys(this.colorSchemes) as ColorScheme[];
   }
 
-  loadSavedTheme(): void {
-    const savedTheme = (LocalStorageService.getItem('mremote-theme') || 'dark') as Theme;
-    const savedColorScheme = (
-      LocalStorageService.getItem('mremote-color-scheme') || 'blue'
-    ) as ColorScheme;
+  async loadSavedTheme(): Promise<void> {
+    const savedTheme = (await IndexedDbService.getItem<Theme>('mremote-theme')) ?? 'dark';
+    const savedColorScheme = (await IndexedDbService.getItem<ColorScheme>('mremote-color-scheme')) ?? 'blue';
 
     this.applyTheme(savedTheme, savedColorScheme);
   }

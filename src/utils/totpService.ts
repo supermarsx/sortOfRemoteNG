@@ -1,7 +1,7 @@
 import { authenticator } from 'otplib';
 import { Authenticator } from '@otplib/core';
 import { TOTPConfig } from '../types/settings';
-import { LocalStorageService } from './localStorageService';
+import { IndexedDbService } from './indexedDbService';
 
 export class TOTPService {
   private readonly storageKey = 'mremote-totp-configs';
@@ -51,8 +51,8 @@ export class TOTPService {
     return instance.keyuri(config.account, config.issuer, config.secret);
   }
 
-  saveConfig(config: TOTPConfig): void {
-    const configs = this.getAllConfigs();
+  async saveConfig(config: TOTPConfig): Promise<void> {
+    const configs = await this.getAllConfigs();
     const existingIndex = configs.findIndex(c => c.secret === config.secret);
     
     if (existingIndex >= 0) {
@@ -61,12 +61,12 @@ export class TOTPService {
       configs.push(config);
     }
     
-    LocalStorageService.setItem(this.storageKey, configs);
+    await IndexedDbService.setItem(this.storageKey, configs);
   }
 
-  getAllConfigs(): TOTPConfig[] {
+  async getAllConfigs(): Promise<TOTPConfig[]> {
     try {
-      const stored = LocalStorageService.getItem<TOTPConfig[]>(this.storageKey);
+      const stored = await IndexedDbService.getItem<TOTPConfig[]>(this.storageKey);
       return stored ? stored : [];
     } catch (error) {
       console.error('Failed to load TOTP configs:', error);
@@ -74,13 +74,13 @@ export class TOTPService {
     }
   }
 
-  getConfig(secret: string): TOTPConfig | undefined {
-    return this.getAllConfigs().find(config => config.secret === secret);
+  async getConfig(secret: string): Promise<TOTPConfig | undefined> {
+    return (await this.getAllConfigs()).find(config => config.secret === secret);
   }
 
-  deleteConfig(secret: string): void {
-    const configs = this.getAllConfigs().filter(config => config.secret !== secret);
-    LocalStorageService.setItem(this.storageKey, configs);
+  async deleteConfig(secret: string): Promise<void> {
+    const configs = (await this.getAllConfigs()).filter(config => config.secret !== secret);
+    await IndexedDbService.setItem(this.storageKey, configs);
   }
 
   // Generate QR code data URL
@@ -109,13 +109,13 @@ export class TOTPService {
   }
 
   // Export TOTP configs for backup
-  exportConfigs(): string {
-    const configs = this.getAllConfigs();
+  async exportConfigs(): Promise<string> {
+    const configs = await this.getAllConfigs();
     return JSON.stringify(configs, null, 2);
   }
 
   // Import TOTP configs from backup
-  importConfigs(jsonData: string): void {
+  async importConfigs(jsonData: string): Promise<void> {
     try {
       const configs = JSON.parse(jsonData) as TOTPConfig[];
       
@@ -126,7 +126,7 @@ export class TOTPService {
         }
       });
       
-      LocalStorageService.setItem(this.storageKey, configs);
+      await IndexedDbService.setItem(this.storageKey, configs);
     } catch (error) {
       throw new Error('Failed to import TOTP configurations: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }

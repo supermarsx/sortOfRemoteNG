@@ -37,7 +37,7 @@ export const useAppLifecycle = ({
     try {
       await settingsManager.initialize();
 
-      themeManager.loadSavedTheme();
+      await themeManager.loadSavedTheme();
       themeManager.injectThemeCSS();
 
       const settings = settingsManager.getSettings();
@@ -77,8 +77,8 @@ export const useAppLifecycle = ({
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    const checkSingleWindow = () => {
-      if (!settingsManager.checkSingleWindow()) {
+    const checkSingleWindow = async () => {
+      if (!(await settingsManager.checkSingleWindow())) {
         alert('Another sortOfRemoteNG window is already open. Only one instance is allowed.');
         window.close();
       }

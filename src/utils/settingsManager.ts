@@ -1,6 +1,6 @@
 import { GlobalSettings, ActionLogEntry, PerformanceMetrics, CustomScript } from '../types/settings';
 import { SecureStorage } from './storage';
-import { LocalStorageService } from './localStorageService';
+import { IndexedDbService } from './indexedDbService';
 
 const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
@@ -116,7 +116,7 @@ export class SettingsManager {
 
   async loadSettings(): Promise<GlobalSettings> {
     try {
-      const stored = LocalStorageService.getItem<GlobalSettings>('mremote-settings');
+      const stored = await IndexedDbService.getItem<GlobalSettings>('mremote-settings');
       if (stored) {
         this.settings = { ...DEFAULT_SETTINGS, ...stored };
       }
@@ -130,7 +130,7 @@ export class SettingsManager {
   async saveSettings(settings: Partial<GlobalSettings>): Promise<void> {
     try {
       this.settings = { ...this.settings, ...settings };
-      LocalStorageService.setItem('mremote-settings', this.settings);
+      await IndexedDbService.setItem('mremote-settings', this.settings);
       this.logAction('info', 'Settings updated', undefined, 'Settings saved successfully');
     } catch (error) {
       console.error('Failed to save settings:', error);
@@ -183,17 +183,17 @@ export class SettingsManager {
     this.saveActionLog();
   }
 
-  private saveActionLog(): void {
+  private async saveActionLog(): Promise<void> {
     try {
-      LocalStorageService.setItem('mremote-action-log', this.actionLog);
+      await IndexedDbService.setItem('mremote-action-log', this.actionLog);
     } catch (error) {
       console.error('Failed to save action log:', error);
     }
   }
 
-  private loadActionLog(): void {
+  private async loadActionLog(): Promise<void> {
     try {
-      const stored = LocalStorageService.getItem<any[]>('mremote-action-log');
+      const stored = await IndexedDbService.getItem<any[]>('mremote-action-log');
       if (stored) {
         this.actionLog = stored.map((entry: any) => ({
           ...entry,
@@ -216,24 +216,24 @@ export class SettingsManager {
       this.performanceMetrics = this.performanceMetrics.slice(0, 1000);
     }
 
-    this.savePerformanceMetrics();
+    void this.savePerformanceMetrics();
   }
 
   getPerformanceMetrics(): PerformanceMetrics[] {
     return this.performanceMetrics;
   }
 
-  private savePerformanceMetrics(): void {
+  private async savePerformanceMetrics(): Promise<void> {
     try {
-      LocalStorageService.setItem('mremote-performance-metrics', this.performanceMetrics);
+      await IndexedDbService.setItem('mremote-performance-metrics', this.performanceMetrics);
     } catch (error) {
       console.error('Failed to save performance metrics:', error);
     }
   }
 
-  private loadPerformanceMetrics(): void {
+  private async loadPerformanceMetrics(): Promise<void> {
     try {
-      const stored = LocalStorageService.getItem<PerformanceMetrics[]>('mremote-performance-metrics');
+      const stored = await IndexedDbService.getItem<PerformanceMetrics[]>('mremote-performance-metrics');
       if (stored) {
         this.performanceMetrics = stored;
       }
@@ -252,7 +252,7 @@ export class SettingsManager {
     };
 
     this.customScripts.push(newScript);
-    this.saveCustomScripts();
+    void this.saveCustomScripts();
     this.logAction('info', 'Custom script added', undefined, `Script "${script.name}" created`);
 
     return newScript;
@@ -266,7 +266,7 @@ export class SettingsManager {
         ...updates,
         updatedAt: new Date(),
       };
-      this.saveCustomScripts();
+      void this.saveCustomScripts();
       this.logAction('info', 'Custom script updated', undefined, `Script "${this.customScripts[index].name}" updated`);
     }
   }
@@ -274,7 +274,7 @@ export class SettingsManager {
   deleteCustomScript(id: string): void {
     const script = this.customScripts.find(s => s.id === id);
     this.customScripts = this.customScripts.filter(script => script.id !== id);
-    this.saveCustomScripts();
+    void this.saveCustomScripts();
     this.logAction('info', 'Custom script deleted', undefined, `Script "${script?.name}" deleted`);
   }
 
@@ -282,17 +282,17 @@ export class SettingsManager {
     return this.customScripts;
   }
 
-  private saveCustomScripts(): void {
+  private async saveCustomScripts(): Promise<void> {
     try {
-      LocalStorageService.setItem('mremote-custom-scripts', this.customScripts);
+      await IndexedDbService.setItem('mremote-custom-scripts', this.customScripts);
     } catch (error) {
       console.error('Failed to save custom scripts:', error);
     }
   }
 
-  private loadCustomScripts(): void {
+  private async loadCustomScripts(): Promise<void> {
     try {
-      const stored = LocalStorageService.getItem<any[]>('mremote-custom-scripts');
+      const stored = await IndexedDbService.getItem<any[]>('mremote-custom-scripts');
       if (stored) {
         this.customScripts = stored.map((script: any) => ({
           ...script,
@@ -345,16 +345,16 @@ export class SettingsManager {
   }
 
   // Single Window Management
-  checkSingleWindow(): boolean {
+  async checkSingleWindow(): Promise<boolean> {
     if (!this.settings.singleWindowMode) return true;
 
     const windowId = sessionStorage.getItem('mremote-window-id');
-    const activeWindowId = LocalStorageService.getItem<string>('mremote-active-window');
+    const activeWindowId = await IndexedDbService.getItem<string>('mremote-active-window');
 
     if (!windowId) {
       const newWindowId = crypto.randomUUID();
       sessionStorage.setItem('mremote-window-id', newWindowId);
-      LocalStorageService.setItem('mremote-active-window', newWindowId);
+      await IndexedDbService.setItem('mremote-active-window', newWindowId);
       return true;
     }
 
@@ -362,7 +362,7 @@ export class SettingsManager {
       return false; // Another window is active
     }
 
-    LocalStorageService.setItem('mremote-active-window', windowId);
+    await IndexedDbService.setItem('mremote-active-window', windowId);
     return true;
   }
 
@@ -375,9 +375,9 @@ export class SettingsManager {
   // Initialize all data
   async initialize(): Promise<void> {
     await this.loadSettings();
-    this.loadActionLog();
-    this.loadPerformanceMetrics();
-    this.loadCustomScripts();
+    await this.loadActionLog();
+    await this.loadPerformanceMetrics();
+    await this.loadCustomScripts();
 
     // Auto-benchmark if enabled
     if (this.settings.autoBenchmarkIterations) {
