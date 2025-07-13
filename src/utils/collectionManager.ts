@@ -1,7 +1,7 @@
 import CryptoJS from 'crypto-js';
 import { ConnectionCollection } from '../types/connection';
 import { StorageData } from './storage';
-import { LocalStorageService } from './localStorageService';
+import { IndexedDbService } from './indexedDbService';
 
 export class CollectionManager {
   private static instance: CollectionManager;
@@ -36,9 +36,9 @@ export class CollectionManager {
       lastAccessed: new Date(),
     };
 
-    const collections = this.getAllCollections();
+    const collections = await this.getAllCollections();
     collections.push(collection);
-    this.saveCollections(collections);
+    await this.saveCollections(collections);
 
     // Initialize empty data for the collection
     if (isEncrypted && password) {
@@ -50,9 +50,9 @@ export class CollectionManager {
     return collection;
   }
 
-  getAllCollections(): ConnectionCollection[] {
+  async getAllCollections(): Promise<ConnectionCollection[]> {
     try {
-      const collections = LocalStorageService.getItem<ConnectionCollection[]>(
+      const collections = await IndexedDbService.getItem<ConnectionCollection[]>(
         this.collectionsKey
       );
       if (collections) {
@@ -70,13 +70,13 @@ export class CollectionManager {
     }
   }
 
-  getCollection(id: string): ConnectionCollection | null {
-    const collections = this.getAllCollections();
+  async getCollection(id: string): Promise<ConnectionCollection | null> {
+    const collections = await this.getAllCollections();
     return collections.find(c => c.id === id) || null;
   }
 
   async selectCollection(id: string, password?: string): Promise<void> {
-    const collection = this.getCollection(id);
+    const collection = await this.getCollection(id);
     if (!collection) {
       throw new Error('Collection not found');
     }
@@ -93,7 +93,7 @@ export class CollectionManager {
       
       // Update last accessed time
       collection.lastAccessed = new Date();
-      this.updateCollection(collection);
+      await this.updateCollection(collection);
     } catch (error) {
       throw new Error('Invalid password or corrupted collection data');
     }
@@ -103,12 +103,12 @@ export class CollectionManager {
     return this.currentCollection;
   }
 
-  updateCollection(collection: ConnectionCollection): void {
-    const collections = this.getAllCollections();
+  async updateCollection(collection: ConnectionCollection): Promise<void> {
+    const collections = await this.getAllCollections();
     const index = collections.findIndex(c => c.id === collection.id);
     if (index >= 0) {
       collections[index] = { ...collection, updatedAt: new Date() };
-      this.saveCollections(collections);
+      await this.saveCollections(collections);
       if (this.currentCollection?.id === collection.id) {
         this.currentCollection = { ...collections[index] };
       }
@@ -116,12 +116,12 @@ export class CollectionManager {
   }
 
   async deleteCollection(id: string): Promise<void> {
-    const collections = this.getAllCollections();
+    const collections = await this.getAllCollections();
     const filteredCollections = collections.filter(c => c.id !== id);
-    this.saveCollections(filteredCollections);
+    await this.saveCollections(filteredCollections);
 
     // Remove collection data
-    LocalStorageService.removeItem(`mremote-collection-${id}`);
+    await IndexedDbService.removeItem(`mremote-collection-${id}`);
 
     if (this.currentCollection?.id === id) {
       this.currentCollection = null;
@@ -129,8 +129,8 @@ export class CollectionManager {
     }
   }
 
-  private saveCollections(collections: ConnectionCollection[]): void {
-    LocalStorageService.setItem(this.collectionsKey, collections);
+  private async saveCollections(collections: ConnectionCollection[]): Promise<void> {
+    await IndexedDbService.setItem(this.collectionsKey, collections);
   }
 
   // Collection data management
@@ -139,15 +139,15 @@ export class CollectionManager {
 
     if (password) {
       const encrypted = CryptoJS.AES.encrypt(JSON.stringify(data), password).toString();
-      LocalStorageService.setItem(key, encrypted);
+      await IndexedDbService.setItem(key, encrypted);
     } else {
-      LocalStorageService.setItem(key, data);
+      await IndexedDbService.setItem(key, data);
     }
   }
 
   async loadCollectionData(collectionId: string, password?: string): Promise<StorageData | null> {
     const key = `mremote-collection-${collectionId}`;
-    const stored = LocalStorageService.getItem<any>(key);
+    const stored = await IndexedDbService.getItem<any>(key);
 
     if (!stored) return null;
 
@@ -183,7 +183,7 @@ export class CollectionManager {
 
   // Export collection with encryption
   async exportCollection(collectionId: string, includePasswords: boolean = false, exportPassword?: string): Promise<string> {
-    const collection = this.getCollection(collectionId);
+    const collection = await this.getCollection(collectionId);
     if (!collection) {
       throw new Error('Collection not found');
     }
@@ -217,7 +217,7 @@ export class CollectionManager {
   }
 
   async removePasswordFromCollection(collectionId: string, password: string): Promise<void> {
-    const collection = this.getCollection(collectionId);
+    const collection = await this.getCollection(collectionId);
     if (!collection) throw new Error('Collection not found');
 
     const data = await this.loadCollectionData(collectionId, password);
@@ -225,7 +225,7 @@ export class CollectionManager {
 
     await this.saveCollectionData(collectionId, data);
     collection.isEncrypted = false;
-    this.updateCollection(collection);
+    await this.updateCollection(collection);
 
     if (this.currentCollection?.id === collectionId) {
       this.currentPassword = null;

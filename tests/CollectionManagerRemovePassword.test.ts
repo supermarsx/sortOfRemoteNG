@@ -1,15 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { CollectionManager } from '../src/utils/collectionManager';
-import { LocalStorageService } from '../src/utils/localStorageService';
+import { IndexedDbService } from '../src/utils/indexedDbService';
+import { openDB } from 'idb';
 import { StorageData } from '../src/utils/storage';
 import { ConnectionCollection } from '../src/types/connection';
+
+const DB_NAME = 'mremote-keyval';
+const STORE_NAME = 'keyval';
 
 describe('CollectionManager remove password', () => {
   let manager: CollectionManager;
   let collectionId: string;
 
   beforeEach(async () => {
-    localStorage.clear();
+    await IndexedDbService.init();
+    const db = await openDB(DB_NAME, 1);
+    await db.clear(STORE_NAME);
     CollectionManager.resetInstance();
     manager = CollectionManager.getInstance();
     const col = await manager.createCollection('Secure', 'desc', true, 'secret');
@@ -18,18 +24,18 @@ describe('CollectionManager remove password', () => {
 
   it('removes encryption with correct password', async () => {
     await manager.selectCollection(collectionId, 'secret');
-    const storedBefore = await LocalStorageService.getItem<string>(
+    const storedBefore = await IndexedDbService.getItem<string>(
       `mremote-collection-${collectionId}`
     );
     expect(typeof storedBefore).toBe('string');
 
     await manager.removePasswordFromCollection(collectionId, 'secret');
-    const storedAfter = await LocalStorageService.getItem<StorageData>(
+    const storedAfter = await IndexedDbService.getItem<StorageData>(
       `mremote-collection-${collectionId}`
     );
     expect(storedAfter.connections).toBeTruthy();
 
-    const meta = (await LocalStorageService.getItem<ConnectionCollection[]>(
+    const meta = (await IndexedDbService.getItem<ConnectionCollection[]>(
       'mremote-collections'
     ))![0];
     expect(meta.isEncrypted).toBe(false);

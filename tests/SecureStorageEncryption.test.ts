@@ -1,11 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SecureStorage, StorageData } from '../src/utils/storage';
-import { LocalStorageService } from '../src/utils/localStorageService';
+import { IndexedDbService } from '../src/utils/indexedDbService';
+import { openDB } from 'idb';
+
+const DB_NAME = 'mremote-keyval';
+const STORE_NAME = 'keyval';
 
 
 describe('SecureStorage encryption', () => {
-  beforeEach(() => {
-    localStorage.clear();
+  beforeEach(async () => {
+    await IndexedDbService.init();
+    const db = await openDB(DB_NAME, 1);
+    await db.clear(STORE_NAME);
     SecureStorage.setPassword('secret');
   });
 
@@ -18,9 +24,9 @@ describe('SecureStorage encryption', () => {
 
     await SecureStorage.saveData(data, true);
 
-    const stored = await LocalStorageService.getItem<string>('mremote-connections');
+    const stored = await IndexedDbService.getItem<string>('mremote-connections');
     expect(typeof stored).toBe('string');
-    const meta = await LocalStorageService.getItem<{ isEncrypted: boolean }>('mremote-storage-meta');
+    const meta = await IndexedDbService.getItem<{ isEncrypted: boolean }>('mremote-storage-meta');
     expect(meta.isEncrypted).toBe(true);
   });
 });
