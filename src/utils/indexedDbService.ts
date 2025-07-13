@@ -28,6 +28,36 @@ export class IndexedDbService {
 
   static async init(): Promise<void> {
     await this.getDB();
+    await this.migrateFromLocalStorage();
+  }
+
+  private static async migrateFromLocalStorage(): Promise<void> {
+    if (typeof localStorage === 'undefined') return;
+
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('mremote-')) {
+        keys.push(key);
+      }
+    }
+
+    for (const key of keys) {
+      try {
+        const existing = await this.getItem(key);
+        if (existing !== null) {
+          localStorage.removeItem(key);
+          continue;
+        }
+        const raw = localStorage.getItem(key);
+        if (raw === null) continue;
+        const value = JSON.parse(raw);
+        await this.setItem(key, value);
+        localStorage.removeItem(key);
+      } catch (error) {
+        console.error(`Failed to migrate localStorage key "${key}":`, error);
+      }
+    }
   }
 
   static async getItem<T>(key: string): Promise<T | null> {
