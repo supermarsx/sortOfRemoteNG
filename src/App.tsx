@@ -121,8 +121,8 @@ const AppContent: React.FC = () => {
     setPasswordError('');
   };
 
-  const handleShowPasswordDialog = () => {
-    if (SecureStorage.isStorageEncrypted()) {
+  const handleShowPasswordDialog = async () => {
+    if (await SecureStorage.isStorageEncrypted()) {
       if (SecureStorage.isStorageUnlocked()) {
         setPasswordDialogMode('setup');
       } else {
