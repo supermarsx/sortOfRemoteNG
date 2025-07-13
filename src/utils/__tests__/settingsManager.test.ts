@@ -1,14 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { SettingsManager } from '../settingsManager';
+import { IndexedDbService } from '../indexedDbService';
+import { openDB } from 'idb';
 
 let dom: JSDOM;
 
-beforeEach(() => {
+const DB_NAME = 'mremote-keyval';
+const STORE_NAME = 'keyval';
+
+beforeEach(async () => {
+  await IndexedDbService.init();
+  const db = await openDB(DB_NAME, 1);
+  await db.clear(STORE_NAME);
   dom = new JSDOM('<!doctype html><html><body></body></html>');
   (global as any).window = dom.window;
   (global as any).document = dom.window.document;
-  localStorage.clear();
   SettingsManager.resetInstance();
 });
 
