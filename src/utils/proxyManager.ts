@@ -127,11 +127,12 @@ export class ProxyManager {
   }
 
   // Test proxy connectivity
-  async testProxy(proxy: ProxyConfig): Promise<boolean> {
+  async testProxy(
+    proxy: ProxyConfig,
+    testHost = 'httpbin.org',
+    testPort = 80
+  ): Promise<boolean> {
     try {
-      const testHost = 'httpbin.org';
-      const testPort = 80;
-      
       const ws = await this.createProxiedConnection(testHost, testPort, proxy);
       ws.close();
       

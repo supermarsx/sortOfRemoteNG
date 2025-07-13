@@ -80,3 +80,36 @@ describe('ProxyManager.createProxiedConnection', () => {
     await expect(promise).rejects.toThrow('SOCKS proxy connection failed');
   });
 });
+
+describe('ProxyManager.testProxy', () => {
+  let manager: ProxyManager;
+
+  beforeEach(() => {
+    ProxyManager.resetInstance();
+    (SettingsManager as any).instance = {
+      getSettings: () => ({ globalProxy: { enabled: false } }),
+      logAction: vi.fn()
+    };
+    manager = ProxyManager.getInstance();
+  });
+
+  it('returns true when proxied connection succeeds', async () => {
+    const proxy: ProxyConfig = { type: 'http', host: 'p', port: 8080, enabled: true };
+    const close = vi.fn();
+    const spy = vi.spyOn(manager, 'createProxiedConnection').mockResolvedValue({ close } as any);
+    const result = await manager.testProxy(proxy, 'localhost', 81);
+    expect(spy).toHaveBeenCalledWith('localhost', 81, proxy);
+    expect(close).toHaveBeenCalled();
+    expect(result).toBe(true);
+    spy.mockRestore();
+  });
+
+  it('returns false when proxied connection fails', async () => {
+    const proxy: ProxyConfig = { type: 'socks5', host: 'p', port: 1080, enabled: true };
+    const spy = vi.spyOn(manager, 'createProxiedConnection').mockRejectedValue(new Error('fail'));
+    const result = await manager.testProxy(proxy, 'localhost', 82);
+    expect(spy).toHaveBeenCalledWith('localhost', 82, proxy);
+    expect(result).toBe(false);
+    spy.mockRestore();
+  });
+});
