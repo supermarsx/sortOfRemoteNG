@@ -160,32 +160,45 @@ export class NetworkScanner {
   ): Promise<{ isOpen: boolean; banner?: string; elapsed: number }> {
     return new Promise((resolve) => {
       const startTime = Date.now();
-      
+      let resolved = false;
+
       // Use WebSocket for port scanning (limited but works for many services)
       const ws = new WebSocket(`ws://${ip}:${port}`);
-      
+
       const timeoutId = setTimeout(() => {
         ws.close();
-        resolve({ isOpen: false, elapsed: Date.now() - startTime });
+        if (!resolved) {
+          resolved = true;
+          resolve({ isOpen: false, elapsed: Date.now() - startTime });
+        }
       }, timeout);
 
       ws.onopen = () => {
         clearTimeout(timeoutId);
         ws.close();
-        resolve({ isOpen: true, elapsed: Date.now() - startTime });
+        if (!resolved) {
+          resolved = true;
+          resolve({ isOpen: true, elapsed: Date.now() - startTime });
+        }
       };
 
       ws.onerror = () => {
         clearTimeout(timeoutId);
-        resolve({ isOpen: false, elapsed: Date.now() - startTime });
+        if (!resolved) {
+          resolved = true;
+          resolve({ isOpen: false, elapsed: Date.now() - startTime });
+        }
       };
 
       ws.onclose = (event) => {
         clearTimeout(timeoutId);
-        if (event.wasClean) {
-          resolve({ isOpen: true, elapsed: Date.now() - startTime });
-        } else {
-          resolve({ isOpen: false, elapsed: Date.now() - startTime });
+        if (!resolved) {
+          resolved = true;
+          if (event.wasClean) {
+            resolve({ isOpen: true, elapsed: Date.now() - startTime });
+          } else {
+            resolve({ isOpen: false, elapsed: Date.now() - startTime });
+          }
         }
       };
     });
