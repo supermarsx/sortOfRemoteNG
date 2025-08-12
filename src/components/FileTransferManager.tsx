@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Upload, Download, Folder, File, Trash2, RefreshCw, ArrowLeft, Home } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FileTransferSession } from '../types/connection';
@@ -33,19 +33,19 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
 
-  const fileService = new FileTransferService();
+  const fileServiceRef = useRef(new FileTransferService());
 
   useEffect(() => {
     if (isOpen) {
       loadDirectory(currentPath);
       loadTransfers();
     }
-  }, [isOpen, currentPath]);
+  }, [isOpen, currentPath, connectionId]);
 
   const loadDirectory = async (path: string) => {
     setIsLoading(true);
     try {
-      const directoryContents = await fileService.listDirectory(connectionId, path);
+      const directoryContents = await fileServiceRef.current.listDirectory(connectionId, path);
       setFiles(directoryContents);
     } catch (error) {
       console.error('Failed to load directory:', error);
@@ -55,7 +55,7 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
   };
 
   const loadTransfers = () => {
-    const activeTransfers = fileService.getActiveTransfers(connectionId);
+    const activeTransfers = fileServiceRef.current.getActiveTransfers(connectionId);
     setTransfers(activeTransfers);
   };
 
@@ -91,7 +91,7 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
       const remotePath = currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`;
       
       try {
-        await fileService.uploadFile(connectionId, file, remotePath);
+        await fileServiceRef.current.uploadFile(connectionId, file, remotePath);
         loadDirectory(currentPath);
         loadTransfers();
       } catch (error) {
@@ -106,7 +106,7 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
       const remotePath = currentPath === '/' ? `/${fileName}` : `${currentPath}/${fileName}`;
       
       try {
-        await fileService.downloadFile(connectionId, remotePath, fileName);
+        await fileServiceRef.current.downloadFile(connectionId, remotePath, fileName);
         loadTransfers();
       } catch (error) {
         console.error('Download failed:', error);
@@ -122,7 +122,7 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
       const remotePath = currentPath === '/' ? `/${fileName}` : `${currentPath}/${fileName}`;
       
       try {
-        await fileService.deleteFile(connectionId, remotePath);
+        await fileServiceRef.current.deleteFile(connectionId, remotePath);
       } catch (error) {
         console.error('Delete failed:', error);
       }
