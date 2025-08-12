@@ -54,7 +54,20 @@ export class NetworkScanner {
       throw new Error('Only /24 to /30 networks are supported');
     }
 
-    const networkParts = network.split('.').map(Number);
+    const networkPartsRaw = network.split('.');
+    if (networkPartsRaw.length !== 4) {
+      throw new Error(`Invalid network address in CIDR: ${cidr}`);
+    }
+    const networkParts = networkPartsRaw.map(part => {
+      if (!/^\d+$/.test(part)) {
+        throw new Error(`Invalid network address in CIDR: ${cidr}`);
+      }
+      const num = Number(part);
+      if (num < 0 || num > 255) {
+        throw new Error(`Invalid network address in CIDR: ${cidr}`);
+      }
+      return num;
+    });
     const hostBits = 32 - prefix;
     const hostCount = Math.pow(2, hostBits) - 2; // Exclude network and broadcast
     
