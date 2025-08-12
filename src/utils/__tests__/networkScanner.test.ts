@@ -10,6 +10,18 @@ describe('NetworkScanner helper methods', () => {
     expect(ips).toEqual(['192.168.0.1', '192.168.0.2']);
   });
 
+  it('masks non-network-base addresses before generating hosts', () => {
+    const ips = scanner.generateIPRange('192.168.0.5/30');
+    expect(ips).toEqual(['192.168.0.5', '192.168.0.6']);
+  });
+
+  it('handles edge prefix /24', () => {
+    const ips = scanner.generateIPRange('10.0.0.42/24');
+    expect(ips.length).toBe(254);
+    expect(ips[0]).toBe('10.0.0.1');
+    expect(ips[253]).toBe('10.0.0.254');
+  });
+
   it('compareIPs sorts numerically', () => {
     const result = scanner.compareIPs('192.168.0.2', '192.168.0.10');
     expect(result).toBeLessThan(0);
@@ -23,6 +35,10 @@ describe('NetworkScanner helper methods', () => {
   it('throws on malformed CIDR strings', () => {
     expect(() => scanner.generateIPRange('192.168.0.0')).toThrow();
     expect(() => scanner.generateIPRange('192.168.0.0/abc')).toThrow();
+  });
+
+  it('throws when IP does not have four octets', () => {
+    expect(() => scanner.generateIPRange('192.168.0/24')).toThrow();
   });
 
   it('throws when prefix is outside supported range', () => {

@@ -51,40 +51,42 @@ export class NetworkScanner {
     const prefix = parseInt(prefixLength, 10);
 
     if (prefix < 24 || prefix > 30) {
-      throw new Error('Only /24 to /30 networks are supported');
+      throw new Error(`Unsupported prefix length /${prefix}. Only /24 to /30 are supported`);
     }
 
     const networkPartsRaw = network.split('.');
     if (networkPartsRaw.length !== 4) {
-      throw new Error(`Invalid network address in CIDR: ${cidr}`);
+      throw new Error(`CIDR IP must have 4 octets: ${network}`);
     }
-    const networkParts = networkPartsRaw.map(part => {
+
+    const octets = networkPartsRaw.map(part => {
       if (!/^\d+$/.test(part)) {
-        throw new Error(`Invalid network address in CIDR: ${cidr}`);
+        throw new Error(`Invalid IPv4 address in CIDR: ${network}`);
       }
       const num = Number(part);
       if (num < 0 || num > 255) {
-        throw new Error(`Invalid network address in CIDR: ${cidr}`);
+        throw new Error(`Invalid IPv4 address in CIDR: ${network}`);
       }
       return num;
     });
+
     const hostBits = 32 - prefix;
+    const mask = (0xffffffff << hostBits) >>> 0;
+    const ipNum =
+      ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+    const networkNum = ipNum & mask;
     const hostCount = Math.pow(2, hostBits) - 2; // Exclude network and broadcast
-    
+
     const ips: string[] = [];
-    
     for (let i = 1; i <= hostCount; i++) {
-      const ip = [...networkParts];
-      let carry = i;
-      
-      for (let j = 3; j >= 0 && carry > 0; j--) {
-        ip[j] += carry % 256;
-        carry = Math.floor(carry / 256);
-      }
-      
-      ips.push(ip.join('.'));
+      const ipInt = (networkNum + i) >>> 0;
+      ips.push(
+        `${(ipInt >>> 24) & 0xff}.${(ipInt >>> 16) & 0xff}.${(ipInt >>> 8) & 0xff}.${
+          ipInt & 0xff
+        }`
+      );
     }
-    
+
     return ips;
   }
 
