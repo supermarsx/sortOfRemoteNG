@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authenticator } from 'otplib';
 import { TOTPService } from '../src/utils/totpService';
 
@@ -11,6 +11,10 @@ describe('TOTPService', () => {
 
   beforeEach(() => {
     service = new TOTPService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('generates and verifies tokens with default options', () => {
@@ -73,5 +77,13 @@ describe('TOTPService', () => {
     await service.generateQRCode(config);
 
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('generates unique backup codes of correct length', () => {
+    const codes = service.generateBackupCodes();
+
+    expect(codes).toHaveLength(10);
+    expect(new Set(codes).size).toBe(codes.length);
+    codes.forEach(code => expect(code).toHaveLength(8));
   });
 });

@@ -99,12 +99,26 @@ export class TOTPService {
   // Backup codes generation
   generateBackupCodes(count: number = 10): string[] {
     const codes: string[] = [];
-    
+
+    const globalCrypto = globalThis.crypto as Crypto | undefined;
+    const useCrypto = globalCrypto && typeof globalCrypto.getRandomValues === 'function';
+
     for (let i = 0; i < count; i++) {
-      const code = Math.random().toString(36).substring(2, 10).toUpperCase();
+      let code: string;
+      if (useCrypto) {
+        const randomValues = new Uint32Array(8);
+        globalCrypto!.getRandomValues(randomValues);
+        code = Array.from(randomValues, n => (n % 36).toString(36))
+          .join('')
+          .slice(0, 8)
+          .toUpperCase();
+      } else {
+        console.warn('crypto.getRandomValues is not available; using insecure Math.random.');
+        code = Math.random().toString(36).substring(2, 10).toUpperCase();
+      }
       codes.push(code);
     }
-    
+
     return codes;
   }
 
