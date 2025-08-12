@@ -1,5 +1,6 @@
 import { FileTransferSession } from '../types/connection';
 import { debugLog } from './debugLogger';
+import { generateId } from './id';
 
 interface FileItem {
   name: string;
@@ -79,7 +80,7 @@ export class FileTransferService {
   }
 
   async uploadFile(connectionId: string, file: File, remotePath: string): Promise<void> {
-    const transferId = crypto.randomUUID();
+    const transferId = generateId();
     const transfer: FileTransferSession = {
       id: transferId,
       connectionId,
@@ -123,7 +124,7 @@ export class FileTransferService {
   }
 
   async downloadFile(connectionId: string, remotePath: string, fileName: string): Promise<void> {
-    const transferId = crypto.randomUUID();
+    const transferId = generateId();
     const fileSize = Math.floor(Math.random() * 10000000) + 1000000; // Random size 1-10MB
     
     const transfer: FileTransferSession = {

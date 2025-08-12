@@ -2,6 +2,7 @@ import CryptoJS from 'crypto-js';
 import { ConnectionCollection } from '../types/connection';
 import { StorageData } from './storage';
 import { IndexedDbService } from './indexedDbService';
+import { generateId } from './id';
 
 export class CollectionManager {
   private static instance: CollectionManager;
@@ -27,7 +28,7 @@ export class CollectionManager {
     password?: string
   ): Promise<ConnectionCollection> {
     const collection: ConnectionCollection = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name,
       description,
       isEncrypted,

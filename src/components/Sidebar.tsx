@@ -5,6 +5,7 @@ import { ConnectionTree } from './ConnectionTree';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/ConnectionContext';
 import { SecureStorage } from '../utils/storage';
+import { generateId } from '../utils/id';
 import { ImportExport } from './ImportExport';
 import { SettingsDialog } from './SettingsDialog';
 import { PerformanceMonitor } from './PerformanceMonitor';
@@ -57,7 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleNewGroup = () => {
     const groupConnection: Connection = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: t('connections.newFolder'),
       protocol: 'rdp',
       hostname: '',

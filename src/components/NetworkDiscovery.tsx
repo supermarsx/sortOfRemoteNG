@@ -5,6 +5,7 @@ import { DiscoveredHost, DiscoveredService } from '../types/connection';
 import { NetworkDiscoveryConfig } from '../types/settings';
 import { NetworkScanner } from '../utils/networkScanner';
 import { useConnections } from '../contexts/ConnectionContext';
+import { generateId } from '../utils/id';
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
@@ -64,7 +65,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
 
       host.services.forEach(service => {
         const connection = {
-          id: crypto.randomUUID(),
+          id: generateId(),
           name: `${host.hostname || host.ip} (${service.service})`,
           protocol: service.protocol as any,
           hostname: host.ip,

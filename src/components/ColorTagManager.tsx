@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, Palette, Edit, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { generateId } from '../utils/id';
 
 interface ColorTag {
   id: string;
@@ -41,7 +42,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
   const handleAddTag = () => {
     if (!newTag.name?.trim()) return;
 
-    const id = crypto.randomUUID();
+    const id = generateId();
     const tag: ColorTag = {
       id,
       name: newTag.name.trim(),

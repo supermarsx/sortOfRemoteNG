@@ -5,6 +5,7 @@ import { useConnections } from '../contexts/ConnectionContext';
 import { TagManager } from './TagManager';
 import { SSHLibraryType } from '../utils/sshLibraries';
 import { getDefaultPort } from '../utils/defaultPorts';
+import { generateId } from '../utils/id';
 import GeneralSection from './connectionEditor/GeneralSection';
 import SSHOptions from './connectionEditor/SSHOptions';
 import HTTPOptions from './connectionEditor/HTTPOptions';
@@ -118,7 +119,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     }
 
     const connectionData: Connection = {
-      id: connection?.id || crypto.randomUUID(),
+      id: connection?.id || generateId(),
       name: formData.name || 'New Connection',
       protocol: formData.protocol as Connection['protocol'],
       hostname: formData.hostname || '',

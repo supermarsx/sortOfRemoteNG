@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/ConnectionContext';
+import { generateId } from '../utils/id';
 
 const getProtocolIcon = (protocol: string) => {
   switch (protocol) {
@@ -169,7 +170,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 e.stopPropagation();
                 const now = new Date();
                 const newConnection = structuredClone(connection);
-                newConnection.id = crypto.randomUUID();
+                newConnection.id = generateId();
                 newConnection.createdAt = now;
                 newConnection.updatedAt = now;
                 dispatch({ type: 'ADD_CONNECTION', payload: newConnection });

@@ -7,6 +7,7 @@ import ExportTab from './ExportTab';
 import ImportTab from './ImportTab';
 import { ImportResult } from './types';
 import CryptoJS from 'crypto-js';
+import { generateId } from '../../utils/id';
 
 interface ImportExportProps {
   isOpen: boolean;
@@ -266,7 +267,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
     if (data.connections && Array.isArray(data.connections)) {
       return data.connections.map((conn: any) => ({
         ...conn,
-        id: conn.id || crypto.randomUUID(),
+        id: conn.id || generateId(),
         createdAt: new Date(conn.createdAt || Date.now()),
         updatedAt: new Date(conn.updatedAt || Date.now()),
         password: conn.password === '***ENCRYPTED***' ? undefined : conn.password
@@ -285,7 +286,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
     
     connectionNodes.forEach(node => {
       const conn: Connection = {
-        id: node.getAttribute('Id') || crypto.randomUUID(),
+        id: node.getAttribute('Id') || generateId(),
         name: node.getAttribute('Name') || 'Imported Connection',
         protocol: (node.getAttribute('Type')?.toLowerCase() || 'rdp') as Connection['protocol'],
         hostname: node.getAttribute('Server') || '',
@@ -322,7 +323,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
       });
       
       connections.push({
-        id: conn.ID || crypto.randomUUID(),
+        id: conn.ID || generateId(),
         name: conn.Name || 'Imported Connection',
         protocol: (conn.Protocol?.toLowerCase() || 'rdp') as Connection['protocol'],
         hostname: conn.Hostname || '',

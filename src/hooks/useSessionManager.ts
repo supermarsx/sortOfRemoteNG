@@ -7,6 +7,7 @@ import { StatusChecker } from '../utils/statusChecker';
 import { ScriptEngine } from '../utils/scriptEngine';
 import { getDefaultPort } from '../utils/defaultPorts';
 import { raceWithTimeout } from '../utils/raceWithTimeout';
+import { generateId } from '../utils/id';
 
 export const useSessionManager = () => {
   const { t } = useTranslation();
@@ -134,7 +135,7 @@ export const useSessionManager = () => {
     }
 
     const session: ConnectionSession = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       connectionId: connection.id,
       name: settings.hostnameOverride && connection.hostname ? connection.hostname : connection.name,
       status: 'connecting',
@@ -181,7 +182,7 @@ export const useSessionManager = () => {
 
   const handleQuickConnect = (hostname: string, protocol: string) => {
     const tempConnection: Connection = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: `${t('connections.quickConnect')} - ${hostname}`,
       protocol: protocol as Connection['protocol'],
       hostname,
