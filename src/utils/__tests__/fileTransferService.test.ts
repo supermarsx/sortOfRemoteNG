@@ -48,7 +48,7 @@ describe('FileTransferService activeTransfers', () => {
     expect(service.getActiveTransfers('c2')).toHaveLength(1);
     expect(firstTransfer(service, 'c2').status).toBe('active');
 
-    await vi.advanceTimersByTimeAsync(2000); // simulated download duration
+    await vi.advanceTimersByTimeAsync(2500); // simulated download duration
     await promise;
 
     expect(service.getActiveTransfers('c2')).toHaveLength(1);

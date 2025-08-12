@@ -1,6 +1,7 @@
 import { CustomScript } from '../types/settings';
 import { Connection, ConnectionSession } from '../types/connection';
 import { SettingsManager } from './settingsManager';
+import { generateId } from './id';
 
 export class ScriptEngine {
   private static instance: ScriptEngine | null = null;
@@ -95,7 +96,7 @@ export class ScriptEngine {
       
       // Utility functions
       sleep: (ms: number) => new Promise(resolve => setTimeout(resolve, ms)),
-      uuid: () => crypto.randomUUID(),
+      uuid: () => generateId(),
       timestamp: () => new Date().toISOString(),
       
       // Settings access

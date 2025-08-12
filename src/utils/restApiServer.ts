@@ -3,10 +3,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
 import { Server } from 'http';
 import { Connection, ConnectionSession } from '../types/connection';
 import { debugLog } from './debugLogger';
+import { generateId } from './id';
 
 interface ApiConfig {
   port: number;
@@ -144,7 +144,7 @@ export class RestApiServer {
     this.app.post('/api/connections', (req, res) => {
       const connection: Connection = {
         ...req.body,
-        id: crypto.randomUUID(),
+        id: generateId(),
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -200,7 +200,7 @@ export class RestApiServer {
       }
 
       const session: ConnectionSession = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         connectionId,
         name: connection.name,
         status: 'connecting',
@@ -236,7 +236,7 @@ export class RestApiServer {
             const connection = this.connections.find(c => c.id === id);
             if (connection) {
               const session: ConnectionSession = {
-                id: crypto.randomUUID(),
+                id: generateId(),
                 connectionId: id,
                 name: connection.name,
                 status: 'connecting',
@@ -265,7 +265,7 @@ export class RestApiServer {
 
       const imported = connections.map(conn => ({
         ...conn,
-        id: crypto.randomUUID(),
+        id: generateId(),
         createdAt: new Date(),
         updatedAt: new Date(),
       }));

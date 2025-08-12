@@ -1,6 +1,7 @@
 import { GlobalSettings, ActionLogEntry, PerformanceMetrics, CustomScript } from '../types/settings';
 import { SecureStorage } from './storage';
 import { IndexedDbService } from './indexedDbService';
+import { generateId } from './id';
 
 const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
@@ -153,7 +154,7 @@ export class SettingsManager {
     if (!this.settings.enableActionLog) return;
 
     const entry: ActionLogEntry = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       timestamp: new Date(),
       level,
       action,
@@ -246,7 +247,7 @@ export class SettingsManager {
   addCustomScript(script: Omit<CustomScript, 'id' | 'createdAt' | 'updatedAt'>): CustomScript {
     const newScript: CustomScript = {
       ...script,
-      id: crypto.randomUUID(),
+      id: generateId(),
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -352,7 +353,7 @@ export class SettingsManager {
     const activeWindowId = await IndexedDbService.getItem<string>('mremote-active-window');
 
     if (!windowId) {
-      const newWindowId = crypto.randomUUID();
+      const newWindowId = generateId();
       sessionStorage.setItem('mremote-window-id', newWindowId);
       await IndexedDbService.setItem('mremote-active-window', newWindowId);
       return true;
