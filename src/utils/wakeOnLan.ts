@@ -1,7 +1,17 @@
 import { debugLog } from './debugLogger';
 
 export class WakeOnLanService {
-  async sendWakePacket(macAddress: string, broadcastAddress: string = '255.255.255.255', port: number = 9): Promise<void> {
+  /**
+   * Send a Wake-on-LAN magic packet immediately.
+   * @param macAddress - Target device's MAC address
+   * @param broadcastAddress - Broadcast address to use
+   * @param port - UDP port used to send the packet (default 9)
+   */
+  async sendWakePacket(
+    macAddress: string,
+    broadcastAddress: string = '255.255.255.255',
+    port: number = 9,
+  ): Promise<void> {
     try {
       // Validate MAC address format
       const cleanMac = macAddress.replace(/[:-]/g, '').toLowerCase();
@@ -82,19 +92,38 @@ export class WakeOnLanService {
     ];
   }
 
-  // Schedule wake-up
-  scheduleWakeUp(macAddress: string, wakeTime: Date, broadcastAddress?: string): void {
+  /**
+   * Schedule a Wake-on-LAN packet to be sent at a future time.
+   * @param macAddress - Target device's MAC address
+   * @param wakeTime - When to send the packet
+   * @param broadcastAddress - Optional broadcast address
+   * @param port - UDP port used to send the magic packet (default 9)
+   */
+  scheduleWakeUp(
+    macAddress: string,
+    wakeTime: Date,
+    broadcastAddress?: string,
+    port: number = 9,
+  ): void {
     const now = new Date();
     const delay = wakeTime.getTime() - now.getTime();
-    
+
     if (delay <= 0) {
       throw new Error('Wake time must be in the future');
     }
-    
-    setTimeout(() => {
-      this.sendWakePacket(macAddress, broadcastAddress);
-    }, delay);
-    
+
+    const MAX_DELAY = 0x7fffffff;
+
+    if (delay > MAX_DELAY) {
+      setTimeout(() => {
+        this.scheduleWakeUp(macAddress, wakeTime, broadcastAddress, port);
+      }, MAX_DELAY);
+    } else {
+      setTimeout(() => {
+        this.sendWakePacket(macAddress, broadcastAddress, port);
+      }, delay);
+    }
+
     debugLog(`Wake-on-LAN scheduled for ${wakeTime.toLocaleString()}`);
   }
 
