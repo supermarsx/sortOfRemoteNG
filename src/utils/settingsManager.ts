@@ -308,24 +308,37 @@ export class SettingsManager {
 
   // Key Derivation Benchmarking
   async benchmarkKeyDerivation(targetTimeSeconds: number = 1): Promise<number> {
+    if (
+      typeof globalThis.performance?.now !== 'function' ||
+      typeof globalThis.crypto?.subtle === 'undefined'
+    ) {
+      throw new Error('Required Web APIs not available');
+    }
+
     const testPassword = 'benchmark-test-password';
     const testSalt = 'benchmark-test-salt';
     let iterations = 10000;
     let lastTime = 0;
+    const maxAttempts = 20;
+    const maxElapsedMs = targetTimeSeconds * 1000 * 10;
+    const benchmarkStart = globalThis.performance.now();
 
     this.logAction('info', 'Key derivation benchmark started', undefined, `Target time: ${targetTimeSeconds}s`);
 
     // Binary search for optimal iterations
-    while (true) {
-      const startTime = performance.now();
-      
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const startTime = globalThis.performance.now();
+
       // Simulate key derivation (simplified)
       for (let i = 0; i < iterations; i++) {
         // Simple hash operation to simulate work
-        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(testPassword + testSalt + i));
+        await globalThis.crypto.subtle.digest(
+          'SHA-256',
+          new TextEncoder().encode(testPassword + testSalt + i)
+        );
       }
-      
-      const endTime = performance.now();
+
+      const endTime = globalThis.performance.now();
       const duration = (endTime - startTime) / 1000;
 
       if (Math.abs(duration - targetTimeSeconds) < 0.1) {
@@ -339,6 +352,10 @@ export class SettingsManager {
         break;
       }
       lastTime = duration;
+
+      if (globalThis.performance.now() - benchmarkStart > maxElapsedMs) {
+        break;
+      }
     }
 
     this.logAction('info', 'Key derivation benchmark completed', undefined, `Optimal iterations: ${iterations}`);

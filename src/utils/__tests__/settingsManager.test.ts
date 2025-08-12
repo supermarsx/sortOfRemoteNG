@@ -60,4 +60,18 @@ describe('SettingsManager.benchmarkKeyDerivation', () => {
     const [last] = manager.getActionLog();
     expect(last.action).toBe('Key derivation benchmark completed');
   });
+
+  it('throws when required Web APIs are missing', async () => {
+    const manager = SettingsManager.getInstance();
+    await manager.loadSettings();
+
+    const originalPerformance = globalThis.performance;
+    // Remove performance API to simulate unsupported environment
+    // @ts-ignore
+    globalThis.performance = undefined;
+
+    await expect(manager.benchmarkKeyDerivation(0.01)).rejects.toThrow();
+
+    globalThis.performance = originalPerformance;
+  });
 });
