@@ -97,7 +97,10 @@ export class SecureStorage {
 
       if (settings) {
         const parsedSettings = settings;
-        if (parsedSettings.isEncrypted && this.password) {
+        if (parsedSettings.isEncrypted) {
+          if (!this.password) {
+            throw new Error('Password is required');
+          }
           const decrypted = CryptoJS.AES.decrypt(storedData as string, this.password).toString(CryptoJS.enc.Utf8);
           if (!decrypted) {
             throw new Error('Invalid password');
@@ -107,7 +110,10 @@ export class SecureStorage {
       }
 
       return storedData as StorageData;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
       throw new Error('Failed to load data or invalid password');
     }
   }
