@@ -97,21 +97,21 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 };
 
 export class SettingsManager {
-  private static instance: SettingsManager;
+  private static instance: SettingsManager | null = null;
   private settings: GlobalSettings = DEFAULT_SETTINGS;
   private actionLog: ActionLogEntry[] = [];
   private performanceMetrics: PerformanceMetrics[] = [];
   private customScripts: CustomScript[] = [];
 
   static getInstance(): SettingsManager {
-    if (!SettingsManager.instance) {
+    if (SettingsManager.instance === null) {
       SettingsManager.instance = new SettingsManager();
     }
     return SettingsManager.instance;
   }
 
   static resetInstance(): void {
-    (SettingsManager as any).instance = undefined;
+    SettingsManager.instance = null;
   }
 
   async loadSettings(): Promise<GlobalSettings> {
