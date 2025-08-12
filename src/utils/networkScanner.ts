@@ -99,7 +99,9 @@ export class NetworkScanner {
     const portsToScan = this.getPortsToScan(config);
 
     // Scan ports concurrently
-    const portPromises = portsToScan.map(port => this.scanPort(ip, port, config.timeout));
+    const portPromises = portsToScan.map(port =>
+      this.scanPort(ip, port, config.timeout, config.tcpBackendUrl)
+    );
     const portResults = await Promise.all(portPromises);
 
     portResults.forEach((result, index) => {
@@ -158,13 +160,57 @@ export class NetworkScanner {
   private async scanPort(
     ip: string,
     port: number,
-    timeout: number
+    timeout: number,
+    backendUrl?: string
   ): Promise<{ isOpen: boolean; banner?: string; elapsed: number }> {
-    return new Promise((resolve) => {
-      const startTime = Date.now();
-      let resolved = false;
+    const startTime = Date.now();
+    const serviceInfo = serviceMap[port];
 
-      // Use WebSocket for port scanning (limited but works for many services)
+    // Use HTTP(S) requests for common web services
+    if (serviceInfo?.protocol === 'http' || serviceInfo?.protocol === 'https') {
+      const scheme = serviceInfo.protocol;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        const response = await fetch(`${scheme}://${ip}:${port}`, {
+          method: 'HEAD',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return {
+          isOpen: true,
+          banner: response.headers.get('server') ?? undefined,
+          elapsed: Date.now() - startTime,
+        };
+      } catch {
+        return { isOpen: false, elapsed: Date.now() - startTime };
+      }
+    }
+
+    // If a backend is configured, ask it to perform a TCP check
+    if (backendUrl) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        const url = `${backendUrl}?ip=${encodeURIComponent(ip)}&port=${port}`;
+        const res = await fetch(url, { method: 'GET', signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const data = await res.json();
+          return {
+            isOpen: Boolean(data.open),
+            banner: data.banner,
+            elapsed: Date.now() - startTime,
+          };
+        }
+      } catch {
+        // fall through to WebSocket fallback
+      }
+    }
+
+    // Fallback to WebSocket-based detection
+    return new Promise((resolve) => {
+      let resolved = false;
       const ws = new WebSocket(`ws://${ip}:${port}`);
 
       const timeoutId = setTimeout(() => {

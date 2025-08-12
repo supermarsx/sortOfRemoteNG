@@ -169,6 +169,8 @@ export interface NetworkDiscoveryConfig {
   timeout: number;
   maxConcurrent: number;
   customPorts: Record<string, number[]>;
+  /** Optional backend endpoint for TCP checks */
+  tcpBackendUrl?: string;
 }
 
 export interface TOTPConfig {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { NetworkScanner } from '../networkScanner';
 
 // Access private methods via casting to any
@@ -56,5 +56,49 @@ describe('NetworkScanner helper methods', () => {
     const result = scanner.identifyService(9999);
     expect(result.service).toBe('unknown');
     expect(result.protocol).toBe('unknown');
+  });
+});
+
+describe('NetworkScanner scanPort', () => {
+  it('uses HEAD fetch for HTTP ports', async () => {
+    const originalFetch = global.fetch;
+    const mock = vi.fn().mockResolvedValue({
+      headers: new Headers({ server: 'test' }),
+    });
+    // @ts-ignore
+    global.fetch = mock;
+
+    const result = await scanner.scanPort('10.0.0.1', 80, 1000);
+
+    expect(mock).toHaveBeenCalledWith(
+      'http://10.0.0.1:80',
+      expect.objectContaining({ method: 'HEAD' })
+    );
+    expect(result.isOpen).toBe(true);
+
+    // @ts-ignore
+    global.fetch = originalFetch;
+  });
+
+  it('queries backend for non-HTTP ports when configured', async () => {
+    const originalFetch = global.fetch;
+    const mock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ open: true, banner: 'SSH-2.0' }),
+    });
+    // @ts-ignore
+    global.fetch = mock;
+
+    const result = await scanner.scanPort('10.0.0.1', 22, 1000, 'http://backend');
+
+    expect(mock).toHaveBeenCalledWith(
+      'http://backend?ip=10.0.0.1&port=22',
+      expect.objectContaining({ method: 'GET' })
+    );
+    expect(result.isOpen).toBe(true);
+    expect(result.banner).toBe('SSH-2.0');
+
+    // @ts-ignore
+    global.fetch = originalFetch;
   });
 });
