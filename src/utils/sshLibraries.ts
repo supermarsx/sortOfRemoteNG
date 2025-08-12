@@ -435,7 +435,7 @@ export class WebSSHClientFrontend extends BaseSSHClient {
   }
 
   resize(cols: number, rows: number): void {
-    this.terminal?.resize();
+    this.terminal?.resize(cols, rows);
   }
 
   disconnect(): void {
