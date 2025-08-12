@@ -163,9 +163,15 @@ export class NetworkScanner {
     return new Promise((resolve) => {
       const startTime = Date.now();
       let resolved = false;
+      let ws: WebSocket;
 
       // Use WebSocket for port scanning (limited but works for many services)
-      const ws = new WebSocket(`ws://${ip}:${port}`);
+      try {
+        ws = new WebSocket(`ws://${ip}:${port}`);
+      } catch (error) {
+        resolve({ isOpen: false, elapsed: Date.now() - startTime });
+        return;
+      }
 
       const timeoutId = setTimeout(() => {
         ws.close();

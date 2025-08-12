@@ -57,4 +57,9 @@ describe('NetworkScanner helper methods', () => {
     expect(result.service).toBe('unknown');
     expect(result.protocol).toBe('unknown');
   });
+
+  it('scanPort resolves false on invalid hostname without rejection', async () => {
+    const result = await scanner.scanPort('invalid host', 80, 50);
+    expect(result.isOpen).toBe(false);
+  });
 });
