@@ -2,20 +2,20 @@ import { ThemeConfig, Theme, ColorScheme } from '../types/settings';
 import { IndexedDbService } from './indexedDbService';
 
 export class ThemeManager {
-  private static instance: ThemeManager;
+  private static instance: ThemeManager | null = null;
   private currentTheme: Theme = 'dark';
   private currentColorScheme: ColorScheme = 'blue';
   private systemThemeStop?: () => void;
 
   static getInstance(): ThemeManager {
-    if (!ThemeManager.instance) {
+    if (ThemeManager.instance === null) {
       ThemeManager.instance = new ThemeManager();
     }
     return ThemeManager.instance;
   }
 
   static resetInstance(): void {
-    (ThemeManager as any).instance = undefined;
+    ThemeManager.instance = null;
   }
 
   private themes: Record<string, ThemeConfig> = {

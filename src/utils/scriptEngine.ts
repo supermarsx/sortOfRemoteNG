@@ -3,18 +3,18 @@ import { Connection, ConnectionSession } from '../types/connection';
 import { SettingsManager } from './settingsManager';
 
 export class ScriptEngine {
-  private static instance: ScriptEngine;
+  private static instance: ScriptEngine | null = null;
   private settingsManager = SettingsManager.getInstance();
 
   static getInstance(): ScriptEngine {
-    if (!ScriptEngine.instance) {
+    if (ScriptEngine.instance === null) {
       ScriptEngine.instance = new ScriptEngine();
     }
     return ScriptEngine.instance;
   }
 
   static resetInstance(): void {
-    (ScriptEngine as any).instance = undefined;
+    ScriptEngine.instance = null;
   }
 
   async executeScript(
