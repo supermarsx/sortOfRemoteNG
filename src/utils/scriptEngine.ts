@@ -83,8 +83,14 @@ export class ScriptEngine {
       // HTTP utilities
       http: {
         get: (url: string, options?: RequestInit) => this.httpRequest('GET', url, options),
-        post: (url: string, data?: any, options?: RequestInit) => this.httpRequest('POST', url, { ...options, body: JSON.stringify(data) }),
-        put: (url: string, data?: any, options?: RequestInit) => this.httpRequest('PUT', url, { ...options, body: JSON.stringify(data) }),
+        post: (url: string, data?: any, options?: RequestInit) =>
+          data !== undefined
+            ? this.httpRequest('POST', url, { ...options, body: JSON.stringify(data) })
+            : this.httpRequest('POST', url, options),
+        put: (url: string, data?: any, options?: RequestInit) =>
+          data !== undefined
+            ? this.httpRequest('PUT', url, { ...options, body: JSON.stringify(data) })
+            : this.httpRequest('PUT', url, options),
         delete: (url: string, options?: RequestInit) => this.httpRequest('DELETE', url, options),
       },
       
@@ -133,13 +139,29 @@ export class ScriptEngine {
   }
 
   private async httpRequest(method: string, url: string, options: RequestInit = {}): Promise<any> {
+    const { headers: optHeaders, ...restOptions } = options;
+    let headers: Record<string, string> = {};
+
+    if (optHeaders instanceof Headers) {
+      optHeaders.forEach((value, key) => {
+        headers[key] = value;
+      });
+    } else if (optHeaders) {
+      headers = { ...(optHeaders as Record<string, string>) };
+    }
+
+    const hasContentType = Object.keys(headers).some(
+      h => h.toLowerCase() === 'content-type'
+    );
+
+    if (restOptions.body !== undefined && restOptions.body !== null && !hasContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+
     const response = await fetch(url, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
+      headers,
+      ...restOptions,
     });
 
     if (!response.ok) {
