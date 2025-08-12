@@ -63,11 +63,11 @@ export class SecureStorage {
 
   static async saveData(data: StorageData, usePassword: boolean = false): Promise<void> {
     try {
-      const serialized = JSON.stringify(data);
+      await this.migrateMetaKey();
 
       if (usePassword && this.password) {
+        const serialized = JSON.stringify(data);
         const encrypted = CryptoJS.AES.encrypt(serialized, this.password).toString();
-        await this.migrateMetaKey();
         await IndexedDbService.setItem(STORAGE_KEY, encrypted);
         await IndexedDbService.setItem(STORAGE_META_KEY, {
           isEncrypted: true,
@@ -75,7 +75,6 @@ export class SecureStorage {
           timestamp: Date.now()
         });
       } else {
-        await this.migrateMetaKey();
         await IndexedDbService.setItem(STORAGE_KEY, data);
         await IndexedDbService.setItem(STORAGE_META_KEY, {
           isEncrypted: false,
