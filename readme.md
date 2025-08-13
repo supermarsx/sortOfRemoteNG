@@ -29,6 +29,37 @@ npm run lint
 
 All code should pass ESLint before committing.
 
+## Authentication
+
+The REST API uses a simple user store with bcrypt-hashed passwords and JWT tokens.
+
+1. Users are defined in a JSON file (`users.json` by default) containing objects with
+   `username` and `passwordHash` fields:
+
+   ```json
+   [
+     { "username": "admin", "passwordHash": "<bcrypt-hash>" }
+   ]
+   ```
+
+   Generate hashes with:
+
+   ```bash
+   node -e "require('bcryptjs').hash('password',10).then(console.log)"
+   ```
+
+2. Obtain a token via `POST /auth/login` with the username and password. Use the
+   returned token in the `Authorization: Bearer <token>` header for all `/api`
+   requests.
+
+3. An API key can be supplied via the `X-API-Key` header.
+
+Environment variables:
+
+- `API_KEY` – optional API key (defaults to none).
+- `JWT_SECRET` – secret for signing JWTs (defaults to `defaultsecret`).
+- `USER_STORE_PATH` – path to the users file (defaults to `users.json`).
+
 ## Appearance
 
 The interface supports selectable color schemes (blue, green, purple, red, orange and teal). Use the settings dialog to choose your preferred scheme.
