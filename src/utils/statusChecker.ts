@@ -100,15 +100,52 @@ export class StatusChecker {
   }
 
   private async checkSocket(hostname: string, port: number, timeout: number): Promise<void> {
+    if (this.canUseTcpSockets()) {
+      return this.checkTcpSocket(hostname, port, timeout);
+    }
+    return this.checkWebSocket(hostname, port, timeout);
+  }
+
+  private canUseTcpSockets(): boolean {
+    return typeof process !== 'undefined' &&
+      !!(process.versions?.node || (process as any).version);
+  }
+
+  private async checkTcpSocket(hostname: string, port: number, timeout: number): Promise<void> {
+    const net = await import('net');
     return new Promise((resolve, reject) => {
-      // Use WebSocket for socket checking (limited but works for many protocols)
+      const socket = net.createConnection({ host: hostname, port });
+
+      const onError = () => {
+        socket.destroy();
+        reject(new Error('Connection failed'));
+      };
+
+      const onTimeout = () => {
+        socket.destroy();
+        reject(new Error('Connection timeout'));
+      };
+
+      socket.setTimeout(timeout);
+
+      socket.once('connect', () => {
+        socket.end();
+        resolve();
+      });
+      socket.once('error', onError);
+      socket.once('timeout', onTimeout);
+    });
+  }
+
+  private async checkWebSocket(hostname: string, port: number, timeout: number): Promise<void> {
+    return new Promise((resolve, reject) => {
       const ws = new WebSocket(`ws://${hostname}:${port}`);
 
       const timeoutId = setTimeout(() => {
         ws.close();
         reject(new Error('Connection timeout'));
       }, timeout);
-      
+
       ws.onopen = () => {
         clearTimeout(timeoutId);
         ws.close();
