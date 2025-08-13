@@ -45,6 +45,25 @@ describe('RestApiServer routes', () => {
     expect(listRes.body).toHaveLength(1);
     expect(listRes.body[0].name).toBe('test');
   });
+
+  it('can create and delete sessions', async () => {
+    const connRes = await request(app)
+      .post('/api/connections')
+      .send({ name: 'session', protocol: 'ssh', hostname: 'localhost' });
+    expect(connRes.status).toBe(201);
+    const connectionId = connRes.body.id;
+
+    const sessionRes = await request(app)
+      .post('/api/sessions')
+      .send({ connectionId });
+    expect(sessionRes.status).toBe(201);
+
+    const delRes = await request(app).delete(`/api/sessions/${sessionRes.body.id}`);
+    expect(delRes.status).toBe(204);
+
+    const listSess = await request(app).get('/api/sessions');
+    expect(listSess.body).toHaveLength(0);
+  });
 });
 
 describe('Authentication', () => {
@@ -102,6 +121,38 @@ describe('Authentication', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
   });
+
+  it('requires auth for session endpoints', async () => {
+    const res = await request(app)
+      .post('/api/sessions')
+      .send({ connectionId: '123' });
+    expect(res.status).toBe(401);
+  });
+
+  it('allows session operations with valid token', async () => {
+    const login = await request(app)
+      .post('/auth/login')
+      .send({ username: 'admin', password: 'admin' });
+    const token = login.body.token;
+
+    const connRes = await request(app)
+      .post('/api/connections')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'auth', protocol: 'ssh', hostname: 'localhost' });
+    expect(connRes.status).toBe(201);
+    const connectionId = connRes.body.id;
+
+    const sessionRes = await request(app)
+      .post('/api/sessions')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ connectionId });
+    expect(sessionRes.status).toBe(201);
+
+    const deleteRes = await request(app)
+      .delete(`/api/sessions/${sessionRes.body.id}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(deleteRes.status).toBe(204);
+  });
 });
 
 describe('Persistence', () => {
@@ -154,5 +205,39 @@ describe('Persistence', () => {
 
     await server.stop();
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+});
+
+describe('Rate limiting', () => {
+  let server: RestApiServer;
+  let app: Application;
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-'));
+    server = new RestApiServer({
+      port: 0,
+      authentication: false,
+      corsEnabled: false,
+      rateLimiting: true,
+      jwtSecret: 'secret',
+      connectionsStorePath: path.join(tempDir, 'connections.json'),
+      sessionsStorePath: path.join(tempDir, 'sessions.json'),
+    });
+    app = (server as unknown as { app: Application }).app;
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('enforces request limits', async () => {
+    for (let i = 0; i < 100; i++) {
+      const res = await request(app).get('/health');
+      expect(res.status).toBe(200);
+    }
+    const limited = await request(app).get('/health');
+    expect(limited.status).toBe(429);
+    expect(limited.body.error).toBe('Too many requests');
   });
 });
