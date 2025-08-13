@@ -13,6 +13,7 @@ import bcrypt from 'bcryptjs';
 import { Connection, ConnectionSession } from '../types/connection';
 import { debugLog } from './debugLogger';
 import { generateId } from './id';
+import { loadJson, saveJson } from './fileStorage';
 
 const execAsync = promisify(exec);
 
@@ -24,12 +25,16 @@ interface ApiConfig {
   rateLimiting: boolean;
   jwtSecret?: string;
   userStorePath?: string;
+  connectionsStorePath?: string;
+  sessionsStorePath?: string;
 }
 
 interface ResolvedApiConfig extends ApiConfig {
   apiKey: string;
   jwtSecret: string;
   userStorePath: string;
+  connectionsStorePath: string;
+  sessionsStorePath: string;
 }
 
 interface AuthRequest extends express.Request {
@@ -54,6 +59,14 @@ export class RestApiServer {
       apiKey: config.apiKey ?? process.env.API_KEY ?? '',
       jwtSecret: config.jwtSecret ?? process.env.JWT_SECRET ?? 'defaultsecret',
       userStorePath: config.userStorePath ?? process.env.USER_STORE_PATH ?? 'users.json',
+      connectionsStorePath:
+        config.connectionsStorePath ??
+        process.env.CONNECTIONS_STORE_PATH ??
+        'connections.json',
+      sessionsStorePath:
+        config.sessionsStorePath ??
+        process.env.SESSIONS_STORE_PATH ??
+        'sessions.json',
     };
     this.config = defaultConfig;
     this.app = express();
@@ -75,6 +88,25 @@ export class RestApiServer {
     } catch {
       return {};
     }
+  }
+
+  private loadPersistedData(): void {
+    this.connections = loadJson<Connection[]>(
+      this.config.connectionsStorePath,
+      []
+    );
+    this.sessions = loadJson<ConnectionSession[]>(
+      this.config.sessionsStorePath,
+      []
+    );
+  }
+
+  private persistConnections(): void {
+    saveJson(this.config.connectionsStorePath, this.connections);
+  }
+
+  private persistSessions(): void {
+    saveJson(this.config.sessionsStorePath, this.sessions);
   }
 
   private setupMiddleware(): void {
@@ -230,8 +262,9 @@ export class RestApiServer {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      
+
       this.connections.push(connection);
+      this.persistConnections();
       res.status(201).json(connection);
     });
 
@@ -252,6 +285,7 @@ export class RestApiServer {
           ...req.body,
           updatedAt: new Date(),
         };
+        this.persistConnections();
         res.json(this.connections[index]);
       } else {
         res.status(404).json({ error: 'Connection not found' });
@@ -262,6 +296,7 @@ export class RestApiServer {
       const index = this.connections.findIndex(c => c.id === req.params.id);
       if (index >= 0) {
         this.connections.splice(index, 1);
+        this.persistConnections();
         res.status(204).send();
       } else {
         res.status(404).json({ error: 'Connection not found' });
@@ -292,6 +327,7 @@ export class RestApiServer {
       };
 
       this.sessions.push(session);
+      this.persistSessions();
       res.status(201).json(session);
     });
 
@@ -299,6 +335,7 @@ export class RestApiServer {
       const index = this.sessions.findIndex(s => s.id === req.params.id);
       if (index >= 0) {
         this.sessions.splice(index, 1);
+        this.persistSessions();
         res.status(204).send();
       } else {
         res.status(404).json({ error: 'Session not found' });
@@ -308,7 +345,7 @@ export class RestApiServer {
     // Bulk operations
     this.app.post('/api/connections/bulk', (req, res) => {
       const { action, connectionIds } = req.body;
-      
+
       switch (action) {
         case 'delete':
           this.connections = this.connections.filter(c => !connectionIds.includes(c.id));
@@ -333,7 +370,9 @@ export class RestApiServer {
         default:
           return res.status(400).json({ error: 'Invalid action' });
       }
-      
+
+      this.persistConnections();
+      this.persistSessions();
       res.json({ success: true, affected: connectionIds.length });
     });
 
@@ -353,6 +392,7 @@ export class RestApiServer {
       }));
 
       this.connections.push(...imported);
+      this.persistConnections();
       res.json({ imported: imported.length });
     });
 
@@ -415,6 +455,7 @@ export class RestApiServer {
   }
 
   start(): Promise<void> {
+    this.loadPersistedData();
     return new Promise((resolve, reject) => {
       try {
         this.server = this.app.listen(this.config.port);
@@ -447,9 +488,11 @@ export class RestApiServer {
   // Update data from main application
   updateConnections(connections: Connection[]): void {
     this.connections = connections;
+    this.persistConnections();
   }
 
   updateSessions(sessions: ConnectionSession[]): void {
     this.sessions = sessions;
+    this.persistSessions();
   }
 }
