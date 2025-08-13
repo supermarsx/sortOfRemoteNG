@@ -123,19 +123,79 @@ export class ScriptEngine {
   }
 
   private async executeJavaScript(code: string, context: any): Promise<any> {
-    // Create a function with the script code
-    const scriptFunction = new Function(
-      ...Object.keys(context),
-      `
-      "use strict";
-      return (async function() {
-        ${code}
-      })();
-      `
-    );
+    const isNode = typeof process !== 'undefined' && !!process.versions?.node;
 
-    // Execute with context
-    return await scriptFunction(...Object.values(context));
+    if (isNode) {
+      // Dynamically import vm2 to avoid bundling for browser builds
+      const { NodeVM } = await import('vm2');
+      const vm = new NodeVM({
+        sandbox: { ...context },
+        timeout: 1000,
+        eval: false,
+        wasm: false,
+        require: false,
+        wrapper: 'commonjs',
+      });
+
+      const wrapped = `module.exports = async function() { ${code} }`;
+      const fn = vm.run(wrapped);
+      const resultPromise = fn();
+      return await Promise.race([
+        resultPromise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Script execution timed out')), 1000)
+        ),
+      ]);
+    }
+
+    return await this.executeInIframe(code, context);
+  }
+
+  private async executeInIframe(code: string, context: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('sandbox', 'allow-scripts');
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+
+      const iframeWindow = iframe.contentWindow;
+      if (!iframeWindow) {
+        document.body.removeChild(iframe);
+        reject(new Error('Sandbox not available'));
+        return;
+      }
+
+      const listener = (event: MessageEvent) => {
+        if (event.source !== iframeWindow) return;
+        window.removeEventListener('message', listener);
+        document.body.removeChild(iframe);
+        const { error, result } = event.data || {};
+        if (error) {
+          reject(new Error(error));
+        } else {
+          resolve(result);
+        }
+      };
+
+      window.addEventListener('message', listener);
+
+      const sandboxInit = `
+        window.addEventListener('message', async (event) => {
+          const { code, context } = event.data;
+          try {
+            const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+            const fn = new AsyncFunction(...Object.keys(context), code);
+            const result = await fn(...Object.values(context));
+            parent.postMessage({ result }, '*');
+          } catch (err) {
+            parent.postMessage({ error: err?.message || String(err) }, '*');
+          }
+        });
+      `;
+
+      iframe.srcdoc = `<script>${sandboxInit}<\/script>`;
+      iframeWindow.postMessage({ code, context }, '*');
+    });
   }
 
   private async httpRequest(method: string, url: string, options: RequestInit = {}): Promise<any> {
