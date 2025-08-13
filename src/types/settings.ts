@@ -168,6 +168,7 @@ export interface NetworkDiscoveryConfig {
   protocols: string[];
   timeout: number;
   maxConcurrent: number;
+  maxPortConcurrent: number;
   customPorts: Record<string, number[]>;
 }
 

@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { NetworkScanner } from '../networkScanner';
+import type { NetworkDiscoveryConfig } from '../../types/settings';
 
 // Access private methods via casting to any
 const scanner = new NetworkScanner() as any;
@@ -56,6 +57,41 @@ describe('NetworkScanner helper methods', () => {
     const result = scanner.identifyService(9999);
     expect(result.service).toBe('unknown');
     expect(result.protocol).toBe('unknown');
+  });
+
+  it('scanHost respects port concurrency limit', async () => {
+    vi.useFakeTimers();
+    const testScanner = new NetworkScanner() as any;
+
+    const config: NetworkDiscoveryConfig = {
+      enabled: true,
+      ipRange: '192.168.0.0/24',
+      portRanges: ['1', '2', '3', '4', '5'],
+      protocols: [],
+      timeout: 1000,
+      maxConcurrent: 10,
+      maxPortConcurrent: 2,
+      customPorts: {},
+    };
+
+    let active = 0;
+    let maxActive = 0;
+    testScanner.scanPort = vi.fn(async () => {
+      active++;
+      maxActive = Math.max(maxActive, active);
+      return new Promise(resolve => {
+        setTimeout(() => {
+          active--;
+          resolve({ isOpen: false, elapsed: 0 });
+        }, 1000);
+      });
+    });
+
+    const promise = testScanner.scanHost('192.168.0.1', config);
+    await vi.runAllTimersAsync();
+    await promise;
+    expect(maxActive).toBe(config.maxPortConcurrent);
+    vi.useRealTimers();
   });
 
   it('scanPort resolves false on invalid hostname without rejection', async () => {

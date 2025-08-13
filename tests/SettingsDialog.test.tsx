@@ -44,7 +44,7 @@ const mockSettings: GlobalSettings = {
   enableStatusChecking: false,
   statusCheckInterval: 30,
   statusCheckMethod: 'socket',
-  networkDiscovery: { enabled: false, ipRange: '', portRanges: [], protocols: [], timeout: 5000, maxConcurrent: 50, customPorts: {} },
+  networkDiscovery: { enabled: false, ipRange: '', portRanges: [], protocols: [], timeout: 5000, maxConcurrent: 50, maxPortConcurrent: 100, customPorts: {} },
   restApi: { enabled: false, port: 8080, authentication: false, apiKey: '', corsEnabled: true, rateLimiting: true },
   wolEnabled: false,
   wolPort: 9,

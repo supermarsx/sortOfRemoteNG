@@ -22,6 +22,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
     protocols: ['ssh', 'http', 'https', 'rdp', 'vnc'],
     timeout: 5000,
     maxConcurrent: 50,
+    maxPortConcurrent: 100,
     customPorts: {
       ssh: [22],
       http: [80, 8080, 8000],
