@@ -1,5 +1,14 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WakeOnLanService } from '../wakeOnLan';
+
+beforeEach(async () => {
+  const { JSDOM } = await import('jsdom');
+  const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' });
+  (global as any).window = dom.window;
+  (global as any).document = dom.window.document;
+  (global as any).localStorage = dom.window.localStorage;
+  localStorage.clear();
+});
 
 describe('WakeOnLanService', () => {
   it('formats MAC addresses', () => {
@@ -24,7 +33,7 @@ describe('WakeOnLanService', () => {
     expect(packet.slice(packet.length - 6)).toEqual(mac);
   });
 
-  it('schedules long delays and passes port', async () => {
+  it('schedules long delays, persists schedule, and passes port', async () => {
     vi.useFakeTimers();
     const service = new WakeOnLanService();
     const sendSpy = vi
@@ -34,11 +43,16 @@ describe('WakeOnLanService', () => {
 
     service.scheduleWakeUp('00:11:22:33:44:55', wakeTime, undefined, 7);
 
+    const stored = JSON.parse(localStorage.getItem('wol-schedules') || '[]');
+    expect(stored).toHaveLength(1);
+
     vi.advanceTimersByTime(0x7fffffff);
     expect(sendSpy).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem('wol-schedules') || '[]')).toHaveLength(1);
 
     vi.advanceTimersByTime(1000);
     expect(sendSpy).toHaveBeenCalledWith('00:11:22:33:44:55', undefined, 7);
+    expect(localStorage.getItem('wol-schedules')).toBeNull();
 
     vi.useRealTimers();
   });

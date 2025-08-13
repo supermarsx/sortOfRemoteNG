@@ -1,4 +1,14 @@
 import { debugLog } from './debugLogger';
+import { LocalStorageService } from './localStorageService';
+
+interface WakeSchedule {
+  macAddress: string;
+  wakeTime: string;
+  broadcastAddress?: string;
+  port: number;
+}
+
+const SCHEDULE_KEY = 'wol-schedules';
 
 export class WakeOnLanService {
   /**
@@ -92,6 +102,13 @@ export class WakeOnLanService {
     ];
   }
 
+  restoreScheduledWakeUps(): void {
+    const schedules = this.getSchedules();
+    for (const s of schedules) {
+      this.scheduleWakeUp(s.macAddress, new Date(s.wakeTime), s.broadcastAddress, s.port);
+    }
+  }
+
   /**
    * Schedule a Wake-on-LAN packet to be sent at a future time.
    * @param macAddress - Target device's MAC address
@@ -112,19 +129,69 @@ export class WakeOnLanService {
       throw new Error('Wake time must be in the future');
     }
 
-    const MAX_DELAY = 0x7fffffff;
+    const MAX_SAFE_TIMEOUT = 0x7fffffff;
 
-    if (delay > MAX_DELAY) {
+    if (delay > MAX_SAFE_TIMEOUT) {
+      this.saveSchedule({
+        macAddress,
+        wakeTime: wakeTime.toISOString(),
+        broadcastAddress,
+        port,
+      });
+
       setTimeout(() => {
         this.scheduleWakeUp(macAddress, wakeTime, broadcastAddress, port);
-      }, MAX_DELAY);
+      }, MAX_SAFE_TIMEOUT);
     } else {
       setTimeout(() => {
         this.sendWakePacket(macAddress, broadcastAddress, port);
+        this.removeSchedule({
+          macAddress,
+          wakeTime: wakeTime.toISOString(),
+          broadcastAddress,
+          port,
+        });
       }, delay);
     }
 
     debugLog(`Wake-on-LAN scheduled for ${wakeTime.toLocaleString()}`);
+  }
+
+  private getSchedules(): WakeSchedule[] {
+    return LocalStorageService.getItem<WakeSchedule[]>(SCHEDULE_KEY) || [];
+  }
+
+  private saveSchedule(schedule: WakeSchedule): void {
+    const schedules = this.getSchedules();
+    const exists = schedules.some(
+      (s) =>
+        s.macAddress === schedule.macAddress &&
+        s.wakeTime === schedule.wakeTime &&
+        s.port === schedule.port &&
+        s.broadcastAddress === schedule.broadcastAddress,
+    );
+    if (!exists) {
+      schedules.push(schedule);
+      LocalStorageService.setItem(SCHEDULE_KEY, schedules);
+    }
+  }
+
+  private removeSchedule(schedule: WakeSchedule): void {
+    const schedules = this.getSchedules();
+    const filtered = schedules.filter(
+      (s) =>
+        !(
+          s.macAddress === schedule.macAddress &&
+          s.wakeTime === schedule.wakeTime &&
+          s.port === schedule.port &&
+          s.broadcastAddress === schedule.broadcastAddress
+        ),
+    );
+    if (filtered.length === 0) {
+      LocalStorageService.removeItem(SCHEDULE_KEY);
+    } else {
+      LocalStorageService.setItem(SCHEDULE_KEY, filtered);
+    }
   }
 
   // Test if device is awake
