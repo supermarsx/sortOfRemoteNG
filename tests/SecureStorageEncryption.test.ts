@@ -26,7 +26,16 @@ describe('SecureStorage encryption', () => {
 
     const stored = await IndexedDbService.getItem<string>('mremote-connections');
     expect(typeof stored).toBe('string');
-    const meta = await IndexedDbService.getItem<{ isEncrypted: boolean }>('mremote-storage-meta');
+    const meta = await IndexedDbService.getItem<{
+      isEncrypted: boolean;
+      salt: string;
+      iv: string;
+    }>('mremote-storage-meta');
     expect(meta.isEncrypted).toBe(true);
+    expect(typeof meta.salt).toBe('string');
+    expect(typeof meta.iv).toBe('string');
+
+    const loaded = await SecureStorage.loadData();
+    expect(loaded?.connections).toBeDefined();
   });
 });
