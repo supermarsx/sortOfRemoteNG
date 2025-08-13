@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { SettingsManager } from '../settingsManager';
 import { IndexedDbService } from '../indexedDbService';
@@ -73,5 +73,22 @@ describe('SettingsManager.benchmarkKeyDerivation', () => {
     await expect(manager.benchmarkKeyDerivation(0.01)).rejects.toThrow();
 
     globalThis.performance = originalPerformance;
+  });
+
+  it('stops when exceeding max time and returns last iteration count', async () => {
+    const manager = SettingsManager.getInstance();
+    await manager.loadSettings();
+    // Mock performance.now to simulate time passing quickly
+    let time = 0;
+    const nowSpy = vi.spyOn(globalThis.performance, 'now').mockImplementation(() => {
+      time += 100; // increase by 100ms each call
+      return time;
+    });
+
+    const iterations = await manager.benchmarkKeyDerivation(5, 0.03); // 30ms max
+
+    expect(iterations).toBe(10000);
+
+    nowSpy.mockRestore();
   });
 });
