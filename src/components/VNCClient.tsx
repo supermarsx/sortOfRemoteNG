@@ -39,6 +39,10 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     quality: 6,
   });
   const [rfb, setRfb] = useState<any>(null);
+  const connectHandlerRef = useRef<EventListener | null>(null);
+  const disconnectHandlerRef = useRef<EventListener | null>(null);
+  const credentialsHandlerRef = useRef<EventListener | null>(null);
+  const securityFailureHandlerRef = useRef<EventListener | null>(null);
 
   useEffect(() => {
     initializeVNCConnection();
@@ -63,11 +67,15 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
         },
       });
 
-      // Set up event handlers
-      rfbConnection.addEventListener('connect', handleConnect);
-      rfbConnection.addEventListener('disconnect', handleDisconnect);
-      rfbConnection.addEventListener('credentialsrequired', handleCredentialsRequired);
-      rfbConnection.addEventListener('securityfailure', handleSecurityFailure);
+      // Set up event handlers and store references for cleanup
+      connectHandlerRef.current = handleConnect.bind(null);
+      rfbConnection.addEventListener('connect', connectHandlerRef.current);
+      disconnectHandlerRef.current = handleDisconnect.bind(null);
+      rfbConnection.addEventListener('disconnect', disconnectHandlerRef.current);
+      credentialsHandlerRef.current = handleCredentialsRequired.bind(null);
+      rfbConnection.addEventListener('credentialsrequired', credentialsHandlerRef.current);
+      securityFailureHandlerRef.current = handleSecurityFailure.bind(null);
+      rfbConnection.addEventListener('securityfailure', securityFailureHandlerRef.current);
 
       // Apply settings
       rfbConnection.viewOnly = settings.viewOnly;
@@ -321,6 +329,18 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
 
   const cleanup = () => {
     if (rfb) {
+      if (connectHandlerRef.current) {
+        rfb.removeEventListener('connect', connectHandlerRef.current);
+      }
+      if (disconnectHandlerRef.current) {
+        rfb.removeEventListener('disconnect', disconnectHandlerRef.current);
+      }
+      if (credentialsHandlerRef.current) {
+        rfb.removeEventListener('credentialsrequired', credentialsHandlerRef.current);
+      }
+      if (securityFailureHandlerRef.current) {
+        rfb.removeEventListener('securityfailure', securityFailureHandlerRef.current);
+      }
       rfb.disconnect();
     }
     setIsConnected(false);
