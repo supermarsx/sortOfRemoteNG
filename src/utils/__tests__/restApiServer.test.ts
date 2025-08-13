@@ -1,22 +1,32 @@
 import request from 'supertest';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 import type { Application } from 'express';
 import { RestApiServer } from '../restApiServer';
 
 describe('RestApiServer routes', () => {
   let server: RestApiServer;
   let app: Application;
+  let tempDir: string;
 
   beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-'));
     server = new RestApiServer({
       port: 0,
       authentication: false,
       corsEnabled: false,
       rateLimiting: false,
-      jwtSecret: 'secret'
+      jwtSecret: 'secret',
+      connectionsStorePath: path.join(tempDir, 'connections.json'),
+      sessionsStorePath: path.join(tempDir, 'sessions.json'),
     });
     app = (server as unknown as { app: Application }).app;
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it('health check returns ok', async () => {
@@ -40,8 +50,10 @@ describe('RestApiServer routes', () => {
 describe('Authentication', () => {
   let server: RestApiServer;
   let app: Application;
+  let tempDir: string;
 
   beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-'));
     server = new RestApiServer({
       port: 0,
       authentication: true,
@@ -49,8 +61,14 @@ describe('Authentication', () => {
       rateLimiting: false,
       jwtSecret: 'secret',
       userStorePath: path.join(__dirname, '..', '..', '..', 'users.json'),
+      connectionsStorePath: path.join(tempDir, 'connections.json'),
+      sessionsStorePath: path.join(tempDir, 'sessions.json'),
     });
     app = (server as unknown as { app: Application }).app;
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
   it('allows login with valid credentials', async () => {
@@ -83,5 +101,58 @@ describe('Authentication', () => {
       .get('/api/connections')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
+  });
+});
+
+describe('Persistence', () => {
+  it('persists connections and sessions across restarts', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-'));
+    const paths = {
+      connectionsStorePath: path.join(tempDir, 'connections.json'),
+      sessionsStorePath: path.join(tempDir, 'sessions.json'),
+    };
+
+    let server = new RestApiServer({
+      port: 0,
+      authentication: false,
+      corsEnabled: false,
+      rateLimiting: false,
+      jwtSecret: 'secret',
+      ...paths,
+    });
+    await server.start();
+    const app = (server as unknown as { app: Application }).app;
+
+    const connRes = await request(app)
+      .post('/api/connections')
+      .send({ name: 'persist', protocol: 'ssh', hostname: 'localhost' });
+    expect(connRes.status).toBe(201);
+    const connectionId = connRes.body.id;
+
+    const sessionRes = await request(app)
+      .post('/api/sessions')
+      .send({ connectionId });
+    expect(sessionRes.status).toBe(201);
+
+    await server.stop();
+
+    server = new RestApiServer({
+      port: 0,
+      authentication: false,
+      corsEnabled: false,
+      rateLimiting: false,
+      jwtSecret: 'secret',
+      ...paths,
+    });
+    await server.start();
+    const app2 = (server as unknown as { app: Application }).app;
+
+    const listConn = await request(app2).get('/api/connections');
+    expect(listConn.body).toHaveLength(1);
+    const listSess = await request(app2).get('/api/sessions');
+    expect(listSess.body).toHaveLength(1);
+
+    await server.stop();
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 });
