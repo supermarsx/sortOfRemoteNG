@@ -67,7 +67,7 @@ describe('SettingsManager.benchmarkKeyDerivation', () => {
 
     const originalPerformance = globalThis.performance;
     // Remove performance API to simulate unsupported environment
-    // @ts-ignore
+    // @ts-expect-error: simulate unsupported environment
     globalThis.performance = undefined;
 
     await expect(manager.benchmarkKeyDerivation(0.01)).rejects.toThrow();
