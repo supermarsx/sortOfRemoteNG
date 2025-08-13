@@ -41,6 +41,42 @@ describe('ScriptEngine.setSetting', () => {
   });
 });
 
+describe('ScriptEngine sandbox', () => {
+  it('prevents access to global window', async () => {
+    const engine = ScriptEngine.getInstance();
+    const script: CustomScript = {
+      id: 's-window',
+      name: 'window access',
+      type: 'javascript',
+      content: "return typeof window;",
+      trigger: 'manual',
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await engine.executeScript(script, { trigger: 'manual' });
+    expect(result).toBe('undefined');
+  });
+
+  it('prevents access to global document', async () => {
+    const engine = ScriptEngine.getInstance();
+    const script: CustomScript = {
+      id: 's-document',
+      name: 'document access',
+      type: 'javascript',
+      content: "return typeof document;",
+      trigger: 'manual',
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await engine.executeScript(script, { trigger: 'manual' });
+    expect(result).toBe('undefined');
+  });
+});
+
 describe('ScriptEngine.httpRequest', () => {
   it('makes GET request without Content-Type header', async () => {
     const engine = ScriptEngine.getInstance();
