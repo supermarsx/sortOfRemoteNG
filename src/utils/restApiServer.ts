@@ -295,11 +295,20 @@ export class RestApiServer {
     });
 
     // Error handling
-    this.app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-      console.error('API Error:', err);
-      res.status(500).json({ error: 'Internal server error' });
-      next();
-    });
+    this.app.use(
+      (
+        err: Error,
+        req: express.Request,
+        res: express.Response,
+        next: express.NextFunction
+      ) => {
+        console.error('API Error:', err);
+        if (res.headersSent) {
+          return next(err);
+        }
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    );
 
     // 404 handler
     this.app.use((req, res) => {
