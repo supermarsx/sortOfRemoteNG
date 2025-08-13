@@ -27,6 +27,7 @@ describe('ProxyManager.createProxiedConnection', () => {
     (global as any).WebSocket = MockWebSocket;
     MockWebSocket.instances = [];
     ProxyManager.resetInstance();
+    vi.stubGlobal('location', { protocol: 'http:' } as any);
     (SettingsManager as any).instance = {
       getSettings: () => ({ globalProxy: { enabled: false } }),
       logAction: vi.fn()
@@ -41,6 +42,14 @@ describe('ProxyManager.createProxiedConnection', () => {
     expect(ws.url).toBe('ws://host:80');
   });
 
+  it('creates secure WebSocket on https page', async () => {
+    (global as any).location.protocol = 'https:';
+    const conn = await manager.createProxiedConnection('host', 80);
+    const ws = MockWebSocket.instances[0];
+    expect(conn).toBe(ws);
+    expect(ws.url).toBe('wss://host:80');
+  });
+
   it('resolves on successful http handshake', async () => {
     const proxy: ProxyConfig = { type: 'http', host: 'p', port: 8080, enabled: true };
     const promise = manager.createProxiedConnection('host', 22, proxy);
@@ -50,6 +59,17 @@ describe('ProxyManager.createProxiedConnection', () => {
     const conn = await promise;
     expect(conn).toBe(ws);
     expect(ws.url).toBe('ws://p:8080/proxy');
+  });
+
+  it('uses wss for https proxy', async () => {
+    const proxy: ProxyConfig = { type: 'https', host: 'p', port: 8080, enabled: true };
+    const promise = manager.createProxiedConnection('host', 22, proxy);
+    const ws = MockWebSocket.instances[0];
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify({ status: 'connected' }) });
+    const conn = await promise;
+    expect(conn).toBe(ws);
+    expect(ws.url).toBe('wss://p:8080/proxy');
   });
 
   it('rejects on failed http handshake', async () => {
@@ -70,6 +90,18 @@ describe('ProxyManager.createProxiedConnection', () => {
     const conn = await promise;
     expect(conn).toBe(ws);
     expect(ws.url).toBe('ws://p:1080/socks');
+  });
+
+  it('uses wss for socks proxy on https page', async () => {
+    (global as any).location.protocol = 'https:';
+    const proxy: ProxyConfig = { type: 'socks5', host: 'p', port: 1080, enabled: true };
+    const promise = manager.createProxiedConnection('host', 22, proxy);
+    const ws = MockWebSocket.instances[0];
+    ws.onopen?.();
+    ws.onmessage?.({ data: JSON.stringify({ status: 'connected' }) });
+    const conn = await promise;
+    expect(conn).toBe(ws);
+    expect(ws.url).toBe('wss://p:1080/socks');
   });
 
   it('rejects on websocket error for socks', async () => {

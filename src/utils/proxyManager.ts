@@ -22,10 +22,11 @@ export class ProxyManager {
     proxy?: ProxyConfig
   ): Promise<WebSocket> {
     const proxyConfig = proxy || this.settingsManager.getSettings().globalProxy;
-    
+
     if (!proxyConfig || !proxyConfig.enabled) {
       // Direct connection
-      return new WebSocket(`ws://${targetHost}:${targetPort}`);
+      const scheme = this.getWebSocketScheme();
+      return new WebSocket(`${scheme}://${targetHost}:${targetPort}`);
     }
 
     this.settingsManager.logAction(
@@ -53,7 +54,8 @@ export class ProxyManager {
     proxy: ProxyConfig
   ): Promise<WebSocket> {
     // HTTP proxy connection through WebSocket proxy server
-    const proxyUrl = `ws://${proxy.host}:${proxy.port}/proxy`;
+    const scheme = this.getWebSocketScheme(proxy);
+    const proxyUrl = `${scheme}://${proxy.host}:${proxy.port}/proxy`;
     const ws = new WebSocket(proxyUrl);
 
     return new Promise((resolve, reject) => {
@@ -92,7 +94,8 @@ export class ProxyManager {
     proxy: ProxyConfig
   ): Promise<WebSocket> {
     // SOCKS proxy connection through WebSocket proxy server
-    const proxyUrl = `ws://${proxy.host}:${proxy.port}/socks`;
+    const scheme = this.getWebSocketScheme(proxy);
+    const proxyUrl = `${scheme}://${proxy.host}:${proxy.port}/socks`;
     const ws = new WebSocket(proxyUrl);
 
     return new Promise((resolve, reject) => {
@@ -124,6 +127,12 @@ export class ProxyManager {
         reject(new Error('SOCKS proxy connection failed'));
       };
     });
+  }
+
+  private getWebSocketScheme(proxy?: ProxyConfig): 'ws' | 'wss' {
+    const pageSecure = typeof location !== 'undefined' && location.protocol === 'https:';
+    const proxySecure = proxy?.type === 'https';
+    return pageSecure || proxySecure ? 'wss' : 'ws';
   }
 
   // Test proxy connectivity
