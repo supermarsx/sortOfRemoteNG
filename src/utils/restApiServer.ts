@@ -326,9 +326,13 @@ export class RestApiServer {
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        this.server = this.app.listen(this.config.port, () => {
+        this.server = this.app.listen(this.config.port);
+        this.server.once('listening', () => {
           debugLog(`REST API server started on port ${this.config.port}`);
           resolve();
+        });
+        this.server.once('error', (error: Error) => {
+          reject(error);
         });
       } catch (error) {
         reject(error);
