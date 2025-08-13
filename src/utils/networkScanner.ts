@@ -100,8 +100,16 @@ export class NetworkScanner {
     // Get ports to scan
     const portsToScan = this.getPortsToScan(config);
 
-    // Scan ports concurrently
-    const portPromises = portsToScan.map(port => this.scanPort(ip, port, config.timeout));
+    // Scan ports with a concurrency limit
+    const portSemaphore = new Semaphore(config.maxPortConcurrent);
+    const portPromises = portsToScan.map(async port => {
+      await portSemaphore.acquire();
+      try {
+        return await this.scanPort(ip, port, config.timeout);
+      } finally {
+        portSemaphore.release();
+      }
+    });
     const portResults = await Promise.all(portPromises);
 
     portResults.forEach((result, index) => {
