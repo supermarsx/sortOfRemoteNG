@@ -307,7 +307,11 @@ export class SettingsManager {
   }
 
   // Key Derivation Benchmarking
-  async benchmarkKeyDerivation(targetTimeSeconds: number = 1): Promise<number> {
+  async benchmarkKeyDerivation(
+    targetTimeSeconds: number = 1,
+    maxTimeSeconds: number = 30,
+    maxIterations: number = 20
+  ): Promise<number> {
     if (
       typeof globalThis.performance?.now !== 'function' ||
       typeof globalThis.crypto?.subtle === 'undefined'
@@ -319,15 +323,22 @@ export class SettingsManager {
     const testSalt = 'benchmark-test-salt';
     let iterations = 10000;
     let lastTime = 0;
-    const maxAttempts = 20;
-    const maxElapsedMs = targetTimeSeconds * 1000 * 10;
+    let iterationCount = 0;
+    let elapsedTime = 0;
+    const maxElapsedMs = maxTimeSeconds * 1000;
     const benchmarkStart = globalThis.performance.now();
 
-    this.logAction('info', 'Key derivation benchmark started', undefined, `Target time: ${targetTimeSeconds}s`);
+    this.logAction(
+      'info',
+      'Key derivation benchmark started',
+      undefined,
+      `Target time: ${targetTimeSeconds}s`
+    );
 
     // Binary search for optimal iterations
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    while (iterationCount < maxIterations && elapsedTime < maxElapsedMs) {
       const startTime = globalThis.performance.now();
+      iterationCount++;
 
       // Simulate key derivation (simplified)
       for (let i = 0; i < iterations; i++) {
@@ -336,10 +347,21 @@ export class SettingsManager {
           'SHA-256',
           new TextEncoder().encode(testPassword + testSalt + i)
         );
+
+        // Track elapsed time inside the loop and break if exceeded
+        elapsedTime = globalThis.performance.now() - benchmarkStart;
+        if (elapsedTime >= maxElapsedMs) {
+          break;
+        }
       }
 
       const endTime = globalThis.performance.now();
       const duration = (endTime - startTime) / 1000;
+      elapsedTime = endTime - benchmarkStart;
+
+      if (elapsedTime >= maxElapsedMs || iterationCount >= maxIterations) {
+        break;
+      }
 
       if (Math.abs(duration - targetTimeSeconds) < 0.1) {
         break;
@@ -352,10 +374,6 @@ export class SettingsManager {
         break;
       }
       lastTime = duration;
-
-      if (globalThis.performance.now() - benchmarkStart > maxElapsedMs) {
-        break;
-      }
     }
 
     this.logAction('info', 'Key derivation benchmark completed', undefined, `Optimal iterations: ${iterations}`);
