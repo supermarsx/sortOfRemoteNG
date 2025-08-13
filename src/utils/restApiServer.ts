@@ -7,6 +7,9 @@ import { Server } from 'http';
 import dns from 'node:dns/promises';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
+import fs from 'fs';
+import path from 'path';
+import bcrypt from 'bcryptjs';
 import { Connection, ConnectionSession } from '../types/connection';
 import { debugLog } from './debugLogger';
 import { generateId } from './id';
@@ -19,7 +22,14 @@ interface ApiConfig {
   apiKey?: string;
   corsEnabled: boolean;
   rateLimiting: boolean;
+  jwtSecret?: string;
+  userStorePath?: string;
+}
+
+interface ResolvedApiConfig extends ApiConfig {
+  apiKey: string;
   jwtSecret: string;
+  userStorePath: string;
 }
 
 interface AuthRequest extends express.Request {
@@ -29,16 +39,42 @@ interface AuthRequest extends express.Request {
 export class RestApiServer {
   private app: express.Application;
   private server?: Server;
-  private config: ApiConfig;
+  private config: ResolvedApiConfig;
   private rateLimiter?: RateLimiterMemory;
   private connections: Connection[] = [];
   private sessions: ConnectionSession[] = [];
+  private users: Record<string, string> = {};
 
   constructor(config: ApiConfig) {
-    this.config = config;
+    const defaultConfig: ResolvedApiConfig = {
+      port: config.port,
+      authentication: config.authentication,
+      corsEnabled: config.corsEnabled,
+      rateLimiting: config.rateLimiting,
+      apiKey: config.apiKey ?? process.env.API_KEY ?? '',
+      jwtSecret: config.jwtSecret ?? process.env.JWT_SECRET ?? 'defaultsecret',
+      userStorePath: config.userStorePath ?? process.env.USER_STORE_PATH ?? 'users.json',
+    };
+    this.config = defaultConfig;
     this.app = express();
+    this.users = this.loadUserStore(this.config.userStorePath);
     this.setupMiddleware();
     this.setupRoutes();
+  }
+
+  private loadUserStore(filePath: string): Record<string, string> {
+    try {
+      const fullPath = path.resolve(filePath);
+      const data = fs.readFileSync(fullPath, 'utf8');
+      const users: { username: string; passwordHash: string }[] = JSON.parse(data);
+      const store: Record<string, string> = {};
+      users.forEach(u => {
+        store[u.username] = u.passwordHash;
+      });
+      return store;
+    } catch {
+      return {};
+    }
   }
 
   private setupMiddleware(): void {
@@ -162,19 +198,24 @@ export class RestApiServer {
     // Authentication
     this.app.post('/auth/login', async (req, res) => {
       const { username, password } = req.body;
-      
-      // Simple authentication (in production, use proper user management)
-      if (username === 'admin' && password === 'admin') {
-        const token = jwt.sign(
-          { username, role: 'admin' },
-          this.config.jwtSecret,
-          { expiresIn: '24h' }
-        );
-        
-        res.json({ token, expiresIn: '24h' });
-      } else {
-        res.status(401).json({ error: 'Invalid credentials' });
+
+      const storedHash = this.users[username];
+      if (!storedHash) {
+        return res.status(401).json({ error: 'Invalid credentials' });
       }
+
+      const valid = await bcrypt.compare(password, storedHash);
+      if (!valid) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+
+      const token = jwt.sign(
+        { username, role: 'admin' },
+        this.config.jwtSecret,
+        { expiresIn: '24h' }
+      );
+
+      res.json({ token, expiresIn: '24h' });
     });
 
     // Connections API
