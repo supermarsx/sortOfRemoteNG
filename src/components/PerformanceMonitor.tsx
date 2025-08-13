@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Download, BarChart3, Activity, Cpu, HardDrive, Wifi, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PerformanceMetrics } from '../types/settings';
-import { SettingsManager } from '../utils/settingsManager';
+import { SettingsManager } from '../utils/settings';
 
 interface PerformanceMonitorProps {
   isOpen: boolean;

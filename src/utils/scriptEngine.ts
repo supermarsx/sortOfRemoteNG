@@ -1,6 +1,6 @@
 import { CustomScript } from '../types/settings';
 import { Connection, ConnectionSession } from '../types/connection';
-import { SettingsManager } from './settingsManager';
+import { SettingsManager } from './settings';
 import { generateId } from './id';
 
 export class ScriptEngine {

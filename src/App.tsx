@@ -11,7 +11,7 @@ import { PasswordDialog } from './components/PasswordDialog';
 import { CollectionSelector } from './components/CollectionSelector';
 import { Connection } from './types/connection';
 import { SecureStorage } from './utils/storage';
-import { SettingsManager } from './utils/settingsManager';
+import { SettingsManager } from './utils/settings';
 import { StatusChecker } from './utils/statusChecker';
 import { CollectionManager } from './utils/collectionManager';
 import { useSessionManager } from './hooks/useSessionManager';

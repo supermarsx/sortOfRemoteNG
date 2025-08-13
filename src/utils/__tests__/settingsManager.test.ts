@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { JSDOM } from 'jsdom';
-import { SettingsManager } from '../settingsManager';
+import { SettingsManager } from '../settings';
 import { IndexedDbService } from '../indexedDbService';
 import { openDB } from 'idb';
 

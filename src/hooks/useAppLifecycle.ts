@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnections } from '../contexts/ConnectionContext';
-import { SettingsManager } from '../utils/settingsManager';
+import { SettingsManager } from '../utils/settings';
 import { StatusChecker } from '../utils/statusChecker';
 import { CollectionManager } from '../utils/collectionManager';
 import { ThemeManager } from '../utils/themeManager';

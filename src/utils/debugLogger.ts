@@ -1,4 +1,4 @@
-import { SettingsManager } from './settingsManager';
+import { SettingsManager } from './settings';
 
 export function debugLog(...args: unknown[]): void {
   const settings = SettingsManager.getInstance().getSettings();

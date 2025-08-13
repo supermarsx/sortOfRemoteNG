@@ -1,5 +1,5 @@
 import { Connection, ConnectionStatus } from '../types/connection';
-import { SettingsManager } from './settingsManager';
+import { SettingsManager } from './settings';
 
 export class StatusChecker {
   private static instance: StatusChecker;

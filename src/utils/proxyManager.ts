@@ -1,5 +1,5 @@
 import { ProxyConfig } from '../types/settings';
-import { SettingsManager } from './settingsManager';
+import { SettingsManager } from './settings';
 
 export class ProxyManager {
   private static instance: ProxyManager;

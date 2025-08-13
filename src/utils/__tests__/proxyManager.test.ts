@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ProxyManager } from '../proxyManager';
 import { ProxyConfig } from '../../types/settings';
-import { SettingsManager } from '../settingsManager';
+import { SettingsManager } from '../settings';
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];

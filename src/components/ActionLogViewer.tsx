@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ActionLogEntry } from '../types/settings';
-import { SettingsManager } from '../utils/settingsManager';
+import { SettingsManager } from '../utils/settings';
 
 const LEVEL_ICONS: Record<string, JSX.Element> = {
   debug: <Bug className="text-gray-400" size={14} />,

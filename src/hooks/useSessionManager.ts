@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnections } from '../contexts/ConnectionContext';
 import { Connection, ConnectionSession } from '../types/connection';
-import { SettingsManager } from '../utils/settingsManager';
+import { SettingsManager } from '../utils/settings';
 import { StatusChecker } from '../utils/statusChecker';
 import { ScriptEngine } from '../utils/scriptEngine';
 import { getDefaultPort } from '../utils/defaultPorts';

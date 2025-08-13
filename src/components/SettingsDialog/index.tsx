@@ -18,7 +18,7 @@ import SecuritySettings from './sections/SecuritySettings';
 import PerformanceSettings from './sections/PerformanceSettings';
 import ProxySettings from './sections/ProxySettings';
 import AdvancedSettings from './sections/AdvancedSettings';
-import { SettingsManager } from '../../utils/settingsManager';
+import { SettingsManager } from '../../utils/settings';
 import { ThemeManager } from '../../utils/themeManager';
 
 interface SettingsDialogProps {

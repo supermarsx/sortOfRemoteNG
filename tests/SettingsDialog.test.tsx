@@ -56,7 +56,7 @@ const mockSettings: GlobalSettings = {
   exportPassword: undefined,
 };
 
-vi.mock('../src/utils/settingsManager', () => ({
+vi.mock('../src/utils/settings', () => ({
   SettingsManager: {
     getInstance: () => ({
       loadSettings: vi.fn().mockResolvedValue(mockSettings),
