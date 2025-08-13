@@ -4,9 +4,14 @@ import helmet from 'helmet';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import jwt from 'jsonwebtoken';
 import { Server } from 'http';
+import dns from 'node:dns/promises';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
 import { Connection, ConnectionSession } from '../types/connection';
 import { debugLog } from './debugLogger';
 import { generateId } from './id';
+
+const execAsync = promisify(exec);
 
 interface ApiConfig {
   port: number;
@@ -116,6 +121,42 @@ export class RestApiServer {
     // Health check
     this.app.get('/health', (req, res) => {
       res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    });
+
+    // Network utilities
+    this.app.get('/api/resolve-hostname', async (req, res) => {
+      const ip = req.query.ip as string;
+      if (!ip) {
+        return res.status(400).json({ error: 'IP parameter required' });
+      }
+      try {
+        const hostnames = await dns.reverse(ip);
+        if (hostnames.length > 0) {
+          res.json({ hostname: hostnames[0] });
+        } else {
+          res.status(404).json({ error: 'Hostname not found' });
+        }
+      } catch {
+        res.status(500).json({ error: 'Lookup failed' });
+      }
+    });
+
+    this.app.get('/api/arp-lookup', async (req, res) => {
+      const ip = req.query.ip as string;
+      if (!ip) {
+        return res.status(400).json({ error: 'IP parameter required' });
+      }
+      try {
+        const { stdout } = await execAsync(`arp -n ${ip}`);
+        const match = stdout.match(/([0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i);
+        if (match) {
+          res.json({ mac: match[0].toLowerCase() });
+        } else {
+          res.status(404).json({ error: 'MAC not found' });
+        }
+      } catch {
+        res.status(500).json({ error: 'Lookup failed' });
+      }
     });
 
     // Authentication
