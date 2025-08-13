@@ -1,30 +1,59 @@
 import { describe, it, expect, vi } from 'vitest';
-import { FileTransferService } from '../fileTransferService';
+import { FileTransferService, FileTransferAdapter } from '../fileTransferService';
 
-// Helper to get the first transfer for a connection
+function createMockAdapter(): FileTransferAdapter {
+  return {
+    list: vi.fn(async () => []),
+    async upload(file, _remotePath, onProgress, signal) {
+      const total = (file as File).size;
+      let transferred = 0;
+      const chunk = total / 5;
+      while (transferred < total) {
+        if (signal?.aborted) throw new Error('aborted');
+        await new Promise(res => setTimeout(res, 100));
+        if (signal?.aborted) throw new Error('aborted');
+        transferred = Math.min(transferred + chunk, total);
+        onProgress?.(transferred, total);
+      }
+    },
+    async download(_remotePath, _localPath, onProgress, signal) {
+      const total = 1000;
+      let transferred = 0;
+      const chunk = total / 5;
+      while (transferred < total) {
+        if (signal?.aborted) throw new Error('aborted');
+        await new Promise(res => setTimeout(res, 100));
+        if (signal?.aborted) throw new Error('aborted');
+        transferred = Math.min(transferred + chunk, total);
+        onProgress?.(transferred, total);
+      }
+    }
+  };
+}
+
 function firstTransfer(service: FileTransferService, id: string) {
   return service.getActiveTransfers(id)[0];
 }
 
-describe('FileTransferService activeTransfers', () => {
-  it('tracks uploads and cleans up completed entries', async () => {
+describe('FileTransferService', () => {
+  it('tracks uploads and emits progress', async () => {
     vi.useFakeTimers();
     const service = new FileTransferService();
+    service.registerAdapter('c1', createMockAdapter());
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
+
+    const progressSpy = vi.fn();
+    service.on('progress', progressSpy);
 
     const promise = service.uploadFile('c1', file, '/remote/hello.txt');
 
-    // Transfer should be registered immediately
-    expect(service.getActiveTransfers('c1')).toHaveLength(1);
-    expect(firstTransfer(service, 'c1').status).toBe('active');
-
-    await vi.advanceTimersByTimeAsync(100); // complete upload
+    await vi.advanceTimersByTimeAsync(500);
     await promise;
 
-    expect(service.getActiveTransfers('c1')).toHaveLength(1);
+    expect(progressSpy).toHaveBeenCalled();
     expect(firstTransfer(service, 'c1').status).toBe('completed');
 
-    await vi.advanceTimersByTimeAsync(5000); // cleanup delay
+    await vi.advanceTimersByTimeAsync(5000);
     expect(service.getActiveTransfers('c1')).toHaveLength(0);
     vi.useRealTimers();
   });
@@ -32,35 +61,35 @@ describe('FileTransferService activeTransfers', () => {
   it('tracks downloads and cleans up completed entries', async () => {
     vi.useFakeTimers();
     const service = new FileTransferService();
-
-    // jsdom does not implement URL.createObjectURL so mock it
-    const originalCreate = URL.createObjectURL;
-    const originalRevoke = URL.revokeObjectURL;
-    const originalClick = HTMLAnchorElement.prototype.click;
-    // @ts-ignore
-    URL.createObjectURL = vi.fn(() => 'blob:mock');
-    // @ts-ignore
-    URL.revokeObjectURL = vi.fn();
-    HTMLAnchorElement.prototype.click = vi.fn();
+    service.registerAdapter('c2', createMockAdapter());
 
     const promise = service.downloadFile('c2', '/remote/file.bin', 'file.bin');
 
-    expect(service.getActiveTransfers('c2')).toHaveLength(1);
-    expect(firstTransfer(service, 'c2').status).toBe('active');
-
-    await vi.advanceTimersByTimeAsync(2500); // simulated download duration
+    await vi.advanceTimersByTimeAsync(500);
     await promise;
 
-    expect(service.getActiveTransfers('c2')).toHaveLength(1);
     expect(firstTransfer(service, 'c2').status).toBe('completed');
 
     await vi.advanceTimersByTimeAsync(5000);
     expect(service.getActiveTransfers('c2')).toHaveLength(0);
     vi.useRealTimers();
+  });
 
-    // restore URL functions
-    URL.createObjectURL = originalCreate;
-    URL.revokeObjectURL = originalRevoke;
-    HTMLAnchorElement.prototype.click = originalClick;
-  }, 10000);
+  it('supports cancellation via AbortController', async () => {
+    vi.useFakeTimers();
+    const service = new FileTransferService();
+    service.registerAdapter('c3', createMockAdapter());
+    const file = new File(['hello'], 'hello.txt');
+
+    const promise = service.uploadFile('c3', file, '/remote/hello.txt');
+    const transferId = firstTransfer(service, 'c3').id;
+    service.cancelTransfer(transferId);
+
+    await vi.advanceTimersByTimeAsync(100);
+    await promise;
+
+    expect(firstTransfer(service, 'c3').status).toBe('cancelled');
+    vi.useRealTimers();
+  });
 });
+

@@ -1,231 +1,217 @@
-import { FileTransferSession } from '../types/connection';
-import { debugLog } from './debugLogger';
+import { EventEmitter } from 'events';
+import type { FileTransferSession } from '../types/connection';
 import { generateId } from './id';
+import { FileTransferAdapter, FileItem } from './fileTransferAdapters';
 
-interface FileItem {
-  name: string;
-  type: 'file' | 'directory';
-  size: number;
-  modified: Date;
-  permissions?: string;
-}
+export { FileTransferAdapter, FileItem } from './fileTransferAdapters';
 
-export class FileTransferService {
+export class FileTransferService extends EventEmitter {
   private activeTransfers = new Map<string, FileTransferSession>();
+  private adapters = new Map<string, FileTransferAdapter>();
+  private controllers = new Map<string, AbortController>();
 
-  async listDirectory(connectionId: string, path: string): Promise<FileItem[]> {
-    // Simulate directory listing
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Mock directory contents
-    const mockFiles: FileItem[] = [
-      {
-        name: 'documents',
-        type: 'directory',
-        size: 0,
-        modified: new Date('2024-01-15'),
-        permissions: 'drwxr-xr-x',
-      },
-      {
-        name: 'downloads',
-        type: 'directory',
-        size: 0,
-        modified: new Date('2024-01-10'),
-        permissions: 'drwxr-xr-x',
-      },
-      {
-        name: 'config.txt',
-        type: 'file',
-        size: 1024,
-        modified: new Date('2024-01-20'),
-        permissions: '-rw-r--r--',
-      },
-      {
-        name: 'backup.zip',
-        type: 'file',
-        size: 5242880,
-        modified: new Date('2024-01-18'),
-        permissions: '-rw-r--r--',
-      },
-      {
-        name: 'script.sh',
-        type: 'file',
-        size: 512,
-        modified: new Date('2024-01-22'),
-        permissions: '-rwxr-xr-x',
-      },
-    ];
-
-    // Filter based on path
-    if (path === '/documents') {
-      return [
-        {
-          name: 'report.pdf',
-          type: 'file',
-          size: 2048576,
-          modified: new Date('2024-01-19'),
-          permissions: '-rw-r--r--',
-        },
-        {
-          name: 'presentation.pptx',
-          type: 'file',
-          size: 8388608,
-          modified: new Date('2024-01-17'),
-          permissions: '-rw-r--r--',
-        },
-      ];
-    }
-
-    return mockFiles;
+  registerAdapter(connectionId: string, adapter: FileTransferAdapter) {
+    this.adapters.set(connectionId, adapter);
   }
 
-  async uploadFile(connectionId: string, file: File, remotePath: string): Promise<void> {
+  async listDirectory(
+    connectionId: string,
+    path: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<FileItem[]> {
+    const adapter = this.adapters.get(connectionId);
+    if (!adapter) throw new Error('No adapter registered for connection');
+    return adapter.list(path, options?.signal);
+  }
+
+  private createSession(
+    connectionId: string,
+    type: 'upload' | 'download',
+    localPath: string,
+    remotePath: string,
+    totalSize: number
+  ): [string, FileTransferSession, AbortController] {
     const transferId = generateId();
-    const transfer: FileTransferSession = {
+    const controller = new AbortController();
+    const session: FileTransferSession = {
       id: transferId,
       connectionId,
-      type: 'upload',
-      localPath: file.name,
+      type,
+      localPath,
       remotePath,
       progress: 0,
       status: 'pending',
       startTime: new Date(),
-      totalSize: file.size,
+      totalSize,
       transferredSize: 0,
     };
-
-    this.activeTransfers.set(transferId, transfer);
-
-    // Simulate upload progress
-    transfer.status = 'active';
-    this.activeTransfers.set(transferId, { ...transfer });
-
-    const chunkSize = Math.max(file.size / 20, 1024); // 20 chunks minimum
-    let transferred = 0;
-
-    while (transferred < file.size) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      transferred = Math.min(transferred + chunkSize, file.size);
-      transfer.transferredSize = transferred;
-      transfer.progress = (transferred / file.size) * 100;
-      
-      this.activeTransfers.set(transferId, { ...transfer });
-    }
-
-    transfer.status = 'completed';
-    transfer.endTime = new Date();
-    this.activeTransfers.set(transferId, { ...transfer });
-
-    // Remove completed transfer after 5 seconds
-    setTimeout(() => {
-      this.activeTransfers.delete(transferId);
-    }, 5000);
+    this.activeTransfers.set(transferId, session);
+    this.controllers.set(transferId, controller);
+    return [transferId, session, controller];
   }
 
-  async downloadFile(connectionId: string, remotePath: string, fileName: string): Promise<void> {
-    const transferId = generateId();
-    const fileSize = Math.floor(Math.random() * 10000000) + 1000000; // Random size 1-10MB
-    
-    const transfer: FileTransferSession = {
-      id: transferId,
+  async uploadFile(
+    connectionId: string,
+    file: File,
+    remotePath: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<void> {
+    const adapter = this.adapters.get(connectionId);
+    if (!adapter) throw new Error('No adapter registered for connection');
+    const [id, session, controller] = this.createSession(
       connectionId,
-      type: 'download',
-      localPath: fileName,
+      'upload',
+      file.name,
       remotePath,
-      progress: 0,
-      status: 'pending',
-      startTime: new Date(),
-      totalSize: fileSize,
-      transferredSize: 0,
-    };
+      file.size
+    );
+    if (options?.signal) options.signal.addEventListener('abort', () => controller.abort());
+    session.status = 'active';
+    this.emit('start', session);
 
-    this.activeTransfers.set(transferId, transfer);
-
-    // Simulate download progress
-    transfer.status = 'active';
-    this.activeTransfers.set(transferId, { ...transfer });
-
-    const chunkSize = Math.max(fileSize / 20, 1024);
-    let transferred = 0;
-
-    while (transferred < fileSize) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      transferred = Math.min(transferred + chunkSize, fileSize);
-      transfer.transferredSize = transferred;
-      transfer.progress = (transferred / fileSize) * 100;
-      
-      this.activeTransfers.set(transferId, { ...transfer });
+    try {
+      await adapter.upload(
+        file,
+        remotePath,
+        (transferred, total) => {
+          session.transferredSize = transferred;
+          session.totalSize = total;
+          session.progress = (transferred / total) * 100;
+          this.activeTransfers.set(id, { ...session });
+          this.emit('progress', { id, progress: session.progress, transferred, total });
+        },
+        controller.signal
+      );
+      session.status = 'completed';
+    } catch (err) {
+      if (controller.signal.aborted) {
+        session.status = 'cancelled';
+      } else {
+        session.status = 'error';
+        session.error = (err as Error).message;
+      }
+    } finally {
+      session.endTime = new Date();
+      this.activeTransfers.set(id, { ...session });
+      if (session.status === 'completed') {
+        this.emit('end', session);
+      } else if (this.listenerCount('error') > 0) {
+        this.emit('error', session);
+      }
+      this.controllers.delete(id);
+      setTimeout(() => this.activeTransfers.delete(id), 5000);
     }
-
-    transfer.status = 'completed';
-    transfer.endTime = new Date();
-    this.activeTransfers.set(transferId, { ...transfer });
-
-    // Simulate file download
-    const blob = new Blob(['Downloaded file content'], { type: 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    // Remove completed transfer after 5 seconds
-    setTimeout(() => {
-      this.activeTransfers.delete(transferId);
-    }, 5000);
   }
 
-  async deleteFile(connectionId: string, remotePath: string): Promise<void> {
-    // Simulate file deletion
-    await new Promise(resolve => setTimeout(resolve, 500));
-    debugLog(`Deleted file: ${remotePath}`);
+  async downloadFile(
+    connectionId: string,
+    remotePath: string,
+    localPath: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<void> {
+    const adapter = this.adapters.get(connectionId);
+    if (!adapter) throw new Error('No adapter registered for connection');
+    const [id, session, controller] = this.createSession(
+      connectionId,
+      'download',
+      localPath,
+      remotePath,
+      0
+    );
+    if (options?.signal) options.signal.addEventListener('abort', () => controller.abort());
+    session.status = 'active';
+    this.emit('start', session);
+
+    try {
+      await adapter.download(
+        remotePath,
+        localPath,
+        (transferred, total) => {
+          session.transferredSize = transferred;
+          session.totalSize = total;
+          session.progress = total ? (transferred / total) * 100 : 0;
+          this.activeTransfers.set(id, { ...session });
+          this.emit('progress', { id, progress: session.progress, transferred, total });
+        },
+        controller.signal
+      );
+      session.status = 'completed';
+    } catch (err) {
+      if (controller.signal.aborted) {
+        session.status = 'cancelled';
+      } else {
+        session.status = 'error';
+        session.error = (err as Error).message;
+      }
+    } finally {
+      session.endTime = new Date();
+      this.activeTransfers.set(id, { ...session });
+      if (session.status === 'completed') {
+        this.emit('end', session);
+      } else if (this.listenerCount('error') > 0) {
+        this.emit('error', session);
+      }
+      this.controllers.delete(id);
+      setTimeout(() => this.activeTransfers.delete(id), 5000);
+    }
   }
 
   getActiveTransfers(connectionId: string): FileTransferSession[] {
-    return Array.from(this.activeTransfers.values())
-      .filter(transfer => transfer.connectionId === connectionId);
+    return Array.from(this.activeTransfers.values()).filter(
+      t => t.connectionId === connectionId
+    );
   }
 
   cancelTransfer(transferId: string): void {
-    const transfer = this.activeTransfers.get(transferId);
-    if (transfer) {
-      transfer.status = 'cancelled';
-      this.activeTransfers.set(transferId, transfer);
-      
-      setTimeout(() => {
-        this.activeTransfers.delete(transferId);
-      }, 1000);
-    }
+    const controller = this.controllers.get(transferId);
+    if (controller) controller.abort();
   }
 
-  // SFTP specific methods
+  // Optional adapter-specific helpers
+  async deleteFile(connectionId: string, remotePath: string): Promise<void> {
+    const adapter: any = this.adapters.get(connectionId);
+    await adapter?.delete?.(remotePath);
+  }
+
   async createDirectory(connectionId: string, path: string): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    debugLog(`Created directory: ${path}`);
+    const adapter: any = this.adapters.get(connectionId);
+    await adapter?.mkdir?.(path);
   }
 
-  async renameFile(connectionId: string, oldPath: string, newPath: string): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    debugLog(`Renamed ${oldPath} to ${newPath}`);
+  async renameFile(
+    connectionId: string,
+    oldPath: string,
+    newPath: string
+  ): Promise<void> {
+    const adapter: any = this.adapters.get(connectionId);
+    await adapter?.rename?.(oldPath, newPath);
   }
 
-  async changePermissions(connectionId: string, path: string, permissions: string): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    debugLog(`Changed permissions of ${path} to ${permissions}`);
+  async changePermissions(
+    connectionId: string,
+    path: string,
+    permissions: string
+  ): Promise<void> {
+    const adapter: any = this.adapters.get(connectionId);
+    await adapter?.chmod?.(path, permissions);
   }
 
-  // SCP specific methods
-  async scpUpload(connectionId: string, localFile: File, remotePath: string): Promise<void> {
-    // SCP is typically a single file transfer
-    return this.uploadFile(connectionId, localFile, remotePath);
+  async scpUpload(
+    connectionId: string,
+    localFile: File,
+    remotePath: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<void> {
+    return this.uploadFile(connectionId, localFile, remotePath, options);
   }
 
-  async scpDownload(connectionId: string, remotePath: string, localPath: string): Promise<void> {
-    return this.downloadFile(connectionId, remotePath, localPath);
+  async scpDownload(
+    connectionId: string,
+    remotePath: string,
+    localPath: string,
+    options?: { signal?: AbortSignal }
+  ): Promise<void> {
+    return this.downloadFile(connectionId, remotePath, localPath, options);
   }
 }
+
