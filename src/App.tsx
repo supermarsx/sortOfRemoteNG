@@ -39,6 +39,7 @@ const AppContent: React.FC = () => {
     handleConnect,
     handleQuickConnect,
     handleSessionClose,
+    confirmDialog,
   } = useSessionManager();
 
   const { isInitialized } = useAppLifecycle({
@@ -252,6 +253,7 @@ const AppContent: React.FC = () => {
         onCancel={handlePasswordCancel}
         error={passwordError}
       />
+      {confirmDialog}
     </div>
   );
 };

@@ -8,6 +8,7 @@ import { ScriptEngine } from '../utils/scriptEngine';
 import { getDefaultPort } from '../utils/defaultPorts';
 import { raceWithTimeout } from '../utils/raceWithTimeout';
 import { generateId } from '../utils/id';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export const useSessionManager = () => {
   const { t } = useTranslation();
@@ -19,6 +20,19 @@ export const useSessionManager = () => {
 
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const [dialogState, setDialogState] = useState<{
+    message: string;
+    showCancel: boolean;
+    resolve: (value: boolean) => void;
+  } | null>(null);
+
+  const showDialog = (message: string, showCancel: boolean) =>
+    new Promise<boolean>(resolve => {
+      setDialogState({ message, showCancel, resolve });
+    });
+
+  const showConfirm = (message: string) => showDialog(message, true);
+  const showAlert = (message: string) => showDialog(message, false);
 
   const startTimer = (fn: () => void, delay: number) => {
     const id = setTimeout(fn, delay);
@@ -121,7 +135,8 @@ export const useSessionManager = () => {
     const settings = settingsManager.getSettings();
 
     if (settings.singleConnectionMode && state.sessions.length > 0) {
-      if (!confirm('Close existing connection and open new one?')) {
+      const proceed = await showConfirm('Close existing connection and open new one?');
+      if (!proceed) {
         return;
       }
       state.sessions.forEach(session => {
@@ -130,7 +145,7 @@ export const useSessionManager = () => {
     }
 
     if (state.sessions.length >= settings.maxConcurrentConnections) {
-      alert(`Maximum concurrent connections (${settings.maxConcurrentConnections}) reached.`);
+      await showAlert(`Maximum concurrent connections (${settings.maxConcurrentConnections}) reached.`);
       return;
     }
 
@@ -203,8 +218,11 @@ export const useSessionManager = () => {
     const settings = settingsManager.getSettings();
 
     const shouldWarn = connection?.warnOnClose || settings.warnOnClose;
-    if (shouldWarn && !confirm(t('dialogs.confirmClose'))) {
-      return;
+    if (shouldWarn) {
+      const confirmed = await showConfirm(t('dialogs.confirmClose'));
+      if (!confirmed) {
+        return;
+      }
     }
 
     if (connection) {
@@ -230,6 +248,25 @@ export const useSessionManager = () => {
 
   const activeSession = state.sessions.find(s => s.id === activeSessionId);
 
+  const confirmDialog = dialogState ? (
+    <ConfirmDialog
+      isOpen={true}
+      message={dialogState.message}
+      onConfirm={() => {
+        dialogState.resolve(true);
+        setDialogState(null);
+      }}
+      onCancel={
+        dialogState.showCancel
+          ? () => {
+              dialogState.resolve(false);
+              setDialogState(null);
+            }
+          : undefined
+      }
+    />
+  ) : null;
+
   return {
     activeSessionId,
     setActiveSessionId,
@@ -238,6 +275,7 @@ export const useSessionManager = () => {
     handleReconnect,
     handleQuickConnect,
     handleSessionClose,
+    confirmDialog,
   };
 };
 
