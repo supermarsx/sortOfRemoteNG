@@ -4,6 +4,8 @@ import { Semaphore } from './semaphore';
 import serviceMap from './serviceMap';
 
 export class NetworkScanner {
+  private hostnameCache = new Map<string, string | null>();
+  private macCache = new Map<string, string | null>();
   async scanNetwork(
     config: NetworkDiscoveryConfig,
     onProgress?: (progress: number) => void
@@ -264,21 +266,41 @@ export class NetworkScanner {
   }
 
   private async resolveHostname(ip: string): Promise<string | undefined> {
+    if (this.hostnameCache.has(ip)) {
+      return this.hostnameCache.get(ip) || undefined;
+    }
+
     try {
-      // Browser DNS resolution is limited, so we'll skip this for now
-      // In a real implementation, this would use a backend service
-      return undefined;
-    } catch (error) {
+      const response = await fetch(`/api/resolve-hostname?ip=${encodeURIComponent(ip)}`);
+      if (!response.ok) {
+        throw new Error('Request failed');
+      }
+      const data = await response.json();
+      const hostname = data.hostname as string | undefined;
+      this.hostnameCache.set(ip, hostname ?? null);
+      return hostname;
+    } catch {
+      this.hostnameCache.set(ip, null);
       return undefined;
     }
   }
 
   private async getMacAddress(ip: string): Promise<string | undefined> {
+    if (this.macCache.has(ip)) {
+      return this.macCache.get(ip) || undefined;
+    }
+
     try {
-      // MAC address resolution requires ARP table access
-      // This would need a backend service in a real implementation
-      return undefined;
-    } catch (error) {
+      const response = await fetch(`/api/arp-lookup?ip=${encodeURIComponent(ip)}`);
+      if (!response.ok) {
+        throw new Error('Request failed');
+      }
+      const data = await response.json();
+      const mac = data.mac as string | undefined;
+      this.macCache.set(ip, mac ?? null);
+      return mac;
+    } catch {
+      this.macCache.set(ip, null);
       return undefined;
     }
   }
