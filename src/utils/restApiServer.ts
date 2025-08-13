@@ -7,9 +7,8 @@ import { Server } from 'http';
 import dns from 'node:dns/promises';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
-import fs from 'fs';
-import path from 'path';
-import bcrypt from 'bcryptjs';
+import { z } from 'zod';
+import { AuthService } from './authService';
 import { Connection, ConnectionSession } from '../types/connection';
 import { debugLog } from './debugLogger';
 import { generateId } from './id';
@@ -48,7 +47,7 @@ export class RestApiServer {
   private rateLimiter?: RateLimiterMemory;
   private connections: Connection[] = [];
   private sessions: ConnectionSession[] = [];
-  private users: Record<string, string> = {};
+  private authService: AuthService;
 
   constructor(config: ApiConfig) {
     const defaultConfig: ResolvedApiConfig = {
@@ -70,24 +69,9 @@ export class RestApiServer {
     };
     this.config = defaultConfig;
     this.app = express();
-    this.users = this.loadUserStore(this.config.userStorePath);
+    this.authService = new AuthService(this.config.userStorePath);
     this.setupMiddleware();
     this.setupRoutes();
-  }
-
-  private loadUserStore(filePath: string): Record<string, string> {
-    try {
-      const fullPath = path.resolve(filePath);
-      const data = fs.readFileSync(fullPath, 'utf8');
-      const users: { username: string; passwordHash: string }[] = JSON.parse(data);
-      const store: Record<string, string> = {};
-      users.forEach(u => {
-        store[u.username] = u.passwordHash;
-      });
-      return store;
-    } catch {
-      return {};
-    }
   }
 
   private loadPersistedData(): void {
@@ -227,16 +211,37 @@ export class RestApiServer {
       }
     });
 
+    // Schemas
+    const loginSchema = z.object({
+      username: z.string(),
+      password: z.string(),
+    });
+    const connectionSchema = z
+      .object({
+        name: z.string(),
+        protocol: z.string(),
+        hostname: z.string(),
+      })
+      .passthrough();
+    const connectionUpdateSchema = connectionSchema.partial();
+    const sessionSchema = z.object({ connectionId: z.string() });
+    const bulkSchema = z.object({
+      action: z.enum(['delete', 'connect']),
+      connectionIds: z.array(z.string()),
+    });
+    const importSchema = z.object({
+      connections: z.array(connectionSchema),
+    });
+
     // Authentication
     this.app.post('/auth/login', async (req, res) => {
-      const { username, password } = req.body;
-
-      const storedHash = this.users[username];
-      if (!storedHash) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+      const result = loginSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid request' });
       }
+      const { username, password } = result.data;
 
-      const valid = await bcrypt.compare(password, storedHash);
+      const valid = await this.authService.verifyUser(username, password);
       if (!valid) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
@@ -256,8 +261,13 @@ export class RestApiServer {
     });
 
     this.app.post('/api/connections', (req, res) => {
+      const result = connectionSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid connection data' });
+      }
+
       const connection: Connection = {
-        ...req.body,
+        ...result.data,
         id: generateId(),
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -278,11 +288,15 @@ export class RestApiServer {
     });
 
     this.app.put('/api/connections/:id', (req, res) => {
+      const result = connectionUpdateSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid connection data' });
+      }
       const index = this.connections.findIndex(c => c.id === req.params.id);
       if (index >= 0) {
         this.connections[index] = {
           ...this.connections[index],
-          ...req.body,
+          ...result.data,
           updatedAt: new Date(),
         };
         this.persistConnections();
@@ -309,7 +323,11 @@ export class RestApiServer {
     });
 
     this.app.post('/api/sessions', (req, res) => {
-      const { connectionId } = req.body;
+      const result = sessionSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid session data' });
+      }
+      const { connectionId } = result.data;
       const connection = this.connections.find(c => c.id === connectionId);
       
       if (!connection) {
@@ -344,7 +362,11 @@ export class RestApiServer {
 
     // Bulk operations
     this.app.post('/api/connections/bulk', (req, res) => {
-      const { action, connectionIds } = req.body;
+      const result = bulkSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: 'Invalid bulk request' });
+      }
+      const { action, connectionIds } = result.data;
 
       switch (action) {
         case 'delete':
@@ -378,13 +400,12 @@ export class RestApiServer {
 
     // Import/Export
     this.app.post('/api/connections/import', (req, res) => {
-      const { connections } = req.body;
-      
-      if (!Array.isArray(connections)) {
+      const result = importSchema.safeParse(req.body);
+      if (!result.success) {
         return res.status(400).json({ error: 'Invalid import data' });
       }
 
-      const imported = connections.map(conn => ({
+      const imported = result.data.connections.map(conn => ({
         ...conn,
         id: generateId(),
         createdAt: new Date(),
