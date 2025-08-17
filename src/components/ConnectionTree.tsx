@@ -1,11 +1,11 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  ChevronRight, 
-  ChevronDown, 
-  Monitor, 
-  Terminal, 
-  Eye, 
-  Globe, 
+import React, { useState, useMemo, useCallback } from "react";
+import {
+  ChevronRight,
+  ChevronDown,
+  Monitor,
+  Terminal,
+  Eye,
+  Globe,
   Phone,
   Folder,
   FolderOpen,
@@ -13,25 +13,25 @@ import {
   Edit,
   Trash2,
   Copy,
-  Play
-} from 'lucide-react';
-import { Connection } from '../types/connection';
-import { useConnections } from '../contexts/ConnectionContext';
-import { generateId } from '../utils/id';
+  Play,
+} from "lucide-react";
+import { Connection } from "../types/connection";
+import { useConnections } from "../contexts/ConnectionContext";
+import { generateId } from "../utils/id";
 
 const getProtocolIcon = (protocol: string) => {
   switch (protocol) {
-    case 'rdp':
+    case "rdp":
       return Monitor;
-    case 'ssh':
+    case "ssh":
       return Terminal;
-    case 'vnc':
+    case "vnc":
       return Eye;
-    case 'http':
-    case 'https':
+    case "http":
+    case "https":
       return Globe;
-    case 'telnet':
-    case 'rlogin':
+    case "telnet":
+    case "rlogin":
       return Phone;
     default:
       return Monitor;
@@ -40,14 +40,14 @@ const getProtocolIcon = (protocol: string) => {
 
 const getStatusColor = (status?: string) => {
   switch (status) {
-    case 'connected':
-      return 'text-green-400';
-    case 'connecting':
-      return 'text-yellow-400';
-    case 'error':
-      return 'text-red-400';
+    case "connected":
+      return "text-green-400";
+    case "connecting":
+      return "text-yellow-400";
+    case "error":
+      return "text-red-400";
     default:
-      return 'text-gray-400';
+      return "text-gray-400";
   }
 };
 
@@ -69,23 +69,25 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
   const [isExpanded, setIsExpanded] = useState(connection.expanded || false);
-  
+
   const ProtocolIcon = getProtocolIcon(connection.protocol);
   const isSelected = state.selectedConnection?.id === connection.id;
-  const activeSession = state.sessions.find(s => s.connectionId === connection.id);
+  const activeSession = state.sessions.find(
+    (s) => s.connectionId === connection.id,
+  );
 
   const handleToggleExpand = () => {
     if (connection.isGroup) {
       setIsExpanded(!isExpanded);
       dispatch({
-        type: 'UPDATE_CONNECTION',
-        payload: { ...connection, expanded: !isExpanded }
+        type: "UPDATE_CONNECTION",
+        payload: { ...connection, expanded: !isExpanded },
       });
     }
   };
 
   const handleSelect = () => {
-    dispatch({ type: 'SELECT_CONNECTION', payload: connection });
+    dispatch({ type: "SELECT_CONNECTION", payload: connection });
   };
 
   const handleConnect = (e: React.MouseEvent) => {
@@ -97,7 +99,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
     <div className="relative">
       <div
         className={`group flex items-center h-8 px-2 cursor-pointer hover:bg-gray-700/50 transition-colors ${
-          isSelected ? 'bg-blue-600/20 text-blue-400' : 'text-gray-300'
+          isSelected ? "bg-blue-600/20 text-blue-400" : "text-gray-300"
         }`}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={handleSelect}
@@ -108,25 +110,40 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             onClick={handleToggleExpand}
             className="flex items-center justify-center w-4 h-4 mr-1 hover:bg-gray-600 rounded transition-colors"
           >
-            {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {isExpanded ? (
+              <ChevronDown size={12} />
+            ) : (
+              <ChevronRight size={12} />
+            )}
           </button>
         )}
-        
+
         <div className="flex items-center min-w-0 flex-1">
           {connection.isGroup ? (
-            isExpanded ? <FolderOpen size={16} className="mr-2 text-yellow-400" /> : <Folder size={16} className="mr-2 text-yellow-400" />
+            isExpanded ? (
+              <FolderOpen size={16} className="mr-2 text-yellow-400" />
+            ) : (
+              <Folder size={16} className="mr-2 text-yellow-400" />
+            )
           ) : (
-            <ProtocolIcon size={16} className={`mr-2 ${getStatusColor(activeSession?.status)}`} />
+            <ProtocolIcon
+              size={16}
+              className={`mr-2 ${getStatusColor(activeSession?.status)}`}
+            />
           )}
-          
+
           <span className="truncate text-sm">{connection.name}</span>
-          
+
           {activeSession && (
-            <div className={`ml-2 w-2 h-2 rounded-full ${
-              activeSession.status === 'connected' ? 'bg-green-400' :
-              activeSession.status === 'connecting' ? 'bg-yellow-400' :
-              'bg-red-400'
-            }`} />
+            <div
+              className={`ml-2 w-2 h-2 rounded-full ${
+                activeSession.status === "connected"
+                  ? "bg-green-400"
+                  : activeSession.status === "connecting"
+                    ? "bg-yellow-400"
+                    : "bg-red-400"
+              }`}
+            />
           )}
         </div>
 
@@ -140,7 +157,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
               <Play size={12} />
             </button>
           )}
-          
+
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -173,7 +190,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 newConnection.id = generateId();
                 newConnection.createdAt = now;
                 newConnection.updatedAt = now;
-                dispatch({ type: 'ADD_CONNECTION', payload: newConnection });
+                dispatch({ type: "ADD_CONNECTION", payload: newConnection });
                 setShowMenu(false);
               }}
               className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
@@ -206,24 +223,30 @@ interface ConnectionTreeProps {
   onDelete: (connection: Connection) => void;
 }
 
-export const ConnectionTree: React.FC<ConnectionTreeProps> = ({ onConnect, onEdit, onDelete }) => {
+export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
+  onConnect,
+  onEdit,
+  onDelete,
+}) => {
   const { state } = useConnections();
 
-  const buildTree = useMemo(
-    () =>
-      (connections: Connection[], parentId?: string): Connection[] =>
-        connections
-          .filter(conn => conn.parentId === parentId)
-          .sort((a, b) => {
-            if (a.isGroup && !b.isGroup) return -1;
-            if (!a.isGroup && b.isGroup) return 1;
-            return a.name.localeCompare(b.name);
-          }),
-    [state.connections, state.filter]
+  const buildTree = useCallback(
+    (connections: Connection[], parentId?: string): Connection[] =>
+      connections
+        .filter((conn) => conn.parentId === parentId)
+        .sort((a, b) => {
+          if (a.isGroup && !b.isGroup) return -1;
+          if (!a.isGroup && b.isGroup) return 1;
+          return a.name.localeCompare(b.name);
+        }),
+    [],
   );
 
-  const renderTree = (connections: Connection[], level: number = 0): React.ReactNode => {
-    return connections.map(connection => (
+  const renderTree = (
+    connections: Connection[],
+    level: number = 0,
+  ): React.ReactNode => {
+    return connections.map((connection) => (
       <div key={connection.id}>
         <ConnectionTreeItem
           connection={connection}
@@ -242,7 +265,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({ onConnect, onEdi
   };
 
   const filteredConnections = useMemo(() => {
-    return state.connections.filter(conn => {
+    return state.connections.filter((conn) => {
       if (state.filter.searchTerm) {
         const searchLower = state.filter.searchTerm.toLowerCase();
         return (
