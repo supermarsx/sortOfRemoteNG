@@ -1,25 +1,25 @@
-const STORAGE_KEY = 'mremote-connections';
-const STORAGE_META_KEY = 'mremote-storage-meta';
-const OLD_STORAGE_META_KEY = 'mremote-settings';
+const STORAGE_KEY = "mremote-connections";
+const STORAGE_META_KEY = "mremote-storage-meta";
+const OLD_STORAGE_META_KEY = "mremote-settings";
 
-import { Connection } from '../types/connection';
-import { IndexedDbService } from './indexedDbService';
+import { Connection } from "../types/connection";
+import { IndexedDbService } from "./indexedDbService";
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
 
 const toBase64 = (buffer: ArrayBuffer | Uint8Array): string => {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(bytes).toString('base64');
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(bytes).toString("base64");
   }
-  let binary = '';
-  bytes.forEach(b => (binary += String.fromCharCode(b)));
+  let binary = "";
+  bytes.forEach((b) => (binary += String.fromCharCode(b)));
   return btoa(binary);
 };
 
 const fromBase64 = (str: string): Uint8Array => {
-  if (typeof Buffer !== 'undefined') {
-    return new Uint8Array(Buffer.from(str, 'base64'));
+  if (typeof Buffer !== "undefined") {
+    return new Uint8Array(Buffer.from(str, "base64"));
   }
   const binary = atob(str);
   const bytes = new Uint8Array(binary.length);
@@ -37,27 +37,35 @@ export class SecureStorage {
   private static password: string | null = null;
   private static isUnlocked: boolean = false;
 
-  private static async deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  private static async deriveKey(
+    password: string,
+    salt: Uint8Array,
+  ): Promise<CryptoKey> {
     const crypto = getCrypto();
     const enc = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
-      'raw',
+      "raw",
       enc.encode(password),
-      'PBKDF2',
+      "PBKDF2",
       false,
-      ['deriveKey']
+      ["deriveBits"],
     );
-    return crypto.subtle.deriveKey(
+    const derivedBits = await crypto.subtle.deriveBits(
       {
-        name: 'PBKDF2',
+        name: "PBKDF2",
         salt,
-        iterations: 100000,
-        hash: 'SHA-256'
+        iterations: 150000,
+        hash: "SHA-256",
       },
       keyMaterial,
-      { name: 'AES-GCM', length: 256 },
+      256,
+    );
+    return crypto.subtle.importKey(
+      "raw",
+      derivedBits,
+      { name: "AES-GCM" },
       false,
-      ['encrypt', 'decrypt']
+      ["encrypt", "decrypt"],
     );
   }
 
@@ -105,7 +113,10 @@ export class SecureStorage {
     return false;
   }
 
-  static async saveData(data: StorageData, usePassword: boolean = false): Promise<void> {
+  static async saveData(
+    data: StorageData,
+    usePassword: boolean = false,
+  ): Promise<void> {
     try {
       await this.migrateMetaKey();
 
@@ -117,9 +128,9 @@ export class SecureStorage {
         const iv = crypto.getRandomValues(new Uint8Array(12));
         const key = await this.deriveKey(this.password, salt);
         const encryptedBuffer = await crypto.subtle.encrypt(
-          { name: 'AES-GCM', iv },
+          { name: "AES-GCM", iv },
           key,
-          encoder.encode(serialized)
+          encoder.encode(serialized),
         );
         const encrypted = toBase64(encryptedBuffer);
         await IndexedDbService.setItem(STORAGE_KEY, encrypted);
@@ -128,18 +139,18 @@ export class SecureStorage {
           hasPassword: true,
           timestamp: Date.now(),
           salt: toBase64(salt),
-          iv: toBase64(iv)
+          iv: toBase64(iv),
         });
       } else {
         await IndexedDbService.setItem(STORAGE_KEY, data);
         await IndexedDbService.setItem(STORAGE_META_KEY, {
           isEncrypted: false,
           hasPassword: false,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
       }
     } catch {
-      throw new Error('Failed to save data');
+      throw new Error("Failed to save data");
     }
   }
 
@@ -148,13 +159,13 @@ export class SecureStorage {
       await this.migrateMetaKey();
       const storedData = await IndexedDbService.getItem<any>(STORAGE_KEY);
       const settings = await IndexedDbService.getItem<any>(STORAGE_META_KEY);
-      
+
       if (!storedData) return null;
 
       if (settings) {
         const parsedSettings = settings;
         if (parsedSettings.isEncrypted && !this.password) {
-          throw new Error('Password is required to load encrypted data');
+          throw new Error("Password is required to load encrypted data");
         }
         if (parsedSettings.isEncrypted) {
           try {
@@ -163,14 +174,14 @@ export class SecureStorage {
             const iv = fromBase64(parsedSettings.iv);
             const key = await this.deriveKey(this.password as string, salt);
             const decryptedBuffer = await crypto.subtle.decrypt(
-              { name: 'AES-GCM', iv },
+              { name: "AES-GCM", iv },
               key,
-              fromBase64(storedData as string)
+              fromBase64(storedData as string),
             );
             const decoded = new TextDecoder().decode(decryptedBuffer);
             return JSON.parse(decoded);
           } catch {
-            throw new Error('Invalid password');
+            throw new Error("Invalid password");
           }
         }
       }
@@ -180,7 +191,7 @@ export class SecureStorage {
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error('Failed to load data or invalid password');
+      throw new Error("Failed to load data or invalid password");
     }
   }
 
