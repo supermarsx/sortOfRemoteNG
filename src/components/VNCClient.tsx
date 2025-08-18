@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { ConnectionSession } from '../types/connection';
+import { useConnections } from '../contexts/ConnectionContext';
 import { 
   Monitor, 
   Maximize2, 
@@ -20,6 +21,8 @@ interface VNCClientProps {
 }
 
 export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
+  const { state } = useConnections();
+  const connection = state.connections.find(c => c.id === session.connectionId);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -56,14 +59,15 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
 
     try {
       setConnectionStatus('connecting');
-      
+
       // Initialize NoVNC RFB connection
       const { default: RFB } = await import('novnc/core/rfb');
-      
+
       const url = `ws://${session.hostname}:${session.port || 5900}`;
+      debugLog(`Connecting to VNC server at ${url}`);
       const rfbConnection = new RFB(canvasRef.current, url, {
         credentials: {
-          password: 'password', // This should come from connection config
+          password: connection?.password || '',
         },
       });
 
@@ -88,8 +92,9 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
       setRfb(rfbConnection);
     } catch (error) {
       setConnectionStatus('error');
+      debugLog('VNC connection failed:', error);
       console.error('VNC connection failed:', error);
-      
+
       // Fallback to simulated VNC for demo
       simulateVNCConnection();
     }
@@ -236,14 +241,17 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
   const handleConnect = () => {
     setIsConnected(true);
     setConnectionStatus('connected');
+    debugLog('VNC connection established');
   };
 
   const handleDisconnect = () => {
     setIsConnected(false);
     setConnectionStatus('disconnected');
+    debugLog('VNC connection disconnected');
   };
 
   const handleCredentialsRequired = () => {
+    debugLog('VNC credentials required');
     // Handle password prompt
     const password = prompt('VNC Password:');
     if (password && rfb) {
@@ -253,6 +261,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
 
   const handleSecurityFailure = () => {
     setConnectionStatus('error');
+    debugLog('VNC security failure');
   };
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
