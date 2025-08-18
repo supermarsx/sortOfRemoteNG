@@ -12,6 +12,7 @@ import { SessionViewer } from "./components/SessionViewer";
 import { QuickConnect } from "./components/QuickConnect";
 import { PasswordDialog } from "./components/PasswordDialog";
 import { CollectionSelector } from "./components/CollectionSelector";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Connection } from "./types/connection";
 import { SecureStorage } from "./utils/storage";
 import { SettingsManager } from "./utils/settingsManager";
@@ -295,7 +296,9 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => (
   <ConnectionProvider>
-    <AppContent />
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   </ConnectionProvider>
 );
 
