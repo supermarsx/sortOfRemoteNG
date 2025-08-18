@@ -75,6 +75,57 @@ describe('ScriptEngine sandbox', () => {
     const result = await engine.executeScript(script, { trigger: 'manual' });
     expect(result).toBe('undefined');
   });
+
+  it('hides globalThis and process', async () => {
+    const engine = ScriptEngine.getInstance();
+    const script: CustomScript = {
+      id: 's-global',
+      name: 'global access',
+      type: 'javascript',
+      content: "return [typeof globalThis, typeof process];",
+      trigger: 'manual',
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await engine.executeScript(script, { trigger: 'manual' });
+    expect(result).toEqual(['undefined', 'undefined']);
+  });
+});
+
+describe('ScriptEngine error handling', () => {
+  it('reports script errors', async () => {
+    const engine = ScriptEngine.getInstance();
+    const script: CustomScript = {
+      id: 's-error',
+      name: 'error script',
+      type: 'javascript',
+      content: "throw new Error('boom');",
+      trigger: 'manual',
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    await expect(engine.executeScript(script, { trigger: 'manual' })).rejects.toThrow('boom');
+  });
+
+  it('enforces execution timeout', async () => {
+    const engine = ScriptEngine.getInstance();
+    const script: CustomScript = {
+      id: 's-timeout',
+      name: 'timeout script',
+      type: 'javascript',
+      content: 'while(true) {}',
+      trigger: 'manual',
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    await expect(engine.executeScript(script, { trigger: 'manual' })).rejects.toThrow(/timed out/);
+  });
 });
 
 describe('ScriptEngine.httpRequest', () => {

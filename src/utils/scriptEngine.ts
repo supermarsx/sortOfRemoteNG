@@ -112,34 +112,49 @@ export class ScriptEngine {
 
     // Execute the script
     if (script.type === 'javascript') {
-      return this.executeJavaScript(script.content, scriptContext);
+      return this.executeJavaScript(script.content, scriptContext, script.name);
     } else if (script.type === 'typescript') {
       // For TypeScript, we'd need to transpile first
       // For now, treat as JavaScript
-      return this.executeJavaScript(script.content, scriptContext);
+      return this.executeJavaScript(script.content, scriptContext, script.name);
     } else {
       throw new Error(`Unsupported script type: ${script.type}`);
     }
   }
 
-  private async executeJavaScript(code: string, context: any): Promise<any> {
+  private async executeJavaScript(
+    code: string,
+    context: any,
+    scriptName: string
+  ): Promise<any> {
     const isNode = typeof process !== 'undefined' && !!process.versions?.node;
 
     if (isNode) {
-      // Dynamically import vm2 to avoid bundling for browser builds
-      const { NodeVM } = await import('vm2');
-      const vm = new NodeVM({
-        sandbox: { ...context },
-        timeout: 1000,
-        eval: false,
-        wasm: false,
-        require: false,
-        wrapper: 'commonjs',
-      });
+      const { VM } = await import('vm2');
+      const vm = new VM({ timeout: 1000, sandbox: {} });
 
-      const wrapped = `module.exports = async function() { ${code} }`;
-      const fn = vm.run(wrapped);
-      const resultPromise = fn();
+      // Expose only whitelisted utilities
+      for (const [key, value] of Object.entries(context)) {
+        vm.freeze(value, key);
+      }
+
+      // Explicitly undefine globals
+      [
+        'global',
+        'globalThis',
+        'process',
+        'window',
+        'document',
+        'self',
+        'Function',
+        'eval',
+        'Proxy',
+        'require',
+        'fetch',
+      ].forEach(g => vm.freeze(undefined, g));
+
+      const wrapped = `"use strict"; (async () => { ${code} })();`;
+      const resultPromise = vm.run(wrapped);
       return await Promise.race([
         resultPromise,
         new Promise((_, reject) =>
@@ -148,53 +163,143 @@ export class ScriptEngine {
       ]);
     }
 
-    return await this.executeInIframe(code, context);
+    return await this.executeInWorker(code, context, scriptName);
   }
 
-  private async executeInIframe(code: string, context: any): Promise<any> {
+  private async executeInWorker(
+    code: string,
+    context: any,
+    scriptName: string
+  ): Promise<any> {
     return new Promise((resolve, reject) => {
-      const iframe = document.createElement('iframe');
-      iframe.setAttribute('sandbox', 'allow-scripts');
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
+      const workerScript = `
+        const pending = new Map();
+        let rpcId = 0;
+        function rpcCall(method, ...args) {
+          return new Promise((resolve, reject) => {
+            const id = rpcId++;
+            pending.set(id, { resolve, reject });
+            postMessage({ type: 'rpc', id, method, args });
+          });
+        }
 
-      const iframeWindow = iframe.contentWindow;
-      if (!iframeWindow) {
-        document.body.removeChild(iframe);
-        reject(new Error('Sandbox not available'));
-        return;
-      }
+        onmessage = async (event) => {
+          const data = event.data;
+          if (data.type === 'rpc-response') {
+            const handler = pending.get(data.id);
+            if (handler) {
+              pending.delete(data.id);
+              data.error ? handler.reject(data.error) : handler.resolve(data.result);
+            }
+            return;
+          }
+          if (data.type !== 'execute') return;
+          const base = data.context;
+          const console = {
+            log: (...a) => postMessage({ type: 'console', level: 'info', message: a.join(' ') }),
+            warn: (...a) => postMessage({ type: 'console', level: 'warn', message: a.join(' ') }),
+            error: (...a) => postMessage({ type: 'console', level: 'error', message: a.join(' ') }),
+          };
+          const http = {
+            get: (url, options) => rpcCall('http.get', url, options),
+            post: (url, data, options) => rpcCall('http.post', url, data, options),
+            put: (url, data, options) => rpcCall('http.put', url, data, options),
+            delete: (url, options) => rpcCall('http.delete', url, options),
+          };
+          const ssh = base.session && base.session.protocol === 'ssh' ? {
+            execute: cmd => rpcCall('ssh.execute', cmd),
+            sendKeys: keys => rpcCall('ssh.sendKeys', keys)
+          } : undefined;
+          const api = {
+            connection: base.connection,
+            session: base.session,
+            trigger: base.trigger,
+            console,
+            http,
+            ssh,
+            sleep: ms => new Promise(r => setTimeout(r, ms)),
+            uuid: () => rpcCall('uuid'),
+            timestamp: () => new Date().toISOString(),
+            getSetting: key => rpcCall('getSetting', key),
+            setSetting: (key, value) => rpcCall('setSetting', key, value),
+          };
+          try {
+            const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+            const fn = new AsyncFunction(
+              ...Object.keys(api),
+              'globalThis',
+              'self',
+              '"use strict"; return (async () => { ' + data.code + ' })();'
+            );
+            const result = await fn(...Object.values(api), undefined, undefined);
+            postMessage({ type: 'result', result });
+          } catch (err) {
+            postMessage({ type: 'result', error: err?.message || String(err) });
+          }
+        };
+      `;
 
-      const listener = (event: MessageEvent) => {
-        if (event.source !== iframeWindow) return;
-        window.removeEventListener('message', listener);
-        document.body.removeChild(iframe);
-        const { error, result } = event.data || {};
-        if (error) {
-          reject(new Error(error));
-        } else {
-          resolve(result);
+      const blob = new Blob([workerScript], { type: 'application/javascript' });
+      const worker = new Worker(URL.createObjectURL(blob));
+
+      const rpcHandlers: Record<string, (...args: any[]) => Promise<any>> = {
+        'http.get': (url: string, options?: RequestInit) => this.httpRequest('GET', url, options),
+        'http.post': (url: string, data?: any, options?: RequestInit) =>
+          this.httpRequest('POST', url, data !== undefined ? { ...options, body: JSON.stringify(data) } : options),
+        'http.put': (url: string, data?: any, options?: RequestInit) =>
+          this.httpRequest('PUT', url, data !== undefined ? { ...options, body: JSON.stringify(data) } : options),
+        'http.delete': (url: string, options?: RequestInit) => this.httpRequest('DELETE', url, options),
+        'ssh.execute': (cmd: string) =>
+          context.session ? this.sshExecute(context.session, cmd) : Promise.reject('No SSH session'),
+        'ssh.sendKeys': (keys: string) =>
+          context.session ? this.sshSendKeys(context.session, keys) : Promise.reject('No SSH session'),
+        getSetting: (key: string) => Promise.resolve(this.getSetting(key)),
+        setSetting: (key: string, value: any) => this.setSetting(key, value),
+        uuid: () => Promise.resolve(generateId()),
+      };
+
+      worker.onmessage = async event => {
+        const data = event.data;
+        if (data.type === 'console') {
+          this.scriptLog(data.level, scriptName, data.message);
+          return;
+        }
+        if (data.type === 'rpc') {
+          const { id, method, args } = data;
+          const handler = rpcHandlers[method];
+          if (!handler) {
+            worker.postMessage({ type: 'rpc-response', id, error: 'Unknown method' });
+            return;
+          }
+          try {
+            const result = await handler(...args);
+            worker.postMessage({ type: 'rpc-response', id, result });
+          } catch (err) {
+            worker.postMessage({
+              type: 'rpc-response',
+              id,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          return;
+        }
+        if (data.type === 'result') {
+          clearTimeout(timeoutId);
+          worker.terminate();
+          if (data.error) {
+            reject(new Error(data.error));
+          } else {
+            resolve(data.result);
+          }
         }
       };
 
-      window.addEventListener('message', listener);
+      const timeoutId = setTimeout(() => {
+        worker.terminate();
+        reject(new Error('Script execution timed out'));
+      }, 1000);
 
-      const sandboxInit = `
-        window.addEventListener('message', async (event) => {
-          const { code, context } = event.data;
-          try {
-            const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-            const fn = new AsyncFunction(...Object.keys(context), code);
-            const result = await fn(...Object.values(context));
-            parent.postMessage({ result }, '*');
-          } catch (err) {
-            parent.postMessage({ error: err?.message || String(err) }, '*');
-          }
-        });
-      `;
-
-      iframe.srcdoc = `<script>${sandboxInit}<\/script>`;
-      iframeWindow.postMessage({ code, context }, '*');
+      worker.postMessage({ type: 'execute', context, code });
     });
   }
 
