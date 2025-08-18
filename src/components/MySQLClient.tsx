@@ -1,18 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Database, Play, Save, Trash2, RefreshCw, Table, Code, BarChart3 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
-import { MySQLService } from '../utils/mysqlService';
+import { MySQLService, QueryResult, MySQLValue } from '../utils/mysqlService';
 
 interface MySQLClientProps {
   session: ConnectionSession;
-}
-
-interface QueryResult {
-  columns: string[];
-  rows: any[][];
-  affectedRows?: number;
-  insertId?: number;
-  error?: string;
 }
 
 export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
@@ -23,6 +15,7 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
   const [selectedDatabase, setSelectedDatabase] = useState<string>('');
   const [tables, setTables] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'query' | 'tables' | 'structure'>('query');
+  const [error, setError] = useState<string | null>(null);
 
   const mysqlService = new MySQLService();
 
@@ -43,8 +36,11 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
       if (dbs.length > 0) {
         setSelectedDatabase(dbs[0]);
       }
-    } catch (error) {
-      console.error('Failed to load databases:', error);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to load databases'
+      );
     }
   };
 
@@ -52,8 +48,11 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
     try {
       const tableList = await mysqlService.getTables(session.connectionId, database);
       setTables(tableList);
-    } catch (error) {
-      console.error('Failed to load tables:', error);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to load tables'
+      );
     }
   };
 
@@ -64,11 +63,12 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
     try {
       const result = await mysqlService.executeQuery(session.connectionId, query);
       setResults(result);
-    } catch (error) {
+      setError(null);
+    } catch (err) {
       setResults({
         columns: [],
         rows: [],
-        error: error instanceof Error ? error.message : 'Query execution failed',
+        error: err instanceof Error ? err.message : 'Query execution failed',
       });
     } finally {
       setIsExecuting(false);
@@ -88,7 +88,7 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
     setQuery(sampleQueries[queryType] || '');
   };
 
-  const formatCellValue = (value: any): string => {
+  const formatCellValue = (value: MySQLValue): string => {
     if (value === null) return 'NULL';
     if (value === undefined) return '';
     if (typeof value === 'object') return JSON.stringify(value);
@@ -126,6 +126,9 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
           </div>
         </div>
       </div>
+      {error && (
+        <div className="bg-red-900/20 text-red-300 p-2 text-sm">{error}</div>
+      )}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}

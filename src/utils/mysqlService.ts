@@ -1,30 +1,50 @@
-interface QueryResult {
+export interface MySQLConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database?: string;
+}
+
+export type MySQLValue =
+  | string
+  | number
+  | boolean
+  | null
+  | Date
+  | Record<string, unknown>;
+
+export interface QueryResult {
   columns: string[];
-  rows: any[][];
+  rows: MySQLValue[][];
   affectedRows?: number;
   insertId?: number;
   error?: string;
 }
 
-export class MySQLService {
-  private connections = new Map<string, any>();
+interface ConnectionInfo {
+  config: MySQLConfig;
+  connected: boolean;
+  lastActivity: Date;
+}
 
-  async connect(connectionId: string, config: {
-    host: string;
-    port: number;
-    user: string;
-    password: string;
-    database?: string;
-  }): Promise<void> {
+export class MySQLService {
+  private connections = new Map<string, ConnectionInfo>();
+
+  async connect(connectionId: string, config: MySQLConfig): Promise<ConnectionInfo> {
     // Simulate MySQL connection
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Store mock connection
-    this.connections.set(connectionId, {
+
+    const connection: ConnectionInfo = {
       config,
       connected: true,
       lastActivity: new Date(),
-    });
+    };
+
+    // Store connection
+    this.connections.set(connectionId, connection);
+
+    return connection;
   }
 
   async executeQuery(connectionId: string, query: string): Promise<QueryResult> {
@@ -181,12 +201,12 @@ export class MySQLService {
 
   async getDatabases(connectionId: string): Promise<string[]> {
     const result = await this.executeQuery(connectionId, 'SHOW DATABASES');
-    return result.rows.map(row =>row[0]);
+    return result.rows.map(row => row[0] as string);
   }
 
   async getTables(connectionId: string, database: string): Promise<string[]> {
     const result = await this.executeQuery(connectionId, `SHOW TABLES FROM ${database}`);
-    return result.rows.map(row => row[0]);
+    return result.rows.map(row => row[0] as string);
   }
 
   async getTableStructure(connectionId: string, table: string): Promise<QueryResult> {
