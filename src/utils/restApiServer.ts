@@ -7,6 +7,7 @@ import { Server } from "http";
 import dns from "node:dns/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import dgram from "dgram";
 import { z } from "zod";
 import { AuthService } from "./authService";
 import { Connection, ConnectionSession } from "../types/connection";
@@ -220,6 +221,36 @@ export class RestApiServer {
         console.error("ARP lookup failed", error);
         res.status(500).json({ error: "Lookup failed" });
       }
+    });
+
+    this.app.post("/api/wol", (req, res) => {
+      const {
+        packet,
+        broadcastAddress = "255.255.255.255",
+        port = 9,
+      } = req.body as {
+        packet: number[];
+        broadcastAddress?: string;
+        port?: number;
+      };
+
+      if (!Array.isArray(packet)) {
+        return res.status(400).json({ error: "Invalid packet" });
+      }
+
+      const socket = dgram.createSocket("udp4");
+      socket.bind(() => {
+        socket.setBroadcast(true);
+        const buf = Buffer.from(packet);
+        socket.send(buf, 0, buf.length, port, broadcastAddress, (err) => {
+          socket.close();
+          if (err) {
+            console.error("Failed to send WOL packet", err);
+            return res.status(500).json({ error: "Failed to send packet" });
+          }
+          res.json({ status: "sent" });
+        });
+      });
     });
 
     // Schemas
