@@ -10,16 +10,17 @@ export interface StoredUser {
 export class AuthService {
   private users: Record<string, string> = {};
   private storePath: string;
+  private loadPromise: Promise<void>;
 
   constructor(storePath: string) {
     this.storePath = storePath;
-    this.load();
+    this.loadPromise = this.load();
   }
 
-  private load(): void {
+  private async load(): Promise<void> {
     try {
       const fullPath = path.resolve(this.storePath);
-      const data = fs.readFileSync(fullPath, 'utf8');
+      const data = await fs.promises.readFile(fullPath, 'utf8');
       const parsed: StoredUser[] = JSON.parse(data);
       this.users = {};
       parsed.forEach(u => {
@@ -30,20 +31,29 @@ export class AuthService {
     }
   }
 
-  private persist(): void {
+  private async persist(): Promise<void> {
     const arr: StoredUser[] = Object.entries(this.users).map(
       ([username, passwordHash]) => ({ username, passwordHash })
     );
-    fs.writeFileSync(path.resolve(this.storePath), JSON.stringify(arr, null, 2));
+    await fs.promises.writeFile(
+      path.resolve(this.storePath),
+      JSON.stringify(arr, null, 2)
+    );
   }
 
   async addUser(username: string, password: string): Promise<void> {
     const hash = await bcrypt.hash(password, 10);
+    await this.loadPromise;
     this.users[username] = hash;
-    this.persist();
+    try {
+      await this.persist();
+    } catch (error) {
+      console.error('Failed to persist user', error);
+    }
   }
 
   async verifyUser(username: string, password: string): Promise<boolean> {
+    await this.loadPromise;
     const hash = this.users[username];
     if (!hash) return false;
     return bcrypt.compare(password, hash);
