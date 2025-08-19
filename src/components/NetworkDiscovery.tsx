@@ -157,7 +157,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-semibold text-white">
-            Network Discovery
+            {t("networkDiscovery.title")}
           </h2>
           <div className="flex items-center space-x-2">
             <button
@@ -165,7 +165,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
               className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
             >
               <Settings size={14} />
-              <span>Advanced</span>
+              <span>{t("networkDiscovery.advanced")}</span>
             </button>
             <button
               onClick={onClose}
@@ -182,7 +182,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  IP Range (CIDR)
+                  {t("networkDiscovery.ipRange")}
                 </label>
                 <input
                   type="text"
@@ -191,13 +191,13 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                     setConfig({ ...config, ipRange: e.target.value })
                   }
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-                  placeholder="192.168.1.0/24"
+                  placeholder={t("networkDiscovery.ipRangePlaceholder")}
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Timeout (ms)
+                  {t("networkDiscovery.timeout")}
                 </label>
                 <input
                   type="number"
@@ -213,7 +213,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Max Concurrent
+                  {t("networkDiscovery.maxConcurrent")}
                 </label>
                 <input
                   type="number"
@@ -234,13 +234,13 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
             {showAdvanced && (
               <div className="bg-gray-700 rounded-lg p-4 mb-4">
                 <h3 className="text-lg font-medium text-white mb-4">
-                  Advanced Configuration
+                  {t("networkDiscovery.advancedConfig")}
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Port Ranges (comma-separated)
+                      {t("networkDiscovery.portRanges")}
                     </label>
                     <input
                       type="text"
@@ -254,13 +254,13 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                         })
                       }
                       className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
-                      placeholder="22, 80, 443, 3389, 5900"
+                      placeholder={t("networkDiscovery.portRangesPlaceholder")}
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Protocols to Detect
+                      {t("networkDiscovery.protocols")}
                     </label>
                     <div className="flex flex-wrap gap-2">
                       {[
@@ -315,7 +315,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors flex items-center space-x-2"
                 >
                   <X size={16} />
-                  <span>Stop</span>
+                  <span>{t("networkDiscovery.stop")}</span>
                 </button>
               ) : (
                 <button
@@ -323,7 +323,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
                 >
                   <Search size={16} />
-                  <span>Start Scan</span>
+                  <span>{t("networkDiscovery.startScan")}</span>
                 </button>
               )}
 
@@ -333,7 +333,11 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                   className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors flex items-center space-x-2"
                 >
                   <Plus size={16} />
-                  <span>Create {selectedHosts.size} Connection(s)</span>
+                  <span>
+                    {t("networkDiscovery.createConnections", {
+                      count: selectedHosts.size,
+                    })}
+                  </span>
                 </button>
               )}
             </div>
@@ -354,7 +358,9 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
           {discoveredHosts.length > 0 && (
             <div>
               <h3 className="text-lg font-medium text-white mb-4">
-                Discovered Hosts ({discoveredHosts.length})
+                {t("networkDiscovery.discoveredHosts", {
+                  count: discoveredHosts.length,
+                })}
               </h3>
 
               <div className="space-y-4">
@@ -388,11 +394,15 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
 
                       <div className="text-right">
                         <p className="text-gray-400 text-sm">
-                          Response: {host.responseTime}ms
+                          {t("networkDiscovery.responseTime", {
+                            ms: host.responseTime,
+                          })}
                         </p>
                         {host.macAddress && (
                           <p className="text-gray-500 text-xs">
-                            MAC: {host.macAddress}
+                            {t("networkDiscovery.macAddress", {
+                              mac: host.macAddress,
+                            })}
                           </p>
                         )}
                       </div>
@@ -412,7 +422,9 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                                 {service.service.toUpperCase()}
                               </p>
                               <p className="text-gray-400 text-sm">
-                                Port {service.port}
+                                {t("networkDiscovery.port", {
+                                  port: service.port,
+                                })}
                               </p>
                               {service.version && (
                                 <p className="text-gray-500 text-xs truncate">
@@ -433,10 +445,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
           {!isScanning && discoveredHosts.length === 0 && (
             <div className="text-center py-12">
               <Search size={48} className="mx-auto text-gray-500 mb-4" />
-              <p className="text-gray-400">
-                No hosts discovered yet. Start a scan to find devices on your
-                network.
-              </p>
+              <p className="text-gray-400">{t("networkDiscovery.noHosts")}</p>
             </div>
           )}
         </div>

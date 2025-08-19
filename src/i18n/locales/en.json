@@ -147,5 +147,25 @@
     "run": "Run Script",
     "edit": "Edit Script",
     "delete": "Delete Script"
+  },
+  "networkDiscovery": {
+    "title": "Network Discovery",
+    "advanced": "Advanced",
+    "ipRange": "IP Range (CIDR)",
+    "ipRangePlaceholder": "192.168.1.0/24",
+    "timeout": "Timeout (ms)",
+    "maxConcurrent": "Max Concurrent",
+    "advancedConfig": "Advanced Configuration",
+    "portRanges": "Port Ranges (comma-separated)",
+    "portRangesPlaceholder": "22, 80, 443, 3389, 5900",
+    "protocols": "Protocols to Detect",
+    "stop": "Stop",
+    "startScan": "Start Scan",
+    "createConnections": "Create {{count}} Connection(s)",
+    "discoveredHosts": "Discovered Hosts ({{count}})",
+    "responseTime": "Response: {{ms}}ms",
+    "macAddress": "MAC: {{mac}}",
+    "port": "Port {{port}}",
+    "noHosts": "No hosts discovered yet. Start a scan to find devices on your network."
   }
 }
