@@ -128,6 +128,41 @@ describe('ScriptEngine error handling', () => {
   });
 });
 
+describe('ScriptEngine TypeScript', () => {
+  it('executes TypeScript scripts', async () => {
+    const engine = ScriptEngine.getInstance();
+    const script: CustomScript = {
+      id: 'ts-success',
+      name: 'ts script',
+      type: 'typescript',
+      content: 'const n: number = 1; return n;',
+      trigger: 'manual',
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const result = await engine.executeScript(script, { trigger: 'manual' });
+    expect(result).toBe(1);
+  });
+
+  it('surfaces TypeScript compilation errors', async () => {
+    const engine = ScriptEngine.getInstance();
+    const script: CustomScript = {
+      id: 'ts-error',
+      name: 'ts error',
+      type: 'typescript',
+      content: 'const o = ;',
+      trigger: 'manual',
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    await expect(engine.executeScript(script, { trigger: 'manual' })).rejects.toThrow(/TypeScript compilation failed/);
+  });
+});
+
 describe('ScriptEngine.httpRequest', () => {
   it('makes GET request without Content-Type header', async () => {
     const engine = ScriptEngine.getInstance();
