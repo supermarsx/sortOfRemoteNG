@@ -1,25 +1,38 @@
-import React, { useState, useEffect } from 'react';
-import { X, Search, Wifi, Monitor, Database, HardDrive, Globe, Play, Plus, Settings, RefreshCw } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { DiscoveredHost, DiscoveredService } from '../types/connection';
-import { NetworkDiscoveryConfig } from '../types/settings';
-import { NetworkScanner } from '../utils/networkScanner';
-import { useConnections } from '../contexts/ConnectionContext';
-import { generateId } from '../utils/id';
+import React, { useState, useRef } from "react";
+import {
+  X,
+  Search,
+  Wifi,
+  Monitor,
+  Database,
+  HardDrive,
+  Globe,
+  Plus,
+  Settings,
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { DiscoveredHost, DiscoveredService } from "../types/connection";
+import { NetworkDiscoveryConfig } from "../types/settings";
+import { NetworkScanner } from "../utils/networkScanner";
+import { useConnections } from "../contexts/ConnectionContext";
+import { generateId } from "../utils/id";
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onClose }) => {
+export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
+  isOpen,
+  onClose,
+}) => {
   const { t } = useTranslation();
   const { dispatch } = useConnections();
   const [config, setConfig] = useState<NetworkDiscoveryConfig>({
     enabled: true,
-    ipRange: '192.168.1.0/24',
-    portRanges: ['22', '80', '443', '3389', '5900'],
-    protocols: ['ssh', 'http', 'https', 'rdp', 'vnc'],
+    ipRange: "192.168.1.0/24",
+    portRanges: ["22", "80", "443", "3389", "5900"],
+    protocols: ["ssh", "http", "https", "rdp", "vnc"],
     timeout: 5000,
     maxConcurrent: 50,
     maxPortConcurrent: 100,
@@ -39,6 +52,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
   const [scanProgress, setScanProgress] = useState(0);
   const [selectedHosts, setSelectedHosts] = useState<Set<string>>(new Set());
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scanner = new NetworkScanner();
 
@@ -47,24 +61,37 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
     setScanProgress(0);
     setDiscoveredHosts([]);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
-      const hosts = await scanner.scanNetwork(config, (progress) => {
-        setScanProgress(progress);
-      });
+      const hosts = await scanner.scanNetwork(
+        config,
+        (progress) => {
+          setScanProgress(progress);
+        },
+        controller.signal,
+      );
       setDiscoveredHosts(hosts);
     } catch (error) {
-      console.error('Network scan failed:', error);
+      console.error("Network scan failed:", error);
     } finally {
       setIsScanning(false);
+      abortControllerRef.current = null;
     }
   };
 
+  const handleStop = () => {
+    abortControllerRef.current?.abort();
+    setIsScanning(false);
+  };
+
   const handleCreateConnections = () => {
-    selectedHosts.forEach(hostIp => {
-      const host = discoveredHosts.find(h => h.ip === hostIp);
+    selectedHosts.forEach((hostIp) => {
+      const host = discoveredHosts.find((h) => h.ip === hostIp);
       if (!host) return;
 
-      host.services.forEach(service => {
+      host.services.forEach((service) => {
         const connection = {
           id: generateId(),
           name: `${host.hostname || host.ip} (${service.service})`,
@@ -74,11 +101,11 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
           isGroup: false,
           createdAt: new Date(),
           updatedAt: new Date(),
-          description: `Auto-discovered ${service.service} service${service.version ? ` (${service.version})` : ''}`,
-          tags: ['auto-discovered'],
+          description: `Auto-discovered ${service.service} service${service.version ? ` (${service.version})` : ""}`,
+          tags: ["auto-discovered"],
         };
 
-        dispatch({ type: 'ADD_CONNECTION', payload: connection });
+        dispatch({ type: "ADD_CONNECTION", payload: connection });
       });
     });
 
@@ -88,15 +115,22 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
 
   const getServiceIcon = (service: string) => {
     switch (service.toLowerCase()) {
-      case 'ssh': return Monitor;
-      case 'http':
-      case 'https': return Globe;
-      case 'rdp': return Monitor;
-      case 'vnc': return Monitor;
-      case 'mysql': return Database;
-      case 'ftp':
-      case 'sftp': return HardDrive;
-      default: return Wifi;
+      case "ssh":
+        return Monitor;
+      case "http":
+      case "https":
+        return Globe;
+      case "rdp":
+        return Monitor;
+      case "vnc":
+        return Monitor;
+      case "mysql":
+        return Database;
+      case "ftp":
+      case "sftp":
+        return HardDrive;
+      default:
+        return Wifi;
     }
   };
 
@@ -121,7 +155,9 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
     >
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">Network Discovery</h2>
+          <h2 className="text-xl font-semibold text-white">
+            Network Discovery
+          </h2>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
@@ -130,7 +166,10 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
               <Settings size={14} />
               <span>Advanced</span>
             </button>
-            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-white transition-colors"
+            >
               <X size={20} />
             </button>
           </div>
@@ -147,12 +186,14 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
                 <input
                   type="text"
                   value={config.ipRange}
-                  onChange={(e) => setConfig({ ...config, ipRange: e.target.value })}
+                  onChange={(e) =>
+                    setConfig({ ...config, ipRange: e.target.value })
+                  }
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                   placeholder="192.168.1.0/24"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Timeout (ms)
@@ -160,13 +201,15 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
                 <input
                   type="number"
                   value={config.timeout}
-                  onChange={(e) => setConfig({ ...config, timeout: parseInt(e.target.value) })}
+                  onChange={(e) =>
+                    setConfig({ ...config, timeout: parseInt(e.target.value) })
+                  }
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                   min="1000"
                   max="30000"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
                   Max Concurrent
@@ -174,7 +217,12 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
                 <input
                   type="number"
                   value={config.maxConcurrent}
-                  onChange={(e) => setConfig({ ...config, maxConcurrent: parseInt(e.target.value) })}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      maxConcurrent: parseInt(e.target.value),
+                    })
+                  }
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                   min="1"
                   max="100"
@@ -184,8 +232,10 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
 
             {showAdvanced && (
               <div className="bg-gray-700 rounded-lg p-4 mb-4">
-                <h3 className="text-lg font-medium text-white mb-4">Advanced Configuration</h3>
-                
+                <h3 className="text-lg font-medium text-white mb-4">
+                  Advanced Configuration
+                </h3>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -193,39 +243,62 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
                     </label>
                     <input
                       type="text"
-                      value={config.portRanges.join(', ')}
-                      onChange={(e) => setConfig({ 
-                        ...config, 
-                        portRanges: e.target.value.split(',').map(p => p.trim()) 
-                      })}
+                      value={config.portRanges.join(", ")}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          portRanges: e.target.value
+                            .split(",")
+                            .map((p) => p.trim()),
+                        })
+                      }
                       className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
                       placeholder="22, 80, 443, 3389, 5900"
                     />
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
                       Protocols to Detect
                     </label>
                     <div className="flex flex-wrap gap-2">
-                      {['ssh', 'http', 'https', 'rdp', 'vnc', 'mysql', 'ftp', 'telnet'].map(protocol => (
-                        <label key={protocol} className="flex items-center space-x-2">
+                      {[
+                        "ssh",
+                        "http",
+                        "https",
+                        "rdp",
+                        "vnc",
+                        "mysql",
+                        "ftp",
+                        "telnet",
+                      ].map((protocol) => (
+                        <label
+                          key={protocol}
+                          className="flex items-center space-x-2"
+                        >
                           <input
                             type="checkbox"
                             checked={config.protocols.includes(protocol)}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setConfig({ ...config, protocols: [...config.protocols, protocol] });
+                                setConfig({
+                                  ...config,
+                                  protocols: [...config.protocols, protocol],
+                                });
                               } else {
-                                setConfig({ 
-                                  ...config, 
-                                  protocols: config.protocols.filter(p => p !== protocol) 
+                                setConfig({
+                                  ...config,
+                                  protocols: config.protocols.filter(
+                                    (p) => p !== protocol,
+                                  ),
                                 });
                               }
                             }}
                             className="rounded border-gray-600 bg-gray-700 text-blue-600"
                           />
-                          <span className="text-gray-300 text-sm">{protocol.toUpperCase()}</span>
+                          <span className="text-gray-300 text-sm">
+                            {protocol.toUpperCase()}
+                          </span>
                         </label>
                       ))}
                     </div>
@@ -235,23 +308,23 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
             )}
 
             <div className="flex items-center space-x-4">
-              <button
-                onClick={handleScan}
-                disabled={isScanning}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
-              >
-                {isScanning ? (
-                  <>
-                    <RefreshCw size={16} className="animate-spin" />
-                    <span>Scanning... {scanProgress.toFixed(0)}%</span>
-                  </>
-                ) : (
-                  <>
-                    <Search size={16} />
-                    <span>Start Scan</span>
-                  </>
-                )}
-              </button>
+              {isScanning ? (
+                <button
+                  onClick={handleStop}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                >
+                  <X size={16} />
+                  <span>Stop</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleScan}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                >
+                  <Search size={16} />
+                  <span>Start Scan</span>
+                </button>
+              )}
 
               {selectedHosts.size > 0 && (
                 <button
@@ -267,7 +340,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
             {isScanning && (
               <div className="mt-4">
                 <div className="w-full bg-gray-700 rounded-full h-2">
-                  <div 
+                  <div
                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                     style={{ width: `${scanProgress}%` }}
                   />
@@ -282,15 +355,15 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
               <h3 className="text-lg font-medium text-white mb-4">
                 Discovered Hosts ({discoveredHosts.length})
               </h3>
-              
+
               <div className="space-y-4">
-                {discoveredHosts.map(host => (
+                {discoveredHosts.map((host) => (
                   <div
                     key={host.ip}
                     className={`bg-gray-700 rounded-lg p-4 border-2 transition-colors cursor-pointer ${
-                      selectedHosts.has(host.ip) 
-                        ? 'border-blue-500 bg-blue-900/20' 
-                        : 'border-gray-600 hover:border-gray-500'
+                      selectedHosts.has(host.ip)
+                        ? "border-blue-500 bg-blue-900/20"
+                        : "border-gray-600 hover:border-gray-500"
                     }`}
                     onClick={() => toggleHostSelection(host.ip)}
                   >
@@ -311,7 +384,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
                           )}
                         </div>
                       </div>
-                      
+
                       <div className="text-right">
                         <p className="text-gray-400 text-sm">
                           Response: {host.responseTime}ms
@@ -359,7 +432,10 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({ isOpen, onCl
           {!isScanning && discoveredHosts.length === 0 && (
             <div className="text-center py-12">
               <Search size={48} className="mx-auto text-gray-500 mb-4" />
-              <p className="text-gray-400">No hosts discovered yet. Start a scan to find devices on your network.</p>
+              <p className="text-gray-400">
+                No hosts discovered yet. Start a scan to find devices on your
+                network.
+              </p>
             </div>
           )}
         </div>

@@ -1,14 +1,15 @@
-import { DiscoveredHost, DiscoveredService } from '../types/connection';
-import { NetworkDiscoveryConfig } from '../types/settings';
-import { Semaphore } from './semaphore';
-import serviceMap from './serviceMap';
+import { DiscoveredHost, DiscoveredService } from "../types/connection";
+import { NetworkDiscoveryConfig } from "../types/settings";
+import { Semaphore } from "./semaphore";
+import serviceMap from "./serviceMap";
 
 export class NetworkScanner {
   private hostnameCache = new Map<string, string | null>();
   private macCache = new Map<string, string | null>();
   async scanNetwork(
     config: NetworkDiscoveryConfig,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    signal?: AbortSignal,
   ): Promise<DiscoveredHost[]> {
     const hosts = this.generateIPRange(config.ipRange);
     const discoveredHosts: DiscoveredHost[] = [];
@@ -19,9 +20,12 @@ export class NetworkScanner {
 
     const scanPromises = hosts.map(async (ip) => {
       await semaphore.acquire();
-      
+
       try {
-        const host = await this.scanHost(ip, config);
+        if (signal?.aborted) {
+          return;
+        }
+        const host = await this.scanHost(ip, config, signal);
         if (host) {
           discoveredHosts.push(host);
         }
@@ -29,17 +33,23 @@ export class NetworkScanner {
         console.error(`Failed to scan ${ip}:`, error);
       } finally {
         completed++;
-        onProgress?.(completed / hosts.length * 100);
+        onProgress?.((completed / hosts.length) * 100);
         semaphore.release();
       }
     });
 
-    await Promise.all(scanPromises);
+    await Promise.race([
+      Promise.all(scanPromises),
+      new Promise<void>((resolve) =>
+        signal?.addEventListener("abort", () => resolve()),
+      ),
+    ]);
+
     return discoveredHosts.sort((a, b) => this.compareIPs(a.ip, b.ip));
   }
 
   private generateIPRange(cidr: string): string[] {
-    const parts = cidr.split('/');
+    const parts = cidr.split("/");
     if (parts.length !== 2) {
       throw new Error(`Malformed CIDR string: ${cidr}`);
     }
@@ -53,15 +63,17 @@ export class NetworkScanner {
     const prefix = parseInt(prefixLength, 10);
 
     if (prefix < 24 || prefix > 30) {
-      throw new Error(`Unsupported prefix length /${prefix}. Only /24 to /30 are supported`);
+      throw new Error(
+        `Unsupported prefix length /${prefix}. Only /24 to /30 are supported`,
+      );
     }
 
-    const networkPartsRaw = network.split('.');
+    const networkPartsRaw = network.split(".");
     if (networkPartsRaw.length !== 4) {
       throw new Error(`CIDR IP must have 4 octets: ${network}`);
     }
 
-    const octets = networkPartsRaw.map(part => {
+    const octets = networkPartsRaw.map((part) => {
       if (!/^\d+$/.test(part)) {
         throw new Error(`Invalid IPv4 address in CIDR: ${network}`);
       }
@@ -75,7 +87,8 @@ export class NetworkScanner {
     const hostBits = 32 - prefix;
     const mask = (0xffffffff << hostBits) >>> 0;
     const ipNum =
-      ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+      ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>>
+      0;
     const networkNum = ipNum & mask;
     const hostCount = Math.pow(2, hostBits) - 2; // Exclude network and broadcast
 
@@ -85,14 +98,18 @@ export class NetworkScanner {
       ips.push(
         `${(ipInt >>> 24) & 0xff}.${(ipInt >>> 16) & 0xff}.${(ipInt >>> 8) & 0xff}.${
           ipInt & 0xff
-        }`
+        }`,
       );
     }
 
     return ips;
   }
 
-  private async scanHost(ip: string, config: NetworkDiscoveryConfig): Promise<DiscoveredHost | null> {
+  private async scanHost(
+    ip: string,
+    config: NetworkDiscoveryConfig,
+    signal?: AbortSignal,
+  ): Promise<DiscoveredHost | null> {
     const startTime = Date.now();
     const openPorts: number[] = [];
     const services: DiscoveredService[] = [];
@@ -102,10 +119,13 @@ export class NetworkScanner {
 
     // Scan ports with a concurrency limit
     const portSemaphore = new Semaphore(config.maxPortConcurrent);
-    const portPromises = portsToScan.map(async port => {
+    const portPromises = portsToScan.map(async (port) => {
       await portSemaphore.acquire();
       try {
-        return await this.scanPort(ip, port, config.timeout);
+        if (signal?.aborted) {
+          return { isOpen: false, elapsed: 0 };
+        }
+        return await this.scanPort(ip, port, config.timeout, signal);
       } finally {
         portSemaphore.release();
       }
@@ -116,7 +136,7 @@ export class NetworkScanner {
       if (result.isOpen) {
         const port = portsToScan[index];
         openPorts.push(port);
-        
+
         const service = this.identifyService(port, result.banner);
         if (service) {
           services.push(service);
@@ -145,9 +165,9 @@ export class NetworkScanner {
     const ports = new Set<number>();
 
     // Add ports from ranges
-    config.portRanges.forEach(range => {
-      if (range.includes('-')) {
-        const [start, end] = range.split('-').map(Number);
+    config.portRanges.forEach((range) => {
+      if (range.includes("-")) {
+        const [start, end] = range.split("-").map(Number);
         for (let port = start; port <= end; port++) {
           ports.add(port);
         }
@@ -157,9 +177,9 @@ export class NetworkScanner {
     });
 
     // Add custom ports for protocols
-    config.protocols.forEach(protocol => {
+    config.protocols.forEach((protocol) => {
       const customPorts = config.customPorts[protocol] || [];
-      customPorts.forEach(port => ports.add(port));
+      customPorts.forEach((port) => ports.add(port));
     });
 
     return Array.from(ports).sort((a, b) => a - b);
@@ -168,12 +188,18 @@ export class NetworkScanner {
   private async scanPort(
     ip: string,
     port: number,
-    timeout: number
+    timeout: number,
+    signal?: AbortSignal,
   ): Promise<{ isOpen: boolean; banner?: string; elapsed: number }> {
     return new Promise((resolve) => {
       const startTime = Date.now();
       let resolved = false;
       let ws: WebSocket;
+
+      if (signal?.aborted) {
+        resolve({ isOpen: false, elapsed: Date.now() - startTime });
+        return;
+      }
 
       // Use WebSocket for port scanning (limited but works for many services)
       try {
@@ -183,6 +209,15 @@ export class NetworkScanner {
         return;
       }
 
+      const abortHandler = () => {
+        ws.close();
+        if (!resolved) {
+          resolved = true;
+          resolve({ isOpen: false, elapsed: Date.now() - startTime });
+        }
+      };
+      signal?.addEventListener("abort", abortHandler);
+
       const timeoutId = setTimeout(() => {
         ws.close();
         if (!resolved) {
@@ -191,8 +226,13 @@ export class NetworkScanner {
         }
       }, timeout);
 
-      ws.onopen = () => {
+      const cleanup = () => {
         clearTimeout(timeoutId);
+        signal?.removeEventListener("abort", abortHandler);
+      };
+
+      ws.onopen = () => {
+        cleanup();
         ws.close();
         if (!resolved) {
           resolved = true;
@@ -201,7 +241,7 @@ export class NetworkScanner {
       };
 
       ws.onerror = () => {
-        clearTimeout(timeoutId);
+        cleanup();
         if (!resolved) {
           resolved = true;
           resolve({ isOpen: false, elapsed: Date.now() - startTime });
@@ -209,7 +249,7 @@ export class NetworkScanner {
       };
 
       ws.onclose = (event) => {
-        clearTimeout(timeoutId);
+        cleanup();
         if (!resolved) {
           resolved = true;
           if (event.wasClean) {
@@ -222,13 +262,16 @@ export class NetworkScanner {
     });
   }
 
-  private identifyService(port: number, banner?: string): DiscoveredService | null {
+  private identifyService(
+    port: number,
+    banner?: string,
+  ): DiscoveredService | null {
     const serviceInfo = serviceMap[port];
     if (!serviceInfo) {
       return {
         port,
-        protocol: 'unknown',
-        service: 'unknown',
+        protocol: "unknown",
+        service: "unknown",
         banner,
       };
     }
@@ -271,9 +314,11 @@ export class NetworkScanner {
     }
 
     try {
-      const response = await fetch(`/api/resolve-hostname?ip=${encodeURIComponent(ip)}`);
+      const response = await fetch(
+        `/api/resolve-hostname?ip=${encodeURIComponent(ip)}`,
+      );
       if (!response.ok) {
-        throw new Error('Request failed');
+        throw new Error("Request failed");
       }
       const data = await response.json();
       const hostname = data.hostname as string | undefined;
@@ -291,9 +336,11 @@ export class NetworkScanner {
     }
 
     try {
-      const response = await fetch(`/api/arp-lookup?ip=${encodeURIComponent(ip)}`);
+      const response = await fetch(
+        `/api/arp-lookup?ip=${encodeURIComponent(ip)}`,
+      );
       if (!response.ok) {
-        throw new Error('Request failed');
+        throw new Error("Request failed");
       }
       const data = await response.json();
       const mac = data.mac as string | undefined;
@@ -306,8 +353,8 @@ export class NetworkScanner {
   }
 
   private compareIPs(a: string, b: string): number {
-    const aParts = a.split('.').map(Number);
-    const bParts = b.split('.').map(Number);
+    const aParts = a.split(".").map(Number);
+    const bParts = b.split(".").map(Number);
 
     for (let i = 0; i < 4; i++) {
       if (aParts[i] !== bParts[i]) {
