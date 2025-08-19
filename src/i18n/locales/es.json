@@ -147,5 +147,25 @@
     "run": "Ejecutar Script",
     "edit": "Editar Script",
     "delete": "Eliminar Script"
+  },
+  "networkDiscovery": {
+    "title": "Descubrimiento de Red",
+    "advanced": "Avanzado",
+    "ipRange": "Rango IP (CIDR)",
+    "ipRangePlaceholder": "192.168.1.0/24",
+    "timeout": "Tiempo de espera (ms)",
+    "maxConcurrent": "Máximo Concurrente",
+    "advancedConfig": "Configuración Avanzada",
+    "portRanges": "Rangos de Puertos (separados por comas)",
+    "portRangesPlaceholder": "22, 80, 443, 3389, 5900",
+    "protocols": "Protocolos a Detectar",
+    "stop": "Detener",
+    "startScan": "Iniciar Escaneo",
+    "createConnections": "Crear {{count}} Conexión(es)",
+    "discoveredHosts": "Hosts Descubiertos ({{count}})",
+    "responseTime": "Respuesta: {{ms}}ms",
+    "macAddress": "MAC: {{mac}}",
+    "port": "Puerto {{port}}",
+    "noHosts": "Aún no se han descubierto hosts. Inicie un escaneo para encontrar dispositivos en su red."
   }
 }
