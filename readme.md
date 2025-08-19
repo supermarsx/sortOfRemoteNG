@@ -4,7 +4,6 @@ A sort of remoteNG inspired web app that runs on the browser. Very broken and no
 
 ## Testing
 
-
 To run the unit tests, you **must** install dependencies first:
 
 ```bash
@@ -37,9 +36,7 @@ The REST API uses a simple user store with bcrypt-hashed passwords and JWT token
    `username` and `passwordHash` fields:
 
    ```json
-   [
-     { "username": "admin", "passwordHash": "<bcrypt-hash>" }
-   ]
+   [{ "username": "admin", "passwordHash": "<bcrypt-hash>" }]
    ```
 
    Generate hashes with:
@@ -59,6 +56,7 @@ Environment variables:
 - `API_KEY` – optional API key (defaults to none).
 - `JWT_SECRET` – secret for signing JWTs (defaults to `defaultsecret`).
 - `USER_STORE_PATH` – path to the users file (defaults to `users.json`).
+- `PBKDF2_ITERATIONS` – overrides key derivation iterations (defaults to `150000`).
 
 ## Appearance
 

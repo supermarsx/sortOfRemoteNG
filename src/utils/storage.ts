@@ -4,6 +4,7 @@ const OLD_STORAGE_META_KEY = "mremote-settings";
 
 import { Connection } from "../types/connection";
 import { IndexedDbService } from "./indexedDbService";
+import { PBKDF2_ITERATIONS } from "../config";
 
 const getCrypto = (): Crypto => globalThis.crypto as Crypto;
 
@@ -54,7 +55,7 @@ export class SecureStorage {
       {
         name: "PBKDF2",
         salt,
-        iterations: 150000,
+        iterations: PBKDF2_ITERATIONS,
         hash: "SHA-256",
       },
       keyMaterial,
