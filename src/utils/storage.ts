@@ -149,8 +149,10 @@ export class SecureStorage {
           timestamp: Date.now(),
         });
       }
-    } catch {
-      throw new Error("Failed to save data");
+    } catch (err) {
+      console.error("Failed to save data:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to save data: ${message}`);
     }
   }
 
@@ -180,18 +182,19 @@ export class SecureStorage {
             );
             const decoded = new TextDecoder().decode(decryptedBuffer);
             return JSON.parse(decoded);
-          } catch {
-            throw new Error("Invalid password");
+          } catch (err) {
+            console.error("Failed to decrypt data:", err);
+            const message = err instanceof Error ? err.message : String(err);
+            throw new Error(`Invalid password: ${message}`);
           }
         }
       }
 
       return storedData as StorageData;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error("Failed to load data or invalid password");
+    } catch (err) {
+      console.error("Failed to load data:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to load data: ${message}`);
     }
   }
 
