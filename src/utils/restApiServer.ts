@@ -74,23 +74,23 @@ export class RestApiServer {
     this.setupRoutes();
   }
 
-  private loadPersistedData(): void {
-    this.connections = loadJson<Connection[]>(
+  private async loadPersistedData(): Promise<void> {
+    this.connections = await loadJson<Connection[]>(
       this.config.connectionsStorePath,
       []
     );
-    this.sessions = loadJson<ConnectionSession[]>(
+    this.sessions = await loadJson<ConnectionSession[]>(
       this.config.sessionsStorePath,
       []
     );
   }
 
-  private persistConnections(): void {
-    saveJson(this.config.connectionsStorePath, this.connections);
+  private async persistConnections(): Promise<void> {
+    await saveJson(this.config.connectionsStorePath, this.connections);
   }
 
-  private persistSessions(): void {
-    saveJson(this.config.sessionsStorePath, this.sessions);
+  private async persistSessions(): Promise<void> {
+    await saveJson(this.config.sessionsStorePath, this.sessions);
   }
 
   private setupMiddleware(): void {
@@ -260,7 +260,7 @@ export class RestApiServer {
       res.json(this.connections);
     });
 
-    this.app.post('/api/connections', (req, res) => {
+    this.app.post('/api/connections', async (req, res) => {
       const result = connectionSchema.safeParse(req.body);
       if (!result.success) {
         return res.status(400).json({ error: 'Invalid connection data' });
@@ -274,7 +274,11 @@ export class RestApiServer {
       };
 
       this.connections.push(connection);
-      this.persistConnections();
+      try {
+        await this.persistConnections();
+      } catch {
+        return res.status(500).json({ error: 'Failed to save connection' });
+      }
       res.status(201).json(connection);
     });
 
@@ -287,7 +291,7 @@ export class RestApiServer {
       }
     });
 
-    this.app.put('/api/connections/:id', (req, res) => {
+    this.app.put('/api/connections/:id', async (req, res) => {
       const result = connectionUpdateSchema.safeParse(req.body);
       if (!result.success) {
         return res.status(400).json({ error: 'Invalid connection data' });
@@ -299,18 +303,26 @@ export class RestApiServer {
           ...result.data,
           updatedAt: new Date(),
         };
-        this.persistConnections();
+        try {
+          await this.persistConnections();
+        } catch {
+          return res.status(500).json({ error: 'Failed to update connection' });
+        }
         res.json(this.connections[index]);
       } else {
         res.status(404).json({ error: 'Connection not found' });
       }
     });
 
-    this.app.delete('/api/connections/:id', (req, res) => {
+    this.app.delete('/api/connections/:id', async (req, res) => {
       const index = this.connections.findIndex(c => c.id === req.params.id);
       if (index >= 0) {
         this.connections.splice(index, 1);
-        this.persistConnections();
+        try {
+          await this.persistConnections();
+        } catch {
+          return res.status(500).json({ error: 'Failed to delete connection' });
+        }
         res.status(204).send();
       } else {
         res.status(404).json({ error: 'Connection not found' });
@@ -322,14 +334,14 @@ export class RestApiServer {
       res.json(this.sessions);
     });
 
-    this.app.post('/api/sessions', (req, res) => {
+    this.app.post('/api/sessions', async (req, res) => {
       const result = sessionSchema.safeParse(req.body);
       if (!result.success) {
         return res.status(400).json({ error: 'Invalid session data' });
       }
       const { connectionId } = result.data;
       const connection = this.connections.find(c => c.id === connectionId);
-      
+
       if (!connection) {
         return res.status(404).json({ error: 'Connection not found' });
       }
@@ -345,15 +357,23 @@ export class RestApiServer {
       };
 
       this.sessions.push(session);
-      this.persistSessions();
+      try {
+        await this.persistSessions();
+      } catch {
+        return res.status(500).json({ error: 'Failed to save session' });
+      }
       res.status(201).json(session);
     });
 
-    this.app.delete('/api/sessions/:id', (req, res) => {
+    this.app.delete('/api/sessions/:id', async (req, res) => {
       const index = this.sessions.findIndex(s => s.id === req.params.id);
       if (index >= 0) {
         this.sessions.splice(index, 1);
-        this.persistSessions();
+        try {
+          await this.persistSessions();
+        } catch {
+          return res.status(500).json({ error: 'Failed to delete session' });
+        }
         res.status(204).send();
       } else {
         res.status(404).json({ error: 'Session not found' });
@@ -361,7 +381,7 @@ export class RestApiServer {
     });
 
     // Bulk operations
-    this.app.post('/api/connections/bulk', (req, res) => {
+    this.app.post('/api/connections/bulk', async (req, res) => {
       const result = bulkSchema.safeParse(req.body);
       if (!result.success) {
         return res.status(400).json({ error: 'Invalid bulk request' });
@@ -370,7 +390,9 @@ export class RestApiServer {
 
       switch (action) {
         case 'delete':
-          this.connections = this.connections.filter(c => !connectionIds.includes(c.id));
+          this.connections = this.connections.filter(
+            c => !connectionIds.includes(c.id)
+          );
           break;
         case 'connect':
           connectionIds.forEach((id: string) => {
@@ -393,13 +415,19 @@ export class RestApiServer {
           return res.status(400).json({ error: 'Invalid action' });
       }
 
-      this.persistConnections();
-      this.persistSessions();
+      try {
+        await this.persistConnections();
+        await this.persistSessions();
+      } catch {
+        return res
+          .status(500)
+          .json({ error: 'Failed to process bulk request' });
+      }
       res.json({ success: true, affected: connectionIds.length });
     });
 
     // Import/Export
-    this.app.post('/api/connections/import', (req, res) => {
+    this.app.post('/api/connections/import', async (req, res) => {
       const result = importSchema.safeParse(req.body);
       if (!result.success) {
         return res.status(400).json({ error: 'Invalid import data' });
@@ -413,7 +441,11 @@ export class RestApiServer {
       }));
 
       this.connections.push(...imported);
-      this.persistConnections();
+      try {
+        await this.persistConnections();
+      } catch {
+        return res.status(500).json({ error: 'Failed to import connections' });
+      }
       res.json({ imported: imported.length });
     });
 
@@ -475,8 +507,8 @@ export class RestApiServer {
     return stats;
   }
 
-  start(): Promise<void> {
-    this.loadPersistedData();
+  async start(): Promise<void> {
+    await this.loadPersistedData();
     return new Promise((resolve, reject) => {
       try {
         this.server = this.app.listen(this.config.port);
@@ -507,13 +539,21 @@ export class RestApiServer {
   }
 
   // Update data from main application
-  updateConnections(connections: Connection[]): void {
+  async updateConnections(connections: Connection[]): Promise<void> {
     this.connections = connections;
-    this.persistConnections();
+    try {
+      await this.persistConnections();
+    } catch (error) {
+      console.error('Failed to persist connections', error);
+    }
   }
 
-  updateSessions(sessions: ConnectionSession[]): void {
+  async updateSessions(sessions: ConnectionSession[]): Promise<void> {
     this.sessions = sessions;
-    this.persistSessions();
+    try {
+      await this.persistSessions();
+    } catch (error) {
+      console.error('Failed to persist sessions', error);
+    }
   }
 }

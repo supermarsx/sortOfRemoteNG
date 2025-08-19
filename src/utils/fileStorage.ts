@@ -11,19 +11,29 @@ function dateReviver(key: string, value: any): any {
   return value;
 }
 
-export function loadJson<T>(filePath: string, defaultValue: T): T {
+export async function loadJson<T>(
+  filePath: string,
+  defaultValue: T
+): Promise<T> {
   try {
     const fullPath = path.resolve(filePath);
-    const data = fs.readFileSync(fullPath, 'utf8');
+    const data = await fs.promises.readFile(fullPath, 'utf8');
     return JSON.parse(data, dateReviver) as T;
   } catch {
     return defaultValue;
   }
 }
 
-export function saveJson<T>(filePath: string, data: T): void {
+export async function saveJson<T>(
+  filePath: string,
+  data: T
+): Promise<void> {
   const fullPath = path.resolve(filePath);
-  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
-  fs.writeFileSync(fullPath, JSON.stringify(data, null, 2), 'utf8');
+  await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
+  await fs.promises.writeFile(
+    fullPath,
+    JSON.stringify(data, null, 2),
+    'utf8'
+  );
 }
 
