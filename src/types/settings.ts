@@ -170,6 +170,7 @@ export interface NetworkDiscoveryConfig {
   maxConcurrent: number;
   maxPortConcurrent: number;
   customPorts: Record<string, number[]>;
+  cacheTTL: number;
 }
 
 export interface TOTPConfig {

@@ -80,6 +80,7 @@ describe('NetworkScanner helper methods', () => {
       maxConcurrent: 10,
       maxPortConcurrent: 2,
       customPorts: {},
+      cacheTTL: 60000,
     };
 
     let active = 0;
@@ -114,8 +115,9 @@ describe('NetworkScanner helper methods', () => {
     });
     (global as any).fetch = fetchMock;
 
-    const first = await scanner.resolveHostname('1.1.1.1');
-    const second = await scanner.resolveHostname('1.1.1.1');
+    const ttl = 1000;
+    const first = await scanner.resolveHostname('1.1.1.1', ttl);
+    const second = await scanner.resolveHostname('1.1.1.1', ttl);
 
     expect(first).toBe('test.local');
     expect(second).toBe('test.local');
@@ -126,8 +128,9 @@ describe('NetworkScanner helper methods', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false });
     (global as any).fetch = fetchMock;
 
-    const first = await scanner.resolveHostname('2.2.2.2');
-    const second = await scanner.resolveHostname('2.2.2.2');
+    const ttl = 1000;
+    const first = await scanner.resolveHostname('2.2.2.2', ttl);
+    const second = await scanner.resolveHostname('2.2.2.2', ttl);
 
     expect(first).toBeUndefined();
     expect(second).toBeUndefined();
@@ -141,8 +144,9 @@ describe('NetworkScanner helper methods', () => {
     });
     (global as any).fetch = fetchMock;
 
-    const first = await scanner.getMacAddress('3.3.3.3');
-    const second = await scanner.getMacAddress('3.3.3.3');
+    const ttl = 1000;
+    const first = await scanner.getMacAddress('3.3.3.3', ttl);
+    const second = await scanner.getMacAddress('3.3.3.3', ttl);
 
     expect(first).toBe('aa:bb:cc:dd:ee:ff');
     expect(second).toBe('aa:bb:cc:dd:ee:ff');
@@ -153,11 +157,50 @@ describe('NetworkScanner helper methods', () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('network'));
     (global as any).fetch = fetchMock;
 
-    const first = await scanner.getMacAddress('4.4.4.4');
-    const second = await scanner.getMacAddress('4.4.4.4');
+    const ttl = 1000;
+    const first = await scanner.getMacAddress('4.4.4.4', ttl);
+    const second = await scanner.getMacAddress('4.4.4.4', ttl);
 
     expect(first).toBeUndefined();
     expect(second).toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolveHostname respects TTL', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ hostname: 'first.local' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ hostname: 'second.local' }),
+      });
+    (global as any).fetch = fetchMock;
+
+    const ttl = 1000;
+    const first = await scanner.resolveHostname('5.5.5.5', ttl);
+    expect(first).toBe('first.local');
+    vi.advanceTimersByTime(ttl + 1);
+    const second = await scanner.resolveHostname('5.5.5.5', ttl);
+    expect(second).toBe('second.local');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it('clearCaches removes cached entries', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ hostname: 'clear.local' }),
+    });
+    (global as any).fetch = fetchMock;
+
+    const ttl = 1000;
+    await scanner.resolveHostname('6.6.6.6', ttl);
+    scanner.clearCaches();
+    await scanner.resolveHostname('6.6.6.6', ttl);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
