@@ -2,6 +2,7 @@ import { CustomScript } from '../types/settings';
 import { Connection, ConnectionSession } from '../types/connection';
 import { SettingsManager } from './settingsManager';
 import { generateId } from './id';
+import * as ts from 'typescript';
 
 export class ScriptEngine {
   private static instance: ScriptEngine | null = null;
@@ -111,12 +112,16 @@ export class ScriptEngine {
     };
 
     // Execute the script
+    const isNode = typeof process !== 'undefined' && !!process.versions?.node;
+
     if (script.type === 'javascript') {
       return this.executeJavaScript(script.content, scriptContext, script.name);
     } else if (script.type === 'typescript') {
-      // For TypeScript, we'd need to transpile first
-      // For now, treat as JavaScript
-      return this.executeJavaScript(script.content, scriptContext, script.name);
+      if (isNode) {
+        const js = this.transpileTypeScript(script.content, script.name);
+        return this.executeJavaScript(js, scriptContext, script.name);
+      }
+      return this.executeInWorker(script.content, scriptContext, script.name, 'typescript');
     } else {
       throw new Error(`Unsupported script type: ${script.type}`);
     }
@@ -169,7 +174,8 @@ export class ScriptEngine {
   private async executeInWorker(
     code: string,
     context: any,
-    scriptName: string
+    scriptName: string,
+    language: 'javascript' | 'typescript' = 'javascript'
   ): Promise<any> {
     return new Promise((resolve, reject) => {
       const workerScript = `
@@ -195,6 +201,24 @@ export class ScriptEngine {
           }
           if (data.type !== 'execute') return;
           const base = data.context;
+          let code = data.code;
+          if (data.language === 'typescript') {
+            try {
+              if (!(self).ts) {
+                importScripts('https://cdn.jsdelivr.net/npm/typescript@5.5.3/lib/typescript.js');
+              }
+              const result = (self).ts.transpileModule(code, { compilerOptions: { module: (self).ts.ModuleKind.ESNext, target: (self).ts.ScriptTarget.ES2017 }, reportDiagnostics: true });
+              if (result.diagnostics && result.diagnostics.length) {
+                const message = result.diagnostics.map(d => (self).ts.flattenDiagnosticMessageText(d.messageText, '\\n')).join('\\n');
+                postMessage({ type: 'result', error: message });
+                return;
+              }
+              code = result.outputText;
+            } catch (err) {
+              postMessage({ type: 'result', error: err?.message || String(err) });
+              return;
+            }
+          }
           const console = {
             log: (...a) => postMessage({ type: 'console', level: 'info', message: a.join(' ') }),
             warn: (...a) => postMessage({ type: 'console', level: 'warn', message: a.join(' ') }),
@@ -229,7 +253,7 @@ export class ScriptEngine {
               ...Object.keys(api),
               'globalThis',
               'self',
-              '"use strict"; return (async () => { ' + data.code + ' })();'
+              '"use strict"; return (async () => { ' + code + ' })();'
             );
             const result = await fn(...Object.values(api), undefined, undefined);
             postMessage({ type: 'result', result });
@@ -299,8 +323,22 @@ export class ScriptEngine {
         reject(new Error('Script execution timed out'));
       }, 1000);
 
-      worker.postMessage({ type: 'execute', context, code });
+      worker.postMessage({ type: 'execute', context, code, language });
     });
+  }
+
+  private transpileTypeScript(code: string, scriptName: string): string {
+    const result = ts.transpileModule(code, {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2017 },
+      reportDiagnostics: true,
+    });
+    if (result.diagnostics && result.diagnostics.length > 0) {
+      const message = result.diagnostics
+        .map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'))
+        .join('\n');
+      throw new Error(`TypeScript compilation failed in ${scriptName}: ${message}`);
+    }
+    return result.outputText;
   }
 
   private async httpRequest(method: string, url: string, options: RequestInit = {}): Promise<any> {
