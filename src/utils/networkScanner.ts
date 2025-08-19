@@ -3,9 +3,14 @@ import { NetworkDiscoveryConfig } from "../types/settings";
 import { Semaphore } from "./semaphore";
 import serviceMap from "./serviceMap";
 
+interface CacheEntry<T> {
+  value: T | null;
+  timestamp: number;
+}
+
 export class NetworkScanner {
-  private hostnameCache = new Map<string, string | null>();
-  private macCache = new Map<string, string | null>();
+  private hostnameCache = new Map<string, CacheEntry<string>>();
+  private macCache = new Map<string, CacheEntry<string>>();
   async scanNetwork(
     config: NetworkDiscoveryConfig,
     onProgress?: (progress: number) => void,
@@ -46,6 +51,11 @@ export class NetworkScanner {
     ]);
 
     return discoveredHosts.sort((a, b) => this.compareIPs(a.ip, b.ip));
+  }
+
+  clearCaches(): void {
+    this.hostnameCache.clear();
+    this.macCache.clear();
   }
 
   private generateIPRange(cidr: string): string[] {
@@ -149,7 +159,7 @@ export class NetworkScanner {
     }
 
     const responseTime = Date.now() - startTime;
-    const hostname = await this.resolveHostname(ip);
+    const hostname = await this.resolveHostname(ip, config.cacheTTL);
 
     return {
       ip,
@@ -157,7 +167,7 @@ export class NetworkScanner {
       openPorts,
       services,
       responseTime,
-      macAddress: await this.getMacAddress(ip),
+      macAddress: await this.getMacAddress(ip, config.cacheTTL),
     };
   }
 
@@ -308,9 +318,23 @@ export class NetworkScanner {
     return undefined;
   }
 
-  private async resolveHostname(ip: string): Promise<string | undefined> {
-    if (this.hostnameCache.has(ip)) {
-      return this.hostnameCache.get(ip) || undefined;
+  private purgeCache<T>(cache: Map<string, CacheEntry<T>>, ttl: number): void {
+    const now = Date.now();
+    for (const [key, entry] of cache.entries()) {
+      if (now - entry.timestamp > ttl) {
+        cache.delete(key);
+      }
+    }
+  }
+
+  private async resolveHostname(
+    ip: string,
+    ttl: number
+  ): Promise<string | undefined> {
+    this.purgeCache(this.hostnameCache, ttl);
+    const cached = this.hostnameCache.get(ip);
+    if (cached) {
+      return cached.value || undefined;
     }
 
     try {
@@ -322,17 +346,22 @@ export class NetworkScanner {
       }
       const data = await response.json();
       const hostname = data.hostname as string | undefined;
-      this.hostnameCache.set(ip, hostname ?? null);
+      this.hostnameCache.set(ip, { value: hostname ?? null, timestamp: Date.now() });
       return hostname;
     } catch {
-      this.hostnameCache.set(ip, null);
+      this.hostnameCache.set(ip, { value: null, timestamp: Date.now() });
       return undefined;
     }
   }
 
-  private async getMacAddress(ip: string): Promise<string | undefined> {
-    if (this.macCache.has(ip)) {
-      return this.macCache.get(ip) || undefined;
+  private async getMacAddress(
+    ip: string,
+    ttl: number
+  ): Promise<string | undefined> {
+    this.purgeCache(this.macCache, ttl);
+    const cached = this.macCache.get(ip);
+    if (cached) {
+      return cached.value || undefined;
     }
 
     try {
@@ -344,10 +373,10 @@ export class NetworkScanner {
       }
       const data = await response.json();
       const mac = data.mac as string | undefined;
-      this.macCache.set(ip, mac ?? null);
+      this.macCache.set(ip, { value: mac ?? null, timestamp: Date.now() });
       return mac;
     } catch {
-      this.macCache.set(ip, null);
+      this.macCache.set(ip, { value: null, timestamp: Date.now() });
       return undefined;
     }
   }
