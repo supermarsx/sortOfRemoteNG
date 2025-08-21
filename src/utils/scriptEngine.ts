@@ -261,16 +261,20 @@ export class ScriptEngine {
           let code = data.code;
           if (data.language === 'typescript') {
             try {
-              if (!(self).ts) {
-                importScripts('https://cdn.jsdelivr.net/npm/typescript@5.5.3/lib/typescript.js');
+              if (!(self).esbuildInitialized) {
+                importScripts('https://cdn.jsdelivr.net/npm/esbuild-wasm@0.21.5/esbuild.js');
+                await (self).esbuild.initialize({
+                  wasmURL: 'https://cdn.jsdelivr.net/npm/esbuild-wasm@0.21.5/esbuild.wasm',
+                  worker: false,
+                });
+                (self).esbuildInitialized = true;
               }
-              const result = (self).ts.transpileModule(code, { compilerOptions: { module: (self).ts.ModuleKind.ESNext, target: (self).ts.ScriptTarget.ES2017 }, reportDiagnostics: true });
-              if (result.diagnostics && result.diagnostics.length) {
-                const message = result.diagnostics.map(d => (self).ts.flattenDiagnosticMessageText(d.messageText, '\\n')).join('\\n');
-                postMessage({ type: 'result', error: message });
-                return;
-              }
-              code = result.outputText;
+              const result = await (self).esbuild.transform(code, {
+                loader: 'ts',
+                format: 'esm',
+                target: 'es2017',
+              });
+              code = result.code;
             } catch (err) {
               postMessage({ type: 'result', error: err?.message || String(err) });
               return;
