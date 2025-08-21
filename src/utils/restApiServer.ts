@@ -5,8 +5,7 @@ import { RateLimiterMemory } from "rate-limiter-flexible";
 import jwt from "jsonwebtoken";
 import { Server } from "http";
 import dns from "node:dns/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import * as child_process from "child_process";
 import dgram from "dgram";
 import { z } from "zod";
 import { AuthService } from "./authService";
@@ -15,7 +14,6 @@ import { debugLog } from "./debugLogger";
 import { generateId } from "./id";
 import { loadJson, saveJson } from "./fileStorage";
 
-const execFileAsync = promisify(execFile);
 const ipv4Regex =
   /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 
@@ -187,8 +185,8 @@ export class RestApiServer {
 
     // Network utilities
     this.app.get("/api/resolve-hostname", async (req, res) => {
-      const ip = req.query.ip as string;
-      if (!ip || !ipv4Regex.test(ip)) {
+      const ip = req.query.ip;
+      if (typeof ip !== "string" || !ipv4Regex.test(ip)) {
         return res.status(400).json({ error: "Invalid IP address" });
       }
       try {
@@ -205,12 +203,19 @@ export class RestApiServer {
     });
 
     this.app.get("/api/arp-lookup", async (req, res) => {
-      const ip = req.query.ip as string;
-      if (!ip || !ipv4Regex.test(ip)) {
+      const ip = req.query.ip;
+      if (typeof ip !== "string" || !ipv4Regex.test(ip)) {
         return res.status(400).json({ error: "Invalid IP address" });
       }
       try {
-        const { stdout } = await execFileAsync("arp", ["-n", ip]);
+        const stdout: string = await new Promise((resolve, reject) => {
+          child_process.execFile("arp", ["-n", ip], (error, stdout) => {
+            if (error) {
+              return reject(error);
+            }
+            resolve(stdout);
+          });
+        });
         const match = stdout.match(/([0-9a-f]{2}[:-]){5}[0-9a-f]{2}/i);
         if (match) {
           res.json({ mac: match[0].toLowerCase() });
