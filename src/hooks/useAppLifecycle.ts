@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnections } from '../contexts/ConnectionContext';
 import { SettingsManager } from '../utils/settingsManager';
@@ -33,7 +33,7 @@ export const useAppLifecycle = ({
   const hasReconnected = useRef(false);
   const reconnectingSessions = useRef<Set<string>>(new Set());
 
-  const initializeApp = async () => {
+  const initializeApp = useCallback(async () => {
     try {
       await settingsManager.initialize();
 
@@ -61,28 +61,31 @@ export const useAppLifecycle = ({
         error instanceof Error ? error.message : 'Unknown error',
       );
     }
-  };
+  }, [settingsManager, themeManager, i18n]);
 
-  useEffect(() => {
-    initializeApp();
-
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+  const handleBeforeUnload = useCallback(
+    (e: BeforeUnloadEvent) => {
       const settings = settingsManager.getSettings();
       if (settings.warnOnExit && state.sessions.length > 0) {
         e.preventDefault();
         e.returnValue = t('dialogs.confirmExit');
         return t('dialogs.confirmExit');
       }
-    };
+    },
+    [settingsManager, state.sessions.length, t],
+  );
+
+  const checkSingleWindow = useCallback(async () => {
+    if (!(await settingsManager.checkSingleWindow())) {
+      alert('Another sortOfRemoteNG window is already open. Only one instance is allowed.');
+      window.close();
+    }
+  }, [settingsManager]);
+
+  useEffect(() => {
+    initializeApp();
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-
-    const checkSingleWindow = async () => {
-      if (!(await settingsManager.checkSingleWindow())) {
-        alert('Another sortOfRemoteNG window is already open. Only one instance is allowed.');
-        window.close();
-      }
-    };
 
     const singleWindowInterval = setInterval(checkSingleWindow, 5000);
 
@@ -91,8 +94,7 @@ export const useAppLifecycle = ({
       clearInterval(singleWindowInterval);
       statusChecker.cleanup();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initializeApp, handleBeforeUnload, checkSingleWindow, statusChecker]);
 
   useEffect(() => {
     if (isInitialized) {
@@ -104,7 +106,13 @@ export const useAppLifecycle = ({
         setShowPasswordDialog(true);
       }
     }
-  }, [isInitialized]);
+  }, [
+    isInitialized,
+    collectionManager,
+    setShowCollectionSelector,
+    setShowPasswordDialog,
+    setPasswordDialogMode,
+  ]);
 
   useEffect(() => {
     const settings = settingsManager.getSettings();
@@ -131,7 +139,7 @@ export const useAppLifecycle = ({
         hasReconnected.current = true;
       }
     }
-  }, [isInitialized, state.connections, handleConnect]);
+  }, [isInitialized, state.connections, handleConnect, settingsManager]);
 
   useEffect(() => {
     const settings = settingsManager.getSettings();
@@ -144,7 +152,7 @@ export const useAppLifecycle = ({
     } else if (state.sessions.length === 0) {
       sessionStorage.removeItem('mremote-active-sessions');
     }
-  }, [state.sessions]);
+  }, [state.sessions, settingsManager]);
 
   return { isInitialized };
 };
