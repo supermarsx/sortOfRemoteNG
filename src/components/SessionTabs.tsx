@@ -1,21 +1,29 @@
-import React from 'react';
-import { X, Monitor, Terminal, Eye, Globe, Phone, Wifi, WifiOff } from 'lucide-react';
-import { ConnectionSession } from '../types/connection';
-import { useConnections } from '../contexts/ConnectionContext';
+import React from "react";
+import {
+  X,
+  Monitor,
+  Terminal,
+  Eye,
+  Globe,
+  Phone,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
+import { useConnections } from "../contexts/ConnectionContext";
 
 const getProtocolIcon = (protocol: string) => {
   switch (protocol) {
-    case 'rdp':
+    case "rdp":
       return Monitor;
-    case 'ssh':
+    case "ssh":
       return Terminal;
-    case 'vnc':
+    case "vnc":
       return Eye;
-    case 'http':
-    case 'https':
+    case "http":
+    case "https":
       return Globe;
-    case 'telnet':
-    case 'rlogin':
+    case "telnet":
+    case "rlogin":
       return Phone;
     default:
       return Monitor;
@@ -24,12 +32,12 @@ const getProtocolIcon = (protocol: string) => {
 
 const getStatusIcon = (status: string) => {
   switch (status) {
-    case 'connected':
+    case "connected":
       return Wifi;
-    case 'connecting':
+    case "connecting":
       return Wifi;
-    case 'disconnected':
-    case 'error':
+    case "disconnected":
+    case "error":
       return WifiOff;
     default:
       return WifiOff;
@@ -38,31 +46,33 @@ const getStatusIcon = (status: string) => {
 
 const getStatusColor = (status: string) => {
   switch (status) {
-    case 'connected':
-      return 'text-green-400';
-    case 'connecting':
-      return 'text-yellow-400 animate-pulse';
-    case 'error':
-      return 'text-red-400';
+    case "connected":
+      return "text-green-400";
+    case "connecting":
+      return "text-yellow-400 animate-pulse";
+    case "error":
+      return "text-red-400";
     default:
-      return 'text-gray-400';
+      return "text-gray-400";
   }
 };
 
 interface SessionTabsProps {
   activeSessionId?: string;
   onSessionSelect: (sessionId: string) => void;
+  onSessionClose: (sessionId: string) => void;
 }
 
 export const SessionTabs: React.FC<SessionTabsProps> = ({
   activeSessionId,
   onSessionSelect,
+  onSessionClose,
 }) => {
-  const { state, dispatch } = useConnections();
+  const { state } = useConnections();
 
   const handleCloseSession = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    dispatch({ type: 'REMOVE_SESSION', payload: sessionId });
+    onSessionClose(sessionId);
   };
 
   if (state.sessions.length === 0) {
@@ -85,8 +95,8 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             key={session.id}
             className={`flex items-center h-full px-3 cursor-pointer border-r border-gray-700 min-w-0 ${
               isActive
-                ? 'bg-gray-700 text-white'
-                : 'text-gray-300 hover:bg-gray-700/50'
+                ? "bg-gray-700 text-white"
+                : "text-gray-300 hover:bg-gray-700/50"
             } transition-colors`}
             onClick={() => onSessionSelect(session.id)}
           >
