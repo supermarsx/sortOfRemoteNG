@@ -49,9 +49,9 @@ export class SecureStorage {
       enc.encode(password),
       "PBKDF2",
       false,
-      ["deriveBits"],
+      ["deriveKey"],
     );
-    const derivedBits = await crypto.subtle.deriveBits(
+    return crypto.subtle.deriveKey(
       {
         name: "PBKDF2",
         salt,
@@ -59,12 +59,7 @@ export class SecureStorage {
         hash: "SHA-256",
       },
       keyMaterial,
-      256,
-    );
-    return crypto.subtle.importKey(
-      "raw",
-      derivedBits,
-      { name: "AES-GCM" },
+      { name: "AES-GCM", length: 256 },
       false,
       ["encrypt", "decrypt"],
     );
