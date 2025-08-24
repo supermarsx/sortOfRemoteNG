@@ -3,6 +3,11 @@ import { SecureStorage } from './storage';
 import { IndexedDbService } from './indexedDbService';
 import { generateId } from './id';
 
+/**
+ * Default global application settings. These values are used when no user
+ * settings have been persisted. Any settings not provided by the user will
+ * fall back to these defaults.
+ */
 const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
   theme: 'dark',
@@ -98,6 +103,11 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   exportPassword: undefined,
 };
 
+/**
+ * Handles persistence and retrieval of application settings, action logs,
+ * performance metrics and custom scripts. Implemented as a singleton so that
+ * state is shared across the application.
+ */
 export class SettingsManager {
   private static instance: SettingsManager | null = null;
   private settings: GlobalSettings = DEFAULT_SETTINGS;
@@ -105,6 +115,10 @@ export class SettingsManager {
   private performanceMetrics: PerformanceMetrics[] = [];
   private customScripts: CustomScript[] = [];
 
+  /**
+   * Retrieves the singleton instance of the manager.
+   * @returns {SettingsManager} The shared instance.
+   */
   static getInstance(): SettingsManager {
     if (SettingsManager.instance === null) {
       SettingsManager.instance = new SettingsManager();
@@ -112,10 +126,18 @@ export class SettingsManager {
     return SettingsManager.instance;
   }
 
+  /**
+   * Resets the singleton instance. Primarily used for testing to create a new
+   * instance with a clean state.
+   */
   static resetInstance(): void {
     SettingsManager.instance = null;
   }
 
+  /**
+   * Loads settings from persistent storage.
+   * @returns {Promise<GlobalSettings>} Resolves with the merged settings; returns defaults if retrieval fails.
+   */
   async loadSettings(): Promise<GlobalSettings> {
     try {
       const stored = await IndexedDbService.getItem<GlobalSettings>('mremote-settings');
@@ -129,6 +151,12 @@ export class SettingsManager {
     }
   }
 
+  /**
+   * Persists new settings to storage, merging with existing ones.
+   * @param {Partial<GlobalSettings>} settings - Settings to merge and save.
+   * @returns {Promise<void>} Resolves when saving succeeds.
+   * @throws {Error} If the settings could not be persisted.
+   */
   async saveSettings(settings: Partial<GlobalSettings>): Promise<void> {
     try {
       this.settings = { ...this.settings, ...settings };
@@ -140,11 +168,24 @@ export class SettingsManager {
     }
   }
 
+  /**
+   * Provides access to the currently loaded settings.
+   * @returns {GlobalSettings} The in-memory settings object.
+   */
   getSettings(): GlobalSettings {
     return this.settings;
   }
 
   // Action Logging
+  /**
+   * Adds an entry to the action log and persists the log. Older entries are
+   * discarded when the log exceeds the configured maximum.
+   * @param {'debug' | 'info' | 'warn' | 'error'} level - Severity level.
+   * @param {string} action - Description of the action performed.
+   * @param {string} [connectionId] - Optional connection identifier.
+   * @param {string} [details=''] - Additional details about the action.
+   * @param {number} [duration] - Optional duration associated with the action.
+   */
   logAction(
     level: 'debug' | 'info' | 'warn' | 'error',
     action: string,
@@ -165,21 +206,29 @@ export class SettingsManager {
       duration,
     };
 
-    this.actionLog.unshift(entry);
+    this.actionLog.unshift(entry); // Add newest entry to the front
 
-    // Limit log size
+    // Limit log size to avoid unbounded memory growth
     if (this.actionLog.length > this.settings.maxLogEntries) {
+      // Keep only the most recent maxLogEntries entries
       this.actionLog = this.actionLog.slice(0, this.settings.maxLogEntries);
     }
 
-    // Persist to localStorage
+    // Persist asynchronously so logs survive page reloads
     this.saveActionLog();
   }
 
+  /**
+   * Returns the current action log.
+   * @returns {ActionLogEntry[]} Array of action log entries.
+   */
   getActionLog(): ActionLogEntry[] {
     return this.actionLog;
   }
 
+  /**
+   * Removes all log entries and persists the empty log.
+   */
   clearActionLog(): void {
     this.actionLog = [];
     this.saveActionLog();
@@ -208,19 +257,29 @@ export class SettingsManager {
   }
 
   // Performance Metrics
+  /**
+   * Records a performance metric and persists it. Only the most recent 1000
+   * metrics are retained to limit storage usage.
+   * @param {PerformanceMetrics} metric - Metric data to record.
+   */
   recordPerformanceMetric(metric: PerformanceMetrics): void {
     if (!this.settings.enablePerformanceTracking) return;
 
-    this.performanceMetrics.unshift(metric);
+    this.performanceMetrics.unshift(metric); // Store newest first
 
-    // Keep only last 1000 metrics
+    // Keep only last 1000 metrics to control data size
     if (this.performanceMetrics.length > 1000) {
       this.performanceMetrics = this.performanceMetrics.slice(0, 1000);
     }
 
+    // Persist asynchronously; errors are logged inside savePerformanceMetrics
     void this.savePerformanceMetrics();
   }
 
+  /**
+     * Retrieves recorded performance metrics.
+     * @returns {PerformanceMetrics[]} Array of metrics.
+     */
   getPerformanceMetrics(): PerformanceMetrics[] {
     return this.performanceMetrics;
   }
@@ -245,6 +304,11 @@ export class SettingsManager {
   }
 
   // Custom Scripts
+  /**
+   * Adds a new custom script and persists it.
+   * @param {Omit<CustomScript, 'id' | 'createdAt' | 'updatedAt'>} script - Script details without id and timestamps.
+   * @returns {CustomScript} The newly created script with id and timestamps.
+   */
   addCustomScript(script: Omit<CustomScript, 'id' | 'createdAt' | 'updatedAt'>): CustomScript {
     const newScript: CustomScript = {
       ...script,
@@ -260,6 +324,11 @@ export class SettingsManager {
     return newScript;
   }
 
+  /**
+   * Updates an existing custom script if it exists.
+   * @param {string} id - Identifier of the script to update.
+   * @param {Partial<CustomScript>} updates - Fields to update.
+   */
   updateCustomScript(id: string, updates: Partial<CustomScript>): void {
     const index = this.customScripts.findIndex(script => script.id === id);
     if (index !== -1) {
@@ -273,6 +342,10 @@ export class SettingsManager {
     }
   }
 
+  /**
+   * Deletes a custom script.
+   * @param {string} id - Identifier of the script to remove.
+   */
   deleteCustomScript(id: string): void {
     const script = this.customScripts.find(s => s.id === id);
     this.customScripts = this.customScripts.filter(script => script.id !== id);
@@ -280,6 +353,10 @@ export class SettingsManager {
     this.logAction('info', 'Custom script deleted', undefined, `Script "${script?.name}" deleted`);
   }
 
+  /**
+   * Lists all stored custom scripts.
+   * @returns {CustomScript[]} Array of scripts.
+   */
   getCustomScripts(): CustomScript[] {
     return this.customScripts;
   }
@@ -308,6 +385,15 @@ export class SettingsManager {
   }
 
   // Key Derivation Benchmarking
+  /**
+   * Estimates the optimal number of key derivation iterations using a binary
+   * search approach to reach a target duration.
+   * @param {number} [targetTimeSeconds=1] - Desired time for a derivation run.
+   * @param {number} [maxTimeSeconds=30] - Maximum total time to spend benchmarking.
+   * @param {number} [maxIterations=20] - Maximum iterations of the search loop.
+   * @returns {Promise<number>} Estimated iteration count.
+   * @throws {Error} If required Web APIs (performance or crypto.subtle) are unavailable.
+   */
   async benchmarkKeyDerivation(
     targetTimeSeconds: number = 1,
     maxTimeSeconds: number = 30,
@@ -382,6 +468,11 @@ export class SettingsManager {
   }
 
   // Single Window Management
+  /**
+   * Ensures only one application window is active when singleWindowMode is
+   * enabled.
+   * @returns {Promise<boolean>} Resolves false if another window is active.
+   */
   async checkSingleWindow(): Promise<boolean> {
     if (!this.settings.singleWindowMode) return true;
 
@@ -410,6 +501,10 @@ export class SettingsManager {
   }
 
   // Initialize all data
+  /**
+   * Loads all persisted data and performs optional auto-benchmarking.
+   * Should be called during application start up.
+   */
   async initialize(): Promise<void> {
     await this.loadSettings();
     await this.loadActionLog();
