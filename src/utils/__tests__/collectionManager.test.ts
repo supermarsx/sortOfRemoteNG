@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import CryptoJS from "crypto-js";
 import { CollectionManager } from "../collectionManager";
 import { IndexedDbService } from "../indexedDbService";
-import { CollectionNotFoundError, InvalidPasswordError } from "../errors";
+import {
+  CollectionNotFoundError,
+  CorruptedDataError,
+  InvalidPasswordError,
+} from "../errors";
 import { openDB } from "idb";
 
 const DB_NAME = "mremote-keyval";
@@ -75,5 +80,14 @@ describe("CollectionManager", () => {
     await expect(
       manager.loadCollectionData(col.id, "wrong"),
     ).rejects.toBeInstanceOf(InvalidPasswordError);
+  });
+
+  it("throws CorruptedDataError when decrypted data is invalid", async () => {
+    const password = "secret";
+    const encrypted = CryptoJS.AES.encrypt("not-json", password).toString();
+    await IndexedDbService.setItem("mremote-collection-corrupt", encrypted);
+    await expect(
+      manager.loadCollectionData("corrupt", password),
+    ).rejects.toBeInstanceOf(CorruptedDataError);
   });
 });

@@ -3,7 +3,11 @@ import { ConnectionCollection } from "../types/connection";
 import { StorageData } from "./storage";
 import { IndexedDbService } from "./indexedDbService";
 import { generateId } from "./id";
-import { CollectionNotFoundError, InvalidPasswordError } from "./errors";
+import {
+  CollectionNotFoundError,
+  CorruptedDataError,
+  InvalidPasswordError,
+} from "./errors";
 
 export class CollectionManager {
   private static instance: CollectionManager;
@@ -188,7 +192,10 @@ export class CollectionManager {
       if (error instanceof InvalidPasswordError) {
         throw error;
       }
-      throw new InvalidPasswordError();
+      if (error instanceof SyntaxError) {
+        throw new CorruptedDataError("Corrupted collection data");
+      }
+      throw error;
     }
   }
 
