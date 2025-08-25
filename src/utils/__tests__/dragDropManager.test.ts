@@ -46,4 +46,12 @@ describe('DragDropManager.processDropResult', () => {
     expect(item.parentId).toBeUndefined();
     expect(updated.map(c => c.id)).toEqual(['group1', 'item1', 'group2']);
   });
+
+  it('moves connection to root when dropped on root level', () => {
+    const result: DragDropResult = { draggedId: 'item1', targetId: null, position: 'after' };
+    const updated = manager.processDropResult(result, connections);
+    const item = updated.find(c => c.id === 'item1')!;
+    expect(item.parentId).toBeUndefined();
+    expect(updated.map(c => c.id)).toEqual(['group1', 'group2', 'item1']);
+  });
 });

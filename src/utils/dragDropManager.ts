@@ -122,22 +122,46 @@ export class DragDropManager {
     connections: Connection[]
   ): Connection[] {
     const draggedConnection = connections.find(c => c.id === result.draggedId);
-    const targetConnection = connections.find(c => c.id === result.targetId);
-    
-    if (!draggedConnection || !targetConnection) {
+    if (!draggedConnection) {
       return connections;
     }
 
     // Remove dragged connection from its current position
     const updatedConnections = connections.filter(c => c.id !== result.draggedId);
-    
+
     // Update parent relationships
     let newParentId: string | undefined;
-    
-    if (result.position === 'inside' && targetConnection.isGroup) {
-      newParentId = targetConnection.id;
+    let insertIndex = 0;
+
+    if (result.targetId === null) {
+      // Dropping on the root level
+      newParentId = undefined;
+      insertIndex = updatedConnections.length;
     } else {
-      newParentId = targetConnection.parentId;
+      const targetConnection = connections.find(c => c.id === result.targetId);
+
+      if (!targetConnection) {
+        return connections;
+      }
+
+      if (result.position === 'inside' && targetConnection.isGroup) {
+        newParentId = targetConnection.id;
+      } else {
+        newParentId = targetConnection.parentId;
+      }
+
+      if (result.position === 'inside') {
+        // Insert at the beginning of the target group's children
+        const targetChildren = updatedConnections.filter(c => c.parentId === targetConnection.id);
+        if (targetChildren.length > 0) {
+          insertIndex = updatedConnections.indexOf(targetChildren[0]);
+        } else {
+          insertIndex = updatedConnections.indexOf(targetConnection) + 1;
+        }
+      } else {
+        const targetIndex = updatedConnections.indexOf(targetConnection);
+        insertIndex = result.position === 'before' ? targetIndex : targetIndex + 1;
+      }
     }
 
     // Update the dragged connection's parent
@@ -147,25 +171,9 @@ export class DragDropManager {
       updatedAt: new Date(),
     };
 
-    // Find insertion index
-    let insertIndex = 0;
-    
-    if (result.position === 'inside') {
-      // Insert at the beginning of the target group's children
-      const targetChildren = updatedConnections.filter(c => c.parentId === targetConnection.id);
-      if (targetChildren.length > 0) {
-        insertIndex = updatedConnections.indexOf(targetChildren[0]);
-      } else {
-        insertIndex = updatedConnections.indexOf(targetConnection) + 1;
-      }
-    } else {
-      const targetIndex = updatedConnections.indexOf(targetConnection);
-      insertIndex = result.position === 'before' ? targetIndex : targetIndex + 1;
-    }
-
     // Insert the connection at the new position
     updatedConnections.splice(insertIndex, 0, updatedDraggedConnection);
-    
+
     return updatedConnections;
   }
 }
