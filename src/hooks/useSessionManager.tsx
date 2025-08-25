@@ -10,6 +10,11 @@ import { raceWithTimeout } from "../utils/raceWithTimeout";
 import { generateId } from "../utils/id";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 
+/**
+ * Manages connection sessions and exposes helpers for session workflows.
+ *
+ * @returns Collection of session management utilities and state.
+ */
 export const useSessionManager = () => {
   const { t } = useTranslation();
   const { state, dispatch } = useConnections();
@@ -19,6 +24,7 @@ export const useSessionManager = () => {
   const scriptEngine = ScriptEngine.getInstance();
 
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
+  // Store active timeout IDs so they can be cleared on unmount
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [dialogState, setDialogState] = useState<{
     message: string;
@@ -26,14 +32,17 @@ export const useSessionManager = () => {
     resolve: (value: boolean) => void;
   } | null>(null);
 
+  // Dialog helper used by confirm/alert wrappers
   const showDialog = (message: string, showCancel: boolean) =>
     new Promise<boolean>((resolve) => {
       setDialogState({ message, showCancel, resolve });
     });
 
+  // Convenient wrappers around showDialog
   const showConfirm = (message: string) => showDialog(message, true);
   const showAlert = (message: string) => showDialog(message, false);
 
+  // Register a timeout and track it for cleanup
   const startTimer = (fn: () => void, delay: number) => {
     const id = setTimeout(fn, delay);
     timers.current.push(id);
@@ -42,6 +51,7 @@ export const useSessionManager = () => {
 
   useEffect(() => {
     return () => {
+      // Clear any active timers when the hook unmounts
       timers.current.forEach(clearTimeout);
       timers.current = [];
     };
@@ -154,6 +164,7 @@ export const useSessionManager = () => {
       if (
         (session.reconnectAttempts || 0) < (session.maxReconnectAttempts || 0)
       ) {
+        // Schedule another attempt when the retry delay expires
         startTimer(() => {
           handleReconnect(session);
         }, connection.retryDelay || settings.retryDelay);
@@ -161,6 +172,10 @@ export const useSessionManager = () => {
     }
   };
 
+  /**
+   * Creates a new session for a given connection and begins establishing it.
+   * @param connection - Connection definition to open.
+   */
   const handleConnect = async (connection: Connection) => {
     const settings = settingsManager.getSettings();
 
@@ -226,17 +241,27 @@ export const useSessionManager = () => {
     await connectSession(updatedSession, connection);
   };
 
+  /**
+   * Initiates a reconnect for a given session.
+   * @param session - Session to re-establish.
+   */
   const handleReconnect = async (session: ConnectionSession) => {
     const connection = state.connections.find(
       (c) => c.id === session.connectionId,
     );
     if (!connection) return;
 
+    // Retry the connection after a short delay
     startTimer(() => {
       reconnectSession(session, connection);
     }, 2000);
   };
 
+  /**
+   * Opens a temporary connection based on hostname and protocol.
+   * @param hostname - Target host name.
+   * @param protocol - Connection protocol.
+   */
   const handleQuickConnect = (hostname: string, protocol: string) => {
     const tempConnection: Connection = {
       id: generateId(),
@@ -252,6 +277,10 @@ export const useSessionManager = () => {
     handleConnect(tempConnection);
   };
 
+  /**
+   * Closes an active session and performs cleanup.
+   * @param sessionId - ID of the session to close.
+   */
   const handleSessionClose = async (sessionId: string) => {
     const session = state.sessions.find((s) => s.id === sessionId);
     if (!session) return;
