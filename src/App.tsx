@@ -22,20 +22,24 @@ import { CollectionNotFoundError, InvalidPasswordError } from "./utils/errors";
 import { useSessionManager } from "./hooks/useSessionManager";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 
+/**
+ * Core application component responsible for rendering the main layout and
+ * managing global application state.
+ */
 const AppContent: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { state, dispatch, loadData, saveData } = useConnections();
   const [editingConnection, setEditingConnection] = useState<Connection | null>(
     null,
-  );
-  const [showConnectionEditor, setShowConnectionEditor] = useState(false);
-  const [showQuickConnect, setShowQuickConnect] = useState(false);
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [showCollectionSelector, setShowCollectionSelector] = useState(false);
+  ); // connection currently being edited
+  const [showConnectionEditor, setShowConnectionEditor] = useState(false); // connection editor visibility
+  const [showQuickConnect, setShowQuickConnect] = useState(false); // quick connect dialog visibility
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
+  const [showCollectionSelector, setShowCollectionSelector] = useState(false); // collection selector visibility
   const [passwordDialogMode, setPasswordDialogMode] = useState<
     "setup" | "unlock"
-  >("setup");
-  const [passwordError, setPasswordError] = useState<string>("");
+  >("setup"); // current mode for password dialog
+  const [passwordError, setPasswordError] = useState<string>(""); // error message for password dialog
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
@@ -58,10 +62,16 @@ const AppContent: React.FC = () => {
     setPasswordDialogMode,
   });
 
+  /**
+   * Select a collection and load its data, handling common errors.
+   *
+   * @param collectionId - ID of the collection to select.
+   * @param password - Optional password for encrypted collections.
+   */
   const handleCollectionSelect = async (
     collectionId: string,
     password?: string,
-  ) => {
+  ): Promise<void> => {
     try {
       await collectionManager.selectCollection(collectionId, password);
       await loadData();
@@ -84,7 +94,8 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleNewConnection = () => {
+  /** Open the connection editor to create a new connection. */
+  const handleNewConnection = (): void => {
     setEditingConnection(null);
     setShowConnectionEditor(true);
   };
@@ -113,7 +124,12 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handlePasswordSubmit = async (password: string) => {
+  /**
+   * Process a submitted password for unlocking or securing data storage.
+   *
+   * @param password - User provided password.
+   */
+  const handlePasswordSubmit = async (password: string): Promise<void> => {
     try {
       setPasswordError("");
       SecureStorage.setPassword(password);
@@ -171,6 +187,7 @@ const AppContent: React.FC = () => {
   return (
     <div className="h-screen bg-gray-900 text-white flex flex-col">
       {!isInitialized && <div className="fixed inset-0 bg-black z-50" />}
+      {/* Top bar */}
       <div className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4">
         <div className="flex items-center space-x-3">
           <Monitor size={20} className="text-blue-400" />
@@ -230,6 +247,7 @@ const AppContent: React.FC = () => {
             onSessionClose={handleSessionClose}
           />
 
+          {/* Session viewer */}
           <div className="flex-1 overflow-hidden">
             {activeSession ? (
               <SessionViewer session={activeSession} />
@@ -264,6 +282,7 @@ const AppContent: React.FC = () => {
         </div>
       </div>
 
+      {/* Dialogs */}
       <CollectionSelector
         isOpen={showCollectionSelector}
         onCollectionSelect={handleCollectionSelect}
