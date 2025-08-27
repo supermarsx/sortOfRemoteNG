@@ -9,6 +9,14 @@ import {
   InvalidPasswordError,
 } from "./errors";
 
+/**
+ * Handles persistence and encryption of connection collections.
+ *
+ * Collections metadata lives in IndexedDB under a single key while individual
+ * collection contents are stored separately. The manager caches the currently
+ * selected collection to minimise lookups and supports optional AES encryption
+ * for stored data.
+ */
 export class CollectionManager {
   private static instance: CollectionManager;
   private readonly collectionsKey = "mremote-collections";
@@ -26,6 +34,14 @@ export class CollectionManager {
     (CollectionManager as any).instance = undefined;
   }
 
+  /**
+   * Create and persist a new empty collection.
+   *
+   * A unique ID is generated and the collection metadata is appended to the
+   * list stored in IndexedDB. If `isEncrypted` is true, initial data is saved
+   * using AES with the provided password. The method returns the created
+   * collection descriptor.
+   */
   async createCollection(
     name: string,
     description?: string,
@@ -46,6 +62,8 @@ export class CollectionManager {
     collections.push(collection);
     await this.saveCollections(collections);
 
+    // Assumes collection count is modest; appending and rewriting the entire
+    // array could be expensive if thousands of collections were stored.
     // Initialize empty data for the collection
     if (isEncrypted && password) {
       await this.saveCollectionData(

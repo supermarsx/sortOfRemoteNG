@@ -8,19 +8,37 @@ interface CacheEntry<T> {
   timestamp: number;
 }
 
+/**
+ * Utility for scanning networks to discover hosts and open services.
+ *
+ * The scanner limits concurrency with semaphores to avoid overwhelming the
+ * browser or target network. Hostname and MAC lookups are cached with TTLs to
+ * minimise repeated HTTP calls. Results are sorted for deterministic output.
+ */
 export class NetworkScanner {
   private hostnameCache = new Map<string, CacheEntry<string>>();
   private macCache = new Map<string, CacheEntry<string>>();
+  /**
+   * Scan an IP range and return metadata about responsive hosts.
+   *
+   * Hosts are generated from the CIDR range and probed in parallel. A
+   * semaphore throttles concurrency to `config.maxConcurrent`. Each host
+   * scan is abortable via an `AbortSignal`, and progress callbacks receive a
+   * percentage of completed tasks. Results are sorted by IP for stability.
+   */
   async scanNetwork(
     config: NetworkDiscoveryConfig,
     onProgress?: (progress: number) => void,
     signal?: AbortSignal,
   ): Promise<DiscoveredHost[]> {
     const hosts = this.generateIPRange(config.ipRange);
+    // Precomputing all hosts simplifies progress tracking but may consume
+    // noticeable memory for large ranges; CIDR is restricted elsewhere to keep
+    // this manageable.
     const discoveredHosts: DiscoveredHost[] = [];
     let completed = 0;
 
-    // Limit concurrent scans
+    // Limit concurrent scans to prevent flooding the network or browser.
     const semaphore = new Semaphore(config.maxConcurrent);
 
     const scanPromises = hosts.map(async (ip) => {
@@ -329,11 +347,12 @@ export class NetworkScanner {
 
   private async resolveHostname(
     ip: string,
-    ttl: number
+    ttl: number,
   ): Promise<string | undefined> {
     this.purgeCache(this.hostnameCache, ttl);
     const cached = this.hostnameCache.get(ip);
     if (cached) {
+      // Cache stores null for negative lookups to avoid repeat network calls.
       return cached.value || undefined;
     }
 
@@ -346,7 +365,10 @@ export class NetworkScanner {
       }
       const data = await response.json();
       const hostname = data.hostname as string | undefined;
-      this.hostnameCache.set(ip, { value: hostname ?? null, timestamp: Date.now() });
+      this.hostnameCache.set(ip, {
+        value: hostname ?? null,
+        timestamp: Date.now(),
+      });
       return hostname;
     } catch {
       this.hostnameCache.set(ip, { value: null, timestamp: Date.now() });
@@ -356,11 +378,12 @@ export class NetworkScanner {
 
   private async getMacAddress(
     ip: string,
-    ttl: number
+    ttl: number,
   ): Promise<string | undefined> {
     this.purgeCache(this.macCache, ttl);
     const cached = this.macCache.get(ip);
     if (cached) {
+      // Returning early prevents additional ARP lookups for frequently queried IPs.
       return cached.value || undefined;
     }
 
