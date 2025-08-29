@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { I18nextProvider } from "react-i18next";
 import i18n from "../src/i18n";
@@ -20,7 +20,9 @@ describe("NetworkDiscovery i18n", () => {
     const { rerender } = renderWithProviders();
     expect(screen.getByText("Network Discovery")).toBeInTheDocument();
 
-    await i18n.changeLanguage("es");
+    await act(async () => {
+      await i18n.changeLanguage("es");
+    });
     rerender(
       <I18nextProvider i18n={i18n}>
         <ConnectionProvider>

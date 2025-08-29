@@ -213,6 +213,9 @@ export class CollectionManager {
       if (error instanceof SyntaxError) {
         throw new CorruptedDataError("Corrupted collection data");
       }
+      if (error instanceof Error && error.message === "Malformed UTF-8 data") {
+        throw new InvalidPasswordError();
+      }
       throw error;
     }
   }
