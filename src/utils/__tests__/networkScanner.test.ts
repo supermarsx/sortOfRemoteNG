@@ -7,9 +7,11 @@ import type { NetworkDiscoveryConfig } from '../../types/settings';
 const scanner = new NetworkScanner() as any;
 
 const originalFetch = global.fetch;
+const originalWebSocket = (global as any).WebSocket;
 
 afterEach(() => {
   (global as any).fetch = originalFetch;
+  (global as any).WebSocket = originalWebSocket;
   vi.restoreAllMocks();
 });
 
@@ -172,6 +174,24 @@ describe('NetworkScanner helper methods', () => {
 
   it('scanPort resolves false on invalid hostname without rejection', async () => {
     const result = await scanner.scanPort('invalid host', 80, 50);
+    expect(result.isOpen).toBe(false);
+  });
+
+  it('scanPort wraps IPv6 addresses in WebSocket URLs', async () => {
+    let capturedUrl = '';
+    class MockWebSocket {
+      onopen?: () => void;
+      onerror?: (ev: any) => void;
+      onclose?: (ev: any) => void;
+      constructor(url: string) {
+        capturedUrl = url;
+        setTimeout(() => this.onerror?.(new Event('error')), 0);
+      }
+      close() {}
+    }
+    (global as any).WebSocket = MockWebSocket as any;
+    const result = await scanner.scanPort('2001:db8::1', 80, 50);
+    expect(capturedUrl).toBe('ws://[2001:db8::1]:80');
     expect(result.isOpen).toBe(false);
   });
 

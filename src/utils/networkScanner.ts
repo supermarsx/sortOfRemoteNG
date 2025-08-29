@@ -271,7 +271,18 @@ export class NetworkScanner {
 
       // Use WebSocket for port scanning (limited but works for many services)
       try {
-        ws = new WebSocket(`ws://${ip}:${port}`);
+        let host = ip;
+        try {
+          if (ipaddr.isValid(ip)) {
+            const addr = ipaddr.parse(ip);
+            if (addr.kind() === "ipv6") {
+              host = `[${addr.toString()}]`;
+            }
+          }
+        } catch {
+          // If the IP is malformed, fall back to the raw string.
+        }
+        ws = new WebSocket(`ws://${host}:${port}`);
       } catch (error) {
         resolve({ isOpen: false, elapsed: Date.now() - startTime });
         return;
