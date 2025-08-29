@@ -2,6 +2,7 @@ import { DiscoveredHost, DiscoveredService } from "../types/connection";
 import { NetworkDiscoveryConfig } from "../types/settings";
 import { Semaphore } from "./semaphore";
 import serviceMap from "./serviceMap";
+import * as ipaddr from "ipaddr.js";
 
 interface CacheEntry<T> {
   value: T | null;
@@ -31,38 +32,42 @@ export class NetworkScanner {
     onProgress?: (progress: number) => void,
     signal?: AbortSignal,
   ): Promise<DiscoveredHost[]> {
-    const hosts = this.generateIPRange(config.ipRange);
-    // Precomputing all hosts simplifies progress tracking but may consume
-    // noticeable memory for large ranges; CIDR is restricted elsewhere to keep
-    // this manageable.
+    const totalHosts = this.getHostCount(config.ipRange);
     const discoveredHosts: DiscoveredHost[] = [];
     let completed = 0;
 
-    // Limit concurrent scans to prevent flooding the network or browser.
     const semaphore = new Semaphore(config.maxConcurrent);
+    const tasks: Promise<void>[] = [];
 
-    const scanPromises = hosts.map(async (ip) => {
-      await semaphore.acquire();
-
-      try {
-        if (signal?.aborted) {
-          return;
-        }
-        const host = await this.scanHost(ip, config, signal);
-        if (host) {
-          discoveredHosts.push(host);
-        }
-      } catch (error) {
-        console.error(`Failed to scan ${ip}:`, error);
-      } finally {
-        completed++;
-        onProgress?.((completed / hosts.length) * 100);
-        semaphore.release();
+    for await (const ip of this.generateIPRange(config.ipRange)) {
+      if (signal?.aborted) {
+        break;
       }
-    });
+
+      const task = (async () => {
+        await semaphore.acquire();
+        try {
+          if (signal?.aborted) {
+            return;
+          }
+          const host = await this.scanHost(ip, config, signal);
+          if (host) {
+            discoveredHosts.push(host);
+          }
+        } catch (error) {
+          console.error(`Failed to scan ${ip}:`, error);
+        } finally {
+          completed++;
+          onProgress?.((completed / totalHosts) * 100);
+          semaphore.release();
+        }
+      })();
+
+      tasks.push(task);
+    }
 
     await Promise.race([
-      Promise.all(scanPromises),
+      Promise.all(tasks),
       new Promise<void>((resolve) =>
         signal?.addEventListener("abort", () => resolve()),
       ),
@@ -76,61 +81,96 @@ export class NetworkScanner {
     this.macCache.clear();
   }
 
-  private generateIPRange(cidr: string): string[] {
-    const parts = cidr.split("/");
-    if (parts.length !== 2) {
+  private async *generateIPRange(cidr: string): AsyncGenerator<string> {
+    let addr: ipaddr.IPv4 | ipaddr.IPv6;
+    let prefix: number;
+    try {
+      [addr, prefix] = ipaddr.parseCIDR(cidr);
+    } catch {
       throw new Error(`Malformed CIDR string: ${cidr}`);
     }
 
-    const [network, prefixLength] = parts;
-
-    if (!prefixLength || isNaN(Number(prefixLength))) {
-      throw new Error(`Invalid prefix length in CIDR: ${cidr}`);
-    }
-
-    const prefix = parseInt(prefixLength, 10);
-
-    if (prefix < 24 || prefix > 30) {
-      throw new Error(
-        `Unsupported prefix length /${prefix}. Only /24 to /30 are supported`,
-      );
-    }
-
-    const networkPartsRaw = network.split(".");
-    if (networkPartsRaw.length !== 4) {
-      throw new Error(`CIDR IP must have 4 octets: ${network}`);
-    }
-
-    const octets = networkPartsRaw.map((part) => {
-      if (!/^\d+$/.test(part)) {
-        throw new Error(`Invalid IPv4 address in CIDR: ${network}`);
+    if (addr.kind() === "ipv4") {
+      if (prefix < 24 || prefix > 30) {
+        throw new Error(
+          `Unsupported prefix length /${prefix}. Only /24 to /30 are supported`,
+        );
       }
-      const num = Number(part);
-      if (num < 0 || num > 255) {
-        throw new Error(`Invalid IPv4 address in CIDR: ${network}`);
+      const octets = (addr as ipaddr.IPv4).octets;
+      const hostBits = 32 - prefix;
+      const mask = (0xffffffff << hostBits) >>> 0;
+      const ipNum =
+        ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>>
+        0;
+      const networkNum = ipNum & mask;
+      const hostCount = Math.pow(2, hostBits) - 2;
+      for (let i = 1; i <= hostCount; i++) {
+        const ipInt = (networkNum + i) >>> 0;
+        yield `${(ipInt >>> 24) & 0xff}.${(ipInt >>> 16) & 0xff}.${
+          (ipInt >>> 8) & 0xff
+        }.${ipInt & 0xff}`;
       }
-      return num;
-    });
-
-    const hostBits = 32 - prefix;
-    const mask = (0xffffffff << hostBits) >>> 0;
-    const ipNum =
-      ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>>
-      0;
-    const networkNum = ipNum & mask;
-    const hostCount = Math.pow(2, hostBits) - 2; // Exclude network and broadcast
-
-    const ips: string[] = [];
-    for (let i = 1; i <= hostCount; i++) {
-      const ipInt = (networkNum + i) >>> 0;
-      ips.push(
-        `${(ipInt >>> 24) & 0xff}.${(ipInt >>> 16) & 0xff}.${(ipInt >>> 8) & 0xff}.${
-          ipInt & 0xff
-        }`,
-      );
+      return;
     }
 
-    return ips;
+    if (addr.kind() === "ipv6") {
+      if (prefix < 112 || prefix > 128) {
+        throw new Error(
+          `Unsupported prefix length /${prefix}. Only /112 to /128 are supported`,
+        );
+      }
+      const parts = (addr as ipaddr.IPv6).parts;
+      let ipBig = 0n;
+      for (const part of parts) {
+        ipBig = (ipBig << 16n) + BigInt(part);
+      }
+      const hostBits = 128 - prefix;
+      const networkBig = (ipBig >> BigInt(hostBits)) << BigInt(hostBits);
+      const hostCount = 1n << BigInt(hostBits);
+      for (let i = 0n; i < hostCount; i++) {
+        const ipInt = networkBig + i;
+        const ipParts: number[] = [];
+        for (let shift = 112n; shift >= 0n; shift -= 16n) {
+          ipParts.push(Number((ipInt >> shift) & 0xffffn));
+        }
+        yield new (ipaddr as any).IPv6(ipParts).toString();
+      }
+      return;
+    }
+
+    throw new Error("Unsupported IP address type");
+  }
+
+  private getHostCount(cidr: string): number {
+    let addr: ipaddr.IPv4 | ipaddr.IPv6;
+    let prefix: number;
+    try {
+      [addr, prefix] = ipaddr.parseCIDR(cidr);
+    } catch {
+      throw new Error(`Malformed CIDR string: ${cidr}`);
+    }
+
+    if (addr.kind() === "ipv4") {
+      if (prefix < 24 || prefix > 30) {
+        throw new Error(
+          `Unsupported prefix length /${prefix}. Only /24 to /30 are supported`,
+        );
+      }
+      const hostBits = 32 - prefix;
+      return Math.pow(2, hostBits) - 2;
+    }
+
+    if (addr.kind() === "ipv6") {
+      if (prefix < 112 || prefix > 128) {
+        throw new Error(
+          `Unsupported prefix length /${prefix}. Only /112 to /128 are supported`,
+        );
+      }
+      const hostBits = 128 - prefix;
+      return Number(1n << BigInt(hostBits));
+    }
+
+    throw new Error("Unsupported IP address type");
   }
 
   private async scanHost(
@@ -405,15 +445,20 @@ export class NetworkScanner {
   }
 
   private compareIPs(a: string, b: string): number {
-    const aParts = a.split(".").map(Number);
-    const bParts = b.split(".").map(Number);
-
-    for (let i = 0; i < 4; i++) {
-      if (aParts[i] !== bParts[i]) {
-        return aParts[i] - bParts[i];
+    const toBigInt = (ip: string): bigint => {
+      const addr = ipaddr.parse(ip);
+      if (addr.kind() === "ipv4") {
+        const o = (addr as ipaddr.IPv4).octets;
+        return BigInt((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]);
       }
-    }
+      const parts = (addr as ipaddr.IPv6).parts;
+      return parts.reduce((acc, part) => (acc << 16n) + BigInt(part), 0n);
+    };
 
+    const aBig = toBigInt(a);
+    const bBig = toBigInt(b);
+    if (aBig < bBig) return -1;
+    if (aBig > bBig) return 1;
     return 0;
   }
 }
