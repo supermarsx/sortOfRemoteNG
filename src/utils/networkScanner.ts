@@ -84,6 +84,17 @@ export class NetworkScanner {
   private async *generateIPRange(cidr: string): AsyncGenerator<string> {
     let addr: ipaddr.IPv4 | ipaddr.IPv6;
     let prefix: number;
+
+    const [ipPart] = cidr.split("/");
+    // ipaddr.js accepts IPv4 addresses with fewer than four octets.
+    // Reject such shorthand forms to keep input validation strict.
+    if (ipPart && !ipPart.includes(":")) {
+      const octetCount = ipPart.split(".").length;
+      if (octetCount !== 4) {
+        throw new Error(`IPv4 address must contain four octets: ${ipPart}`);
+      }
+    }
+
     try {
       [addr, prefix] = ipaddr.parseCIDR(cidr);
     } catch {
@@ -100,7 +111,10 @@ export class NetworkScanner {
       const hostBits = 32 - prefix;
       const mask = (0xffffffff << hostBits) >>> 0;
       const ipNum =
-        ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>>
+        ((octets[0] << 24) |
+          (octets[1] << 16) |
+          (octets[2] << 8) |
+          octets[3]) >>>
         0;
       const networkNum = ipNum & mask;
       const hostCount = Math.pow(2, hostBits) - 2;
@@ -144,6 +158,15 @@ export class NetworkScanner {
   private getHostCount(cidr: string): number {
     let addr: ipaddr.IPv4 | ipaddr.IPv6;
     let prefix: number;
+
+    const [ipPart] = cidr.split("/");
+    if (ipPart && !ipPart.includes(":")) {
+      const octetCount = ipPart.split(".").length;
+      if (octetCount !== 4) {
+        throw new Error(`IPv4 address must contain four octets: ${ipPart}`);
+      }
+    }
+
     try {
       [addr, prefix] = ipaddr.parseCIDR(cidr);
     } catch {
