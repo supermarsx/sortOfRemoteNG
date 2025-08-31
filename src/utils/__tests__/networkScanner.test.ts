@@ -7,28 +7,52 @@ import type { NetworkDiscoveryConfig } from '../../types/settings';
 const scanner = new NetworkScanner() as any;
 
 const originalFetch = global.fetch;
+const originalWebSocket = (global as any).WebSocket;
 
 afterEach(() => {
   (global as any).fetch = originalFetch;
+  (global as any).WebSocket = originalWebSocket;
   vi.restoreAllMocks();
 });
 
 describe('NetworkScanner helper methods', () => {
-  it('generateIPRange("192.168.0.0/30") returns two host IPs', () => {
-    const ips = scanner.generateIPRange('192.168.0.0/30');
+  it('generateIPRange("192.168.0.0/30") returns two host IPs', async () => {
+    const ips: string[] = [];
+    for await (const ip of scanner.generateIPRange('192.168.0.0/30')) {
+      ips.push(ip);
+    }
     expect(ips).toEqual(['192.168.0.1', '192.168.0.2']);
   });
 
-  it('masks non-network-base addresses before generating hosts', () => {
-    const ips = scanner.generateIPRange('192.168.0.5/30');
+  it('masks non-network-base addresses before generating hosts', async () => {
+    const ips: string[] = [];
+    for await (const ip of scanner.generateIPRange('192.168.0.5/30')) {
+      ips.push(ip);
+    }
     expect(ips).toEqual(['192.168.0.5', '192.168.0.6']);
   });
 
-  it('handles edge prefix /24', () => {
-    const ips = scanner.generateIPRange('10.0.0.42/24');
+  it('handles edge prefix /24', async () => {
+    const ips: string[] = [];
+    for await (const ip of scanner.generateIPRange('10.0.0.42/24')) {
+      ips.push(ip);
+    }
     expect(ips.length).toBe(254);
     expect(ips[0]).toBe('10.0.0.1');
     expect(ips[253]).toBe('10.0.0.254');
+  });
+
+  it('supports IPv6 ranges', async () => {
+    const ips: string[] = [];
+    for await (const ip of scanner.generateIPRange('2001:db8::/126')) {
+      ips.push(ip);
+    }
+    expect(ips).toEqual([
+      '2001:db8::',
+      '2001:db8::1',
+      '2001:db8::2',
+      '2001:db8::3',
+    ]);
   });
 
   it('compareIPs sorts numerically', () => {
@@ -41,18 +65,19 @@ describe('NetworkScanner helper methods', () => {
     expect(version).toBe('8.6');
   });
 
-  it('throws on malformed CIDR strings', () => {
-    expect(() => scanner.generateIPRange('192.168.0.0')).toThrow();
-    expect(() => scanner.generateIPRange('192.168.0.0/abc')).toThrow();
+  it('throws on malformed CIDR strings', async () => {
+    await expect(scanner.generateIPRange('192.168.0.0').next()).rejects.toThrow();
+    await expect(scanner.generateIPRange('192.168.0.0/abc').next()).rejects.toThrow();
   });
 
-  it('throws when IP does not have four octets', () => {
-    expect(() => scanner.generateIPRange('192.168.0/24')).toThrow();
+  it('throws when IP does not have four octets', async () => {
+    await expect(scanner.generateIPRange('192.168.0/24').next()).rejects.toThrow();
   });
 
-  it('throws when prefix is outside supported range', () => {
-    expect(() => scanner.generateIPRange('192.168.0.0/23')).toThrow();
-    expect(() => scanner.generateIPRange('192.168.0.0/31')).toThrow();
+  it('throws when prefix is outside supported range', async () => {
+    await expect(scanner.generateIPRange('192.168.0.0/23').next()).rejects.toThrow();
+    await expect(scanner.generateIPRange('192.168.0.0/31').next()).rejects.toThrow();
+    await expect(scanner.generateIPRange('2001:db8::/111').next()).rejects.toThrow();
   });
 
   it('identifyService returns mapped values', () => {
@@ -103,8 +128,70 @@ describe('NetworkScanner helper methods', () => {
     vi.useRealTimers();
   });
 
+  it('scanNetwork processes IPv4 ranges', async () => {
+    const testScanner = new NetworkScanner() as any;
+    testScanner.scanHost = vi.fn(async () => null);
+
+    const config: NetworkDiscoveryConfig = {
+      enabled: true,
+      ipRange: '192.168.0.0/30',
+      portRanges: [],
+      protocols: [],
+      timeout: 1000,
+      maxConcurrent: 2,
+      maxPortConcurrent: 1,
+      customPorts: {},
+      cacheTTL: 60000,
+    };
+
+    const progress: number[] = [];
+    await testScanner.scanNetwork(config, (p: number) => progress.push(p));
+    expect(testScanner.scanHost).toHaveBeenCalledTimes(2);
+    expect(progress.at(-1)).toBe(100);
+  });
+
+  it('scanNetwork processes IPv6 ranges', async () => {
+    const testScanner = new NetworkScanner() as any;
+    testScanner.scanHost = vi.fn(async () => null);
+
+    const config: NetworkDiscoveryConfig = {
+      enabled: true,
+      ipRange: '2001:db8::/126',
+      portRanges: [],
+      protocols: [],
+      timeout: 1000,
+      maxConcurrent: 2,
+      maxPortConcurrent: 1,
+      customPorts: {},
+      cacheTTL: 60000,
+    };
+
+    const progress: number[] = [];
+    await testScanner.scanNetwork(config, (p: number) => progress.push(p));
+    expect(testScanner.scanHost).toHaveBeenCalledTimes(4);
+    expect(progress.at(-1)).toBe(100);
+  });
+
   it('scanPort resolves false on invalid hostname without rejection', async () => {
     const result = await scanner.scanPort('invalid host', 80, 50);
+    expect(result.isOpen).toBe(false);
+  });
+
+  it('scanPort wraps IPv6 addresses in WebSocket URLs', async () => {
+    let capturedUrl = '';
+    class MockWebSocket {
+      onopen?: () => void;
+      onerror?: (ev: any) => void;
+      onclose?: (ev: any) => void;
+      constructor(url: string) {
+        capturedUrl = url;
+        setTimeout(() => this.onerror?.(new Event('error')), 0);
+      }
+      close() {}
+    }
+    (global as any).WebSocket = MockWebSocket as any;
+    const result = await scanner.scanPort('2001:db8::1', 80, 50);
+    expect(capturedUrl).toBe('ws://[2001:db8::1]:80');
     expect(result.isOpen).toBe(false);
   });
 
