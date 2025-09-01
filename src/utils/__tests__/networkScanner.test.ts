@@ -106,6 +106,8 @@ describe('NetworkScanner helper methods', () => {
       maxPortConcurrent: 2,
       customPorts: {},
       cacheTTL: 60000,
+      hostnameTtl: 60000,
+      macTtl: 60000,
     };
 
     let active = 0;
@@ -142,6 +144,8 @@ describe('NetworkScanner helper methods', () => {
       maxPortConcurrent: 1,
       customPorts: {},
       cacheTTL: 60000,
+      hostnameTtl: 60000,
+      macTtl: 60000,
     };
 
     const progress: number[] = [];
@@ -164,6 +168,8 @@ describe('NetworkScanner helper methods', () => {
       maxPortConcurrent: 1,
       customPorts: {},
       cacheTTL: 60000,
+      hostnameTtl: 60000,
+      macTtl: 60000,
     };
 
     const progress: number[] = [];

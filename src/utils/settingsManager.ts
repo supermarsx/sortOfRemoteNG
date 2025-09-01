@@ -80,6 +80,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
       ftp: [21],
       telnet: [23],
     },
+    cacheTTL: 300000,
+    hostnameTtl: 300000,
+    macTtl: 300000,
   },
 
   restApi: {
@@ -142,7 +145,14 @@ export class SettingsManager {
     try {
       const stored = await IndexedDbService.getItem<GlobalSettings>('mremote-settings');
       if (stored) {
-        this.settings = { ...DEFAULT_SETTINGS, ...stored };
+        this.settings = {
+          ...DEFAULT_SETTINGS,
+          ...stored,
+          networkDiscovery: {
+            ...DEFAULT_SETTINGS.networkDiscovery,
+            ...(stored.networkDiscovery ?? {}),
+          },
+        };
       }
       return this.settings;
     } catch (error) {
