@@ -49,6 +49,20 @@ describe('SettingsManager colorScheme', () => {
   });
 });
 
+describe('SettingsManager loadSettings', () => {
+  it('applies default network discovery TTLs when missing', async () => {
+    await IndexedDbService.setItem('mremote-settings', {
+      networkDiscovery: { cacheTTL: 12345 },
+    } as any);
+    const manager = SettingsManager.getInstance();
+    const settings = await manager.loadSettings();
+
+    expect(settings.networkDiscovery.cacheTTL).toBe(12345);
+    expect(settings.networkDiscovery.hostnameTtl).toBe(300000);
+    expect(settings.networkDiscovery.macTtl).toBe(300000);
+  });
+});
+
 describe('SettingsManager.benchmarkKeyDerivation', () => {
   it('returns a positive iteration count and logs completion', async () => {
     const manager = SettingsManager.getInstance();

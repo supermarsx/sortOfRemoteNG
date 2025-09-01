@@ -145,7 +145,14 @@ export class SettingsManager {
     try {
       const stored = await IndexedDbService.getItem<GlobalSettings>('mremote-settings');
       if (stored) {
-        this.settings = { ...DEFAULT_SETTINGS, ...stored };
+        this.settings = {
+          ...DEFAULT_SETTINGS,
+          ...stored,
+          networkDiscovery: {
+            ...DEFAULT_SETTINGS.networkDiscovery,
+            ...(stored.networkDiscovery ?? {}),
+          },
+        };
       }
       return this.settings;
     } catch (error) {
