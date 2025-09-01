@@ -80,6 +80,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
       ftp: [21],
       telnet: [23],
     },
+    cacheTTL: 300000,
+    hostnameTtl: 300000,
+    macTtl: 300000,
   },
 
   restApi: {

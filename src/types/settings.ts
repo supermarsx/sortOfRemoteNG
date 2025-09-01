@@ -171,6 +171,8 @@ export interface NetworkDiscoveryConfig {
   maxPortConcurrent: number;
   customPorts: Record<string, number[]>;
   cacheTTL: number;
+  hostnameTtl: number;
+  macTtl: number;
 }
 
 export interface TOTPConfig {

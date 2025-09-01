@@ -47,6 +47,8 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
       telnet: [23],
     },
     cacheTTL: 300000,
+    hostnameTtl: 300000,
+    macTtl: 300000,
   });
   const [discoveredHosts, setDiscoveredHosts] = useState<DiscoveredHost[]>([]);
   const [isScanning, setIsScanning] = useState(false);

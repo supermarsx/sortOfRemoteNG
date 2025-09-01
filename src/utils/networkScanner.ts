@@ -240,7 +240,7 @@ export class NetworkScanner {
     }
 
     const responseTime = Date.now() - startTime;
-    const hostname = await this.resolveHostname(ip, config.cacheTTL);
+    const hostname = await this.resolveHostname(ip, config.hostnameTtl);
 
     return {
       ip,
@@ -248,7 +248,7 @@ export class NetworkScanner {
       openPorts,
       services,
       responseTime,
-      macAddress: await this.getMacAddress(ip, config.cacheTTL),
+      macAddress: await this.getMacAddress(ip, config.macTtl),
     };
   }
 
