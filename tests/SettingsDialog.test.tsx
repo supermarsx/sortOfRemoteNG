@@ -1,52 +1,61 @@
-import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
-import { SettingsDialog } from '../src/components/SettingsDialog';
-import { GlobalSettings } from '../src/types/settings';
+import React from "react";
+import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { SettingsDialog } from "../src/components/SettingsDialog";
+import { GlobalSettings } from "../src/types/settings";
 
 // mock i18n
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en', changeLanguage: vi.fn() } })
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { language: "en", changeLanguage: vi.fn() },
+  }),
 }));
 
 const mockSettings: GlobalSettings = {
-  language: 'en',
-  theme: 'dark',
-  colorScheme: 'blue',
+  language: "en",
+  theme: "dark",
+  colorScheme: "blue",
   singleWindowMode: false,
   singleConnectionMode: false,
   reconnectOnReload: false,
   warnOnClose: false,
   warnOnExit: false,
-  autoLock: { enabled: false, timeoutMinutes: 10, lockOnIdle: true, lockOnSuspend: true, requirePassword: true },
+  autoLock: {
+    enabled: false,
+    timeoutMinutes: 10,
+    lockOnIdle: true,
+    lockOnSuspend: true,
+    requirePassword: true,
+  },
   maxConcurrentConnections: 5,
   connectionTimeout: 30,
   retryAttempts: 0,
   retryDelay: 5000,
   enablePerformanceTracking: false,
-  encryptionAlgorithm: 'AES-256-GCM',
-  blockCipherMode: 'GCM',
+  encryptionAlgorithm: "AES-256-GCM",
+  blockCipherMode: "GCM",
   keyDerivationIterations: 1000,
   autoBenchmarkIterations: false,
   benchmarkTimeSeconds: 1,
   totpEnabled: false,
-  totpIssuer: '',
+  totpIssuer: "",
   totpDigits: 6,
   totpPeriod: 30,
-  globalProxy: { type: 'http', host: '', port: 8080, enabled: false },
-  tabGrouping: 'none',
+  globalProxy: { type: "http", host: "", port: 8080, enabled: false },
+  tabGrouping: "none",
   hostnameOverride: false,
-  defaultTabLayout: 'tabs',
+  defaultTabLayout: "tabs",
   enableTabDetachment: false,
   enableTabResize: true,
   enableZoom: true,
   colorTags: {},
   enableStatusChecking: false,
   statusCheckInterval: 30,
-  statusCheckMethod: 'socket',
+  statusCheckMethod: "socket",
   networkDiscovery: {
     enabled: false,
-    ipRange: '',
+    ipRange: "",
     portRanges: [],
     protocols: [],
     timeout: 5000,
@@ -57,18 +66,25 @@ const mockSettings: GlobalSettings = {
     hostnameTtl: 300000,
     macTtl: 300000,
   },
-  restApi: { enabled: false, port: 8080, authentication: false, apiKey: '', corsEnabled: true, rateLimiting: true },
+  restApi: {
+    enabled: false,
+    port: 8080,
+    authentication: false,
+    apiKey: "",
+    corsEnabled: true,
+    rateLimiting: true,
+  },
   wolEnabled: false,
   wolPort: 9,
-  wolBroadcastAddress: '255.255.255.255',
+  wolBroadcastAddress: "255.255.255.255",
   enableActionLog: false,
-  logLevel: 'info',
+  logLevel: "info",
   maxLogEntries: 1000,
   exportEncryption: false,
   exportPassword: undefined,
 };
 
-vi.mock('../src/utils/settingsManager', () => ({
+vi.mock("../src/utils/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       loadSettings: vi.fn().mockResolvedValue(mockSettings),
@@ -77,15 +93,20 @@ vi.mock('../src/utils/settingsManager', () => ({
   },
 }));
 
-vi.mock('../src/utils/themeManager', () => ({
-  ThemeManager: { getInstance: () => ({ applyTheme: vi.fn() }) },
+vi.mock("../src/utils/themeManager", () => ({
+  ThemeManager: {
+    getInstance: () => ({
+      applyTheme: vi.fn(),
+      getAvailableThemes: () => ["dark", "light", "auto"],
+      getAvailableColorSchemes: () => ["blue"],
+    }),
+  },
 }));
 
-describe('SettingsDialog', () => {
-  it('renders general tab content', async () => {
+describe("SettingsDialog", () => {
+  it("renders general tab content", async () => {
     render(<SettingsDialog isOpen onClose={() => {}} />);
-    const items = await screen.findAllByText('settings.general');
+    const items = await screen.findAllByText("settings.general");
     expect(items.length).toBeGreaterThan(0);
   });
 });
-

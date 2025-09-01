@@ -1,26 +1,28 @@
 export const Themes = [
-  'dark',
-  'light',
-  'auto',
-  'darkest',
-  'oled',
-  'semilight',
+  "dark",
+  "light",
+  "auto",
+  "darkest",
+  "oled",
+  "semilight",
 ] as const;
-export type Theme = typeof Themes[number];
+// Allow custom theme names beyond the predefined list
+export type Theme = (typeof Themes)[number] | string;
 
 export const ColorSchemes = [
-  'blue',
-  'green',
-  'purple',
-  'red',
-  'orange',
-  'teal',
-  'grey',
+  "blue",
+  "green",
+  "purple",
+  "red",
+  "orange",
+  "teal",
+  "grey",
 ] as const;
-export type ColorScheme = typeof ColorSchemes[number];
+// Allow custom color scheme names beyond the predefined list
+export type ColorScheme = (typeof ColorSchemes)[number] | string;
 
-export const StatusCheckMethods = ['ping', 'socket', 'http'] as const;
-export type StatusCheckMethod = typeof StatusCheckMethods[number];
+export const StatusCheckMethods = ["ping", "socket", "http"] as const;
+export type StatusCheckMethod = (typeof StatusCheckMethods)[number];
 
 export interface GlobalSettings {
   // General Settings
@@ -32,41 +34,41 @@ export interface GlobalSettings {
   reconnectOnReload: boolean;
   warnOnClose: boolean;
   warnOnExit: boolean;
-  
+
   // Auto Lock
   autoLock: AutoLockConfig;
-  
+
   // Performance Settings
   maxConcurrentConnections: number;
   connectionTimeout: number;
   retryAttempts: number;
   retryDelay: number;
   enablePerformanceTracking: boolean;
-  
+
   // Security Settings
-  encryptionAlgorithm: 'AES-256-GCM' | 'AES-256-CBC' | 'ChaCha20-Poly1305';
-  blockCipherMode: 'GCM' | 'CBC' | 'CTR' | 'OFB' | 'CFB';
+  encryptionAlgorithm: "AES-256-GCM" | "AES-256-CBC" | "ChaCha20-Poly1305";
+  blockCipherMode: "GCM" | "CBC" | "CTR" | "OFB" | "CFB";
   keyDerivationIterations: number;
   autoBenchmarkIterations: boolean;
   benchmarkTimeSeconds: number;
-  
+
   // TOTP Settings
   totpEnabled: boolean;
   totpIssuer: string;
   totpDigits: number;
   totpPeriod: number;
-  
+
   // Proxy Settings
   globalProxy?: ProxyConfig;
-  
+
   // Tab Settings
-  tabGrouping: 'none' | 'protocol' | 'status' | 'hostname' | 'colorTag';
+  tabGrouping: "none" | "protocol" | "status" | "hostname" | "colorTag";
   hostnameOverride: boolean;
-  defaultTabLayout: 'tabs' | 'sideBySide' | 'mosaic' | 'miniMosaic';
+  defaultTabLayout: "tabs" | "sideBySide" | "mosaic" | "miniMosaic";
   enableTabDetachment: boolean;
   enableTabResize: boolean;
   enableZoom: boolean;
-  
+
   // Color Tags
   colorTags: {
     [key: string]: {
@@ -75,15 +77,15 @@ export interface GlobalSettings {
       global: boolean;
     };
   };
-  
+
   // Status Checking
   enableStatusChecking: boolean;
   statusCheckInterval: number;
   statusCheckMethod: StatusCheckMethod;
-  
+
   // Network Discovery
   networkDiscovery: NetworkDiscoveryConfig;
-  
+
   // REST API
   restApi: {
     enabled: boolean;
@@ -93,24 +95,24 @@ export interface GlobalSettings {
     corsEnabled: boolean;
     rateLimiting: boolean;
   };
-  
+
   // Wake on LAN
   wolEnabled: boolean;
   wolPort: number;
   wolBroadcastAddress: string;
-  
+
   // Logging
   enableActionLog: boolean;
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
+  logLevel: "debug" | "info" | "warn" | "error";
   maxLogEntries: number;
-  
+
   // Export Settings
   exportEncryption: boolean;
   exportPassword?: string;
 }
 
 export interface ProxyConfig {
-  type: 'http' | 'https' | 'socks4' | 'socks5';
+  type: "http" | "https" | "socks4" | "socks5";
   host: string;
   port: number;
   username?: string;
@@ -141,7 +143,7 @@ export interface PerformanceMetrics {
 export interface ActionLogEntry {
   id: string;
   timestamp: Date;
-  level: 'debug' | 'info' | 'warn' | 'error';
+  level: "debug" | "info" | "warn" | "error";
   action: string;
   connectionId?: string;
   connectionName?: string;
@@ -152,9 +154,9 @@ export interface ActionLogEntry {
 export interface CustomScript {
   id: string;
   name: string;
-  type: 'javascript' | 'typescript';
+  type: "javascript" | "typescript";
   content: string;
-  trigger: 'onConnect' | 'onDisconnect' | 'manual';
+  trigger: "onConnect" | "onDisconnect" | "manual";
   protocol?: string;
   enabled: boolean;
   createdAt: Date;
@@ -181,7 +183,7 @@ export interface TOTPConfig {
   account: string;
   digits: number;
   period: number;
-  algorithm: 'SHA1' | 'SHA256' | 'SHA512';
+  algorithm: "SHA1" | "SHA256" | "SHA512";
 }
 
 export interface ThemeConfig {
