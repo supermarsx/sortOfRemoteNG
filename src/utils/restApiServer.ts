@@ -293,24 +293,34 @@ export class RestApiServer {
       }
       const { username, password } = result.data;
 
-      const valid = await this.authService.verifyUser(username, password);
-      if (!valid) {
-        return res.status(401).json({ error: "Invalid credentials" });
+      try {
+        const valid = await this.authService.verifyUser(username, password);
+        if (!valid) {
+          return res.status(401).json({ error: "Invalid credentials" });
+        }
+
+        const token = jwt.sign(
+          { username, role: "admin" },
+          this.config.jwtSecret,
+          { expiresIn: "24h" },
+        );
+
+        res.json({ token, expiresIn: "24h" });
+      } catch (err) {
+        console.error("Failed to verify user", err);
+        res.status(500).json({ error: "Internal server error" });
       }
-
-      const token = jwt.sign(
-        { username, role: "admin" },
-        this.config.jwtSecret,
-        { expiresIn: "24h" },
-      );
-
-      res.json({ token, expiresIn: "24h" });
     });
 
     // User management
     this.app.get("/api/users", async (req, res) => {
-      const users = await this.authService.listUsers();
-      res.json(users);
+      try {
+        const users = await this.authService.listUsers();
+        res.json(users);
+      } catch (err) {
+        console.error("Failed to list users", err);
+        res.status(500).json({ error: "Internal server error" });
+      }
     });
 
     this.app.post("/api/users", async (req, res) => {
@@ -319,16 +329,26 @@ export class RestApiServer {
         return res.status(400).json({ error: "Invalid request" });
       }
       const { username, password } = result.data;
-      await this.authService.addUser(username, password);
-      res.status(201).json({ username });
+      try {
+        await this.authService.addUser(username, password);
+        res.status(201).json({ username });
+      } catch (err) {
+        console.error("Failed to add user", err);
+        res.status(500).json({ error: "Internal server error" });
+      }
     });
 
     this.app.delete("/api/users/:username", async (req, res) => {
-      const removed = await this.authService.removeUser(req.params.username);
-      if (!removed) {
-        return res.status(404).json({ error: "User not found" });
+      try {
+        const removed = await this.authService.removeUser(req.params.username);
+        if (!removed) {
+          return res.status(404).json({ error: "User not found" });
+        }
+        res.status(204).send();
+      } catch (err) {
+        console.error("Failed to remove user", err);
+        res.status(500).json({ error: "Internal server error" });
       }
-      res.status(204).send();
     });
 
     this.app.put("/api/users/:username/password", async (req, res) => {
@@ -336,14 +356,19 @@ export class RestApiServer {
       if (!result.success) {
         return res.status(400).json({ error: "Invalid request" });
       }
-      const updated = await this.authService.updatePassword(
-        req.params.username,
-        result.data.password,
-      );
-      if (!updated) {
-        return res.status(404).json({ error: "User not found" });
+      try {
+        const updated = await this.authService.updatePassword(
+          req.params.username,
+          result.data.password,
+        );
+        if (!updated) {
+          return res.status(404).json({ error: "User not found" });
+        }
+        res.status(204).send();
+      } catch (err) {
+        console.error("Failed to update password", err);
+        res.status(500).json({ error: "Internal server error" });
       }
-      res.status(204).send();
     });
 
     // Connections API
