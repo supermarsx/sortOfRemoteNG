@@ -41,9 +41,20 @@ export class AuthService {
    * @throws {Error} If the user store cannot be read or parsed.
    */
   private async load(): Promise<void> {
+    const fullPath = path.resolve(this.storePath);
+    let data: string;
     try {
-      const fullPath = path.resolve(this.storePath);
-      const data = await fs.promises.readFile(fullPath, "utf8");
+      data = await fs.promises.readFile(fullPath, "utf8");
+    } catch (err: any) {
+      if (err.code === "ENOENT") {
+        this.users = {};
+        return;
+      }
+      console.error("Failed to read user store", err);
+      throw err;
+    }
+
+    try {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
         // Plaintext store
@@ -89,8 +100,9 @@ export class AuthService {
       } else {
         this.users = {};
       }
-    } catch {
-      this.users = {};
+    } catch (err) {
+      console.error("Failed to load user store", err);
+      throw err;
     }
   }
 
