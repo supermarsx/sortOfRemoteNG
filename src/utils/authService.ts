@@ -117,7 +117,8 @@ export class AuthService {
    */
   async removeUser(username: string): Promise<boolean> {
     await this.ready();
-    if (!(username in this.users)) {
+    const hash = this.users[username];
+    if (!hash) {
       return false;
     }
     delete this.users[username];
@@ -125,7 +126,8 @@ export class AuthService {
       await this.persist();
     } catch (error) {
       console.error("Failed to persist user removal", error);
-      return false;
+      this.users[username] = hash;
+      throw error;
     }
     return true;
   }
@@ -142,7 +144,8 @@ export class AuthService {
     newPassword: string,
   ): Promise<boolean> {
     await this.ready();
-    if (!(username in this.users)) {
+    const currentHash = this.users[username];
+    if (!currentHash) {
       return false;
     }
     const hash = await bcrypt.hash(newPassword, 10);
@@ -151,7 +154,8 @@ export class AuthService {
       await this.persist();
     } catch (error) {
       console.error("Failed to persist password update", error);
-      return false;
+      this.users[username] = currentHash;
+      throw error;
     }
     return true;
   }
