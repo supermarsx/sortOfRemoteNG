@@ -172,6 +172,7 @@ export interface NetworkDiscoveryConfig {
   maxConcurrent: number;
   maxPortConcurrent: number;
   customPorts: Record<string, number[]>;
+  probeStrategies: Record<string, ("websocket" | "http")[]>;
   cacheTTL: number;
   hostnameTtl: number;
   macTtl: number;
