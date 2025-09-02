@@ -56,6 +56,8 @@ Environment variables:
 - `API_KEY` – optional API key (defaults to none).
 - `JWT_SECRET` – secret for signing JWTs (defaults to `defaultsecret`).
 - `USER_STORE_PATH` – path to the users file (defaults to `users.json`).
+- `USER_STORE_SECRET` – passphrase used to encrypt the user store with AES-GCM.
+  Plaintext stores are automatically migrated on first load when this is set.
 - `PBKDF2_ITERATIONS` – overrides key derivation iterations (defaults to `150000`).
 
 ## Appearance

@@ -1,7 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { AuthService } from '../src/utils/authService';
+
+let AuthService: typeof import('../src/utils/authService').AuthService;
 
 // Utility to create temp directory for user store
 async function createStore(): Promise<string> {
@@ -15,6 +16,17 @@ describe('AuthService', () => {
   let storePath: string;
   let service: AuthService;
 
+  beforeAll(async () => {
+    process.env.USER_STORE_SECRET = 'test-secret';
+    process.env.PBKDF2_ITERATIONS = '1000';
+    ({ AuthService } = await import('../src/utils/authService'));
+  });
+
+  afterAll(() => {
+    delete process.env.USER_STORE_SECRET;
+    delete process.env.PBKDF2_ITERATIONS;
+  });
+
   beforeEach(async () => {
     storePath = await createStore();
     service = new AuthService(storePath);
@@ -27,8 +39,13 @@ describe('AuthService', () => {
     const users = await service.listUsers();
     expect(users.sort()).toEqual(['alice', 'bob']);
     const contents = await fs.readFile(storePath, 'utf8');
-    expect(contents).toContain('alice');
-    expect(contents).toContain('bob');
+    expect(contents).not.toContain('alice');
+    expect(contents).not.toContain('bob');
+    const parsed = JSON.parse(contents);
+    expect(parsed).toHaveProperty('iv');
+    const service2 = new AuthService(storePath);
+    await service2.ready();
+    expect(await service2.verifyUser('alice', 'password1')).toBe(true);
   });
 
   test('removeUser', async () => {
@@ -45,5 +62,19 @@ describe('AuthService', () => {
     const updated = await service.updatePassword('dave', 'new');
     expect(updated).toBe(true);
     expect(await service.verifyUser('dave', 'new')).toBe(true);
+  });
+
+  test('migrates plaintext store to encrypted', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'auth-plain-'));
+    const file = path.join(dir, 'users.json');
+    await fs.writeFile(
+      file,
+      JSON.stringify([{ username: 'legacy', passwordHash: 'hash' }]),
+    );
+    const svc = new AuthService(file);
+    await svc.ready();
+    expect(await svc.listUsers()).toEqual(['legacy']);
+    const contents = await fs.readFile(file, 'utf8');
+    expect(contents).not.toContain('legacy');
   });
 });
