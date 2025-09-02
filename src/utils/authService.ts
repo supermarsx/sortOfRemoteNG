@@ -120,14 +120,17 @@ export class AuthService {
     if (!(username in this.users)) {
       return false;
     }
+    const previousHash = this.users[username];
     delete this.users[username];
     try {
       await this.persist();
+      return true;
     } catch (error) {
       console.error("Failed to persist user removal", error);
-      return false;
+      // rollback in-memory change to keep state consistent with disk
+      this.users[username] = previousHash;
+      throw error;
     }
-    return true;
   }
 
   /**
@@ -145,14 +148,17 @@ export class AuthService {
     if (!(username in this.users)) {
       return false;
     }
+    const previousHash = this.users[username];
     const hash = await bcrypt.hash(newPassword, 10);
     this.users[username] = hash;
     try {
       await this.persist();
+      return true;
     } catch (error) {
       console.error("Failed to persist password update", error);
-      return false;
+      // rollback in-memory change so password remains valid
+      this.users[username] = previousHash;
+      throw error;
     }
-    return true;
   }
 }
