@@ -46,6 +46,11 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
       ftp: [21],
       telnet: [23],
     },
+    probeStrategies: {
+      default: ["websocket"],
+      http: ["websocket", "http"],
+      https: ["websocket", "http"],
+    },
     cacheTTL: 300000,
     hostnameTtl: 300000,
     macTtl: 300000,

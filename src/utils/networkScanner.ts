@@ -216,7 +216,7 @@ export class NetworkScanner {
         if (signal?.aborted) {
           return { isOpen: false, elapsed: 0 };
         }
-        return await this.scanPort(ip, port, config.timeout, signal);
+        return await this.scanPort(ip, port, config, signal);
       } finally {
         portSemaphore.release();
       }
@@ -279,9 +279,45 @@ export class NetworkScanner {
   private async scanPort(
     ip: string,
     port: number,
-    timeout: number,
+    config: NetworkDiscoveryConfig,
     signal?: AbortSignal,
   ): Promise<{ isOpen: boolean; banner?: string; elapsed: number }> {
+    const protocol = serviceMap[port]?.protocol || "default";
+    const strategies =
+      config.probeStrategies[protocol] || config.probeStrategies.default || ["websocket"];
+
+    for (const strategy of strategies) {
+      if (signal?.aborted) {
+        return { isOpen: false, elapsed: 0 };
+      }
+
+      if (strategy === "websocket") {
+        const wsResult = await this.probeWebSocket(ip, port, config.timeout, signal);
+        if (wsResult !== null) {
+          if (wsResult.isOpen || strategies.length === 1) {
+            return wsResult;
+          }
+          // If websocket reported closed and other strategies remain, continue loop
+          continue;
+        }
+        // wsResult null means creation failed; fall through to next strategy
+      } else if (strategy === "http") {
+        const httpResult = await this.probeHttp(ip, port, config.timeout, signal);
+        if (httpResult !== null) {
+          return httpResult;
+        }
+      }
+    }
+
+    return { isOpen: false, elapsed: 0 };
+  }
+
+  private async probeWebSocket(
+    ip: string,
+    port: number,
+    timeout: number,
+    signal?: AbortSignal,
+  ): Promise<{ isOpen: boolean; elapsed: number } | null> {
     return new Promise((resolve) => {
       const startTime = Date.now();
       let resolved = false;
@@ -292,7 +328,6 @@ export class NetworkScanner {
         return;
       }
 
-      // Use WebSocket for port scanning (limited but works for many services)
       try {
         let host = ip;
         try {
@@ -306,8 +341,8 @@ export class NetworkScanner {
           // If the IP is malformed, fall back to the raw string.
         }
         ws = new WebSocket(`ws://${host}:${port}`);
-      } catch (error) {
-        resolve({ isOpen: false, elapsed: Date.now() - startTime });
+      } catch {
+        resolve(null); // Creation failed, try next strategy
         return;
       }
 
@@ -362,6 +397,61 @@ export class NetworkScanner {
         }
       };
     });
+  }
+
+  private async probeHttp(
+    ip: string,
+    port: number,
+    timeout: number,
+    signal?: AbortSignal,
+  ): Promise<{ isOpen: boolean; banner?: string; elapsed: number } | null> {
+    const startTime = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      let host = ip;
+      try {
+        if (ipaddr.isValid(ip)) {
+          const addr = ipaddr.parse(ip);
+          if (addr.kind() === "ipv6") {
+            host = `[${addr.toString()}]`;
+          }
+        }
+      } catch {
+        // If the IP is malformed, fall back to the raw string.
+      }
+      const url = `http://${host}:${port}`;
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: "HEAD",
+          signal: signal ? this.mergeSignals(signal, controller.signal) : controller.signal,
+        });
+      } catch {
+        response = await fetch(url, {
+          method: "GET",
+          signal: signal ? this.mergeSignals(signal, controller.signal) : controller.signal,
+        });
+      }
+      clearTimeout(timer);
+      const banner = response.headers.get("server") || undefined;
+      return { isOpen: true, banner, elapsed: Date.now() - startTime };
+    } catch {
+      clearTimeout(timer);
+      return { isOpen: false, elapsed: Date.now() - startTime };
+    }
+  }
+
+  private mergeSignals(signalA: AbortSignal, signalB: AbortSignal): AbortSignal {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (signalA.aborted || signalB.aborted) {
+      controller.abort();
+    } else {
+      signalA.addEventListener("abort", abort);
+      signalB.addEventListener("abort", abort);
+    }
+    return controller.signal;
   }
 
   private identifyService(

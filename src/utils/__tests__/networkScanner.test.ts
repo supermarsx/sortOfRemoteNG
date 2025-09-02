@@ -105,6 +105,7 @@ describe('NetworkScanner helper methods', () => {
       maxConcurrent: 10,
       maxPortConcurrent: 2,
       customPorts: {},
+      probeStrategies: { default: ['websocket'] },
       cacheTTL: 60000,
       hostnameTtl: 60000,
       macTtl: 60000,
@@ -143,6 +144,7 @@ describe('NetworkScanner helper methods', () => {
       maxConcurrent: 2,
       maxPortConcurrent: 1,
       customPorts: {},
+      probeStrategies: { default: ['websocket'] },
       cacheTTL: 60000,
       hostnameTtl: 60000,
       macTtl: 60000,
@@ -167,6 +169,7 @@ describe('NetworkScanner helper methods', () => {
       maxConcurrent: 2,
       maxPortConcurrent: 1,
       customPorts: {},
+      probeStrategies: { default: ['websocket'] },
       cacheTTL: 60000,
       hostnameTtl: 60000,
       macTtl: 60000,
@@ -179,7 +182,21 @@ describe('NetworkScanner helper methods', () => {
   });
 
   it('scanPort resolves false on invalid hostname without rejection', async () => {
-    const result = await scanner.scanPort('invalid host', 80, 50);
+    const config: NetworkDiscoveryConfig = {
+      enabled: true,
+      ipRange: '',
+      portRanges: [],
+      protocols: [],
+      timeout: 50,
+      maxConcurrent: 1,
+      maxPortConcurrent: 1,
+      customPorts: {},
+      probeStrategies: { default: ['websocket'] },
+      cacheTTL: 0,
+      hostnameTtl: 0,
+      macTtl: 0,
+    };
+    const result = await scanner.scanPort('invalid host', 80, config);
     expect(result.isOpen).toBe(false);
   });
 
@@ -196,7 +213,21 @@ describe('NetworkScanner helper methods', () => {
       close() {}
     }
     (global as any).WebSocket = MockWebSocket as any;
-    const result = await scanner.scanPort('2001:db8::1', 80, 50);
+    const config: NetworkDiscoveryConfig = {
+      enabled: true,
+      ipRange: '',
+      portRanges: [],
+      protocols: [],
+      timeout: 50,
+      maxConcurrent: 1,
+      maxPortConcurrent: 1,
+      customPorts: {},
+      probeStrategies: { default: ['websocket'] },
+      cacheTTL: 0,
+      hostnameTtl: 0,
+      macTtl: 0,
+    };
+    const result = await scanner.scanPort('2001:db8::1', 80, config);
     expect(capturedUrl).toBe('ws://[2001:db8::1]:80');
     expect(result.isOpen).toBe(false);
   });
