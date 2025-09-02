@@ -23,6 +23,14 @@ export class AuthService {
   }
 
   /**
+   * Returns a promise that resolves when the initial user list has been
+   * loaded from disk.
+   */
+  async ready(): Promise<void> {
+    await this.loadPromise;
+  }
+
+  /**
    * Loads the stored users from disk into memory.
    *
    * @returns {Promise<void>} Resolves when the user list is loaded.
@@ -67,8 +75,8 @@ export class AuthService {
    * @throws {Error} If hashing or persisting the user fails.
    */
   async addUser(username: string, password: string): Promise<void> {
+    await this.ready();
     const hash = await bcrypt.hash(password, 10);
-    await this.loadPromise;
     this.users[username] = hash;
     try {
       await this.persist();
@@ -87,9 +95,64 @@ export class AuthService {
    * @throws {Error} If the password comparison fails.
    */
   async verifyUser(username: string, password: string): Promise<boolean> {
-    await this.loadPromise;
+    await this.ready();
     const hash = this.users[username];
     if (!hash) return false;
     return bcrypt.compare(password, hash);
+  }
+
+  /**
+   * Returns a list of all stored usernames.
+   */
+  async listUsers(): Promise<string[]> {
+    await this.ready();
+    return Object.keys(this.users);
+  }
+
+  /**
+   * Removes the specified user from the store.
+   *
+   * @param {string} username - The username to remove.
+   * @returns {Promise<boolean>} True if the user existed and was removed.
+   */
+  async removeUser(username: string): Promise<boolean> {
+    await this.ready();
+    if (!(username in this.users)) {
+      return false;
+    }
+    delete this.users[username];
+    try {
+      await this.persist();
+    } catch (error) {
+      console.error("Failed to persist user removal", error);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Updates the password for an existing user.
+   *
+   * @param {string} username - The username to update.
+   * @param {string} newPassword - The new plain-text password.
+   * @returns {Promise<boolean>} True if the password was updated.
+   */
+  async updatePassword(
+    username: string,
+    newPassword: string,
+  ): Promise<boolean> {
+    await this.ready();
+    if (!(username in this.users)) {
+      return false;
+    }
+    const hash = await bcrypt.hash(newPassword, 10);
+    this.users[username] = hash;
+    try {
+      await this.persist();
+    } catch (error) {
+      console.error("Failed to persist password update", error);
+      return false;
+    }
+    return true;
   }
 }
