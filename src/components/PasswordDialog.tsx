@@ -20,6 +20,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,9 +30,11 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
     }
     
     if (password.length < 4) {
+      setPasswordError('Password must be at least 4 characters');
       return;
     }
 
+    setPasswordError('');
     onSubmit(password);
     setPassword('');
     setConfirmPassword('');
@@ -40,6 +43,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
   const handleCancel = () => {
     setPassword('');
     setConfirmPassword('');
+    setPasswordError('');
     onCancel();
   };
 
@@ -110,6 +114,9 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
+            {passwordError && (
+              <p className="text-red-400 text-sm mt-1">{passwordError}</p>
+            )}
           </div>
 
           {mode === 'setup' && (
