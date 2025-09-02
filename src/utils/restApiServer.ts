@@ -263,6 +263,11 @@ export class RestApiServer {
       username: z.string(),
       password: z.string(),
     });
+    const userSchema = z.object({
+      username: z.string(),
+      password: z.string(),
+    });
+    const passwordSchema = z.object({ password: z.string() });
     const connectionSchema = z
       .object({
         name: z.string(),
@@ -300,6 +305,45 @@ export class RestApiServer {
       );
 
       res.json({ token, expiresIn: "24h" });
+    });
+
+    // User management
+    this.app.get("/api/users", async (req, res) => {
+      const users = await this.authService.listUsers();
+      res.json(users);
+    });
+
+    this.app.post("/api/users", async (req, res) => {
+      const result = userSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: "Invalid request" });
+      }
+      const { username, password } = result.data;
+      await this.authService.addUser(username, password);
+      res.status(201).json({ username });
+    });
+
+    this.app.delete("/api/users/:username", async (req, res) => {
+      const removed = await this.authService.removeUser(req.params.username);
+      if (!removed) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.status(204).send();
+    });
+
+    this.app.put("/api/users/:username/password", async (req, res) => {
+      const result = passwordSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ error: "Invalid request" });
+      }
+      const updated = await this.authService.updatePassword(
+        req.params.username,
+        result.data.password,
+      );
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.status(204).send();
     });
 
     // Connections API
