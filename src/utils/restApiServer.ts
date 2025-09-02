@@ -324,11 +324,16 @@ export class RestApiServer {
     });
 
     this.app.delete("/api/users/:username", async (req, res) => {
-      const removed = await this.authService.removeUser(req.params.username);
-      if (!removed) {
-        return res.status(404).json({ error: "User not found" });
+      try {
+        const removed = await this.authService.removeUser(req.params.username);
+        if (!removed) {
+          return res.status(404).json({ error: "User not found" });
+        }
+        res.status(204).send();
+      } catch (error) {
+        console.error("Failed to remove user", error);
+        res.status(500).json({ error: "Failed to remove user" });
       }
-      res.status(204).send();
     });
 
     this.app.put("/api/users/:username/password", async (req, res) => {
@@ -336,14 +341,19 @@ export class RestApiServer {
       if (!result.success) {
         return res.status(400).json({ error: "Invalid request" });
       }
-      const updated = await this.authService.updatePassword(
-        req.params.username,
-        result.data.password,
-      );
-      if (!updated) {
-        return res.status(404).json({ error: "User not found" });
+      try {
+        const updated = await this.authService.updatePassword(
+          req.params.username,
+          result.data.password,
+        );
+        if (!updated) {
+          return res.status(404).json({ error: "User not found" });
+        }
+        res.status(204).send();
+      } catch (error) {
+        console.error("Failed to update password", error);
+        res.status(500).json({ error: "Failed to update password" });
       }
-      res.status(204).send();
     });
 
     // Connections API

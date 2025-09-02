@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import * as fsModule from 'fs';
 import path from 'path';
 import os from 'os';
 import { AuthService } from '../src/utils/authService';
@@ -45,5 +46,27 @@ describe('AuthService', () => {
     const updated = await service.updatePassword('dave', 'new');
     expect(updated).toBe(true);
     expect(await service.verifyUser('dave', 'new')).toBe(true);
+  });
+
+  test('removeUser rolls back on persist failure', async () => {
+    await service.addUser('eve', 'secret');
+    const writeSpy = vi
+      .spyOn(fsModule.promises, 'writeFile')
+      .mockRejectedValue(new Error('disk error'));
+    await expect(service.removeUser('eve')).rejects.toThrow();
+    expect(await service.listUsers()).toContain('eve');
+    const contents = await fs.readFile(storePath, 'utf8');
+    expect(contents).toContain('eve');
+    writeSpy.mockRestore();
+  });
+
+  test('updatePassword rolls back on persist failure', async () => {
+    await service.addUser('frank', 'old');
+    const writeSpy = vi
+      .spyOn(fsModule.promises, 'writeFile')
+      .mockRejectedValue(new Error('disk error'));
+    await expect(service.updatePassword('frank', 'new')).rejects.toThrow();
+    expect(await service.verifyUser('frank', 'old')).toBe(true);
+    writeSpy.mockRestore();
   });
 });
