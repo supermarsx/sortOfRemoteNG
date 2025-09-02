@@ -409,7 +409,18 @@ export class NetworkScanner {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
-      const url = `http://${ip}:${port}`;
+      let host = ip;
+      try {
+        if (ipaddr.isValid(ip)) {
+          const addr = ipaddr.parse(ip);
+          if (addr.kind() === "ipv6") {
+            host = `[${addr.toString()}]`;
+          }
+        }
+      } catch {
+        // If the IP is malformed, fall back to the raw string.
+      }
+      const url = `http://${host}:${port}`;
       let response: Response;
       try {
         response = await fetch(url, {
