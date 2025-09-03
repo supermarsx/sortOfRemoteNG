@@ -216,8 +216,11 @@ const AppContent: React.FC = () => {
               onChange={(e) => i18n.changeLanguage(e.target.value)}
               className="bg-transparent border-none text-gray-400 text-xs focus:outline-none"
             >
-              <option value="en">EN</option>
-              <option value="es">ES</option>
+              <option value="en">English</option>
+              <option value="es">Español (España)</option>
+              <option value="fr">Français (France)</option>
+              <option value="de">Deutsch (Deutschland)</option>
+              <option value="pt-PT">Português (Portugal)</option>
             </select>
           </div>
 
