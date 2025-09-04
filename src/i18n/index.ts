@@ -24,7 +24,7 @@ const loadLanguage = async (lng: string) => {
 };
 
 const originalChangeLanguage = i18n.changeLanguage.bind(i18n);
-(i18n as any).changeLanguage = async (lng: string, ...args: any[]) => {
+const changeLanguage = async (lng: string, ...args: any[]) => {
   if (typeof lng === "string" && !i18n.hasResourceBundle(lng, "translation")) {
     await loadLanguage(lng);
   }
@@ -45,6 +45,10 @@ i18n
       order: ["navigator", "htmlTag"],
       caches: [],
     },
+  })
+  .then(async () => {
+    (i18n as any).changeLanguage = changeLanguage;
+    await changeLanguage(i18n.language);
   });
 
 export default i18n;
