@@ -36,9 +36,14 @@ const originalChangeLanguage = i18n.changeLanguage.bind(i18n);
 const changeLanguage = async (lng: string, ...args: any[]) => {
   if (typeof lng === "string") {
     const baseLng = getBaseLanguage(lng);
+    const hasLngBundle = i18n.hasResourceBundle(lng, "translation");
+    const hasBaseBundle = i18n.hasResourceBundle(baseLng, "translation");
+    const hasLngLoader = Boolean(languageLoaders[lng]);
+    const hasBaseLoader = Boolean(languageLoaders[baseLng]);
+
     if (
-      !i18n.hasResourceBundle(lng, "translation") &&
-      !i18n.hasResourceBundle(baseLng, "translation")
+      !hasLngBundle &&
+      (hasLngLoader || (!hasBaseBundle && hasBaseLoader))
     ) {
       await loadLanguage(lng);
     }
