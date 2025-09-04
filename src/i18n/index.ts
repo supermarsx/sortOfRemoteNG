@@ -15,18 +15,33 @@ const languageLoaders: Record<string, () => Promise<any>> = {
   "pt-PT": () => import("./locales/pt-PT.json"),
 };
 
+const getBaseLanguage = (lng: string) => lng.split("-")[0];
+
 const loadLanguage = async (lng: string) => {
-  const loader = languageLoaders[lng];
+  let language = lng;
+  let loader = languageLoaders[language];
+
+  if (!loader) {
+    language = getBaseLanguage(language);
+    loader = languageLoaders[language];
+  }
+
   if (loader) {
     const { default: translations } = await loader();
-    i18n.addResourceBundle(lng, "translation", translations, true, true);
+    i18n.addResourceBundle(language, "translation", translations, true, true);
   }
 };
 
 const originalChangeLanguage = i18n.changeLanguage.bind(i18n);
 const changeLanguage = async (lng: string, ...args: any[]) => {
-  if (typeof lng === "string" && !i18n.hasResourceBundle(lng, "translation")) {
-    await loadLanguage(lng);
+  if (typeof lng === "string") {
+    const baseLng = getBaseLanguage(lng);
+    if (
+      !i18n.hasResourceBundle(lng, "translation") &&
+      !i18n.hasResourceBundle(baseLng, "translation")
+    ) {
+      await loadLanguage(lng);
+    }
   }
   return originalChangeLanguage(lng, ...args);
 };
