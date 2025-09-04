@@ -18,7 +18,7 @@ describe("NetworkDiscovery i18n", () => {
   it("renders translated text when switching locales", async () => {
     await i18n.changeLanguage("en");
     const { rerender } = renderWithProviders();
-    expect(screen.getByText("Network Discovery")).toBeInTheDocument();
+    expect(await screen.findByText("Network Discovery")).toBeInTheDocument();
 
     await act(async () => {
       await i18n.changeLanguage("es");
@@ -30,6 +30,32 @@ describe("NetworkDiscovery i18n", () => {
         </ConnectionProvider>
       </I18nextProvider>,
     );
-    expect(screen.getByText("Descubrimiento de Red")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Descubrimiento de Red"),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      await i18n.changeLanguage("fr");
+    });
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <ConnectionProvider>
+          <NetworkDiscovery isOpen onClose={() => {}} />
+        </ConnectionProvider>
+      </I18nextProvider>,
+    );
+    expect(await screen.findByText("Découverte du Réseau")).toBeInTheDocument();
+
+    await act(async () => {
+      await i18n.changeLanguage("pt-PT");
+    });
+    rerender(
+      <I18nextProvider i18n={i18n}>
+        <ConnectionProvider>
+          <NetworkDiscovery isOpen onClose={() => {}} />
+        </ConnectionProvider>
+      </I18nextProvider>,
+    );
+    expect(await screen.findByText("Deteção de Rede")).toBeInTheDocument();
   });
 });

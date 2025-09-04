@@ -28,6 +28,13 @@ npm run lint
 
 All code should pass ESLint before committing.
 
+## Language Switching
+
+The interface is translated into multiple languages. Use the language selector in
+the top bar or the settings dialog to switch between English, Spanish, French,
+German and Portuguese (Portugal). Translation files are loaded on demand to keep the initial bundle
+small.
+
 ## Authentication
 
 The REST API uses a simple user store with bcrypt-hashed passwords and JWT tokens.

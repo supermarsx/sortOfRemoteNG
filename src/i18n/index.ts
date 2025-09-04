@@ -1,13 +1,54 @@
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import LanguageDetector from "i18next-browser-languagedetector";
 
-import en from './locales/en.json';
-import es from './locales/es.json';
+import en from "./locales/en.json";
 
 const resources = {
   en: { translation: en },
-  es: { translation: es }
+};
+
+const languageLoaders: Record<string, () => Promise<any>> = {
+  es: () => import("./locales/es.json"),
+  fr: () => import("./locales/fr.json"),
+  de: () => import("./locales/de.json"),
+  "pt-PT": () => import("./locales/pt-PT.json"),
+};
+
+const getBaseLanguage = (lng: string) => lng.split("-")[0];
+
+const loadLanguage = async (lng: string) => {
+  let language = lng;
+  let loader = languageLoaders[language];
+
+  if (!loader) {
+    language = getBaseLanguage(language);
+    loader = languageLoaders[language];
+  }
+
+  if (loader) {
+    const { default: translations } = await loader();
+    i18n.addResourceBundle(language, "translation", translations, true, true);
+  }
+};
+
+const originalChangeLanguage = i18n.changeLanguage.bind(i18n);
+const changeLanguage = async (lng: string, ...args: any[]) => {
+  if (typeof lng === "string") {
+    const baseLng = getBaseLanguage(lng);
+    const hasLngBundle = i18n.hasResourceBundle(lng, "translation");
+    const hasBaseBundle = i18n.hasResourceBundle(baseLng, "translation");
+    const hasLngLoader = Boolean(languageLoaders[lng]);
+    const hasBaseLoader = Boolean(languageLoaders[baseLng]);
+
+    if (
+      !hasLngBundle &&
+      (hasLngLoader || (!hasBaseBundle && hasBaseLoader))
+    ) {
+      await loadLanguage(lng);
+    }
+  }
+  return originalChangeLanguage(lng, ...args);
 };
 
 i18n
@@ -15,15 +56,19 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    fallbackLng: 'en',
+    fallbackLng: "en",
     debug: false,
     interpolation: {
       escapeValue: false,
     },
     detection: {
-      order: ['navigator', 'htmlTag'],
+      order: ["navigator", "htmlTag"],
       caches: [],
     },
+  })
+  .then(async () => {
+    (i18n as any).changeLanguage = changeLanguage;
+    await changeLanguage(i18n.language);
   });
 
 export default i18n;

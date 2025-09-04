@@ -38,7 +38,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
           >
             <option value="en">English</option>
-            <option value="es">Español</option>
+            <option value="es">Español (España)</option>
+            <option value="fr">Français (France)</option>
+            <option value="de">Deutsch (Deutschland)</option>
+            <option value="pt-PT">Português (Portugal)</option>
           </select>
         </div>
 
