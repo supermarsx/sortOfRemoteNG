@@ -23,6 +23,14 @@ const loadLanguage = async (lng: string) => {
   }
 };
 
+const originalChangeLanguage = i18n.changeLanguage.bind(i18n);
+(i18n as any).changeLanguage = async (lng: string, ...args: any[]) => {
+  if (typeof lng === "string" && !i18n.hasResourceBundle(lng, "translation")) {
+    await loadLanguage(lng);
+  }
+  return originalChangeLanguage(lng, ...args);
+};
+
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
@@ -38,13 +46,5 @@ i18n
       caches: [],
     },
   });
-
-const originalChangeLanguage = i18n.changeLanguage.bind(i18n);
-(i18n as any).changeLanguage = async (lng: string, ...args: any[]) => {
-  if (!i18n.hasResourceBundle(lng, "translation")) {
-    await loadLanguage(lng);
-  }
-  return originalChangeLanguage(lng, ...args);
-};
 
 export default i18n;
