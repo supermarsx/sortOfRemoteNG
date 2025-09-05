@@ -9,6 +9,7 @@ import {
   Globe,
   Plus,
   Settings,
+  Download,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { DiscoveredHost, DiscoveredService } from "../types/connection";
@@ -16,6 +17,7 @@ import { NetworkDiscoveryConfig } from "../types/settings";
 import { NetworkScanner } from "../utils/networkScanner";
 import { useConnections } from "../contexts/ConnectionContext";
 import { generateId } from "../utils/id";
+import { discoveredHostsToCsv } from "../utils/discoveredHostsCsv";
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
@@ -60,6 +62,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
   const [scanProgress, setScanProgress] = useState(0);
   const [selectedHosts, setSelectedHosts] = useState<Set<string>>(new Set());
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [filterText, setFilterText] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const scanner = new NetworkScanner();
@@ -150,6 +153,27 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
       newSelection.add(hostIp);
     }
     setSelectedHosts(newSelection);
+  };
+
+  const filteredHosts = discoveredHosts.filter((host) => {
+    const query = filterText.toLowerCase();
+    return (
+      host.ip.toLowerCase().includes(query) ||
+      (host.hostname?.toLowerCase()?.includes(query) ?? false)
+    );
+  });
+
+  const handleExportCSV = () => {
+    const csv = discoveredHostsToCsv(filteredHosts);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "discovered_hosts.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   if (!isOpen) return null;
@@ -364,14 +388,32 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
           {/* Discovered Hosts */}
           {discoveredHosts.length > 0 && (
             <div>
-              <h3 className="text-lg font-medium text-white mb-4">
-                {t("networkDiscovery.discoveredHosts", {
-                  count: discoveredHosts.length,
-                })}
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-white">
+                  {t("networkDiscovery.discoveredHosts", {
+                    count: filteredHosts.length,
+                  })}
+                </h3>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={filterText}
+                    onChange={(e) => setFilterText(e.target.value)}
+                    placeholder={t("networkDiscovery.filterPlaceholder")}
+                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  />
+                  <button
+                    onClick={handleExportCSV}
+                    className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                  >
+                    <Download size={14} />
+                    <span>{t("networkDiscovery.exportCsv")}</span>
+                  </button>
+                </div>
+              </div>
 
               <div className="space-y-4">
-                {discoveredHosts.map((host) => (
+                {filteredHosts.map((host) => (
                   <div
                     key={host.ip}
                     className={`bg-gray-700 rounded-lg p-4 border-2 transition-colors cursor-pointer ${

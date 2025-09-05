@@ -163,6 +163,8 @@
     "startScan": "Start Scan",
     "createConnections": "Create {{count}} Connection(s)",
     "discoveredHosts": "Discovered Hosts ({{count}})",
+    "filterPlaceholder": "Filtrar hosts",
+    "exportCsv": "Exportar CSV",
     "responseTime": "Response: {{ms}}ms",
     "macAddress": "MAC: {{mac}}",
     "port": "Port {{port}}",
