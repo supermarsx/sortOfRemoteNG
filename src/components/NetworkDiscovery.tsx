@@ -159,7 +159,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
     const query = filterText.toLowerCase();
     return (
       host.ip.toLowerCase().includes(query) ||
-      host.hostname?.toLowerCase().includes(query)
+      (host.hostname?.toLowerCase()?.includes(query) ?? false)
     );
   });
 
@@ -399,9 +399,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                     type="text"
                     value={filterText}
                     onChange={(e) => setFilterText(e.target.value)}
-                    placeholder={t(
-                      "networkDiscovery.filterPlaceholder",
-                    )}
+                    placeholder={t("networkDiscovery.filterPlaceholder")}
                     className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
                   />
                   <button
