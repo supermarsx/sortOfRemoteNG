@@ -1,16 +1,21 @@
 import { debugLog } from "./debugLogger";
 import { LocalStorageService } from "./localStorageService";
 
-interface WakeSchedule {
+export type WakeRecurrence = "daily" | "weekly";
+
+export interface WakeSchedule {
   macAddress: string;
   wakeTime: string;
   broadcastAddress?: string;
   port: number;
+  recurrence?: WakeRecurrence;
 }
 
 const SCHEDULE_KEY = "wol-schedules";
 
 export class WakeOnLanService {
+  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+
   /**
    * Send a Wake-on-LAN magic packet immediately.
    * @param macAddress - Target device's MAC address
@@ -114,13 +119,26 @@ export class WakeOnLanService {
 
   restoreScheduledWakeUps(): void {
     const schedules = this.getSchedules();
+    const now = new Date();
     for (const s of schedules) {
-      this.scheduleWakeUp(
-        s.macAddress,
-        new Date(s.wakeTime),
-        s.broadcastAddress,
-        s.port,
-      );
+      let nextTime = new Date(s.wakeTime);
+      if (s.recurrence) {
+        while (nextTime.getTime() <= now.getTime()) {
+          nextTime = this.getNextWakeTime(nextTime, s.recurrence);
+        }
+        this.removeSchedule(s);
+        this.scheduleWakeUp(
+          s.macAddress,
+          nextTime,
+          s.broadcastAddress,
+          s.port,
+          s.recurrence,
+        );
+      } else if (nextTime.getTime() > now.getTime()) {
+        this.scheduleWakeUp(s.macAddress, nextTime, s.broadcastAddress, s.port);
+      } else {
+        this.removeSchedule(s);
+      }
     }
   }
 
@@ -136,6 +154,7 @@ export class WakeOnLanService {
     wakeTime: Date,
     broadcastAddress?: string,
     port: number = 9,
+    recurrence?: WakeRecurrence,
   ): void {
     const now = new Date();
     const delay = wakeTime.getTime() - now.getTime();
@@ -144,32 +163,85 @@ export class WakeOnLanService {
       throw new Error("Wake time must be in the future");
     }
 
+    const schedule: WakeSchedule = {
+      macAddress,
+      wakeTime: wakeTime.toISOString(),
+      broadcastAddress,
+      port,
+      recurrence,
+    };
+    this.saveSchedule(schedule);
+
     const MAX_SAFE_TIMEOUT = 0x7fffffff;
 
-    if (delay > MAX_SAFE_TIMEOUT) {
-      this.saveSchedule({
-        macAddress,
-        wakeTime: wakeTime.toISOString(),
-        broadcastAddress,
-        port,
-      });
-
-      setTimeout(() => {
-        this.scheduleWakeUp(macAddress, wakeTime, broadcastAddress, port);
-      }, MAX_SAFE_TIMEOUT);
-    } else {
-      setTimeout(() => {
-        this.sendWakePacket(macAddress, broadcastAddress, port);
-        this.removeSchedule({
+    const execute = () => {
+      this.sendWakePacket(macAddress, broadcastAddress, port);
+      this.timers.delete(this.getScheduleKey(schedule));
+      this.removeSchedule(schedule);
+      if (recurrence) {
+        const next = this.getNextWakeTime(
+          new Date(schedule.wakeTime),
+          recurrence,
+        );
+        this.scheduleWakeUp(
           macAddress,
-          wakeTime: wakeTime.toISOString(),
+          next,
           broadcastAddress,
           port,
-        });
-      }, delay);
+          recurrence,
+        );
+      }
+    };
+
+    if (delay > MAX_SAFE_TIMEOUT) {
+      const timer = setTimeout(() => {
+        this.scheduleWakeUp(
+          macAddress,
+          wakeTime,
+          broadcastAddress,
+          port,
+          recurrence,
+        );
+      }, MAX_SAFE_TIMEOUT);
+      this.timers.set(this.getScheduleKey(schedule), timer);
+    } else {
+      const timer = setTimeout(execute, delay);
+      this.timers.set(this.getScheduleKey(schedule), timer);
     }
 
     debugLog(`Wake-on-LAN scheduled for ${wakeTime.toLocaleString()}`);
+  }
+
+  private getNextWakeTime(current: Date, recurrence: WakeRecurrence): Date {
+    const next = new Date(current);
+    if (recurrence === "daily") {
+      next.setUTCDate(next.getUTCDate() + 1);
+    } else if (recurrence === "weekly") {
+      next.setUTCDate(next.getUTCDate() + 7);
+    }
+    const offsetDiff = next.getTimezoneOffset() - current.getTimezoneOffset();
+    if (offsetDiff !== 0) {
+      next.setMinutes(next.getMinutes() + offsetDiff);
+    }
+    return next;
+  }
+
+  listSchedules(): WakeSchedule[] {
+    return this.getSchedules();
+  }
+
+  cancelSchedule(schedule: WakeSchedule): void {
+    const key = this.getScheduleKey(schedule);
+    const timer = this.timers.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(key);
+    }
+    this.removeSchedule(schedule);
+  }
+
+  private getScheduleKey(schedule: WakeSchedule): string {
+    return `${schedule.macAddress}-${schedule.wakeTime}-${schedule.broadcastAddress ?? ""}-${schedule.port}`;
   }
 
   private getSchedules(): WakeSchedule[] {
@@ -178,17 +250,19 @@ export class WakeOnLanService {
 
   private saveSchedule(schedule: WakeSchedule): void {
     const schedules = this.getSchedules();
-    const exists = schedules.some(
+    const index = schedules.findIndex(
       (s) =>
         s.macAddress === schedule.macAddress &&
-        s.wakeTime === schedule.wakeTime &&
+        s.broadcastAddress === schedule.broadcastAddress &&
         s.port === schedule.port &&
-        s.broadcastAddress === schedule.broadcastAddress,
+        s.wakeTime === schedule.wakeTime,
     );
-    if (!exists) {
+    if (index >= 0) {
+      schedules[index] = schedule;
+    } else {
       schedules.push(schedule);
-      LocalStorageService.setItem(SCHEDULE_KEY, schedules);
     }
+    LocalStorageService.setItem(SCHEDULE_KEY, schedules);
   }
 
   private removeSchedule(schedule: WakeSchedule): void {
@@ -197,9 +271,9 @@ export class WakeOnLanService {
       (s) =>
         !(
           s.macAddress === schedule.macAddress &&
-          s.wakeTime === schedule.wakeTime &&
+          s.broadcastAddress === schedule.broadcastAddress &&
           s.port === schedule.port &&
-          s.broadcastAddress === schedule.broadcastAddress
+          s.wakeTime === schedule.wakeTime
         ),
     );
     if (filtered.length === 0) {
