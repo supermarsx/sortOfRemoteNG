@@ -3,6 +3,8 @@ import { WakeOnLanService, type WakeSchedule, type WakeRecurrence } from '../uti
 import { Trash2, Pencil, Save, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+const wolService = new WakeOnLanService();
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -10,7 +12,6 @@ interface Props {
 
 export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
-  const wolService = new WakeOnLanService();
   const [schedules, setSchedules] = useState<WakeSchedule[]>([]);
   const [editing, setEditing] = useState<WakeSchedule | null>(null);
   const [form, setForm] = useState<WakeSchedule>({
