@@ -135,12 +135,7 @@ export class WakeOnLanService {
           s.recurrence,
         );
       } else if (nextTime.getTime() > now.getTime()) {
-        this.scheduleWakeUp(
-          s.macAddress,
-          nextTime,
-          s.broadcastAddress,
-          s.port,
-        );
+        this.scheduleWakeUp(s.macAddress, nextTime, s.broadcastAddress, s.port);
       } else {
         this.removeSchedule(s);
       }
@@ -220,9 +215,13 @@ export class WakeOnLanService {
   private getNextWakeTime(current: Date, recurrence: WakeRecurrence): Date {
     const next = new Date(current);
     if (recurrence === "daily") {
-      next.setDate(next.getDate() + 1);
+      next.setUTCDate(next.getUTCDate() + 1);
     } else if (recurrence === "weekly") {
-      next.setDate(next.getDate() + 7);
+      next.setUTCDate(next.getUTCDate() + 7);
+    }
+    const offsetDiff = next.getTimezoneOffset() - current.getTimezoneOffset();
+    if (offsetDiff !== 0) {
+      next.setMinutes(next.getMinutes() + offsetDiff);
     }
     return next;
   }
