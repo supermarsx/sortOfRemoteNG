@@ -34,10 +34,27 @@ export interface StorageData {
   timestamp: number;
 }
 
+/**
+ * Provides secure storage of connection data in IndexedDB.
+ *
+ * The class manages a password in memory and can encrypt/decrypt stored
+ * data using AES-GCM. Keys are derived from the password via PBKDF2 and
+ * associated metadata (salt, IV, encryption flags) is persisted alongside
+ * the data in IndexedDB.
+ */
 export class SecureStorage {
   private static password: string | null = null;
   private static isUnlocked: boolean = false;
 
+  /**
+   * Derive an AES-GCM key from a user password.
+   *
+   * @param password - Plain-text password provided by the user.
+   * @param salt - Random salt used for PBKDF2.
+   * @returns A 256-bit AES-GCM {@link CryptoKey}.
+   * @throws {DOMException} If the underlying crypto operations fail.
+   * @remarks Side-effect free; only uses the Web Crypto API.
+   */
   private static async deriveKey(
     password: string,
     salt: Uint8Array,
@@ -55,7 +72,7 @@ export class SecureStorage {
       {
         name: "PBKDF2",
         salt,
-        iterations: PBKDF2_ITERATIONS,
+        iterations: PBKDF2_ITERATIONS, // Number of PBKDF2 iterations from config
         hash: "SHA-256",
       },
       keyMaterial,
@@ -65,7 +82,13 @@ export class SecureStorage {
     );
   }
 
-  // Migrate old metadata key to the new one if needed
+  /**
+   * Migrate legacy storage metadata to the current key.
+   *
+   * @remarks Removes the old metadata entry after copying it to the new key.
+   * @throws {Error} Propagates errors thrown by {@link IndexedDbService}.
+   * @sideEffect Reads and writes to IndexedDB via {@link IndexedDbService}.
+   */
   private static async migrateMetaKey(): Promise<void> {
     const oldData = await IndexedDbService.getItem<any>(OLD_STORAGE_META_KEY);
     if (oldData && !(await IndexedDbService.getItem(STORAGE_META_KEY))) {
@@ -109,6 +132,14 @@ export class SecureStorage {
     return false;
   }
 
+  /**
+   * Persist data to IndexedDB, encrypting it when requested.
+   *
+   * @param data - Connection and settings data to store.
+   * @param usePassword - When `true`, encrypts using the current password.
+   * @throws {Error} If encryption or storage operations fail.
+   * @sideEffect Overwrites existing storage and metadata in IndexedDB.
+   */
   static async saveData(
     data: StorageData,
     usePassword: boolean = false,
@@ -120,9 +151,9 @@ export class SecureStorage {
         const crypto = getCrypto();
         const serialized = JSON.stringify(data);
         const encoder = new TextEncoder();
-        const salt = crypto.getRandomValues(new Uint8Array(16));
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-        const key = await this.deriveKey(this.password, salt);
+        const salt = crypto.getRandomValues(new Uint8Array(16)); // Random salt for PBKDF2 key derivation
+        const iv = crypto.getRandomValues(new Uint8Array(12)); // Initialization vector for AES-GCM
+        const key = await this.deriveKey(this.password, salt); // Derive 256-bit AES key from password
         const encryptedBuffer = await crypto.subtle.encrypt(
           { name: "AES-GCM", iv },
           key,
@@ -152,6 +183,13 @@ export class SecureStorage {
     }
   }
 
+  /**
+   * Retrieve and decrypt stored data from IndexedDB.
+   *
+   * @returns The {@link StorageData} if present, otherwise `null`.
+   * @throws {Error} If a password is required or incorrect, or if data cannot be read.
+   * @sideEffect Reads from IndexedDB and may log errors to the console.
+   */
   static async loadData(): Promise<StorageData | null> {
     try {
       await this.migrateMetaKey();
@@ -168,9 +206,9 @@ export class SecureStorage {
         if (parsedSettings.isEncrypted) {
           try {
             const crypto = getCrypto();
-            const salt = fromBase64(parsedSettings.salt);
-            const iv = fromBase64(parsedSettings.iv);
-            const key = await this.deriveKey(this.password as string, salt);
+            const salt = fromBase64(parsedSettings.salt); // Retrieve salt used during encryption
+            const iv = fromBase64(parsedSettings.iv); // Retrieve IV for AES-GCM
+            const key = await this.deriveKey(this.password as string, salt); // Re-create key using stored salt and password
             const decryptedBuffer = await crypto.subtle.decrypt(
               { name: "AES-GCM", iv },
               key,
