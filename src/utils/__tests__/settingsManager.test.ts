@@ -68,7 +68,7 @@ describe('SettingsManager.benchmarkKeyDerivation', () => {
     const manager = SettingsManager.getInstance();
     await manager.loadSettings();
 
-    const iterations = await manager.benchmarkKeyDerivation(0.01);
+    const iterations = await manager.benchmarkKeyDerivation(0.01, 0.1, 1);
 
     expect(iterations).toBeGreaterThan(0);
     const [last] = manager.getActionLog();
