@@ -126,17 +126,24 @@ export class WakeOnLanService {
         while (nextTime.getTime() <= now.getTime()) {
           nextTime = this.getNextWakeTime(nextTime, s.recurrence);
         }
-        if (nextTime.toISOString() !== s.wakeTime) {
-          this.saveSchedule({ ...s, wakeTime: nextTime.toISOString() });
-        }
+        this.removeSchedule(s);
+        this.scheduleWakeUp(
+          s.macAddress,
+          nextTime,
+          s.broadcastAddress,
+          s.port,
+          s.recurrence,
+        );
+      } else if (nextTime.getTime() > now.getTime()) {
+        this.scheduleWakeUp(
+          s.macAddress,
+          nextTime,
+          s.broadcastAddress,
+          s.port,
+        );
+      } else {
+        this.removeSchedule(s);
       }
-      this.scheduleWakeUp(
-        s.macAddress,
-        nextTime,
-        s.broadcastAddress,
-        s.port,
-        s.recurrence,
-      );
     }
   }
 
@@ -175,12 +182,11 @@ export class WakeOnLanService {
     const execute = () => {
       this.sendWakePacket(macAddress, broadcastAddress, port);
       this.timers.delete(this.getScheduleKey(schedule));
+      this.removeSchedule(schedule);
 
       if (recurrence) {
         const next = this.getNextWakeTime(new Date(schedule.wakeTime), recurrence);
         this.scheduleWakeUp(macAddress, next, broadcastAddress, port, recurrence);
-      } else {
-        this.removeSchedule(schedule);
       }
     };
 
@@ -235,7 +241,8 @@ export class WakeOnLanService {
       (s) =>
         s.macAddress === schedule.macAddress &&
         s.broadcastAddress === schedule.broadcastAddress &&
-        s.port === schedule.port,
+        s.port === schedule.port &&
+        s.wakeTime === schedule.wakeTime,
     );
     if (index >= 0) {
       schedules[index] = schedule;
