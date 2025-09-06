@@ -54,8 +54,8 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
     }
   };
 
-  const loadTransfers = () => {
-    const activeTransfers = fileServiceRef.current.getActiveTransfers(connectionId);
+  const loadTransfers = async () => {
+    const activeTransfers = await fileServiceRef.current.getActiveTransfers(connectionId);
     setTransfers(activeTransfers);
   };
 
@@ -93,7 +93,7 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
       try {
         await fileServiceRef.current.uploadFile(connectionId, file, remotePath);
         loadDirectory(currentPath);
-        loadTransfers();
+        await loadTransfers();
       } catch (error) {
         console.error('Upload failed:', error);
       }
@@ -107,7 +107,7 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
       
       try {
         await fileServiceRef.current.downloadFile(connectionId, remotePath, fileName);
-        loadTransfers();
+        await loadTransfers();
       } catch (error) {
         console.error('Download failed:', error);
       }
@@ -368,6 +368,20 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
                     {transfer.error && (
                       <p className="text-red-400 text-xs mt-1">{transfer.error}</p>
                     )}
+
+                    {transfer.status !== 'active' &&
+                      transfer.status !== 'completed' &&
+                      transfer.type === 'download' && (
+                        <button
+                          onClick={async () => {
+                            await fileServiceRef.current.resumeTransfer(transfer.id);
+                            await loadTransfers();
+                          }}
+                          className="mt-2 text-blue-400 text-xs hover:underline"
+                        >
+                          Resume
+                        </button>
+                      )}
                   </div>
                 ))
               )}
