@@ -19,6 +19,13 @@ import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/ConnectionContext";
 import { generateId } from "../utils/id";
 
+/**
+ * Maps a connection protocol to a Lucide icon component.
+ *
+ * @param protocol - Identifier for the protocol (e.g. `rdp`, `ssh`).
+ * @returns The icon component representing the protocol. Defaults to
+ * `Monitor` when no specific mapping exists.
+ */
 const getProtocolIcon = (protocol: string) => {
   switch (protocol) {
     case "rdp":
@@ -38,6 +45,12 @@ const getProtocolIcon = (protocol: string) => {
   }
 };
 
+/**
+ * Converts a session status into a Tailwind CSS text color.
+ *
+ * @param status - Session state (`connected`, `connecting`, `error`).
+ * @returns Tailwind text color class, gray when status is undefined.
+ */
 const getStatusColor = (status?: string) => {
   switch (status) {
     case "connected":
@@ -51,6 +64,15 @@ const getStatusColor = (status?: string) => {
   }
 };
 
+/**
+ * Props for {@link ConnectionTreeItem}.
+ *
+ * @property connection - Connection or group to render.
+ * @property level - Depth in the tree, used for indentation.
+ * @property onConnect - Invoked when a non-group connection is opened.
+ * @property onEdit - Handler for editing the connection.
+ * @property onDelete - Handler for removing the connection.
+ */
 interface ConnectionTreeItemProps {
   connection: Connection;
   level: number;
@@ -59,6 +81,10 @@ interface ConnectionTreeItemProps {
   onDelete: (connection: Connection) => void;
 }
 
+/**
+ * Renders a single row in the connection tree. Handles selection state,
+ * group expansion, context menu actions and session status indication.
+ */
 const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   connection,
   level,
@@ -105,6 +131,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         onClick={handleSelect}
         onDoubleClick={() => !connection.isGroup && onConnect(connection)}
       >
+        {/* Group expand/collapse button */}
         {connection.isGroup && (
           <button
             onClick={handleToggleExpand}
@@ -134,6 +161,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
           <span className="truncate text-sm">{connection.name}</span>
 
+          {/* Dot representing current session state */}
           {activeSession && (
             <div
               className={`ml-2 w-2 h-2 rounded-full ${
@@ -158,6 +186,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             </button>
           )}
 
+          {/* Context menu trigger */}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -171,6 +200,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
         {showMenu && (
           <div className="absolute right-0 top-8 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10 min-w-[120px]">
+            {/* Edit action */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -182,6 +212,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
               <Edit size={14} className="mr-2" />
               Edit
             </button>
+            {/* Duplicate action */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -199,6 +230,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
               Duplicate
             </button>
             <hr className="border-gray-700" />
+            {/* Delete action */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -217,12 +249,24 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   );
 };
 
+/**
+ * Props for {@link ConnectionTree}.
+ *
+ * @property onConnect - Called when a user attempts to open a connection.
+ * @property onEdit - Invoked to edit a specific connection.
+ * @property onDelete - Invoked to delete a connection or group.
+ */
 interface ConnectionTreeProps {
   onConnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
   onDelete: (connection: Connection) => void;
 }
 
+/**
+ * Displays a hierarchical tree of connections and groups. Handles filtering
+ * and delegates selection, expansion and action callbacks to
+ * {@link ConnectionTreeItem}.
+ */
 export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   onConnect,
   onEdit,
@@ -257,6 +301,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
         />
         {connection.isGroup && connection.expanded && (
           <div>
+            {/* Recursively render children when group is expanded */}
             {renderTree(buildTree(state.connections, connection.id), level + 1)}
           </div>
         )}
