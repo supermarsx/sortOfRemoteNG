@@ -68,4 +68,27 @@ describe("WakeOnLanService scheduling", () => {
     const stored = service.listSchedules()[0];
     expect(new Date(stored.wakeTime).getTime()).toBeGreaterThan(Date.now());
   });
+
+  it("preserves local time across DST changes", () => {
+    vi.useRealTimers();
+    const service = new WakeOnLanService();
+    const offsetSpy = vi
+      .spyOn(Date.prototype, "getTimezoneOffset")
+      .mockImplementation(function (this: Date) {
+        const month = this.getUTCMonth();
+        const day = this.getUTCDate();
+        if (month === 2 && day === 9) return 480; // Mar 9 2024 PST
+        if (month === 2 && day === 10) return 420; // Mar 10 2024 PDT
+        if (month === 9 && day === 27) return 420; // Oct 27 2024 PDT
+        if (month === 10 && day === 3) return 480; // Nov 3 2024 PST
+        return 0;
+      });
+    const beforeDst = new Date("2024-03-09T17:00:00Z");
+    const nextDay = (service as any).getNextWakeTime(beforeDst, "daily");
+    expect(nextDay.toISOString()).toBe("2024-03-10T16:00:00.000Z");
+    const beforeEnd = new Date("2024-10-27T16:00:00Z");
+    const nextWeek = (service as any).getNextWakeTime(beforeEnd, "weekly");
+    expect(nextWeek.toISOString()).toBe("2024-11-03T17:00:00.000Z");
+    offsetSpy.mockRestore();
+  });
 });
