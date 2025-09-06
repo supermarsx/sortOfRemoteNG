@@ -183,16 +183,30 @@ export class WakeOnLanService {
       this.sendWakePacket(macAddress, broadcastAddress, port);
       this.timers.delete(this.getScheduleKey(schedule));
       this.removeSchedule(schedule);
-
       if (recurrence) {
-        const next = this.getNextWakeTime(new Date(schedule.wakeTime), recurrence);
-        this.scheduleWakeUp(macAddress, next, broadcastAddress, port, recurrence);
+        const next = this.getNextWakeTime(
+          new Date(schedule.wakeTime),
+          recurrence,
+        );
+        this.scheduleWakeUp(
+          macAddress,
+          next,
+          broadcastAddress,
+          port,
+          recurrence,
+        );
       }
     };
 
     if (delay > MAX_SAFE_TIMEOUT) {
       const timer = setTimeout(() => {
-        this.scheduleWakeUp(macAddress, wakeTime, broadcastAddress, port, recurrence);
+        this.scheduleWakeUp(
+          macAddress,
+          wakeTime,
+          broadcastAddress,
+          port,
+          recurrence,
+        );
       }, MAX_SAFE_TIMEOUT);
       this.timers.set(this.getScheduleKey(schedule), timer);
     } else {
