@@ -1,14 +1,14 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { WakeOnLanService } from '../src/utils/wakeOnLan';
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { WakeOnLanService } from "../src/utils/wakeOnLan";
 
-const MAC = '00:11:22:33:44:55';
+const MAC = "00:11:22:33:44:55";
 
-describe('WakeOnLanService scheduling', () => {
+describe("WakeOnLanService scheduling", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.useFakeTimers();
-    vi.spyOn(WakeOnLanService.prototype, 'sendWakePacket').mockResolvedValue();
-    vi.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+    vi.spyOn(WakeOnLanService.prototype, "sendWakePacket").mockResolvedValue();
+    vi.setSystemTime(new Date("2024-01-01T00:00:00Z"));
   });
 
   afterEach(() => {
@@ -16,7 +16,7 @@ describe('WakeOnLanService scheduling', () => {
     vi.restoreAllMocks();
   });
 
-  it('persists schedules', () => {
+  it("persists schedules", () => {
     const service = new WakeOnLanService();
     const wakeTime = new Date(Date.now() + 3600000);
     service.scheduleWakeUp(MAC, wakeTime);
@@ -25,10 +25,22 @@ describe('WakeOnLanService scheduling', () => {
     expect(schedules[0].macAddress).toBe(MAC);
   });
 
-  it('handles daily recurrence', () => {
+  it("keeps multiple schedules for the same device", () => {
+    const service = new WakeOnLanService();
+    const first = new Date(Date.now() + 3600000);
+    const second = new Date(Date.now() + 7200000);
+    service.scheduleWakeUp(MAC, first);
+    service.scheduleWakeUp(MAC, second);
+    const schedules = service.listSchedules();
+    expect(schedules).toHaveLength(2);
+    const times = schedules.map((s) => s.wakeTime).sort();
+    expect(times).toEqual([first.toISOString(), second.toISOString()].sort());
+  });
+
+  it("handles daily recurrence", () => {
     const service = new WakeOnLanService();
     const wakeTime = new Date(Date.now() + 60000);
-    service.scheduleWakeUp(MAC, wakeTime, undefined, 9, 'daily');
+    service.scheduleWakeUp(MAC, wakeTime, undefined, 9, "daily");
     vi.advanceTimersByTime(60000);
     const schedules = service.listSchedules();
     expect(schedules).toHaveLength(1);
@@ -36,11 +48,21 @@ describe('WakeOnLanService scheduling', () => {
     expect(next).toBe(wakeTime.getTime() + 24 * 60 * 60 * 1000);
   });
 
-  it('restores past schedules to next occurrence', () => {
+  it("restores past schedules to next occurrence", () => {
     const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    localStorage.setItem('wol-schedules', JSON.stringify([{ macAddress: MAC, wakeTime: past.toISOString(), port: 9, recurrence: 'daily' }]));
+    localStorage.setItem(
+      "wol-schedules",
+      JSON.stringify([
+        {
+          macAddress: MAC,
+          wakeTime: past.toISOString(),
+          port: 9,
+          recurrence: "daily",
+        },
+      ]),
+    );
     const service = new WakeOnLanService();
-    const spy = vi.spyOn(service, 'scheduleWakeUp');
+    const spy = vi.spyOn(service, "scheduleWakeUp");
     service.restoreScheduledWakeUps();
     expect(spy).toHaveBeenCalled();
     const stored = service.listSchedules()[0];
