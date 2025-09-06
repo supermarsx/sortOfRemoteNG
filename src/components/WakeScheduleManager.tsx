@@ -47,9 +47,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
     if (editing) {
       wolService.cancelSchedule(editing);
     }
-    const broadcast = form.broadcastAddress?.trim()
-      ? form.broadcastAddress
-      : undefined;
+    const broadcast = form.broadcastAddress?.trim() || undefined;
     wolService.scheduleWakeUp(
       form.macAddress,
       date,
