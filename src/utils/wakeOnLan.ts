@@ -218,13 +218,16 @@ export class WakeOnLanService {
   }
 
   private getNextWakeTime(current: Date, recurrence: WakeRecurrence): Date {
-    const next = new Date(current);
-    if (recurrence === "daily") {
-      next.setDate(next.getDate() + 1);
-    } else if (recurrence === "weekly") {
-      next.setDate(next.getDate() + 7);
-    }
-    return next;
+    const days = recurrence === "daily" ? 1 : 7;
+    return new Date(
+      current.getFullYear(),
+      current.getMonth(),
+      current.getDate() + days,
+      current.getHours(),
+      current.getMinutes(),
+      current.getSeconds(),
+      current.getMilliseconds(),
+    );
   }
 
   listSchedules(): WakeSchedule[] {
