@@ -129,14 +129,23 @@ export class WakeOnLanService {
         if (nextTime.toISOString() !== s.wakeTime) {
           this.saveSchedule({ ...s, wakeTime: nextTime.toISOString() });
         }
+        this.scheduleWakeUp(
+          s.macAddress,
+          nextTime,
+          s.broadcastAddress,
+          s.port,
+          s.recurrence,
+        );
+      } else if (nextTime.getTime() > now.getTime()) {
+        this.scheduleWakeUp(
+          s.macAddress,
+          nextTime,
+          s.broadcastAddress,
+          s.port,
+        );
+      } else {
+        this.removeSchedule(s);
       }
-      this.scheduleWakeUp(
-        s.macAddress,
-        nextTime,
-        s.broadcastAddress,
-        s.port,
-        s.recurrence,
-      );
     }
   }
 

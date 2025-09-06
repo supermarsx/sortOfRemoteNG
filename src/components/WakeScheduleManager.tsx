@@ -1,9 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { WakeOnLanService, type WakeSchedule, type WakeRecurrence } from '../utils/wakeOnLan';
+import {
+  WakeOnLanService,
+  type WakeSchedule,
+  type WakeRecurrence,
+} from '../utils/wakeOnLan';
 import { Trash2, Pencil, Save, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 const wolService = new WakeOnLanService();
+
+const formatLocalDateTime = (date: Date) => {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+};
 
 interface Props {
   isOpen: boolean;
@@ -16,7 +27,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
   const [editing, setEditing] = useState<WakeSchedule | null>(null);
   const [form, setForm] = useState<WakeSchedule>({
     macAddress: '',
-    wakeTime: new Date().toISOString().slice(0, 16),
+    wakeTime: formatLocalDateTime(new Date()),
     port: 9,
   });
 
@@ -29,7 +40,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const resetForm = () => {
-    setForm({ macAddress: '', wakeTime: new Date().toISOString().slice(0, 16), port: 9 });
+    setForm({ macAddress: '', wakeTime: formatLocalDateTime(new Date()), port: 9 });
     setEditing(null);
   };
 
@@ -51,7 +62,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const handleEdit = (s: WakeSchedule) => {
     setEditing(s);
-    setForm({ ...s, wakeTime: s.wakeTime.slice(0, 16) });
+    setForm({ ...s, wakeTime: formatLocalDateTime(new Date(s.wakeTime)) });
   };
 
   const handleDelete = (s: WakeSchedule) => {
