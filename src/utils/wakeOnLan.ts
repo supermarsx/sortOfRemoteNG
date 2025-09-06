@@ -126,20 +126,24 @@ export class WakeOnLanService {
         while (nextTime.getTime() <= now.getTime()) {
           nextTime = this.getNextWakeTime(nextTime, s.recurrence);
         }
-        if (nextTime.toISOString() !== s.wakeTime) {
-          this.removeSchedule(s);
-        }
-      } else if (nextTime.getTime() <= now.getTime()) {
         this.removeSchedule(s);
-        continue;
+        this.scheduleWakeUp(
+          s.macAddress,
+          nextTime,
+          s.broadcastAddress,
+          s.port,
+          s.recurrence,
+        );
+      } else if (nextTime.getTime() > now.getTime()) {
+        this.scheduleWakeUp(
+          s.macAddress,
+          nextTime,
+          s.broadcastAddress,
+          s.port,
+        );
+      } else {
+        this.removeSchedule(s);
       }
-      this.scheduleWakeUp(
-        s.macAddress,
-        nextTime,
-        s.broadcastAddress,
-        s.port,
-        s.recurrence,
-      );
     }
   }
 
