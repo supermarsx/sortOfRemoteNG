@@ -47,10 +47,13 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
     if (editing) {
       wolService.cancelSchedule(editing);
     }
+    const broadcast = form.broadcastAddress?.trim()
+      ? form.broadcastAddress
+      : undefined;
     wolService.scheduleWakeUp(
       form.macAddress,
       date,
-      form.broadcastAddress,
+      broadcast,
       form.port,
       form.recurrence as WakeRecurrence | undefined,
     );
@@ -83,7 +86,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
         <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
           {schedules.map((s) => (
             <div
-              key={s.wakeTime + s.macAddress}
+              key={`${s.macAddress}-${s.wakeTime}-${s.broadcastAddress ?? ""}-${s.port}-${s.recurrence ?? ""}`}
               className="flex justify-between items-center bg-gray-700 px-2 py-1 rounded"
             >
               <div className="text-sm">
