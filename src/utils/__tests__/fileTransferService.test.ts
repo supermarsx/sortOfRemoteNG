@@ -31,13 +31,12 @@ function createMockAdapter(): FileTransferAdapter {
   };
 }
 
-function firstTransfer(service: FileTransferService, id: string) {
-  return service.getActiveTransfers(id)[0];
+async function firstTransfer(service: FileTransferService, id: string) {
+  return (await service.getActiveTransfers(id))[0];
 }
 
 describe('FileTransferService', () => {
   it('tracks uploads and emits progress', async () => {
-    vi.useFakeTimers();
     const service = new FileTransferService();
     service.registerAdapter('c1', createMockAdapter());
     const file = new File(['hello'], 'hello.txt', { type: 'text/plain' });
@@ -45,51 +44,35 @@ describe('FileTransferService', () => {
     const progressSpy = vi.fn();
     service.on('progress', progressSpy);
 
-    const promise = service.uploadFile('c1', file, '/remote/hello.txt');
-
-    await vi.advanceTimersByTimeAsync(500);
-    await promise;
+    await service.uploadFile('c1', file, '/remote/hello.txt');
 
     expect(progressSpy).toHaveBeenCalled();
-    expect(firstTransfer(service, 'c1').status).toBe('completed');
-
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(service.getActiveTransfers('c1')).toHaveLength(0);
-    vi.useRealTimers();
+    expect((await firstTransfer(service, 'c1')).status).toBe('completed');
   });
 
-  it('tracks downloads and cleans up completed entries', async () => {
-    vi.useFakeTimers();
+  it('tracks downloads and emits completion', async () => {
     const service = new FileTransferService();
     service.registerAdapter('c2', createMockAdapter());
 
-    const promise = service.downloadFile('c2', '/remote/file.bin', 'file.bin');
+    await service.downloadFile('c2', '/remote/file.bin', 'file.bin');
 
-    await vi.advanceTimersByTimeAsync(500);
-    await promise;
-
-    expect(firstTransfer(service, 'c2').status).toBe('completed');
-
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(service.getActiveTransfers('c2')).toHaveLength(0);
-    vi.useRealTimers();
+    expect((await firstTransfer(service, 'c2')).status).toBe('completed');
   });
 
   it('supports cancellation via AbortController', async () => {
-    vi.useFakeTimers();
     const service = new FileTransferService();
     service.registerAdapter('c3', createMockAdapter());
     const file = new File(['hello'], 'hello.txt');
 
-    const promise = service.uploadFile('c3', file, '/remote/hello.txt');
-    const transferId = firstTransfer(service, 'c3').id;
-    service.cancelTransfer(transferId);
+    let transferId = '';
+    service.on('start', s => {
+      transferId = s.id;
+      setTimeout(() => service.cancelTransfer(transferId), 150);
+    });
 
-    await vi.advanceTimersByTimeAsync(100);
-    await promise;
+    await service.uploadFile('c3', file, '/remote/hello.txt');
 
-    expect(firstTransfer(service, 'c3').status).toBe('cancelled');
-    vi.useRealTimers();
+    expect((await firstTransfer(service, 'c3')).status).toBe('cancelled');
   });
 });
 

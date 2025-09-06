@@ -2,13 +2,34 @@ import { EventEmitter } from 'events';
 import type { FileTransferSession } from '../types/connection';
 import { generateId } from './id';
 import { FileTransferAdapter, FileItem } from './fileTransferAdapters';
+import { IndexedDbService } from './indexedDbService';
 
 export { FileTransferAdapter, FileItem } from './fileTransferAdapters';
 
 export class FileTransferService extends EventEmitter {
-  private activeTransfers = new Map<string, FileTransferSession>();
   private adapters = new Map<string, FileTransferAdapter>();
   private controllers = new Map<string, AbortController>();
+  private readonly storageKey = 'mremote-file-transfers';
+
+  private async loadSessions(): Promise<FileTransferSession[]> {
+    return (await IndexedDbService.getItem<FileTransferSession[]>(this.storageKey)) || [];
+  }
+
+  private async saveSession(session: FileTransferSession): Promise<void> {
+    const sessions = await this.loadSessions();
+    const index = sessions.findIndex(s => s.id === session.id);
+    if (index >= 0) {
+      sessions[index] = { ...session };
+    } else {
+      sessions.push({ ...session });
+    }
+    await IndexedDbService.setItem(this.storageKey, sessions);
+  }
+
+  private async getSession(id: string): Promise<FileTransferSession | undefined> {
+    const sessions = await this.loadSessions();
+    return sessions.find(s => s.id === id);
+  }
 
   registerAdapter(connectionId: string, adapter: FileTransferAdapter) {
     this.adapters.set(connectionId, adapter);
@@ -45,8 +66,8 @@ export class FileTransferService extends EventEmitter {
       totalSize,
       transferredSize: 0,
     };
-    this.activeTransfers.set(transferId, session);
     this.controllers.set(transferId, controller);
+    void this.saveSession(session);
     return [transferId, session, controller];
   }
 
@@ -68,6 +89,7 @@ export class FileTransferService extends EventEmitter {
     if (options?.signal) options.signal.addEventListener('abort', () => controller.abort());
     session.status = 'active';
     this.emit('start', session);
+    await this.saveSession(session);
 
     try {
       await adapter.upload(
@@ -77,7 +99,7 @@ export class FileTransferService extends EventEmitter {
           session.transferredSize = transferred;
           session.totalSize = total;
           session.progress = (transferred / total) * 100;
-          this.activeTransfers.set(id, { ...session });
+          void this.saveSession(session);
           this.emit('progress', { id, progress: session.progress, transferred, total });
         },
         controller.signal
@@ -92,14 +114,13 @@ export class FileTransferService extends EventEmitter {
       }
     } finally {
       session.endTime = new Date();
-      this.activeTransfers.set(id, { ...session });
+      await this.saveSession(session);
       if (session.status === 'completed') {
         this.emit('end', session);
       } else if (this.listenerCount('error') > 0) {
         this.emit('error', session);
       }
       this.controllers.delete(id);
-      setTimeout(() => this.activeTransfers.delete(id), 5000);
     }
   }
 
@@ -121,6 +142,7 @@ export class FileTransferService extends EventEmitter {
     if (options?.signal) options.signal.addEventListener('abort', () => controller.abort());
     session.status = 'active';
     this.emit('start', session);
+    await this.saveSession(session);
 
     try {
       await adapter.download(
@@ -130,7 +152,7 @@ export class FileTransferService extends EventEmitter {
           session.transferredSize = transferred;
           session.totalSize = total;
           session.progress = total ? (transferred / total) * 100 : 0;
-          this.activeTransfers.set(id, { ...session });
+          void this.saveSession(session);
           this.emit('progress', { id, progress: session.progress, transferred, total });
         },
         controller.signal
@@ -145,26 +167,91 @@ export class FileTransferService extends EventEmitter {
       }
     } finally {
       session.endTime = new Date();
-      this.activeTransfers.set(id, { ...session });
+      await this.saveSession(session);
       if (session.status === 'completed') {
         this.emit('end', session);
       } else if (this.listenerCount('error') > 0) {
         this.emit('error', session);
       }
       this.controllers.delete(id);
-      setTimeout(() => this.activeTransfers.delete(id), 5000);
     }
   }
 
-  getActiveTransfers(connectionId: string): FileTransferSession[] {
-    return Array.from(this.activeTransfers.values()).filter(
-      t => t.connectionId === connectionId
-    );
+  async getActiveTransfers(connectionId: string): Promise<FileTransferSession[]> {
+    const sessions = await this.loadSessions();
+    return sessions.filter(t => t.connectionId === connectionId);
   }
 
   cancelTransfer(transferId: string): void {
     const controller = this.controllers.get(transferId);
     if (controller) controller.abort();
+  }
+
+  async resumeTransfer(transferId: string, file?: File | Buffer): Promise<void> {
+    const session = await this.getSession(transferId);
+    if (!session) throw new Error('Transfer session not found');
+    if (session.status === 'completed') return;
+    const adapter = this.adapters.get(session.connectionId);
+    if (!adapter) throw new Error('No adapter registered for connection');
+
+    const controller = new AbortController();
+    this.controllers.set(transferId, controller);
+    session.status = 'active';
+    session.error = undefined;
+    await this.saveSession(session);
+    this.emit('start', session);
+
+    const progressHandler = (transferred: number, total: number) => {
+      const already = session.transferredSize || 0;
+      session.totalSize = total || session.totalSize;
+      session.transferredSize = Math.min(already + transferred, session.totalSize);
+      session.progress = session.totalSize
+        ? (session.transferredSize / session.totalSize) * 100
+        : 0;
+      void this.saveSession(session);
+      this.emit('progress', {
+        id: transferId,
+        progress: session.progress,
+        transferred: session.transferredSize,
+        total: session.totalSize,
+      });
+    };
+
+    try {
+      if (session.type === 'upload') {
+        if (!file) throw new Error('File required to resume upload');
+        await adapter.upload(
+          file as any,
+          session.remotePath,
+          progressHandler,
+          controller.signal,
+        );
+      } else {
+        await adapter.download(
+          session.remotePath,
+          session.localPath,
+          progressHandler,
+          controller.signal,
+        );
+      }
+      session.status = 'completed';
+    } catch (err) {
+      if (controller.signal.aborted) {
+        session.status = 'cancelled';
+      } else {
+        session.status = 'error';
+        session.error = (err as Error).message;
+      }
+    } finally {
+      session.endTime = new Date();
+      await this.saveSession(session);
+      if (session.status === 'completed') {
+        this.emit('end', session);
+      } else if (this.listenerCount('error') > 0) {
+        this.emit('error', session);
+      }
+      this.controllers.delete(transferId);
+    }
   }
 
   // Optional adapter-specific helpers
