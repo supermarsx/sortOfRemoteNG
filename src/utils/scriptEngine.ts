@@ -58,10 +58,6 @@ export class ScriptEngine {
     );
 
     try {
-      if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
-
       const result = await this.runScript<T>(script, context, signal);
 
       const duration = Date.now() - startTime;
@@ -212,13 +208,7 @@ export class ScriptEngine {
     const isNode = typeof process !== "undefined" && !!process.versions?.node;
 
     if (isNode) {
-      if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
       const { VM } = await import("vm2");
-      if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
       const vm = new VM({ timeout: 1000, sandbox: {} });
 
       // Expose only whitelisted utilities
@@ -240,10 +230,6 @@ export class ScriptEngine {
         "require",
         "fetch",
       ].forEach((g) => vm.freeze(undefined, g));
-
-      if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
 
       const wrapped = `"use strict"; (async () => { ${code} })();`;
       const resultPromise = vm.run(wrapped);
@@ -465,13 +451,6 @@ export class ScriptEngine {
         worker.terminate();
         reject(new Error("Script execution timed out"));
       }, 1000);
-
-      if (signal?.aborted) {
-        clearTimeout(timeoutId);
-        worker.terminate();
-        reject(new DOMException("Aborted", "AbortError"));
-        return;
-      }
 
       const abortHandler = () => {
         clearTimeout(timeoutId);
