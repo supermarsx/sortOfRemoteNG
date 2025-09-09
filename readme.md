@@ -78,3 +78,19 @@ starts, it checks for any `mremote-` keys in `localStorage` and moves them into
 IndexedDB. After migration these keys are removed from `localStorage`.
 Ensure your browser supports IndexedDB so settings and collections can be
 preserved across sessions.
+
+## Aborting Scripts
+
+Custom scripts executed through the `ScriptEngine` can be cancelled using an
+`AbortSignal`. Create an `AbortController` and pass its signal to
+`executeScript`. Any pending `http`, `ssh`, or `sleep` calls will reject with an
+`AbortError` when the signal is triggered:
+
+```ts
+const controller = new AbortController();
+const promise = engine.executeScript(script, context, controller.signal);
+controller.abort(); // script stops immediately
+```
+
+This allows external callers to stop long running scripts and network requests
+cleanly.

@@ -43,6 +43,7 @@ export class ScriptEngine {
   async executeScript<T = unknown>(
     script: CustomScript,
     context: ScriptExecutionContext,
+    signal?: AbortSignal,
   ): Promise<T> {
     if (!script.enabled) {
       throw new Error("Script is disabled");
@@ -57,7 +58,11 @@ export class ScriptEngine {
     );
 
     try {
-      const result = await this.runScript<T>(script, context);
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+
+      const result = await this.runScript<T>(script, context, signal);
 
       const duration = Date.now() - startTime;
       this.settingsManager.logAction(
@@ -85,6 +90,7 @@ export class ScriptEngine {
   private async runScript<T>(
     script: CustomScript,
     context: ScriptExecutionContext,
+    signal?: AbortSignal,
   ): Promise<T> {
     // Create a safe execution environment
     const scriptContext = {
@@ -106,31 +112,41 @@ export class ScriptEngine {
       // HTTP utilities
       http: {
         get: <R = unknown>(url: string, options?: RequestInit) =>
-          this.httpRequest<R>("GET", url, options),
+          this.httpRequest<R>("GET", url, options, signal),
         post: <R = unknown, D = unknown>(
           url: string,
           data?: D,
           options?: RequestInit,
         ) =>
           data !== undefined
-            ? this.httpRequest<R>("POST", url, {
-                ...options,
-                body: JSON.stringify(data),
-              })
-            : this.httpRequest<R>("POST", url, options),
+            ? this.httpRequest<R>(
+                "POST",
+                url,
+                {
+                  ...options,
+                  body: JSON.stringify(data),
+                },
+                signal,
+              )
+            : this.httpRequest<R>("POST", url, options, signal),
         put: <R = unknown, D = unknown>(
           url: string,
           data?: D,
           options?: RequestInit,
         ) =>
           data !== undefined
-            ? this.httpRequest<R>("PUT", url, {
-                ...options,
-                body: JSON.stringify(data),
-              })
-            : this.httpRequest<R>("PUT", url, options),
+            ? this.httpRequest<R>(
+                "PUT",
+                url,
+                {
+                  ...options,
+                  body: JSON.stringify(data),
+                },
+                signal,
+              )
+            : this.httpRequest<R>("PUT", url, options, signal),
         delete: <R = unknown>(url: string, options?: RequestInit) =>
-          this.httpRequest<R>("DELETE", url, options),
+          this.httpRequest<R>("DELETE", url, options, signal),
       },
 
       // SSH utilities (if SSH session)
@@ -138,15 +154,14 @@ export class ScriptEngine {
         context.session?.protocol === "ssh"
           ? {
               execute: (command: string) =>
-                this.sshExecute(context.session, command),
+                this.sshExecute(context.session, command, signal),
               sendKeys: (keys: string) =>
-                this.sshSendKeys(context.session, keys),
+                this.sshSendKeys(context.session, keys, signal),
             }
           : undefined,
 
       // Utility functions
-      sleep: (ms: number) =>
-        new Promise<void>((resolve) => setTimeout(resolve, ms)),
+      sleep: (ms: number) => this.sleep(ms, signal),
       uuid: () => generateId(),
       timestamp: () => new Date().toISOString(),
 
@@ -164,17 +179,24 @@ export class ScriptEngine {
         script.content,
         scriptContext,
         script.name,
+        signal,
       );
     } else if (script.type === "typescript") {
       if (isNode) {
         const js = this.transpileTypeScript(script.content, script.name);
-        return this.executeJavaScript<T>(js, scriptContext, script.name);
+        return this.executeJavaScript<T>(
+          js,
+          scriptContext,
+          script.name,
+          signal,
+        );
       }
       return this.executeInWorker<T>(
         script.content,
         scriptContext,
         script.name,
         "typescript",
+        signal,
       );
     } else {
       throw new Error(`Unsupported script type: ${script.type}`);
@@ -185,6 +207,7 @@ export class ScriptEngine {
     code: string,
     context: ScriptExecutionContext,
     scriptName: string,
+    signal?: AbortSignal,
   ): Promise<T> {
     const isNode = typeof process !== "undefined" && !!process.versions?.node;
 
@@ -214,18 +237,26 @@ export class ScriptEngine {
 
       const wrapped = `"use strict"; (async () => { ${code} })();`;
       const resultPromise = vm.run(wrapped);
-      return await Promise.race([
-        resultPromise,
-        new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Script execution timed out")),
-            1000,
-          ),
+      const abortPromise = new Promise((_, reject) =>
+        signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("Aborted", "AbortError")),
+          { once: true },
         ),
-      ]);
+      );
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Script execution timed out")), 1000),
+      );
+      return await Promise.race([resultPromise, abortPromise, timeoutPromise]);
     }
 
-    return await this.executeInWorker<T>(code, context, scriptName);
+    return await this.executeInWorker<T>(
+      code,
+      context,
+      scriptName,
+      "javascript",
+      signal,
+    );
   }
 
   private async executeInWorker<T>(
@@ -233,6 +264,7 @@ export class ScriptEngine {
     context: ScriptExecutionContext,
     scriptName: string,
     language: "javascript" | "typescript" = "javascript",
+    signal?: AbortSignal,
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       const workerScript = `
@@ -248,7 +280,7 @@ export class ScriptEngine {
 
         onmessage = async (event) => {
           const data = event.data;
-          if (data.type === 'rpc-response') {
+        if (data.type === 'rpc-response') {
             const handler = pending.get(data.id);
             if (handler) {
               pending.delete(data.id);
@@ -302,7 +334,7 @@ export class ScriptEngine {
             console,
             http,
             ssh,
-            sleep: ms => new Promise(r => setTimeout(r, ms)),
+            sleep: ms => rpcCall('sleep', ms),
             uuid: () => rpcCall('uuid'),
             timestamp: () => new Date().toISOString(),
             getSetting: key => rpcCall('getSetting', key),
@@ -319,7 +351,7 @@ export class ScriptEngine {
             const result = await fn(...Object.values(api), undefined, undefined);
             postMessage({ type: 'result', result });
           } catch (err) {
-            postMessage({ type: 'result', error: err?.message || String(err) });
+            postMessage({ type: 'result', error: { message: err?.message || String(err), name: err?.name } });
           }
         };
       `;
@@ -332,7 +364,7 @@ export class ScriptEngine {
         (...args: unknown[]) => Promise<unknown>
       > = {
         "http.get": (url: string, options?: RequestInit) =>
-          this.httpRequest("GET", url, options),
+          this.httpRequest("GET", url, options, signal),
         "http.post": (url: string, data?: unknown, options?: RequestInit) =>
           this.httpRequest(
             "POST",
@@ -340,6 +372,7 @@ export class ScriptEngine {
             data !== undefined
               ? { ...options, body: JSON.stringify(data) }
               : options,
+            signal,
           ),
         "http.put": (url: string, data?: unknown, options?: RequestInit) =>
           this.httpRequest(
@@ -348,21 +381,23 @@ export class ScriptEngine {
             data !== undefined
               ? { ...options, body: JSON.stringify(data) }
               : options,
+            signal,
           ),
         "http.delete": (url: string, options?: RequestInit) =>
-          this.httpRequest("DELETE", url, options),
+          this.httpRequest("DELETE", url, options, signal),
         "ssh.execute": (cmd: string) =>
           context.session
-            ? this.sshExecute(context.session, cmd)
+            ? this.sshExecute(context.session, cmd, signal)
             : Promise.reject("No SSH session"),
         "ssh.sendKeys": (keys: string) =>
           context.session
-            ? this.sshSendKeys(context.session, keys)
+            ? this.sshSendKeys(context.session, keys, signal)
             : Promise.reject("No SSH session"),
         getSetting: (key: string) => Promise.resolve(this.getSetting(key)),
         setSetting: (key: string, value: unknown) =>
           this.setSetting(key, value),
         uuid: () => Promise.resolve(generateId()),
+        sleep: (ms: number) => this.sleep(ms, signal),
       };
 
       worker.onmessage = async (event) => {
@@ -389,7 +424,10 @@ export class ScriptEngine {
             worker.postMessage({
               type: "rpc-response",
               id,
-              error: err instanceof Error ? err.message : String(err),
+              error:
+                err instanceof Error
+                  ? { message: err.message, name: err.name }
+                  : { message: String(err) },
             });
           }
           return;
@@ -398,7 +436,11 @@ export class ScriptEngine {
           clearTimeout(timeoutId);
           worker.terminate();
           if (data.error) {
-            reject(new Error(data.error));
+            reject(
+              data.error.name
+                ? new DOMException(data.error.message, data.error.name)
+                : new Error(data.error.message || data.error),
+            );
           } else {
             resolve(data.result);
           }
@@ -409,6 +451,20 @@ export class ScriptEngine {
         worker.terminate();
         reject(new Error("Script execution timed out"));
       }, 1000);
+
+      if (signal?.aborted) {
+        clearTimeout(timeoutId);
+        worker.terminate();
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+
+      const abortHandler = () => {
+        clearTimeout(timeoutId);
+        worker.terminate();
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      signal?.addEventListener("abort", abortHandler, { once: true });
 
       worker.postMessage({ type: "execute", context, code, language });
     });
@@ -437,6 +493,7 @@ export class ScriptEngine {
     method: string,
     url: string,
     options: RequestInit = {},
+    signal?: AbortSignal,
   ): Promise<T> {
     const { headers: optHeaders, ...restOptions } = options;
     let headers: Record<string, string> = {};
@@ -464,6 +521,7 @@ export class ScriptEngine {
     const response = await fetch(url, {
       method,
       headers,
+      signal,
       ...restOptions,
     });
 
@@ -482,29 +540,86 @@ export class ScriptEngine {
   private async sshExecute(
     session: ConnectionSession,
     command: string,
+    signal?: AbortSignal,
   ): Promise<string> {
-    // This would integrate with the SSH client to execute commands
-    // For now, return a placeholder
-    this.settingsManager.logAction(
-      "debug",
-      "SSH command executed",
-      session.connectionId,
-      `Command: ${command}`,
-    );
-    return `Executed: ${command}`;
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+
+      const done = () => {
+        this.settingsManager.logAction(
+          "debug",
+          "SSH command executed",
+          session.connectionId,
+          `Command: ${command}`,
+        );
+        resolve(`Executed: ${command}`);
+      };
+
+      const timeout = setTimeout(done, 0);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timeout);
+          reject(new DOMException("Aborted", "AbortError"));
+        },
+        { once: true },
+      );
+    });
   }
 
   private async sshSendKeys(
     session: ConnectionSession,
     keys: string,
+    signal?: AbortSignal,
   ): Promise<void> {
-    // This would integrate with the SSH client to send key sequences
-    this.settingsManager.logAction(
-      "debug",
-      "SSH keys sent",
-      session.connectionId,
-      `Keys: ${keys}`,
-    );
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+
+      const done = () => {
+        this.settingsManager.logAction(
+          "debug",
+          "SSH keys sent",
+          session.connectionId,
+          `Keys: ${keys}`,
+        );
+        resolve();
+      };
+
+      const timeout = setTimeout(done, 0);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timeout);
+          reject(new DOMException("Aborted", "AbortError"));
+        },
+        { once: true },
+      );
+    });
+  }
+
+  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(resolve, ms);
+      if (signal?.aborted) {
+        clearTimeout(timeout);
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timeout);
+          reject(new DOMException("Aborted", "AbortError"));
+        },
+        { once: true },
+      );
+    });
   }
 
   private scriptLog(
