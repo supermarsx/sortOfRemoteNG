@@ -212,7 +212,13 @@ export class ScriptEngine {
     const isNode = typeof process !== "undefined" && !!process.versions?.node;
 
     if (isNode) {
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
       const { VM } = await import("vm2");
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
       const vm = new VM({ timeout: 1000, sandbox: {} });
 
       // Expose only whitelisted utilities
@@ -235,15 +241,23 @@ export class ScriptEngine {
         "fetch",
       ].forEach((g) => vm.freeze(undefined, g));
 
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+
       const wrapped = `"use strict"; (async () => { ${code} })();`;
       const resultPromise = vm.run(wrapped);
-      const abortPromise = new Promise((_, reject) =>
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (signal?.aborted) {
+          reject(new DOMException("Aborted", "AbortError"));
+          return;
+        }
         signal?.addEventListener(
           "abort",
           () => reject(new DOMException("Aborted", "AbortError")),
           { once: true },
-        ),
-      );
+        );
+      });
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Script execution timed out")), 1000),
       );
