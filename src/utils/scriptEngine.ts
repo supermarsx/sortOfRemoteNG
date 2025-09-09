@@ -455,9 +455,14 @@ export class ScriptEngine {
       const abortHandler = () => {
         clearTimeout(timeoutId);
         worker.terminate();
+        signal?.removeEventListener("abort", abortHandler);
         reject(new DOMException("Aborted", "AbortError"));
       };
       signal?.addEventListener("abort", abortHandler, { once: true });
+      if (signal?.aborted) {
+        abortHandler();
+        return;
+      }
 
       worker.postMessage({ type: "execute", context, code, language });
     });
