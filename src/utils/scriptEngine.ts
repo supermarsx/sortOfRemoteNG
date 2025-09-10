@@ -435,7 +435,10 @@ export class ScriptEngine {
         if (data.type === "result") {
           clearTimeout(timeoutId);
           worker.terminate();
-          if (data.error) {
+          signal?.removeEventListener("abort", abortHandler);
+          if (signal?.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+          } else if (data.error) {
             reject(
               data.error.name
                 ? new DOMException(data.error.message, data.error.name)
@@ -459,12 +462,11 @@ export class ScriptEngine {
         reject(new DOMException("Aborted", "AbortError"));
       };
       signal?.addEventListener("abort", abortHandler, { once: true });
-      if (signal?.aborted) {
-        abortHandler();
-        return;
-      }
 
       worker.postMessage({ type: "execute", context, code, language });
+      if (signal?.aborted) {
+        abortHandler();
+      }
     });
   }
 
