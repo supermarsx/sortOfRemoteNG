@@ -466,10 +466,12 @@ export class ScriptEngine {
       };
       signal?.addEventListener("abort", abortHandler, { once: true });
 
-      worker.postMessage({ type: "execute", context, code, language });
       if (signal?.aborted) {
         abortHandler();
+        return;
       }
+
+      worker.postMessage({ type: "execute", context, code, language });
     });
   }
 
