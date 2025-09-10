@@ -208,6 +208,9 @@ export class ScriptEngine {
     const isNode = typeof process !== "undefined" && !!process.versions?.node;
 
     if (isNode) {
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
       const { VM } = await import("vm2");
       const vm = new VM({ timeout: 1000, sandbox: {} });
 
