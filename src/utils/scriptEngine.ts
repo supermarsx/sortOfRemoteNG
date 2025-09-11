@@ -510,7 +510,7 @@ export class ScriptEngine {
     options: RequestInit = {},
     signal?: AbortSignal,
   ): Promise<T> {
-    const { headers: optHeaders, ...restOptions } = options;
+    const { headers: optHeaders, signal: optSignal, ...restOptions } = options;
     let headers: Record<string, string> = {};
 
     if (optHeaders instanceof Headers) {
@@ -533,11 +533,16 @@ export class ScriptEngine {
       headers["Content-Type"] = "application/json";
     }
 
+    const combinedSignal =
+      signal && optSignal
+        ? AbortSignal.any([signal, optSignal])
+        : signal || optSignal;
+
     const response = await fetch(url, {
       method,
       headers,
-      signal,
       ...restOptions,
+      signal: combinedSignal,
     });
 
     if (!response.ok) {
