@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   ScriptEngine,
   ScriptExecutionContext,
@@ -6,6 +6,11 @@ import {
 import { CustomScript } from "../src/types/settings";
 
 describe("ScriptEngine abort handling", () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
   it("aborts a sleeping script", async () => {
     const engine = ScriptEngine.getInstance();
     const script: CustomScript = {
