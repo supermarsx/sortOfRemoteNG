@@ -52,4 +52,27 @@ describe("ScriptEngine abort handling", () => {
     await expect(promise).rejects.toMatchObject({ name: "AbortError" });
     expect(fetchMock).toHaveBeenCalled();
   });
+
+  it("does not run script when aborted before execution", async () => {
+    const engine = ScriptEngine.getInstance();
+    const script: CustomScript = {
+      id: "preabort",
+      name: "preabort",
+      type: "javascript",
+      content: "await http.get('https://example.com');",
+      trigger: "manual",
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const context: ScriptExecutionContext = { trigger: "manual" };
+    const fetchMock = vi.fn();
+    (global as any).fetch = fetchMock;
+    const ac = new AbortController();
+    ac.abort();
+    await expect(
+      engine.executeScript<void>(script, context, ac.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

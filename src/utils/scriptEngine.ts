@@ -58,10 +58,6 @@ export class ScriptEngine {
     );
 
     try {
-      if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
-
       const result = await this.runScript<T>(script, context, signal);
 
       const duration = Date.now() - startTime;
@@ -212,6 +208,9 @@ export class ScriptEngine {
     const isNode = typeof process !== "undefined" && !!process.versions?.node;
 
     if (isNode) {
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
       const { VM } = await import("vm2");
       const vm = new VM({ timeout: 1000, sandbox: {} });
 
@@ -237,13 +236,17 @@ export class ScriptEngine {
 
       const wrapped = `"use strict"; (async () => { ${code} })();`;
       const resultPromise = vm.run(wrapped);
-      const abortPromise = new Promise((_, reject) =>
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (signal?.aborted) {
+          reject(new DOMException("Aborted", "AbortError"));
+          return;
+        }
         signal?.addEventListener(
           "abort",
           () => reject(new DOMException("Aborted", "AbortError")),
           { once: true },
-        ),
-      );
+        );
+      });
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Script execution timed out")), 1000),
       );
@@ -435,7 +438,10 @@ export class ScriptEngine {
         if (data.type === "result") {
           clearTimeout(timeoutId);
           worker.terminate();
-          if (data.error) {
+          signal?.removeEventListener("abort", abortHandler);
+          if (signal?.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+          } else if (data.error) {
             reject(
               data.error.name
                 ? new DOMException(data.error.message, data.error.name)
@@ -452,19 +458,18 @@ export class ScriptEngine {
         reject(new Error("Script execution timed out"));
       }, 1000);
 
-      if (signal?.aborted) {
-        clearTimeout(timeoutId);
-        worker.terminate();
-        reject(new DOMException("Aborted", "AbortError"));
-        return;
-      }
-
       const abortHandler = () => {
         clearTimeout(timeoutId);
         worker.terminate();
+        signal?.removeEventListener("abort", abortHandler);
         reject(new DOMException("Aborted", "AbortError"));
       };
       signal?.addEventListener("abort", abortHandler, { once: true });
+
+      if (signal?.aborted) {
+        abortHandler();
+        return;
+      }
 
       worker.postMessage({ type: "execute", context, code, language });
     });
