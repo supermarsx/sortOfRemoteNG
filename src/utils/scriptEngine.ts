@@ -211,7 +211,7 @@ export class ScriptEngine {
       if (signal?.aborted) {
         throw new DOMException("Aborted", "AbortError");
       }
-      const { VM } = await import("vm2");
+      const { VM } = await import(/* @vite-ignore */ "vm2");
       const vm = new VM({ timeout: 1000, sandbox: {} });
 
       // Expose only whitelisted utilities
@@ -540,11 +540,9 @@ export class ScriptEngine {
         if (sig.aborted) {
           controller.abort(sig.reason);
         } else {
-          sig.addEventListener(
-            "abort",
-            () => controller.abort(sig.reason),
-            { once: true },
-          );
+          sig.addEventListener("abort", () => controller.abort(sig.reason), {
+            once: true,
+          });
         }
       };
       forward(signal);
