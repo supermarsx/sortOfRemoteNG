@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, Plus, Trash2, Copy, RefreshCw, Shield, QrCode, Key } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { TOTPConfig } from '../types/settings';
@@ -25,23 +25,9 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({ isOpen, onClose, conne
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const [currentCodes, setCurrentCodes] = useState<Record<string, string>>({});
 
-  const totpService = new TOTPService();
+  const totpService = useMemo(() => new TOTPService(), []);
 
-  useEffect(() => {
-    if (isOpen) {
-      loadTOTPConfigs();
-      const interval = setInterval(updateCurrentCodes, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [isOpen]);
-
-  const loadTOTPConfigs = async () => {
-    const configs = await totpService.getAllConfigs();
-    setTotpConfigs(configs);
-    updateCurrentCodes();
-  };
-
-  const updateCurrentCodes = () => {
+  const updateCurrentCodes = useCallback(() => {
     const codes: Record<string, string> = {};
     totpConfigs.forEach(config => {
       if (config.secret) {
@@ -49,7 +35,21 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({ isOpen, onClose, conne
       }
     });
     setCurrentCodes(codes);
-  };
+  }, [totpConfigs, totpService]);
+
+  const loadTOTPConfigs = useCallback(async () => {
+    const configs = await totpService.getAllConfigs();
+    setTotpConfigs(configs);
+    updateCurrentCodes();
+  }, [totpService, updateCurrentCodes]);
+
+  useEffect(() => {
+    if (isOpen) {
+      void loadTOTPConfigs();
+      const interval = setInterval(updateCurrentCodes, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [isOpen, loadTOTPConfigs, updateCurrentCodes]);
 
   const handleAddConfig = async () => {
     if (!newConfig.account) return;
