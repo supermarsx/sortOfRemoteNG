@@ -533,10 +533,26 @@ export class ScriptEngine {
       headers["Content-Type"] = "application/json";
     }
 
-    const combinedSignal =
-      signal && optSignal
-        ? AbortSignal.any([signal, optSignal])
-        : signal || optSignal;
+    let combinedSignal: AbortSignal | undefined;
+    if (signal && optSignal) {
+      const controller = new AbortController();
+      const forward = (sig: AbortSignal) => {
+        if (sig.aborted) {
+          controller.abort(sig.reason);
+        } else {
+          sig.addEventListener(
+            "abort",
+            () => controller.abort(sig.reason),
+            { once: true },
+          );
+        }
+      };
+      forward(signal);
+      forward(optSignal);
+      combinedSignal = controller.signal;
+    } else {
+      combinedSignal = signal || optSignal;
+    }
 
     const response = await fetch(url, {
       method,
