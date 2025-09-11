@@ -439,9 +439,7 @@ export class ScriptEngine {
           clearTimeout(timeoutId);
           worker.terminate();
           signal?.removeEventListener("abort", abortHandler);
-          if (signal?.aborted) {
-            reject(new DOMException("Aborted", "AbortError"));
-          } else if (data.error) {
+          if (data.error) {
             reject(
               data.error.name
                 ? new DOMException(data.error.message, data.error.name)
