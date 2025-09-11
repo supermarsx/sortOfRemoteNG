@@ -412,8 +412,20 @@ export class ScriptEngine {
         if (data.type === "rpc") {
           const { id, method, args } = data;
           const handler = rpcHandlers[method];
+
+          const safePostMessage = (message: unknown) => {
+            if (signal?.aborted) {
+              return;
+            }
+            try {
+              worker.postMessage(message);
+            } catch {
+              // Worker has been terminated; ignore.
+            }
+          };
+
           if (!handler) {
-            worker.postMessage({
+            safePostMessage({
               type: "rpc-response",
               id,
               error: "Unknown method",
@@ -422,9 +434,9 @@ export class ScriptEngine {
           }
           try {
             const result = await handler(...args);
-            worker.postMessage({ type: "rpc-response", id, result });
+            safePostMessage({ type: "rpc-response", id, result });
           } catch (err) {
-            worker.postMessage({
+            safePostMessage({
               type: "rpc-response",
               id,
               error:
