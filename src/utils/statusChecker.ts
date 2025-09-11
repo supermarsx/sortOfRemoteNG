@@ -149,7 +149,7 @@ export class StatusChecker {
     port: number,
     timeout: number,
   ): Promise<void> {
-    const net = await import("net");
+    const net = await import(/* @vite-ignore */ "node:net");
     return new Promise((resolve, reject) => {
       const socket = net.createConnection({ host: hostname, port });
 
