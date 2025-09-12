@@ -36,4 +36,19 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npm test -- --run
+      - run: npm test -- --run --coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+
+  coverage:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: coverage
+      - name: Report coverage
+        run: >-
+          node -e "const fs=require('fs');const data=JSON.parse(fs.readFileSync('coverage/coverage-final.json','utf8'));let total=0,covered=0;for(const f of Object.values(data)){total+=Object.keys(f.statementMap).length;for(const k in f.s){if(f.s[k])covered++;}}const pct=(covered/total*100).toFixed(2);console.log('Coverage: '+pct+'%');"

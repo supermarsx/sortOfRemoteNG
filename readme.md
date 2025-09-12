@@ -1,5 +1,15 @@
 # sortOfRemoteNG
 
+[![CI Status](https://img.shields.io/github/actions/workflow/status/supermarsx/sortOfRemoteNG/ci.yml?label=CI&logo=github)](https://github.com/supermarsx/sortOfRemoteNG/actions)
+[![Coverage](https://img.shields.io/badge/coverage-34.73%25-red)](https://github.com/supermarsx/sortOfRemoteNG/actions/workflows/ci.yml)
+[![Downloads](https://img.shields.io/github/downloads/supermarsx/sortOfRemoteNG/total)](https://github.com/supermarsx/sortOfRemoteNG/releases)
+[![Stars](https://img.shields.io/github/stars/supermarsx/sortOfRemoteNG?style=social)](https://github.com/supermarsx/sortOfRemoteNG/stargazers)
+[![Forks](https://img.shields.io/github/forks/supermarsx/sortOfRemoteNG?style=social)](https://github.com/supermarsx/sortOfRemoteNG/network/members)
+[![Watchers](https://img.shields.io/github/watchers/supermarsx/sortOfRemoteNG?style=social)](https://github.com/supermarsx/sortOfRemoteNG/watchers)
+[![Open Issues](https://img.shields.io/github/issues/supermarsx/sortOfRemoteNG)](https://github.com/supermarsx/sortOfRemoteNG/issues)
+[![Commit Activity](https://img.shields.io/github/commit-activity/m/supermarsx/sortOfRemoteNG)](https://github.com/supermarsx/sortOfRemoteNG/commits)
+[![License](https://img.shields.io/github/license/supermarsx/sortOfRemoteNG)](license.md)
+
 A sort of remoteNG inspired web app that runs on the browser. Very broken and non-functional though, it's an experiment.
 
 ## Testing
@@ -94,3 +104,7 @@ controller.abort(); // script stops immediately
 
 This allows external callers to stop long running scripts and network requests
 cleanly.
+
+## License
+
+Distributed under the MIT License. See [license.md](license.md) for details.
