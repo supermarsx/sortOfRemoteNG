@@ -215,8 +215,13 @@ export class ScriptEngine {
       throw new DOMException("Aborted", "AbortError");
     }
     // Dynamic import to avoid bundling in browser
-    const vm2Module = await import("vm2");
-    const { VM } = vm2Module;
+    let VM: any;
+    try {
+      const vm2Module = await import("vm2");
+      VM = vm2Module.VM;
+    } catch (e) {
+      throw new Error("vm2 not available");
+    }
     const vm = new VM({ timeout: 1000, sandbox: {} });
 
     // Expose only whitelisted utilities
