@@ -214,7 +214,9 @@ export class ScriptEngine {
     if (signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    const { VM } = await import(/* @vite-ignore */ "vm2");
+    // Dynamic import to avoid bundling in browser
+    const vm2Module = await import("vm2");
+    const { VM } = vm2Module;
     const vm = new VM({ timeout: 1000, sandbox: {} });
 
     // Expose only whitelisted utilities
