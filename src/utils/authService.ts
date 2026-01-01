@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
@@ -10,20 +11,38 @@ export interface StoredUser {
 }
 
 /**
- * Service for managing user credentials persisted as bcrypt hashes in a JSON
- * file on disk. Credentials are loaded into memory and can be updated or
- * verified against provided passwords.
+ * Service for managing user credentials.
+ * Uses Tauri backend if available, otherwise falls back to file-based storage.
  */
 export class AuthService {
   private users: Record<string, string> = {};
-  private storePath: string;
+  private storePath?: string;
   private loadPromise: Promise<void>;
   private secret: string | undefined;
+  private useTauri: boolean;
 
-  constructor(storePath: string) {
+  constructor(storePath?: string) {
     this.storePath = storePath;
     this.secret = process.env.USER_STORE_SECRET;
-    this.loadPromise = this.load();
+    this.useTauri = typeof window !== 'undefined' && (window as any).__TAURI__;
+    if (!this.useTauri && storePath) {
+      this.loadPromise = this.load();
+    } else {
+      this.loadPromise = Promise.resolve();
+    }
+  }
+
+  private static instance: AuthService | null = null;
+
+  static getInstance(): AuthService {
+    if (AuthService.instance === null) {
+      AuthService.instance = new AuthService();
+    }
+    return AuthService.instance;
+  }
+
+  static resetInstance(): void {
+    AuthService.instance = null;
   }
 
   /**
@@ -36,11 +55,9 @@ export class AuthService {
 
   /**
    * Loads the stored users from disk into memory.
-   *
-   * @returns {Promise<void>} Resolves when the user list is loaded.
-   * @throws {Error} If the user store cannot be read or parsed.
    */
   private async load(): Promise<void> {
+    if (!this.storePath) return;
     const fullPath = path.resolve(this.storePath);
     let data: string;
     try {
@@ -57,12 +74,10 @@ export class AuthService {
     try {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
-        // Plaintext store
         this.users = {};
         parsed.forEach((u: StoredUser) => {
           this.users[u.username] = u.passwordHash;
         });
-        // Migrate to encrypted store if a secret is configured
         if (this.secret) {
           await this.persist();
         }
@@ -108,11 +123,9 @@ export class AuthService {
 
   /**
    * Persists the in-memory users to the JSON storage file.
-   *
-   * @returns {Promise<void>} Resolves when all users are written to disk.
-   * @throws {Error} If writing to the storage file fails.
    */
   private async persist(): Promise<void> {
+    if (!this.storePath) return;
     const arr: StoredUser[] = Object.entries(this.users).map(
       ([username, passwordHash]) => ({ username, passwordHash }),
     );
@@ -147,91 +160,90 @@ export class AuthService {
 
   /**
    * Adds a new user with a bcrypt-hashed password and persists the update.
-   *
-   * @param {string} username - The username to store.
-   * @param {string} password - The plain-text password for the user.
-   * @returns {Promise<void>} Resolves when the user is added and persisted.
-   * @throws {Error} If hashing or persisting the user fails.
    */
   async addUser(username: string, password: string): Promise<void> {
-    await this.ready();
-    const hash = await bcrypt.hash(password, 10);
-    this.users[username] = hash;
-    try {
-      await this.persist();
-    } catch (error) {
-      console.error("Failed to persist user", error);
+    if (this.useTauri) {
+      await invoke('add_user', { username, password });
+    } else {
+      await this.ready();
+      const hash = await bcrypt.hash(password, 10);
+      this.users[username] = hash;
+      try {
+        await this.persist();
+      } catch (error) {
+        console.error("Failed to persist user", error);
+      }
     }
   }
 
   /**
-   * Verifies that a provided password matches the stored hash for the given
-   * username.
-   *
-   * @param {string} username - The username to verify.
-   * @param {string} password - The plain-text password to compare.
-   * @returns {Promise<boolean>} True if the credentials are valid, otherwise false.
-   * @throws {Error} If the password comparison fails.
+   * Verifies that a provided password matches the stored hash for the given username.
    */
   async verifyUser(username: string, password: string): Promise<boolean> {
-    await this.ready();
-    const hash = this.users[username];
-    if (!hash) return false;
-    return bcrypt.compare(password, hash);
+    if (this.useTauri) {
+      return await invoke('verify_user', { username, password });
+    } else {
+      await this.ready();
+      const hash = this.users[username];
+      if (!hash) return false;
+      return bcrypt.compare(password, hash);
+    }
   }
 
   /**
    * Returns a list of all stored usernames.
    */
   async listUsers(): Promise<string[]> {
-    await this.ready();
-    return Object.keys(this.users);
+    if (this.useTauri) {
+      return await invoke('list_users');
+    } else {
+      await this.ready();
+      return Object.keys(this.users);
+    }
   }
 
   /**
    * Removes the specified user from the store.
-   *
-   * @param {string} username - The username to remove.
-   * @returns {Promise<boolean>} True if the user existed and was removed.
    */
   async removeUser(username: string): Promise<boolean> {
-    await this.ready();
-    if (!(username in this.users)) {
-      return false;
+    if (this.useTauri) {
+      return await invoke('remove_user', { username });
+    } else {
+      await this.ready();
+      if (!(username in this.users)) {
+        return false;
+      }
+      delete this.users[username];
+      try {
+        await this.persist();
+      } catch (error) {
+        console.error("Failed to persist user removal", error);
+        return false;
+      }
+      return true;
     }
-    delete this.users[username];
-    try {
-      await this.persist();
-    } catch (error) {
-      console.error("Failed to persist user removal", error);
-      return false;
-    }
-    return true;
   }
 
   /**
    * Updates the password for an existing user.
-   *
-   * @param {string} username - The username to update.
-   * @param {string} newPassword - The new plain-text password.
-   * @returns {Promise<boolean>} True if the password was updated.
    */
-  async updatePassword(
-    username: string,
-    newPassword: string,
-  ): Promise<boolean> {
-    await this.ready();
-    if (!(username in this.users)) {
-      return false;
+  async updatePassword(username: string, newPassword: string): Promise<boolean> {
+    if (this.useTauri) {
+      return await invoke('update_password', { username, newPassword });
+    } else {
+      await this.ready();
+      if (!(username in this.users)) {
+        return false;
+      }
+      const hash = await bcrypt.hash(newPassword, 10);
+      this.users[username] = hash;
+      try {
+        await this.persist();
+      } catch (error) {
+        console.error("Failed to persist password update", error);
+        return false;
+      }
+      return true;
     }
-    const hash = await bcrypt.hash(newPassword, 10);
-    this.users[username] = hash;
-    try {
-      await this.persist();
-    } catch (error) {
-      console.error("Failed to persist password update", error);
-      return false;
-    }
-    return true;
   }
 }
