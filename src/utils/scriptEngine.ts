@@ -207,59 +207,53 @@ export class ScriptEngine {
   ): Promise<T> {
     const isNode = typeof process !== "undefined" && !!process.versions?.node;
 
-    if (isNode) {
-      if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
-      }
-      const { VM } = await import(/* @vite-ignore */ "vm2");
-      const vm = new VM({ timeout: 1000, sandbox: {} });
-
-      // Expose only whitelisted utilities
-      for (const [key, value] of Object.entries(context)) {
-        vm.freeze(value, key);
-      }
-
-      // Explicitly undefine globals
-      [
-        "global",
-        "globalThis",
-        "process",
-        "window",
-        "document",
-        "self",
-        "Function",
-        "eval",
-        "Proxy",
-        "require",
-        "fetch",
-      ].forEach((g) => vm.freeze(undefined, g));
-
-      const wrapped = `"use strict"; (async () => { ${code} })();`;
-      const resultPromise = vm.run(wrapped);
-      const abortPromise = new Promise<never>((_, reject) => {
-        if (signal?.aborted) {
-          reject(new DOMException("Aborted", "AbortError"));
-          return;
-        }
-        signal?.addEventListener(
-          "abort",
-          () => reject(new DOMException("Aborted", "AbortError")),
-          { once: true },
-        );
-      });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Script execution timed out")), 1000),
-      );
-      return await Promise.race([resultPromise, abortPromise, timeoutPromise]);
+    if (!isNode) {
+      throw new Error("Script execution is not supported in browser environment. Please migrate to Tauri backend.");
     }
 
-    return await this.executeInWorker<T>(
-      code,
-      context,
-      scriptName,
-      "javascript",
-      signal,
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+    const { VM } = await import(/* @vite-ignore */ "vm2");
+    const vm = new VM({ timeout: 1000, sandbox: {} });
+
+    // Expose only whitelisted utilities
+    for (const [key, value] of Object.entries(context)) {
+      vm.freeze(value, key);
+    }
+
+    // Explicitly undefine globals
+    [
+      "global",
+      "globalThis",
+      "process",
+      "window",
+      "document",
+      "self",
+      "Function",
+      "eval",
+      "Proxy",
+      "require",
+      "fetch",
+    ].forEach((g) => vm.freeze(undefined, g));
+
+    const wrapped = `"use strict"; (async () => { ${code} })();`;
+    const resultPromise = vm.run(wrapped);
+    const abortPromise = new Promise<never>((_, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException("Aborted", "AbortError"));
+        return;
+      }
+      signal?.addEventListener(
+        "abort",
+        () => reject(new DOMException("Aborted", "AbortError")),
+        { once: true },
+      );
+    });
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Script execution timed out")), 1000),
     );
+    return await Promise.race([resultPromise, abortPromise, timeoutPromise]);
   }
 
   private async executeInWorker<T>(
