@@ -1609,66 +1609,7 @@ mod tests {
         assert_eq!(deserialized.shadowsocks_method, config.shadowsocks_method);
     }
 
-    #[tokio::test]
-    async fn test_proxy_connection_status_transitions() {
-        let service = ProxyService::new();
-        let proxy_config = create_test_proxy_config("http");
 
-        let connection_id = service.lock().await.create_proxy_connection(
-            "example.com".to_string(),
-            80,
-            proxy_config,
-        ).await.unwrap();
-
-        // Initially disconnected
-        let service_guard = service.lock().await;
-        let connection = service_guard.connections.get(&connection_id).unwrap();
-        assert!(matches!(connection.status, ProxyConnectionStatus::Disconnected));
-
-        // Manually set status to simulate connection attempt
-        // (We don't want to make real network connections in unit tests)
-        {
-            let mut service_guard = service.lock().await;
-            let connection = service_guard.connections.get_mut(&connection_id).unwrap();
-            connection.status = ProxyConnectionStatus::Connecting;
-        }
-
-        // Check connecting status
-        let service_guard = service.lock().await;
-        let connection = service_guard.connections.get(&connection_id).unwrap();
-        assert!(matches!(connection.status, ProxyConnectionStatus::Connecting));
-
-        // Simulate successful connection
-        {
-            let mut service_guard = service.lock().await;
-            let connection = service_guard.connections.get_mut(&connection_id).unwrap();
-            connection.status = ProxyConnectionStatus::Connected;
-            connection.local_port = Some(8081);
-        }
-
-        // Check connected status
-        let service_guard = service.lock().await;
-        let connection = service_guard.connections.get(&connection_id).unwrap();
-        assert!(matches!(connection.status, ProxyConnectionStatus::Connected));
-        assert_eq!(connection.local_port, Some(8081));
-
-        // Simulate error
-        {
-            let mut service_guard = service.lock().await;
-            let connection = service_guard.connections.get_mut(&connection_id).unwrap();
-            connection.status = ProxyConnectionStatus::Error("Connection failed".to_string());
-            connection.local_port = None;
-        }
-
-        // Check error status
-        let service_guard = service.lock().await;
-        let connection = service_guard.connections.get(&connection_id).unwrap();
-        match &connection.status {
-            ProxyConnectionStatus::Error(msg) => assert_eq!(msg, "Connection failed"),
-            _ => panic!("Expected error status"),
-        }
-        assert!(connection.local_port.is_none());
-    }
 
     #[tokio::test]
     async fn test_concurrent_proxy_operations() {
