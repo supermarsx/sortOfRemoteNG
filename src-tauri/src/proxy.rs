@@ -1673,7 +1673,7 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_proxy_operations() {
         let service = ProxyService::new();
-        
+
         // Spawn multiple tasks to create connections concurrently
         let mut handles = vec![];
         for i in 0..5 {
@@ -1685,25 +1685,25 @@ mod tests {
                     80,
                     proxy_config,
                 ).await.unwrap();
-                
-                // Try to connect (may fail but shouldn't panic)
-                let _ = service_clone.lock().await.connect_via_proxy(&connection_id).await;
-                
+
+                // Don't try to connect in unit tests to avoid network dependencies
+                // Just return the connection ID
+
                 connection_id
             });
             handles.push(handle);
         }
-        
+
         // Wait for all tasks to complete
         let mut connection_ids = vec![];
         for handle in handles {
             connection_ids.push(handle.await.unwrap());
         }
-        
+
         // Verify all connections were created
         let connections = service.lock().await.list_proxy_connections().await;
         assert_eq!(connections.len(), 5);
-        
+
         // Verify all IDs are unique
         let mut ids = std::collections::HashSet::new();
         for id in &connection_ids {
