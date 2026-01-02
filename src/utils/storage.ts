@@ -44,7 +44,6 @@ export class SecureStorage {
   private static password: string | null = null;
   private static useTauri: boolean = typeof window !== 'undefined' && (window as any).__TAURI__;
   private static isUnlocked: boolean = false;
-  private static useTauri: boolean = typeof window !== 'undefined' && (window as any).__TAURI__;
 
   /**
    * Derive an AES-GCM key from a user password.
