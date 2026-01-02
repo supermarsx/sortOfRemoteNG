@@ -3,7 +3,6 @@ import { Terminal, type IDisposable } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ConnectionSession } from '../types/connection';
-import { SSHClient } from '../utils/sshClient';
 import { Maximize2, Minimize2, Copy, Download, Upload } from 'lucide-react';
 import { useConnections } from '../contexts/useConnections';
 
@@ -17,7 +16,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const fitAddon = useRef<FitAddon | null>(null);
-  const sshClient = useRef<SSHClient | null>(null);
+  const websocket = useRef<WebSocket | null>(null);
   const isConnectedRef = useRef<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -100,8 +99,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     // Handle terminal input
     const dataDisposable = terminal.current.onData((data) => {
       if (session.protocol === 'ssh') {
-        if (sshClient.current && isConnectedRef.current) {
-          sshClient.current.sendData(data);
+        if (websocket.current && websocket.current.readyState === WebSocket.OPEN && isConnectedRef.current) {
+          websocket.current.send(JSON.stringify({
+            type: 'input',
+            data: data
+          }));
         }
         // ignore input while connecting
       } else {
@@ -115,8 +117,12 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         fitAddon.current.fit();
         const { cols, rows } = terminal.current;
         onResize?.(cols, rows);
-        if (sshClient.current && isConnected) {
-          sshClient.current.resize(cols, rows);
+        if (websocket.current && websocket.current.readyState === WebSocket.OPEN && isConnected) {
+          websocket.current.send(JSON.stringify({
+            type: 'resize',
+            cols: cols,
+            rows: rows
+          }));
         }
       }
     };
@@ -126,9 +132,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     return () => {
       window.removeEventListener('resize', handleResize);
       dataDisposable.dispose();
-      if (sshClient.current) {
-        sshClient.current.disconnect();
-        sshClient.current = null;
+      if (websocket.current) {
+        websocket.current.close();
+        websocket.current = null;
       }
       if (terminal.current) {
         terminal.current.dispose();
@@ -236,67 +242,82 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     if (!terminal.current) return;
 
     try {
-      terminal.current.writeln('\x1b[36mConnecting to SSH server...\x1b[0m');
+      terminal.current.writeln('\x1b[36mConnecting to SSH server via backend...\x1b[0m');
       terminal.current.writeln('\x1b[90mHost: ' + session.hostname + '\x1b[0m');
-      
-      // Get SSH library preference from connection
-      let sshLibrary: 'node-ssh' | 'ssh2' | 'simple-ssh' | 'websocket' | 'webssh' = 'webssh';
-      if (connection?.description) {
-        const match = connection.description.match(/\[SSH_LIBRARY:([^\]]+)\]/);
-        if (match) {
-          sshLibrary = match[1];
+
+      // Connect to backend WebSocket for SSH session
+      const backendUrl = `ws://localhost:3001/api/ssh/${session.id}`;
+      websocket.current = new WebSocket(backendUrl);
+
+      websocket.current.onopen = () => {
+        // Send connection details to backend
+        websocket.current!.send(JSON.stringify({
+          type: 'connect',
+          connectionId: session.connectionId,
+          hostname: session.hostname,
+          port: connection?.port || 22,
+          username: connection?.username || 'user',
+          password: connection?.password,
+          privateKey: connection?.privateKey,
+          passphrase: connection?.passphrase
+        }));
+      };
+
+      websocket.current.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+
+        switch (message.type) {
+          case 'connected':
+            setIsConnected(true);
+            isConnectedRef.current = true;
+            setConnectionError('');
+            if (terminal.current) {
+              terminal.current.writeln('\r\n\x1b[32mSSH connection established!\x1b[0m');
+            }
+            break;
+          case 'data':
+            if (terminal.current) {
+              terminal.current.write(message.data);
+            }
+            break;
+          case 'error':
+            setConnectionError(message.error);
+            if (terminal.current) {
+              terminal.current.writeln('\r\n\x1b[31mConnection error: ' + message.error + '\x1b[0m');
+            }
+            break;
+          case 'disconnected':
+            setIsConnected(false);
+            isConnectedRef.current = false;
+            if (terminal.current) {
+              terminal.current.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
+            }
+            break;
         }
-      }
+      };
 
-      sshClient.current = new SSHClient({
-        host: session.hostname,
-        port: connection?.port || 22,
-        username: connection?.username || 'user',
-        password: connection?.password || 'password',
-        privateKey: connection?.privateKey,
-        passphrase: connection?.passphrase,
-        library: sshLibrary,
-      });
-
-      sshClient.current.onData((data) => {
-        // Handle SSH data with proper formatting
+      websocket.current.onerror = () => {
+        setConnectionError('WebSocket connection failed');
         if (terminal.current) {
-          terminal.current.write(data);
+          terminal.current.writeln('\r\n\x1b[31mWebSocket connection failed\x1b[0m');
         }
-      });
+      };
 
-      sshClient.current.onConnect(() => {
-        setIsConnected(true);
-        isConnectedRef.current = true;
-        setConnectionError('');
-        if (terminal.current) {
-          terminal.current.writeln('\r\n\x1b[32mSSH connection established!\x1b[0m');
-        }
-      });
-
-      sshClient.current.onError((error) => {
-        setConnectionError(error);
-        if (terminal.current) {
-          terminal.current.writeln('\r\n\x1b[31mConnection error: ' + error + '\x1b[0m');
-        }
-      });
-
-      sshClient.current.onClose(() => {
+      websocket.current.onclose = () => {
         setIsConnected(false);
         isConnectedRef.current = false;
         if (terminal.current) {
           terminal.current.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
         }
-      });
+      };
 
-      await sshClient.current.connect();
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : 'Connection failed');
       if (terminal.current) {
         terminal.current.writeln('\r\n\x1b[31mFailed to connect: ' + error + '\x1b[0m');
       }
     }
-  }, [session.hostname, connection]);
+  }, [session.id, session.hostname, session.connectionId, connection]);
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);

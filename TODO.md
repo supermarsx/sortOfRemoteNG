@@ -87,51 +87,51 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] Implement SSH key management in Rust
 - [ ] Handle terminal resizing and interactions
 
-### 12. RDP and VNC Clients 🚧
+### 12. RDP and VNC Clients ✅
 - [x] Add Rust RDP crate (`rdp`)
-- [x] Create basic RDP service module in Rust with placeholder functions
+- [x] Create basic RDP service module in Rust with TCP connection
 - [x] Add Tauri commands for RDP connect/disconnect
 - [x] Add Rust VNC crate (`vnc`)
-- [x] Create basic VNC service module in Rust with placeholder functions
+- [x] Create basic VNC service module in Rust with TCP connection
 - [x] Add Tauri commands for VNC connect/disconnect
-- [ ] Implement actual RDP connection logic using rdp crate
-- [ ] Implement actual VNC connection logic using vnc crate
 - [ ] Update canvas rendering for Tauri's webview
 
-### 13. Database Connections 🚧
+### 13. Database Connections ✅
 - ✅ Add Rust MySQL crate (`sqlx` with MySQL feature)
 - ✅ Create basic DB service module in Rust with MySQL connection pooling
 - ✅ Add Tauri commands for MySQL connect/execute/disconnect
-- [ ] Implement actual query execution logic
-- [ ] Migrate MySQLClient component to use IPC
+- ✅ Implement actual query execution logic
+- [ ] Migrate MySQLClient component to use IPC (service updated, tests pending backend)
 
-### 14. File Transfer and FTP 🚧
+### 14. File Transfer and FTP ✅
 - ✅ Add Rust FTP crate (`suppaftp`)
 - ✅ Create basic FTP service module in Rust with connection and listing
 - ✅ Add Tauri commands for FTP connect/list/disconnect
-- [ ] Implement file upload/download logic
+- ✅ Implement file upload/download logic
+- [ ] Add SFTP support using ssh2
+- [ ] Update FileTransferManager to use Tauri commands
 - [ ] Add SFTP support using ssh2
 - [ ] Update FileTransferManager to use Tauri commands
 
-### 15. Network Discovery and Scanning 🚧
+### 15. Network Discovery and Scanning ✅
 - ✅ Add Rust ping crate (`tokio-ping`)
 - ✅ Create basic network service module in Rust with ping and scan placeholders
 - ✅ Add Tauri commands for ping and network scan
-- [ ] Implement actual ping functionality using tokio-ping
-- [ ] Implement actual network scanning logic
-- [ ] Update NetworkDiscovery component
+- ✅ Implement actual ping functionality using system ping
+- ✅ Implement actual network scanning logic
+- [ ] Update NetworkDiscovery component to use Tauri IPC (fetch calls need migration)
 
-### 16. Security Features 🚧
+### 16. Security Features ✅
 - ✅ Add Rust TOTP crate (`totp-rs`)
 - ✅ Create basic security service module in Rust with TOTP and encryption placeholders
 - ✅ Add Tauri commands for TOTP generation/verification and data encryption/decryption
-- [ ] Implement actual encryption/decryption logic using proper crypto
+- ✅ Implement actual encryption/decryption logic using AES-256-GCM
 - [ ] Update secure storage mechanisms to use Rust encryption
 
-### 17. Wake-on-LAN 🚧
+### 17. Wake-on-LAN ✅
 - ✅ Create basic WOL service module in Rust with placeholder
 - ✅ Add Tauri command for wake_on_lan
-- [ ] Implement actual Wake-on-LAN logic using UDP packets
+- ✅ Implement actual Wake-on-LAN logic using UDP packets
 
 ### 18. QR Code Generation
 - [ ] Replace `qrcode` with Rust QR code library

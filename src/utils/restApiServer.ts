@@ -8,6 +8,8 @@ import dns from "node:dns/promises";
 import * as child_process from "child_process";
 import dgram from "dgram";
 import { z } from "zod";
+import WebSocket from "ws";
+import * as fs from "fs";
 import { AuthService } from "./authService";
 import { Connection, ConnectionSession } from "../types/connection";
 import { debugLog } from "./debugLogger";
@@ -618,12 +620,149 @@ export class RestApiServer {
     return stats;
   }
 
-  private getSessionsByStatus(): Record<string, number> {
-    const stats: Record<string, number> = {};
-    this.sessions.forEach((session) => {
-      stats[session.status] = (stats[session.status] || 0) + 1;
+  private setupWebSocketServer(wss: WebSocket.Server): void {
+    wss.on('connection', (ws: WebSocket, req) => {
+      const url = req.url;
+      debugLog(`WebSocket connection established: ${url}`);
+
+      if (url?.startsWith('/api/ssh/')) {
+        this.handleSSHWebSocket(ws, url);
+      } else {
+        ws.close(1008, 'Unsupported WebSocket endpoint');
+      }
     });
-    return stats;
+  }
+
+  private handleSSHWebSocket(ws: WebSocket, url: string): void {
+    let sshProcess: child_process.ChildProcess | null = null;
+    let isConnected = false;
+
+    ws.on('message', (data: Buffer) => {
+      try {
+        const message = JSON.parse(data.toString());
+
+        switch (message.type) {
+          case 'connect':
+            // Start SSH connection using system ssh command
+            // In a real implementation, this would use the Rust SSH library
+            const sshArgs = [
+              '-o', 'StrictHostKeyChecking=no',
+              '-o', 'UserKnownHostsFile=/dev/null',
+              '-p', message.port?.toString() || '22'
+            ];
+
+            if (message.privateKey) {
+              // Use private key authentication
+              const keyFile = `/tmp/ssh_key_${Date.now()}`;
+              fs.writeFileSync(keyFile, message.privateKey);
+              fs.chmodSync(keyFile, '600');
+              sshArgs.push('-i', keyFile);
+              sshArgs.push('-o', `IdentitiesOnly=yes`);
+            }
+
+            sshArgs.push(`${message.username}@${message.hostname}`);
+
+            debugLog(`Starting SSH connection: ssh ${sshArgs.join(' ')}`);
+
+            sshProcess = child_process.spawn('ssh', sshArgs, {
+              stdio: ['pipe', 'pipe', 'pipe']
+            });
+
+            sshProcess.stdout?.on('data', (data: Buffer) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'data',
+                  data: data.toString()
+                }));
+              }
+            });
+
+            sshProcess.stderr?.on('data', (data: Buffer) => {
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'data',
+                  data: data.toString()
+                }));
+              }
+            });
+
+            sshProcess.on('close', (code: number) => {
+              debugLog(`SSH process exited with code ${code}`);
+              isConnected = false;
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'disconnected'
+                }));
+              }
+            });
+
+            sshProcess.on('error', (error: Error) => {
+              debugLog(`SSH process error: ${error.message}`);
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: 'error',
+                  error: error.message
+                }));
+              }
+            });
+
+            // Send password if provided
+            if (message.password && sshProcess.stdin) {
+              setTimeout(() => {
+                if (sshProcess?.stdin) {
+                  sshProcess.stdin.write(message.password + '\n');
+                }
+              }, 1000);
+            }
+
+            isConnected = true;
+            ws.send(JSON.stringify({
+              type: 'connected'
+            }));
+            break;
+
+          case 'input':
+            if (sshProcess?.stdin && isConnected) {
+              sshProcess.stdin.write(message.data);
+            }
+            break;
+
+          case 'resize':
+            if (sshProcess?.stdin && isConnected) {
+              // Send terminal resize signal
+              // Note: This is a simplified implementation
+              // In a real implementation, you'd use the Rust SSH library's resize functionality
+            }
+            break;
+        }
+      } catch (error) {
+        debugLog(`WebSocket message error: ${error}`);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            error: 'Invalid message format'
+          }));
+        }
+      }
+    });
+
+    ws.on('close', () => {
+      debugLog('SSH WebSocket connection closed');
+      if (sshProcess) {
+        sshProcess.kill();
+        sshProcess = null;
+      }
+      isConnected = false;
+    });
+
+    ws.on('error', (error) => {
+      debugLog(`SSH WebSocket error: ${error.message}`);
+      if (sshProcess) {
+        sshProcess.kill();
+        sshProcess = null;
+      }
+      isConnected = false;
+    });
   }
 
   async start(): Promise<void> {
@@ -633,6 +772,11 @@ export class RestApiServer {
         this.server = this.app.listen(this.config.port);
         this.server.once("listening", () => {
           debugLog(`REST API server started on port ${this.config.port}`);
+
+          // Initialize WebSocket server for SSH connections
+          const wss = new WebSocket.Server({ server: this.server });
+          this.setupWebSocketServer(wss);
+
           resolve();
         });
         this.server.once("error", (error: Error) => {

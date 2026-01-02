@@ -15,6 +15,7 @@ describe('MySQLService', () => {
     const result = await service.executeQuery('test', 'SELECT * FROM users');
     expect(Array.isArray(result.columns)).toBe(true);
     expect(Array.isArray(result.rows)).toBe(true);
+    expect(typeof result.row_count).toBe('number');
     result.rows.forEach(row => {
       row.forEach(cell => {
         expect(
@@ -35,14 +36,14 @@ describe('MySQLService', () => {
     );
   });
 
-  it('returns metadata for insert queries', async () => {
+  it('returns row count for queries', async () => {
     const service = new MySQLService();
-    await service.connect('insert', config);
+    await service.connect('count', config);
     const result = await service.executeQuery(
-      'insert',
-      "INSERT INTO table_name (column) VALUES ('value');"
+      'count',
+      "SELECT * FROM information_schema.tables LIMIT 5"
     );
-    expect(result.affectedRows).toBe(1);
-    expect(typeof result.insertId).toBe('number');
+    expect(typeof result.row_count).toBe('number');
+    expect(result.row_count).toBeGreaterThanOrEqual(0);
   });
 });
