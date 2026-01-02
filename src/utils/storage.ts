@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+
 const STORAGE_KEY = "mremote-connections";
 const STORAGE_META_KEY = "mremote-storage-meta";
 const OLD_STORAGE_META_KEY = "mremote-settings";
@@ -35,16 +37,14 @@ export interface StorageData {
 }
 
 /**
- * Provides secure storage of connection data in IndexedDB.
- *
- * The class manages a password in memory and can encrypt/decrypt stored
- * data using AES-GCM. Keys are derived from the password via PBKDF2 and
- * associated metadata (salt, IV, encryption flags) is persisted alongside
- * the data in IndexedDB.
+ * Provides secure storage of connection data.
+ * Uses Tauri backend if available, otherwise falls back to IndexedDB.
  */
 export class SecureStorage {
   private static password: string | null = null;
+  private static useTauri: boolean = typeof window !== 'undefined' && (window as any).__TAURI__;
   private static isUnlocked: boolean = false;
+  private static useTauri: boolean = typeof window !== 'undefined' && (window as any).__TAURI__;
 
   /**
    * Derive an AES-GCM key from a user password.
@@ -116,20 +116,28 @@ export class SecureStorage {
   }
 
   static async hasStoredData(): Promise<boolean> {
-    return (await IndexedDbService.getItem(STORAGE_KEY)) !== null;
+    if (this.useTauri) {
+      return await invoke('has_stored_data');
+    } else {
+      return (await IndexedDbService.getItem(STORAGE_KEY)) !== null;
+    }
   }
 
   static async isStorageEncrypted(): Promise<boolean> {
-    await this.migrateMetaKey();
-    const settings = await IndexedDbService.getItem<any>(STORAGE_META_KEY);
-    if (settings) {
-      try {
-        return settings.isEncrypted === true;
-      } catch {
-        return false;
+    if (this.useTauri) {
+      return await invoke('is_storage_encrypted');
+    } else {
+      await this.migrateMetaKey();
+      const settings = await IndexedDbService.getItem<any>(STORAGE_META_KEY);
+      if (settings) {
+        try {
+          return settings.isEncrypted === true;
+        } catch {
+          return false;
+        }
       }
+      return false;
     }
-    return false;
   }
 
   /**
@@ -144,42 +152,57 @@ export class SecureStorage {
     data: StorageData,
     usePassword: boolean = false,
   ): Promise<void> {
-    try {
-      await this.migrateMetaKey();
-
-      if (usePassword && this.password) {
-        const crypto = getCrypto();
-        const serialized = JSON.stringify(data);
-        const encoder = new TextEncoder();
-        const salt = crypto.getRandomValues(new Uint8Array(16)); // Random salt for PBKDF2 key derivation
-        const iv = crypto.getRandomValues(new Uint8Array(12)); // Initialization vector for AES-GCM
-        const key = await this.deriveKey(this.password, salt); // Derive 256-bit AES key from password
-        const encryptedBuffer = await crypto.subtle.encrypt(
-          { name: "AES-GCM", iv },
-          key,
-          encoder.encode(serialized),
-        );
-        const encrypted = toBase64(encryptedBuffer);
-        await IndexedDbService.setItem(STORAGE_KEY, encrypted);
-        await IndexedDbService.setItem(STORAGE_META_KEY, {
-          isEncrypted: true,
-          hasPassword: true,
-          timestamp: Date.now(),
-          salt: toBase64(salt),
-          iv: toBase64(iv),
-        });
-      } else {
-        await IndexedDbService.setItem(STORAGE_KEY, data);
-        await IndexedDbService.setItem(STORAGE_META_KEY, {
-          isEncrypted: false,
-          hasPassword: false,
-          timestamp: Date.now(),
-        });
+    if (this.useTauri) {
+      try {
+        if (usePassword && this.password) {
+          await invoke('set_storage_password', { password: this.password });
+        } else {
+          await invoke('set_storage_password', { password: null });
+        }
+        await invoke('save_data', { data, usePassword });
+      } catch (err) {
+        console.error("Failed to save data via Tauri:", err);
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to save data: ${message}`);
       }
-    } catch (err) {
-      console.error("Failed to save data:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to save data: ${message}`);
+    } else {
+      try {
+        await this.migrateMetaKey();
+
+        if (usePassword && this.password) {
+          const crypto = getCrypto();
+          const serialized = JSON.stringify(data);
+          const encoder = new TextEncoder();
+          const salt = crypto.getRandomValues(new Uint8Array(16)); // Random salt for PBKDF2 key derivation
+          const iv = crypto.getRandomValues(new Uint8Array(12)); // Initialization vector for AES-GCM
+          const key = await this.deriveKey(this.password, salt); // Derive 256-bit AES key from password
+          const encryptedBuffer = await crypto.subtle.encrypt(
+            { name: "AES-GCM", iv },
+            key,
+            encoder.encode(serialized),
+          );
+          const encrypted = toBase64(encryptedBuffer);
+          await IndexedDbService.setItem(STORAGE_KEY, encrypted);
+          await IndexedDbService.setItem(STORAGE_META_KEY, {
+            isEncrypted: true,
+            hasPassword: true,
+            timestamp: Date.now(),
+            salt: toBase64(salt),
+            iv: toBase64(iv),
+          });
+        } else {
+          await IndexedDbService.setItem(STORAGE_KEY, data);
+          await IndexedDbService.setItem(STORAGE_META_KEY, {
+            isEncrypted: false,
+            hasPassword: false,
+            timestamp: Date.now(),
+          });
+        }
+      } catch (err) {
+        console.error("Failed to save data:", err);
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to save data: ${message}`);
+      }
     }
   }
 
@@ -191,51 +214,73 @@ export class SecureStorage {
    * @sideEffect Reads from IndexedDB and may log errors to the console.
    */
   static async loadData(): Promise<StorageData | null> {
-    try {
-      await this.migrateMetaKey();
-      const storedData = await IndexedDbService.getItem<any>(STORAGE_KEY);
-      const settings = await IndexedDbService.getItem<any>(STORAGE_META_KEY);
+    if (this.useTauri) {
+      try {
+        const result = await invoke('load_data') as StorageData | null;
+        return result;
+      } catch (err) {
+        console.error("Failed to load data via Tauri:", err);
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to load data: ${message}`);
+      }
+    } else {
+      try {
+        await this.migrateMetaKey();
+        const storedData = await IndexedDbService.getItem<any>(STORAGE_KEY);
+        const settings = await IndexedDbService.getItem<any>(STORAGE_META_KEY);
 
-      if (!storedData) return null;
+        if (!storedData) return null;
 
-      if (settings) {
-        const parsedSettings = settings;
-        if (parsedSettings.isEncrypted && !this.password) {
-          throw new Error("Password is required to load encrypted data");
-        }
-        if (parsedSettings.isEncrypted) {
-          try {
-            const crypto = getCrypto();
-            const salt = fromBase64(parsedSettings.salt); // Retrieve salt used during encryption
-            const iv = fromBase64(parsedSettings.iv); // Retrieve IV for AES-GCM
-            const key = await this.deriveKey(this.password as string, salt); // Re-create key using stored salt and password
-            const decryptedBuffer = await crypto.subtle.decrypt(
-              { name: "AES-GCM", iv },
-              key,
-              fromBase64(storedData as string),
-            );
-            const decoded = new TextDecoder().decode(decryptedBuffer);
-            return JSON.parse(decoded);
-          } catch (err) {
-            console.error("Failed to decrypt data:", err);
-            const message = err instanceof Error ? err.message : String(err);
-            throw new Error(`Invalid password: ${message}`);
+        if (settings) {
+          const parsedSettings = settings;
+          if (parsedSettings.isEncrypted && !this.password) {
+            throw new Error("Password is required to load encrypted data");
+          }
+          if (parsedSettings.isEncrypted) {
+            try {
+              const crypto = getCrypto();
+              const salt = fromBase64(parsedSettings.salt); // Retrieve salt used during encryption
+              const iv = fromBase64(parsedSettings.iv); // Retrieve IV for AES-GCM
+              const key = await this.deriveKey(this.password as string, salt); // Re-create key using stored salt and password
+              const decryptedBuffer = await crypto.subtle.decrypt(
+                { name: "AES-GCM", iv },
+                key,
+                fromBase64(storedData as string),
+              );
+              const decoded = new TextDecoder().decode(decryptedBuffer);
+              return JSON.parse(decoded);
+            } catch (err) {
+              console.error("Failed to decrypt data:", err);
+              const message = err instanceof Error ? err.message : String(err);
+              throw new Error(`Invalid password: ${message}`);
+            }
           }
         }
-      }
 
-      return storedData as StorageData;
-    } catch (err) {
-      console.error("Failed to load data:", err);
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to load data: ${message}`);
+        return storedData as StorageData;
+      } catch (err) {
+        console.error("Failed to load data:", err);
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to load data: ${message}`);
+      }
     }
   }
 
   static async clearStorage(): Promise<void> {
-    await this.migrateMetaKey();
-    await IndexedDbService.removeItem(STORAGE_KEY);
-    await IndexedDbService.removeItem(STORAGE_META_KEY);
-    this.clearPassword();
+    if (this.useTauri) {
+      try {
+        await invoke('clear_storage');
+        this.clearPassword();
+      } catch (err) {
+        console.error("Failed to clear storage via Tauri:", err);
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(`Failed to clear storage: ${message}`);
+      }
+    } else {
+      await this.migrateMetaKey();
+      await IndexedDbService.removeItem(STORAGE_KEY);
+      await IndexedDbService.removeItem(STORAGE_META_KEY);
+      this.clearPassword();
+    }
   }
 }

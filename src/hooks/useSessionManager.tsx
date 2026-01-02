@@ -4,7 +4,7 @@ import { useConnections } from "../contexts/ConnectionContext";
 import { Connection, ConnectionSession } from "../types/connection";
 import { SettingsManager } from "../utils/settingsManager";
 import { StatusChecker } from "../utils/statusChecker";
-import { ScriptEngine } from "../utils/scriptEngine";
+// import { ScriptEngine } from "../utils/scriptEngine"; // Disabled for Tauri migration
 import { getDefaultPort } from "../utils/defaultPorts";
 import { raceWithTimeout } from "../utils/raceWithTimeout";
 import { generateId } from "../utils/id";

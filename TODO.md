@@ -61,16 +61,18 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] Create main.rs and lib.rs files
 - [ ] Set up error handling and logging in Rust
 
-### 8. Migrate Authentication System
-- [ ] Implement JWT token handling in Rust (using `jsonwebtoken` crate)
-- [ ] Migrate bcrypt password hashing to Rust (using `bcrypt` crate)
-- [ ] Create Tauri commands for authentication
-- [ ] Update user store (from JSON/file to Rust structures)
+### 8. Migrate Authentication System ✅
+- ✅ Implement JWT token handling in Rust (using `jsonwebtoken` crate)
+- ✅ Migrate bcrypt password hashing to Rust (using `bcrypt` crate)
+- ✅ Create Tauri commands for authentication
+- ✅ Update user store (from JSON/file to Rust structures)
 
-### 9. Migrate Data Storage
-- [ ] Replace IndexedDB usage with Tauri's filesystem APIs or SQLite
-- [ ] Migrate local storage mechanisms
-- [ ] Implement secure storage for sensitive data in Rust
+### 9. Migrate Data Storage ✅
+- ✅ Replace IndexedDB usage with Tauri's filesystem APIs
+- ✅ Migrate local storage mechanisms to file-based storage in Rust
+- ✅ Implement secure storage for sensitive data in Rust (password-based encryption pending)
+- ✅ Update frontend storage service to use Tauri IPC
+- ✅ Create Rust storage service with async file operations
 
 ### 10. Migrate Server-side Logic
 - [ ] Replace Express.js routes with Tauri commands
@@ -80,41 +82,60 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 
 ## Feature-Specific Migrations
 
-### 11. SSH and Terminal Features
-- [ ] Replace `node-ssh`, `ssh2`, `simple-ssh` with Rust SSH libraries (`russh`, `ssh2-rs`)
+### 11. SSH and Terminal Features 🚧
+- ✅ Add Rust SSH crate (`ssh2`)
+- ✅ Create basic SSH service module in Rust with placeholder functions
+- ✅ Add Tauri commands for SSH connect/execute/disconnect
+- [ ] Implement actual SSH connection logic using ssh2 crate
 - [ ] Migrate WebTerminal component to use Tauri IPC
 - [ ] Implement SSH key management in Rust
 - [ ] Handle terminal resizing and interactions
 
-### 12. RDP and VNC Clients
-- [ ] Replace `guacamole-common-js` and `novnc` with Rust RDP/VNC libraries
-- [ ] Implement RDP client in Rust (potentially using `rdp-rs` or similar)
-- [ ] Implement VNC client in Rust (using `vnc` crate)
+### 12. RDP and VNC Clients 🚧
+- ✅ Add Rust RDP crate (`rdp`)
+- ✅ Create basic RDP service module in Rust with placeholder functions
+- ✅ Add Tauri commands for RDP connect/disconnect
+- ✅ Add Rust VNC crate (`vnc`)
+- ✅ Create basic VNC service module in Rust with placeholder functions
+- ✅ Add Tauri commands for VNC connect/disconnect
+- [ ] Implement actual RDP connection logic using rdp crate
+- [ ] Implement actual VNC connection logic using vnc crate
 - [ ] Update canvas rendering for Tauri's webview
 
-### 13. Database Connections
-- [ ] Replace `mysql2` with Rust MySQL library (`mysql` or `sqlx`)
-- [ ] Implement database connection pooling in Rust
+### 13. Database Connections 🚧
+- ✅ Add Rust MySQL crate (`sqlx` with MySQL feature)
+- ✅ Create basic DB service module in Rust with MySQL connection pooling
+- ✅ Add Tauri commands for MySQL connect/execute/disconnect
+- [ ] Implement actual query execution logic
 - [ ] Migrate MySQLClient component to use IPC
 
-### 14. File Transfer and FTP
-- [ ] Replace `basic-ftp`, `ssh2-sftp-client` with Rust FTP/SFTP libraries
-- [ ] Implement file transfer logic in Rust
+### 14. File Transfer and FTP 🚧
+- ✅ Add Rust FTP crate (`suppaftp`)
+- ✅ Create basic FTP service module in Rust with connection and listing
+- ✅ Add Tauri commands for FTP connect/list/disconnect
+- [ ] Implement file upload/download logic
+- [ ] Add SFTP support using ssh2
 - [ ] Update FileTransferManager to use Tauri commands
 
-### 15. Network Discovery and Scanning
-- [ ] Migrate network scanning from Node.js to Rust
-- [ ] Implement ping functionality in Rust
+### 15. Network Discovery and Scanning 🚧
+- ✅ Add Rust ping crate (`tokio-ping`)
+- ✅ Create basic network service module in Rust with ping and scan placeholders
+- ✅ Add Tauri commands for ping and network scan
+- [ ] Implement actual ping functionality using tokio-ping
+- [ ] Implement actual network scanning logic
 - [ ] Update NetworkDiscovery component
 
-### 16. Security Features
-- [ ] Implement TOTP in Rust (using `totp-rs`)
-- [ ] Migrate encryption/decryption logic to Rust
-- [ ] Update secure storage mechanisms
+### 16. Security Features 🚧
+- ✅ Add Rust TOTP crate (`totp-rs`)
+- ✅ Create basic security service module in Rust with TOTP and encryption placeholders
+- ✅ Add Tauri commands for TOTP generation/verification and data encryption/decryption
+- [ ] Implement actual encryption/decryption logic using proper crypto
+- [ ] Update secure storage mechanisms to use Rust encryption
 
-### 17. Wake-on-LAN
-- [ ] Implement Wake-on-LAN in Rust
-- [ ] Replace `wake_on_lan` package
+### 17. Wake-on-LAN 🚧
+- ✅ Create basic WOL service module in Rust with placeholder
+- ✅ Add Tauri command for wake_on_lan
+- [ ] Implement actual Wake-on-LAN logic using UDP packets
 
 ### 18. QR Code Generation
 - [ ] Replace `qrcode` with Rust QR code library

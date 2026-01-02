@@ -205,62 +205,8 @@ export class ScriptEngine {
     scriptName: string,
     signal?: AbortSignal,
   ): Promise<T> {
-    const isNode = typeof process !== "undefined" && !!process.versions?.node;
-
-    if (!isNode) {
-      throw new Error("Script execution is not supported in browser environment. Please migrate to Tauri backend.");
-    }
-
-    if (signal?.aborted) {
-      throw new DOMException("Aborted", "AbortError");
-    }
-    // Dynamic import to avoid bundling in browser
-    let VM: any;
-    try {
-      const vm2Module = await import("vm2");
-      VM = vm2Module.VM;
-    } catch (e) {
-      throw new Error("vm2 not available");
-    }
-    const vm = new VM({ timeout: 1000, sandbox: {} });
-
-    // Expose only whitelisted utilities
-    for (const [key, value] of Object.entries(context)) {
-      vm.freeze(value, key);
-    }
-
-    // Explicitly undefine globals
-    [
-      "global",
-      "globalThis",
-      "process",
-      "window",
-      "document",
-      "self",
-      "Function",
-      "eval",
-      "Proxy",
-      "require",
-      "fetch",
-    ].forEach((g) => vm.freeze(undefined, g));
-
-    const wrapped = `"use strict"; (async () => { ${code} })();`;
-    const resultPromise = vm.run(wrapped);
-    const abortPromise = new Promise<never>((_, reject) => {
-      if (signal?.aborted) {
-        reject(new DOMException("Aborted", "AbortError"));
-        return;
-      }
-      signal?.addEventListener(
-        "abort",
-        () => reject(new DOMException("Aborted", "AbortError")),
-        { once: true },
-      );
-    });
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Script execution timed out")), 1000),
-    );
-    return await Promise.race([resultPromise, abortPromise, timeoutPromise]);
+    // Disabled for Tauri migration - vm2 replaced entirely
+    throw new Error("Script execution is disabled during Tauri migration. Custom scripts will be re-implemented in a future update.");
   }
 
   private async executeInWorker<T>(
@@ -270,7 +216,9 @@ export class ScriptEngine {
     language: "javascript" | "typescript" = "javascript",
     signal?: AbortSignal,
   ): Promise<T> {
-    return new Promise((resolve, reject) => {
+    // Disabled for Tauri migration - vm2 replaced entirely
+    throw new Error("Script execution is disabled during Tauri migration. Custom scripts will be re-implemented in a future update.");
+  }
       const workerScript = `
         const pending = new Map();
         let rpcId = 0;
