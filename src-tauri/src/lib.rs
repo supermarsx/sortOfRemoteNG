@@ -39,16 +39,6 @@
 //! - Network discovery and scanning
 //! - File transfer capabilities
 //! - Script execution and automation
-//!
-//! ## Example
-//!
-//! ```rust,no_run
-//! 
-//!
-//! fn main() {
-//!     run();
-//! }
-//! ```
 
 mod auth;
 mod storage;
@@ -69,22 +59,22 @@ mod tailscale;
 mod chaining;
 
 use auth::{AuthService, AuthServiceState};
-use storage::{SecureStorage, StorageData, SecureStorageState};
-use ssh::{SshService, SshServiceState};
-use rdp::{RdpService, RdpServiceState};
-use vnc::{VncService, VncServiceState};
-use db::{DbService, DbServiceState};
-use ftp::{FtpService, FtpServiceState};
-use network::{NetworkService, NetworkServiceState};
-use security::{SecurityService, SecurityServiceState};
-use wol::{WolService, WolServiceState};
-use script::{ScriptService, ScriptServiceState};
-use openvpn::{OpenVPNService, OpenVPNServiceState};
-use proxy::{ProxyService, ProxyServiceState};
-use wireguard::{WireGuardService, WireGuardServiceState};
-use zerotier::{ZeroTierService, ZeroTierServiceState};
-use tailscale::{TailscaleService, TailscaleServiceState};
-use chaining::{ChainingService, ChainingServiceState};
+use storage::SecureStorage;
+use ssh::SshService;
+use rdp::RdpService;
+use vnc::VncService;
+use db::DbService;
+use ftp::FtpService;
+use network::NetworkService;
+use security::SecurityService;
+use wol::WolService;
+use script::ScriptService;
+use openvpn::OpenVPNService;
+use proxy::ProxyService;
+use wireguard::WireGuardService;
+use zerotier::ZeroTierService;
+use tailscale::TailscaleService;
+use chaining::ChainingService;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -26,32 +26,6 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
-//! 
-//! use std::collections::HashMap;
-//!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let storage = crate::storage::SecureStorage::new("data.json".to_string());
-//!
-//! // Create some data to store
-//! let data = crate::storage::StorageData {
-//!     connections: vec![],
-//!     settings: HashMap::new(),
-//!     timestamp: std::time::SystemTime::now()
-//!         .duration_since(std::time::UNIX_EPOCH)?
-//!         .as_secs(),
-//! };
-//!
-//! // Save the data
-//! storage.lock().await.save_data(data, false).await?;
-//!
-//! // Load the data back
-//! if let Some(loaded_data) = storage.lock().await.load_data().await? {
-//!     println!("Data loaded successfully");
-//! }
-//! # Ok(())
-//! # }
-//! ```
 
 use std::fs;
 use std::path::Path;
@@ -103,11 +77,6 @@ impl SecureStorage {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// 
-    ///
-    /// let storage = crate::storage::SecureStorage::new("app_data.json".to_string());
-    /// ```
     pub fn new(store_path: String) -> SecureStorageState {
         Arc::new(Mutex::new(SecureStorage { store_path, password: None }))
     }
@@ -182,21 +151,6 @@ impl SecureStorage {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # use std::collections::HashMap;
-    /// # 
-    /// # async fn example() -> Result<(), String> {
-    /// # let storage = crate::storage::SecureStorage::new("data.json".to_string());
-    /// # let storage_guard = storage.lock().await;
-    /// let data = crate::storage::StorageData {
-    ///     connections: vec![],
-    ///     settings: HashMap::new(),
-    ///     timestamp: 1234567890,
-    /// };
-    /// storage_guard.save_data(data, false).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
         let password = if use_password { self.password.clone() } else { None };
         // For now, just save without encryption
@@ -222,19 +176,6 @@ impl SecureStorage {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # 
-    /// # async fn example() -> Result<(), String> {
-    /// # let storage = crate::storage::SecureStorage::new("data.json".to_string());
-    /// # let storage_guard = storage.lock().await;
-    /// if let Some(data) = storage_guard.load_data().await? {
-    ///     println!("Loaded {} connections", data.connections.len());
-    /// } else {
-    ///     println!("No stored data found");
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn load_data(&self) -> Result<Option<StorageData>, String> {
         if !Path::new(&self.store_path).exists() {
             return Ok(None);
@@ -259,16 +200,6 @@ impl SecureStorage {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # 
-    /// # async fn example() -> Result<(), String> {
-    /// # let storage = crate::storage::SecureStorage::new("data.json".to_string());
-    /// # let storage_guard = storage.lock().await;
-    /// storage_guard.clear_storage().await?;
-    /// println!("Storage cleared");
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn clear_storage(&self) -> Result<(), String> {
         if Path::new(&self.store_path).exists() {
             fs::remove_file(&self.store_path).map_err(|e| e.to_string())

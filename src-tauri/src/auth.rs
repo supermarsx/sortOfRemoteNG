@@ -17,21 +17,6 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
-//! 
-//!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let auth_service = crate::auth::AuthService::new("users.json".to_string());
-//!
-//! // Add a new user
-//! auth_service.lock().await.add_user("john".to_string(), "password123".to_string()).await?;
-//!
-//! // Verify credentials
-//! let is_valid = auth_service.lock().await.verify_user("john", "password123").await?;
-//! assert!(is_valid);
-//! # Ok(())
-//! # }
-//! ```
 
 use std::collections::HashMap;
 use std::fs;
@@ -84,11 +69,6 @@ impl AuthService {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// 
-    ///
-    /// let auth_service = crate::auth::AuthService::new("users.json".to_string());
-    /// ```
     pub fn new(store_path: String) -> AuthServiceState {
         let mut service = AuthService {
             users: HashMap::new(),
@@ -179,17 +159,6 @@ impl AuthService {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # use std::sync::Arc;
-    /// # use tokio::sync::Mutex;
-    /// # 
-    /// # async fn example() -> Result<(), String> {
-    /// # let auth_service = crate::auth::AuthService::new("users.json".to_string());
-    /// # let mut service = auth_service.lock().await;
-    /// service.add_user("john".to_string(), "secure_password".to_string()).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn add_user(&mut self, username: String, password: String) -> Result<(), String> {
         let hash = hash(password, DEFAULT_COST).map_err(|e| e.to_string())?;
         self.users.insert(username, hash);
@@ -216,18 +185,6 @@ impl AuthService {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # use std::sync::Arc;
-    /// # use tokio::sync::Mutex;
-    /// # 
-    /// # async fn example() -> Result<(), String> {
-    /// # let auth_service = crate::auth::AuthService::new("users.json".to_string());
-    /// # let service = auth_service.lock().await;
-    /// let is_valid = service.verify_user("john", "secure_password").await?;
-    /// assert!(is_valid);
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn verify_user(&self, username: &str, password: &str) -> Result<bool, String> {
         if let Some(stored_hash) = self.users.get(username) {
             verify(password, stored_hash).map_err(|e| e.to_string())
@@ -247,17 +204,6 @@ impl AuthService {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # use std::sync::Arc;
-    /// # use tokio::sync::Mutex;
-    /// # 
-    /// # async fn example() {
-    /// # let auth_service = crate::auth::AuthService::new("users.json".to_string());
-    /// # let service = auth_service.lock().await;
-    /// let users = service.list_users().await;
-    /// println!("Registered users: {:?}", users);
-    /// # }
-    /// ```
     pub async fn list_users(&self) -> Vec<String> {
         self.users.keys().cloned().collect()
     }
@@ -282,20 +228,6 @@ impl AuthService {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # use std::sync::Arc;
-    /// # use tokio::sync::Mutex;
-    /// # 
-    /// # async fn example() -> Result<(), String> {
-    /// # let auth_service = crate::auth::AuthService::new("users.json".to_string());
-    /// # let mut service = auth_service.lock().await;
-    /// let removed = service.remove_user("old_user".to_string()).await?;
-    /// if removed {
-    ///     println!("User removed successfully");
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn remove_user(&mut self, username: String) -> Result<bool, String> {
         if self.users.remove(&username).is_some() {
             self.persist().map_err(|e| e.to_string())?;
@@ -328,20 +260,6 @@ impl AuthService {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # use std::sync::Arc;
-    /// # use tokio::sync::Mutex;
-    /// # 
-    /// # async fn example() -> Result<(), String> {
-    /// # let auth_service = crate::auth::AuthService::new("users.json".to_string());
-    /// # let mut service = auth_service.lock().await;
-    /// let updated = service.update_password("john".to_string(), "new_password".to_string()).await?;
-    /// if updated {
-    ///     println!("Password updated successfully");
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn update_password(&mut self, username: String, new_password: String) -> Result<bool, String> {
         if self.users.contains_key(&username) {
             let hash = hash(new_password, DEFAULT_COST).map_err(|e| e.to_string())?;

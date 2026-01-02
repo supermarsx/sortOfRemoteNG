@@ -34,44 +34,6 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
-//! 
-//!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let proxy_service = crate::proxy::ProxyService::new();
-//!
-//! // Create an HTTP proxy configuration
-//! let config = crate::proxy::ProxyConfig {
-//!     proxy_type: "http".to_string(),
-//!     host: "proxy.example.com".to_string(),
-//!     port: 8080,
-//!     username: Some("user".to_string()),
-//!     password: Some("pass".to_string()),
-//!     ssh_key_file: None,
-//!     ssh_key_passphrase: None,
-//!     ssh_host_key_verification: None,
-//!     ssh_known_hosts_file: None,
-//!     tunnel_domain: None,
-//!     tunnel_key: None,
-//!     tunnel_method: None,
-//!     custom_headers: None,
-//!     websocket_path: None,
-//!     quic_cert_file: None,
-//!     shadowsocks_method: None,
-//!     shadowsocks_plugin: None,
-//! };
-//!
-//! // Create and connect to a proxy
-//! let connection_id = proxy_service.lock().await
-//!     .create_proxy_connection("target.com".to_string(), 80, config).await?;
-//!
-//! let local_port = proxy_service.lock().await
-//!     .connect_via_proxy(&connection_id).await?;
-//!
-//! println!("Connected via local port: {}", local_port);
-//! # Ok(())
-//! # }
-//! ```
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -80,7 +42,6 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::net::SocketAddr;
 use std::collections::HashMap;
 use tokio::time::{timeout, Duration};
-use tokio::process::Command;
 use futures::SinkExt;
 
 /// Type alias for the proxy service state wrapped in an Arc<Mutex<>> for thread-safe access.
@@ -268,11 +229,6 @@ impl ProxyService {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// 
-    ///
-    /// let proxy_service = crate::proxy::ProxyService::new();
-    /// ```
     pub fn new() -> ProxyServiceState {
         Arc::new(Mutex::new(ProxyService {
             connections: HashMap::new(),
@@ -297,40 +253,6 @@ impl ProxyService {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # 
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let proxy_service = crate::proxy::ProxyService::new();
-    /// # let mut service = proxy_service.lock().await;
-    /// let config = crate::proxy::ProxyConfig {
-    ///     proxy_type: "http".to_string(),
-    ///     host: "proxy.example.com".to_string(),
-    ///     port: 8080,
-    ///     username: None,
-    ///     password: None,
-    ///     // ... other fields
-    ///     ssh_key_file: None,
-    ///     ssh_key_passphrase: None,
-    ///     ssh_host_key_verification: None,
-    ///     ssh_known_hosts_file: None,
-    ///     tunnel_domain: None,
-    ///     tunnel_key: None,
-    ///     tunnel_method: None,
-    ///     custom_headers: None,
-    ///     websocket_path: None,
-    ///     quic_cert_file: None,
-    ///     shadowsocks_method: None,
-    ///     shadowsocks_plugin: None,
-    /// };
-    ///
-    /// let connection_id = service.create_proxy_connection(
-    ///     "target.com".to_string(),
-    ///     80,
-    ///     config
-    /// ).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn create_proxy_connection(
         &mut self,
         target_host: String,
@@ -375,17 +297,6 @@ impl ProxyService {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
-    /// # 
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let proxy_service = crate::proxy::ProxyService::new();
-    /// # let mut service = proxy_service.lock().await;
-    /// # let connection_id = "some-id".to_string();
-    /// let local_port = service.connect_via_proxy(&connection_id).await?;
-    /// println!("Connected via local port: {}", local_port);
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn connect_via_proxy(&mut self, connection_id: &str) -> Result<u16, String> {
         let connection = self.connections.get_mut(connection_id)
             .ok_or_else(|| "Proxy connection not found".to_string())?;
@@ -816,7 +727,7 @@ impl ProxyService {
             domain,
         ]);
 
-        let mut child = command.spawn()
+        let child = command.spawn()
             .map_err(|e| format!("Failed to spawn DNS tunnel process: {}", e))?;
 
         // Wait for tunnel to establish
@@ -854,7 +765,7 @@ impl ProxyService {
             connection.target_host.as_str(),
         ]);
 
-        let mut child = command.spawn()
+        let child = command.spawn()
             .map_err(|e| format!("Failed to spawn ICMP tunnel process: {}", e))?;
 
         // Find an available local port for binding
@@ -879,8 +790,8 @@ impl ProxyService {
     async fn connect_websocket_tunnel_static(connection: &mut ProxyConnection) -> Result<u16, String> {
         // WebSocket tunneling implementation
         // This would use WebSocket connections to tunnel traffic
-        use tokio_tungstenite::{connect_async, tungstenite::Message};
-        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::connect_async;
+        use futures_util::StreamExt;
 
         let ws_url = format!("ws://{}:{}{}",
             connection.proxy_config.host,
@@ -891,7 +802,7 @@ impl ProxyService {
         let (ws_stream, _) = connect_async(ws_url).await
             .map_err(|e| format!("Failed to connect to WebSocket: {}", e))?;
 
-        let (mut write, mut read) = ws_stream.split();
+        let (write, read) = ws_stream.split();
 
         // Find an available local port for binding
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await
@@ -931,7 +842,7 @@ impl ProxyService {
             "--domain", connection.proxy_config.tunnel_domain.as_deref().unwrap_or("example.com"),
         ]);
 
-        let mut child = command.spawn()
+        let child = command.spawn()
             .map_err(|e| format!("Failed to spawn TCP-over-DNS process: {}", e))?;
 
         // Find an available local port for binding
@@ -1041,7 +952,7 @@ impl ProxyService {
             command.arg("-plugin").arg(plugin);
         }
 
-        let mut child = command.spawn()
+        let child = command.spawn()
             .map_err(|e| format!("Failed to spawn Shadowsocks process: {}", e))?;
 
         // Wait for Shadowsocks to start
@@ -1078,7 +989,7 @@ impl ProxyService {
 
     async fn handle_ssh_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the SSH process and handle connections
-        if let Ok((mut client_stream, _)) = listener.accept().await {
+        if let Ok((client_stream, _)) = listener.accept().await {
             // For SSH tunnels, the local port forwarding is handled by ssh itself
             // We just need to keep the process alive
             let _ = child.wait().await;
@@ -1087,7 +998,7 @@ impl ProxyService {
 
     async fn handle_dns_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the DNS tunnel process
-        if let Ok((mut client_stream, _)) = listener.accept().await {
+        if let Ok((client_stream, _)) = listener.accept().await {
             // DNS tunneling handles the traffic encoding/decoding
             let _ = child.wait().await;
         }
@@ -1095,7 +1006,7 @@ impl ProxyService {
 
     async fn handle_icmp_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the ICMP tunnel process
-        if let Ok((mut client_stream, _)) = listener.accept().await {
+        if let Ok((client_stream, _)) = listener.accept().await {
             // ICMP tunneling handles the traffic encoding/decoding
             let _ = child.wait().await;
         }
@@ -1151,7 +1062,7 @@ impl ProxyService {
 
     async fn handle_tcp_over_dns_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the TCP-over-DNS tunnel process
-        if let Ok((mut client_stream, _)) = listener.accept().await {
+        if let Ok((client_stream, _)) = listener.accept().await {
             // TCP-over-DNS tunneling handles the traffic encoding/decoding
             let _ = child.wait().await;
         }
@@ -1159,7 +1070,7 @@ impl ProxyService {
 
     async fn handle_shadowsocks_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the Shadowsocks process
-        if let Ok((mut client_stream, _)) = listener.accept().await {
+        if let Ok((client_stream, _)) = listener.accept().await {
             // Shadowsocks handles the traffic encryption/decryption
             let _ = child.wait().await;
         }
