@@ -21,7 +21,7 @@ export const useSessionManager = () => {
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
-  const scriptEngine = ScriptEngine.getInstance();
+  // const scriptEngine = ScriptEngine.getInstance(); // Disabled for Tauri
 
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>();
   // Store active timeout IDs so they can be cleared on unmount
@@ -72,10 +72,10 @@ export const useSessionManager = () => {
     );
 
     try {
-      await scriptEngine.executeScriptsForTrigger("onConnect", {
-        connection,
-        session,
-      });
+      // await scriptEngine.executeScriptsForTrigger("onConnect", {
+      //   connection,
+      //   session,
+      // });
     } catch (error) {
       console.error("Script execution failed:", error);
     }
@@ -300,10 +300,10 @@ export const useSessionManager = () => {
 
     if (connection) {
       try {
-        await scriptEngine.executeScriptsForTrigger("onDisconnect", {
-          connection,
-          session,
-        });
+        // await scriptEngine.executeScriptsForTrigger("onDisconnect", {
+        //   connection,
+        //   session,
+        // });
       } catch (error) {
         console.error("Script execution failed:", error);
       }
