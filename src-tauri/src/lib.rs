@@ -1,6 +1,7 @@
 mod auth;
 mod storage;
 mod ssh;
+mod ssh_bridge;
 mod rdp;
 mod vnc;
 mod db;
@@ -91,7 +92,24 @@ pub fn run() {
         storage::set_storage_password,
         ssh::connect_ssh,
         ssh::execute_command,
+        ssh::execute_command_interactive,
+        ssh::start_shell,
+        ssh::setup_port_forward,
+        ssh::list_directory,
+        ssh::upload_file,
+        ssh::download_file,
         ssh::disconnect_ssh,
+        ssh::get_session_info,
+        ssh::list_sessions,
+        ssh::start_bridge_server,
+        ssh::create_tunnel,
+        ssh::list_tunnels,
+        ssh::close_tunnel,
+        ssh::get_bridge_status,
+        ssh::execute_script,
+        ssh::transfer_file_scp,
+        ssh::get_system_info,
+        ssh::monitor_process,
         rdp::connect_rdp,
         rdp::disconnect_rdp,
         vnc::connect_vnc,

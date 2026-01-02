@@ -218,7 +218,7 @@ export class ScriptEngine {
   ): Promise<T> {
     // Disabled for Tauri migration - vm2 replaced entirely
     throw new Error("Script execution is disabled during Tauri migration. Custom scripts will be re-implemented in a future update.");
-  }
+    /*
       const workerScript = `
         const pending = new Map();
         let rpcId = 0;
@@ -432,6 +432,7 @@ export class ScriptEngine {
 
       worker.postMessage({ type: "execute", context, code, language });
     });
+    */
   }
 
   private transpileTypeScript(code: string, scriptName: string): string {

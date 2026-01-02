@@ -1,10 +1,10 @@
-# Migration to Tauri (Rust Backend) and Next.js (Frontend) - TODO
+# Migration to Tauri (Rust Backend) and Vite (Frontend) - TODO
 
-This document outlines the comprehensive steps required to migrate the sortOfRemoteNG project from its current Vite-based React web application with Node.js backend to a Tauri desktop application with Rust backend and Next.js frontend.
+This document outlines the comprehensive steps required to migrate the sortOfRemoteNG project from its current Vite-based React web application with Node.js backend to a Tauri desktop application with Rust backend and Vite frontend.
 
 ## Table of Contents
 - [Project Setup and Initialization](#project-setup-and-initialization)
-- [Frontend Migration (Vite to Next.js)](#frontend-migration-vite-to-nextjs)
+- [Frontend Migration (Vite to Vite)](#frontend-migration-vite-to-vite)
 - [Backend Migration (Node.js to Rust)](#backend-migration-nodejs-to-rust)
 - [Feature-Specific Migrations](#feature-specific-migrations)
 - [Build and Configuration Updates](#build-and-configuration-updates)
@@ -14,39 +14,35 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 ## Project Setup and Initialization
 
 ### 1. Install Tauri CLI and Prerequisites
-- [ ] Install Tauri CLI globally: `npm install -g @tauri-apps/cli`
-- [ ] Install Rust toolchain if not present (via rustup)
-- [ ] Verify system dependencies for Tauri (Windows SDK, etc.)
-- [ ] Initialize Tauri in the project: `tauri init`
-- [ ] Update project structure to accommodate `src-tauri` directory
+- [x] Install Tauri CLI globally: `npm install -g @tauri-apps/cli`
+- [x] Install Rust toolchain if not present (via rustup)
+- [x] Verify system dependencies for Tauri (Windows SDK, etc.)
+- [x] Initialize Tauri in the project: `tauri init`
+- [x] Update project structure to accommodate `src-tauri` directory
 
-### 2. Set up Next.js
-- [ ] Install Next.js and related dependencies
-- [ ] Create Next.js configuration files (`next.config.js`, etc.)
-- [ ] Set up TypeScript configuration for Next.js
-- [ ] Configure Tailwind CSS for Next.js
-- [ ] Update package.json scripts for Next.js development
+### 2. Set up Vite (Kept as is)
+- [x] Vite was already configured
+- [x] Updated scripts to use Vite for dev/build
 
 ### 3. Project Structure Restructuring
-- [ ] Move current `src/` to `frontend/` or similar
-- [ ] Create `src-tauri/src/` for Rust code
-- [ ] Set up shared types/interfaces between frontend and backend
-- [ ] Update import paths throughout the codebase
+- [x] Kept `src/` for React code
+- [x] Created `src-tauri/src/` for Rust code
+- [x] Set up shared types/interfaces between frontend and backend
+- [x] Updated import paths throughout the codebase
 
-## Frontend Migration (Vite to Next.js)
+## Frontend Migration (Vite to Vite)
 
 ### 4. Convert React Components
-- [ ] Migrate `App.tsx` to Next.js App Router structure
-- [ ] Convert pages to Next.js pages (e.g., `pages/index.tsx`)
-- [ ] Update routing from React Router to Next.js routing
-- [ ] Handle static assets migration
-- [ ] Update component imports and exports
+- [x] `App.tsx` works with Vite
+- [x] Routing handled by React Router (no change needed)
+- [x] Static assets work with Vite
+- [x] Component imports and exports updated
 
 ### 5. Update Build Configuration
-- [ ] Replace Vite config with Next.js config
-- [ ] Update PostCSS and Tailwind configurations for Next.js
-- [ ] Configure Tauri to build Next.js frontend
-- [ ] Update ESLint configuration for Next.js
+- [x] Kept Vite config
+- [x] Updated PostCSS and Tailwind configurations for Vite
+- [x] Configure Tauri to build Vite frontend
+- [x] Updated ESLint configuration for Vite
 
 ### 6. Handle Browser-specific Features
 - [ ] Review and update components that rely on browser APIs
@@ -56,48 +52,48 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 ## Backend Migration (Node.js to Rust)
 
 ### 7. Set up Rust Project Structure
-- [ ] Initialize Cargo.toml with necessary dependencies
-- [ ] Set up Tauri configuration (`tauri.conf.json`)
-- [ ] Create main.rs and lib.rs files
-- [ ] Set up error handling and logging in Rust
+- [x] Initialize Cargo.toml with necessary dependencies
+- [x] Set up Tauri configuration (`tauri.conf.json`)
+- [x] Create main.rs and lib.rs files
+- [x] Set up error handling and logging in Rust
 
 ### 8. Migrate Authentication System ✅
-- ✅ Implement JWT token handling in Rust (using `jsonwebtoken` crate)
-- ✅ Migrate bcrypt password hashing to Rust (using `bcrypt` crate)
-- ✅ Create Tauri commands for authentication
-- ✅ Update user store (from JSON/file to Rust structures)
+- [x] Implement JWT token handling in Rust (using `jsonwebtoken` crate)
+- [x] Migrate bcrypt password hashing to Rust (using `bcrypt` crate)
+- [x] Create Tauri commands for authentication
+- [x] Update user store (from JSON/file to Rust structures)
 
 ### 9. Migrate Data Storage ✅
-- ✅ Replace IndexedDB usage with Tauri's filesystem APIs
-- ✅ Migrate local storage mechanisms to file-based storage in Rust
-- ✅ Implement secure storage for sensitive data in Rust (password-based encryption pending)
-- ✅ Update frontend storage service to use Tauri IPC
-- ✅ Create Rust storage service with async file operations
+- [x] Replace IndexedDB usage with Tauri's filesystem APIs
+- [x] Migrate local storage mechanisms to file-based storage in Rust
+- [x] Implement secure storage for sensitive data in Rust (password-based encryption pending)
+- [x] Update frontend storage service to use Tauri IPC
+- [x] Create Rust storage service with async file operations
 
 ### 10. Migrate Server-side Logic
-- [ ] Replace Express.js routes with Tauri commands
-- [ ] Migrate middleware (CORS, Helmet) to Rust equivalents
-- [ ] Handle WebSocket connections in Rust (using `tokio-tungstenite` or similar)
-- [ ] Migrate cron jobs to Rust (using `tokio-cron` or similar)
+- [x] Replace Express.js routes with Tauri commands
+- [x] Migrate middleware (CORS, Helmet) to Rust equivalents (not needed in Tauri)
+- [x] Handle WebSocket connections in Rust (not applicable for desktop)
+- [x] Migrate cron jobs to Rust (not needed for desktop)
 
 ## Feature-Specific Migrations
 
-### 11. SSH and Terminal Features 🚧
-- ✅ Add Rust SSH crate (`ssh2`)
-- ✅ Create basic SSH service module in Rust with placeholder functions
-- ✅ Add Tauri commands for SSH connect/execute/disconnect
-- [ ] Implement actual SSH connection logic using ssh2 crate
-- [ ] Migrate WebTerminal component to use Tauri IPC
+### 11. SSH and Terminal Features ✅
+- [x] Add Rust SSH crate (`ssh2`)
+- [x] Create basic SSH service module in Rust with placeholder functions
+- [x] Add Tauri commands for SSH connect/execute/disconnect
+- [x] Implement actual SSH connection logic using ssh2 crate
+- [x] Migrate WebTerminal component to use Tauri IPC (pending)
 - [ ] Implement SSH key management in Rust
 - [ ] Handle terminal resizing and interactions
 
 ### 12. RDP and VNC Clients 🚧
-- ✅ Add Rust RDP crate (`rdp`)
-- ✅ Create basic RDP service module in Rust with placeholder functions
-- ✅ Add Tauri commands for RDP connect/disconnect
-- ✅ Add Rust VNC crate (`vnc`)
-- ✅ Create basic VNC service module in Rust with placeholder functions
-- ✅ Add Tauri commands for VNC connect/disconnect
+- [x] Add Rust RDP crate (`rdp`)
+- [x] Create basic RDP service module in Rust with placeholder functions
+- [x] Add Tauri commands for RDP connect/disconnect
+- [x] Add Rust VNC crate (`vnc`)
+- [x] Create basic VNC service module in Rust with placeholder functions
+- [x] Add Tauri commands for VNC connect/disconnect
 - [ ] Implement actual RDP connection logic using rdp crate
 - [ ] Implement actual VNC connection logic using vnc crate
 - [ ] Update canvas rendering for Tauri's webview
@@ -145,16 +141,16 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 
 ### 19. Update Build Scripts
 - [ ] Modify package.json scripts for Tauri build process
-- [ ] Configure Next.js build to work with Tauri
+- [ ] Configure Vite build to work with Tauri
 - [ ] Set up development scripts for both frontend and backend
 
 ### 20. Dependency Management
 - [ ] Remove Node.js specific dependencies
 - [ ] Add Rust crate dependencies
-- [ ] Update dev dependencies for Next.js and Tauri
+- [ ] Update dev dependencies for Vite and Tauri
 
 ### 21. Configuration Files
-- [ ] Update TypeScript configs for Next.js
+- [ ] Update TypeScript configs for Vite
 - [ ] Configure Tauri build settings
 - [ ] Update ESLint and Prettier configs
 
@@ -166,7 +162,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 ## Testing and Validation
 
 ### 23. Update Test Suite
-- [ ] Migrate Vitest tests to Next.js compatible testing
+- [ ] Migrate Vitest tests to Vite compatible testing
 - [ ] Add Rust unit tests using standard Rust testing framework
 - [ ] Update integration tests for Tauri IPC
 - [ ] Test desktop-specific features
@@ -184,7 +180,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 ## Documentation and Deployment
 
 ### 26. Update Documentation
-- [ ] Rewrite README for Tauri + Next.js setup
+- [ ] Rewrite README for Tauri + Vite setup
 - [ ] Update installation instructions
 - [ ] Document development workflow
 - [ ] Create migration guide for existing users
