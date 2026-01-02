@@ -9,6 +9,12 @@ mod network;
 mod security;
 mod wol;
 mod script;
+mod openvpn;
+mod proxy;
+mod wireguard;
+mod zerotier;
+mod tailscale;
+mod chaining;
 
 use auth::{AuthService, AuthServiceState};
 use storage::{SecureStorage, StorageData, SecureStorageState};
@@ -21,6 +27,12 @@ use network::{NetworkService, NetworkServiceState};
 use security::{SecurityService, SecurityServiceState};
 use wol::{WolService, WolServiceState};
 use script::{ScriptService, ScriptServiceState};
+use openvpn::{OpenVPNService, OpenVPNServiceState};
+use proxy::{ProxyService, ProxyServiceState};
+use wireguard::{WireGuardService, WireGuardServiceState};
+use zerotier::{ZeroTierService, ZeroTierServiceState};
+use tailscale::{TailscaleService, TailscaleServiceState};
+use chaining::{ChainingService, ChainingServiceState};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -81,6 +93,36 @@ pub fn run() {
       let script_service = ScriptService::new();
       app.manage(script_service);
 
+      // Initialize OpenVPN service
+      let openvpn_service = OpenVPNService::new();
+      app.manage(openvpn_service.clone());
+
+      // Initialize Proxy service
+      let proxy_service = ProxyService::new();
+      app.manage(proxy_service.clone());
+
+      // Initialize WireGuard service
+      let wireguard_service = WireGuardService::new();
+      app.manage(wireguard_service.clone());
+
+      // Initialize ZeroTier service
+      let zerotier_service = ZeroTierService::new();
+      app.manage(zerotier_service.clone());
+
+      // Initialize Tailscale service
+      let tailscale_service = TailscaleService::new();
+      app.manage(tailscale_service.clone());
+
+      // Initialize Chaining service
+      let chaining_service = ChainingService::new(
+        proxy_service.clone(),
+        openvpn_service.clone(),
+        wireguard_service.clone(),
+        zerotier_service.clone(),
+        tailscale_service.clone(),
+      );
+      app.manage(chaining_service);
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -110,23 +152,87 @@ pub fn run() {
         rdp::connect_rdp,
         rdp::disconnect_rdp,
         rdp::get_rdp_session_info,
+        rdp::list_rdp_sessions,
         vnc::connect_vnc,
         vnc::disconnect_vnc,
         vnc::get_vnc_session_info,
+        vnc::list_vnc_sessions,
         db::connect_mysql,
         db::execute_query,
         db::disconnect_db,
+        db::get_databases,
+        db::get_tables,
+        db::get_table_structure,
+        db::create_database,
+        db::drop_database,
+        db::create_table,
+        db::drop_table,
+        db::get_table_data,
+        db::insert_row,
+        db::update_row,
+        db::delete_row,
+        db::export_table,
+        db::export_table_chunked,
+        db::export_database,
+        db::export_database_chunked,
         ftp::connect_ftp,
         ftp::list_files,
         ftp::ftp_upload_file,
         ftp::ftp_download_file,
         ftp::disconnect_ftp,
+        ftp::get_ftp_session_info,
+        ftp::list_ftp_sessions,
         network::ping_host,
         network::scan_network,
         security::generate_totp_secret,
         security::verify_totp,
         wol::wake_on_lan,
-        script::execute_user_script
+        script::execute_user_script,
+        openvpn::create_openvpn_connection,
+        openvpn::connect_openvpn,
+        openvpn::disconnect_openvpn,
+        openvpn::get_openvpn_connection,
+        openvpn::list_openvpn_connections,
+        openvpn::delete_openvpn_connection,
+        openvpn::get_openvpn_status,
+        proxy::create_proxy_connection,
+        proxy::connect_via_proxy,
+        proxy::disconnect_proxy,
+        proxy::get_proxy_connection,
+        proxy::list_proxy_connections,
+        proxy::delete_proxy_connection,
+        proxy::create_proxy_chain,
+        proxy::connect_proxy_chain,
+        proxy::disconnect_proxy_chain,
+        proxy::get_proxy_chain,
+        proxy::list_proxy_chains,
+        proxy::delete_proxy_chain,
+        proxy::get_proxy_chain_health,
+        wireguard::create_wireguard_connection,
+        wireguard::connect_wireguard,
+        wireguard::disconnect_wireguard,
+        wireguard::get_wireguard_connection,
+        wireguard::list_wireguard_connections,
+        wireguard::delete_wireguard_connection,
+        zerotier::create_zerotier_connection,
+        zerotier::connect_zerotier,
+        zerotier::disconnect_zerotier,
+        zerotier::get_zerotier_connection,
+        zerotier::list_zerotier_connections,
+        zerotier::delete_zerotier_connection,
+        tailscale::create_tailscale_connection,
+        tailscale::connect_tailscale,
+        tailscale::disconnect_tailscale,
+        tailscale::get_tailscale_connection,
+        tailscale::list_tailscale_connections,
+        tailscale::delete_tailscale_connection,
+        chaining::create_connection_chain,
+        chaining::connect_connection_chain,
+        chaining::disconnect_connection_chain,
+        chaining::get_connection_chain,
+        chaining::list_connection_chains,
+        chaining::delete_connection_chain,
+        chaining::update_connection_chain_layers
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

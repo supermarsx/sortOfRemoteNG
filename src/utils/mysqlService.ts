@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { ProxyConfig } from '../types/settings';
 
 export interface MySQLConfig {
   host: string;
@@ -6,6 +7,12 @@ export interface MySQLConfig {
   user: string;
   password: string;
   database?: string;
+  proxy?: ProxyConfig;
+  openvpn?: {
+    enabled: boolean;
+    configId?: string;
+    chainPosition?: number;
+  };
 }
 
 export type MySQLValue =
@@ -40,6 +47,8 @@ export class MySQLService {
         username: config.user,
         password: config.password,
         database: config.database || '',
+        proxy: config.proxy,
+        openvpn: config.openvpn,
       });
 
       const connection: ConnectionInfo = {
@@ -78,45 +87,53 @@ export class MySQLService {
     }
   }
 
-  async getDatabases(connectionId: string): Promise<string[]> {
-    const result = await this.executeQuery(connectionId, 'SHOW DATABASES');
+  async getDatabases(): Promise<string[]> {
+    const result = await invoke<QueryResult>('get_databases');
     return result.rows.map(row => row[0] as string);
   }
 
-  async getTables(connectionId: string, database: string): Promise<string[]> {
-    const result = await this.executeQuery(connectionId, `SHOW TABLES FROM ${database}`);
+  async getTables(database: string): Promise<string[]> {
+    const result = await invoke<QueryResult>('get_tables', { database });
     return result.rows.map(row => row[0] as string);
   }
 
-  async getTableStructure(connectionId: string, table: string): Promise<QueryResult> {
-    return this.executeQuery(connectionId, `DESCRIBE ${table}`);
+  async getTableStructure(database: string, table: string): Promise<QueryResult> {
+    return await invoke<QueryResult>('get_table_structure', { database, table });
   }
 
-  async disconnect(connectionId: string): Promise<void> {
-    try {
-      // Use Tauri IPC to disconnect from MySQL database
-      await invoke('disconnect_db');
-      this.connections.delete(connectionId);
-    } catch (error) {
-      // Even if backend disconnect fails, remove from local connections
-      this.connections.delete(connectionId);
-      throw new Error(`Failed to disconnect from MySQL: ${error}`);
-    }
+  async createDatabase(database: string): Promise<void> {
+    await invoke('create_database', { database });
   }
 
-  isConnected(connectionId: string): boolean {
-    return this.connections.has(connectionId);
+  async dropDatabase(database: string): Promise<void> {
+    await invoke('drop_database', { database });
   }
 
-
-  // Export/Import functionality - these would need backend implementation
-  async exportDatabase(connectionId: string, database: string): Promise<string> {
-    // TODO: Implement database export via backend
-    throw new Error('Database export not yet implemented in backend');
+  async createTable(database: string, table: string, columns: string[]): Promise<void> {
+    await invoke('create_table', { database, table, columns });
   }
 
-  async importDatabase(connectionId: string, sqlContent: string): Promise<void> {
-    // TODO: Implement database import via backend
-    throw new Error('Database import not yet implemented in backend');
+  async dropTable(database: string, table: string): Promise<void> {
+    await invoke('drop_table', { database, table });
+  }
+
+  async getTableData(database: string, table: string, limit?: number, offset?: number): Promise<QueryResult> {
+    return await invoke<QueryResult>('get_table_data', { database, table, limit, offset });
+  }
+
+  async insertRow(database: string, table: string, columns: string[], values: string[]): Promise<number> {
+    return await invoke<number>('insert_row', { database, table, columns, values });
+  }
+
+  async updateRow(database: string, table: string, columns: string[], values: string[], whereClause: string): Promise<number> {
+    return await invoke<number>('update_row', { database, table, columns, values, whereClause });
+  }
+
+  async deleteRow(database: string, table: string, whereClause: string): Promise<number> {
+    return await invoke<number>('delete_row', { database, table, columns, whereClause });
+  }
+
+  async exportTable(database: string, table: string, format: 'csv' | 'sql'): Promise<string> {
+    return await invoke<string>('export_table', { database, table, format });
   }
 }

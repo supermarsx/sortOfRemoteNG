@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
 import { MySQLService, MySQLConfig } from '../src/utils/mysqlService';
 
 const config: MySQLConfig = {
@@ -9,7 +10,23 @@ const config: MySQLConfig = {
 };
 
 describe('MySQLService', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('returns typed results for select queries', async () => {
+    const mockResult = {
+      columns: ['id', 'name', 'email'],
+      rows: [
+        [1, 'John Doe', 'john@example.com'],
+        [2, 'Jane Smith', 'jane@example.com']
+      ],
+      row_count: 2
+    };
+
+    (invoke as any).mockResolvedValueOnce('connected'); // for connect
+    (invoke as any).mockResolvedValueOnce(mockResult); // for executeQuery
+
     const service = new MySQLService();
     await service.connect('test', config);
     const result = await service.executeQuery('test', 'SELECT * FROM users');
@@ -37,6 +54,19 @@ describe('MySQLService', () => {
   });
 
   it('returns row count for queries', async () => {
+    const mockResult = {
+      columns: ['TABLE_SCHEMA', 'TABLE_NAME'],
+      rows: [
+        ['mysql', 'user'],
+        ['mysql', 'db'],
+        ['information_schema', 'tables']
+      ],
+      row_count: 3
+    };
+
+    (invoke as any).mockResolvedValueOnce('connected'); // for connect
+    (invoke as any).mockResolvedValueOnce(mockResult); // for executeQuery
+
     const service = new MySQLService();
     await service.connect('count', config);
     const result = await service.executeQuery(

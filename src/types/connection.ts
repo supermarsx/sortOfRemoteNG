@@ -82,6 +82,11 @@ export interface Connection {
     blockCipherMode?: string;
     keyDerivationIterations?: number;
     proxy?: ProxyConfig;
+    openvpn?: {
+      enabled: boolean;
+      configId?: string; // Reference to OpenVPN configuration
+      chainPosition?: number; // Order in VPN chain (0 = first, higher = chained after)
+    };
     sshTunnel?: {
       enabled: boolean;
       connectionId: string;

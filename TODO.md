@@ -94,14 +94,16 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add Rust VNC crate (`vnc`)
 - [x] Create basic VNC service module in Rust with TCP connection
 - [x] Add Tauri commands for VNC connect/disconnect
-- [ ] Update canvas rendering for Tauri's webview
+- [x] Update canvas rendering for Tauri's webview
+- [x] Implement VNC protocol version negotiation and basic handshake
 
 ### 13. Database Connections ✅
 - ✅ Add Rust MySQL crate (`sqlx` with MySQL feature)
 - ✅ Create basic DB service module in Rust with MySQL connection pooling
 - ✅ Add Tauri commands for MySQL connect/execute/disconnect
 - ✅ Implement actual query execution logic
-- [ ] Migrate MySQLClient component to use IPC (service updated, tests pending backend)
+- [x] Migrate MySQLClient component to use IPC (service updated, tests pending backend)
+- [x] Add phpMyAdmin-like management features (database/table CRUD, data editing, export)
 
 ### 14. File Transfer and FTP ✅
 - ✅ Add Rust FTP crate (`suppaftp`)

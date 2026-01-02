@@ -61,6 +61,9 @@ export interface GlobalSettings {
   // Proxy Settings
   globalProxy?: ProxyConfig;
 
+  // OpenVPN Settings
+  openvpn?: OpenVPNConfig;
+
   // Tab Settings
   tabGrouping: "none" | "protocol" | "status" | "hostname" | "colorTag";
   hostnameOverride: boolean;
@@ -118,6 +121,190 @@ export interface ProxyConfig {
   username?: string;
   password?: string;
   enabled: boolean;
+}
+
+export interface OpenVPNConfig {
+  enabled: boolean;
+  configFile?: string;
+  authFile?: string;
+  caCert?: string;
+  clientCert?: string;
+  clientKey?: string;
+  username?: string;
+  password?: string;
+  remoteHost?: string;
+  remotePort?: number;
+  protocol?: "udp" | "tcp";
+  cipher?: string;
+  auth?: string;
+  tlsAuth?: boolean;
+  tlsCrypt?: boolean;
+  compression?: boolean;
+  mssFix?: number;
+  tunMtu?: number;
+  fragment?: number;
+  mtuDiscover?: boolean;
+  keepAlive?: {
+    interval: number;
+    timeout: number;
+  };
+  routeNoPull?: boolean;
+  route?: Array<{
+    network: string;
+    netmask: string;
+    gateway?: string;
+  }>;
+  dns?: Array<{
+    server: string;
+    domain?: string;
+  }>;
+  customOptions?: string[];
+}
+
+export interface WireGuardConfig {
+  enabled: boolean;
+  interface: {
+    privateKey: string;
+    address: string[];
+    dns?: string[];
+    mtu?: number;
+    table?: string | number;
+    preUp?: string[];
+    postUp?: string[];
+    preDown?: string[];
+    postDown?: string[];
+  };
+  peer: {
+    publicKey: string;
+    presharedKey?: string;
+    endpoint?: string;
+    allowedIPs: string[];
+    persistentKeepalive?: number;
+  };
+  configFile?: string;
+}
+
+export interface IKEv2Config {
+  enabled: boolean;
+  server: string;
+  username: string;
+  password?: string;
+  certificate?: string;
+  privateKey?: string;
+  caCertificate?: string;
+  eapMethod?: "mschapv2" | "tls" | "peap";
+  phase1Algorithms?: string;
+  phase2Algorithms?: string;
+  ikeVersion?: "ikev1" | "ikev2";
+  localId?: string;
+  remoteId?: string;
+  fragmentation?: boolean;
+  mobike?: boolean;
+  customOptions?: string[];
+}
+
+export interface SSTPConfig {
+  enabled: boolean;
+  server: string;
+  username: string;
+  password?: string;
+  domain?: string;
+  certificate?: string;
+  caCertificate?: string;
+  ignoreCertificate?: boolean;
+  proxy?: ProxyConfig;
+  customOptions?: string[];
+}
+
+export interface L2TPConfig {
+  enabled: boolean;
+  server: string;
+  username: string;
+  password: string;
+  pppSettings?: {
+    mru?: number;
+    mtu?: number;
+    lcpEchoInterval?: number;
+    lcpEchoFailure?: number;
+    requireChap?: boolean;
+    refuseChap?: boolean;
+    requireMsChap?: boolean;
+    refuseMsChap?: boolean;
+    requireMsChapV2?: boolean;
+    refuseMsChapV2?: boolean;
+    requireEap?: boolean;
+    refuseEap?: boolean;
+    requirePap?: boolean;
+    refusePap?: boolean;
+  };
+  ipsecSettings?: {
+    ike?: string;
+    esp?: string;
+    pfs?: string;
+    ikelifetime?: number;
+    lifetime?: number;
+    phase2alg?: string;
+  };
+  customOptions?: string[];
+}
+
+export interface PPTPConfig {
+  enabled: boolean;
+  server: string;
+  username: string;
+  password: string;
+  domain?: string;
+  requireMppe?: boolean;
+  mppeStateful?: boolean;
+  refuseEap?: boolean;
+  refusePap?: boolean;
+  refuseChap?: boolean;
+  refuseMsChap?: boolean;
+  refuseMsChapV2?: boolean;
+  nobsdcomp?: boolean;
+  nodeflate?: boolean;
+  noVjComp?: boolean;
+  customOptions?: string[];
+}
+
+export interface SoftEtherConfig {
+  enabled: boolean;
+  host: string;
+  port?: number;
+  hub: string;
+  username: string;
+  password: string;
+  certificate?: string;
+  privateKey?: string;
+  checkCertificate?: boolean;
+  protocol?: "tcp" | "udp" | "tcp+udp";
+  customOptions?: string[];
+}
+
+export interface ZeroTierConfig {
+  enabled: boolean;
+  networkId: string;
+  identity?: {
+    public: string;
+    secret: string;
+  };
+  allowManaged?: boolean;
+  allowGlobal?: boolean;
+  allowDefault?: boolean;
+  allowDNS?: boolean;
+  customOptions?: string[];
+}
+
+export interface TailscaleConfig {
+  enabled: boolean;
+  authKey?: string;
+  loginServer?: string;
+  routes?: string[];
+  exitNode?: string;
+  advertiseRoutes?: string[];
+  acceptRoutes?: boolean;
+  ssh?: boolean;
+  customOptions?: string[];
 }
 
 export interface SecurityConfig {

@@ -28,10 +28,27 @@ pub struct SshConnectionConfig {
     pub private_key_path: Option<String>,
     pub private_key_passphrase: Option<String>,
     pub jump_hosts: Vec<JumpHostConfig>,
+    pub proxy_config: Option<ProxyConfig>,
+    pub openvpn_config: Option<OpenVPNConfig>,
     pub connect_timeout: Option<u64>,
     pub keep_alive_interval: Option<u64>,
     pub strict_host_key_checking: bool,
     pub known_hosts_path: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProxyConfig {
+    pub proxy_type: String,
+    pub host: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OpenVPNConfig {
+    pub connection_id: String,
+    pub chain_position: Option<u16>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -181,6 +198,17 @@ impl SshService {
     }
 
     async fn establish_direct_connection(&self, config: &SshConnectionConfig) -> Result<TcpStream, String> {
+        // Handle OpenVPN chaining first
+        if let Some(openvpn_config) = &config.openvpn_config {
+            return self.establish_openvpn_connection(config, openvpn_config).await;
+        }
+
+        // Handle proxy connection
+        if let Some(proxy_config) = &config.proxy_config {
+            return self.establish_proxy_connection(config, proxy_config).await;
+        }
+
+        // Direct connection
         let addr = format!("{}:{}", config.host, config.port);
         let timeout = config.connect_timeout.unwrap_or(30);
 
@@ -194,6 +222,20 @@ impl SshService {
         // Convert to blocking TcpStream for ssh2
         TcpStream::connect((config.host.as_str(), config.port))
             .map_err(|e| format!("Failed to establish TCP connection: {}", e))
+    }
+
+    async fn establish_proxy_connection(&self, config: &SshConnectionConfig, proxy_config: &ProxyConfig) -> Result<TcpStream, String> {
+        // Use the proxy service to establish connection
+        // This would need to be implemented with the proxy service
+        // For now, return an error indicating proxy is not implemented
+        Err("Proxy connections not yet implemented for SSH".to_string())
+    }
+
+    async fn establish_openvpn_connection(&self, config: &SshConnectionConfig, openvpn_config: &OpenVPNConfig) -> Result<TcpStream, String> {
+        // Use the OpenVPN service to establish connection through VPN
+        // This would need to be implemented with the OpenVPN service
+        // For now, return an error indicating OpenVPN is not implemented
+        Err("OpenVPN connections not yet implemented for SSH".to_string())
     }
 
     async fn establish_jump_connection(&self, config: &SshConnectionConfig) -> Result<TcpStream, String> {
