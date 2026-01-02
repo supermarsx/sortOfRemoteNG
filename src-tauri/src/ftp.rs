@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use suppaftp::FtpStream;
-use std::path::Path;
 use tokio::fs;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -43,7 +42,7 @@ impl FtpService {
         let session_id = Uuid::new_v4().to_string();
 
         // Create channels for shutdown signaling
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+        let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
 
         // Create session info
         let session = FtpSession {

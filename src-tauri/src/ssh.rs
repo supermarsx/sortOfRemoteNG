@@ -2,21 +2,14 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::collections::HashMap;
 use ssh2::Session;
-use std::net::{TcpStream, TcpListener, SocketAddr};
+use std::net::{TcpStream, TcpListener};
 use std::io::{Read, Write};
 use std::path::Path;
-use std::time::{Duration, Instant};
-use tokio::net::{TcpStream as AsyncTcpStream, TcpListener as AsyncTcpListener};
+use std::time::Duration;
+use tokio::net::TcpStream as AsyncTcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use futures::future::join_all;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use std::sync::mpsc;
-use russh::*;
-use russh_keys::*;
-use async_trait::async_trait;
 use shell_escape;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -302,7 +295,7 @@ impl SshService {
     }
 
     fn verify_host_key(&self, session: &mut Session, config: &SshConnectionConfig) -> Result<(), String> {
-        let mut known_hosts_path = config.known_hosts_path.clone()
+        let known_hosts_path = config.known_hosts_path.clone()
             .unwrap_or_else(|| {
                 dirs::home_dir()
                     .map(|p| p.join(".ssh").join("known_hosts"))

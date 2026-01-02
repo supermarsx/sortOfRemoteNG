@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use totp_rs::{Algorithm, TOTP};
-use aes_gcm::{Aes256Gcm, Key, Nonce};
+use aes_gcm::{Aes256Gcm, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use rand::RngCore;
 use base64::{Engine as _, engine::general_purpose};

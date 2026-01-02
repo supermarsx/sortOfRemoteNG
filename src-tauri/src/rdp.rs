@@ -6,8 +6,6 @@ use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use tokio::task;
 use tokio::sync::mpsc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::RwLock;
 
 pub type RdpServiceState = Arc<Mutex<RdpService>>;
 
@@ -42,7 +40,7 @@ impl RdpService {
         let session_id = Uuid::new_v4().to_string();
 
         // Create channels for shutdown signaling
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+        let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
 
         // Create session info
         let session = RdpSession {
@@ -78,7 +76,7 @@ impl RdpService {
         // For now, just establish and maintain a basic TCP connection
         // In a full implementation, this would handle the RDP protocol
         match TcpStream::connect(format!("{}:{}", session.host, session.port)) {
-            Ok(mut stream) => {
+            Ok(stream) => {
                 println!("RDP TCP connection established for session {}", session.id);
 
                 // Set up connection parameters (would be RDP-specific in full implementation)
