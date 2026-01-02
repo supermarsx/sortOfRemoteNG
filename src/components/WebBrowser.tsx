@@ -13,7 +13,7 @@ import {
   User
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
-import { useConnections } from '../contexts/ConnectionContext';
+import { useConnections } from '../contexts/useConnections';
 
 interface WebBrowserProps {
   session: ConnectionSession;

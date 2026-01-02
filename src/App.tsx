@@ -1,10 +1,8 @@
 import React, { useState } from "react";
 import { Monitor, Zap, Menu, Globe } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import {
-  ConnectionProvider,
-  useConnections,
-} from "./contexts/ConnectionContext";
+import { ConnectionProvider } from "./contexts/ConnectionProvider";
+import { useConnections } from "./contexts/useConnections";
 import { Sidebar } from "./components/Sidebar";
 import { ConnectionEditor } from "./components/ConnectionEditor";
 import { SessionTabs } from "./components/SessionTabs";

@@ -9,7 +9,7 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import { useConnections } from "../contexts/ConnectionContext";
+import { useConnections } from "../contexts/useConnections";
 
 const getProtocolIcon = (protocol: string) => {
   switch (protocol) {

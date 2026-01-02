@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useConnections } from "../contexts/ConnectionContext";
+import { useConnections } from "../contexts/useConnections";
 import { Connection, ConnectionSession } from "../types/connection";
 import { SettingsManager } from "../utils/settingsManager";
 import { StatusChecker } from "../utils/statusChecker";

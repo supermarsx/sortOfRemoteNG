@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { ConnectionSession } from '../types/connection';
-import { useConnections } from '../contexts/ConnectionContext';
+import { useConnections } from '../contexts/useConnections';
 import { 
   Monitor, 
   Maximize2, 

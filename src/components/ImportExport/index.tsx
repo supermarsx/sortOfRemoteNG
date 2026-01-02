@@ -1,20 +1,20 @@
 import React, { useState, useRef } from 'react';
 import { Download, Upload, X } from 'lucide-react';
 import { Connection } from '../../types/connection';
-import { useConnections } from '../../contexts/ConnectionContext';
+import { useConnections } from '../../contexts/useConnections';
 import { CollectionManager } from '../../utils/collectionManager';
 import ExportTab from './ExportTab';
 import ImportTab from './ImportTab';
 import { ImportResult } from './types';
 import CryptoJS from 'crypto-js';
-import { generateId } from '../../utils/id';
+import { parseCSVLine, importFromCSV } from './utils';
 
 interface ImportExportProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const parseCSVLine = (line: string): string[] => {
+const parseCSVLine = (line: string): string[] => {
   const values: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -41,7 +41,7 @@ export const parseCSVLine = (line: string): string[] => {
   return values;
 };
 
-export const importFromCSV = async (content: string): Promise<Connection[]> => {
+const importFromCSV = async (content: string): Promise<Connection[]> => {
   const lines = content.split(/\r?\n/).filter(line => line.trim());
   if (lines.length < 2) throw new Error('CSV file must have headers and at least one data row');
 

@@ -3,7 +3,7 @@ import { Search, Plus, FolderPlus, Settings, Download, Upload, ChevronLeft, Chev
 import { useTranslation } from 'react-i18next';
 import { ConnectionTree } from './ConnectionTree';
 import { Connection } from '../types/connection';
-import { useConnections } from '../contexts/ConnectionContext';
+import { useConnections } from '../contexts/useConnections';
 import { SecureStorage } from '../utils/storage';
 import { generateId } from '../utils/id';
 import { ImportExport } from './ImportExport';

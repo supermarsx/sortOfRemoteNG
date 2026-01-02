@@ -2,7 +2,8 @@ import React from 'react';
 import { describe, it, expect } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import { ConnectionTree } from '../src/components/ConnectionTree';
-import { ConnectionProvider, useConnections } from '../src/contexts/ConnectionContext';
+import { ConnectionProvider } from '../src/contexts/ConnectionContext';
+import { useConnections } from '../src/contexts/useConnections';
 import { Connection } from '../src/types/connection';
 
 const mockConnections: Connection[] = [

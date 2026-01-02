@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { ConnectionProvider, useConnections } from '../src/contexts/ConnectionContext';
+import { ConnectionProvider } from '../src/contexts/ConnectionContext';
+import { useConnections } from '../src/contexts/useConnections';
 import { CollectionManager } from '../src/utils/collectionManager';
 import { IndexedDbService } from '../src/utils/indexedDbService';
 import { openDB } from 'idb';

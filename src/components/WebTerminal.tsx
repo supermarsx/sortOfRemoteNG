@@ -5,7 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ConnectionSession } from '../types/connection';
 import { SSHClient } from '../utils/sshClient';
 import { Maximize2, Minimize2, Copy, Download, Upload } from 'lucide-react';
-import { useConnections } from '../contexts/ConnectionContext';
+import { useConnections } from '../contexts/useConnections';
 
 interface WebTerminalProps {
   session: ConnectionSession;

@@ -16,7 +16,7 @@ import {
   Play,
 } from "lucide-react";
 import { Connection } from "../types/connection";
-import { useConnections } from "../contexts/ConnectionContext";
+import { useConnections } from "../contexts/useConnections";
 import { generateId } from "../utils/id";
 
 /**

@@ -15,7 +15,7 @@ import { useTranslation } from "react-i18next";
 import { DiscoveredHost, DiscoveredService } from "../types/connection";
 import { NetworkDiscoveryConfig } from "../types/settings";
 import { NetworkScanner } from "../utils/networkScanner";
-import { useConnections } from "../contexts/ConnectionContext";
+import { useConnections } from "../contexts/useConnections";
 import { generateId } from "../utils/id";
 import { discoveredHostsToCsv } from "../utils/discoveredHostsCsv";
 

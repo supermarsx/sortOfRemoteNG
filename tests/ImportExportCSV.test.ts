@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { importFromCSV } from '../src/components/ImportExport';
+import { importFromCSV } from '../src/components/ImportExport/utils';
 
 const csvHeaders = 'ID,Name,Protocol,Hostname,Port,Username,Domain,Description,ParentId,IsGroup,Tags,CreatedAt,UpdatedAt';
 const csvRow = '1,Test,RDP,example.com,3389,user,,desc,,false,tag1;tag2,2024-01-01T00:00:00.000Z,2024-01-01T00:00:00.000Z';

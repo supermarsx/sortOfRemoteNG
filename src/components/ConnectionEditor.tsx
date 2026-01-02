@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save } from 'lucide-react';
 import { Connection } from '../types/connection';
-import { useConnections } from '../contexts/ConnectionContext';
+import { useConnections } from '../contexts/useConnections';
 import { TagManager } from './TagManager';
 import { SSHLibraryType } from '../utils/sshLibraries';
 import { getDefaultPort } from '../utils/defaultPorts';
