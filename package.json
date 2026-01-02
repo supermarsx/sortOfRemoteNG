@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "format": "prettier --check AGENTS.md",
     "preview": "vite preview",
-    "test": "npx vitest",
+    "test": "npx vitest --run",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

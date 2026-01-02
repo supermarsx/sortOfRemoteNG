@@ -115,12 +115,28 @@ export interface GlobalSettings {
 }
 
 export interface ProxyConfig {
-  type: "http" | "https" | "socks4" | "socks5";
+  type: "http" | "https" | "socks4" | "socks5" | "ssh" | "dns-tunnel" | "icmp-tunnel" | "websocket" | "quic" | "tcp-over-dns" | "http-connect" | "shadowsocks";
   host: string;
   port: number;
   username?: string;
   password?: string;
   enabled: boolean;
+
+  // SSH-specific options
+  sshKeyFile?: string;
+  sshKeyPassphrase?: string;
+  sshHostKeyVerification?: boolean;
+  sshKnownHostsFile?: string;
+
+  // Advanced tunneling options
+  tunnelDomain?: string; // For DNS tunneling
+  tunnelKey?: string; // Encryption key for tunneling
+  tunnelMethod?: "direct" | "fragmented" | "obfuscated"; // Tunneling method
+  customHeaders?: Record<string, string>; // For HTTP-based tunneling
+  websocketPath?: string; // For WebSocket tunneling
+  quicCertFile?: string; // For QUIC tunneling
+  shadowsocksMethod?: string; // Shadowsocks encryption method
+  shadowsocksPlugin?: string; // Shadowsocks plugin
 }
 
 export interface OpenVPNConfig {

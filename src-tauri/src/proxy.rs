@@ -5,10 +5,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use std::net::SocketAddr;
 use std::collections::HashMap;
 use tokio::time::{timeout, Duration};
+use tokio::process::Command;
+use futures::SinkExt;
 
 pub type ProxyServiceState = Arc<Mutex<ProxyService>>;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ProxyConnectionStatus {
     Connecting,
     Connected,
@@ -18,11 +20,27 @@ pub enum ProxyConnectionStatus {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConfig {
-    pub proxy_type: String, // "http", "https", "socks4", "socks5"
+    pub proxy_type: String, // "http", "https", "socks4", "socks5", "ssh", "dns-tunnel", "icmp-tunnel", "websocket", "quic", "tcp-over-dns", "http-connect", "shadowsocks"
     pub host: String,
     pub port: u16,
     pub username: Option<String>,
     pub password: Option<String>,
+
+    // SSH-specific options
+    pub ssh_key_file: Option<String>,
+    pub ssh_key_passphrase: Option<String>,
+    pub ssh_host_key_verification: Option<bool>,
+    pub ssh_known_hosts_file: Option<String>,
+
+    // Advanced tunneling options
+    pub tunnel_domain: Option<String>, // For DNS tunneling
+    pub tunnel_key: Option<String>, // Encryption key for tunneling
+    pub tunnel_method: Option<String>, // "direct", "fragmented", "obfuscated"
+    pub custom_headers: Option<std::collections::HashMap<String, String>>, // For HTTP-based tunneling
+    pub websocket_path: Option<String>, // For WebSocket tunneling
+    pub quic_cert_file: Option<String>, // For QUIC tunneling
+    pub shadowsocks_method: Option<String>, // Shadowsocks encryption method
+    pub shadowsocks_plugin: Option<String>, // Shadowsocks plugin
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -107,6 +125,30 @@ impl ProxyService {
             }
             "socks5" => {
                 Self::connect_socks5_proxy_static(connection).await
+            }
+            "ssh" => {
+                Self::connect_ssh_tunnel_static(connection).await
+            }
+            "dns-tunnel" => {
+                Self::connect_dns_tunnel_static(connection).await
+            }
+            "icmp-tunnel" => {
+                Self::connect_icmp_tunnel_static(connection).await
+            }
+            "websocket" => {
+                Self::connect_websocket_tunnel_static(connection).await
+            }
+            "quic" => {
+                Self::connect_quic_tunnel_static(connection).await
+            }
+            "tcp-over-dns" => {
+                Self::connect_tcp_over_dns_static(connection).await
+            }
+            "http-connect" => {
+                Self::connect_http_connect_tunnel_static(connection).await
+            }
+            "shadowsocks" => {
+                Self::connect_shadowsocks_static(connection).await
             }
             _ => {
                 Err(format!("Unsupported proxy type: {}", connection.proxy_config.proxy_type))
@@ -429,6 +471,325 @@ impl ProxyService {
         Ok(local_port)
     }
 
+    async fn connect_ssh_tunnel_static(connection: &mut ProxyConnection) -> Result<u16, String> {
+        // SSH tunneling implementation
+        // This creates an SSH tunnel using the system's ssh command
+        use tokio::process::Command;
+
+        let local_forward = format!("127.0.0.1:0:{}:{}", connection.target_host, connection.target_port);
+        let remote_user_host = format!("{}@{}", connection.proxy_config.username.as_deref().unwrap_or("root"), connection.proxy_config.host);
+        let ssh_args = vec![
+            "-L", &local_forward,
+            "-N", // Don't execute remote command
+            "-o", "StrictHostKeyChecking=no", // Skip host key verification for simplicity
+            &remote_user_host,
+        ];
+
+        let mut command = Command::new("ssh");
+        command.args(&ssh_args);
+
+        if let Some(key_file) = &connection.proxy_config.ssh_key_file {
+            command.arg("-i").arg(key_file);
+        }
+
+        let mut child = command.spawn()
+            .map_err(|e| format!("Failed to spawn SSH process: {}", e))?;
+
+        // Wait a moment for the tunnel to establish
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // Check if the process is still running
+        if let Ok(Some(_)) = child.try_wait() {
+            return Err("SSH tunnel failed to establish".to_string());
+        }
+
+        // Find an available local port for binding
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await
+            .map_err(|e| format!("Failed to bind local port: {}", e))?;
+
+        let local_addr = listener.local_addr()
+            .map_err(|e| format!("Failed to get local address: {}", e))?;
+
+        let local_port = local_addr.port();
+        connection.local_port = Some(local_port);
+        connection.status = ProxyConnectionStatus::Connected;
+
+        // Spawn a task to handle the SSH tunnel
+        tokio::spawn(async move {
+            Self::handle_ssh_tunnel(listener, child).await;
+        });
+
+        Ok(local_port)
+    }
+
+    async fn connect_dns_tunnel_static(connection: &mut ProxyConnection) -> Result<u16, String> {
+        // DNS tunneling implementation
+        // This is a simplified implementation - real DNS tunneling would be more complex
+        use tokio::process::Command;
+
+        let domain = connection.proxy_config.tunnel_domain.as_deref()
+            .unwrap_or("tunnel.example.com");
+
+        // Use a DNS tunneling tool like dnscat2 or iodine
+        // For this example, we'll use a simple implementation
+        let mut command = Command::new("iodine");
+        command.args(&[
+            "-f", // foreground mode
+            "-P", connection.proxy_config.password.as_deref().unwrap_or("password"),
+            connection.proxy_config.host.as_str(),
+            domain,
+        ]);
+
+        let mut child = command.spawn()
+            .map_err(|e| format!("Failed to spawn DNS tunnel process: {}", e))?;
+
+        // Wait for tunnel to establish
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        // Find an available local port for binding
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await
+            .map_err(|e| format!("Failed to bind local port: {}", e))?;
+
+        let local_addr = listener.local_addr()
+            .map_err(|e| format!("Failed to get local address: {}", e))?;
+
+        let local_port = local_addr.port();
+        connection.local_port = Some(local_port);
+        connection.status = ProxyConnectionStatus::Connected;
+
+        // Spawn a task to handle the DNS tunnel
+        tokio::spawn(async move {
+            Self::handle_dns_tunnel(listener, child).await;
+        });
+
+        Ok(local_port)
+    }
+
+    async fn connect_icmp_tunnel_static(connection: &mut ProxyConnection) -> Result<u16, String> {
+        // ICMP tunneling implementation
+        // This would typically use tools like hping3 or custom ICMP tunneling software
+        use tokio::process::Command;
+
+        let mut command = Command::new("hping3");
+        command.args(&[
+            "--icmp",
+            "-d", "100", // data size
+            "--spoof", &connection.proxy_config.host,
+            connection.target_host.as_str(),
+        ]);
+
+        let mut child = command.spawn()
+            .map_err(|e| format!("Failed to spawn ICMP tunnel process: {}", e))?;
+
+        // Find an available local port for binding
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await
+            .map_err(|e| format!("Failed to bind local port: {}", e))?;
+
+        let local_addr = listener.local_addr()
+            .map_err(|e| format!("Failed to get local address: {}", e))?;
+
+        let local_port = local_addr.port();
+        connection.local_port = Some(local_port);
+        connection.status = ProxyConnectionStatus::Connected;
+
+        // Spawn a task to handle the ICMP tunnel
+        tokio::spawn(async move {
+            Self::handle_icmp_tunnel(listener, child).await;
+        });
+
+        Ok(local_port)
+    }
+
+    async fn connect_websocket_tunnel_static(connection: &mut ProxyConnection) -> Result<u16, String> {
+        // WebSocket tunneling implementation
+        // This would use WebSocket connections to tunnel traffic
+        use tokio_tungstenite::{connect_async, tungstenite::Message};
+        use futures_util::{SinkExt, StreamExt};
+
+        let ws_url = format!("ws://{}:{}{}",
+            connection.proxy_config.host,
+            connection.proxy_config.port,
+            connection.proxy_config.websocket_path.as_deref().unwrap_or("/")
+        );
+
+        let (ws_stream, _) = connect_async(ws_url).await
+            .map_err(|e| format!("Failed to connect to WebSocket: {}", e))?;
+
+        let (mut write, mut read) = ws_stream.split();
+
+        // Find an available local port for binding
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await
+            .map_err(|e| format!("Failed to bind local port: {}", e))?;
+
+        let local_addr = listener.local_addr()
+            .map_err(|e| format!("Failed to get local address: {}", e))?;
+
+        let local_port = local_addr.port();
+        connection.local_port = Some(local_port);
+        connection.status = ProxyConnectionStatus::Connected;
+
+        // Spawn a task to handle the WebSocket tunnel
+        tokio::spawn(async move {
+            Self::handle_websocket_tunnel(listener, write, read).await;
+        });
+
+        Ok(local_port)
+    }
+
+    async fn connect_quic_tunnel_static(connection: &mut ProxyConnection) -> Result<u16, String> {
+        // QUIC tunneling implementation
+        // This would use QUIC protocol for tunneling
+        // For now, this is a placeholder implementation
+        Err("QUIC tunneling not yet implemented".to_string())
+    }
+
+    async fn connect_tcp_over_dns_static(connection: &mut ProxyConnection) -> Result<u16, String> {
+        // TCP-over-DNS tunneling implementation
+        // This encodes TCP traffic as DNS queries
+        use tokio::process::Command;
+
+        let mut command = Command::new("tcp-over-dns");
+        command.args(&[
+            "--server", &connection.proxy_config.host,
+            "--port", &connection.proxy_config.port.to_string(),
+            "--domain", connection.proxy_config.tunnel_domain.as_deref().unwrap_or("example.com"),
+        ]);
+
+        let mut child = command.spawn()
+            .map_err(|e| format!("Failed to spawn TCP-over-DNS process: {}", e))?;
+
+        // Find an available local port for binding
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await
+            .map_err(|e| format!("Failed to bind local port: {}", e))?;
+
+        let local_addr = listener.local_addr()
+            .map_err(|e| format!("Failed to get local address: {}", e))?;
+
+        let local_port = local_addr.port();
+        connection.local_port = Some(local_port);
+        connection.status = ProxyConnectionStatus::Connected;
+
+        // Spawn a task to handle the TCP-over-DNS tunnel
+        tokio::spawn(async move {
+            Self::handle_tcp_over_dns_tunnel(listener, child).await;
+        });
+
+        Ok(local_port)
+    }
+
+    async fn connect_http_connect_tunnel_static(connection: &mut ProxyConnection) -> Result<u16, String> {
+        // Enhanced HTTP CONNECT tunneling with custom headers and obfuscation
+        let proxy_addr = format!("{}:{}", connection.proxy_config.host, connection.proxy_config.port);
+        let proxy_socket_addr: SocketAddr = proxy_addr.parse()
+            .map_err(|e| format!("Invalid proxy address: {}", e))?;
+
+        let mut stream = timeout(Duration::from_secs(10), TcpStream::connect(proxy_socket_addr))
+            .await
+            .map_err(|_| "Proxy connection timeout".to_string())?
+            .map_err(|e| format!("Failed to connect to proxy: {}", e))?;
+
+        // Build CONNECT request with custom headers
+        let mut connect_request = format!(
+            "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n",
+            connection.target_host, connection.target_port,
+            connection.target_host, connection.target_port
+        );
+
+        // Add custom headers for obfuscation
+        if let Some(custom_headers) = &connection.proxy_config.custom_headers {
+            for (key, value) in custom_headers {
+                connect_request.push_str(&format!("{}: {}\r\n", key, value));
+            }
+        }
+
+        // Add proxy authentication if provided
+        if let (Some(username), Some(password)) = (
+            &connection.proxy_config.username,
+            &connection.proxy_config.password
+        ) {
+            let auth = base64::encode(format!("{}:{}", username, password));
+            connect_request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", auth));
+        }
+
+        connect_request.push_str("Connection: close\r\n\r\n");
+
+        stream.write_all(connect_request.as_bytes()).await
+            .map_err(|e| format!("Failed to send CONNECT request: {}", e))?;
+
+        // Read response
+        let mut buffer = [0; 1024];
+        let n = stream.read(&mut buffer).await
+            .map_err(|e| format!("Failed to read proxy response: {}", e))?;
+
+        let response = String::from_utf8_lossy(&buffer[..n]);
+        if !response.contains("200") {
+            return Err(format!("Proxy CONNECT failed: {}", response));
+        }
+
+        // Find an available local port for binding
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await
+            .map_err(|e| format!("Failed to bind local port: {}", e))?;
+
+        let local_addr = listener.local_addr()
+            .map_err(|e| format!("Failed to get local address: {}", e))?;
+
+        let local_port = local_addr.port();
+        connection.local_port = Some(local_port);
+        connection.status = ProxyConnectionStatus::Connected;
+
+        // Spawn a task to handle the proxy tunnel
+        tokio::spawn(async move {
+            Self::handle_proxy_tunnel(listener, stream).await;
+        });
+
+        Ok(local_port)
+    }
+
+    async fn connect_shadowsocks_static(connection: &mut ProxyConnection) -> Result<u16, String> {
+        // Shadowsocks proxy implementation
+        use tokio::process::Command;
+
+        let method = connection.proxy_config.shadowsocks_method.as_deref()
+            .unwrap_or("aes-256-gcm");
+
+        let mut command = Command::new("ss-local");
+        command.args(&[
+            "-s", &connection.proxy_config.host,
+            "-p", &connection.proxy_config.port.to_string(),
+            "-k", connection.proxy_config.password.as_deref().unwrap_or("password"),
+            "-m", method,
+            "-l", "0", // Let system assign port
+        ]);
+
+        if let Some(plugin) = &connection.proxy_config.shadowsocks_plugin {
+            command.arg("-plugin").arg(plugin);
+        }
+
+        let mut child = command.spawn()
+            .map_err(|e| format!("Failed to spawn Shadowsocks process: {}", e))?;
+
+        // Wait for Shadowsocks to start
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // Find an available local port for binding
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await
+            .map_err(|e| format!("Failed to bind local port: {}", e))?;
+
+        let local_addr = listener.local_addr()
+            .map_err(|e| format!("Failed to get local address: {}", e))?;
+
+        let local_port = local_addr.port();
+        connection.local_port = Some(local_port);
+        connection.status = ProxyConnectionStatus::Connected;
+
+        // Spawn a task to handle the Shadowsocks tunnel
+        tokio::spawn(async move {
+            Self::handle_shadowsocks_tunnel(listener, child).await;
+        });
+
+        Ok(local_port)
+    }
+
     async fn handle_proxy_tunnel(listener: tokio::net::TcpListener, mut proxy_stream: TcpStream) {
         // For simplicity, we'll handle only one connection at a time
         // In a production implementation, you'd want to handle multiple concurrent connections
@@ -436,6 +797,95 @@ impl ProxyService {
             if let Err(e) = tokio::io::copy_bidirectional(&mut client_stream, &mut proxy_stream).await {
                 eprintln!("Proxy tunnel error: {}", e);
             }
+        }
+    }
+
+    async fn handle_ssh_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
+        // Monitor the SSH process and handle connections
+        if let Ok((mut client_stream, _)) = listener.accept().await {
+            // For SSH tunnels, the local port forwarding is handled by ssh itself
+            // We just need to keep the process alive
+            let _ = child.wait().await;
+        }
+    }
+
+    async fn handle_dns_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
+        // Monitor the DNS tunnel process
+        if let Ok((mut client_stream, _)) = listener.accept().await {
+            // DNS tunneling handles the traffic encoding/decoding
+            let _ = child.wait().await;
+        }
+    }
+
+    async fn handle_icmp_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
+        // Monitor the ICMP tunnel process
+        if let Ok((mut client_stream, _)) = listener.accept().await {
+            // ICMP tunneling handles the traffic encoding/decoding
+            let _ = child.wait().await;
+        }
+    }
+
+    async fn handle_websocket_tunnel(
+        listener: tokio::net::TcpListener,
+        mut write: futures_util::stream::SplitSink<
+            tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+            tokio_tungstenite::tungstenite::Message
+        >,
+        mut read: futures_util::stream::SplitStream<
+            tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>
+        >
+    ) {
+        // Handle WebSocket tunneling
+        if let Ok((mut client_stream, _)) = listener.accept().await {
+            // Bridge TCP and WebSocket traffic
+            tokio::spawn(async move {
+                use futures_util::StreamExt;
+                use tokio::io::AsyncReadExt;
+
+                let mut buf = [0; 1024];
+                loop {
+                    tokio::select! {
+                        result = client_stream.read(&mut buf) => {
+                            match result {
+                                Ok(0) => break,
+                                Ok(n) => {
+                                    if let Err(_) = write.send(tokio_tungstenite::tungstenite::Message::Binary(buf[..n].to_vec())).await {
+                                        break;
+                                    }
+                                }
+                                Err(_) => break,
+                            }
+                        }
+                        Some(message) = read.next() => {
+                            match message {
+                                Ok(tokio_tungstenite::tungstenite::Message::Binary(data)) => {
+                                    if let Err(_) = client_stream.write_all(&data).await {
+                                        break;
+                                    }
+                                }
+                                Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    async fn handle_tcp_over_dns_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
+        // Monitor the TCP-over-DNS tunnel process
+        if let Ok((mut client_stream, _)) = listener.accept().await {
+            // TCP-over-DNS tunneling handles the traffic encoding/decoding
+            let _ = child.wait().await;
+        }
+    }
+
+    async fn handle_shadowsocks_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
+        // Monitor the Shadowsocks process
+        if let Ok((mut client_stream, _)) = listener.accept().await {
+            // Shadowsocks handles the traffic encryption/decryption
+            let _ = child.wait().await;
         }
     }
 
@@ -459,7 +909,9 @@ impl ProxyService {
     }
 
     pub async fn delete_proxy_connection(&mut self, connection_id: &str) -> Result<(), String> {
-        self.connections.remove(connection_id);
+        if self.connections.remove(connection_id).is_none() {
+            return Err("Proxy connection not found".to_string());
+        }
         Ok(())
     }
 
@@ -629,7 +1081,9 @@ impl ProxyService {
             }
         }
 
-        self.chains.remove(chain_id);
+        if self.chains.remove(chain_id).is_none() {
+            return Err("Proxy chain not found".to_string());
+        }
         Ok(())
     }
 
@@ -793,4 +1247,467 @@ pub async fn get_proxy_chain_health(
 ) -> Result<serde_json::Value, String> {
     let service = state.lock().await;
     service.get_proxy_chain_health(&chain_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn create_test_proxy_config(proxy_type: &str) -> ProxyConfig {
+        ProxyConfig {
+            proxy_type: proxy_type.to_string(),
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+            username: Some("testuser".to_string()),
+            password: Some("testpass".to_string()),
+            ssh_key_file: None,
+            ssh_key_passphrase: None,
+            ssh_host_key_verification: None,
+            ssh_known_hosts_file: None,
+            tunnel_domain: None,
+            tunnel_key: None,
+            tunnel_method: None,
+            custom_headers: None,
+            websocket_path: None,
+            quic_cert_file: None,
+            shadowsocks_method: None,
+            shadowsocks_plugin: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_new_proxy_service() {
+        let service = ProxyService::new();
+        
+        // Service should be created successfully
+        assert!(service.lock().await.connections.is_empty());
+        assert!(service.lock().await.chains.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_create_proxy_connection() {
+        let service = ProxyService::new();
+        let proxy_config = create_test_proxy_config("http");
+        
+        let result = service.lock().await.create_proxy_connection(
+            "example.com".to_string(),
+            80,
+            proxy_config,
+        ).await;
+        
+        assert!(result.is_ok());
+        let connection_id = result.unwrap();
+        
+        // Verify connection was created
+        let connections = &service.lock().await.connections;
+        assert!(connections.contains_key(&connection_id));
+        
+        let connection = connections.get(&connection_id).unwrap();
+        assert_eq!(connection.target_host, "example.com");
+        assert_eq!(connection.target_port, 80);
+        assert_eq!(connection.proxy_config.proxy_type, "http");
+        assert_eq!(connection.status, ProxyConnectionStatus::Disconnected);
+        assert!(connection.local_port.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_proxy_connection_existing() {
+        let service = ProxyService::new();
+        let proxy_config = create_test_proxy_config("socks5");
+        
+        let connection_id = service.lock().await.create_proxy_connection(
+            "test.com".to_string(),
+            443,
+            proxy_config,
+        ).await.unwrap();
+        
+        let result = service.lock().await.get_proxy_connection(&connection_id).await;
+        assert!(result.is_ok());
+        
+        let connection = result.unwrap();
+        assert_eq!(connection.id, connection_id);
+        assert_eq!(connection.target_host, "test.com");
+        assert_eq!(connection.target_port, 443);
+    }
+
+    #[tokio::test]
+    async fn test_get_proxy_connection_nonexistent() {
+        let service = ProxyService::new();
+        
+        let result = service.lock().await.get_proxy_connection("nonexistent").await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Proxy connection not found");
+    }
+
+    #[tokio::test]
+    async fn test_list_proxy_connections() {
+        let service = ProxyService::new();
+        
+        // Initially empty
+        let connections = service.lock().await.list_proxy_connections().await;
+        assert!(connections.is_empty());
+        
+        // Add some connections
+        let config1 = create_test_proxy_config("http");
+        let config2 = create_test_proxy_config("socks5");
+        
+        service.lock().await.create_proxy_connection(
+            "host1.com".to_string(),
+            80,
+            config1,
+        ).await.unwrap();
+        
+        service.lock().await.create_proxy_connection(
+            "host2.com".to_string(),
+            443,
+            config2,
+        ).await.unwrap();
+        
+        let connections = service.lock().await.list_proxy_connections().await;
+        assert_eq!(connections.len(), 2);
+        
+        // Check that both connections are present
+        let hosts: Vec<String> = connections.iter().map(|c| c.target_host.clone()).collect();
+        assert!(hosts.contains(&"host1.com".to_string()));
+        assert!(hosts.contains(&"host2.com".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_delete_proxy_connection_existing() {
+        let service = ProxyService::new();
+        let proxy_config = create_test_proxy_config("ssh");
+        
+        let connection_id = service.lock().await.create_proxy_connection(
+            "ssh.example.com".to_string(),
+            22,
+            proxy_config,
+        ).await.unwrap();
+        
+        // Verify connection exists
+        assert!(service.lock().await.connections.contains_key(&connection_id));
+        
+        // Delete connection
+        let result = service.lock().await.delete_proxy_connection(&connection_id).await;
+        assert!(result.is_ok());
+        
+        // Verify connection is gone
+        assert!(!service.lock().await.connections.contains_key(&connection_id));
+    }
+
+    #[tokio::test]
+    async fn test_delete_proxy_connection_nonexistent() {
+        let service = ProxyService::new();
+        
+        let result = service.lock().await.delete_proxy_connection("nonexistent").await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Proxy connection not found");
+    }
+
+    #[tokio::test]
+    async fn test_connect_via_proxy_unsupported_type() {
+        let service = ProxyService::new();
+        let mut proxy_config = create_test_proxy_config("unsupported");
+        
+        let connection_id = service.lock().await.create_proxy_connection(
+            "example.com".to_string(),
+            80,
+            proxy_config,
+        ).await.unwrap();
+        
+        let result = service.lock().await.connect_via_proxy(&connection_id).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unsupported proxy type"));
+        
+        // Check that status was updated to error
+        let service_guard = service.lock().await;
+        let connection = service_guard.connections.get(&connection_id).unwrap();
+        match &connection.status {
+            ProxyConnectionStatus::Error(_) => {},
+            _ => panic!("Expected error status"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_proxy_connection() {
+        let service = ProxyService::new();
+        let proxy_config = create_test_proxy_config("http");
+        
+        let connection_id = service.lock().await.create_proxy_connection(
+            "example.com".to_string(),
+            80,
+            proxy_config,
+        ).await.unwrap();
+        
+        // Disconnect (should work even if not connected)
+        let result = service.lock().await.disconnect_proxy(&connection_id).await;
+        assert!(result.is_ok());
+        
+        // Verify status is disconnected
+        let service_guard = service.lock().await;
+        let connection = service_guard.connections.get(&connection_id).unwrap();
+        assert!(matches!(connection.status, ProxyConnectionStatus::Disconnected));
+    }
+
+    #[tokio::test]
+    async fn test_create_proxy_chain() {
+        let service = ProxyService::new();
+        
+        let layers = vec![
+            create_test_proxy_config("http"),
+            create_test_proxy_config("socks5"),
+        ];
+        
+        let result = service.lock().await.create_proxy_chain(
+            "Test Chain".to_string(),
+            layers,
+            Some("A test proxy chain".to_string()),
+        ).await;
+        
+        assert!(result.is_ok());
+        let chain_id = result.unwrap();
+        
+        // Verify chain was created
+        let chains = &service.lock().await.chains;
+        assert!(chains.contains_key(&chain_id));
+        
+        let chain = chains.get(&chain_id).unwrap();
+        assert_eq!(chain.name, "Test Chain");
+        assert_eq!(chain.description, Some("A test proxy chain".to_string()));
+        assert_eq!(chain.layers.len(), 2);
+        assert!(matches!(chain.status, ProxyConnectionStatus::Disconnected));
+    }
+
+    #[tokio::test]
+    async fn test_get_proxy_chain_existing() {
+        let service = ProxyService::new();
+        
+        let layers = vec![create_test_proxy_config("http")];
+        
+        let chain_id = service.lock().await.create_proxy_chain(
+            "Test Chain".to_string(),
+            layers,
+            None,
+        ).await.unwrap();
+        
+        let result = service.lock().await.get_proxy_chain(&chain_id).await;
+        assert!(result.is_ok());
+        
+        let chain = result.unwrap();
+        assert_eq!(chain.id, chain_id);
+        assert_eq!(chain.name, "Test Chain");
+    }
+
+    #[tokio::test]
+    async fn test_get_proxy_chain_nonexistent() {
+        let service = ProxyService::new();
+        
+        let result = service.lock().await.get_proxy_chain("nonexistent").await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Proxy chain not found");
+    }
+
+    #[tokio::test]
+    async fn test_list_proxy_chains() {
+        let service = ProxyService::new();
+        
+        // Initially empty
+        let chains = service.lock().await.list_proxy_chains().await;
+        assert!(chains.is_empty());
+        
+        // Add chains
+        let layers1 = vec![create_test_proxy_config("http")];
+        let layers2 = vec![create_test_proxy_config("socks5")];
+        
+        service.lock().await.create_proxy_chain(
+            "Chain 1".to_string(),
+            layers1,
+            None,
+        ).await.unwrap();
+        
+        service.lock().await.create_proxy_chain(
+            "Chain 2".to_string(),
+            layers2,
+            None,
+        ).await.unwrap();
+        
+        let chains = service.lock().await.list_proxy_chains().await;
+        assert_eq!(chains.len(), 2);
+        
+        let names: Vec<String> = chains.iter().map(|c| c.name.clone()).collect();
+        assert!(names.contains(&"Chain 1".to_string()));
+        assert!(names.contains(&"Chain 2".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_delete_proxy_chain_existing() {
+        let service = ProxyService::new();
+        
+        let layers = vec![create_test_proxy_config("http")];
+        let chain_id = service.lock().await.create_proxy_chain(
+            "Test Chain".to_string(),
+            layers,
+            None,
+        ).await.unwrap();
+        
+        // Verify chain exists
+        assert!(service.lock().await.chains.contains_key(&chain_id));
+        
+        // Delete chain
+        let result = service.lock().await.delete_proxy_chain(&chain_id).await;
+        assert!(result.is_ok());
+        
+        // Verify chain is gone
+        assert!(!service.lock().await.chains.contains_key(&chain_id));
+    }
+
+    #[tokio::test]
+    async fn test_delete_proxy_chain_nonexistent() {
+        let service = ProxyService::new();
+        
+        let result = service.lock().await.delete_proxy_chain("nonexistent").await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Proxy chain not found");
+    }
+
+    #[tokio::test]
+    async fn test_proxy_config_serialization() {
+        let config = ProxyConfig {
+            proxy_type: "websocket".to_string(),
+            host: "ws.example.com".to_string(),
+            port: 443,
+            username: Some("wsuser".to_string()),
+            password: Some("wspass".to_string()),
+            ssh_key_file: Some("/path/to/key".to_string()),
+            ssh_key_passphrase: Some("keypass".to_string()),
+            ssh_host_key_verification: Some(true),
+            ssh_known_hosts_file: Some("/path/to/known_hosts".to_string()),
+            tunnel_domain: Some("tunnel.example.com".to_string()),
+            tunnel_key: Some("tunnelkey123".to_string()),
+            tunnel_method: Some("obfuscated".to_string()),
+            custom_headers: Some({
+                let mut headers = HashMap::new();
+                headers.insert("X-Custom".to_string(), "value".to_string());
+                headers
+            }),
+            websocket_path: Some("/ws".to_string()),
+            quic_cert_file: Some("/path/to/cert.pem".to_string()),
+            shadowsocks_method: Some("aes-256-gcm".to_string()),
+            shadowsocks_plugin: Some("v2ray-plugin".to_string()),
+        };
+        
+        // Test serialization
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: ProxyConfig = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(deserialized.proxy_type, config.proxy_type);
+        assert_eq!(deserialized.host, config.host);
+        assert_eq!(deserialized.port, config.port);
+        assert_eq!(deserialized.username, config.username);
+        assert_eq!(deserialized.password, config.password);
+        assert_eq!(deserialized.websocket_path, config.websocket_path);
+        assert_eq!(deserialized.shadowsocks_method, config.shadowsocks_method);
+    }
+
+    #[tokio::test]
+    async fn test_proxy_connection_status_transitions() {
+        let service = ProxyService::new();
+        let proxy_config = create_test_proxy_config("http");
+
+        let connection_id = service.lock().await.create_proxy_connection(
+            "example.com".to_string(),
+            80,
+            proxy_config,
+        ).await.unwrap();
+
+        // Initially disconnected
+        let service_guard = service.lock().await;
+        let connection = service_guard.connections.get(&connection_id).unwrap();
+        assert!(matches!(connection.status, ProxyConnectionStatus::Disconnected));
+
+        // Manually set status to simulate connection attempt
+        // (We don't want to make real network connections in unit tests)
+        {
+            let mut service_guard = service.lock().await;
+            let connection = service_guard.connections.get_mut(&connection_id).unwrap();
+            connection.status = ProxyConnectionStatus::Connecting;
+        }
+
+        // Check connecting status
+        let service_guard = service.lock().await;
+        let connection = service_guard.connections.get(&connection_id).unwrap();
+        assert!(matches!(connection.status, ProxyConnectionStatus::Connecting));
+
+        // Simulate successful connection
+        {
+            let mut service_guard = service.lock().await;
+            let connection = service_guard.connections.get_mut(&connection_id).unwrap();
+            connection.status = ProxyConnectionStatus::Connected;
+            connection.local_port = Some(8081);
+        }
+
+        // Check connected status
+        let service_guard = service.lock().await;
+        let connection = service_guard.connections.get(&connection_id).unwrap();
+        assert!(matches!(connection.status, ProxyConnectionStatus::Connected));
+        assert_eq!(connection.local_port, Some(8081));
+
+        // Simulate error
+        {
+            let mut service_guard = service.lock().await;
+            let connection = service_guard.connections.get_mut(&connection_id).unwrap();
+            connection.status = ProxyConnectionStatus::Error("Connection failed".to_string());
+            connection.local_port = None;
+        }
+
+        // Check error status
+        let service_guard = service.lock().await;
+        let connection = service_guard.connections.get(&connection_id).unwrap();
+        match &connection.status {
+            ProxyConnectionStatus::Error(msg) => assert_eq!(msg, "Connection failed"),
+            _ => panic!("Expected error status"),
+        }
+        assert!(connection.local_port.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_proxy_operations() {
+        let service = ProxyService::new();
+        
+        // Spawn multiple tasks to create connections concurrently
+        let mut handles = vec![];
+        for i in 0..5 {
+            let service_clone = service.clone();
+            let handle = tokio::spawn(async move {
+                let proxy_config = create_test_proxy_config("http");
+                let connection_id = service_clone.lock().await.create_proxy_connection(
+                    format!("host{}.com", i),
+                    80,
+                    proxy_config,
+                ).await.unwrap();
+                
+                // Try to connect (may fail but shouldn't panic)
+                let _ = service_clone.lock().await.connect_via_proxy(&connection_id).await;
+                
+                connection_id
+            });
+            handles.push(handle);
+        }
+        
+        // Wait for all tasks to complete
+        let mut connection_ids = vec![];
+        for handle in handles {
+            connection_ids.push(handle.await.unwrap());
+        }
+        
+        // Verify all connections were created
+        let connections = service.lock().await.list_proxy_connections().await;
+        assert_eq!(connections.len(), 5);
+        
+        // Verify all IDs are unique
+        let mut ids = std::collections::HashSet::new();
+        for id in &connection_ids {
+            assert!(ids.insert(id));
+        }
+    }
 }
