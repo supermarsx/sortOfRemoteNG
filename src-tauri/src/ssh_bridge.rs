@@ -19,7 +19,6 @@ pub struct SshBridgeServer {
 impl SshBridgeServer {
     pub fn new() -> Self {
         let mut config = russh::server::Config::default();
-        config.connection_timeout = Some(std::time::Duration::from_secs(600));
         config.auth_rejection_time = std::time::Duration::from_secs(3);
         config.auth_rejection_time_initial = Some(std::time::Duration::from_secs(0));
         config.keys = vec![russh_keys::key::KeyPair::generate_ed25519().unwrap()];
@@ -39,7 +38,7 @@ impl SshBridgeServer {
             let server_clone = self.clone();
 
             tokio::spawn(async move {
-                let config = server_clone.config.as_ref().clone();
+                let config = server_clone.config.clone();
                 if let Err(e) = russh::server::run_stream(config, socket, server_clone).await {
                     log::error!("SSH server error: {}", e);
                 }
@@ -54,9 +53,8 @@ impl SshBridgeServer {
 
     pub async fn disconnect_client(&self, client_id: Uuid) -> Result<(), Box<dyn std::error::Error>> {
         let mut clients = self.clients.lock().await;
-        if let Some(handle) = clients.remove(&client_id) {
-            handle.disconnect().await?;
-        }
+        clients.remove(&client_id);
+        // Note: The handle doesn't have a disconnect method in this version
         Ok(())
     }
 }
@@ -138,7 +136,7 @@ impl russh::server::Handler for SshBridgeHandler {
 
     async fn exec_request(&mut self, channel_id: russh::ChannelId, data: &[u8], session: &mut russh::server::Session) -> Result<(), Self::Error> {
         if !self.authenticated {
-            session.channel_close(channel_id).await?;
+            session.channel_failure(channel_id).await?;
             return Ok(());
         }
 
@@ -150,9 +148,9 @@ impl russh::server::Handler for SshBridgeHandler {
             // This is a simplified implementation
             let output = format!("Command executed: {}\n", command.trim());
 
-            session.data(channel_id, russh::CryptoVec::from(output.as_bytes())).await?;
-            session.exit_status_request(channel_id, 0).await?;
-            session.channel_close(channel_id).await?;
+            session.data(channel_id, russh::CryptoVec::from(output.as_bytes().to_vec()))?;
+            session.exit_status_request(channel_id, 0)?;
+            session.channel_failure(channel_id).await?;
         }
 
         Ok(())
@@ -160,7 +158,7 @@ impl russh::server::Handler for SshBridgeHandler {
 
     async fn shell_request(&mut self, channel_id: russh::ChannelId, session: &mut russh::server::Session) -> Result<(), Self::Error> {
         if !self.authenticated {
-            session.channel_close(channel_id).await?;
+            session.channel_failure(channel_id).await?;
             return Ok(());
         }
 
@@ -168,7 +166,7 @@ impl russh::server::Handler for SshBridgeHandler {
 
         // Send a welcome message
         let welcome = "Welcome to SSH Bridge Server\n$ ";
-        session.data(channel_id, russh::CryptoVec::from(welcome.as_bytes())).await?;
+        session.data(channel_id, russh::CryptoVec::from(welcome.as_bytes().to_vec()))?;
 
         Ok(())
     }
@@ -183,7 +181,7 @@ impl russh::server::Handler for SshBridgeHandler {
 
         // Echo back the input with a prompt
         let response = format!("Echo: {}\n$ ", input.trim());
-        session.data(channel_id, russh::CryptoVec::from(response.as_bytes())).await?;
+        session.data(channel_id, russh::CryptoVec::from(response.as_bytes().to_vec()))?;
 
         Ok(())
     }
@@ -209,7 +207,7 @@ impl russh::server::Handler for SshBridgeHandler {
 
 // SSH Client Bridge for connecting to remote servers
 pub struct SshClientBridge {
-    connections: Arc<Mutex<HashMap<String, russh::client::Handle>>>,
+    connections: Arc<Mutex<HashMap<String, russh::client::Handle<SshClientHandler>>>>,
 }
 
 impl SshClientBridge {
@@ -228,7 +226,7 @@ impl SshClientBridge {
         auth_method: AuthMethod,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let config = russh::client::Config::default();
-        let mut session = russh::client::connect(config, (host, port), SshClientHandler::new()).await?;
+        let mut session = russh::client::connect(Arc::new(config), (host, port), SshClientHandler::new()).await?;
 
         match auth_method {
             AuthMethod::Password(password) => {
@@ -356,7 +354,7 @@ impl SshBridgeManager {
             id: tunnel_id.clone(),
             local_addr: local_addr.to_string(),
             remote_addr: remote_addr.to_string(),
-            direction,
+            direction: direction.clone(),
             created_at: Utc::now(),
         };
 

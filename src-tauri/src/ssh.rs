@@ -77,15 +77,14 @@ pub enum PortForwardDirection {
     Dynamic,
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone)]
 pub struct SshSession {
     pub id: String,
-    #[serde(skip)]
     pub session: Session,
     pub config: SshConnectionConfig,
     pub connected_at: DateTime<Utc>,
     pub last_activity: DateTime<Utc>,
-    pub port_forwards: HashMap<String, PortForwardHandle>,
+    pub port_forwards: HashMap<String, PortForwardInfo>,
     pub keep_alive_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -94,6 +93,12 @@ pub struct PortForwardHandle {
     pub id: String,
     pub config: PortForwardConfig,
     pub handle: tokio::task::JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PortForwardInfo {
+    pub id: String,
+    pub config: PortForwardConfig,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -199,6 +204,11 @@ impl SshService {
         let mut current_stream = self.establish_direct_connection(config).await?;
 
         for jump_host in &config.jump_hosts {
+            // Get local address before moving the stream
+            let local_addr = current_stream.local_addr()
+                .map_err(|e| format!("Failed to get local address: {}", e))?;
+            let local_port = local_addr.port();
+
             let mut jump_session = Session::new()
                 .map_err(|e| format!("Failed to create jump session: {}", e))?;
             jump_session.set_tcp_stream(current_stream);
@@ -209,10 +219,6 @@ impl SshService {
             self.authenticate_jump_session(&mut jump_session, jump_host)?;
 
             // Create tunnel to next host
-            let local_addr = current_stream.local_addr()
-                .map_err(|e| format!("Failed to get local address: {}", e))?;
-            let local_port = local_addr.port();
-
             current_stream = TcpStream::connect((jump_host.host.as_str(), jump_host.port))
                 .map_err(|e| format!("Failed to connect to jump host: {}", e))?;
         }
@@ -366,30 +372,37 @@ impl SshService {
     }
 
     pub async fn setup_port_forward(&mut self, session_id: &str, config: PortForwardConfig) -> Result<String, String> {
-        let session = self.sessions.get_mut(session_id)
-            .ok_or("Session not found")?;
-
-        session.last_activity = Utc::now();
-
         let forward_id = Uuid::new_v4().to_string();
 
         let handle = match config.direction {
             PortForwardDirection::Local => {
+                let session = self.sessions.get_mut(session_id)
+                    .ok_or("Session not found")?;
+                session.last_activity = Utc::now();
                 self.setup_local_port_forward(session, &config, forward_id.clone()).await?
             }
             PortForwardDirection::Remote => {
+                let session = self.sessions.get_mut(session_id)
+                    .ok_or("Session not found")?;
+                session.last_activity = Utc::now();
                 self.setup_remote_port_forward(session, &config, forward_id.clone()).await?
             }
             PortForwardDirection::Dynamic => {
+                let session = self.sessions.get_mut(session_id)
+                    .ok_or("Session not found")?;
+                session.last_activity = Utc::now();
                 self.setup_dynamic_port_forward(session, &config, forward_id.clone()).await?
             }
         };
 
+        let session = self.sessions.get_mut(session_id)
+            .ok_or("Session not found")?;
+        session.last_activity = Utc::now();
         session.port_forwards.insert(forward_id.clone(), handle);
         Ok(forward_id)
     }
 
-    async fn setup_local_port_forward(&self, session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardHandle, String> {
+    async fn setup_local_port_forward(&self, session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardInfo, String> {
         let listener = TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
             .map_err(|e| format!("Failed to bind local port: {}", e))?;
 
@@ -409,20 +422,35 @@ impl SshService {
                         .map_err(|e| format!("Failed to create direct TCP channel: {}", e))?;
 
                     // Forward data between local stream and SSH channel
-                    let mut local_stream = AsyncTcpStream::from_std(stream)?;
-                    let (mut reader, mut writer) = tokio::io::split(local_stream);
-                    let mut channel_reader = channel.stream(0);
-                    let mut channel_writer = channel.stream(0);
+                    let mut local_stream = AsyncTcpStream::from_std(stream)
+                        .map_err(|e| format!("Failed to convert stream: {}", e))?;
+                    let mut buf = [0u8; 8192];
 
-                    let forward_task1 = tokio::io::copy(&mut reader, &mut channel_writer);
-                    let forward_task2 = tokio::io::copy(&mut channel_reader, &mut writer);
-
-                    tokio::select! {
-                        result = forward_task1 => {
-                            result.map_err(|e| format!("Forward error: {}", e))?;
+                    loop {
+                        let local_result = local_stream.read(&mut buf).await;
+                        match local_result {
+                            Ok(0) => break,
+                            Ok(n) => {
+                                if let Err(e) = channel.write_all(&buf[..n]) {
+                                    return Err(format!("Failed to write to SSH channel: {}", e).into());
+                                }
+                            }
+                            Err(e) => return Err(format!("Local read error: {}", e).into()),
                         }
-                        result = forward_task2 => {
-                            result.map_err(|e| format!("Reverse forward error: {}", e))?;
+
+                        let channel_result = tokio::task::spawn_blocking(move || {
+                            channel.read(&mut buf)
+                        }).await;
+
+                        match channel_result {
+                            Ok(Ok(0)) => break,
+                            Ok(Ok(n)) => {
+                                if let Err(e) = local_stream.write_all(&buf[..n]).await {
+                                    return Err(format!("Failed to write to local stream: {}", e).into());
+                                }
+                            }
+                            Ok(Err(e)) => return Err(format!("SSH channel read error: {}", e).into()),
+                            Err(e) => return Err(format!("Task join error: {}", e).into()),
                         }
                     }
                     Ok(())
@@ -430,70 +458,78 @@ impl SshService {
             }
         });
 
-        Ok(PortForwardHandle {
+        Ok(PortForwardInfo {
             id,
             config: config.clone(),
-            handle,
         })
     }
 
-    async fn setup_remote_port_forward(&self, session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardHandle, String> {
+    async fn setup_remote_port_forward(&self, session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardInfo, String> {
         // Remote port forwarding - listen on remote host and forward to local
         session.session.channel_forward_listen(config.remote_port, Some(&config.remote_host), None)
             .map_err(|e| format!("Failed to setup remote port forward: {}", e))?;
 
-        Ok(PortForwardHandle {
+        Ok(PortForwardInfo {
             id,
             config: config.clone(),
-            handle: tokio::spawn(async { Ok(()) }),
         })
     }
 
-    async fn setup_dynamic_port_forward(&self, session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardHandle, String> {
+    async fn setup_dynamic_port_forward(&self, session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardInfo, String> {
         // Dynamic port forwarding (SOCKS proxy)
         let listener = TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
             .map_err(|e| format!("Failed to bind SOCKS port: {}", e))?;
 
-        let session_clone = session.session.clone();
-
-        let handle = tokio::spawn(async move {
+        // Start the SOCKS proxy in background
+        tokio::spawn(async move {
             loop {
-                let (stream, _) = listener.accept()
-                    .map_err(|e| format!("Failed to accept SOCKS connection: {}", e))?;
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        tokio::spawn(async move {
+                            // Handle SOCKS protocol
+                            // This is a simplified implementation - full SOCKS5 would be more complex
+                            match AsyncTcpStream::from_std(stream) {
+                                Ok(mut local_stream) => {
+                                    let mut buf = [0u8; 512];
 
-                let session = session_clone.clone();
+                                    // Read SOCKS request
+                                    match local_stream.read(&mut buf).await {
+                                        Ok(n) => {
+                                            if n < 10 || buf[0] != 5 {
+                                                log::error!("Invalid SOCKS version");
+                                                return;
+                                            }
 
-                tokio::spawn(async move {
-                    // Handle SOCKS protocol
-                    // This is a simplified implementation - full SOCKS5 would be more complex
-                    let mut local_stream = AsyncTcpStream::from_std(stream)?;
-                    let mut buf = [0u8; 512];
-
-                    // Read SOCKS request
-                    let n = local_stream.read(&mut buf).await
-                        .map_err(|e| format!("Failed to read SOCKS request: {}", e))?;
-
-                    if n < 10 || buf[0] != 5 {
-                        return Err("Invalid SOCKS version".to_string());
+                                            // Send success response
+                                            if let Err(e) = local_stream.write_all(&[5, 0]).await {
+                                                log::error!("Failed to send SOCKS response: {}", e);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to read SOCKS request: {}", e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to convert stream: {}", e);
+                                }
+                            }
+                        });
                     }
-
-                    // Send success response
-                    local_stream.write_all(&[5, 0]).await
-                        .map_err(|e| format!("Failed to send SOCKS response: {}", e))?;
-
-                    Ok(())
-                });
+                    Err(e) => {
+                        log::error!("Failed to accept SOCKS connection: {}", e);
+                    }
+                }
             }
         });
 
-        Ok(PortForwardHandle {
+        Ok(PortForwardInfo {
             id,
             config: config.clone(),
-            handle,
         })
     }
 
-    pub async fn list_directory(&mut self, session_id: &str, path: &str) -> Result<Vec<std::fs::DirEntry>, String> {
+    pub async fn list_directory(&mut self, session_id: &str, path: &str) -> Result<Vec<SftpDirEntry>, String> {
         let session = self.sessions.get_mut(session_id)
             .ok_or("Session not found")?;
 
@@ -792,7 +828,7 @@ pub async fn list_directory(
 ) -> Result<Vec<String>, String> {
     let mut ssh = state.lock().await;
     let entries = ssh.list_directory(&session_id, &path).await?;
-    Ok(entries.into_iter().map(|e| e.path().to_string_lossy().to_string()).collect())
+    Ok(entries.into_iter().map(|e| e.path.to_string()).collect())
 }
 
 #[tauri::command]
