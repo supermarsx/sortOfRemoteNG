@@ -1,3 +1,78 @@
+//! # Proxy Service
+//!
+//! This module provides comprehensive proxy and tunneling functionality for the SortOfRemote NG application.
+//! It supports multiple proxy protocols and advanced tunneling techniques for secure and anonymous connections.
+//!
+//! ## Supported Proxy Types
+//!
+//! - **HTTP/HTTPS**: Standard web proxies with optional authentication
+//! - **SOCKS4/SOCKS5**: Versatile proxy protocols with UDP support
+//! - **SSH Tunneling**: Secure shell-based port forwarding
+//! - **DNS Tunneling**: Data exfiltration through DNS queries
+//! - **ICMP Tunneling**: Using ping packets for data transmission
+//! - **WebSocket Tunneling**: Real-time bidirectional communication
+//! - **QUIC Tunneling**: Next-generation transport protocol
+//! - **TCP-over-DNS**: TCP connections tunneled through DNS
+//! - **HTTP CONNECT**: HTTP method for establishing tunnels
+//! - **Shadowsocks**: Encrypted SOCKS5 proxy protocol
+//!
+//! ## Features
+//!
+//! - **Connection Chaining**: Chain multiple proxies for enhanced anonymity
+//! - **Dynamic Port Allocation**: Automatic local port assignment
+//! - **Connection Health Monitoring**: Real-time status tracking
+//! - **Error Handling**: Comprehensive error reporting and recovery
+//! - **Thread Safety**: Async mutex-protected operations
+//! - **Extensible Architecture**: Easy addition of new proxy types
+//!
+//! ## Security Considerations
+//!
+//! - All proxy credentials are handled securely
+//! - SSH key-based authentication support
+//! - Certificate validation for secure protocols
+//! - Connection encryption where applicable
+//!
+//! ## Example
+//!
+//! ```rust,no_run
+//! 
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let proxy_service = crate::proxy::ProxyService::new();
+//!
+//! // Create an HTTP proxy configuration
+//! let config = crate::proxy::ProxyConfig {
+//!     proxy_type: "http".to_string(),
+//!     host: "proxy.example.com".to_string(),
+//!     port: 8080,
+//!     username: Some("user".to_string()),
+//!     password: Some("pass".to_string()),
+//!     ssh_key_file: None,
+//!     ssh_key_passphrase: None,
+//!     ssh_host_key_verification: None,
+//!     ssh_known_hosts_file: None,
+//!     tunnel_domain: None,
+//!     tunnel_key: None,
+//!     tunnel_method: None,
+//!     custom_headers: None,
+//!     websocket_path: None,
+//!     quic_cert_file: None,
+//!     shadowsocks_method: None,
+//!     shadowsocks_plugin: None,
+//! };
+//!
+//! // Create and connect to a proxy
+//! let connection_id = proxy_service.lock().await
+//!     .create_proxy_connection("target.com".to_string(), 80, config).await?;
+//!
+//! let local_port = proxy_service.lock().await
+//!     .connect_via_proxy(&connection_id).await?;
+//!
+//! println!("Connected via local port: {}", local_port);
+//! # Ok(())
+//! # }
+//! ```
+
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::net::TcpStream;
@@ -8,80 +83,196 @@ use tokio::time::{timeout, Duration};
 use tokio::process::Command;
 use futures::SinkExt;
 
+/// Type alias for the proxy service state wrapped in an Arc<Mutex<>> for thread-safe access.
 pub type ProxyServiceState = Arc<Mutex<ProxyService>>;
 
+/// Represents the current status of a proxy connection.
+///
+/// This enum tracks the lifecycle states of proxy connections and any errors that may occur.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ProxyConnectionStatus {
+    /// Connection is being established
     Connecting,
+    /// Connection is active and ready for use
     Connected,
+    /// Connection has been closed or disconnected
     Disconnected,
+    /// Connection failed with an error message
     Error(String),
 }
 
+/// Configuration for proxy connections and tunneling.
+///
+/// This struct contains all the parameters needed to establish various types of proxy connections,
+/// from basic HTTP proxies to advanced tunneling protocols.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConfig {
-    pub proxy_type: String, // "http", "https", "socks4", "socks5", "ssh", "dns-tunnel", "icmp-tunnel", "websocket", "quic", "tcp-over-dns", "http-connect", "shadowsocks"
+    /// The type of proxy protocol to use
+    ///
+    /// Supported values: "http", "https", "socks4", "socks5", "ssh", "dns-tunnel",
+    /// "icmp-tunnel", "websocket", "quic", "tcp-over-dns", "http-connect", "shadowsocks"
+    pub proxy_type: String,
+
+    /// The hostname or IP address of the proxy server
     pub host: String,
+
+    /// The port number of the proxy server
     pub port: u16,
+
+    /// Optional username for proxy authentication
     pub username: Option<String>,
+
+    /// Optional password for proxy authentication
     pub password: Option<String>,
 
-    // SSH-specific options
+    /// SSH private key file path (SSH tunneling only)
     pub ssh_key_file: Option<String>,
+
+    /// Passphrase for encrypted SSH private key (SSH tunneling only)
     pub ssh_key_passphrase: Option<String>,
+
+    /// Whether to verify SSH host keys (SSH tunneling only)
     pub ssh_host_key_verification: Option<bool>,
+
+    /// Path to SSH known hosts file (SSH tunneling only)
     pub ssh_known_hosts_file: Option<String>,
 
-    // Advanced tunneling options
-    pub tunnel_domain: Option<String>, // For DNS tunneling
-    pub tunnel_key: Option<String>, // Encryption key for tunneling
-    pub tunnel_method: Option<String>, // "direct", "fragmented", "obfuscated"
-    pub custom_headers: Option<std::collections::HashMap<String, String>>, // For HTTP-based tunneling
-    pub websocket_path: Option<String>, // For WebSocket tunneling
-    pub quic_cert_file: Option<String>, // For QUIC tunneling
-    pub shadowsocks_method: Option<String>, // Shadowsocks encryption method
-    pub shadowsocks_plugin: Option<String>, // Shadowsocks plugin
+    /// Domain name for DNS tunneling
+    pub tunnel_domain: Option<String>,
+
+    /// Encryption key for tunneling protocols
+    pub tunnel_key: Option<String>,
+
+    /// Tunneling method: "direct", "fragmented", "obfuscated"
+    pub tunnel_method: Option<String>,
+
+    /// Custom HTTP headers for HTTP-based tunneling
+    pub custom_headers: Option<std::collections::HashMap<String, String>>,
+
+    /// WebSocket path for WebSocket tunneling
+    pub websocket_path: Option<String>,
+
+    /// Certificate file path for QUIC tunneling
+    pub quic_cert_file: Option<String>,
+
+    /// Shadowsocks encryption method
+    pub shadowsocks_method: Option<String>,
+
+    /// Shadowsocks plugin configuration
+    pub shadowsocks_plugin: Option<String>,
 }
 
+/// Represents an individual proxy connection.
+///
+/// This struct tracks the state and configuration of a single proxy connection,
+/// including its target destination and current status.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConnection {
+    /// Unique identifier for this connection
     pub id: String,
+
+    /// Target hostname or IP address to connect to through the proxy
     pub target_host: String,
+
+    /// Target port number to connect to through the proxy
     pub target_port: u16,
+
+    /// Proxy configuration for this connection
     pub proxy_config: ProxyConfig,
+
+    /// Local port allocated for this connection (assigned when connected)
     pub local_port: Option<u16>,
+
+    /// Current status of the connection
     pub status: ProxyConnectionStatus,
 }
 
+/// Represents a layer in a proxy chain.
+///
+/// Proxy chains allow routing traffic through multiple proxies in sequence,
+/// with each layer representing one hop in the chain.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProxyChainLayer {
+    /// Unique identifier for this layer
     pub id: String,
+
+    /// Proxy configuration for this layer
     pub proxy_config: ProxyConfig,
+
+    /// Position of this layer in the chain (0-based index)
     pub position: usize,
+
+    /// Current status of this layer
     pub status: ProxyConnectionStatus,
+
+    /// Local port allocated for this layer (if applicable)
     pub local_port: Option<u16>,
+
+    /// Error message if this layer failed
     pub error: Option<String>,
 }
 
+/// Represents a complete proxy chain configuration.
+///
+/// A proxy chain consists of multiple layers that traffic passes through in sequence,
+/// providing enhanced anonymity and security.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProxyChain {
+    /// Unique identifier for this chain
     pub id: String,
+
+    /// Human-readable name for the chain
     pub name: String,
+
+    /// Optional description of the chain's purpose
     pub description: Option<String>,
+
+    /// Ordered list of proxy layers in this chain
     pub layers: Vec<ProxyChainLayer>,
+
+    /// Overall status of the chain
     pub status: ProxyConnectionStatus,
+
+    /// ISO 8601 timestamp when the chain was created
     pub created_at: String,
+
+    /// ISO 8601 timestamp when the chain was last connected (if applicable)
     pub connected_at: Option<String>,
+
+    /// Final local port that provides access to the chain
     pub final_local_port: Option<u16>,
+
+    /// Error message if the chain failed to connect
     pub error: Option<String>,
 }
 
+/// The main proxy service that manages proxy connections and chains.
+///
+/// This service provides all proxy-related functionality including creating connections,
+/// managing chains, and handling different proxy protocols.
 pub struct ProxyService {
+    /// Map of connection ID to proxy connection
     connections: HashMap<String, ProxyConnection>,
+    /// Map of chain ID to proxy chain
     chains: HashMap<String, ProxyChain>,
 }
 
 impl ProxyService {
+    /// Creates a new proxy service instance.
+    ///
+    /// Initializes an empty proxy service with no connections or chains.
+    ///
+    /// # Returns
+    ///
+    /// A new `ProxyServiceState` wrapped in an Arc<Mutex<>> for thread-safe access
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// 
+    ///
+    /// let proxy_service = crate::proxy::ProxyService::new();
+    /// ```
     pub fn new() -> ProxyServiceState {
         Arc::new(Mutex::new(ProxyService {
             connections: HashMap::new(),
@@ -89,6 +280,57 @@ impl ProxyService {
         }))
     }
 
+    /// Creates a new proxy connection configuration.
+    ///
+    /// This method creates a proxy connection entry but does not establish the actual connection.
+    /// Use `connect_via_proxy` to establish the connection after creation.
+    ///
+    /// # Arguments
+    ///
+    /// * `target_host` - The target hostname or IP address to connect to through the proxy
+    /// * `target_port` - The target port number to connect to through the proxy
+    /// * `proxy_config` - The proxy configuration specifying protocol, server, and credentials
+    ///
+    /// # Returns
+    ///
+    /// `Ok(String)` containing the connection ID if successful, `Err(String)` with error message if failed
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # 
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let proxy_service = crate::proxy::ProxyService::new();
+    /// # let mut service = proxy_service.lock().await;
+    /// let config = crate::proxy::ProxyConfig {
+    ///     proxy_type: "http".to_string(),
+    ///     host: "proxy.example.com".to_string(),
+    ///     port: 8080,
+    ///     username: None,
+    ///     password: None,
+    ///     // ... other fields
+    ///     ssh_key_file: None,
+    ///     ssh_key_passphrase: None,
+    ///     ssh_host_key_verification: None,
+    ///     ssh_known_hosts_file: None,
+    ///     tunnel_domain: None,
+    ///     tunnel_key: None,
+    ///     tunnel_method: None,
+    ///     custom_headers: None,
+    ///     websocket_path: None,
+    ///     quic_cert_file: None,
+    ///     shadowsocks_method: None,
+    ///     shadowsocks_plugin: None,
+    /// };
+    ///
+    /// let connection_id = service.create_proxy_connection(
+    ///     "target.com".to_string(),
+    ///     80,
+    ///     config
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn create_proxy_connection(
         &mut self,
         target_host: String,
@@ -110,6 +352,40 @@ impl ProxyService {
         Ok(id)
     }
 
+    /// Establishes a proxy connection using the specified connection configuration.
+    ///
+    /// This method connects to the proxy server and sets up local port forwarding.
+    /// The connection must have been previously created using `create_proxy_connection`.
+    ///
+    /// # Arguments
+    ///
+    /// * `connection_id` - The ID of the proxy connection to establish
+    ///
+    /// # Returns
+    ///
+    /// `Ok(u16)` containing the local port number if successful, `Err(String)` with error message if failed
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The connection ID doesn't exist
+    /// - The proxy server is unreachable
+    /// - Authentication fails
+    /// - The proxy protocol is unsupported
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # 
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let proxy_service = crate::proxy::ProxyService::new();
+    /// # let mut service = proxy_service.lock().await;
+    /// # let connection_id = "some-id".to_string();
+    /// let local_port = service.connect_via_proxy(&connection_id).await?;
+    /// println!("Connected via local port: {}", local_port);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn connect_via_proxy(&mut self, connection_id: &str) -> Result<u16, String> {
         let connection = self.connections.get_mut(connection_id)
             .ok_or_else(|| "Proxy connection not found".to_string())?;
@@ -1572,7 +1848,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_config_serialization() {
-        let config = ProxyConfig {
+        let config = crate::proxy::ProxyConfig {
             proxy_type: "websocket".to_string(),
             host: "ws.example.com".to_string(),
             port: 443,
