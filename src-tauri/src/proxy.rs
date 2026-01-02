@@ -43,6 +43,7 @@ use std::net::SocketAddr;
 use std::collections::HashMap;
 use tokio::time::{timeout, Duration};
 use futures::SinkExt;
+use base64::Engine;
 
 /// Type alias for the proxy service state wrapped in an Arc<Mutex<>> for thread-safe access.
 pub type ProxyServiceState = Arc<Mutex<ProxyService>>;
@@ -380,7 +381,7 @@ impl ProxyService {
             &connection.proxy_config.username,
             &connection.proxy_config.password
         ) {
-            let auth = base64::encode(format!("{}:{}", username, password));
+            let auth = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password));
             request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", auth));
         }
 
@@ -823,7 +824,7 @@ impl ProxyService {
         Ok(local_port)
     }
 
-    async fn connect_quic_tunnel_static(connection: &mut ProxyConnection) -> Result<u16, String> {
+    async fn connect_quic_tunnel_static(_connection: &mut ProxyConnection) -> Result<u16, String> {
         // QUIC tunneling implementation
         // This would use QUIC protocol for tunneling
         // For now, this is a placeholder implementation
@@ -894,7 +895,7 @@ impl ProxyService {
             &connection.proxy_config.username,
             &connection.proxy_config.password
         ) {
-            let auth = base64::encode(format!("{}:{}", username, password));
+            let auth = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", username, password));
             connect_request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", auth));
         }
 
@@ -989,7 +990,7 @@ impl ProxyService {
 
     async fn handle_ssh_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the SSH process and handle connections
-        if let Ok((client_stream, _)) = listener.accept().await {
+        if let Ok((_client_stream, _)) = listener.accept().await {
             // For SSH tunnels, the local port forwarding is handled by ssh itself
             // We just need to keep the process alive
             let _ = child.wait().await;
@@ -998,7 +999,7 @@ impl ProxyService {
 
     async fn handle_dns_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the DNS tunnel process
-        if let Ok((client_stream, _)) = listener.accept().await {
+        if let Ok((_client_stream, _)) = listener.accept().await {
             // DNS tunneling handles the traffic encoding/decoding
             let _ = child.wait().await;
         }
@@ -1006,7 +1007,7 @@ impl ProxyService {
 
     async fn handle_icmp_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the ICMP tunnel process
-        if let Ok((client_stream, _)) = listener.accept().await {
+        if let Ok((_client_stream, _)) = listener.accept().await {
             // ICMP tunneling handles the traffic encoding/decoding
             let _ = child.wait().await;
         }
@@ -1062,7 +1063,7 @@ impl ProxyService {
 
     async fn handle_tcp_over_dns_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the TCP-over-DNS tunnel process
-        if let Ok((client_stream, _)) = listener.accept().await {
+        if let Ok((_client_stream, _)) = listener.accept().await {
             // TCP-over-DNS tunneling handles the traffic encoding/decoding
             let _ = child.wait().await;
         }
@@ -1070,7 +1071,7 @@ impl ProxyService {
 
     async fn handle_shadowsocks_tunnel(listener: tokio::net::TcpListener, mut child: tokio::process::Child) {
         // Monitor the Shadowsocks process
-        if let Ok((client_stream, _)) = listener.accept().await {
+        if let Ok((_client_stream, _)) = listener.accept().await {
             // Shadowsocks handles the traffic encryption/decryption
             let _ = child.wait().await;
         }

@@ -217,14 +217,14 @@ impl SshService {
             .map_err(|e| format!("Failed to establish TCP connection: {}", e))
     }
 
-    async fn establish_proxy_connection(&self, config: &SshConnectionConfig, proxy_config: &ProxyConfig) -> Result<TcpStream, String> {
+    async fn establish_proxy_connection(&self, _config: &SshConnectionConfig, _proxy_config: &ProxyConfig) -> Result<TcpStream, String> {
         // Use the proxy service to establish connection
         // This would need to be implemented with the proxy service
         // For now, return an error indicating proxy is not implemented
         Err("Proxy connections not yet implemented for SSH".to_string())
     }
 
-    async fn establish_openvpn_connection(&self, config: &SshConnectionConfig, openvpn_config: &OpenVPNConfig) -> Result<TcpStream, String> {
+    async fn establish_openvpn_connection(&self, _config: &SshConnectionConfig, _openvpn_config: &OpenVPNConfig) -> Result<TcpStream, String> {
         // Use the OpenVPN service to establish connection through VPN
         // This would need to be implemented with the OpenVPN service
         // For now, return an error indicating OpenVPN is not implemented
@@ -238,7 +238,7 @@ impl SshService {
             // Get local address before moving the stream
             let local_addr = current_stream.local_addr()
                 .map_err(|e| format!("Failed to get local address: {}", e))?;
-            let local_port = local_addr.port();
+            let _local_port = local_addr.port();
 
             let mut jump_session = Session::new()
                 .map_err(|e| format!("Failed to create jump session: {}", e))?;
@@ -295,7 +295,7 @@ impl SshService {
     }
 
     fn verify_host_key(&self, session: &mut Session, config: &SshConnectionConfig) -> Result<(), String> {
-        let known_hosts_path = config.known_hosts_path.clone()
+        let _known_hosts_path = config.known_hosts_path.clone()
             .unwrap_or_else(|| {
                 dirs::home_dir()
                     .map(|p| p.join(".ssh").join("known_hosts"))
@@ -325,7 +325,7 @@ impl SshService {
         })
     }
 
-    pub async fn execute_command(&mut self, session_id: &str, command: String, timeout: Option<u64>) -> Result<String, String> {
+    pub async fn execute_command(&mut self, session_id: &str, command: String, _timeout: Option<u64>) -> Result<String, String> {
         let session = self.sessions.get_mut(session_id)
             .ok_or("Session not found")?;
 
@@ -434,11 +434,11 @@ impl SshService {
     }
 
     async fn setup_local_port_forward(session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardHandle, String> {
-        let listener = TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
+        let _listener = TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
             .map_err(|e| format!("Failed to bind local port: {}", e))?;
 
-        let session_clone = session.session.clone();
-        let config_clone = config.clone();
+        let _session_clone = session.session.clone();
+        let _config_clone = config.clone();
 
         let handle = tokio::spawn(async move {
             // Simplified port forwarding - just keep alive
@@ -476,7 +476,7 @@ impl SshService {
         })
     }
 
-    async fn setup_dynamic_port_forward(session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardHandle, String> {
+    async fn setup_dynamic_port_forward(_session: &mut SshSession, config: &PortForwardConfig, id: String) -> Result<PortForwardHandle, String> {
         // Dynamic port forwarding (SOCKS proxy)
         let listener = TcpListener::bind(format!("{}:{}", config.local_host, config.local_port))
             .map_err(|e| format!("Failed to bind SOCKS port: {}", e))?;
@@ -655,7 +655,7 @@ impl SshService {
         match direction {
             TransferDirection::Upload => {
                 // Use SCP to upload file
-                let scp_command = format!("scp -t {}", remote_path);
+                let _scp_command = format!("scp -t {}", remote_path);
                 let file_size = std::fs::metadata(local_path)
                     .map_err(|e| format!("Failed to get file metadata: {}", e))?
                     .len() as u64;

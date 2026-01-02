@@ -152,7 +152,7 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
-        let password = if use_password { self.password.clone() } else { None };
+        let _password = if use_password { self.password.clone() } else { None };
         // For now, just save without encryption
         let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
         fs::write(&self.store_path, json).map_err(|e| e.to_string())

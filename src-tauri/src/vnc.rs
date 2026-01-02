@@ -80,7 +80,7 @@ impl VncService {
         Ok(format!("VNC session {} initiated and running on dedicated thread", session_id))
     }
 
-    async fn handle_vnc_connection(session: VncSession, password: Option<String>, mut shutdown_rx: mpsc::Receiver<()>) {
+    async fn handle_vnc_connection(session: VncSession, _password: Option<String>, mut shutdown_rx: mpsc::Receiver<()>) {
         println!("VNC connection handler started for session {}", session.id);
 
         // For now, implement a basic VNC protocol handler

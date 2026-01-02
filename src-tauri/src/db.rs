@@ -50,7 +50,7 @@ impl DbService {
         }
 
         // Handle proxy connection
-        let actual_host = if let Some(proxy_config) = proxy {
+        let actual_host = if let Some(_proxy_config) = proxy {
             // Establish proxy connection and get local port
             // This would require integrating with the proxy service
             // For now, use direct connection
@@ -151,7 +151,7 @@ impl DbService {
     }
 
     pub async fn get_table_structure(&self, database: String, table: String) -> Result<QueryResult, String> {
-        if let Some(pool) = &self.pool {
+        if let Some(_pool) = &self.pool {
             let query = format!("DESCRIBE `{}`.`{}`", database, table);
             self.execute_query(query).await
         } else {
@@ -213,7 +213,7 @@ impl DbService {
     }
 
     pub async fn get_table_data(&self, database: String, table: String, limit: Option<u32>, offset: Option<u32>) -> Result<QueryResult, String> {
-        if let Some(pool) = &self.pool {
+        if let Some(_pool) = &self.pool {
             let limit_clause = if let Some(l) = limit {
                 if let Some(o) = offset {
                     format!(" LIMIT {} OFFSET {}", l, o)
@@ -257,7 +257,7 @@ impl DbService {
         if let Some(pool) = &self.pool {
             let set_clause = columns.iter()
                 .enumerate()
-                .map(|(i, col)| format!("`{}` = ?", col))
+                .map(|(_i, col)| format!("`{}` = ?", col))
                 .collect::<Vec<_>>()
                 .join(", ");
 
@@ -433,7 +433,7 @@ impl DbService {
         }
     }
 
-    async fn generate_create_table_sql(&self, database: String, table: String, structure: QueryResult) -> Result<String, String> {
+    async fn generate_create_table_sql(&self, _database: String, table: String, structure: QueryResult) -> Result<String, String> {
         let mut sql = format!("CREATE TABLE `{}` (\n", table);
 
         let mut column_defs = Vec::new();

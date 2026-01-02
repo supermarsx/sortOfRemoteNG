@@ -252,7 +252,7 @@ impl WireGuardService {
         Ok(())
     }
 
-    fn generate_config(&self, config: &WireGuardConfig, interface_name: &str) -> Result<String, String> {
+    fn generate_config(&self, config: &WireGuardConfig, _interface_name: &str) -> Result<String, String> {
         let mut lines = Vec::new();
 
         lines.push(format!("[Interface]"));

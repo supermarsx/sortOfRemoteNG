@@ -33,7 +33,7 @@ impl ScriptService {
         &mut self,
         code: String,
         script_type: String,
-        context: ScriptContext,
+        _context: ScriptContext,
     ) -> Result<ScriptResult, String> {
         match script_type.as_str() {
             "javascript" => {
@@ -48,7 +48,7 @@ impl ScriptService {
 
                 ctx.with(|ctx| {
                     // Add basic globals for script context
-                    ctx.globals().set("console", ctx.eval::<(), _>("({
+                    let _ = ctx.globals().set("console", ctx.eval::<(), _>("({
                         log: (...args) => {},
                         warn: (...args) => {},
                         error: (...args) => {}
@@ -56,7 +56,7 @@ impl ScriptService {
 
                     // Execute the script
                     match ctx.eval::<rquickjs::Value, _>(code.clone()) {
-                        Ok(result) => {
+                        Ok(_result) => {
                             // For now, just return a success message
                             // TODO: Implement proper result extraction from JavaScript values
                             let result_str = "Script executed successfully".to_string();
