@@ -1,10 +1,7 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use rquickjs::{Context, Runtime};
-
-pub type ScriptServiceState = Arc<Mutex<ScriptService>>;
 
 pub type ScriptServiceState = Arc<Mutex<ScriptService>>;
 
@@ -58,17 +55,11 @@ impl ScriptService {
                     })").unwrap_or(()));
 
                     // Execute the script
-                    match ctx.eval::<rquickjs::Value, _>(&code) {
+                    match ctx.eval::<rquickjs::Value, _>(code.clone()) {
                         Ok(result) => {
-                            let result_str = if result.is_string() {
-                                result.as_string().unwrap().to_string()
-                            } else if result.is_number() {
-                                result.as_number().unwrap().to_string()
-                            } else if result.is_bool() {
-                                result.as_bool().unwrap().to_string()
-                            } else {
-                                "Script executed successfully".to_string()
-                            };
+                            // For now, just return a success message
+                            // TODO: Implement proper result extraction from JavaScript values
+                            let result_str = "Script executed successfully".to_string();
 
                             Ok(ScriptResult {
                                 success: true,
@@ -93,7 +84,7 @@ impl ScriptService {
 }
 
 #[tauri::command]
-pub async fn execute_script(
+pub async fn execute_user_script(
     state: tauri::State<'_, ScriptServiceState>,
     code: String,
     script_type: String,

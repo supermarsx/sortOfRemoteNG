@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { X, Download, BarChart3, Activity, Cpu, HardDrive, Wifi, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PerformanceMetrics } from '../types/settings';
@@ -21,14 +21,14 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
       const interval = setInterval(updateCurrentMetrics, 1000);
       return () => clearInterval(interval);
     }
-  }, [isOpen]);
+  }, [isOpen, loadMetrics, updateCurrentMetrics]);
 
-  const loadMetrics = () => {
+  const loadMetrics = useCallback(() => {
     const storedMetrics = settingsManager.getPerformanceMetrics();
     setMetrics(storedMetrics);
-  };
+  }, [settingsManager]);
 
-  const updateCurrentMetrics = () => {
+  const updateCurrentMetrics = useCallback(() => {
     const now = performance.now();
     const memoryInfo = (performance as any).memory;
     
@@ -44,7 +44,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
 
     setCurrentMetrics(currentMetric);
     settingsManager.recordPerformanceMetric(currentMetric);
-  };
+  }, [settingsManager]);
 
   const exportMetrics = () => {
     const csvContent = [

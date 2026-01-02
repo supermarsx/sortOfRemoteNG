@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Upload, Download, Folder, File, Trash2, RefreshCw, ArrowLeft, Home } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FileTransferSession } from '../types/connection';
@@ -40,9 +40,9 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
       loadDirectory(currentPath);
       loadTransfers();
     }
-  }, [isOpen, currentPath, connectionId]);
+  }, [isOpen, currentPath, connectionId, loadDirectory, loadTransfers]);
 
-  const loadDirectory = async (path: string) => {
+  const loadDirectory = useCallback(async (path: string) => {
     setIsLoading(true);
     try {
       const directoryContents = await fileServiceRef.current.listDirectory(connectionId, path);
@@ -52,12 +52,12 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [connectionId]);
 
-  const loadTransfers = async () => {
+  const loadTransfers = useCallback(async () => {
     const activeTransfers = await fileServiceRef.current.getActiveTransfers(connectionId);
     setTransfers(activeTransfers);
-  };
+  }, [connectionId]);
 
   const navigateToPath = (path: string) => {
     setCurrentPath(path);

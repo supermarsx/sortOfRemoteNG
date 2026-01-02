@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X,
   Save,
@@ -35,16 +35,16 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const settingsManager = SettingsManager.getInstance();
   const themeManager = ThemeManager.getInstance();
 
+  const loadSettings = useCallback(async () => {
+    const currentSettings = await settingsManager.loadSettings();
+    setSettings(currentSettings);
+  }, [settingsManager]);
+
   useEffect(() => {
     if (isOpen) {
       loadSettings();
     }
-  }, [isOpen]);
-
-  const loadSettings = async () => {
-    const currentSettings = await settingsManager.loadSettings();
-    setSettings(currentSettings);
-  };
+  }, [isOpen, loadSettings]);
 
   const handleSave = async () => {
     if (!settings) return;

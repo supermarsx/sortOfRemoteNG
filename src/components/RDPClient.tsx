@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { ConnectionSession } from '../types/connection';
 import { drawSimulatedDesktop } from './rdpCanvas';
@@ -41,9 +41,9 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     return () => {
       cleanup();
     };
-  }, [session]);
+  }, [session, initializeRDPConnection, cleanup]);
 
-  const initializeRDPConnection = async () => {
+  const initializeRDPConnection = useCallback(async () => {
     if (!canvasRef.current) return;
 
     try {
@@ -72,7 +72,7 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setConnectionStatus('error');
       console.error('RDP connection failed:', error);
     }
-  };
+  }, [settings.resolution]);
 
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -123,10 +123,10 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     setIsFullscreen(!isFullscreen);
   };
 
-  const cleanup = () => {
+  const cleanup = useCallback(() => {
     setIsConnected(false);
     setConnectionStatus('disconnected');
-  };
+  }, []);
 
   const getStatusColor = () => {
     switch (connectionStatus) {

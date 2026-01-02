@@ -123,10 +123,8 @@ pub fn run() {
         network::scan_network,
         security::generate_totp_secret,
         security::verify_totp,
-        security::encrypt_data,
-        security::decrypt_data,
         wol::wake_on_lan,
-        script::execute_script
+        script::execute_user_script
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

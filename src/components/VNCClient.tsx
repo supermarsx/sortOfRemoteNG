@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { ConnectionSession } from '../types/connection';
 import { useConnections } from '../contexts/ConnectionContext';
@@ -52,9 +52,9 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     return () => {
       cleanup();
     };
-  }, [session]);
+  }, [session, initializeVNCConnection, cleanup]);
 
-  const initializeVNCConnection = async () => {
+  const initializeVNCConnection = useCallback(async () => {
     if (!canvasRef.current) return;
 
     try {
@@ -98,9 +98,9 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
       // Fallback to simulated VNC for demo
       simulateVNCConnection();
     }
-  };
+  }, [session, connection, settings, handleCredentialsRequired, simulateVNCConnection]);
 
-  const simulateVNCConnection = async () => {
+  const simulateVNCConnection = useCallback(async () => {
     if (!canvasRef.current) return;
 
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -117,9 +117,9 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
       setIsConnected(true);
       setConnectionStatus('connected');
     }
-  };
+  }, [drawSimulatedDesktop]);
 
-  const drawSimulatedDesktop = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  const drawSimulatedDesktop = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number) => {
     // Draw desktop background
     const gradient = ctx.createLinearGradient(0, 0, width, height);
     gradient.addColorStop(0, '#2563eb');
@@ -155,7 +155,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     
     // Draw application window
     drawWindow(ctx, 200, 100, 500, 400, 'VNC Remote Desktop');
-  };
+  }, [drawWindow]);
 
   const drawDesktopIcon = (ctx: CanvasRenderingContext2D, x: number, y: number, label: string, emoji: string) => {
     // Icon background
@@ -179,7 +179,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     ctx.textAlign = 'left';
   };
 
-  const drawWindow = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, title: string) => {
+  const drawWindow = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, title: string) => {
     // Window background
     ctx.fillStyle = '#f9fafb';
     ctx.fillRect(x, y, width, height);
@@ -236,7 +236,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     ctx.fill();
     ctx.fillStyle = '#1f2937';
     ctx.fillText('Connected', x + 35, y + 195);
-  };
+  }, [session.hostname]);
 
   const handleConnect = () => {
     setIsConnected(true);
@@ -250,14 +250,14 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     debugLog('VNC connection disconnected');
   };
 
-  const handleCredentialsRequired = () => {
+  const handleCredentialsRequired = useCallback(() => {
     debugLog('VNC credentials required');
     // Handle password prompt
     const password = prompt('VNC Password:');
     if (password && rfb) {
       rfb.sendCredentials({ password });
     }
-  };
+  }, [rfb]);
 
   const handleSecurityFailure = () => {
     setConnectionStatus('error');
@@ -336,7 +336,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     }
   };
 
-  const cleanup = () => {
+  const cleanup = useCallback(() => {
     if (rfb) {
       if (connectHandlerRef.current) {
         rfb.removeEventListener('connect', connectHandlerRef.current);
@@ -354,7 +354,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     }
     setIsConnected(false);
     setConnectionStatus('disconnected');
-  };
+  }, [rfb]);
 
   const getStatusColor = () => {
     switch (connectionStatus) {

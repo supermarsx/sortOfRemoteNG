@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, Clock, Shield, Eye, EyeOff } from 'lucide-react';
 import { AutoLockConfig } from '../types/settings';
 
@@ -77,12 +77,12 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
       });
       clearInterval(interval);
     };
-  }, [config, lastActivity, isLocked]);
+  }, [config, lastActivity, isLocked, handleAutoLock]);
 
-  const handleAutoLock = () => {
+  const handleAutoLock = useCallback(() => {
     setIsLocked(true);
     onLock();
-  };
+  }, [onLock]);
 
   const handleUnlock = () => {
     if (config.requirePassword) {

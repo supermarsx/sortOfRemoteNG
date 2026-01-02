@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionCollection } from '../types/connection';
@@ -35,16 +35,16 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
   const collectionManager = CollectionManager.getInstance();
 
+  const loadCollections = useCallback(async () => {
+    const allCollections = await collectionManager.getAllCollections();
+    setCollections(allCollections);
+  }, [collectionManager]);
+
   useEffect(() => {
     if (isOpen) {
       loadCollections();
     }
-  }, [isOpen]);
-
-  const loadCollections = async () => {
-    const allCollections = await collectionManager.getAllCollections();
-    setCollections(allCollections);
-  };
+  }, [isOpen, loadCollections]);
 
   const handleCreateCollection = async () => {
     if (!newCollection.name.trim()) {

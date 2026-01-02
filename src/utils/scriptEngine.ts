@@ -215,7 +215,7 @@ export class ScriptEngine {
     };
 
     try {
-      const result = await invoke("execute_script", {
+      const result = await invoke("execute_user_script", {
         code,
         scriptType: "javascript",
         context: scriptContext,
@@ -226,9 +226,17 @@ export class ScriptEngine {
         // TODO: Implement proper result parsing and context handling
         return result.result as T;
       } else {
-        throw new Error(result.error || "Script execution failed");
+        const errorMessage = result.error || "Script execution failed";
+        if (errorMessage.startsWith("AbortError:")) {
+          throw new DOMException(errorMessage.substring("AbortError:".length).trim(), "AbortError");
+        }
+        throw new Error(errorMessage);
       }
     } catch (error) {
+      // If it's already a proper error, re-throw it
+      if (error instanceof Error) {
+        throw error;
+      }
       throw new Error(`Script execution failed: ${error}`);
     }
   }
@@ -250,7 +258,7 @@ export class ScriptEngine {
     };
 
     try {
-      const result = await invoke("execute_script", {
+      const result = await invoke("execute_user_script", {
         code,
         scriptType: language,
         context: scriptContext,
@@ -261,227 +269,19 @@ export class ScriptEngine {
         // TODO: Implement proper result parsing and context handling
         return result.result as T;
       } else {
-        throw new Error(result.error || "Script execution failed");
+        const errorMessage = result.error || "Script execution failed";
+        if (errorMessage.startsWith("AbortError:")) {
+          throw new DOMException(errorMessage.substring("AbortError:".length).trim(), "AbortError");
+        }
+        throw new Error(errorMessage);
       }
     } catch (error) {
+      // If it's already a proper error, re-throw it
+      if (error instanceof Error) {
+        throw error;
+      }
       throw new Error(`Script execution failed: ${error}`);
     }
-  }
-    /*
-      const workerScript = `
-        const pending = new Map();
-        let rpcId = 0;
-        function rpcCall(method, ...args) {
-          return new Promise((resolve, reject) => {
-            const id = rpcId++;
-            pending.set(id, { resolve, reject });
-            postMessage({ type: 'rpc', id, method, args });
-          });
-        }
-
-        onmessage = async (event) => {
-          const data = event.data;
-        if (data.type === 'rpc-response') {
-            const handler = pending.get(data.id);
-            if (handler) {
-              pending.delete(data.id);
-              data.error ? handler.reject(data.error) : handler.resolve(data.result);
-            }
-            return;
-          }
-          if (data.type !== 'execute') return;
-          const base = data.context;
-          let code = data.code;
-          if (data.language === 'typescript') {
-            try {
-              if (!(self).esbuildInitialized) {
-                importScripts('https://cdn.jsdelivr.net/npm/esbuild-wasm@0.21.5/esbuild.js');
-                await (self).esbuild.initialize({
-                  wasmURL: 'https://cdn.jsdelivr.net/npm/esbuild-wasm@0.21.5/esbuild.wasm',
-                  worker: false,
-                });
-                (self).esbuildInitialized = true;
-              }
-              const result = await (self).esbuild.transform(code, {
-                loader: 'ts',
-                format: 'esm',
-                target: 'es2017',
-              });
-              code = result.code;
-            } catch (err) {
-              postMessage({ type: 'result', error: err?.message || String(err) });
-              return;
-            }
-          }
-          const console = {
-            log: (...a) => postMessage({ type: 'console', level: 'info', message: a.join(' ') }),
-            warn: (...a) => postMessage({ type: 'console', level: 'warn', message: a.join(' ') }),
-            error: (...a) => postMessage({ type: 'console', level: 'error', message: a.join(' ') }),
-          };
-          const http = {
-            get: (url, options) => rpcCall('http.get', url, options),
-            post: (url, data, options) => rpcCall('http.post', url, data, options),
-            put: (url, data, options) => rpcCall('http.put', url, data, options),
-            delete: (url, options) => rpcCall('http.delete', url, options),
-          };
-          const ssh = base.session && base.session.protocol === 'ssh' ? {
-            execute: cmd => rpcCall('ssh.execute', cmd),
-            sendKeys: keys => rpcCall('ssh.sendKeys', keys)
-          } : undefined;
-          const api = {
-            connection: base.connection,
-            session: base.session,
-            trigger: base.trigger,
-            console,
-            http,
-            ssh,
-            sleep: ms => rpcCall('sleep', ms),
-            uuid: () => rpcCall('uuid'),
-            timestamp: () => new Date().toISOString(),
-            getSetting: key => rpcCall('getSetting', key),
-            setSetting: (key, value) => rpcCall('setSetting', key, value),
-          };
-          try {
-            const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-            const fn = new AsyncFunction(
-              ...Object.keys(api),
-              'globalThis',
-              'self',
-              '"use strict"; return (async () => { ' + code + ' })();'
-            );
-            const result = await fn(...Object.values(api), undefined, undefined);
-            postMessage({ type: 'result', result });
-          } catch (err) {
-            postMessage({ type: 'result', error: { message: err?.message || String(err), name: err?.name } });
-          }
-        };
-      `;
-
-      const blob = new Blob([workerScript], { type: "application/javascript" });
-      const worker = new Worker(URL.createObjectURL(blob));
-
-      const rpcHandlers: Record<
-        string,
-        (...args: unknown[]) => Promise<unknown>
-      > = {
-        "http.get": (url: string, options?: RequestInit) =>
-          this.httpRequest("GET", url, options, signal),
-        "http.post": (url: string, data?: unknown, options?: RequestInit) =>
-          this.httpRequest(
-            "POST",
-            url,
-            data !== undefined
-              ? { ...options, body: JSON.stringify(data) }
-              : options,
-            signal,
-          ),
-        "http.put": (url: string, data?: unknown, options?: RequestInit) =>
-          this.httpRequest(
-            "PUT",
-            url,
-            data !== undefined
-              ? { ...options, body: JSON.stringify(data) }
-              : options,
-            signal,
-          ),
-        "http.delete": (url: string, options?: RequestInit) =>
-          this.httpRequest("DELETE", url, options, signal),
-        "ssh.execute": (cmd: string) =>
-          context.session
-            ? this.sshExecute(context.session, cmd, signal)
-            : Promise.reject("No SSH session"),
-        "ssh.sendKeys": (keys: string) =>
-          context.session
-            ? this.sshSendKeys(context.session, keys, signal)
-            : Promise.reject("No SSH session"),
-        getSetting: (key: string) => Promise.resolve(this.getSetting(key)),
-        setSetting: (key: string, value: unknown) =>
-          this.setSetting(key, value),
-        uuid: () => Promise.resolve(generateId()),
-        sleep: (ms: number) => this.sleep(ms, signal),
-      };
-
-      worker.onmessage = async (event) => {
-        const data = event.data;
-        if (data.type === "console") {
-          this.scriptLog(data.level, scriptName, data.message);
-          return;
-        }
-        if (data.type === "rpc") {
-          const { id, method, args } = data;
-          const handler = rpcHandlers[method];
-
-          const safePostMessage = (message: unknown) => {
-            if (signal?.aborted) {
-              return;
-            }
-            try {
-              worker.postMessage(message);
-            } catch {
-              // Worker has been terminated; ignore.
-            }
-          };
-
-          if (!handler) {
-            safePostMessage({
-              type: "rpc-response",
-              id,
-              error: "Unknown method",
-            });
-            return;
-          }
-          try {
-            const result = await handler(...args);
-            safePostMessage({ type: "rpc-response", id, result });
-          } catch (err) {
-            safePostMessage({
-              type: "rpc-response",
-              id,
-              error:
-                err instanceof Error
-                  ? { message: err.message, name: err.name }
-                  : { message: String(err) },
-            });
-          }
-          return;
-        }
-        if (data.type === "result") {
-          clearTimeout(timeoutId);
-          worker.terminate();
-          signal?.removeEventListener("abort", abortHandler);
-          if (data.error) {
-            reject(
-              data.error.name
-                ? new DOMException(data.error.message, data.error.name)
-                : new Error(data.error.message || data.error),
-            );
-          } else {
-            resolve(data.result);
-          }
-        }
-      };
-
-      const timeoutId = setTimeout(() => {
-        worker.terminate();
-        reject(new Error("Script execution timed out"));
-      }, 1000);
-
-      const abortHandler = () => {
-        clearTimeout(timeoutId);
-        worker.terminate();
-        signal?.removeEventListener("abort", abortHandler);
-        reject(new DOMException("Aborted", "AbortError"));
-      };
-      signal?.addEventListener("abort", abortHandler, { once: true });
-
-      if (signal?.aborted) {
-        abortHandler();
-        return;
-      }
-
-      worker.postMessage({ type: "execute", context, code, language });
-    });
-    */
   }
 
   private transpileTypeScript(code: string, scriptName: string): string {

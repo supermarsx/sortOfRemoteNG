@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Database, Play, Save, Trash2, RefreshCw, Table, Code, BarChart3 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
 import { MySQLService, QueryResult, MySQLValue } from '../utils/mysqlService';
@@ -17,19 +17,19 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
   const [activeTab, setActiveTab] = useState<'query' | 'tables' | 'structure'>('query');
   const [error, setError] = useState<string | null>(null);
 
-  const mysqlService = new MySQLService();
+  const mysqlService = useMemo(() => new MySQLService(), []);
 
   useEffect(() => {
     loadDatabases();
-  }, []);
+  }, [loadDatabases]);
 
   useEffect(() => {
     if (selectedDatabase) {
       loadTables(selectedDatabase);
     }
-  }, [selectedDatabase]);
+  }, [selectedDatabase, loadTables]);
 
-  const loadDatabases = async () => {
+  const loadDatabases = useCallback(async () => {
     try {
       const dbs = await mysqlService.getDatabases(session.connectionId);
       setDatabases(dbs);
@@ -42,9 +42,9 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
         err instanceof Error ? err.message : 'Failed to load databases'
       );
     }
-  };
+  }, [session.connectionId, mysqlService]);
 
-  const loadTables = async (database: string) => {
+  const loadTables = useCallback(async (database: string) => {
     try {
       const tableList = await mysqlService.getTables(session.connectionId, database);
       setTables(tableList);
@@ -54,7 +54,7 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
         err instanceof Error ? err.message : 'Failed to load tables'
       );
     }
-  };
+  }, [session.connectionId, mysqlService]);
 
   const executeQuery = async () => {
     if (!query.trim()) return;

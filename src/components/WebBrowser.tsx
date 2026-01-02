@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { 
   ArrowLeft, 
@@ -24,7 +24,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const connection = state.connections.find(c => c.id === session.connectionId);
 
   // Build a URL and apply basic auth credentials if configured
-  const buildUrlWithAuth = (url: string): string => {
+  const buildUrlWithAuth = useCallback((url: string): string => {
     if (
       connection?.authType === 'basic' &&
       connection.basicAuthUsername &&
@@ -44,7 +44,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       }
     }
     return url;
-  };
+  }, [connection]);
 
   const [currentUrl, setCurrentUrl] = useState(() => {
     const protocol = session.protocol === 'https' ? 'https' : 'http';
@@ -65,7 +65,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       setCurrentUrl(prev => buildUrlWithAuth(prev));
       setInputUrl(prev => buildUrlWithAuth(prev));
     }
-  }, [connection]);
+  }, [connection, buildUrlWithAuth]);
 
 
   const handleUrlSubmit = (e: React.FormEvent) => {

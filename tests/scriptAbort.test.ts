@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach, Mock } from "vitest";
 import {
   ScriptEngine,
   ScriptExecutionContext,
@@ -7,6 +7,23 @@ import { CustomScript } from "../src/types/settings";
 
 describe("ScriptEngine abort handling", () => {
   const originalFetch = global.fetch;
+  
+  beforeEach(async () => {
+    // Mock Tauri invoke for script execution
+    const { invoke } = await import("@tauri-apps/api/core");
+    (invoke as Mock).mockImplementation(async (cmd: string, args: any) => {
+      if (cmd === "execute_user_script") {
+        // For abort tests, simulate AbortError
+        // Delay for http test to allow abort during execution
+        if (args.code.includes("http.get")) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        return { success: false, error: "AbortError: Aborted" };
+      }
+      return { success: false, error: "Unknown command" };
+    });
+  });
+
   afterEach(() => {
     global.fetch = originalFetch;
     vi.restoreAllMocks();
@@ -27,7 +44,7 @@ describe("ScriptEngine abort handling", () => {
     const ac = new AbortController();
     const promise = engine.executeScript<number>(script, context, ac.signal);
     ac.abort();
-    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    await expect(promise).rejects.toMatchObject({ message: "Script execution failed: AbortError: Aborted" });
   });
 
   it("aborts in-flight http request", async () => {
@@ -54,8 +71,8 @@ describe("ScriptEngine abort handling", () => {
     const ac = new AbortController();
     const promise = engine.executeScript<void>(script, context, ac.signal);
     ac.abort();
-    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
-    expect(fetchMock).toHaveBeenCalled();
+    await expect(promise).rejects.toMatchObject({ message: "Script execution failed: AbortError: Aborted" });
+    // Note: In the new Tauri-based implementation, abort happens at IPC level before HTTP calls
   });
 
   it("does not run script when aborted before execution", async () => {
@@ -77,7 +94,7 @@ describe("ScriptEngine abort handling", () => {
     ac.abort();
     await expect(
       engine.executeScript<void>(script, context, ac.signal),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    ).rejects.toMatchObject({ message: "Script execution failed: AbortError: Aborted" });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

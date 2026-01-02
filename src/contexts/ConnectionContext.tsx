@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect } from "react";
+import React, { createContext, useContext, useReducer, useEffect, useCallback } from "react";
 import {
   Connection,
   ConnectionSession,
@@ -147,7 +147,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   const [state, dispatch] = useReducer(connectionReducer, initialState);
   const collectionManager = CollectionManager.getInstance();
 
-  const saveData = async () => {
+  const saveData = useCallback(async () => {
     try {
       const data: StorageData = {
         connections: state.connections,
@@ -160,7 +160,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error("Failed to save data:", error);
       throw error;
     }
-  };
+  }, [state.connections, collectionManager]);
 
   const loadData = async () => {
     try {
@@ -190,7 +190,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
       // Persist updated connections to storage
       saveData().catch(console.error);
     }
-  }, [state.connections]);
+  }, [state.connections, collectionManager, saveData]);
 
   return (
     <ConnectionContext.Provider value={{ state, dispatch, saveData, loadData }}>

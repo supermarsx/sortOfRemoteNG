@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal, type IDisposable } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -28,7 +28,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const connection = state.connections.find(c => c.id === session.connectionId);
 
   useEffect(() => {
-    if (!terminalRef.current) return;
+    const terminalElement = terminalRef.current;
+    if (!terminalElement) return;
 
     // Initialize terminal with proper settings for SSH
     terminal.current = new Terminal({
@@ -76,8 +77,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     terminal.current.loadAddon(fitAddon.current);
     terminal.current.loadAddon(new WebLinksAddon());
 
-    if (terminalRef.current?.parentElement) {
-      terminal.current.open(terminalRef.current);
+    if (terminalElement?.parentElement) {
+      terminal.current.open(terminalElement);
       terminal.current.focus();
       fitAddon.current.fit();
     } else {
@@ -132,8 +133,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       if (terminal.current) {
         terminal.current.dispose();
       }
-      if (terminalRef.current) {
-        terminalRef.current.innerHTML = '';
+      if (terminalElement) {
+        terminalElement.innerHTML = '';
       }
       terminal.current = null;
       fitAddon.current = null;
@@ -142,9 +143,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       setConnectionError('');
       setCurrentLine('');
     };
-  }, [session.id, session.protocol]);
+  }, [session.id, session.protocol, session.hostname, handleNonSSHInput, initializeSSHConnection, isConnected, onResize]);
 
-  const handleNonSSHInput = (data: string) => {
+  const handleNonSSHInput = useCallback((data: string) => {
     if (!terminal.current) return;
 
     for (let i = 0; i < data.length; i++) {
@@ -178,9 +179,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
           break;
       }
     }
-  };
+  }, [currentLine, processCommand]);
 
-  const processCommand = (command: string) => {
+  const processCommand = useCallback((command: string) => {
     if (!terminal.current) return;
 
     const cmd = command.trim();
@@ -193,7 +194,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     setTimeout(() => {
       executeCommand(cmd);
     }, 50);
-  };
+  }, []);
 
   const executeCommand = (command: string) => {
     if (!terminal.current) return;
@@ -231,7 +232,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     terminal.current.write('\x1b[33m$ \x1b[0m');
   };
 
-  const initializeSSHConnection = async () => {
+  const initializeSSHConnection = useCallback(async () => {
     if (!terminal.current) return;
 
     try {
@@ -295,7 +296,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         terminal.current.writeln('\r\n\x1b[31mFailed to connect: ' + error + '\x1b[0m');
       }
     }
-  };
+  }, [session.hostname, connection]);
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);

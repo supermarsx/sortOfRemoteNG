@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   X,
   Download,
@@ -55,25 +55,12 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const settingsManager = SettingsManager.getInstance();
 
-  useEffect(() => {
-    if (isOpen) {
-      loadLogs();
-      // Periodically refresh logs while the viewer is open
-      const interval = setInterval(loadLogs, 5000); // Refresh every 5 seconds
-      return () => clearInterval(interval);
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    filterLogs();
-  }, [logs, searchTerm, levelFilter]);
-
-  const loadLogs = () => {
+  const loadLogs = useCallback(() => {
     const actionLogs = settingsManager.getActionLog();
     setLogs(actionLogs);
-  };
+  }, [settingsManager]);
 
-  const filterLogs = () => {
+  const filterLogs = useCallback(() => {
     // Start with the full log list
     let filtered = logs;
 
@@ -94,7 +81,20 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
     }
 
     setFilteredLogs(filtered);
-  };
+  }, [logs, searchTerm, levelFilter]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadLogs();
+      // Periodically refresh logs while the viewer is open
+      const interval = setInterval(loadLogs, 5000); // Refresh every 5 seconds
+      return () => clearInterval(interval);
+    }
+  }, [isOpen, loadLogs]);
+
+  useEffect(() => {
+    filterLogs();
+  }, [filterLogs]);
 
   const clearLogs = () => {
     if (confirm("Are you sure you want to clear all logs?")) {
