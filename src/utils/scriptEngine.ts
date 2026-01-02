@@ -201,23 +201,72 @@ export class ScriptEngine {
 
   private async executeJavaScript<T>(
     code: string,
-    context: ScriptExecutionContext,
+    context: any,
     scriptName: string,
     signal?: AbortSignal,
   ): Promise<T> {
-    // Disabled for Tauri migration - vm2 replaced entirely
-    throw new Error("Script execution is disabled during Tauri migration. Custom scripts will be re-implemented in a future update.");
+    // Use Tauri IPC for script execution
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    const scriptContext = {
+      connection_id: context.connection?.id,
+      session_id: context.session?.id,
+      trigger: context.trigger,
+    };
+
+    try {
+      const result = await invoke("execute_script", {
+        code,
+        scriptType: "javascript",
+        context: scriptContext,
+      });
+
+      if (result.success) {
+        // For now, return a simple result
+        // TODO: Implement proper result parsing and context handling
+        return result.result as T;
+      } else {
+        throw new Error(result.error || "Script execution failed");
+      }
+    } catch (error) {
+      throw new Error(`Script execution failed: ${error}`);
+    }
   }
 
   private async executeInWorker<T>(
     code: string,
-    context: ScriptExecutionContext,
+    context: any,
     scriptName: string,
     language: "javascript" | "typescript" = "javascript",
     signal?: AbortSignal,
   ): Promise<T> {
-    // Disabled for Tauri migration - vm2 replaced entirely
-    throw new Error("Script execution is disabled during Tauri migration. Custom scripts will be re-implemented in a future update.");
+    // Use Tauri IPC for script execution
+    const { invoke } = await import("@tauri-apps/api/core");
+
+    const scriptContext = {
+      connection_id: context.connection?.id,
+      session_id: context.session?.id,
+      trigger: context.trigger,
+    };
+
+    try {
+      const result = await invoke("execute_script", {
+        code,
+        scriptType: language,
+        context: scriptContext,
+      });
+
+      if (result.success) {
+        // For now, return a simple result
+        // TODO: Implement proper result parsing and context handling
+        return result.result as T;
+      } else {
+        throw new Error(result.error || "Script execution failed");
+      }
+    } catch (error) {
+      throw new Error(`Script execution failed: ${error}`);
+    }
+  }
     /*
       const workerScript = `
         const pending = new Map();

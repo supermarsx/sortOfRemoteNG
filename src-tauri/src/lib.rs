@@ -1,7 +1,6 @@
 mod auth;
 mod storage;
 mod ssh;
-mod ssh_bridge;
 mod rdp;
 mod vnc;
 mod db;
@@ -9,6 +8,7 @@ mod ftp;
 mod network;
 mod security;
 mod wol;
+mod script;
 
 use auth::{AuthService, AuthServiceState};
 use storage::{SecureStorage, StorageData, SecureStorageState};
@@ -20,6 +20,7 @@ use ftp::{FtpService, FtpServiceState};
 use network::{NetworkService, NetworkServiceState};
 use security::{SecurityService, SecurityServiceState};
 use wol::{WolService, WolServiceState};
+use script::{ScriptService, ScriptServiceState};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -75,6 +76,11 @@ pub fn run() {
       // Initialize WOL service
       let wol_service = WolService::new();
       app.manage(wol_service);
+
+      // Initialize Script service
+      let script_service = ScriptService::new();
+      app.manage(script_service);
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -101,15 +107,6 @@ pub fn run() {
         ssh::disconnect_ssh,
         ssh::get_session_info,
         ssh::list_sessions,
-        ssh::start_bridge_server,
-        ssh::create_tunnel,
-        ssh::list_tunnels,
-        ssh::close_tunnel,
-        ssh::get_bridge_status,
-        ssh::execute_script,
-        ssh::transfer_file_scp,
-        ssh::get_system_info,
-        ssh::monitor_process,
         rdp::connect_rdp,
         rdp::disconnect_rdp,
         vnc::connect_vnc,
@@ -119,6 +116,8 @@ pub fn run() {
         db::disconnect_db,
         ftp::connect_ftp,
         ftp::list_files,
+        ftp::ftp_upload_file,
+        ftp::ftp_download_file,
         ftp::disconnect_ftp,
         network::ping_host,
         network::scan_network,
@@ -126,7 +125,8 @@ pub fn run() {
         security::verify_totp,
         security::encrypt_data,
         security::decrypt_data,
-        wol::wake_on_lan
+        wol::wake_on_lan,
+        script::execute_script
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

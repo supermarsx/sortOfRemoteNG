@@ -2,8 +2,17 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use sqlx::mysql::MySqlPoolOptions;
 use sqlx::MySqlPool;
+use sqlx::{Row, Column};
+use serde::{Deserialize, Serialize};
 
 pub type DbServiceState = Arc<Mutex<DbService>>;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<String>>,
+    pub row_count: usize,
+}
 
 pub struct DbService {
     pool: Option<MySqlPool>,
@@ -25,14 +34,42 @@ impl DbService {
         Ok("Connected to MySQL".to_string())
     }
 
-    pub async fn execute_query(&self, query: String) -> Result<String, String> {
+    pub async fn execute_query(&self, query: String) -> Result<QueryResult, String> {
         if let Some(pool) = &self.pool {
             let rows = sqlx::query(&query)
                 .fetch_all(pool)
                 .await
                 .map_err(|e| e.to_string())?;
-            // For simplicity, return number of rows
-            Ok(format!("Query executed, affected {} rows", rows.len()))
+
+            if rows.is_empty() {
+                return Ok(QueryResult {
+                    columns: vec![],
+                    rows: vec![],
+                    row_count: 0,
+                });
+            }
+
+            // Get column names from the first row
+            let columns: Vec<String> = rows[0].columns().iter().map(|c| c.name().to_string()).collect();
+
+            // Convert rows to string vectors
+            let mut result_rows = Vec::new();
+            for row in rows {
+                let mut row_data = Vec::new();
+                for (i, _) in columns.iter().enumerate() {
+                    let value: String = row.try_get(i).unwrap_or("NULL".to_string());
+                    row_data.push(value);
+                }
+                result_rows.push(row_data);
+            }
+
+            let row_count = result_rows.len();
+
+            Ok(QueryResult {
+                columns,
+                rows: result_rows,
+                row_count,
+            })
         } else {
             Err("No database connection".to_string())
         }
@@ -51,7 +88,7 @@ pub async fn connect_mysql(state: tauri::State<'_, DbServiceState>, host: String
 }
 
 #[tauri::command]
-pub async fn execute_query(state: tauri::State<'_, DbServiceState>, query: String) -> Result<String, String> {
+pub async fn execute_query(state: tauri::State<'_, DbServiceState>, query: String) -> Result<QueryResult, String> {
     let db = state.lock().await;
     db.execute_query(query).await
 }
