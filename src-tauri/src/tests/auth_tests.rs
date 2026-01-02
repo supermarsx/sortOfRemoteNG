@@ -12,8 +12,9 @@ async fn test_new_auth_service() {
     let store_path = temp_file.path().to_string_lossy().to_string();
     let service = AuthService::new(store_path.clone());
 
-    // Service should be created successfully
-    assert!(service.lock().await.users.is_empty());
+    // Service should be created successfully - check by listing users
+    let users = service.lock().await.list_users().await;
+    assert!(users.is_empty());
 }
 
 #[tokio::test]
