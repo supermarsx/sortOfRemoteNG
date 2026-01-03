@@ -58,6 +58,7 @@ mod zerotier;
 mod tailscale;
 mod chaining;
 mod qr;
+mod api;
 
 #[cfg(test)]
 mod tests {
@@ -84,7 +85,9 @@ use zerotier::ZeroTierService;
 use tailscale::TailscaleService;
 use chaining::ChainingService;
 use qr::QrService;
+use api::ApiService;
 use tauri::Manager;
+use std::sync::Arc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Initializes and runs the SortOfRemote NG Tauri application.
@@ -124,7 +127,7 @@ pub fn run() {
       let app_dir = app.path().app_data_dir().unwrap();
       let user_store_path = app_dir.join("users.json");
       let auth_service = AuthService::new(user_store_path.to_string_lossy().to_string());
-      app.manage(auth_service);
+      app.manage(auth_service.clone());
 
       // Initialize storage
       let storage_path = app_dir.join("storage.json");
@@ -133,7 +136,7 @@ pub fn run() {
 
       // Initialize SSH service
       let ssh_service = SshService::new();
-      app.manage(ssh_service);
+      app.manage(ssh_service.clone());
 
       // Initialize RDP service
       let rdp_service = RdpService::new();
@@ -145,23 +148,23 @@ pub fn run() {
 
       // Initialize DB service
       let db_service = DbService::new();
-      app.manage(db_service);
+      app.manage(db_service.clone());
 
       // Initialize FTP service
       let ftp_service = FtpService::new();
-      app.manage(ftp_service);
+      app.manage(ftp_service.clone());
 
       // Initialize Network service
       let network_service = NetworkService::new();
-      app.manage(network_service);
+      app.manage(network_service.clone());
 
       // Initialize Security service
       let security_service = SecurityService::new();
-      app.manage(security_service);
+      app.manage(security_service.clone());
 
       // Initialize WOL service
       let wol_service = WolService::new();
-      app.manage(wol_service);
+      app.manage(wol_service.clone());
 
       // Initialize Script service
       let script_service = ScriptService::new();
@@ -199,7 +202,31 @@ pub fn run() {
 
       // Initialize QR service
       let qr_service = QrService::new();
-      app.manage(qr_service);
+      app.manage(qr_service.clone());
+
+      // Initialize API service
+      let api_service = ApiService::new(
+        auth_service.clone(),
+        ssh_service.clone(),
+        db_service.clone(),
+        ftp_service.clone(),
+        network_service.clone(),
+        security_service.clone(),
+        wol_service.clone(),
+        qr_service.clone(),
+      );
+      app.manage(api_service.clone());
+
+      // Start the REST API server in a background task
+      let api_service_clone = api_service.clone();
+      println!("About to start REST API server...");
+      tauri::async_runtime::spawn(async move {
+        println!("Starting API server task...");
+        if let Err(e) = Arc::new(api_service_clone).start_server(3001).await {
+          eprintln!("Failed to start REST API server: {}", e);
+        }
+      });
+      println!("API server task spawned");
 
       Ok(())
     })

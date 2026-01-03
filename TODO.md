@@ -159,6 +159,15 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] **ADD QR FEATURES**: Support for different formats, error correction levels, custom sizing
 - [x] **INTEGRATE WITH CONNECTIONS**: Generate QR codes for connection sharing/import
 
+### 15.9. Script Execution Engine ✅
+- [x] **ADD JS RUNTIME CRATE**: Add `rquickjs` crate for embedded JavaScript execution
+- [x] **IMPLEMENT SCRIPT SERVICE**: Create Rust service to handle script execution requests
+- [x] **MIGRATE SCRIPT ENGINE**: Update frontend `ScriptEngine` to offload execution to Tauri backend
+- [x] **SECURE EXECUTION**: Implement basic sandboxing and context isolation in Rust
+- [ ] **TYPESCRIPT SUPPORT**: Move TypeScript compilation to backend or improve frontend transpilation pipeline
+- [ ] **EXPAND API**: Expose more internal APIs (SSH, DB, File) to the script runtime safely
+- [ ] **LONG-RUNNING SCRIPTS**: Improve handling of long-running scripts and timeouts in Rust
+
 ### 16. Security Features ✅
 - ✅ Add Rust TOTP crate (`totp-rs`)
 - ✅ Create basic security service module in Rust with TOTP and encryption placeholders
