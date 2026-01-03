@@ -602,6 +602,7 @@ pub fn run() {
         ssh::update_ssh_session_auth,
         ssh::validate_ssh_key_file,
         ssh::test_ssh_connection,
+        ssh::generate_ssh_key,
         // Authentication services - commented out until Tauri integration is complete
         // cert_auth::parse_certificate,
         // cert_auth::validate_certificate,
