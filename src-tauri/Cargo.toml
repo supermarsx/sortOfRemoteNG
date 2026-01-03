@@ -59,6 +59,13 @@ tower-http = "0.5"
 hyper = "1.0"
 reqwest = { version = "0.11", features = ["json"] }
 regex = "1.10"
+rustls = "0.21"
+rustls-pemfile = "1.0"
+x509-parser = "0.15"
+windows = { version = "0.52", features = ["Win32_System_Registry", "Win32_Security", "Win32_System_Policy"] }
+tauri-plugin-window-state = "2"
+oauth2 = "4.4"
+url = "2.5"
 
 [dev-dependencies]
 tokio-test = "0.4"
