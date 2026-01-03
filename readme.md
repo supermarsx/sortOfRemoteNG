@@ -10,27 +10,67 @@
 [![Commit Activity](https://img.shields.io/github/commit-activity/m/supermarsx/sortOfRemoteNG)](https://github.com/supermarsx/sortOfRemoteNG/commits)
 [![License](https://img.shields.io/github/license/supermarsx/sortOfRemoteNG)](license.md)
 
-A sort of remoteNG inspired web app that runs on the browser. Very broken and non-functional though, it's an experiment.
+A comprehensive remote connectivity and management desktop application built with Tauri and Rust. This application provides a unified interface for managing various types of remote connections including SSH, RDP, VNC, databases, FTP, and network services.
 
-## Testing
+## Features
 
-To run the unit tests, you **must** install dependencies first:
+- **Multi-protocol remote connectivity**: SSH, RDP, VNC, databases, FTP
+- **Secure credential storage** with encryption
+- **Connection chaining** and proxy routing
+- **Network discovery** and scanning
+- **User authentication** and access control
+- **File transfer** capabilities
+- **Script execution** and automation
+- **VPN management** (OpenVPN, WireGuard, ZeroTier, Tailscale)
+- **Cross-platform** desktop application (Windows, macOS, Linux)
+
+## Installation
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or later)
+- [Rust](https://rustup.rs/) (latest stable)
+- For Windows: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+- For macOS: Xcode Command Line Tools
+- For Linux: GCC and development libraries
+
+### Install Dependencies
 
 ```bash
 npm install
 ```
 
-Then execute the tests:
+### Development
+
+To run the application in development mode:
+
+```bash
+npm run tauri:dev
+```
+
+This will start the Vite development server and launch the Tauri application.
+
+### Building
+
+To build the application for production:
+
+```bash
+npm run tauri:build
+```
+
+This will create platform-specific installers in `src-tauri/target/release/bundle/`.
+
+## Testing
+
+To run the unit tests:
 
 ```bash
 npm test
 ```
 
-Ensure that Node.js and npm are installed on your system before running the commands.
-
 ## Linting
 
-To check code style, run:
+To check code style:
 
 ```bash
 npm run lint
@@ -40,17 +80,13 @@ All code should pass ESLint before committing.
 
 ## Language Switching
 
-The interface is translated into multiple languages. Use the language selector in
-the top bar or the settings dialog to switch between English, Spanish, French,
-German and Portuguese (Portugal). Translation files are loaded on demand to keep the initial bundle
-small.
+The interface is translated into multiple languages. Use the language selector in the top bar or the settings dialog to switch between English, Spanish, French, German and Portuguese (Portugal). Translation files are loaded on demand to keep the initial bundle small.
 
 ## Authentication
 
-The REST API uses a simple user store with bcrypt-hashed passwords and JWT tokens.
+The application uses a secure user store with bcrypt-hashed passwords and JWT tokens for API authentication.
 
-1. Users are defined in a JSON file (`users.json` by default) containing objects with
-   `username` and `passwordHash` fields:
+1. Users are defined in a JSON file (`users.json` by default) containing objects with `username` and `passwordHash` fields:
 
    ```json
    [{ "username": "admin", "passwordHash": "<bcrypt-hash>" }]
@@ -62,9 +98,7 @@ The REST API uses a simple user store with bcrypt-hashed passwords and JWT token
    node -e "require('bcryptjs').hash('password',10).then(console.log)"
    ```
 
-2. Obtain a token via `POST /auth/login` with the username and password. Use the
-   returned token in the `Authorization: Bearer <token>` header for all `/api`
-   requests.
+2. Authentication is handled through the Tauri backend with secure token management.
 
 3. An API key can be supplied via the `X-API-Key` header.
 

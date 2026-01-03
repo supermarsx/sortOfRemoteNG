@@ -14,10 +14,10 @@ import {
 import { useTranslation } from "react-i18next";
 import { DiscoveredHost, DiscoveredService } from "../types/connection";
 import { NetworkDiscoveryConfig } from "../types/settings";
-import { NetworkScanner } from "../utils/networkScanner";
 import { useConnections } from "../contexts/useConnections";
 import { generateId } from "../utils/id";
 import { discoveredHostsToCsv } from "../utils/discoveredHostsCsv";
+import { invoke } from "@tauri-apps/api/core";
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
@@ -65,36 +65,33 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
   const [filterText, setFilterText] = useState("");
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const scanner = new NetworkScanner();
-
   const handleScan = async () => {
     setIsScanning(true);
     setScanProgress(0);
     setDiscoveredHosts([]);
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
     try {
-      const hosts = await scanner.scanNetwork(
-        config,
-        (progress) => {
-          setScanProgress(progress);
-        },
-        controller.signal,
-      );
+      // Use Tauri IPC to scan network
+      const ips: string[] = await invoke('scan_network', { subnet: config.ipRange });
+      
+      // Convert IP addresses to DiscoveredHost format
+      const hosts: DiscoveredHost[] = ips.map(ip => ({
+        id: generateId(),
+        ip,
+        hostname: null,
+        mac: null,
+        services: [],
+        lastSeen: Date.now(),
+        responseTime: null,
+      }));
+
       setDiscoveredHosts(hosts);
+      setScanProgress(100);
     } catch (error) {
       console.error("Network scan failed:", error);
     } finally {
       setIsScanning(false);
-      abortControllerRef.current = null;
     }
-  };
-
-  const handleStop = () => {
-    abortControllerRef.current?.abort();
-    setIsScanning(false);
   };
 
   const handleCreateConnections = () => {
@@ -340,23 +337,14 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
             )}
 
             <div className="flex items-center space-x-4">
-              {isScanning ? (
-                <button
-                  onClick={handleStop}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors flex items-center space-x-2"
-                >
-                  <X size={16} />
-                  <span>{t("networkDiscovery.stop")}</span>
-                </button>
-              ) : (
-                <button
-                  onClick={handleScan}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
-                >
-                  <Search size={16} />
-                  <span>{t("networkDiscovery.startScan")}</span>
-                </button>
-              )}
+              <button
+                onClick={handleScan}
+                disabled={isScanning}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-md transition-colors flex items-center space-x-2"
+              >
+                <Search size={16} />
+                <span>{isScanning ? t("networkDiscovery.scanning") : t("networkDiscovery.scan")}</span>
+              </button>
 
               {selectedHosts.size > 0 && (
                 <button

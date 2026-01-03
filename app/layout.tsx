@@ -4,7 +4,7 @@ import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
 
-export const metadata: Metadata = {
+export const metadata: Metadata = { // eslint-disable-line react-refresh/only-export-components
   title: 'sortOfRemoteNG',
   description: 'A remote management tool',
 }

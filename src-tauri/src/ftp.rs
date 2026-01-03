@@ -7,6 +7,8 @@ use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use tokio::task;
 use tokio::sync::mpsc;
+use ssh2::Session;
+use std::net::TcpStream;
 
 pub type FtpServiceState = Arc<Mutex<FtpService>>;
 
@@ -19,6 +21,16 @@ pub struct FtpSession {
     pub connected: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SftpSession {
+    pub id: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub connected: bool,
+    pub auth_method: String, // "password" or "key"
+}
+
 #[derive(Debug)]
 struct FtpConnection {
     session: FtpSession,
@@ -27,14 +39,24 @@ struct FtpConnection {
     _handle: task::JoinHandle<()>,
 }
 
+struct SftpConnection {
+    session: SftpSession,
+    session_handle: Option<Session>,
+    tcp_stream: Option<TcpStream>,
+    shutdown_tx: mpsc::Sender<()>,
+    _handle: task::JoinHandle<()>,
+}
+
 pub struct FtpService {
-    connections: HashMap<String, FtpConnection>,
+    ftp_connections: HashMap<String, FtpConnection>,
+    sftp_connections: HashMap<String, SftpConnection>,
 }
 
 impl FtpService {
     pub fn new() -> FtpServiceState {
         Arc::new(Mutex::new(FtpService {
-            connections: HashMap::new(),
+            ftp_connections: HashMap::new(),
+            sftp_connections: HashMap::new(),
         }))
     }
 
@@ -74,7 +96,7 @@ impl FtpService {
             _handle: handle,
         };
 
-        self.connections.insert(session_id.clone(), connection);
+        self.ftp_connections.insert(session_id.clone(), connection);
 
         Ok(format!("FTP session {} connected and running on dedicated thread", session_id))
     }
@@ -102,7 +124,7 @@ impl FtpService {
     }
 
     pub async fn list_files(&mut self, session_id: String, path: String) -> Result<Vec<String>, String> {
-        if let Some(connection) = self.connections.get_mut(&session_id) {
+        if let Some(connection) = self.ftp_connections.get_mut(&session_id) {
             if let Some(stream) = &mut connection.stream {
                 let files = stream.list(Some(&path))
                     .map_err(|e| e.to_string())?;
@@ -116,7 +138,7 @@ impl FtpService {
     }
 
     pub async fn upload_file(&mut self, session_id: String, local_path: String, remote_path: String) -> Result<String, String> {
-        if let Some(connection) = self.connections.get_mut(&session_id) {
+        if let Some(connection) = self.ftp_connections.get_mut(&session_id) {
             if let Some(stream) = &mut connection.stream {
                 // Read local file
                 let data = fs::read(&local_path).await
@@ -137,7 +159,7 @@ impl FtpService {
     }
 
     pub async fn download_file(&mut self, session_id: String, remote_path: String, local_path: String) -> Result<String, String> {
-        if let Some(connection) = self.connections.get_mut(&session_id) {
+        if let Some(connection) = self.ftp_connections.get_mut(&session_id) {
             if let Some(stream) = &mut connection.stream {
                 // Download from FTP server
                 let cursor = stream.retr_as_buffer(&remote_path)
@@ -160,7 +182,7 @@ impl FtpService {
     }
 
     pub async fn disconnect_ftp(&mut self, session_id: String) -> Result<(), String> {
-        if let Some(connection) = self.connections.remove(&session_id) {
+        if let Some(connection) = self.ftp_connections.remove(&session_id) {
             // Send shutdown signal to the connection handler
             let _ = connection.shutdown_tx.send(()).await;
 
@@ -177,9 +199,116 @@ impl FtpService {
             Err(format!("FTP session {} not found", session_id))
         }
     }
+    // SFTP Methods
+    pub async fn connect_sftp(&mut self, host: String, port: u16, username: String, password: Option<String>, private_key: Option<String>) -> Result<String, String> {
+        let session_id = Uuid::new_v4().to_string();
 
+        // Create TCP connection
+        let tcp = TcpStream::connect(format!("{}:{}", host, port))
+            .map_err(|e| format!("Failed to connect to {}:{}: {}", host, port, e))?;
+
+        // Create SSH session
+        let mut sess = Session::new().map_err(|e| format!("Failed to create SSH session: {}", e))?;
+        sess.set_tcp_stream(tcp);
+        sess.handshake().map_err(|e| format!("SSH handshake failed: {}", e))?;
+
+        // Authenticate
+        let auth_method = if password.is_some() {
+            sess.userauth_password(&username, &password.unwrap())
+                .map_err(|e| format!("Password authentication failed: {}", e))?;
+            "password"
+        } else if let Some(private_key) = private_key {
+            // For private _key auth, we'd need to parse the key
+            // This is a simplified implementation
+            return Err("Private key authentication not yet implemented".to_string());
+        } else {
+            return Err("No authentication method provided".to_string());
+        };
+
+        // Create channels for shutdown signaling
+        let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>(1);
+
+        // Create session info
+        let session = SftpSession {
+            id: session_id.clone(),
+            host: host.clone(),
+            port,
+            username: username.clone(),
+            connected: true,
+            auth_method: auth_method.to_string(),
+        };
+
+        // Start connection handler
+        let session_clone = session.clone();
+        let handle = task::spawn(async move {
+            Self::handle_sftp_connection(session_clone, shutdown_rx).await;
+        });
+
+        let connection = SftpConnection {
+            session: session.clone(),
+            session_handle: Some(sess),
+            tcp_stream: None, // TCP stream is now owned by the session
+            shutdown_tx,
+            _handle: handle,
+        };
+
+        self.sftp_connections.insert(session_id.clone(), connection);
+
+        Ok(session_id)
+    }
+
+    pub async fn list_sftp_files(&mut self, session_id: String, path: String) -> Result<Vec<String>, String> {
+        if let Some(connection) = self.sftp_connections.get_mut(&session_id) {
+            if let Some(sess) = &connection.session_handle {
+                let sftp = sess.sftp().map_err(|e| format!("Failed to create SFTP channel: {}", e))?;
+                let entries = sftp.readdir(std::path::Path::new(&path))
+                    .map_err(|e| format!("Failed to list directory {}: {}", path, e))?;
+
+                let filenames: Vec<String> = entries.iter()
+                    .map(|(path, _)| path.to_string_lossy().to_string())
+                    .collect();
+
+                Ok(filenames)
+            } else {
+                Err(format!("SFTP session {} not connected", session_id))
+            }
+        } else {
+            Err(format!("SFTP session {} not found", session_id))
+        }
+    }
+
+    pub async fn disconnect_sftp(&mut self, session_id: String) -> Result<(), String> {
+        if let Some(connection) = self.sftp_connections.remove(&session_id) {
+            // Send shutdown signal to the connection handler
+            let _ = connection.shutdown_tx.send(()).await;
+
+            // The session will be dropped, which should close the connection
+            Ok(())
+        } else {
+            Err(format!("SFTP session {} not found", session_id))
+        }
+    }
+
+    async fn handle_sftp_connection(session: SftpSession, mut shutdown_rx: mpsc::Receiver<()>) {
+        println!("SFTP connection handler started for session {}", session.id);
+
+        // Connection maintenance loop
+        loop {
+            tokio::select! {
+                // Check for shutdown signal
+                _ = shutdown_rx.recv() => {
+                    println!("SFTP session {} received shutdown signal", session.id);
+                    break;
+                }
+                // Keep connection alive
+                _ = tokio::time::sleep(tokio::time::Duration::from_secs(60)) => {
+                    println!("SFTP session {} keep-alive", session.id);
+                }
+            }
+        }
+    }
     pub async fn get_session_info(&self, session_id: &str) -> Result<FtpSession, String> {
-        if let Some(connection) = self.connections.get(session_id) {
+        if let Some(connection) = self.ftp_connections.get(session_id) {
             Ok(connection.session.clone())
         } else {
             Err(format!("FTP session {} not found", session_id))
@@ -187,7 +316,7 @@ impl FtpService {
     }
 
     pub async fn list_sessions(&self) -> Vec<FtpSession> {
-        self.connections.values().map(|conn| conn.session.clone()).collect()
+        self.ftp_connections.values().map(|conn| conn.session.clone()).collect()
     }
 }
 
@@ -231,4 +360,23 @@ pub async fn get_ftp_session_info(state: tauri::State<'_, FtpServiceState>, sess
 pub async fn list_ftp_sessions(state: tauri::State<'_, FtpServiceState>) -> Result<Vec<FtpSession>, String> {
     let ftp = state.lock().await;
     Ok(ftp.list_sessions().await)
+}
+
+// SFTP Commands
+#[tauri::command]
+pub async fn connect_sftp(state: tauri::State<'_, FtpServiceState>, host: String, port: u16, username: String, password: Option<String>, private_key: Option<String>) -> Result<String, String> {
+    let mut ftp = state.lock().await;
+    ftp.connect_sftp(host, port, username, password, private_key).await
+}
+
+#[tauri::command]
+pub async fn list_sftp_files(state: tauri::State<'_, FtpServiceState>, session_id: String, path: String) -> Result<Vec<String>, String> {
+    let mut ftp = state.lock().await;
+    ftp.list_sftp_files(session_id, path).await
+}
+
+#[tauri::command]
+pub async fn disconnect_sftp(state: tauri::State<'_, FtpServiceState>, session_id: String) -> Result<(), String> {
+    let mut ftp = state.lock().await;
+    ftp.disconnect_sftp(session_id).await
 }

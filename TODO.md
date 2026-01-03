@@ -110,10 +110,13 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - ✅ Create basic FTP service module in Rust with connection and listing
 - ✅ Add Tauri commands for FTP connect/list/disconnect
 - ✅ Implement file upload/download logic
-- [ ] Add SFTP support using ssh2
+- [x] **ADD SFTP SUPPORT**: Implemented SFTP using ssh2 crate with connect/list functionality
 - [ ] Update FileTransferManager to use Tauri commands
-- [ ] Add SFTP support using ssh2
-- [ ] Update FileTransferManager to use Tauri commands
+- [ ] **FULL SFTP SUPPORT**: Complete file upload/download for SFTP
+- [ ] **FTP OVER SSH TUNNELING**: SSH port forwarding for FTP connections
+- [ ] **FTP OVER HTTP/HTTPS**: HTTP proxy support for FTP connections
+- [ ] **ADVANCED FTP FEATURES**: Passive/active mode auto-detection, SSL/TLS support, resume transfers
+- [ ] **FTP MIRRORING/SYNC**: Directory synchronization and backup features
 
 ### 15. Network Discovery and Scanning ✅
 - ✅ Add Rust ping crate (`tokio-ping`)
@@ -121,7 +124,40 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - ✅ Add Tauri commands for ping and network scan
 - ✅ Implement actual ping functionality using system ping
 - ✅ Implement actual network scanning logic
-- [ ] Update NetworkDiscovery component to use Tauri IPC (fetch calls need migration)
+- [x] **FULLY IMPLEMENT NETWORK DISCOVERY**: Added port scanning, service detection, hostname resolution, MAC address lookup
+- [x] Update NetworkDiscovery component to use Tauri IPC (basic implementation done, needs enhancement)
+- [ ] **ADD ADVANCED NETWORK FEATURES**: ARP scanning, traceroute, DNS resolution, network topology mapping
+
+### 15.5. REST API Server and gRPC Implementation
+- [ ] **IMPLEMENT REST API SERVER IN RUST**: Add HTTP server (axum/warp) with all endpoints from Node.js version
+- [ ] **IMPLEMENT GRPC SERVER IN RUST**: Add gRPC service definitions and handlers
+- [ ] **MIGRATE ALL API ENDPOINTS**: Authentication, connections, file operations, network functions
+- [ ] **ADD API AUTHENTICATION**: JWT validation, API key support, rate limiting
+- [ ] **IMPLEMENT WEBSOCKET SUPPORT**: Real-time updates and bidirectional communication
+
+### 15.6. Wake-on-LAN Functionality ✅
+- ✅ Create basic WOL service module in Rust with placeholder
+- ✅ Add Tauri command for wake_on_lan
+- ✅ Implement actual Wake-on-LAN logic using UDP packets
+- [ ] **ENHANCE WOL FEATURES**: Support for secure WOL, scheduled wake-up, wake-on-pattern
+- [ ] **ADD WOL DISCOVERY**: Network scanning for WOL-capable devices
+
+### 15.7. Advanced FTP/SFTP Implementation
+- ✅ Add Rust FTP crate (`suppaftp`)
+- ✅ Create basic FTP service module in Rust with connection and listing
+- ✅ Add Tauri commands for FTP connect/list/disconnect
+- ✅ Implement file upload/download logic
+- [ ] **FULL SFTP SUPPORT**: Implement SFTP over SSH using russh crate
+- [ ] **FTP OVER SSH TUNNELING**: SSH port forwarding for FTP connections
+- [ ] **FTP OVER HTTP/HTTPS**: HTTP proxy support for FTP connections
+- [ ] **ADVANCED FTP FEATURES**: Passive/active mode auto-detection, SSL/TLS support, resume transfers
+- [ ] **FTP MIRRORING/SYNC**: Directory synchronization and backup features
+
+### 15.8. QR Code Generation ✅
+- [x] **ADD QR CODE CRATE**: Add `qrcode` and `image` Rust crates to dependencies
+- [x] **IMPLEMENT QR GENERATION**: Create Tauri command for generating QR codes (SVG and PNG formats)
+- [x] **ADD QR FEATURES**: Support for different formats, error correction levels, custom sizing
+- [x] **INTEGRATE WITH CONNECTIONS**: Generate QR codes for connection sharing/import
 
 ### 16. Security Features ✅
 - ✅ Add Rust TOTP crate (`totp-rs`)
@@ -135,21 +171,17 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - ✅ Add Tauri command for wake_on_lan
 - ✅ Implement actual Wake-on-LAN logic using UDP packets
 
-### 18. QR Code Generation
-- [ ] Replace `qrcode` with Rust QR code library
-- [ ] Implement QR code generation in backend
-
 ## Build and Configuration Updates
 
 ### 19. Update Build Scripts
-- [ ] Modify package.json scripts for Tauri build process
-- [ ] Configure Vite build to work with Tauri
-- [ ] Set up development scripts for both frontend and backend
+- [x] Modify package.json scripts for Tauri build process
+- [x] Configure Vite build to work with Tauri
+- [x] Set up development scripts for both frontend and backend
 
 ### 20. Dependency Management
-- [ ] Remove Node.js specific dependencies
-- [ ] Add Rust crate dependencies
-- [ ] Update dev dependencies for Vite and Tauri
+- [x] Remove Node.js specific dependencies
+- [x] Add Rust crate dependencies
+- [x] Update dev dependencies for Vite and Tauri
 
 ### 21. Configuration Files
 - [ ] Update TypeScript configs for Vite
@@ -182,9 +214,9 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 ## Documentation and Deployment
 
 ### 26. Update Documentation
-- [ ] Rewrite README for Tauri + Vite setup
-- [ ] Update installation instructions
-- [ ] Document development workflow
+- [x] Rewrite README for Tauri + Vite setup
+- [x] Update installation instructions
+- [x] Document development workflow
 - [ ] Create migration guide for existing users
 
 ### 27. Packaging and Distribution

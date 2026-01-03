@@ -57,6 +57,7 @@ mod wireguard;
 mod zerotier;
 mod tailscale;
 mod chaining;
+mod qr;
 
 #[cfg(test)]
 mod tests {
@@ -82,6 +83,7 @@ use wireguard::WireGuardService;
 use zerotier::ZeroTierService;
 use tailscale::TailscaleService;
 use chaining::ChainingService;
+use qr::QrService;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -195,6 +197,10 @@ pub fn run() {
       );
       app.manage(chaining_service);
 
+      // Initialize QR service
+      let qr_service = QrService::new();
+      app.manage(qr_service);
+
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -254,8 +260,12 @@ pub fn run() {
         ftp::disconnect_ftp,
         ftp::get_ftp_session_info,
         ftp::list_ftp_sessions,
+        ftp::connect_sftp,
+        ftp::list_sftp_files,
+        ftp::disconnect_sftp,
         network::ping_host,
         network::scan_network,
+        network::scan_network_comprehensive,
         security::generate_totp_secret,
         security::verify_totp,
         wol::wake_on_lan,
@@ -304,7 +314,9 @@ pub fn run() {
         chaining::get_connection_chain,
         chaining::list_connection_chains,
         chaining::delete_connection_chain,
-        chaining::update_connection_chain_layers
+        chaining::update_connection_chain_layers,
+        qr::generate_qr_code,
+        qr::generate_qr_code_png
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
