@@ -19,6 +19,9 @@ use crate::{
     wol::WolService,
     qr::QrService,
     rustdesk::RustDeskService,
+    aws::{AwsService, AwsConnectionConfig},
+    vercel::{VercelService, VercelConnectionConfig},
+    cloudflare::{CloudflareService, CloudflareConnectionConfig},
 };
 
 #[derive(Clone)]
@@ -37,6 +40,9 @@ pub struct ApiService {
     pub meshcentral_service: Arc<Mutex<crate::meshcentral::MeshCentralService>>,
     pub agent_service: Arc<Mutex<crate::agent::AgentService>>,
     pub commander_service: Arc<Mutex<crate::commander::CommanderService>>,
+    pub aws_service: Arc<Mutex<crate::aws::AwsService>>,
+    pub vercel_service: Arc<Mutex<crate::vercel::VercelService>>,
+    pub cloudflare_service: Arc<Mutex<crate::cloudflare::CloudflareService>>,
 }
 
 impl ApiService {
@@ -55,6 +61,9 @@ impl ApiService {
         meshcentral_service: Arc<Mutex<crate::meshcentral::MeshCentralService>>,
         agent_service: Arc<Mutex<crate::agent::AgentService>>,
         commander_service: Arc<Mutex<crate::commander::CommanderService>>,
+        aws_service: Arc<Mutex<crate::aws::AwsService>>,
+        vercel_service: Arc<Mutex<crate::vercel::VercelService>>,
+        cloudflare_service: Arc<Mutex<crate::cloudflare::CloudflareService>>,
     ) -> Self {
         Self {
             auth_service,
@@ -71,6 +80,9 @@ impl ApiService {
             meshcentral_service,
             agent_service,
             commander_service,
+            aws_service,
+            vercel_service,
+            cloudflare_service,
         }
     }
 
@@ -174,6 +186,50 @@ impl ApiService {
             .route("/commander/list/:session_id", get(list_commander_directory_api))
             .route("/commander/status/:session_id", post(update_commander_status_api))
             .route("/commander/system/:session_id", get(get_commander_system_info_api))
+            // AWS
+            .route("/aws/connect", post(connect_aws_api))
+            .route("/aws/disconnect/:session_id", post(disconnect_aws_api))
+            .route("/aws/sessions", get(list_aws_sessions_api))
+            .route("/aws/session/:session_id", get(get_aws_session_api))
+            .route("/aws/ec2/instances/:session_id", get(list_ec2_instances_api))
+            .route("/aws/ec2/instance/:session_id/:instance_id", get(get_ec2_instance_api))
+            .route("/aws/ec2/action/:session_id/:instance_id", post(execute_ec2_action_api))
+            .route("/aws/s3/buckets/:session_id", get(list_s3_buckets_api))
+            .route("/aws/s3/bucket/:session_id/:bucket_name", get(get_s3_bucket_api))
+            .route("/aws/s3/objects/:session_id/:bucket_name", get(list_s3_objects_api))
+            .route("/aws/s3/object/:session_id/:bucket_name/*key", get(get_s3_object_api))
+            .route("/aws/rds/instances/:session_id", get(list_rds_instances_api))
+            .route("/aws/rds/instance/:session_id/:instance_id", get(get_rds_instance_api))
+            .route("/aws/lambda/functions/:session_id", get(list_lambda_functions_api))
+            .route("/aws/lambda/function/:session_id/:function_name", get(get_lambda_function_api))
+            .route("/aws/cloudwatch/metrics/:session_id", get(get_cloudwatch_metrics_api))
+            // Vercel
+            .route("/vercel/connect", post(connect_vercel_api))
+            .route("/vercel/disconnect/:session_id", post(disconnect_vercel_api))
+            .route("/vercel/sessions", get(list_vercel_sessions_api))
+            .route("/vercel/session/:session_id", get(get_vercel_session_api))
+            .route("/vercel/projects/:session_id", get(list_vercel_projects_api))
+            .route("/vercel/project/:session_id/:project_id", get(get_vercel_project_api))
+            .route("/vercel/deployments/:session_id/:project_id", get(list_vercel_deployments_api))
+            .route("/vercel/deployment/:session_id/:deployment_id", get(get_vercel_deployment_api))
+            .route("/vercel/domains/:session_id", get(list_vercel_domains_api))
+            .route("/vercel/domain/:session_id/:domain_name", get(get_vercel_domain_api))
+            .route("/vercel/teams/:session_id", get(list_vercel_teams_api))
+            .route("/vercel/team/:session_id/:team_id", get(get_vercel_team_api))
+            // Cloudflare
+            .route("/cloudflare/connect", post(connect_cloudflare_api))
+            .route("/cloudflare/disconnect/:session_id", post(disconnect_cloudflare_api))
+            .route("/cloudflare/sessions", get(list_cloudflare_sessions_api))
+            .route("/cloudflare/session/:session_id", get(get_cloudflare_session_api))
+            .route("/cloudflare/zones/:session_id", get(list_cloudflare_zones_api))
+            .route("/cloudflare/zone/:session_id/:zone_id", get(get_cloudflare_zone_api))
+            .route("/cloudflare/dns/:session_id/:zone_id", get(list_cloudflare_dns_records_api))
+            .route("/cloudflare/dns/:session_id/:zone_id/:record_id", get(get_cloudflare_dns_record_api))
+            .route("/cloudflare/workers/:session_id", get(list_cloudflare_workers_api))
+            .route("/cloudflare/worker/:session_id/:worker_id", get(get_cloudflare_worker_api))
+            .route("/cloudflare/pagerules/:session_id/:zone_id", get(list_cloudflare_page_rules_api))
+            .route("/cloudflare/pagerule/:session_id/:zone_id/:rule_id", get(get_cloudflare_page_rule_api))
+            .route("/cloudflare/analytics/:session_id/:zone_id", get(get_cloudflare_analytics_api))
             .with_state(self)
     }
 }
@@ -1334,6 +1390,641 @@ async fn get_commander_system_info_api(
         Ok(info) => Ok(Json(info)),
         Err(e) => {
             eprintln!("Failed to get commander system info: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// AWS API handlers
+async fn connect_aws_api(
+    State(services): State<Arc<ApiService>>,
+    Json(params): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut aws = services.aws_service.lock().await;
+    // Parse the JSON params into AwsConnectionConfig
+    let config: AwsConnectionConfig = match serde_json::from_value(params) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to parse AWS connection config: {}", e);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+    match aws.connect_aws(config).await {
+        Ok(session_id) => Ok(Json(serde_json::json!({
+            "session_id": session_id
+        }))),
+        Err(e) => {
+            eprintln!("Failed to connect to AWS: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn disconnect_aws_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut aws = services.aws_service.lock().await;
+    match aws.disconnect_aws(&session_id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "disconnected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to disconnect from AWS: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_aws_sessions_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    let sessions = aws.list_aws_sessions().await;
+    Ok(Json(serde_json::json!(sessions)))
+}
+
+async fn get_aws_session_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    match aws.get_aws_session(&session_id).await {
+        Some(session) => Ok(Json(serde_json::json!(session))),
+        None => Err(StatusCode::NOT_FOUND)
+    }
+}
+
+async fn list_ec2_instances_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    match aws.list_ec2_instances(&session_id).await {
+        Ok(instances) => Ok(Json(serde_json::json!(instances))),
+        Err(e) => {
+            eprintln!("Failed to list EC2 instances: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_ec2_instance_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, instance_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    match aws.list_ec2_instances(&session_id).await {
+        Ok(instances) => {
+            match instances.into_iter().find(|i| i.instance_id == instance_id) {
+                Some(instance) => Ok(Json(serde_json::json!(instance))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get EC2 instance: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn execute_ec2_action_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, instance_id)): Path<(String, String)>,
+    Json(params): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    let action = params.get("action")
+        .and_then(|a| a.as_str())
+        .unwrap_or("start");
+    match aws.execute_ec2_action(&session_id, &instance_id, action).await {
+        Ok(result) => Ok(Json(serde_json::json!(result))),
+        Err(e) => {
+            eprintln!("Failed to execute EC2 action: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_s3_buckets_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    match aws.list_s3_buckets(&session_id).await {
+        Ok(buckets) => Ok(Json(serde_json::json!(buckets))),
+        Err(e) => {
+            eprintln!("Failed to list S3 buckets: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_s3_bucket_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, bucket_name)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    match aws.list_s3_buckets(&session_id).await {
+        Ok(buckets) => {
+            match buckets.into_iter().find(|b| b.name == bucket_name) {
+                Some(bucket) => Ok(Json(serde_json::json!(bucket))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get S3 bucket: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_s3_objects_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, bucket_name)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // This method doesn't exist, return empty array for now
+    Ok(Json(serde_json::json!([])))
+}
+
+async fn get_s3_object_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, bucket_name, key)): Path<(String, String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // This method doesn't exist, return not found
+    Err(StatusCode::NOT_FOUND)
+}
+
+async fn list_rds_instances_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    match aws.list_rds_instances(&session_id).await {
+        Ok(instances) => Ok(Json(serde_json::json!(instances))),
+        Err(e) => {
+            eprintln!("Failed to list RDS instances: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_rds_instance_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, instance_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    match aws.list_rds_instances(&session_id).await {
+        Ok(instances) => {
+            match instances.into_iter().find(|i| i.db_instance_identifier == instance_id) {
+                Some(instance) => Ok(Json(serde_json::json!(instance))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get RDS instance: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_lambda_functions_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    match aws.list_lambda_functions(&session_id).await {
+        Ok(functions) => Ok(Json(serde_json::json!(functions))),
+        Err(e) => {
+            eprintln!("Failed to list Lambda functions: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_lambda_function_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, function_name)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    match aws.list_lambda_functions(&session_id).await {
+        Ok(functions) => {
+            match functions.into_iter().find(|f| f.function_name == function_name) {
+                Some(function) => Ok(Json(serde_json::json!(function))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get Lambda function: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_cloudwatch_metrics_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let aws = services.aws_service.lock().await;
+    let namespace = params.get("namespace").unwrap_or(&"AWS/EC2".to_string()).clone();
+    let metric_name = params.get("metric_name").unwrap_or(&"CPUUtilization".to_string()).clone();
+    match aws.get_cloudwatch_metrics(&session_id, &namespace, &metric_name).await {
+        Ok(metrics) => Ok(Json(serde_json::json!(metrics))),
+        Err(e) => {
+            eprintln!("Failed to get CloudWatch metrics: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Vercel API handlers
+async fn connect_vercel_api(
+    State(services): State<Arc<ApiService>>,
+    Json(params): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut vercel = services.vercel_service.lock().await;
+    let config: VercelConnectionConfig = match serde_json::from_value(params) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to parse Vercel connection config: {}", e);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+    match vercel.connect_vercel(config).await {
+        Ok(session_id) => Ok(Json(serde_json::json!({
+            "session_id": session_id
+        }))),
+        Err(e) => {
+            eprintln!("Failed to connect to Vercel: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn disconnect_vercel_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut vercel = services.vercel_service.lock().await;
+    match vercel.disconnect_vercel(&session_id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "disconnected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to disconnect from Vercel: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_vercel_sessions_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let vercel = services.vercel_service.lock().await;
+    let sessions = vercel.list_vercel_sessions().await;
+    Ok(Json(serde_json::json!(sessions)))
+}
+
+async fn get_vercel_session_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let vercel = services.vercel_service.lock().await;
+    match vercel.get_vercel_session(&session_id).await {
+        Some(session) => Ok(Json(serde_json::json!(session))),
+        None => Err(StatusCode::NOT_FOUND)
+    }
+}
+
+async fn list_vercel_projects_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let vercel = services.vercel_service.lock().await;
+    match vercel.list_vercel_projects(&session_id).await {
+        Ok(projects) => Ok(Json(serde_json::json!(projects))),
+        Err(e) => {
+            eprintln!("Failed to list Vercel projects: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_vercel_project_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, project_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let vercel = services.vercel_service.lock().await;
+    match vercel.list_vercel_projects(&session_id).await {
+        Ok(projects) => {
+            match projects.into_iter().find(|p| p.id == project_id) {
+                Some(project) => Ok(Json(serde_json::json!(project))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get Vercel project: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_vercel_deployments_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, project_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let vercel = services.vercel_service.lock().await;
+    match vercel.list_vercel_deployments(&session_id, Some(project_id)).await {
+        Ok(deployments) => Ok(Json(serde_json::json!(deployments))),
+        Err(e) => {
+            eprintln!("Failed to list Vercel deployments: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_vercel_deployment_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, deployment_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    // This method doesn't exist, return not found
+    Err(StatusCode::NOT_FOUND)
+}
+
+async fn list_vercel_domains_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let vercel = services.vercel_service.lock().await;
+    match vercel.list_vercel_domains(&session_id).await {
+        Ok(domains) => Ok(Json(serde_json::json!(domains))),
+        Err(e) => {
+            eprintln!("Failed to list Vercel domains: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_vercel_domain_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, domain_name)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let vercel = services.vercel_service.lock().await;
+    match vercel.list_vercel_domains(&session_id).await {
+        Ok(domains) => {
+            match domains.into_iter().find(|d| d.name == domain_name) {
+                Some(domain) => Ok(Json(serde_json::json!(domain))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get Vercel domain: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_vercel_teams_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let vercel = services.vercel_service.lock().await;
+    match vercel.list_vercel_teams(&session_id).await {
+        Ok(teams) => Ok(Json(serde_json::json!(teams))),
+        Err(e) => {
+            eprintln!("Failed to list Vercel teams: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_vercel_team_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, team_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let vercel = services.vercel_service.lock().await;
+    match vercel.list_vercel_teams(&session_id).await {
+        Ok(teams) => {
+            match teams.into_iter().find(|t| t.id == team_id) {
+                Some(team) => Ok(Json(serde_json::json!(team))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get Vercel team: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Cloudflare API handlers
+async fn connect_cloudflare_api(
+    State(services): State<Arc<ApiService>>,
+    Json(params): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut cloudflare = services.cloudflare_service.lock().await;
+    let config: CloudflareConnectionConfig = match serde_json::from_value(params) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Failed to parse Cloudflare connection config: {}", e);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+    match cloudflare.connect_cloudflare(config).await {
+        Ok(session_id) => Ok(Json(serde_json::json!({
+            "session_id": session_id
+        }))),
+        Err(e) => {
+            eprintln!("Failed to connect to Cloudflare: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn disconnect_cloudflare_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut cloudflare = services.cloudflare_service.lock().await;
+    match cloudflare.disconnect_cloudflare(&session_id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "disconnected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to disconnect from Cloudflare: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_cloudflare_sessions_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    let sessions = cloudflare.list_cloudflare_sessions().await;
+    Ok(Json(serde_json::json!(sessions)))
+}
+
+async fn get_cloudflare_session_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    match cloudflare.get_cloudflare_session(&session_id).await {
+        Some(session) => Ok(Json(serde_json::json!(session))),
+        None => Err(StatusCode::NOT_FOUND)
+    }
+}
+
+async fn list_cloudflare_zones_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    match cloudflare.list_cloudflare_zones(&session_id).await {
+        Ok(zones) => Ok(Json(serde_json::json!(zones))),
+        Err(e) => {
+            eprintln!("Failed to list Cloudflare zones: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_cloudflare_zone_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, zone_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    match cloudflare.list_cloudflare_zones(&session_id).await {
+        Ok(zones) => {
+            match zones.into_iter().find(|z| z.id == zone_id) {
+                Some(zone) => Ok(Json(serde_json::json!(zone))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get Cloudflare zone: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_cloudflare_dns_records_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, zone_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    match cloudflare.list_cloudflare_dns_records(&session_id, &zone_id).await {
+        Ok(records) => Ok(Json(serde_json::json!(records))),
+        Err(e) => {
+            eprintln!("Failed to list Cloudflare DNS records: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_cloudflare_dns_record_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, zone_id, record_id)): Path<(String, String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    match cloudflare.list_cloudflare_dns_records(&session_id, &zone_id).await {
+        Ok(records) => {
+            match records.into_iter().find(|r| r.id == record_id) {
+                Some(record) => Ok(Json(serde_json::json!(record))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get Cloudflare DNS record: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_cloudflare_workers_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    let account_id = params.get("account_id").unwrap_or(&"default".to_string()).clone();
+    match cloudflare.list_cloudflare_workers(&session_id, &account_id).await {
+        Ok(workers) => Ok(Json(serde_json::json!(workers))),
+        Err(e) => {
+            eprintln!("Failed to list Cloudflare workers: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_cloudflare_worker_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, worker_id)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    let account_id = params.get("account_id").unwrap_or(&"default".to_string()).clone();
+    match cloudflare.list_cloudflare_workers(&session_id, &account_id).await {
+        Ok(workers) => {
+            match workers.into_iter().find(|w| w.id == worker_id) {
+                Some(worker) => Ok(Json(serde_json::json!(worker))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get Cloudflare worker: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_cloudflare_page_rules_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, zone_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    match cloudflare.list_cloudflare_page_rules(&session_id, &zone_id).await {
+        Ok(rules) => Ok(Json(serde_json::json!(rules))),
+        Err(e) => {
+            eprintln!("Failed to list Cloudflare page rules: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_cloudflare_page_rule_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, zone_id, rule_id)): Path<(String, String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    match cloudflare.list_cloudflare_page_rules(&session_id, &zone_id).await {
+        Ok(rules) => {
+            match rules.into_iter().find(|r| r.id == rule_id) {
+                Some(rule) => Ok(Json(serde_json::json!(rule))),
+                None => Err(StatusCode::NOT_FOUND)
+            }
+        },
+        Err(e) => {
+            eprintln!("Failed to get Cloudflare page rule: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_cloudflare_analytics_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, zone_id)): Path<(String, String)>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let cloudflare = services.cloudflare_service.lock().await;
+    let since = params.get("since").cloned();
+    let until = params.get("until").cloned();
+    match cloudflare.get_cloudflare_analytics(&session_id, &zone_id, since, until).await {
+        Ok(analytics) => Ok(Json(serde_json::json!(analytics))),
+        Err(e) => {
+            eprintln!("Failed to get Cloudflare analytics: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

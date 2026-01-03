@@ -46,7 +46,7 @@ uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 tokio-process = "0.2.5"
 aes-gcm = "0.10.3"
-rquickjs = "0.6"
+rquickjs = { version = "0.6", features = ["full-async"] }
 tokio-tungstenite = "0.21"
 futures-util = "0.3"
 qrcode = "0.13"
@@ -57,6 +57,8 @@ axum = "0.7"
 tower = "0.4"
 tower-http = "0.5"
 hyper = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+regex = "1.10"
 
 [dev-dependencies]
 tokio-test = "0.4"

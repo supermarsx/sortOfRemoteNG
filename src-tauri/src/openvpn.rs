@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use regex::Regex;
 
 pub type OpenVPNServiceState = Arc<Mutex<OpenVPNService>>;
 
@@ -315,6 +316,313 @@ impl OpenVPNService {
             false
         }
     }
+
+    pub async fn parse_ovpn_file(&self, ovpn_content: &str) -> Result<OpenVPNConfig, String> {
+        let mut config = OpenVPNConfig {
+            config_file: None,
+            auth_file: None,
+            ca_cert: None,
+            client_cert: None,
+            client_key: None,
+            username: None,
+            password: None,
+            remote_host: None,
+            remote_port: None,
+            protocol: None,
+            cipher: None,
+            auth: None,
+            tls_auth: None,
+            tls_crypt: None,
+            compression: None,
+            mss_fix: None,
+            tun_mtu: None,
+            fragment: None,
+            mtu_discover: None,
+            keep_alive: None,
+            route_no_pull: None,
+            routes: Vec::new(),
+            dns_servers: Vec::new(),
+            custom_options: Vec::new(),
+        };
+
+        let lines: Vec<&str> = ovpn_content.lines().collect();
+        let mut i = 0;
+
+        while i < lines.len() {
+            let line = lines[i].trim();
+
+            // Skip comments and empty lines
+            if line.starts_with('#') || line.starts_with(';') || line.is_empty() {
+                i += 1;
+                continue;
+            }
+
+            // Parse remote directive
+            if line.starts_with("remote ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.remote_host = Some(parts[1].to_string());
+                    if parts.len() >= 3 {
+                        config.remote_port = parts[2].parse().ok();
+                    }
+                }
+            }
+            // Parse port directive
+            else if line.starts_with("port ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.remote_port = parts[1].parse().ok();
+                }
+            }
+            // Parse proto directive
+            else if line.starts_with("proto ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.protocol = Some(parts[1].to_string());
+                }
+            }
+            // Parse cipher directive
+            else if line.starts_with("cipher ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.cipher = Some(parts[1].to_string());
+                }
+            }
+            // Parse auth directive
+            else if line.starts_with("auth ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.auth = Some(parts[1].to_string());
+                }
+            }
+            // Parse tls-auth directive
+            else if line == "tls-auth ta.key" || line == "tls-auth ta.key 1" {
+                config.tls_auth = Some(true);
+            }
+            // Parse tls-crypt directive
+            else if line.starts_with("tls-crypt ") {
+                config.tls_crypt = Some(true);
+            }
+            // Parse compress directive
+            else if line.starts_with("compress ") || line == "compress" {
+                config.compression = Some(true);
+            }
+            // Parse mssfix directive
+            else if line.starts_with("mssfix ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.mss_fix = parts[1].parse().ok();
+                }
+            }
+            // Parse tun-mtu directive
+            else if line.starts_with("tun-mtu ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.tun_mtu = parts[1].parse().ok();
+                }
+            }
+            // Parse fragment directive
+            else if line.starts_with("fragment ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.fragment = parts[1].parse().ok();
+                }
+            }
+            // Parse mtu-disc directive
+            else if line.starts_with("mtu-disc ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    config.mtu_discover = Some(parts[1] == "yes");
+                }
+            }
+            // Parse keepalive directive
+            else if line.starts_with("keepalive ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    config.keep_alive = Some(KeepAliveConfig {
+                        interval: parts[1].parse().unwrap_or(10),
+                        timeout: parts[2].parse().unwrap_or(60),
+                    });
+                }
+            }
+            // Parse route-no-pull directive
+            else if line == "route-no-pull" {
+                config.route_no_pull = Some(true);
+            }
+            // Parse route directive
+            else if line.starts_with("route ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    config.routes.push(RouteConfig {
+                        network: parts[1].to_string(),
+                        netmask: parts[2].to_string(),
+                        gateway: parts.get(3).map(|s| s.to_string()),
+                    });
+                }
+            }
+            // Parse dhcp-option DNS directive
+            else if line.starts_with("dhcp-option DNS ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    config.dns_servers.push(DNSConfig {
+                        server: parts[2].to_string(),
+                        domain: None,
+                    });
+                }
+            }
+            // Parse dhcp-option DOMAIN directive
+            else if line.starts_with("dhcp-option DOMAIN ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 && !config.dns_servers.is_empty() {
+                    if let Some(dns) = config.dns_servers.last_mut() {
+                        dns.domain = Some(parts[2].to_string());
+                    }
+                }
+            }
+            // Handle inline certificates and keys
+            else if line == "<ca>" {
+                let mut cert_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</ca>" {
+                    cert_content.push_str(lines[i]);
+                    cert_content.push('\n');
+                    i += 1;
+                }
+                // In a real implementation, you'd save this to a temp file
+                config.ca_cert = Some("inline_ca_cert".to_string());
+            }
+            else if line == "<cert>" {
+                let mut cert_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</cert>" {
+                    cert_content.push_str(lines[i]);
+                    cert_content.push('\n');
+                    i += 1;
+                }
+                config.client_cert = Some("inline_client_cert".to_string());
+            }
+            else if line == "<key>" {
+                let mut key_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</key>" {
+                    key_content.push_str(lines[i]);
+                    key_content.push('\n');
+                    i += 1;
+                }
+                config.client_key = Some("inline_client_key".to_string());
+            }
+            else if line == "<tls-auth>" {
+                let mut tls_auth_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</tls-auth>" {
+                    tls_auth_content.push_str(lines[i]);
+                    tls_auth_content.push('\n');
+                    i += 1;
+                }
+                config.tls_auth = Some(true);
+            }
+            else if line == "<tls-crypt>" {
+                let mut tls_crypt_content = String::new();
+                i += 1;
+                while i < lines.len() && lines[i].trim() != "</tls-crypt>" {
+                    tls_crypt_content.push_str(lines[i]);
+                    tls_crypt_content.push('\n');
+                    i += 1;
+                }
+                config.tls_crypt = Some(true);
+            }
+            // Add other directives as custom options
+            else if !line.is_empty() {
+                config.custom_options.push(line.to_string());
+            }
+
+            i += 1;
+        }
+
+        Ok(config)
+    }
+
+    pub async fn create_connection_from_ovpn(&mut self, name: String, ovpn_content: String) -> Result<String, String> {
+        let config = self.parse_ovpn_file(&ovpn_content).await?;
+        self.create_connection(name, config).await
+    }
+
+    pub async fn update_connection_auth(&mut self, connection_id: &str, username: Option<String>, password: Option<String>) -> Result<(), String> {
+        let connection = self.connections.get_mut(connection_id)
+            .ok_or_else(|| "OpenVPN connection not found".to_string())?;
+
+        connection.config.username = username;
+        connection.config.password = password;
+        Ok(())
+    }
+
+    pub async fn set_connection_key_files(&mut self, connection_id: &str, ca_cert: Option<String>, client_cert: Option<String>, client_key: Option<String>, tls_auth: Option<String>) -> Result<(), String> {
+        let connection = self.connections.get_mut(connection_id)
+            .ok_or_else(|| "OpenVPN connection not found".to_string())?;
+
+        connection.config.ca_cert = ca_cert;
+        connection.config.client_cert = client_cert;
+        connection.config.client_key = client_key;
+
+        if tls_auth.is_some() {
+            connection.config.tls_auth = Some(true);
+        }
+
+        Ok(())
+    }
+
+    pub async fn validate_ovpn_config(&self, ovpn_content: &str) -> Result<Vec<String>, String> {
+        let mut warnings = Vec::new();
+        let mut errors = Vec::new();
+
+        let lines: Vec<&str> = ovpn_content.lines().collect();
+
+        let mut has_remote = false;
+        let mut has_ca = false;
+        let mut has_cert = false;
+        let mut has_key = false;
+
+        for line in lines {
+            let line = line.trim();
+
+            if line.starts_with("remote ") {
+                has_remote = true;
+            } else if line == "<ca>" {
+                has_ca = true;
+            } else if line == "<cert>" {
+                has_cert = true;
+            } else if line == "<key>" {
+                has_key = true;
+            } else if line.starts_with("cipher ") {
+                // Check if cipher is supported
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    let cipher = parts[1];
+                    if !["AES-256-GCM", "AES-128-GCM", "AES-256-CBC", "AES-128-CBC", "BF-CBC"].contains(&cipher) {
+                        warnings.push(format!("Potentially unsupported cipher: {}", cipher));
+                    }
+                }
+            }
+        }
+
+        if !has_remote {
+            errors.push("No remote server specified".to_string());
+        }
+
+        if !has_ca {
+            warnings.push("No CA certificate specified - connection may not be secure".to_string());
+        }
+
+        if !has_cert && !has_key {
+            warnings.push("No client certificate or key specified - will use password authentication only".to_string());
+        }
+
+        if !errors.is_empty() {
+            return Err(errors.join("; "));
+        }
+
+        Ok(warnings)
+    }
 }
 
 #[tauri::command]
@@ -378,4 +686,47 @@ pub async fn get_openvpn_status(
 ) -> Result<OpenVPNStatus, String> {
     let service = state.lock().await;
     service.get_status(&connection_id).await
+}
+
+#[tauri::command]
+pub async fn create_openvpn_connection_from_ovpn(
+    name: String,
+    ovpn_content: String,
+    state: tauri::State<'_, OpenVPNServiceState>,
+) -> Result<String, String> {
+    let mut service = state.lock().await;
+    service.create_connection_from_ovpn(name, ovpn_content).await
+}
+
+#[tauri::command]
+pub async fn update_openvpn_connection_auth(
+    connection_id: String,
+    username: Option<String>,
+    password: Option<String>,
+    state: tauri::State<'_, OpenVPNServiceState>,
+) -> Result<(), String> {
+    let mut service = state.lock().await;
+    service.update_connection_auth(&connection_id, username, password).await
+}
+
+#[tauri::command]
+pub async fn set_openvpn_connection_key_files(
+    connection_id: String,
+    ca_cert: Option<String>,
+    client_cert: Option<String>,
+    client_key: Option<String>,
+    tls_auth: Option<String>,
+    state: tauri::State<'_, OpenVPNServiceState>,
+) -> Result<(), String> {
+    let mut service = state.lock().await;
+    service.set_connection_key_files(&connection_id, ca_cert, client_cert, client_key, tls_auth).await
+}
+
+#[tauri::command]
+pub async fn validate_ovpn_config(
+    ovpn_content: String,
+    state: tauri::State<'_, OpenVPNServiceState>,
+) -> Result<Vec<String>, String> {
+    let service = state.lock().await;
+    service.validate_ovpn_config(&ovpn_content).await
 }

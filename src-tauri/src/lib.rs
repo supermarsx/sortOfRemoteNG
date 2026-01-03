@@ -65,6 +65,9 @@ pub mod rpc;
 pub mod meshcentral;
 pub mod agent;
 pub mod commander;
+pub mod aws;
+pub mod vercel;
+pub mod cloudflare;
 
 #[cfg(test)]
 mod tests {
@@ -93,6 +96,9 @@ use chaining::ChainingService;
 use qr::QrService;
 use rustdesk::RustDeskService;
 use api::ApiService;
+use aws::AwsService;
+use vercel::VercelService;
+use cloudflare::CloudflareService;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -176,7 +182,7 @@ pub fn run() {
       app.manage(wol_service.clone());
 
       // Initialize Script service
-      let script_service = ScriptService::new();
+      let script_service = ScriptService::new(ssh_service.clone());
       app.manage(script_service);
 
       // Initialize OpenVPN service
@@ -237,6 +243,18 @@ pub fn run() {
       let commander_service = commander::CommanderService::new();
       app.manage(commander_service.clone());
 
+      // Initialize AWS service
+      let aws_service = aws::AwsService::new();
+      app.manage(aws_service.clone());
+
+      // Initialize Vercel service
+      let vercel_service = vercel::VercelService::new();
+      app.manage(vercel_service.clone());
+
+      // Initialize Cloudflare service
+      let cloudflare_service = cloudflare::CloudflareService::new();
+      app.manage(cloudflare_service.clone());
+
       // Initialize API service
       let api_service = ApiService::new(
         auth_service.clone(),
@@ -253,6 +271,9 @@ pub fn run() {
         meshcentral_service.clone(),
         agent_service.clone(),
         commander_service.clone(),
+        aws_service.clone(),
+        vercel_service.clone(),
+        cloudflare_service.clone(),
       );
       app.manage(api_service.clone());
 
@@ -427,7 +448,52 @@ pub fn run() {
         commander::get_commander_session,
         commander::list_commander_sessions,
         commander::update_commander_status,
-        commander::get_commander_system_info
+        commander::get_commander_system_info,
+        aws::connect_aws,
+        aws::disconnect_aws,
+        aws::list_aws_sessions,
+        aws::get_aws_session,
+        aws::list_ec2_instances,
+        aws::list_s3_buckets,
+        aws::list_rds_instances,
+        aws::list_lambda_functions,
+        aws::get_cloudwatch_metrics,
+        aws::execute_ec2_action,
+        aws::create_s3_bucket,
+        aws::invoke_lambda_function,
+        vercel::connect_vercel,
+        vercel::disconnect_vercel,
+        vercel::list_vercel_sessions,
+        vercel::get_vercel_session,
+        vercel::list_vercel_projects,
+        vercel::list_vercel_deployments,
+        vercel::list_vercel_domains,
+        vercel::list_vercel_teams,
+        vercel::create_vercel_deployment,
+        vercel::redeploy_vercel_project,
+        vercel::add_vercel_domain,
+        vercel::set_vercel_env_var,
+        cloudflare::connect_cloudflare,
+        cloudflare::disconnect_cloudflare,
+        cloudflare::list_cloudflare_sessions,
+        cloudflare::get_cloudflare_session,
+        cloudflare::list_cloudflare_zones,
+        cloudflare::list_cloudflare_dns_records,
+        cloudflare::create_cloudflare_dns_record,
+        cloudflare::update_cloudflare_dns_record,
+        cloudflare::delete_cloudflare_dns_record,
+        cloudflare::list_cloudflare_workers,
+        cloudflare::deploy_cloudflare_worker,
+        cloudflare::list_cloudflare_page_rules,
+        cloudflare::get_cloudflare_analytics,
+        cloudflare::purge_cloudflare_cache,
+        openvpn::create_openvpn_connection_from_ovpn,
+        openvpn::update_openvpn_connection_auth,
+        openvpn::set_openvpn_connection_key_files,
+        openvpn::validate_ovpn_config,
+        ssh::update_ssh_session_auth,
+        ssh::validate_ssh_key_file,
+        ssh::test_ssh_connection
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

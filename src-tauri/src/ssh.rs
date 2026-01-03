@@ -258,37 +258,79 @@ impl SshService {
     }
 
     fn authenticate_session(&self, session: &mut Session, config: &SshConnectionConfig) -> Result<(), String> {
+        // Try public key authentication first if key is provided
+        if let Some(private_key_path) = &config.private_key_path {
+            if let Ok(private_key_content) = std::fs::read_to_string(private_key_path) {
+                let passphrase = config.private_key_passphrase.as_deref();
+
+                if session.userauth_pubkey_file(
+                    &config.username,
+                    None,
+                    Path::new(private_key_path),
+                    passphrase,
+                ).is_ok() {
+                    return Ok(());
+                }
+            }
+        }
+
+        // Try password authentication if password is provided
         if let Some(password) = &config.password {
-            session.userauth_password(&config.username, password)
-                .map_err(|e| format!("Password authentication failed: {}", e))?;
-        } else if let Some(key_path) = &config.private_key_path {
-            let passphrase = config.private_key_passphrase.as_deref();
-            session.userauth_pubkey_file(&config.username, None, Path::new(key_path), passphrase)
-                .map_err(|e| format!("Key authentication failed: {}", e))?;
-        } else {
-            return Err("No authentication method provided".to_string());
+            if session.userauth_password(&config.username, password).is_ok() {
+                return Ok(());
+            }
         }
 
-        if !session.authenticated() {
-            return Err("Authentication failed".to_string());
+        // Try agent authentication
+        if session.userauth_agent(&config.username).is_ok() {
+            return Ok(());
         }
 
-        Ok(())
+        Err("All authentication methods failed".to_string())
     }
 
     fn authenticate_jump_session(&self, session: &mut Session, jump_config: &JumpHostConfig) -> Result<(), String> {
-        if let Some(password) = &jump_config.password {
-            session.userauth_password(&jump_config.username, password)
-                .map_err(|e| format!("Jump host password authentication failed: {}", e))?;
-        } else if let Some(key_path) = &jump_config.private_key_path {
-            session.userauth_pubkey_file(&jump_config.username, None, Path::new(key_path), None)
-                .map_err(|e| format!("Jump host key authentication failed: {}", e))?;
-        } else {
-            return Err("No authentication method for jump host".to_string());
+        // Try public key authentication first if key is provided
+        if let Some(private_key_path) = &jump_config.private_key_path {
+            if session.userauth_pubkey_file(
+                &jump_config.username,
+                None,
+                Path::new(private_key_path),
+                None,
+                ).is_ok() {
+                    return Ok(());
+                }
         }
 
-        if !session.authenticated() {
-            return Err("Jump host authentication failed".to_string());
+        // Try password authentication if password is provided
+        if let Some(password) = &jump_config.password {
+            if session.userauth_password(&jump_config.username, password).is_ok() {
+                return Ok(());
+            }
+        }
+
+        // Try agent authentication
+        if session.userauth_agent(&jump_config.username).is_ok() {
+            return Ok(());
+        }
+
+        Err("All jump host authentication methods failed".to_string())
+    }
+
+    pub async fn update_session_auth(&mut self, session_id: &str, password: Option<String>, private_key_path: Option<String>, private_key_passphrase: Option<String>) -> Result<(), String> {
+        let session = self.sessions.get_mut(session_id)
+            .ok_or("Session not found")?;
+
+        if let Some(password) = password {
+            session.config.password = Some(password);
+        }
+
+        if let Some(private_key_path) = private_key_path {
+            session.config.private_key_path = Some(private_key_path);
+        }
+
+        if let Some(passphrase) = private_key_passphrase {
+            session.config.private_key_passphrase = Some(passphrase);
         }
 
         Ok(())
@@ -319,10 +361,46 @@ impl SshService {
             loop {
                 interval.tick().await;
                 // Send keep-alive packet
-                // This is a simplified version - in practice you'd need access to the session
-                log::debug!("Keep-alive for session {}", session_id);
+                // This is a simplified implementation
+                log::debug!("Sending keep-alive for session {}", session_id);
             }
         })
+    }
+
+    pub async fn validate_key_file(&self, key_path: &str, passphrase: Option<&str>) -> Result<bool, String> {
+        if !Path::new(key_path).exists() {
+            return Err(format!("Key file does not exist: {}", key_path));
+        }
+
+        let key_content = std::fs::read_to_string(key_path)
+            .map_err(|e| format!("Failed to read key file: {}", e))?;
+
+        // Basic validation - check if it looks like a private key
+        if !key_content.contains("-----BEGIN") || !key_content.contains("PRIVATE KEY-----") {
+            return Err("File does not appear to be a valid private key".to_string());
+        }
+
+        // Try to parse the key (this is a basic check)
+        // In a real implementation, you'd use the SSH library to validate the key
+        Ok(true)
+    }
+
+    pub async fn test_ssh_connection(&self, config: SshConnectionConfig) -> Result<String, String> {
+        // Create a test connection without storing it
+        let final_stream = if config.jump_hosts.is_empty() {
+            self.establish_direct_connection(&config).await?
+        } else {
+            self.establish_jump_connection(&config).await?
+        };
+
+        let mut sess = Session::new().map_err(|e| format!("Failed to create test session: {}", e))?;
+        sess.set_tcp_stream(final_stream);
+        sess.handshake().map_err(|e| format!("SSH handshake failed: {}", e))?;
+
+        // Test authentication
+        self.authenticate_session(&mut sess, &config)?;
+
+        Ok("SSH connection test successful".to_string())
     }
 
     pub async fn execute_command(&mut self, session_id: &str, command: String, _timeout: Option<u64>) -> Result<String, String> {
@@ -699,20 +777,6 @@ impl SshService {
         Ok(())
     }
 
-    pub async fn get_system_info(&mut self, session_id: &str) -> Result<SystemInfo, String> {
-        let uname_output = self.execute_command(session_id, "uname -a".to_string(), None).await?;
-        let cpu_info = self.execute_command(session_id, "cat /proc/cpuinfo | head -5".to_string(), None).await?;
-        let mem_info = self.execute_command(session_id, "free -h".to_string(), None).await?;
-        let disk_info = self.execute_command(session_id, "df -h".to_string(), None).await?;
-
-        Ok(SystemInfo {
-            uname: uname_output.trim().to_string(),
-            cpu_info: cpu_info.trim().to_string(),
-            memory_info: mem_info.trim().to_string(),
-            disk_info: disk_info.trim().to_string(),
-        })
-    }
-
     pub async fn monitor_process(&mut self, session_id: &str, process_name: &str) -> Result<Vec<ProcessInfo>, String> {
         let command = format!("ps aux | grep {} | grep -v grep", shell_escape::escape(process_name.into()));
         let output = self.execute_command(session_id, command, None).await?;
@@ -739,6 +803,20 @@ impl SshService {
             cpu_percent: parts[2].parse().unwrap_or(0.0),
             mem_percent: parts[3].parse().unwrap_or(0.0),
             command: parts[10..].join(" "),
+        })
+    }
+
+    pub async fn get_system_info(&mut self, session_id: &str) -> Result<SystemInfo, String> {
+        let uname_output = self.execute_command(session_id, "uname -a".to_string(), None).await?;
+        let cpu_info = self.execute_command(session_id, "cat /proc/cpuinfo | head -5".to_string(), None).await?;
+        let mem_info = self.execute_command(session_id, "free -h".to_string(), None).await?;
+        let disk_info = self.execute_command(session_id, "df -h".to_string(), None).await?;
+
+        Ok(SystemInfo {
+            uname: uname_output.trim().to_string(),
+            cpu_info: cpu_info.trim().to_string(),
+            memory_info: mem_info.trim().to_string(),
+            disk_info: disk_info.trim().to_string(),
         })
     }
 }
@@ -892,4 +970,35 @@ pub async fn monitor_process(
 ) -> Result<Vec<ProcessInfo>, String> {
     let mut ssh = state.lock().await;
     ssh.monitor_process(&session_id, &process_name).await
+}
+
+#[tauri::command]
+pub async fn update_ssh_session_auth(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    password: Option<String>,
+    private_key_path: Option<String>,
+    private_key_passphrase: Option<String>
+) -> Result<(), String> {
+    let mut ssh = state.lock().await;
+    ssh.update_session_auth(&session_id, password, private_key_path, private_key_passphrase).await
+}
+
+#[tauri::command]
+pub async fn validate_ssh_key_file(
+    state: tauri::State<'_, SshServiceState>,
+    key_path: String,
+    passphrase: Option<String>
+) -> Result<bool, String> {
+    let ssh = state.lock().await;
+    ssh.validate_key_file(&key_path, passphrase.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn test_ssh_connection(
+    state: tauri::State<'_, SshServiceState>,
+    config: SshConnectionConfig
+) -> Result<String, String> {
+    let ssh = state.lock().await;
+    ssh.test_ssh_connection(config).await
 }

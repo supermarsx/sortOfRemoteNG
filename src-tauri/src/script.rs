@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
-use rquickjs::{Context, Runtime};
+use rquickjs::{AsyncRuntime, AsyncContext, Function, Object, Value, async_with};
+use rquickjs::prelude::Async;
+use crate::ssh::{SshServiceState, SshConnectionConfig, JumpHostConfig};
 
 pub type ScriptServiceState = Arc<Mutex<ScriptService>>;
 
@@ -30,13 +32,14 @@ pub struct ScriptResult {
 }
 
 pub struct ScriptService {
-    // For now, we'll implement basic script execution
-    // In a full implementation, this would include proper sandboxing
+    ssh_service: SshServiceState,
 }
 
 impl ScriptService {
-    pub fn new() -> ScriptServiceState {
-        Arc::new(Mutex::new(ScriptService {}))
+    pub fn new(ssh_service: SshServiceState) -> ScriptServiceState {
+        Arc::new(Mutex::new(ScriptService {
+            ssh_service,
+        }))
     }
 
     pub async fn execute_script(
@@ -52,40 +55,138 @@ impl ScriptService {
                     return Err("Potentially unsafe code detected".to_string());
                 }
 
-                // Execute JavaScript using rquickjs
-                let rt = Runtime::new().map_err(|e| format!("Failed to create JavaScript runtime: {}", e))?;
-                let ctx = Context::full(&rt).map_err(|e| format!("Failed to create JavaScript context: {}", e))?;
+                let ssh_service = self.ssh_service.clone();
+                let (tx, rx) = tokio::sync::oneshot::channel();
 
-                ctx.with(|ctx| {
-                    // Add basic globals for script context
-                    let _ = ctx.globals().set("console", ctx.eval::<(), _>("({
-                        log: (...args) => {},
-                        warn: (...args) => {},
-                        error: (...args) => {}
-                    })").unwrap_or(()));
+                // Spawn a dedicated thread for the JS runtime to avoid Send issues
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build();
 
-                    // Execute the script
-                    match ctx.eval::<rquickjs::Value, _>(code.clone()) {
-                        Ok(_result) => {
-                            // For now, just return a success message
-                            // TODO: Implement proper result extraction from JavaScript values
-                            let result_str = "Script executed successfully".to_string();
+                    match rt {
+                        Ok(rt) => {
+                            rt.block_on(async move {
+                                let js_rt_res = AsyncRuntime::new();
+                                match js_rt_res {
+                                    Ok(js_rt) => {
+                                        let js_ctx_res = AsyncContext::full(&js_rt).await;
+                                        match js_ctx_res {
+                                            Ok(ctx) => {
+                                                let result = async_with!(ctx => |ctx| {
+                                                    // Add basic globals
+                                                    let global = ctx.globals();
+                                                    
+                                                    // Console mock
+                                                    let _ = global.set("console", ctx.eval::<(), _>("({
+                                                        log: (...args) => {},
+                                                        warn: (...args) => {},
+                                                        error: (...args) => {}
+                                                    })").unwrap_or(()));
 
-                            Ok(ScriptResult {
-                                success: true,
-                                result: Some(result_str),
-                                error: None,
-                            })
-                        }
+                                                    // SSH Module Binding
+                                                    if let Ok(ssh_obj) = Object::new(ctx.clone()) {
+                                                        // ssh.connect(host, port, username, password)
+                                                        let ssh_service_clone = ssh_service.clone();
+                                                        let _ = ssh_obj.set("connect", Function::new(ctx.clone(), Async(move |host: String, port: u16, username: String, password: Option<String>| {
+                                                            let ssh_service = ssh_service_clone.clone();
+                                                            async move {
+                                                                let config = SshConnectionConfig {
+                                                                    host,
+                                                                    port,
+                                                                    username,
+                                                                    password,
+                                                                    private_key_path: None,
+                                                                    private_key_passphrase: None,
+                                                                    jump_hosts: vec![],
+                                                                    proxy_config: None,
+                                                                    openvpn_config: None,
+                                                                    connect_timeout: Some(30),
+                                                                    keep_alive_interval: Some(60),
+                                                                    strict_host_key_checking: false,
+                                                                    known_hosts_path: None,
+                                                                };
+                                                                
+                                                                let mut service = ssh_service.lock().await;
+                                                                service.connect_ssh(config).await.map_err(|e| rquickjs::Error::Exception)
+                                                            }
+                                                        })));
+
+                                                        // ssh.exec(session_id, command)
+                                                        let ssh_service_clone = ssh_service.clone();
+                                                        let _ = ssh_obj.set("exec", Function::new(ctx.clone(), Async(move |session_id: String, command: String| {
+                                                            let ssh_service = ssh_service_clone.clone();
+                                                            async move {
+                                                                let mut service = ssh_service.lock().await;
+                                                                service.execute_command(&session_id, command, None).await.map_err(|e| rquickjs::Error::Exception)
+                                                            }
+                                                        })));
+
+                                                        // ssh.disconnect(session_id)
+                                                        let ssh_service_clone = ssh_service.clone();
+                                                        let _ = ssh_obj.set("disconnect", Function::new(ctx.clone(), Async(move |session_id: String| {
+                                                            let ssh_service = ssh_service_clone.clone();
+                                                            async move {
+                                                                let mut service = ssh_service.lock().await;
+                                                                service.disconnect_ssh(&session_id).await.map_err(|e| rquickjs::Error::Exception)
+                                                            }
+                                                        })));
+
+                                                        let _ = global.set("ssh", ssh_obj);
+                                                    }
+
+                                                    // Execute the script and await the promise
+                                                    let promise = ctx.eval_promise::<String>(code);
+                                                    match promise {
+                                                        Ok(p) => {
+                                                            match p.into_future().await {
+                                                                Ok(res) => Ok::<String, String>(res),
+                                                                Err(e) => Err(format!("Script runtime error: {}", e))
+                                                            }
+                                                        },
+                                                        Err(e) => Err(format!("Script eval error: {}", e))
+                                                    }
+                                                }).await;
+                                                
+                                                let _ = tx.send(result);
+                                            },
+                                            Err(e) => {
+                                                let _ = tx.send(Err(format!("Failed to create JS context: {}", e)));
+                                            }
+                                        }
+                                    },
+                                    Err(e) => {
+                                        let _ = tx.send(Err(format!("Failed to create JS runtime: {}", e)));
+                                    }
+                                }
+                            });
+                        },
                         Err(e) => {
-                            Err(format!("JavaScript execution error: {}", e))
+                            let _ = tx.send(Err(format!("Failed to create tokio runtime: {}", e)));
                         }
                     }
-                })
+                });
+
+                // Await the result from the thread
+                match rx.await {
+                    Ok(res) => {
+                        match res {
+                            Ok(output) => Ok(ScriptResult {
+                                success: true,
+                                result: Some(output),
+                                error: None,
+                            }),
+                            Err(e) => Ok(ScriptResult {
+                                success: false,
+                                result: None,
+                                error: Some(e),
+                            }),
+                        }
+                    },
+                    Err(e) => Err(format!("Script thread panicked or cancelled: {}", e))
+                }
             }
             "typescript" => {
-                // For TypeScript, we would need a TypeScript compiler
-                // For now, treat as JavaScript
                 Err("TypeScript execution not yet implemented".to_string())
             }
             _ => Err(format!("Unsupported script type: {}", script_type)),
