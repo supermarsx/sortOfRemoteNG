@@ -9,6 +9,7 @@ import { generateId } from '../utils/id';
 import GeneralSection from './connectionEditor/GeneralSection';
 import SSHOptions from './connectionEditor/SSHOptions';
 import HTTPOptions from './connectionEditor/HTTPOptions';
+import CloudProviderOptions from './connectionEditor/CloudProviderOptions';
 
 interface ConnectionEditorProps {
   connection?: Connection;
@@ -98,6 +99,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         basicAuthPassword: '',
         basicAuthRealm: '',
         httpHeaders: {},
+        cloudProvider: undefined,
       });
     }
   }, [connection, isOpen]);
@@ -140,6 +142,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       basicAuthPassword: formData.basicAuthPassword,
       basicAuthRealm: formData.basicAuthRealm,
       httpHeaders: formData.httpHeaders,
+      cloudProvider: formData.cloudProvider,
     };
 
     if (connection) {
@@ -187,6 +190,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
           <GeneralSection formData={formData} setFormData={setFormData} availableGroups={availableGroups} />
           <SSHOptions formData={formData} setFormData={setFormData} />
           <HTTPOptions formData={formData} setFormData={setFormData} />
+          <CloudProviderOptions formData={formData} setFormData={setFormData} />
 
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">

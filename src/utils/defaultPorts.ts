@@ -16,6 +16,10 @@ export const DEFAULT_PORTS: Record<string, number> = {
   https: 443,
   telnet: 23,
   rlogin: 513,
+  gcp: 22,
+  azure: 22,
+  'ibm-csp': 22,
+  'digital-ocean': 22,
 };
 
 /**

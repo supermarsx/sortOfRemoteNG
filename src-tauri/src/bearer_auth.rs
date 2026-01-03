@@ -144,7 +144,7 @@ impl BearerAuthService {
     }
 
     /// Validates a Bearer token
-    pub async fn validate_token(&self, token: &str) -> Result<String, String> {
+    pub fn validate_token(&self, token: &str) -> Result<String, String> {
         if let Some(token_info) = self.tokens.get(token) {
             // Check expiration
             if let Some(expires_at) = token_info.expires_at {
@@ -155,12 +155,12 @@ impl BearerAuthService {
             Ok(token_info.username.clone())
         } else {
             // Try JWT validation
-            self.validate_jwt(token)
+            self.validate_jwt_token(token)
         }
     }
 
     /// Validates a JWT token
-    fn validate_jwt(&self, token: &str) -> Result<String, String> {
+    fn validate_jwt_token(&self, token: &str) -> Result<String, String> {
         // Try to decode with available keys
         for (issuer, key) in &self.jwt_keys {
             let validation = Validation::new(Algorithm::RS256);
@@ -180,27 +180,37 @@ impl BearerAuthService {
     }
 
     /// Refreshes an access token
-    pub async fn refresh_token(&mut self, refresh_token: &str) -> Result<String, String> {
+    pub fn refresh_token(&mut self, refresh_token: &str) -> Result<String, String> {
         // Find the token info by refresh token
+        let mut token_to_refresh = None;
+        let mut new_token = None;
+
         for (access_token, token_info) in &self.tokens {
             if token_info.refresh_token.as_ref() == Some(&refresh_token.to_string()) {
                 // Generate new token
-                let new_token = self.generate_token(&token_info.username);
+                let username = token_info.username.clone();
+                let new_access_token = self.generate_token(&username);
                 let new_token_info = TokenInfo {
-                    access_token: new_token.clone(),
+                    access_token: new_access_token.clone(),
                     refresh_token: token_info.refresh_token.clone(),
                     token_type: "Bearer".to_string(),
                     expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
-                    username: token_info.username.clone(),
+                    username,
                 };
 
-                // Remove old token and add new one
-                self.tokens.remove(access_token);
-                self.tokens.insert(new_token.clone(), new_token_info);
-                return Ok(new_token);
+                token_to_refresh = Some(access_token.clone());
+                new_token = Some((new_access_token, new_token_info));
+                break;
             }
         }
-        Err("Invalid refresh token".to_string())
+
+        if let (Some(old_token), Some((new_access_token, new_token_info))) = (token_to_refresh, new_token) {
+            self.tokens.remove(&old_token);
+            self.tokens.insert(new_access_token.clone(), new_token_info);
+            Ok(new_access_token)
+        } else {
+            Err("Invalid refresh token".to_string())
+        }
     }
 
     /// Adds an OAuth2 provider
@@ -210,7 +220,7 @@ impl BearerAuthService {
     }
 
     /// Initiates OAuth2 authorization flow
-    pub async fn initiate_oauth_flow(&self, provider_name: &str, redirect_uri: &str) -> Result<String, String> {
+    pub fn initiate_oauth_flow(&self, provider_name: &str, redirect_uri: &str) -> Result<String, String> {
         if let Some(provider) = self.providers.get(provider_name) {
             let client = BasicClient::new(
                 ClientId::new(provider.client_id.clone()),
@@ -240,6 +250,16 @@ impl BearerAuthService {
         // Simplified implementation
         let token = format!("oauth_callback_{}_{}", provider_name, code);
         Ok(token)
+    }
+
+    /// Completes OAuth2 authorization flow
+    pub async fn complete_oauth_flow(&mut self, provider_name: String, code: String, state: String) -> Result<String, String> {
+        self.handle_oauth_callback(&provider_name, &code, &state).await
+    }
+
+    /// Lists available OAuth2 providers
+    pub async fn list_providers(&self) -> Vec<String> {
+        self.providers.keys().cloned().collect()
     }
 
     /// Adds a JWT validation key
@@ -275,5 +295,4 @@ impl BearerAuthService {
             Err("Token not found".to_string())
         }
     }
-}</content>
-<parameter name="filePath">c:\Projects\sortOfRemoteNG\src-tauri\src\bearer_auth.rs
+}

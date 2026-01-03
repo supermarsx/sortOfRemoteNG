@@ -198,5 +198,15 @@ impl AutoLockService {
 
         idle_duration >= timeout_duration
     }
-}</content>
-<parameter name="filePath">c:\Projects\sortOfRemoteNG\src-tauri\src\auto_lock.rs
+
+    /// Sets the lock timeout in minutes
+    pub async fn set_lock_timeout(&mut self, minutes: u32) -> Result<(), String> {
+        self.config.idle_timeout_minutes = minutes;
+        Ok(())
+    }
+
+    /// Gets the current lock timeout in minutes
+    pub async fn get_lock_timeout(&self) -> u32 {
+        self.config.idle_timeout_minutes
+    }
+}

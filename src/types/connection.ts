@@ -2,7 +2,7 @@ import { ProxyConfig } from "./settings";
 export interface Connection {
   id: string;
   name: string;
-  protocol: 'rdp' | 'ssh' | 'vnc' | 'http' | 'https' | 'telnet' | 'rlogin' | 'mysql' | 'ftp' | 'sftp' | 'scp' | 'winrm' | 'rustdesk' | 'smb';
+  protocol: 'rdp' | 'ssh' | 'vnc' | 'http' | 'https' | 'telnet' | 'rlogin' | 'mysql' | 'ftp' | 'sftp' | 'scp' | 'winrm' | 'rustdesk' | 'smb' | 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean';
   hostname: string;
   port: number;
   username?: string;
@@ -55,6 +55,27 @@ export interface Connection {
   // SMB specific
   shareName?: string;
   workgroup?: string;
+  
+  // Cloud Provider specific
+  cloudProvider?: {
+    provider: 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean';
+    projectId?: string; // GCP, Azure resource group
+    subscriptionId?: string; // Azure
+    region?: string;
+    zone?: string; // GCP
+    resourceGroup?: string; // Azure
+    instanceId?: string;
+    instanceName?: string;
+    apiKey?: string;
+    accessToken?: string;
+    clientId?: string; // Azure
+    clientSecret?: string; // Azure
+    tenantId?: string; // Azure
+    serviceAccountKey?: string; // GCP
+    vpcId?: string; // AWS, but can be used for others
+    subnetId?: string;
+    securityGroup?: string;
+  };
   
   // Status Checking
   statusCheck?: {

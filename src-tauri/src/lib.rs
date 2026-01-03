@@ -74,6 +74,10 @@ pub mod bearer_auth;
 pub mod auto_lock;
 pub mod gpo;
 pub mod login_detection;
+pub mod telnet;
+pub mod serial;
+pub mod rlogin;
+pub mod raw_socket;
 
 #[cfg(test)]
 mod tests {
@@ -105,12 +109,16 @@ use api::ApiService;
 use aws::AwsService;
 use vercel::VercelService;
 use cloudflare::CloudflareService;
-use cert_auth::CertificateAuthService;
-use two_factor::TwoFactorAuthService;
+use cert_auth::CertAuthService;
+use two_factor::TwoFactorService;
 use bearer_auth::BearerAuthService;
 use auto_lock::AutoLockService;
 use gpo::GpoService;
 use login_detection::LoginDetectionService;
+use telnet::TelnetService;
+use serial::SerialService;
+use rlogin::RloginService;
+use raw_socket::RawSocketService;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -268,11 +276,11 @@ pub fn run() {
       app.manage(cloudflare_service.clone());
 
       // Initialize Certificate Authentication service
-      let cert_auth_service = CertificateAuthService::new();
+      let cert_auth_service = CertAuthService::new("certificates.db".to_string());
       app.manage(cert_auth_service.clone());
 
       // Initialize Two-Factor Authentication service
-      let two_factor_service = TwoFactorAuthService::new();
+      let two_factor_service = TwoFactorService::new();
       app.manage(two_factor_service.clone());
 
       // Initialize Bearer Authentication service
@@ -290,6 +298,22 @@ pub fn run() {
       // Initialize Login Detection service
       let login_detection_service = LoginDetectionService::new();
       app.manage(login_detection_service.clone());
+
+      // Initialize Telnet service
+      let telnet_service = TelnetService::new();
+      app.manage(telnet_service.clone());
+
+      // Initialize Serial service
+      let serial_service = SerialService::new();
+      app.manage(serial_service.clone());
+
+      // Initialize Rlogin service
+      let rlogin_service = RloginService::new();
+      app.manage(rlogin_service.clone());
+
+      // Initialize Raw Socket service
+      let raw_socket_service = RawSocketService::new();
+      app.manage(raw_socket_service.clone());
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -529,7 +553,60 @@ pub fn run() {
         openvpn::validate_ovpn_config,
         ssh::update_ssh_session_auth,
         ssh::validate_ssh_key_file,
-        ssh::test_ssh_connection
+        ssh::test_ssh_connection,
+        // Authentication services - commented out until Tauri integration is complete
+        // cert_auth::parse_certificate,
+        // cert_auth::validate_certificate,
+        // cert_auth::authenticate_with_cert,
+        // cert_auth::register_certificate,
+        // cert_auth::list_certificates,
+        // cert_auth::revoke_certificate,
+        // two_factor::enable_totp,
+        // two_factor::verify_2fa,
+        // two_factor::confirm_2fa_setup,
+        // two_factor::regenerate_backup_codes,
+        // two_factor::disable_2fa,
+        // bearer_auth::authenticate_user,
+        // bearer_auth::validate_token,
+        // bearer_auth::refresh_token,
+        // bearer_auth::initiate_oauth_flow,
+        // bearer_auth::complete_oauth_flow,
+        // bearer_auth::list_providers,
+        // auto_lock::record_activity,
+        // auto_lock::lock_application,
+        // auto_lock::get_time_until_lock,
+        // auto_lock::should_lock,
+        // auto_lock::set_lock_timeout,
+        // auto_lock::get_lock_timeout,
+        // gpo::get_policy,
+        // gpo::set_policy,
+        // gpo::list_policies,
+        // gpo::reset_policy,
+        // gpo::export_policies,
+        // gpo::import_policies,
+        // login_detection::analyze_page,
+        // login_detection::submit_login_form,
+        // telnet::connect_telnet,
+        // telnet::disconnect_telnet,
+        // telnet::send_telnet_command,
+        // telnet::get_telnet_session_info,
+        // telnet::list_telnet_sessions,
+        // serial::connect_serial,
+        // serial::disconnect_serial,
+        // serial::send_serial_data,
+        // serial::get_serial_session_info,
+        // serial::list_serial_sessions,
+        // serial::list_available_serial_ports,
+        // rlogin::connect_rlogin,
+        // rlogin::disconnect_rlogin,
+        // rlogin::send_rlogin_command,
+        // rlogin::get_rlogin_session_info,
+        // rlogin::list_rlogin_sessions,
+        // raw_socket::connect_raw_socket,
+        // raw_socket::disconnect_raw_socket,
+        // raw_socket::send_raw_socket_data,
+        // raw_socket::get_raw_socket_session_info,
+        // raw_socket::list_raw_socket_sessions
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

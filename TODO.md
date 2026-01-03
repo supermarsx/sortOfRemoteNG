@@ -87,15 +87,17 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] Implement SSH key management in Rust
 - [ ] Handle terminal resizing and interactions
 
-### 12. RDP and VNC Clients ✅
+### 12. RDP and VNC Clients (Partially Implemented)
 - [x] Add Rust RDP crate (`rdp`)
 - [x] Create basic RDP service module in Rust with TCP connection
 - [x] Add Tauri commands for RDP connect/disconnect
 - [x] Add Rust VNC crate (`vnc`)
 - [x] Create basic VNC service module in Rust with TCP connection
 - [x] Add Tauri commands for VNC connect/disconnect
-- [x] Update canvas rendering for Tauri's webview
-- [x] Implement VNC protocol version negotiation and basic handshake
+- [ ] **RDP Protocol Implementation**: Implement full RDP protocol handling (bitmaps, input, capabilities)
+- [ ] **VNC Protocol Implementation**: Implement full VNC/RFB protocol handling (framebuffer updates, encodings)
+- [ ] **Canvas Rendering**: Wire up backend protocol events to frontend Canvas API
+- [ ] **Input Handling**: Forward keyboard/mouse events from frontend to backend protocol handlers
 
 ### 13. Database Connections ✅
 - ✅ Add Rust MySQL crate (`sqlx` with MySQL feature)
@@ -103,6 +105,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - ✅ Add Tauri commands for MySQL connect/execute/disconnect
 - ✅ Implement actual query execution logic
 - [x] Migrate MySQLClient component to use IPC (service updated, tests pending backend)
+- [ ] **Connection Tunneling**: Implement SSH/VPN tunneling for DB connections (currently stubbed)
 - [x] Add phpMyAdmin-like management features (database/table CRUD, data editing, export)
 
 ### 14. File Transfer and FTP ✅
@@ -113,10 +116,9 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] **ADD SFTP SUPPORT**: Implemented SFTP using ssh2 crate with connect/list functionality
 - [ ] Update FileTransferManager to use Tauri commands
 - [ ] **FULL SFTP SUPPORT**: Complete file upload/download for SFTP
+- [ ] **SMB Client**: Implement SMB/CIFS protocol backend (currently missing)
 - [ ] **FTP OVER SSH TUNNELING**: SSH port forwarding for FTP connections
 - [ ] **FTP OVER HTTP/HTTPS**: HTTP proxy support for FTP connections
-- [ ] **ADVANCED FTP FEATURES**: Passive/active mode auto-detection, SSL/TLS support, resume transfers
-- [ ] **FTP MIRRORING/SYNC**: Directory synchronization and backup features
 
 ### 15. Network Discovery and Scanning ✅
 - ✅ Add Rust ping crate (`tokio-ping`)
@@ -128,17 +130,12 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Update NetworkDiscovery component to use Tauri IPC (basic implementation done, needs enhancement)
 - [ ] **ADD ADVANCED NETWORK FEATURES**: ARP scanning, traceroute, DNS resolution, network topology mapping
 
-### 15.5. REST API Server and gRPC Implementation ✅
-- [x] **IMPLEMENT REST API SERVER IN RUST**: Add HTTP server (axum) with all endpoints from Node.js version
-- [x] **ADD CORS AND MIDDLEWARE**: Configure axum with CORS, logging, and error handling
-- [x] **MIGRATE ALL API ENDPOINTS**: Authentication, connections, file operations, network functions
-- [x] **ADD API AUTHENTICATION**: JWT validation, API key support, rate limiting
-- [x] **INTEGRATE ALL SERVICES**: SSH, DB, FTP, Network, Security, WOL, QR, Script, RustDesk
-- [x] **IMPLEMENT WEBSOCKET SUPPORT**: Real-time updates and bidirectional communication
-- [x] **ADD GRPC SERVER**: Basic gRPC service definitions and handlers (optional)
-- [ ] **API DOCUMENTATION**: Generate OpenAPI/Swagger documentation
-- [ ] **RATE LIMITING**: Implement advanced rate limiting and DDoS protection
-- [ ] **API VERSIONING**: Add API versioning support for backward compatibility
+### 15.5. VPN Integration (CLI Wrappers)
+- [x] **OpenVPN**: Wrapper structure created, CLI execution stubbed.
+- [x] **WireGuard**: Wrapper structure created, CLI execution stubbed.
+- [ ] **Full Implementation**: Complete the CLI wrapper logic to correctly spawn and manage VPN processes.
+- [ ] **State Management**: Track connection status and handle unexpected disconnections.
+- [ ] **Log Parsing**: Parse stdout/stderr from VPN tools to report status/errors to UI.
 
 ### 15.6. Wake-on-LAN Functionality ✅
 - ✅ Create basic WOL service module in Rust with placeholder
@@ -146,17 +143,6 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - ✅ Implement actual Wake-on-LAN logic using UDP packets
 - [ ] **ENHANCE WOL FEATURES**: Support for secure WOL, scheduled wake-up, wake-on-pattern
 - [ ] **ADD WOL DISCOVERY**: Network scanning for WOL-capable devices
-
-### 15.7. Advanced FTP/SFTP Implementation
-- ✅ Add Rust FTP crate (`suppaftp`)
-- ✅ Create basic FTP service module in Rust with connection and listing
-- ✅ Add Tauri commands for FTP connect/list/disconnect
-- ✅ Implement file upload/download logic
-- [ ] **FULL SFTP SUPPORT**: Implement SFTP over SSH using russh crate
-- [ ] **FTP OVER SSH TUNNELING**: SSH port forwarding for FTP connections
-- [ ] **FTP OVER HTTP/HTTPS**: HTTP proxy support for FTP connections
-- [ ] **ADVANCED FTP FEATURES**: Passive/active mode auto-detection, SSL/TLS support, resume transfers
-- [ ] **FTP MIRRORING/SYNC**: Directory synchronization and backup features
 
 ### 15.8. QR Code Generation ✅
 - [x] **ADD QR CODE CRATE**: Add `qrcode` and `image` Rust crates to dependencies
@@ -169,39 +155,18 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] **IMPLEMENT SCRIPT SERVICE**: Create Rust service to handle script execution requests
 - [x] **MIGRATE SCRIPT ENGINE**: Update frontend `ScriptEngine` to offload execution to Tauri backend
 - [x] **SECURE EXECUTION**: Implement basic sandboxing and context isolation in Rust
+- [x] **SSH INTEGRATION**: Implemented `ssh` global object (connect/exec/disconnect) in script runtime.
+- [x] **ASYNC SUPPORT**: Refactored to use dedicated thread with local Tokio runtime to support async operations without blocking.
 - [ ] **TYPESCRIPT SUPPORT**: Move TypeScript compilation to backend or improve frontend transpilation pipeline
-- [ ] **EXPAND API**: Expose more internal APIs (SSH, DB, File) to the script runtime safely
+- [ ] **EXPAND API**: Expose more internal APIs (DB, File, HTTP) to the script runtime safely
 - [ ] **LONG-RUNNING SCRIPTS**: Improve handling of long-running scripts and timeouts in Rust
 
-### 15.10. RustDesk Remote Desktop Integration ✅
+### 15.10. RustDesk Remote Desktop Integration (Skeleton)
 - [x] **ADD RUSTDESK SERVICE**: Create comprehensive RustDesk service module with process management
 - [x] **IMPLEMENT PROCESS SPAWNING**: Add tokio process management for RustDesk binary execution
 - [x] **ADD TAURI COMMANDS**: Create IPC commands for connect/disconnect/session management
-- [x] **IMPLEMENT REST API**: Add HTTP endpoints for external RustDesk control
-- [x] **SESSION MANAGEMENT**: UUID-based session tracking with connection state
-- [x] **ASYNC PROCESS MONITORING**: Background task monitoring with stdout/stderr capture
-- [x] **CROSS-PLATFORM SUPPORT**: Windows and Unix binary detection and execution
-- [x] **SETTINGS MANAGEMENT**: Quality, view-only, audio, clipboard, file transfer controls
-- [x] **INPUT HANDLING**: Send keyboard/mouse input to remote sessions
-- [x] **SCREENSHOT CAPTURE**: Capture and return remote desktop screenshots
-- [x] **STATUS CHECKING**: Verify RustDesk availability and version detection
-- [ ] **UPDATE FRONTEND COMPONENT**: Replace mock RustDeskClient with real service integration
-- [ ] **TEST INTEGRATION**: Validate RustDesk binary detection and connection management
-- [ ] **ERROR HANDLING**: Improve error reporting and connection failure recovery
-
-### 15.11. Apple Native Screen Sharing (Planned)
-- [ ] **RESEARCH MACOS APIS**: Investigate ScreenCaptureKit and CoreGraphics frameworks
-- [ ] **ADD MACOS-SPECIFIC CRATES**: screencapturekit, core-graphics, or native macOS bindings
-- [ ] **CREATE SCREEN SHARE SERVICE**: Rust service for native macOS screen capture
-- [ ] **IMPLEMENT PERMISSION HANDLING**: Request screen recording permissions
-- [ ] **ADD TAURI COMMANDS**: IPC commands for screen share start/stop/configuration
-- [ ] **STREAMING PROTOCOL**: Implement efficient screen data streaming to frontend
-- [ ] **WINDOW/AREA SELECTION**: Allow users to select specific windows or screen areas
-- [ ] **AUDIO CAPTURE**: Optional system audio capture during screen sharing
-- [ ] **COMPRESSION OPTIMIZATION**: Hardware-accelerated H.264/HEVC encoding
-- [ ] **REST API ENDPOINTS**: HTTP API for external screen share control
-- [ ] **CROSS-PLATFORM FALLBACK**: Alternative implementations for Windows/Linux
-- [ ] **SECURITY CONSIDERATIONS**: Ensure secure screen data handling and transmission
+- [ ] **Actual Integration**: The current frontend is a UI mock. Needs to actually control the RustDesk process or integrate via API.
+- [ ] **Binary Management**: Mechanism to download/locate the RustDesk binary on the user's system.
 
 ### 16. Security Features ✅
 - ✅ Add Rust TOTP crate (`totp-rs`)
@@ -210,10 +175,9 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - ✅ Implement actual encryption/decryption logic using AES-256-GCM
 - [ ] Update secure storage mechanisms to use Rust encryption
 
-### 17. Wake-on-LAN ✅
-- ✅ Create basic WOL service module in Rust with placeholder
-- ✅ Add Tauri command for wake_on_lan
-- ✅ Implement actual Wake-on-LAN logic using UDP packets
+### 17. Connection Chaining & Proxying
+- [ ] **Implementation**: Implement the logic to route connections (SSH, DB, etc.) through the configured proxy/VPN chains.
+- [ ] **UI Integration**: Ensure the frontend correctly passes chain configurations to the backend.
 
 ## Build and Configuration Updates
 

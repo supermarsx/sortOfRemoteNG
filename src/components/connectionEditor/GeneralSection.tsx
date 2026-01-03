@@ -76,6 +76,10 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
                 <option value="https">HTTPS</option>
                 <option value="telnet">Telnet</option>
                 <option value="rlogin">RLogin</option>
+                <option value="gcp">Google Cloud Platform (GCP)</option>
+                <option value="azure">Microsoft Azure</option>
+                <option value="ibm-csp">IBM Cloud</option>
+                <option value="digital-ocean">Digital Ocean</option>
               </select>
             </div>
 

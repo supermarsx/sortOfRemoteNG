@@ -237,10 +237,16 @@ impl LoginDetectionService {
 
     /// Analyzes a single input field
     fn analyze_input_field(&self, input_html: &str) -> Result<Option<FormField>, String> {
-        let name = self.extract_attribute(input_html, "name")?;
+        let name_opt = self.extract_attribute(input_html, "name")?;
         let field_type = self.extract_attribute(input_html, "type")?.unwrap_or_else(|| "text".to_string());
         let id = self.extract_attribute(input_html, "id").ok().flatten();
         let placeholder = self.extract_attribute(input_html, "placeholder").ok().flatten();
+
+        // Skip fields without names
+        let name = match name_opt {
+            Some(n) => n,
+            None => return Ok(None),
+        };
 
         // Skip hidden, submit, and button fields
         if matches!(field_type.as_str(), "hidden" | "submit" | "button" | "reset") {
@@ -360,13 +366,26 @@ impl LoginDetectionService {
     pub async fn submit_login_form(
         &self,
         form: &LoginForm,
-        credentials: &HashMap<String, String>
+        username: String,
+        password: String
     ) -> Result<String, String> {
+        let mut credentials = HashMap::new();
+        credentials.insert("username".to_string(), username);
+        credentials.insert("password".to_string(), password);
+
         let mut form_data = HashMap::new();
 
         // Fill in the form fields
         for field in &form.fields {
-            if let Some(value) = credentials.get(&field.name) {
+            if field.is_username {
+                if let Some(value) = credentials.get("username") {
+                    form_data.insert(field.name.clone(), value.clone());
+                }
+            } else if field.is_password {
+                if let Some(value) = credentials.get("password") {
+                    form_data.insert(field.name.clone(), value.clone());
+                }
+            } else if let Some(value) = credentials.get(&field.name) {
                 form_data.insert(field.name.clone(), value.clone());
             }
         }
@@ -403,5 +422,4 @@ impl LoginDetectionService {
             Err(e) => Err(format!("Failed to submit form: {}", e))
         }
     }
-}</content>
-<parameter name="filePath">c:\Projects\sortOfRemoteNG\src-tauri\src\login_detection.rs
+}

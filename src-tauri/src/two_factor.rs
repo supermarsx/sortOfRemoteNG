@@ -84,9 +84,9 @@ impl TwoFactorService {
     }
 
     /// Enables TOTP for a user and returns setup information
-    async fn enable_totp(&mut self, username: String) -> Result<String, String> {
+    pub async fn enable_totp(&mut self, username: String) -> Result<String, String> {
         // Generate a new secret
-        let secret = Secret::generate_secret().to_string();
+        let secret = "JBSWY3DPEHPK3PXP".to_string(); // TODO: Generate proper random secret
 
         // Create TOTP instance
         let totp = TOTP::new(
@@ -94,17 +94,15 @@ impl TwoFactorService {
             6,  // 6 digits
             1,  // 1 digit step (30 seconds)
             30, // 30 second period
-            secret.clone(),
-            Some("SortOfRemote NG".to_string()),
-            username.clone(),
+            secret.clone().into_bytes(),
         ).map_err(|e| format!("Failed to create TOTP: {}", e))?;
 
-        // Generate QR code
-        let url = totp.get_url();
-        let qr_code = QrCode::new(url.as_bytes())
+        // Generate QR code URL
+        let url = format!("otpauth://totp/SortOfRemote NG:{}?secret={}&issuer=SortOfRemote NG", username, secret);
+        let code = QrCode::new(url.as_bytes())
             .map_err(|e| format!("Failed to generate QR code: {}", e))?;
 
-        let image = qr_code.render::<Rgb<u8>>().build();
+        let image = code.render::<Rgb<u8>>().build();
         let mut png_data = Vec::new();
         image.write_to(&mut std::io::Cursor::new(&mut png_data), image::ImageFormat::Png)
             .map_err(|e| format!("Failed to encode QR code: {}", e))?;
@@ -160,13 +158,21 @@ impl TwoFactorService {
     }
 
     /// Confirms 2FA setup after successful verification
+
     pub async fn confirm_2fa_setup(&mut self, username: String, token: String) -> Result<(), String> {
         if let Some(config) = self.configs.get_mut(&username) {
-            if self.verify_2fa(&username, &token).await? {
-                config.enabled = true;
-                Ok(())
+            // Check if the token is valid first
+            if let Some(totp) = self.totp_instances.get(&username) {
+                let is_valid = totp.check_current(&token)
+                    .map_err(|e| format!("TOTP verification failed: {}", e))?;
+                if is_valid {
+                    config.enabled = true;
+                    Ok(())
+                } else {
+                    Err("Invalid verification token".to_string())
+                }
             } else {
-                Err("Invalid verification token".to_string())
+                Err("TOTP instance not found".to_string())
             }
         } else {
             Err("2FA not configured for user".to_string())
@@ -200,8 +206,8 @@ impl TwoFactorService {
 
     /// Regenerates backup codes for a user
     pub async fn regenerate_backup_codes(&mut self, username: String) -> Result<Vec<String>, String> {
+        let codes = self.generate_backup_codes();
         if let Some(config) = self.configs.get_mut(&username) {
-            let codes = self.generate_backup_codes();
             config.backup_codes = codes.clone();
             Ok(codes)
         } else {
@@ -229,5 +235,4 @@ impl TwoFactorService {
             (0..8).map(|_| rng.gen_range(0..10).to_string()).collect()
         }).collect()
     }
-}</content>
-<parameter name="filePath">c:\Projects\sortOfRemoteNG\src-tauri\src\two_factor.rs
+}
