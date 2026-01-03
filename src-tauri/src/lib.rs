@@ -59,6 +59,7 @@ pub mod tailscale;
 pub mod chaining;
 pub mod qr;
 pub mod api;
+pub mod rustdesk;
 
 #[cfg(test)]
 mod tests {
@@ -85,12 +86,12 @@ use zerotier::ZeroTierService;
 use tailscale::TailscaleService;
 use chaining::ChainingService;
 use qr::QrService;
+use rustdesk::RustDeskService;
 use api::ApiService;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tauri::Manager;
-use std::sync::Arc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Initializes and runs the SortOfRemote NG Tauri application.
@@ -207,16 +208,21 @@ pub fn run() {
       let qr_service = QrService::new();
       app.manage(qr_service.clone());
 
+      // Initialize RustDesk service
+      let rustdesk_service = RustDeskService::new();
+      app.manage(rustdesk_service.clone());
+
       // Initialize API service
       let api_service = ApiService::new(
-        Arc::new(Mutex::new(auth_service.clone())),
-        Arc::new(Mutex::new(ssh_service.clone())),
-        Arc::new(Mutex::new(db_service.clone())),
-        Arc::new(Mutex::new(ftp_service.clone())),
-        Arc::new(Mutex::new(network_service.clone())),
-        Arc::new(Mutex::new(security_service.clone())),
-        Arc::new(Mutex::new(wol_service.clone())),
-        Arc::new(Mutex::new(qr_service.clone())),
+        auth_service.clone(),
+        ssh_service.clone(),
+        db_service.clone(),
+        ftp_service.clone(),
+        network_service.clone(),
+        security_service.clone(),
+        wol_service.clone(),
+        qr_service.clone(),
+        rustdesk_service.clone(),
       );
       app.manage(api_service.clone());
 

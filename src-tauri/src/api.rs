@@ -18,6 +18,7 @@ use crate::{
     security::SecurityService,
     wol::WolService,
     qr::QrService,
+    rustdesk::RustDeskService,
 };
 
 #[derive(Clone)]
@@ -30,6 +31,7 @@ pub struct ApiService {
     pub security_service: Arc<Mutex<SecurityService>>,
     pub wol_service: Arc<Mutex<WolService>>,
     pub qr_service: Arc<Mutex<QrService>>,
+    pub rustdesk_service: Arc<Mutex<RustDeskService>>,
 }
 
 impl ApiService {
@@ -42,6 +44,7 @@ impl ApiService {
         security_service: Arc<Mutex<SecurityService>>,
         wol_service: Arc<Mutex<WolService>>,
         qr_service: Arc<Mutex<QrService>>,
+        rustdesk_service: Arc<Mutex<RustDeskService>>,
     ) -> Self {
         Self {
             auth_service,
@@ -52,6 +55,7 @@ impl ApiService {
             security_service,
             wol_service,
             qr_service,
+            rustdesk_service,
         }
     }
 
@@ -96,6 +100,15 @@ impl ApiService {
             // QR Code
             .route("/qr/generate", post(generate_qr_code))
             .route("/qr/generate/png", post(generate_qr_code_png))
+            // RustDesk
+            .route("/rustdesk/connect", post(connect_rustdesk_api))
+            .route("/rustdesk/disconnect/:session_id", post(disconnect_rustdesk_api))
+            .route("/rustdesk/sessions", get(list_rustdesk_sessions_api))
+            .route("/rustdesk/session/:session_id", get(get_rustdesk_session_api))
+            .route("/rustdesk/settings/:session_id", post(update_rustdesk_settings_api))
+            .route("/rustdesk/input/:session_id", post(send_rustdesk_input_api))
+            .route("/rustdesk/screenshot/:session_id", get(get_rustdesk_screenshot_api))
+            .route("/rustdesk/status", get(rustdesk_status_api))
             .with_state(self)
     }
 }
@@ -429,4 +442,147 @@ async fn generate_qr_code_png(
         }))),
         Err(_) => Err(StatusCode::BAD_REQUEST),
     }
+}
+
+// RustDesk API handlers
+async fn connect_rustdesk_api(
+    State(services): State<Arc<ApiService>>,
+    Json(config): Json<crate::rustdesk::RustDeskConfig>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut rustdesk = services.rustdesk_service.lock().await;
+    match rustdesk.connect_rustdesk(config).await {
+        Ok(session_id) => Ok(Json(serde_json::json!({
+            "session_id": session_id,
+            "status": "connected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to connect RustDesk: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn disconnect_rustdesk_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut rustdesk = services.rustdesk_service.lock().await;
+    match rustdesk.disconnect_rustdesk(&session_id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "disconnected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to disconnect RustDesk: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_rustdesk_sessions_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rustdesk = services.rustdesk_service.lock().await;
+    match rustdesk.list_rustdesk_sessions().await {
+        sessions => Ok(Json(serde_json::json!({
+            "sessions": sessions
+        }))),
+    }
+}
+
+async fn get_rustdesk_session_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rustdesk = services.rustdesk_service.lock().await;
+    match rustdesk.get_rustdesk_session(&session_id).await {
+        Some(session) => Ok(Json(serde_json::json!(session))),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateSettingsRequest {
+    quality: Option<String>,
+    view_only: Option<bool>,
+    enable_audio: Option<bool>,
+    enable_clipboard: Option<bool>,
+    enable_file_transfer: Option<bool>,
+}
+
+async fn update_rustdesk_settings_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(settings): Json<UpdateSettingsRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut rustdesk = services.rustdesk_service.lock().await;
+    match rustdesk.update_rustdesk_settings(
+        &session_id,
+        settings.quality,
+        settings.view_only,
+        settings.enable_audio,
+        settings.enable_clipboard,
+        settings.enable_file_transfer,
+    ).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "updated"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to update RustDesk settings: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct SendInputRequest {
+    input_type: String,
+    data: serde_json::Value,
+}
+
+async fn send_rustdesk_input_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(input): Json<SendInputRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rustdesk = services.rustdesk_service.lock().await;
+    match rustdesk.send_rustdesk_input(&session_id, input.input_type, input.data).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "sent"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to send RustDesk input: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_rustdesk_screenshot_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Vec<u8>, StatusCode> {
+    let rustdesk = services.rustdesk_service.lock().await;
+    match rustdesk.get_rustdesk_screenshot(&session_id).await {
+        Ok(data) => Ok(data),
+        Err(e) => {
+            eprintln!("Failed to get RustDesk screenshot: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn rustdesk_status_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rustdesk = services.rustdesk_service.lock().await;
+    let available = rustdesk.is_rustdesk_available().await;
+    let version = if available {
+        rustdesk.get_rustdesk_version().await.ok()
+    } else {
+        None
+    };
+
+    Ok(Json(serde_json::json!({
+        "available": available,
+        "version": version
+    })))
 }

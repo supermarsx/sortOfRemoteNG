@@ -128,12 +128,17 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Update NetworkDiscovery component to use Tauri IPC (basic implementation done, needs enhancement)
 - [ ] **ADD ADVANCED NETWORK FEATURES**: ARP scanning, traceroute, DNS resolution, network topology mapping
 
-### 15.5. REST API Server and gRPC Implementation
-- [ ] **IMPLEMENT REST API SERVER IN RUST**: Add HTTP server (axum/warp) with all endpoints from Node.js version
-- [ ] **IMPLEMENT GRPC SERVER IN RUST**: Add gRPC service definitions and handlers
-- [ ] **MIGRATE ALL API ENDPOINTS**: Authentication, connections, file operations, network functions
-- [ ] **ADD API AUTHENTICATION**: JWT validation, API key support, rate limiting
-- [ ] **IMPLEMENT WEBSOCKET SUPPORT**: Real-time updates and bidirectional communication
+### 15.5. REST API Server and gRPC Implementation ✅
+- [x] **IMPLEMENT REST API SERVER IN RUST**: Add HTTP server (axum) with all endpoints from Node.js version
+- [x] **ADD CORS AND MIDDLEWARE**: Configure axum with CORS, logging, and error handling
+- [x] **MIGRATE ALL API ENDPOINTS**: Authentication, connections, file operations, network functions
+- [x] **ADD API AUTHENTICATION**: JWT validation, API key support, rate limiting
+- [x] **INTEGRATE ALL SERVICES**: SSH, DB, FTP, Network, Security, WOL, QR, Script, RustDesk
+- [x] **IMPLEMENT WEBSOCKET SUPPORT**: Real-time updates and bidirectional communication
+- [x] **ADD GRPC SERVER**: Basic gRPC service definitions and handlers (optional)
+- [ ] **API DOCUMENTATION**: Generate OpenAPI/Swagger documentation
+- [ ] **RATE LIMITING**: Implement advanced rate limiting and DDoS protection
+- [ ] **API VERSIONING**: Add API versioning support for backward compatibility
 
 ### 15.6. Wake-on-LAN Functionality ✅
 - ✅ Create basic WOL service module in Rust with placeholder
@@ -167,6 +172,36 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] **TYPESCRIPT SUPPORT**: Move TypeScript compilation to backend or improve frontend transpilation pipeline
 - [ ] **EXPAND API**: Expose more internal APIs (SSH, DB, File) to the script runtime safely
 - [ ] **LONG-RUNNING SCRIPTS**: Improve handling of long-running scripts and timeouts in Rust
+
+### 15.10. RustDesk Remote Desktop Integration ✅
+- [x] **ADD RUSTDESK SERVICE**: Create comprehensive RustDesk service module with process management
+- [x] **IMPLEMENT PROCESS SPAWNING**: Add tokio process management for RustDesk binary execution
+- [x] **ADD TAURI COMMANDS**: Create IPC commands for connect/disconnect/session management
+- [x] **IMPLEMENT REST API**: Add HTTP endpoints for external RustDesk control
+- [x] **SESSION MANAGEMENT**: UUID-based session tracking with connection state
+- [x] **ASYNC PROCESS MONITORING**: Background task monitoring with stdout/stderr capture
+- [x] **CROSS-PLATFORM SUPPORT**: Windows and Unix binary detection and execution
+- [x] **SETTINGS MANAGEMENT**: Quality, view-only, audio, clipboard, file transfer controls
+- [x] **INPUT HANDLING**: Send keyboard/mouse input to remote sessions
+- [x] **SCREENSHOT CAPTURE**: Capture and return remote desktop screenshots
+- [x] **STATUS CHECKING**: Verify RustDesk availability and version detection
+- [ ] **UPDATE FRONTEND COMPONENT**: Replace mock RustDeskClient with real service integration
+- [ ] **TEST INTEGRATION**: Validate RustDesk binary detection and connection management
+- [ ] **ERROR HANDLING**: Improve error reporting and connection failure recovery
+
+### 15.11. Apple Native Screen Sharing (Planned)
+- [ ] **RESEARCH MACOS APIS**: Investigate ScreenCaptureKit and CoreGraphics frameworks
+- [ ] **ADD MACOS-SPECIFIC CRATES**: screencapturekit, core-graphics, or native macOS bindings
+- [ ] **CREATE SCREEN SHARE SERVICE**: Rust service for native macOS screen capture
+- [ ] **IMPLEMENT PERMISSION HANDLING**: Request screen recording permissions
+- [ ] **ADD TAURI COMMANDS**: IPC commands for screen share start/stop/configuration
+- [ ] **STREAMING PROTOCOL**: Implement efficient screen data streaming to frontend
+- [ ] **WINDOW/AREA SELECTION**: Allow users to select specific windows or screen areas
+- [ ] **AUDIO CAPTURE**: Optional system audio capture during screen sharing
+- [ ] **COMPRESSION OPTIMIZATION**: Hardware-accelerated H.264/HEVC encoding
+- [ ] **REST API ENDPOINTS**: HTTP API for external screen share control
+- [ ] **CROSS-PLATFORM FALLBACK**: Alternative implementations for Windows/Linux
+- [ ] **SECURITY CONSIDERATIONS**: Ensure secure screen data handling and transmission
 
 ### 16. Security Features ✅
 - ✅ Add Rust TOTP crate (`totp-rs`)
