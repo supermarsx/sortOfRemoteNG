@@ -123,7 +123,17 @@ IndexedDB. After migration these keys are removed from `localStorage`.
 Ensure your browser supports IndexedDB so settings and collections can be
 preserved across sessions.
 
-## Aborting Scripts
+## Script Engine
+
+The application features a powerful, sandboxed script execution engine powered by **Tauri** and **QuickJS** (via `rquickjs`) on the Rust backend. This architecture ensures high performance and improved security by isolating script execution from the main UI thread.
+
+Supported features:
+- **JavaScript Execution**: Run custom automation scripts directly in the backend.
+- **TypeScript Support**: TypeScript is automatically transpiled before execution.
+- **Context Awareness**: Scripts have access to connection and session details.
+- **Safe API**: A restricted set of APIs (HTTP, SSH, Logging) is exposed to scripts.
+
+### Aborting Scripts
 
 Custom scripts executed through the `ScriptEngine` can be cancelled using an
 `AbortSignal`. Create an `AbortController` and pass its signal to
