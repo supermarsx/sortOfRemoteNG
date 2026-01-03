@@ -1595,7 +1595,7 @@ mod tests {
     #[tokio::test]
     async fn test_connect_via_proxy_unsupported_type() {
         let service = ProxyService::new();
-        let mut proxy_config = create_test_proxy_config("unsupported");
+        let proxy_config = create_test_proxy_config("unsupported");
         
         let connection_id = service.lock().await.create_proxy_connection(
             "example.com".to_string(),

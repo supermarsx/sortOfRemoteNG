@@ -12,6 +12,16 @@ pub struct ScriptContext {
     pub trigger: String,
 }
 
+impl Default for ScriptContext {
+    fn default() -> Self {
+        ScriptContext {
+            connection_id: None,
+            session_id: None,
+            trigger: "test".to_string(),
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ScriptResult {
     pub success: bool,

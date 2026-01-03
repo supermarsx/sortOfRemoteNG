@@ -553,8 +553,8 @@ pub async fn update_connection_chain_layers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
+    
+    
 
     // For testing, we'll create a minimal chaining service
     // Note: In a real scenario, you'd want proper dependency injection or mocking

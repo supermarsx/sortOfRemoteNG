@@ -58,6 +58,13 @@ mod zerotier;
 mod tailscale;
 mod chaining;
 
+#[cfg(test)]
+mod tests {
+    mod security_tests;
+    mod network_tests;
+    mod script_tests;
+}
+
 use auth::{AuthService, AuthServiceState};
 use storage::SecureStorage;
 use ssh::SshService;
