@@ -5,6 +5,9 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use sha2::{Sha256, Digest};
+use base64::{Engine as _, engine::general_purpose};
 
 pub type GcpServiceState = Arc<Mutex<GcpService>>;
 
@@ -50,6 +53,65 @@ pub struct GcpNetworkInterface {
 pub struct GcpAccessConfig {
     pub nat_ip: Option<String>,
     pub public_ptr_domain_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ServiceAccountKey {
+    r#type: String,
+    project_id: String,
+    private_key_id: String,
+    private_key: String,
+    client_email: String,
+    client_id: String,
+    auth_uri: String,
+    token_uri: String,
+    auth_provider_x509_cert_url: String,
+    client_x509_cert_url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct JwtClaims {
+    iss: String,
+    scope: String,
+    aud: String,
+    exp: i64,
+    iat: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct GcpApiResponse<T> {
+    items: Option<Vec<T>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GcpComputeInstance {
+    id: String,
+    name: String,
+    machineType: String,
+    status: String,
+    networkInterfaces: Vec<GcpApiNetworkInterface>,
+    zone: String,
+    creationTimestamp: String,
+    tags: Option<GcpApiTags>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GcpApiNetworkInterface {
+    network: String,
+    subnetwork: String,
+    networkIP: String,
+    accessConfigs: Option<Vec<GcpApiAccessConfig>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GcpApiAccessConfig {
+    natIP: Option<String>,
+    publicPtrDomainName: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GcpApiTags {
+    items: Option<Vec<String>>,
 }
 
 pub struct GcpService {
@@ -103,28 +165,81 @@ impl GcpService {
             return Err("GCP session is not connected".to_string());
         }
 
-        // TODO: Implement actual GCP API call to list instances
-        // For now, return mock data
-        let instances = vec![
-            GcpInstance {
-                instance_id: "test-instance-1".to_string(),
-                name: "test-instance-1".to_string(),
-                machine_type: "n1-standard-1".to_string(),
-                status: "RUNNING".to_string(),
-                zone: session.config.zone.clone().unwrap_or("us-central1-a".to_string()),
-                creation_timestamp: "2024-01-01T00:00:00Z".to_string(),
-                network_interfaces: vec![GcpNetworkInterface {
-                    network: "default".to_string(),
-                    subnetwork: "default".to_string(),
-                    network_ip: "10.0.0.1".to_string(),
-                    access_configs: vec![GcpAccessConfig {
-                        nat_ip: Some("35.123.456.789".to_string()),
-                        public_ptr_domain_name: None,
-                    }],
-                }],
-                tags: HashMap::new(),
-            }
-        ];
+        // Parse service account key
+        let service_account: ServiceAccountKey = serde_json::from_str(&session.config.service_account_key)
+            .map_err(|e| format!("Failed to parse service account key: {}", e))?;
+
+        // Get access token
+        let access_token = self.get_access_token(&service_account).await
+            .map_err(|e| format!("Failed to get access token: {}", e))?;
+
+        // Determine zone to query
+        let zone = session.config.zone.as_ref()
+            .ok_or("Zone must be specified in GCP config")?;
+
+        // Make API call to list instances
+        let url = format!(
+            "https://compute.googleapis.com/compute/v1/projects/{}/zones/{}/instances",
+            session.config.project_id, zone
+        );
+
+        let response = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to make API request: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!("GCP API error {}: {}", status, error_text));
+        }
+
+        let api_response: GcpApiResponse<GcpComputeInstance> = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse API response: {}", e))?;
+
+        let instances = api_response.items
+            .unwrap_or_default()
+            .into_iter()
+            .map(|api_instance| {
+                let tags = api_instance.tags
+                    .and_then(|t| t.items)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, tag)| (format!("tag_{}", i), tag))
+                    .collect();
+
+                GcpInstance {
+                    instance_id: api_instance.id,
+                    name: api_instance.name,
+                    machine_type: api_instance.machineType,
+                    status: api_instance.status,
+                    zone: api_instance.zone,
+                    creation_timestamp: api_instance.creationTimestamp,
+                    network_interfaces: api_instance.networkInterfaces
+                        .into_iter()
+                        .map(|ni| GcpNetworkInterface {
+                            network: ni.network,
+                            subnetwork: ni.subnetwork,
+                            network_ip: ni.networkIP,
+                            access_configs: ni.accessConfigs
+                                .unwrap_or_default()
+                                .into_iter()
+                                .map(|ac| GcpAccessConfig {
+                                    nat_ip: ac.natIP,
+                                    public_ptr_domain_name: ac.publicPtrDomainName,
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                    tags,
+                }
+            })
+            .collect::<Vec<_>>();
 
         // Update session with instances
         if let Some(session) = self.sessions.get_mut(session_id) {
@@ -139,11 +254,72 @@ impl GcpService {
         self.sessions.get(session_id)
     }
 
+    pub async fn get_access_token(&self, service_account: &ServiceAccountKey) -> Result<String, String> {
+        // Create JWT claims
+        let now = Utc::now().timestamp();
+        let claims = JwtClaims {
+            iss: service_account.client_email.clone(),
+            scope: "https://www.googleapis.com/auth/compute.readonly".to_string(),
+            aud: service_account.token_uri.clone(),
+            exp: now + 3600, // 1 hour
+            iat: now,
+        };
+
+        // Create header
+        let header = Header {
+            alg: Algorithm::RS256,
+            kid: Some(service_account.private_key_id.clone()),
+            ..Default::default()
+        };
+
+        // Load private key
+        let private_key_pem = service_account.private_key
+            .replace("\\n", "\n")
+            .replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
+            .replace("-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----");
+
+        let encoding_key = EncodingKey::from_rsa_pem(private_key_pem.as_bytes())
+            .map_err(|e| format!("Failed to load private key: {}", e))?;
+
+        // Sign JWT
+        let jwt = encode(&header, &claims, &encoding_key)
+            .map_err(|e| format!("Failed to encode JWT: {}", e))?;
+
+        // Exchange JWT for access token
+        let mut form_data = std::collections::HashMap::new();
+        form_data.insert("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer");
+        form_data.insert("assertion", &jwt);
+
+        let response = self.client
+            .post(&service_account.token_uri)
+            .form(&form_data)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to exchange JWT for token: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!("Token exchange failed {}: {}", status, error_text));
+        }
+
+        #[derive(Deserialize)]
+        struct TokenResponse {
+            access_token: String,
+        }
+
+        let token_response: TokenResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+        Ok(token_response.access_token)
+    }
+
     pub fn get_sessions(&self) -> Vec<&GcpSession> {
         self.sessions.values().collect()
     }
 }
-
 #[tauri::command]
 pub async fn connect_gcp(
     config: GcpConnectionConfig,

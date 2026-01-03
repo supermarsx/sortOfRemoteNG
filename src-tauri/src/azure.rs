@@ -50,6 +50,72 @@ pub struct AzureNetworkInterface {
     pub public_ip_address: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct AzureTokenResponse {
+    access_token: String,
+    token_type: String,
+    expires_in: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiVmResponse {
+    value: Vec<AzureApiVirtualMachine>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiVirtualMachine {
+    id: String,
+    name: String,
+    location: String,
+    properties: AzureApiVmProperties,
+    tags: Option<HashMap<String, String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiVmProperties {
+    vmId: String,
+    hardwareProfile: AzureApiHardwareProfile,
+    provisioningState: String,
+    storageProfile: Option<AzureApiStorageProfile>,
+    networkProfile: Option<AzureApiNetworkProfile>,
+    instanceView: Option<AzureApiInstanceView>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiHardwareProfile {
+    vmSize: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiStorageProfile {
+    osDisk: Option<AzureApiOsDisk>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiOsDisk {
+    osType: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiNetworkProfile {
+    networkInterfaces: Vec<AzureApiNetworkInterfaceRef>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiNetworkInterfaceRef {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiInstanceView {
+    statuses: Option<Vec<AzureApiStatus>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AzureApiStatus {
+    code: String,
+}
+
 pub struct AzureService {
     sessions: HashMap<String, AzureSession>,
     client: Client,
@@ -103,27 +169,83 @@ impl AzureService {
             return Err("Azure session is not connected".to_string());
         }
 
-        // TODO: Implement actual Azure API call to list VMs
-        // For now, return mock data
-        let vms = vec![
-            AzureVirtualMachine {
-                vm_id: "test-vm-1".to_string(),
-                name: "test-vm-1".to_string(),
-                size: "Standard_DS1_v2".to_string(),
-                provisioning_state: "Succeeded".to_string(),
-                power_state: "VM running".to_string(),
-                location: session.config.region.clone().unwrap_or("East US".to_string()),
-                resource_group: session.config.resource_group.clone().unwrap_or("default".to_string()),
-                os_type: "Linux".to_string(),
-                network_interfaces: vec![AzureNetworkInterface {
-                    id: "nic-1".to_string(),
-                    name: "nic-1".to_string(),
-                    private_ip_address: Some("10.0.0.4".to_string()),
-                    public_ip_address: Some("52.123.456.789".to_string()),
-                }],
-                tags: HashMap::new(),
-            }
-        ];
+        // Get access token
+        let access_token = self.get_access_token(&session.config).await
+            .map_err(|e| format!("Failed to get access token: {}", e))?;
+
+        // Make API call to list VMs
+        let url = format!(
+            "https://management.azure.com/subscriptions/{}/providers/Microsoft.Compute/virtualMachines?api-version=2023-03-01",
+            session.config.subscription_id
+        );
+
+        let response = self.client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", access_token))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to make API request: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!("Azure API error {}: {}", status, error_text));
+        }
+
+        let api_response: AzureApiVmResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse API response: {}", e))?;
+
+        let vms = api_response.value
+            .into_iter()
+            .map(|api_vm| {
+                let resource_group = api_vm.id
+                    .split('/')
+                    .nth(4)
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                let power_state = api_vm.properties.instanceView
+                    .and_then(|iv| iv.statuses)
+                    .and_then(|statuses| statuses.into_iter().find(|s| s.code.starts_with("PowerState/")))
+                    .map(|s| s.code.split('/').nth(1).unwrap_or("Unknown").to_string())
+                    .unwrap_or("Unknown".to_string());
+
+                let os_type = api_vm.properties.storageProfile
+                    .and_then(|sp| sp.osDisk)
+                    .and_then(|os| os.osType)
+                    .unwrap_or("Unknown".to_string());
+
+                let network_interfaces = api_vm.properties.networkProfile
+                    .map(|np| np.networkInterfaces
+                        .into_iter()
+                        .map(|ni| AzureNetworkInterface {
+                            id: ni.id.clone(),
+                            name: ni.id.split('/').last().unwrap_or("unknown").to_string(),
+                            private_ip_address: None, // Would need separate API call
+                            public_ip_address: None,  // Would need separate API call
+                        })
+                        .collect()
+                    )
+                    .unwrap_or_default();
+
+                let tags = api_vm.tags.unwrap_or_default();
+
+                AzureVirtualMachine {
+                    vm_id: api_vm.properties.vmId,
+                    name: api_vm.name,
+                    size: api_vm.properties.hardwareProfile.vmSize,
+                    provisioning_state: api_vm.properties.provisioningState,
+                    power_state,
+                    location: api_vm.location,
+                    resource_group,
+                    os_type,
+                    network_interfaces,
+                    tags,
+                }
+            })
+            .collect::<Vec<_>>();
 
         // Update session with VMs
         if let Some(session) = self.sessions.get_mut(session_id) {
@@ -136,6 +258,39 @@ impl AzureService {
 
     pub async fn get_session(&self, session_id: &str) -> Option<&AzureSession> {
         self.sessions.get(session_id)
+    }
+
+    pub async fn get_access_token(&self, config: &AzureConnectionConfig) -> Result<String, String> {
+        let token_url = format!(
+            "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
+            config.tenant_id
+        );
+
+        let mut form_data = std::collections::HashMap::new();
+        form_data.insert("grant_type", "client_credentials");
+        form_data.insert("client_id", &config.client_id);
+        form_data.insert("client_secret", &config.client_secret);
+        form_data.insert("scope", "https://management.azure.com/.default");
+
+        let response = self.client
+            .post(&token_url)
+            .form(&form_data)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to request access token: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!("Token request failed {}: {}", status, error_text));
+        }
+
+        let token_response: AzureTokenResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+        Ok(token_response.access_token)
     }
 
     pub fn get_sessions(&self) -> Vec<&AzureSession> {

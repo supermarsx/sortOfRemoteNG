@@ -115,41 +115,34 @@ impl DigitalOceanService {
             return Err("DigitalOcean session is not connected".to_string());
         }
 
-        // TODO: Implement actual DigitalOcean API call to list droplets
-        // For now, return mock data
-        let droplets = vec![
-            DigitalOceanDroplet {
-                id: 123456789,
-                name: "test-droplet".to_string(),
-                size_slug: "s-1vcpu-1gb".to_string(),
-                status: "active".to_string(),
-                region: DigitalOceanRegion {
-                    slug: session.config.region.clone().unwrap_or("nyc1".to_string()),
-                    name: "New York 1".to_string(),
-                },
-                image: DigitalOceanImage {
-                    id: 12345678,
-                    name: "Ubuntu 22.04 LTS".to_string(),
-                    distribution: "Ubuntu".to_string(),
-                },
-                networks: DigitalOceanNetworks {
-                    v4: vec![
-                        DigitalOceanNetworkV4 {
-                            ip_address: "10.0.0.1".to_string(),
-                            netmask: "255.255.0.0".to_string(),
-                            network_type: "private".to_string(),
-                        },
-                        DigitalOceanNetworkV4 {
-                            ip_address: "192.0.2.1".to_string(),
-                            netmask: "255.255.255.0".to_string(),
-                            network_type: "public".to_string(),
-                        },
-                    ],
-                },
-                created_at: "2024-01-01T00:00:00Z".to_string(),
-                tags: vec![],
-            }
-        ];
+        // Make API call to list droplets
+        let url = "https://api.digitalocean.com/v2/droplets";
+
+        let response = self.client
+            .get(url)
+            .header("Authorization", format!("Bearer {}", session.config.api_token))
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .map_err(|e| format!("Failed to make API request: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!("DigitalOcean API error {}: {}", status, error_text));
+        }
+
+        #[derive(Deserialize)]
+        struct DoApiResponse {
+            droplets: Vec<DigitalOceanDroplet>,
+        }
+
+        let api_response: DoApiResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse API response: {}", e))?;
+
+        let droplets = api_response.droplets;
 
         // Update session with droplets
         if let Some(session) = self.sessions.get_mut(session_id) {

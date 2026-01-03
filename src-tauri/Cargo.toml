@@ -71,11 +71,11 @@ hex = "0.4"
 sha2 = "0.10"
 serialport = "4.2"
 socket2 = "0.5"
+ssh-key = { version = "0.6", features = ["rsa", "ed25519", "encryption", "std", "getrandom"] }
+rsa = "0.9"
 
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.0"
 mockall = "0.11"
 serial_test = "2.0"
-ssh-key = { version = "0.6", features = ["rsa", "ed25519", "encryption", "std", "getrandom"] }
-rsa = "0.9"

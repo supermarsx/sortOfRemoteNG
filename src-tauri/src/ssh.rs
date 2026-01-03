@@ -441,19 +441,6 @@ impl SshService {
     }
 
     pub async fn test_ssh_connection(&self, config: SshConnectionConfig) -> Result<String, String> {
-    }
-}
-
-#[tauri::command]
-pub async fn generate_ssh_key(
-    state: tauri::State<'_, SshServiceState>,
-    key_type: String,
-    bits: Option<usize>,
-    passphrase: Option<String>
-) -> Result<(String, String), String> {
-    let ssh = state.lock().await;
-    ssh.generate_ssh_key(&key_type, bits, passphrase).await
-}
         // Create a test connection without storing it
         let final_stream = if config.jump_hosts.is_empty() {
             self.establish_direct_connection(&config).await?
@@ -1069,4 +1056,15 @@ pub async fn test_ssh_connection(
 ) -> Result<String, String> {
     let ssh = state.lock().await;
     ssh.test_ssh_connection(config).await
+}
+
+#[tauri::command]
+pub async fn generate_ssh_key(
+    state: tauri::State<'_, SshServiceState>,
+    key_type: String,
+    bits: Option<usize>,
+    passphrase: Option<String>
+) -> Result<(String, String), String> {
+    let ssh = state.lock().await;
+    ssh.generate_ssh_key(&key_type, bits, passphrase).await
 }
