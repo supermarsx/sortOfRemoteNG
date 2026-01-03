@@ -20,6 +20,10 @@ export const DEFAULT_PORTS: Record<string, number> = {
   azure: 22,
   'ibm-csp': 22,
   'digital-ocean': 22,
+  heroku: 22,
+  scaleway: 22,
+  linode: 22,
+  ovhcloud: 22,
 };
 
 /**

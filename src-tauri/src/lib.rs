@@ -78,6 +78,14 @@ pub mod telnet;
 pub mod serial;
 pub mod rlogin;
 pub mod raw_socket;
+pub mod gcp;
+pub mod azure;
+pub mod ibm;
+pub mod digital_ocean;
+pub mod heroku;
+pub mod scaleway;
+pub mod linode;
+pub mod ovh;
 
 #[cfg(test)]
 mod tests {
@@ -119,6 +127,14 @@ use telnet::TelnetService;
 use serial::SerialService;
 use rlogin::RloginService;
 use raw_socket::RawSocketService;
+use gcp::GcpService;
+use azure::AzureService;
+use ibm::IbmService;
+use digital_ocean::DigitalOceanService;
+use heroku::HerokuService;
+use scaleway::ScalewayService;
+use linode::LinodeService;
+use ovh::OvhService;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -314,6 +330,38 @@ pub fn run() {
       // Initialize Raw Socket service
       let raw_socket_service = RawSocketService::new();
       app.manage(raw_socket_service.clone());
+
+      // Initialize GCP service
+      let gcp_service = GcpService::new();
+      app.manage(gcp_service.clone());
+
+      // Initialize Azure service
+      let azure_service = AzureService::new();
+      app.manage(azure_service.clone());
+
+      // Initialize IBM Cloud service
+      let ibm_service = IbmService::new();
+      app.manage(ibm_service.clone());
+
+      // Initialize Digital Ocean service
+      let digital_ocean_service = DigitalOceanService::new();
+      app.manage(digital_ocean_service.clone());
+
+      // Initialize Heroku service
+      let heroku_service = HerokuService::new();
+      app.manage(heroku_service.clone());
+
+      // Initialize Scaleway service
+      let scaleway_service = ScalewayService::new();
+      app.manage(scaleway_service.clone());
+
+      // Initialize Linode service
+      let linode_service = LinodeService::new();
+      app.manage(linode_service.clone());
+
+      // Initialize OVH service
+      let ovh_service = OvhService::new();
+      app.manage(ovh_service.clone());
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -606,7 +654,47 @@ pub fn run() {
         // raw_socket::disconnect_raw_socket,
         // raw_socket::send_raw_socket_data,
         // raw_socket::get_raw_socket_session_info,
-        // raw_socket::list_raw_socket_sessions
+        // raw_socket::list_raw_socket_sessions,
+        // gcp::connect_gcp,
+        // gcp::disconnect_gcp,
+        // gcp::list_gcp_instances,
+        // gcp::get_gcp_session,
+        // gcp::list_gcp_sessions,
+        // azure::connect_azure,
+        // azure::disconnect_azure,
+        // azure::list_azure_virtual_machines,
+        // azure::get_azure_session,
+        // azure::list_azure_sessions,
+        // ibm::connect_ibm,
+        // ibm::disconnect_ibm,
+        // ibm::list_ibm_virtual_servers,
+        // ibm::get_ibm_session,
+        // ibm::list_ibm_sessions,
+        // digital_ocean::connect_digital_ocean,
+        // digital_ocean::disconnect_digital_ocean,
+        // digital_ocean::list_digital_ocean_droplets,
+        // digital_ocean::get_digital_ocean_session,
+        // digital_ocean::list_digital_ocean_sessions,
+        // heroku::connect_heroku,
+        // heroku::disconnect_heroku,
+        // heroku::list_heroku_dynos,
+        // heroku::get_heroku_session,
+        // heroku::list_heroku_sessions,
+        // scaleway::connect_scaleway,
+        // scaleway::disconnect_scaleway,
+        // scaleway::list_scaleway_instances,
+        // scaleway::get_scaleway_session,
+        // scaleway::list_scaleway_sessions,
+        // linode::connect_linode,
+        // linode::disconnect_linode,
+        // linode::list_linode_instances,
+        // linode::get_linode_session,
+        // linode::list_linode_sessions,
+        // ovh::connect_ovh,
+        // ovh::disconnect_ovh,
+        // ovh::list_ovh_instances,
+        // ovh::get_ovh_session,
+        // ovh::list_ovh_sessions
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

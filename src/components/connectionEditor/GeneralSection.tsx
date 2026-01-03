@@ -80,6 +80,10 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
                 <option value="azure">Microsoft Azure</option>
                 <option value="ibm-csp">IBM Cloud</option>
                 <option value="digital-ocean">Digital Ocean</option>
+                <option value="heroku">Heroku</option>
+                <option value="scaleway">Scaleway</option>
+                <option value="linode">Linode</option>
+                <option value="ovhcloud">OVH Cloud</option>
               </select>
             </div>
 

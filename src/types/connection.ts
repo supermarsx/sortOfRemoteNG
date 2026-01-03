@@ -2,7 +2,7 @@ import { ProxyConfig } from "./settings";
 export interface Connection {
   id: string;
   name: string;
-  protocol: 'rdp' | 'ssh' | 'vnc' | 'http' | 'https' | 'telnet' | 'rlogin' | 'mysql' | 'ftp' | 'sftp' | 'scp' | 'winrm' | 'rustdesk' | 'smb' | 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean';
+  protocol: 'rdp' | 'ssh' | 'vnc' | 'http' | 'https' | 'telnet' | 'rlogin' | 'mysql' | 'ftp' | 'sftp' | 'scp' | 'winrm' | 'rustdesk' | 'smb' | 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean' | 'heroku' | 'scaleway' | 'linode' | 'ovhcloud';
   hostname: string;
   port: number;
   username?: string;
@@ -58,7 +58,7 @@ export interface Connection {
   
   // Cloud Provider specific
   cloudProvider?: {
-    provider: 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean';
+    provider: 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean' | 'heroku' | 'scaleway' | 'linode' | 'ovhcloud';
     projectId?: string; // GCP, Azure resource group
     subscriptionId?: string; // Azure
     region?: string;
@@ -75,6 +75,11 @@ export interface Connection {
     vpcId?: string; // AWS, but can be used for others
     subnetId?: string;
     securityGroup?: string;
+    appName?: string; // Heroku
+    dynoName?: string; // Heroku
+    organizationId?: string; // Scaleway
+    projectName?: string; // Scaleway, OVH
+    serviceId?: string; // OVH
   };
   
   // Status Checking
