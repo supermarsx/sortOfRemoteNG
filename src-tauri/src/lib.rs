@@ -40,25 +40,25 @@
 //! - File transfer capabilities
 //! - Script execution and automation
 
-mod auth;
-mod storage;
-mod ssh;
-mod rdp;
-mod vnc;
-mod db;
-mod ftp;
-mod network;
-mod security;
-mod wol;
-mod script;
-mod openvpn;
-mod proxy;
-mod wireguard;
-mod zerotier;
-mod tailscale;
-mod chaining;
-mod qr;
-mod api;
+pub mod auth;
+pub mod storage;
+pub mod ssh;
+pub mod rdp;
+pub mod vnc;
+pub mod db;
+pub mod ftp;
+pub mod network;
+pub mod security;
+pub mod wol;
+pub mod script;
+pub mod openvpn;
+pub mod proxy;
+pub mod wireguard;
+pub mod zerotier;
+pub mod tailscale;
+pub mod chaining;
+pub mod qr;
+pub mod api;
 
 #[cfg(test)]
 mod tests {
