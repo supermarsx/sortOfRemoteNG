@@ -35,13 +35,6 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
 
   const fileServiceRef = useRef(new FileTransferService());
 
-  useEffect(() => {
-    if (isOpen) {
-      loadDirectory(currentPath);
-      loadTransfers();
-    }
-  }, [isOpen, currentPath, connectionId, loadDirectory, loadTransfers]);
-
   const loadDirectory = useCallback(async (path: string) => {
     setIsLoading(true);
     try {
@@ -58,6 +51,13 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
     const activeTransfers = await fileServiceRef.current.getActiveTransfers(connectionId);
     setTransfers(activeTransfers);
   }, [connectionId]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadDirectory(currentPath);
+      loadTransfers();
+    }
+  }, [isOpen, currentPath, connectionId, loadDirectory, loadTransfers]);
 
   const navigateToPath = (path: string) => {
     setCurrentPath(path);

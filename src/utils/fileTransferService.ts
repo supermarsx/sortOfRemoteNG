@@ -4,7 +4,7 @@ import { generateId } from './id';
 import { FileTransferAdapter, FileItem } from './fileTransferAdapters';
 import { IndexedDbService } from './indexedDbService';
 
-export { FileTransferAdapter, FileItem } from './fileTransferAdapters';
+export type { FileTransferAdapter, FileItem } from './fileTransferAdapters';
 
 export class FileTransferService extends EventEmitter {
   private adapters = new Map<string, FileTransferAdapter>();

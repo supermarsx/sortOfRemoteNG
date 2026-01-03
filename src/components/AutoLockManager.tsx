@@ -19,6 +19,11 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  const handleAutoLock = useCallback(() => {
+    setIsLocked(true);
+    onLock();
+  }, [onLock]);
+
   useEffect(() => {
     if (!config.enabled) return;
 
@@ -78,11 +83,6 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
       clearInterval(interval);
     };
   }, [config, lastActivity, isLocked, handleAutoLock]);
-
-  const handleAutoLock = useCallback(() => {
-    setIsLocked(true);
-    onLock();
-  }, [onLock]);
 
   const handleUnlock = () => {
     if (config.requirePassword) {

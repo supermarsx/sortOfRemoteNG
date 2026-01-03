@@ -131,9 +131,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {isStorageEncrypted && (
                   <div className="flex items-center">
                     {isStorageUnlocked ? (
-                      <Unlock size={14} className="text-green-400" title="Storage unlocked" />
+                      <span title="Storage unlocked">
+                        <Unlock size={14} className="text-green-400" />
+                      </span>
                     ) : (
-                      <Lock size={14} className="text-red-400" title="Storage locked" />
+                      <span title="Storage locked">
+                        <Lock size={14} className="text-red-400" />
+                      </span>
                     )}
                   </div>
                 )}

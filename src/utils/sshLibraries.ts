@@ -564,8 +564,6 @@ export class WebSSHClientFrontend extends BaseSSHClient {
 }
 
 // SSH Library Factory
-export type SSHLibraryType = 'node-ssh' | 'ssh2' | 'simple-ssh' | 'websocket' | 'webssh';
-
 export class SSHLibraryFactory {
   static createClient(type: SSHLibraryType, config: SSHLibraryConfig): BaseSSHClient {
     const isBrowser = typeof window !== 'undefined';

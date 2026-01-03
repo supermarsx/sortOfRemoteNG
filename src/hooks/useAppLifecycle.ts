@@ -53,17 +53,22 @@ export const useAppLifecycle = ({
 
   const initializeApp = useCallback(async () => {
     try {
+      console.log('Initializing app...');
       await settingsManager.initialize();
+      console.log('Settings manager initialized');
 
       await themeManager.loadSavedTheme();
       themeManager.injectThemeCSS();
+      console.log('Theme manager initialized');
 
       const settings = settingsManager.getSettings();
       if (settings.language !== i18n.language) {
         i18n.changeLanguage(settings.language);
       }
+      console.log('Language set');
 
       setIsInitialized(true);
+      console.log('App initialized successfully');
       settingsManager.logAction(
         "info",
         "Application initialized",

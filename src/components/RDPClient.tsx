@@ -36,13 +36,6 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     encryptionEnabled: true
   });
 
-  useEffect(() => {
-    initializeRDPConnection();
-    return () => {
-      cleanup();
-    };
-  }, [session, initializeRDPConnection, cleanup]);
-
   const initializeRDPConnection = useCallback(async () => {
     if (!canvasRef.current) return;
 
@@ -73,6 +66,18 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       console.error('RDP connection failed:', error);
     }
   }, [settings.resolution]);
+
+  const cleanup = useCallback(() => {
+    setIsConnected(false);
+    setConnectionStatus('disconnected');
+  }, []);
+
+  useEffect(() => {
+    initializeRDPConnection();
+    return () => {
+      cleanup();
+    };
+  }, [session, initializeRDPConnection, cleanup]);
 
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -122,11 +127,6 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
   };
-
-  const cleanup = useCallback(() => {
-    setIsConnected(false);
-    setConnectionStatus('disconnected');
-  }, []);
 
   const getStatusColor = () => {
     switch (connectionStatus) {

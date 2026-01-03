@@ -130,7 +130,7 @@ export class MySQLService {
   }
 
   async deleteRow(database: string, table: string, whereClause: string): Promise<number> {
-    return await invoke<number>('delete_row', { database, table, columns, whereClause });
+    return await invoke<number>('delete_row', { database, table, whereClause });
   }
 
   async exportTable(database: string, table: string, format: 'csv' | 'sql'): Promise<string> {

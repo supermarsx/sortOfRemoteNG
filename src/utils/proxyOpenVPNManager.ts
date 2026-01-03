@@ -196,14 +196,14 @@ export interface ChainHop {
   error?: string;
 }
 
-export interface ConnectionChain {
+export interface AdvancedConnectionChain {
   id: string;
   name: string;
   hops: ChainHop[];
   targetHost: string;
   targetPort: number;
   finalLocalPort?: number;
-  status: 'disconnected' | 'connecting' | 'connected' | 'error' | 'partial';
+  status: ChainStatus;
   createdAt: Date;
   connectedAt?: Date;
 }
@@ -265,7 +265,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getOpenVPNConnection(connectionId: string): Promise<OpenVPNConnection> {
-    const result = await invoke('get_openvpn_connection', { connectionId });
+    const result: any = await invoke('get_openvpn_connection', { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -274,7 +274,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listOpenVPNConnections(): Promise<OpenVPNConnection[]> {
-    const results = await invoke('list_openvpn_connections');
+    const results: any[] = await invoke('list_openvpn_connections');
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
@@ -304,7 +304,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getWireGuardConnection(connectionId: string): Promise<WireGuardConnection> {
-    const result = await invoke('get_wireguard_connection', { connectionId });
+    const result: any = await invoke('get_wireguard_connection', { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -313,7 +313,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listWireGuardConnections(): Promise<WireGuardConnection[]> {
-    const results = await invoke('list_wireguard_connections');
+    const results: any[] = await invoke('list_wireguard_connections');
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
@@ -343,7 +343,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getIKEv2Connection(connectionId: string): Promise<IKEv2Connection> {
-    const result = await invoke('get_ikev2_connection', { connectionId });
+    const result: any = await invoke('get_ikev2_connection', { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -352,7 +352,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listIKEv2Connections(): Promise<IKEv2Connection[]> {
-    const results = await invoke('list_ikev2_connections');
+    const results: any[] = await invoke('list_ikev2_connections');
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
@@ -382,7 +382,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getSSTPConnection(connectionId: string): Promise<SSTPConnection> {
-    const result = await invoke('get_sstp_connection', { connectionId });
+    const result: any = await invoke('get_sstp_connection', { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -391,7 +391,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listSSTPConnections(): Promise<SSTPConnection[]> {
-    const results = await invoke('list_sstp_connections');
+    const results: any[] = await invoke('list_sstp_connections');
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
@@ -421,7 +421,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getL2TPConnection(connectionId: string): Promise<L2TPConnection> {
-    const result = await invoke('get_l2tp_connection', { connectionId });
+    const result: any = await invoke('get_l2tp_connection', { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -430,7 +430,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listL2TPConnections(): Promise<L2TPConnection[]> {
-    const results = await invoke('list_l2tp_connections');
+    const results: any[] = await invoke('list_l2tp_connections');
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
@@ -460,7 +460,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getPPTPConnection(connectionId: string): Promise<PPTPConnection> {
-    const result = await invoke('get_pptp_connection', { connectionId });
+    const result: any = await invoke('get_pptp_connection', { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -469,7 +469,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listPPTPConnections(): Promise<PPTPConnection[]> {
-    const results = await invoke('list_pptp_connections');
+    const results: any[] = await invoke('list_pptp_connections');
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
@@ -499,7 +499,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getSoftEtherConnection(connectionId: string): Promise<SoftEtherConnection> {
-    const result = await invoke('get_softether_connection', { connectionId });
+    const result: any = await invoke('get_softether_connection', { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -508,7 +508,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listSoftEtherConnections(): Promise<SoftEtherConnection[]> {
-    const results = await invoke('list_softether_connections');
+    const results: any[] = await invoke('list_softether_connections');
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
@@ -538,7 +538,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getZeroTierConnection(connectionId: string): Promise<ZeroTierConnection> {
-    const result = await invoke('get_zerotier_connection', { connectionId });
+    const result: any = await invoke('get_zerotier_connection', { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -547,7 +547,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listZeroTierConnections(): Promise<ZeroTierConnection[]> {
-    const results = await invoke('list_zerotier_connections');
+    const results: any[] = await invoke('list_zerotier_connections');
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
@@ -577,7 +577,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getTailscaleConnection(connectionId: string): Promise<TailscaleConnection> {
-    const result = await invoke('get_tailscale_connection', { connectionId });
+    const result: any = await invoke('get_tailscale_connection', { connectionId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -586,7 +586,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listTailscaleConnections(): Promise<TailscaleConnection[]> {
-    const results = await invoke('list_tailscale_connections');
+    const results: any[] = await invoke('list_tailscale_connections');
     return results.map((result: any) => ({
       ...result,
       createdAt: new Date(result.created_at),
@@ -737,7 +737,7 @@ export class ProxyOpenVPNManager {
   }
 
   // Connection chaining utilities
-  async createConnectionChain(
+  async createConnectionChainFromConfigs(
     connections: Array<{
       type: 'proxy' | 'openvpn' | 'wireguard' | 'ikev2' | 'sstp' | 'l2tp' | 'pptp' | 'softether' | 'zerotier' | 'tailscale';
       config: ProxyConfig | OpenVPNConfig | WireGuardConfig | IKEv2Config | SSTPConfig | L2TPConfig | PPTPConfig | SoftEtherConfig | ZeroTierConfig | TailscaleConfig;
@@ -873,7 +873,7 @@ export class ProxyOpenVPNManager {
     hops: Omit<ChainHop, 'id' | 'status' | 'error'>[],
     targetHost: string,
     targetPort: number
-  ): Promise<ConnectionChain> {
+  ): Promise<AdvancedConnectionChain> {
     const chainId = `chain_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     // Validate chain configuration
@@ -883,7 +883,7 @@ export class ProxyOpenVPNManager {
     const sortedHops = hops.sort((a, b) => a.position - b.position);
 
     // Create the chain object
-    const chain: ConnectionChain = {
+    const chain: AdvancedConnectionChain = {
       id: chainId,
       name,
       hops: sortedHops.map(hop => ({
@@ -893,15 +893,15 @@ export class ProxyOpenVPNManager {
       })),
       targetHost,
       targetPort,
-      status: 'disconnected',
+      status: ChainStatus.Disconnected,
       createdAt: new Date(),
     };
 
     return chain;
   }
 
-  async connectAdvancedChain(chain: ConnectionChain): Promise<ConnectionChain> {
-    const updatedChain = { ...chain, status: 'connecting' as const };
+  async connectAdvancedChain(chain: AdvancedConnectionChain): Promise<AdvancedConnectionChain> {
+    const updatedChain = { ...chain, status: ChainStatus.Connecting };
 
     try {
       // Connect hops in order, building up the chain
@@ -957,12 +957,12 @@ export class ProxyOpenVPNManager {
         }
       }
 
-      updatedChain.status = 'connected';
+      updatedChain.status = ChainStatus.Connected;
       updatedChain.connectedAt = new Date();
       updatedChain.finalLocalPort = finalLocalPort;
 
     } catch (error) {
-      updatedChain.status = 'error';
+      updatedChain.status = ChainStatus.Error;
       // Cleanup any partially established connections
       await this.disconnectAdvancedChain(updatedChain);
     }
@@ -970,10 +970,10 @@ export class ProxyOpenVPNManager {
     return updatedChain;
   }
 
-  async disconnectAdvancedChain(chain: ConnectionChain): Promise<void> {
+  async disconnectAdvancedChain(chain: AdvancedConnectionChain): Promise<void> {
     // Disconnect in reverse order (opposite of connection order)
     const proxyConnections: string[] = [];
-    const openvpnConnections: string[] = [];
+    const vpnConnections: Array<{ type: string; id: string }> = [];
 
     // Collect all connection IDs
     for (const hop of chain.hops) {
@@ -982,11 +982,11 @@ export class ProxyOpenVPNManager {
         // This is a limitation - we should store the actual connection IDs
         proxyConnections.push(`${chain.id}_proxy_${hop.position}`);
       } else if (hop.type === 'openvpn') {
-        openvpnConnections.push(`${chain.name} - VPN Hop ${hop.position}`);
+        vpnConnections.push({ type: 'openvpn', id: `${chain.name} - VPN Hop ${hop.position}` });
       }
     }
 
-    await this.disconnectChain(proxyConnections, openvpnConnections);
+    await this.disconnectChain(proxyConnections, vpnConnections);
   }
 
   async validateChainConfig(hops: Omit<ChainHop, 'id' | 'status' | 'error'>[]): Promise<void> {
@@ -1171,7 +1171,7 @@ export class ProxyOpenVPNManager {
 
   // Chain Optimization and Analysis
   async analyzeChainPerformance(
-    chain: ConnectionChain
+    chain: AdvancedConnectionChain
   ): Promise<{
     totalLatency: number;
     bandwidth: number;
@@ -1192,8 +1192,8 @@ export class ProxyOpenVPNManager {
   }
 
   async optimizeChain(
-    chain: ConnectionChain
-  ): Promise<ConnectionChain> {
+    chain: AdvancedConnectionChain
+  ): Promise<AdvancedConnectionChain> {
     // Analyze current chain and suggest optimizations
     const analysis = await this.analyzeChainPerformance(chain);
 
@@ -1221,7 +1221,7 @@ export class ProxyOpenVPNManager {
   async reconfigureChain(
     chainId: string,
     newHops: Omit<ChainHop, 'id' | 'status' | 'error'>[]
-  ): Promise<ConnectionChain> {
+  ): Promise<AdvancedConnectionChain> {
     // Find existing chain (this would need to be stored)
     // For now, create a new optimized chain
     const newChain = await this.createAdvancedChain(
@@ -1235,7 +1235,7 @@ export class ProxyOpenVPNManager {
   }
 
   // Chain Monitoring and Health Checks
-  async monitorChain(chain: ConnectionChain): Promise<{
+  async monitorChain(chain: AdvancedConnectionChain): Promise<{
     overallHealth: 'healthy' | 'degraded' | 'unhealthy';
     hopStatuses: Array<{ hopId: string; health: 'healthy' | 'degraded' | 'unhealthy'; metrics: any }>;
     recommendations: string[];
@@ -1339,7 +1339,7 @@ export class ProxyOpenVPNManager {
   }
 
   async getConnectionChain(chainId: string): Promise<ConnectionChain> {
-    const result = await invoke('get_connection_chain', { chainId });
+    const result: any = await invoke('get_connection_chain', { chainId });
     return {
       ...result,
       createdAt: new Date(result.created_at),
@@ -1348,7 +1348,7 @@ export class ProxyOpenVPNManager {
   }
 
   async listConnectionChains(): Promise<ConnectionChain[]> {
-    const results = await invoke('list_connection_chains');
+    const results: any[] = await invoke('list_connection_chains');
     return results.map((chain: any) => ({
       ...chain,
       createdAt: new Date(chain.created_at),

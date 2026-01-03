@@ -19,19 +19,9 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
 
   const mysqlService = useMemo(() => new MySQLService(), []);
 
-  useEffect(() => {
-    loadDatabases();
-  }, [loadDatabases]);
-
-  useEffect(() => {
-    if (selectedDatabase) {
-      loadTables(selectedDatabase);
-    }
-  }, [selectedDatabase, loadTables]);
-
   const loadDatabases = useCallback(async () => {
     try {
-      const dbs = await mysqlService.getDatabases(session.connectionId);
+      const dbs = await mysqlService.getDatabases();
       setDatabases(dbs);
       if (dbs.length > 0) {
         setSelectedDatabase(dbs[0]);
@@ -42,11 +32,11 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
         err instanceof Error ? err.message : 'Failed to load databases'
       );
     }
-  }, [session.connectionId, mysqlService]);
+  }, [mysqlService]);
 
   const loadTables = useCallback(async (database: string) => {
     try {
-      const tableList = await mysqlService.getTables(session.connectionId, database);
+      const tableList = await mysqlService.getTables(database);
       setTables(tableList);
       setError(null);
     } catch (err) {
@@ -54,7 +44,17 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
         err instanceof Error ? err.message : 'Failed to load tables'
       );
     }
-  }, [session.connectionId, mysqlService]);
+  }, [mysqlService]);
+
+  useEffect(() => {
+    loadDatabases();
+  }, [loadDatabases]);
+
+  useEffect(() => {
+    if (selectedDatabase) {
+      loadTables(selectedDatabase);
+    }
+  }, [selectedDatabase, loadTables]);
 
   const executeQuery = async () => {
     if (!query.trim()) return;
@@ -65,11 +65,8 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
       setResults(result);
       setError(null);
     } catch (err) {
-      setResults({
-        columns: [],
-        rows: [],
-        error: err instanceof Error ? err.message : 'Query execution failed',
-      });
+      setResults(null);
+      setError(err instanceof Error ? err.message : 'Query execution failed');
     } finally {
       setIsExecuting(false);
     }
@@ -249,67 +246,58 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
 
           {/* Results */}
           <div className="flex-1 overflow-hidden">
-            {results ? (
+            {error ? (
+              <div className="p-4 bg-red-900/20 border-l-4 border-red-500">
+                <h4 className="text-red-400 font-medium mb-2">Query Error</h4>
+                <p className="text-red-300 text-sm font-mono">{error}</p>
+              </div>
+            ) : results ? (
               <div className="h-full flex flex-col">
-                {results.error ? (
-                  <div className="p-4 bg-red-900/20 border-l-4 border-red-500">
-                    <h4 className="text-red-400 font-medium mb-2">Query Error</h4>
-                    <p className="text-red-300 text-sm font-mono">{results.error}</p>
-                  </div>
-                ) : (
-                  <>
-                    {/* Result Info */}
-                    <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
-                      <div className="text-gray-300 text-sm">
-                        {results.rows.length > 0 ? (
-                          `${results.rows.length} rows returned`
-                        ) : (
-                          `Query executed successfully${results.affectedRows !== undefined ? ` (${results.affectedRows} rows affected)` : ''}`
-                        )}
-                      </div>
-                      
-                      {results.insertId && (
-                        <div className="text-gray-400 text-sm">
-                          Insert ID: {results.insertId}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Data Table */}
-                    {results.rows.length > 0 && (
-                      <div className="flex-1 overflow-auto">
-                        <table className="w-full">
-                          <thead className="bg-gray-700 sticky top-0">
-                            <tr>
-                              {results.columns.map((column, index) => (
-                                <th
-                                  key={index}
-                                  className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider border-r border-gray-600 last:border-r-0"
-                                >
-                                  {column}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-600">
-                            {results.rows.map((row, rowIndex) => (
-                              <tr key={rowIndex} className="hover:bg-gray-700">
-                                {row.map((cell, cellIndex) => (
-                                  <td
-                                    key={cellIndex}
-                                    className="px-4 py-3 text-sm text-gray-300 border-r border-gray-600 last:border-r-0 max-w-xs truncate"
-                                    title={formatCellValue(cell)}
-                                  >
-                                    {formatCellValue(cell)}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                {/* Result Info */}
+                <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
+                  <div className="text-gray-300 text-sm">
+                    {results.rows.length > 0 ? (
+                      `${results.rows.length} rows returned`
+                    ) : (
+                      `Query executed successfully`
                     )}
-                  </>
+                  </div>
+                  
+                </div>
+
+                {/* Data Table */}
+                {results.rows.length > 0 && (
+                  <div className="flex-1 overflow-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-700 sticky top-0">
+                        <tr>
+                          {results.columns.map((column, index) => (
+                            <th
+                              key={index}
+                              className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider border-r border-gray-600 last:border-r-0"
+                            >
+                              {column}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-600">
+                        {results.rows.map((row, rowIndex) => (
+                          <tr key={rowIndex} className="hover:bg-gray-700">
+                            {row.map((cell, cellIndex) => (
+                              <td
+                                key={cellIndex}
+                                className="px-4 py-3 text-sm text-gray-300 border-r border-gray-600 last:border-r-0 max-w-xs truncate"
+                                title={formatCellValue(cell)}
+                              >
+                                {formatCellValue(cell)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
             ) : (

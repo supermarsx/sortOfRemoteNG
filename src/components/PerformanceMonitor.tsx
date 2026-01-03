@@ -15,14 +15,6 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
   const [currentMetrics, setCurrentMetrics] = useState<PerformanceMetrics | null>(null);
   const settingsManager = SettingsManager.getInstance();
 
-  useEffect(() => {
-    if (isOpen) {
-      loadMetrics();
-      const interval = setInterval(updateCurrentMetrics, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [isOpen, loadMetrics, updateCurrentMetrics]);
-
   const loadMetrics = useCallback(() => {
     const storedMetrics = settingsManager.getPerformanceMetrics();
     setMetrics(storedMetrics);
@@ -45,6 +37,14 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
     setCurrentMetrics(currentMetric);
     settingsManager.recordPerformanceMetric(currentMetric);
   }, [settingsManager]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadMetrics();
+      const interval = setInterval(updateCurrentMetrics, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [isOpen, loadMetrics, updateCurrentMetrics]);
 
   const exportMetrics = () => {
     const csvContent = [

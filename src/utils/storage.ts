@@ -1,4 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
+// @ts-ignore
+const invoke = (globalThis as any).__TAURI__?.core?.invoke;
 
 const STORAGE_KEY = "mremote-connections";
 const STORAGE_META_KEY = "mremote-storage-meta";
@@ -115,7 +116,7 @@ export class SecureStorage {
   }
 
   static async hasStoredData(): Promise<boolean> {
-    if (this.useTauri) {
+    if (this.useTauri && invoke) {
       return await invoke('has_stored_data');
     } else {
       return (await IndexedDbService.getItem(STORAGE_KEY)) !== null;
@@ -123,7 +124,7 @@ export class SecureStorage {
   }
 
   static async isStorageEncrypted(): Promise<boolean> {
-    if (this.useTauri) {
+    if (this.useTauri && invoke) {
       return await invoke('is_storage_encrypted');
     } else {
       await this.migrateMetaKey();
@@ -151,7 +152,7 @@ export class SecureStorage {
     data: StorageData,
     usePassword: boolean = false,
   ): Promise<void> {
-    if (this.useTauri) {
+    if (this.useTauri && invoke) {
       try {
         if (usePassword && this.password) {
           await invoke('set_storage_password', { password: this.password });
@@ -213,7 +214,7 @@ export class SecureStorage {
    * @sideEffect Reads from IndexedDB and may log errors to the console.
    */
   static async loadData(): Promise<StorageData | null> {
-    if (this.useTauri) {
+    if (this.useTauri && invoke) {
       try {
         const result = await invoke('load_data') as StorageData | null;
         return result;
@@ -266,7 +267,7 @@ export class SecureStorage {
   }
 
   static async clearStorage(): Promise<void> {
-    if (this.useTauri) {
+    if (this.useTauri && invoke) {
       try {
         await invoke('clear_storage');
         this.clearPassword();

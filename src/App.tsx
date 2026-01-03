@@ -27,8 +27,8 @@ import { useAppLifecycle } from "./hooks/useAppLifecycle";
 const AppContent: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { state, dispatch, loadData, saveData } = useConnections();
-  const [editingConnection, setEditingConnection] = useState<Connection | null>(
-    null,
+  const [editingConnection, setEditingConnection] = useState<Connection | undefined>(
+    undefined,
   ); // connection currently being edited
   const [showConnectionEditor, setShowConnectionEditor] = useState(false); // connection editor visibility
   const [showQuickConnect, setShowQuickConnect] = useState(false); // quick connect dialog visibility
@@ -94,7 +94,7 @@ const AppContent: React.FC = () => {
 
   /** Open the connection editor to create a new connection. */
   const handleNewConnection = (): void => {
-    setEditingConnection(null);
+    setEditingConnection(undefined);
     setShowConnectionEditor(true);
   };
 
@@ -184,7 +184,7 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="h-screen bg-gray-900 text-white flex flex-col">
-      {!isInitialized && <div className="fixed inset-0 bg-black z-50" />}
+      {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
       {/* Top bar */}
       <div className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4">
         <div className="flex items-center space-x-3">

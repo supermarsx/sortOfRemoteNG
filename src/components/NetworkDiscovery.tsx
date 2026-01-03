@@ -76,13 +76,10 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
       
       // Convert IP addresses to DiscoveredHost format
       const hosts: DiscoveredHost[] = ips.map(ip => ({
-        id: generateId(),
         ip,
-        hostname: null,
-        mac: null,
+        openPorts: [],
         services: [],
-        lastSeen: Date.now(),
-        responseTime: null,
+        responseTime: 0,
       }));
 
       setDiscoveredHosts(hosts);

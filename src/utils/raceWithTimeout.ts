@@ -3,7 +3,7 @@ export function raceWithTimeout<T>(
   timeoutMs: number,
   onTimeout?: () => void,
 ): { promise: Promise<T>; timer: ReturnType<typeof setTimeout> } {
-  let timer: ReturnType<typeof setTimeout>;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       onTimeout?.();
@@ -12,6 +12,8 @@ export function raceWithTimeout<T>(
   });
 
   const raced = Promise.race([promise, timeoutPromise]) as Promise<T>;
-  raced.finally(() => clearTimeout(timer));
-  return { promise: raced, timer };
+  raced.finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+  return { promise: raced, timer: timer! };
 }

@@ -29,7 +29,7 @@ export class TOTPService {
       ...instance.options,
       digits: config?.digits ?? 6,
       step: config?.period ?? 30,
-      algorithm: (config?.algorithm ?? 'SHA1').toLowerCase(),
+      algorithm: (config?.algorithm ?? 'SHA1') as any,
     };
     return instance.generate(secret);
   }
@@ -40,7 +40,7 @@ export class TOTPService {
       ...instance.options,
       digits: config?.digits ?? 6,
       step: config?.period ?? 30,
-      algorithm: (config?.algorithm ?? 'SHA1').toLowerCase(),
+      algorithm: (config?.algorithm ?? 'SHA1') as any,
       window: 1, // Allow 1 step tolerance
     };
     return instance.verify({ token, secret });

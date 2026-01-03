@@ -168,7 +168,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   const renderMosaicLayout = () => (
     <div ref={containerRef} className="relative h-full">
       {layout.sessions.map(sessionLayout => {
-        const session = sessions.find(s => s.sessionId === sessionLayout.sessionId);
+        const session = sessions.find(s => s.id === sessionLayout.sessionId);
         if (!session) return null;
 
         const isActive = session.id === activeSessionId;

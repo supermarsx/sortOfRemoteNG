@@ -11,13 +11,20 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
   setFormData,
 }) => {
   const updateCloudProvider = (updates: Partial<NonNullable<Connection['cloudProvider']>>) => {
-    setFormData(prev => ({
-      ...prev,
-      cloudProvider: {
-        ...prev.cloudProvider,
-        ...updates,
-      },
-    }));
+    setFormData(prev => {
+      const currentCloudProvider = prev.cloudProvider || {};
+      const updatedCloudProvider = { ...currentCloudProvider, ...updates } as NonNullable<Connection['cloudProvider']>;
+
+      // Ensure provider is set if not already present
+      if (!updatedCloudProvider.provider && formData.protocol) {
+        updatedCloudProvider.provider = formData.protocol as NonNullable<Connection['cloudProvider']>['provider'];
+      }
+
+      return {
+        ...prev,
+        cloudProvider: updatedCloudProvider,
+      };
+    });
   };
 
   if (!['gcp', 'azure', 'ibm-csp', 'digital-ocean', 'heroku', 'scaleway', 'linode', 'ovhcloud'].includes(formData.protocol || '')) {
@@ -25,7 +32,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
   }
 
   const provider = formData.protocol;
-  const cloudProvider = formData.cloudProvider || {};
+  const cloudProvider = (formData.cloudProvider || {}) as Partial<NonNullable<Connection['cloudProvider']>>;
 
   return (
     <div className="space-y-4">

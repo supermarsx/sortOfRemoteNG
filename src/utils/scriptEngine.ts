@@ -150,9 +150,9 @@ export class ScriptEngine {
         context.session?.protocol === "ssh"
           ? {
               execute: (command: string) =>
-                this.sshExecute(context.session, command, signal),
+                this.sshExecute(context.session!, command, signal),
               sendKeys: (keys: string) =>
-                this.sshSendKeys(context.session, keys, signal),
+                this.sshSendKeys(context.session!, keys, signal),
             }
           : undefined,
 
@@ -215,7 +215,7 @@ export class ScriptEngine {
     };
 
     try {
-      const result = await invoke("execute_user_script", {
+      const result: any = await invoke("execute_user_script", {
         code,
         scriptType: "javascript",
         context: scriptContext,
@@ -258,7 +258,7 @@ export class ScriptEngine {
     };
 
     try {
-      const result = await invoke("execute_user_script", {
+      const result: any = await invoke("execute_user_script", {
         code,
         scriptType: language,
         context: scriptContext,
@@ -348,7 +348,7 @@ export class ScriptEngine {
       forward(optSignal);
       combinedSignal = controller.signal;
     } else {
-      combinedSignal = signal || optSignal;
+      combinedSignal = signal || optSignal || undefined;
     }
 
     const response = await fetch(url, {
@@ -469,10 +469,7 @@ export class ScriptEngine {
   }
 
   private getSetting(key: string): unknown {
-    const settings = this.settingsManager.getSettings() as Record<
-      string,
-      unknown
-    >;
+    const settings = this.settingsManager.getSettings() as any;
     return settings[key];
   }
 

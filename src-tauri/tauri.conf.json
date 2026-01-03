@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.sortofremote.ng",
   "build": {
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
+    "frontendDist": "../.next/standalone",
+    "devUrl": "http://localhost:3001",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },

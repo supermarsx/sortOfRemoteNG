@@ -307,6 +307,13 @@ pub fn run() {
       let auto_lock_service = AutoLockService::new();
       app.manage(auto_lock_service.clone());
 
+      // Start auto-lock monitoring in background
+      let auto_lock_clone = auto_lock_service.clone();
+      tauri::async_runtime::spawn(async move {
+        let mut service = auto_lock_clone.lock().await;
+        service.start_monitoring().await;
+      });
+
       // Initialize GPO service
       let gpo_service = GpoService::new();
       app.manage(gpo_service.clone());

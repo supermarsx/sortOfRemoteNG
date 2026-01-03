@@ -26,6 +26,156 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
 
+  const executeCommand = useCallback((command: string) => {
+    if (!terminal.current) return;
+
+    const parts = command.split(' ');
+    const cmd = parts[0];
+
+    switch (cmd) {
+      case 'ls':
+        terminal.current.writeln('Desktop  Documents  Downloads  Pictures  Videos');
+        break;
+      case 'pwd':
+        terminal.current.writeln('/home/user');
+        break;
+      case 'whoami':
+        terminal.current.writeln('user');
+        break;
+      case 'date':
+        terminal.current.writeln(new Date().toString());
+        break;
+      case 'echo':
+        terminal.current.writeln(parts.slice(1).join(' '));
+        break;
+      case 'clear':
+        terminal.current.clear();
+        break;
+      case 'help':
+        terminal.current.writeln('Available commands: ls, pwd, whoami, date, echo, clear, help, exit');
+        break;
+      case 'exit':
+        terminal.current.writeln('logout');
+        setIsConnected(false);
+        break;
+      default:
+        terminal.current.writeln(`Command not found: ${cmd}`);
+        break;
+    }
+
+    if (cmd !== 'clear' && cmd !== 'exit') {
+      terminal.current.write('\x1b[33m$ \x1b[0m');
+    }
+  }, []);
+
+  const processCommand = useCallback((command: string) => {
+    if (!terminal.current) return;
+
+    const cmd = command.trim();
+    if (cmd === '') {
+      terminal.current.write('\x1b[33m$ \x1b[0m');
+      return;
+    }
+
+    // Simulate command execution
+    setTimeout(() => {
+      executeCommand(cmd);
+    }, 100);
+  }, [executeCommand]);
+
+  const handleNonSSHInput = useCallback((data: string) => {
+    if (!terminal.current) return;
+
+    for (let i = 0; i < data.length; i++) {
+      const char = data[i];
+      const charCode = char.charCodeAt(0);
+
+      switch (charCode) {
+        case 13: // Enter (CR)
+          terminal.current.write('\r\n');
+          processCommand(currentLine);
+          setCurrentLine('');
+          break;
+        case 127: // Backspace
+          if (currentLine.length > 0) {
+            setCurrentLine(currentLine.slice(0, -1));
+            terminal.current.write('\b \b');
+          }
+          break;
+        case 3: // Ctrl+C
+          terminal.current.write('^C\r\n\x1b[33m$ \x1b[0m');
+          setCurrentLine('');
+          break;
+        case 4: // Ctrl+D
+          terminal.current.write('logout\r\n');
+          break;
+        default:
+          if (charCode >= 32 && charCode <= 126) { // Printable characters
+            setCurrentLine(currentLine + char);
+            terminal.current.write(char);
+          }
+          break;
+      }
+    }
+  }, [currentLine, processCommand]);
+
+  const initializeSSHConnection = useCallback(async () => {
+    if (!terminal.current) return;
+
+    try {
+      terminal.current.writeln('\x1b[36mConnecting to SSH server via backend...\x1b[0m');
+      terminal.current.writeln('\x1b[90mHost: ' + session.hostname + '\x1b[0m');
+
+      // Connect to backend WebSocket for SSH session
+      const backendUrl = `ws://localhost:3001/api/ssh/${session.id}`;
+      websocket.current = new WebSocket(backendUrl);
+
+      websocket.current.onopen = () => {
+        // Send connection details to backend
+        websocket.current!.send(JSON.stringify({
+          type: 'connect',
+          connectionId: session.connectionId,
+          hostname: session.hostname,
+          port: connection?.port || 22,
+          username: connection?.username || '',
+          password: connection?.password || '',
+          privateKey: connection?.privateKey || '',
+          passphrase: connection?.passphrase || ''
+        }));
+      };
+
+      websocket.current.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'output') {
+          terminal.current?.write(message.data);
+        } else if (message.type === 'connected') {
+          setIsConnected(true);
+          isConnectedRef.current = true;
+          terminal.current?.writeln('\x1b[32mSSH connection established\x1b[0m');
+        } else if (message.type === 'error') {
+          setConnectionError(message.error);
+          terminal.current?.writeln(`\x1b[31mSSH Error: ${message.error}\x1b[0m`);
+        }
+      };
+
+      websocket.current.onclose = () => {
+        setIsConnected(false);
+        isConnectedRef.current = false;
+        terminal.current?.writeln('\x1b[31mSSH connection closed\x1b[0m');
+      };
+
+      websocket.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionError('WebSocket connection failed');
+        terminal.current?.writeln('\x1b[31mWebSocket connection failed\x1b[0m');
+      };
+    } catch (error) {
+      console.error('SSH connection failed:', error);
+      setConnectionError('Failed to initialize SSH connection');
+      terminal.current?.writeln('\x1b[31mFailed to initialize SSH connection\x1b[0m');
+    }
+  }, [session.id, session.connectionId, session.hostname, connection]);
+
   useEffect(() => {
     const terminalElement = terminalRef.current;
     if (!terminalElement) return;
@@ -36,7 +186,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         background: '#1f2937',
         foreground: '#f9fafb',
         cursor: '#60a5fa',
-        selection: '#374151',
+        selectionBackground: '#374151',
         black: '#1f2937',
         red: '#ef4444',
         green: '#10b981',
@@ -63,7 +213,6 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       tabStopWidth: 4,
       convertEol: false, // Let SSH handle line endings
       allowTransparency: false,
-      bellStyle: 'none',
       fastScrollModifier: 'alt',
       fastScrollSensitivity: 5,
       scrollSensitivity: 1,
@@ -151,174 +300,6 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     };
   }, [session.id, session.protocol, session.hostname, handleNonSSHInput, initializeSSHConnection, isConnected, onResize]);
 
-  const handleNonSSHInput = useCallback((data: string) => {
-    if (!terminal.current) return;
-
-    for (let i = 0; i < data.length; i++) {
-      const char = data[i];
-      const charCode = char.charCodeAt(0);
-
-      switch (charCode) {
-        case 13: // Enter (CR)
-          terminal.current.write('\r\n');
-          processCommand(currentLine);
-          setCurrentLine('');
-          break;
-        case 127: // Backspace
-          if (currentLine.length > 0) {
-            setCurrentLine(currentLine.slice(0, -1));
-            terminal.current.write('\b \b');
-          }
-          break;
-        case 3: // Ctrl+C
-          terminal.current.write('^C\r\n\x1b[33m$ \x1b[0m');
-          setCurrentLine('');
-          break;
-        case 4: // Ctrl+D
-          terminal.current.write('logout\r\n');
-          break;
-        default:
-          if (charCode >= 32 && charCode <= 126) { // Printable characters
-            setCurrentLine(currentLine + char);
-            terminal.current.write(char);
-          }
-          break;
-      }
-    }
-  }, [currentLine, processCommand]);
-
-  const processCommand = useCallback((command: string) => {
-    if (!terminal.current) return;
-
-    const cmd = command.trim();
-    if (cmd === '') {
-      terminal.current.write('\x1b[33m$ \x1b[0m');
-      return;
-    }
-
-    // Simulate command execution
-    setTimeout(() => {
-      executeCommand(cmd);
-    }, 50);
-  }, []);
-
-  const executeCommand = (command: string) => {
-    if (!terminal.current) return;
-
-    const parts = command.split(' ');
-    const cmd = parts[0];
-
-    switch (cmd) {
-      case 'ls':
-        terminal.current.writeln('Desktop  Documents  Downloads  Pictures  Videos');
-        break;
-      case 'pwd':
-        terminal.current.writeln('/home/user');
-        break;
-      case 'whoami':
-        terminal.current.writeln('user');
-        break;
-      case 'date':
-        terminal.current.writeln(new Date().toString());
-        break;
-      case 'clear':
-        terminal.current.clear();
-        break;
-      case 'help':
-        terminal.current.writeln('Available commands: ls, pwd, whoami, date, clear, help, exit');
-        break;
-      case 'exit':
-        terminal.current.writeln('logout');
-        return;
-      default:
-        terminal.current.writeln(`bash: ${cmd}: command not found`);
-        break;
-    }
-
-    terminal.current.write('\x1b[33m$ \x1b[0m');
-  };
-
-  const initializeSSHConnection = useCallback(async () => {
-    if (!terminal.current) return;
-
-    try {
-      terminal.current.writeln('\x1b[36mConnecting to SSH server via backend...\x1b[0m');
-      terminal.current.writeln('\x1b[90mHost: ' + session.hostname + '\x1b[0m');
-
-      // Connect to backend WebSocket for SSH session
-      const backendUrl = `ws://localhost:3001/api/ssh/${session.id}`;
-      websocket.current = new WebSocket(backendUrl);
-
-      websocket.current.onopen = () => {
-        // Send connection details to backend
-        websocket.current!.send(JSON.stringify({
-          type: 'connect',
-          connectionId: session.connectionId,
-          hostname: session.hostname,
-          port: connection?.port || 22,
-          username: connection?.username || 'user',
-          password: connection?.password,
-          privateKey: connection?.privateKey,
-          passphrase: connection?.passphrase
-        }));
-      };
-
-      websocket.current.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-
-        switch (message.type) {
-          case 'connected':
-            setIsConnected(true);
-            isConnectedRef.current = true;
-            setConnectionError('');
-            if (terminal.current) {
-              terminal.current.writeln('\r\n\x1b[32mSSH connection established!\x1b[0m');
-            }
-            break;
-          case 'data':
-            if (terminal.current) {
-              terminal.current.write(message.data);
-            }
-            break;
-          case 'error':
-            setConnectionError(message.error);
-            if (terminal.current) {
-              terminal.current.writeln('\r\n\x1b[31mConnection error: ' + message.error + '\x1b[0m');
-            }
-            break;
-          case 'disconnected':
-            setIsConnected(false);
-            isConnectedRef.current = false;
-            if (terminal.current) {
-              terminal.current.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
-            }
-            break;
-        }
-      };
-
-      websocket.current.onerror = () => {
-        setConnectionError('WebSocket connection failed');
-        if (terminal.current) {
-          terminal.current.writeln('\r\n\x1b[31mWebSocket connection failed\x1b[0m');
-        }
-      };
-
-      websocket.current.onclose = () => {
-        setIsConnected(false);
-        isConnectedRef.current = false;
-        if (terminal.current) {
-          terminal.current.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
-        }
-      };
-
-    } catch (error) {
-      setConnectionError(error instanceof Error ? error.message : 'Connection failed');
-      if (terminal.current) {
-        terminal.current.writeln('\r\n\x1b[31mFailed to connect: ' + error + '\x1b[0m');
-      }
-    }
-  }, [session.id, session.hostname, session.connectionId, connection]);
-
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
     setTimeout(() => {
@@ -340,8 +321,12 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const pasteFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (terminal.current && sshClient.current && isConnected) {
-        sshClient.current.sendData(text);
+      if (terminal.current && websocket.current && isConnected) {
+        // Send paste data through WebSocket for SSH connections
+        websocket.current.send(JSON.stringify({
+          type: 'data',
+          data: text
+        }));
       } else if (terminal.current) {
         // For non-SSH, handle paste character by character
         for (const char of text) {

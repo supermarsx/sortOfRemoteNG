@@ -152,7 +152,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
   const getAuthIcon = () => {
     if (connection?.authType === 'basic') {
-      return <User size={14} className="text-blue-400" title="Basic Authentication" />;
+      return <span title="Basic Authentication"><User size={14} className="text-blue-400" /></span>;
     }
     return null;
   };

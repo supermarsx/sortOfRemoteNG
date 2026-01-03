@@ -81,13 +81,22 @@ impl AutoLockService {
             lock_task: None,
         };
 
-        let state = Arc::new(Mutex::new(service));
-        Self::start_monitoring(state.clone());
-        state
+        Arc::new(Mutex::new(service))
     }
 
     /// Starts the activity monitoring task
-    fn start_monitoring(state: AutoLockServiceState) {
+    pub async fn start_monitoring(&mut self) {
+        if self.lock_task.is_some() {
+            return; // Already started
+        }
+
+        let state = Arc::new(Mutex::new(AutoLockService {
+            config: self.config.clone(),
+            state: self.state.clone(),
+            last_activity: self.last_activity,
+            lock_task: None,
+        }));
+
         let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
 
@@ -111,8 +120,7 @@ impl AutoLockService {
             }
         });
 
-        // Store the handle (though we can't access it from here)
-        // In a real implementation, you'd store it in the service
+        self.lock_task = Some(handle);
     }
 
     /// Updates the auto-lock configuration

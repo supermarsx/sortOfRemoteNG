@@ -47,136 +47,30 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
   const credentialsHandlerRef = useRef<EventListener | null>(null);
   const securityFailureHandlerRef = useRef<EventListener | null>(null);
 
-  useEffect(() => {
-    initializeVNCConnection();
-    return () => {
-      cleanup();
-    };
-  }, [session, initializeVNCConnection, cleanup]);
+  const handleConnect = () => {
+    setIsConnected(true);
+    setConnectionStatus('connected');
+    debugLog('VNC connection established');
+  };
 
-  const initializeVNCConnection = useCallback(async () => {
-    if (!canvasRef.current) return;
+  const handleDisconnect = () => {
+    setIsConnected(false);
+    setConnectionStatus('disconnected');
+    debugLog('VNC connection disconnected');
+  };
 
-    try {
-      setConnectionStatus('connecting');
-
-      // Initialize NoVNC RFB connection
-      const { default: RFB } = await import('novnc/core/rfb');
-
-      const url = `ws://${session.hostname}:${session.port || 5900}`;
-      debugLog(`Connecting to VNC server at ${url}`);
-      const rfbConnection = new RFB(canvasRef.current, url, {
-        credentials: {
-          password: connection?.password || '',
-        },
-      });
-
-      // Set up event handlers and store references for cleanup
-      connectHandlerRef.current = handleConnect.bind(null);
-      rfbConnection.addEventListener('connect', connectHandlerRef.current);
-      disconnectHandlerRef.current = handleDisconnect.bind(null);
-      rfbConnection.addEventListener('disconnect', disconnectHandlerRef.current);
-      credentialsHandlerRef.current = handleCredentialsRequired.bind(null);
-      rfbConnection.addEventListener('credentialsrequired', credentialsHandlerRef.current);
-      securityFailureHandlerRef.current = handleSecurityFailure.bind(null);
-      rfbConnection.addEventListener('securityfailure', securityFailureHandlerRef.current);
-
-      // Apply settings
-      rfbConnection.viewOnly = settings.viewOnly;
-      rfbConnection.scaleViewport = settings.scaleViewport;
-      rfbConnection.clipViewport = settings.clipViewport;
-      rfbConnection.dragViewport = settings.dragViewport;
-      rfbConnection.resizeSession = settings.resizeSession;
-      rfbConnection.showDotCursor = settings.showDotCursor;
-
-      setRfb(rfbConnection);
-    } catch (error) {
-      setConnectionStatus('error');
-      debugLog('VNC connection failed:', error);
-      console.error('VNC connection failed:', error);
-
-      // Fallback to simulated VNC for demo
-      simulateVNCConnection();
+  const handleCredentialsRequired = useCallback(() => {
+    debugLog('VNC credentials required');
+    // Handle password prompt
+    const password = prompt('VNC Password:');
+    if (password && rfb) {
+      rfb.sendCredentials({ password });
     }
-  }, [session, connection, settings, handleCredentialsRequired, simulateVNCConnection]);
+  }, [rfb]);
 
-  const simulateVNCConnection = useCallback(async () => {
-    if (!canvasRef.current) return;
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    
-    if (ctx) {
-      canvas.width = 1024;
-      canvas.height = 768;
-      
-      drawSimulatedDesktop(ctx, canvas.width, canvas.height);
-      
-      setIsConnected(true);
-      setConnectionStatus('connected');
-    }
-  }, [drawSimulatedDesktop]);
-
-  const drawSimulatedDesktop = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number) => {
-    // Draw desktop background
-    const gradient = ctx.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, '#2563eb');
-    gradient.addColorStop(1, '#1d4ed8');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-    
-    // Draw taskbar
-    ctx.fillStyle = '#1f2937';
-    ctx.fillRect(0, height - 40, width, 40);
-    
-    // Draw start menu
-    ctx.fillStyle = '#3b82f6';
-    ctx.fillRect(5, height - 35, 100, 30);
-    ctx.fillStyle = 'white';
-    ctx.font = '14px Arial';
-    ctx.fillText('VNC Desktop', 15, height - 15);
-    
-    // Draw system tray
-    ctx.fillStyle = '#374151';
-    ctx.fillRect(width - 120, height - 35, 115, 30);
-    
-    // Draw time
-    ctx.fillStyle = 'white';
-    ctx.font = '12px Arial';
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    ctx.fillText(time, width - 80, height - 15);
-    
-    // Draw desktop icons
-    drawDesktopIcon(ctx, 50, 50, 'Computer', '🖥️');
-    drawDesktopIcon(ctx, 50, 130, 'Files', '📁');
-    drawDesktopIcon(ctx, 50, 210, 'Terminal', '⚡');
-    
-    // Draw application window
-    drawWindow(ctx, 200, 100, 500, 400, 'VNC Remote Desktop');
-  }, [drawWindow]);
-
-  const drawDesktopIcon = (ctx: CanvasRenderingContext2D, x: number, y: number, label: string, emoji: string) => {
-    // Icon background
-    ctx.fillStyle = 'rgba(59, 130, 246, 0.8)';
-    ctx.fillRect(x, y, 48, 48);
-    
-    // Icon border
-    ctx.strokeStyle = '#1d4ed8';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, 48, 48);
-    
-    // Icon emoji
-    ctx.font = '24px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(emoji, x + 24, y + 32);
-    
-    // Label
-    ctx.fillStyle = 'white';
-    ctx.font = '11px Arial';
-    ctx.fillText(label, x + 24, y + 65);
-    ctx.textAlign = 'left';
+  const handleSecurityFailure = () => {
+    setConnectionStatus('error');
+    debugLog('VNC security failure');
   };
 
   const drawWindow = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, title: string) => {
@@ -238,31 +132,157 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
     ctx.fillText('Connected', x + 35, y + 195);
   }, [session.hostname]);
 
-  const handleConnect = () => {
-    setIsConnected(true);
-    setConnectionStatus('connected');
-    debugLog('VNC connection established');
+  const drawDesktopIcon = (ctx: CanvasRenderingContext2D, x: number, y: number, label: string, emoji: string) => {
+    // Icon background
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.8)';
+    ctx.fillRect(x, y, 48, 48);
+    
+    // Icon border
+    ctx.strokeStyle = '#1d4ed8';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, 48, 48);
+    
+    // Icon emoji
+    ctx.font = '24px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(emoji, x + 24, y + 32);
+    
+    // Label
+    ctx.fillStyle = 'white';
+    ctx.font = '11px Arial';
+    ctx.fillText(label, x + 24, y + 65);
+    ctx.textAlign = 'left';
   };
 
-  const handleDisconnect = () => {
+  const drawSimulatedDesktop = useCallback((ctx: CanvasRenderingContext2D, width: number, height: number) => {
+    // Draw desktop background
+    const gradient = ctx.createLinearGradient(0, 0, width, height);
+    gradient.addColorStop(0, '#2563eb');
+    gradient.addColorStop(1, '#1d4ed8');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+    
+    // Draw taskbar
+    ctx.fillStyle = '#1f2937';
+    ctx.fillRect(0, height - 40, width, 40);
+    
+    // Draw start menu
+    ctx.fillStyle = '#3b82f6';
+    ctx.fillRect(5, height - 35, 100, 30);
+    ctx.fillStyle = 'white';
+    ctx.font = '14px Arial';
+    ctx.fillText('VNC Desktop', 15, height - 15);
+    
+    // Draw system tray
+    ctx.fillStyle = '#374151';
+    ctx.fillRect(width - 120, height - 35, 115, 30);
+    
+    // Draw time
+    ctx.fillStyle = 'white';
+    ctx.font = '12px Arial';
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    ctx.fillText(time, width - 80, height - 15);
+    
+    // Draw desktop icons
+    drawDesktopIcon(ctx, 50, 50, 'Computer', '🖥️');
+    drawDesktopIcon(ctx, 50, 130, 'Files', '📁');
+    drawDesktopIcon(ctx, 50, 210, 'Terminal', '⚡');
+    
+    // Draw application window
+    drawWindow(ctx, 200, 100, 500, 400, 'VNC Remote Desktop');
+  }, [drawWindow]);
+
+  const simulateVNCConnection = useCallback(async () => {
+    if (!canvasRef.current) return;
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    
+    if (ctx) {
+      canvas.width = 1024;
+      canvas.height = 768;
+      
+      drawSimulatedDesktop(ctx, canvas.width, canvas.height);
+      
+      setIsConnected(true);
+      setConnectionStatus('connected');
+    }
+  }, [drawSimulatedDesktop]);
+
+  const initializeVNCConnection = useCallback(async () => {
+    if (!canvasRef.current) return;
+
+    try {
+      setConnectionStatus('connecting');
+
+      // Initialize NoVNC RFB connection
+      const { default: RFB } = await import('novnc/core/rfb' as any);
+
+      const url = `ws://${session.hostname}:${connection?.port || 5900}`;
+      debugLog(`Connecting to VNC server at ${url}`);
+      const rfbConnection = new RFB(canvasRef.current, url, {
+        credentials: {
+          password: connection?.password || '',
+        },
+      });
+
+      // Set up event handlers and store references for cleanup
+      connectHandlerRef.current = handleConnect.bind(null);
+      rfbConnection.addEventListener('connect', connectHandlerRef.current);
+      disconnectHandlerRef.current = handleDisconnect.bind(null);
+      rfbConnection.addEventListener('disconnect', disconnectHandlerRef.current);
+      credentialsHandlerRef.current = handleCredentialsRequired.bind(null);
+      rfbConnection.addEventListener('credentialsrequired', credentialsHandlerRef.current);
+      securityFailureHandlerRef.current = handleSecurityFailure.bind(null);
+      rfbConnection.addEventListener('securityfailure', securityFailureHandlerRef.current);
+
+      // Apply settings
+      rfbConnection.viewOnly = settings.viewOnly;
+      rfbConnection.scaleViewport = settings.scaleViewport;
+      rfbConnection.clipViewport = settings.clipViewport;
+      rfbConnection.dragViewport = settings.dragViewport;
+      rfbConnection.resizeSession = settings.resizeSession;
+      rfbConnection.showDotCursor = settings.showDotCursor;
+
+      setRfb(rfbConnection);
+    } catch (error) {
+      setConnectionStatus('error');
+      debugLog('VNC connection failed:', error);
+      console.error('VNC connection failed:', error);
+
+      // Fallback to simulated VNC for demo
+      simulateVNCConnection();
+    }
+  }, [session, connection, settings, handleCredentialsRequired, simulateVNCConnection]);
+
+  const cleanup = useCallback(() => {
+    if (rfb) {
+      if (connectHandlerRef.current) {
+        rfb.removeEventListener('connect', connectHandlerRef.current);
+      }
+      if (disconnectHandlerRef.current) {
+        rfb.removeEventListener('disconnect', disconnectHandlerRef.current);
+      }
+      if (credentialsHandlerRef.current) {
+        rfb.removeEventListener('credentialsrequired', credentialsHandlerRef.current);
+      }
+      if (securityFailureHandlerRef.current) {
+        rfb.removeEventListener('securityfailure', securityFailureHandlerRef.current);
+      }
+      rfb.disconnect();
+    }
     setIsConnected(false);
     setConnectionStatus('disconnected');
-    debugLog('VNC connection disconnected');
-  };
-
-  const handleCredentialsRequired = useCallback(() => {
-    debugLog('VNC credentials required');
-    // Handle password prompt
-    const password = prompt('VNC Password:');
-    if (password && rfb) {
-      rfb.sendCredentials({ password });
-    }
   }, [rfb]);
 
-  const handleSecurityFailure = () => {
-    setConnectionStatus('error');
-    debugLog('VNC security failure');
-  };
+  useEffect(() => {
+    initializeVNCConnection();
+    return () => {
+      cleanup();
+    };
+  }, [session, initializeVNCConnection, cleanup]);
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isConnected || settings.viewOnly) return;
@@ -335,26 +355,6 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
       rfb.sendCtrlAltDel();
     }
   };
-
-  const cleanup = useCallback(() => {
-    if (rfb) {
-      if (connectHandlerRef.current) {
-        rfb.removeEventListener('connect', connectHandlerRef.current);
-      }
-      if (disconnectHandlerRef.current) {
-        rfb.removeEventListener('disconnect', disconnectHandlerRef.current);
-      }
-      if (credentialsHandlerRef.current) {
-        rfb.removeEventListener('credentialsrequired', credentialsHandlerRef.current);
-      }
-      if (securityFailureHandlerRef.current) {
-        rfb.removeEventListener('securityfailure', securityFailureHandlerRef.current);
-      }
-      rfb.disconnect();
-    }
-    setIsConnected(false);
-    setConnectionStatus('disconnected');
-  }, [rfb]);
 
   const getStatusColor = () => {
     switch (connectionStatus) {
