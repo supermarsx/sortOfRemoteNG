@@ -68,6 +68,12 @@ pub mod commander;
 pub mod aws;
 pub mod vercel;
 pub mod cloudflare;
+pub mod cert_auth;
+pub mod two_factor;
+pub mod bearer_auth;
+pub mod auto_lock;
+pub mod gpo;
+pub mod login_detection;
 
 #[cfg(test)]
 mod tests {
@@ -99,6 +105,12 @@ use api::ApiService;
 use aws::AwsService;
 use vercel::VercelService;
 use cloudflare::CloudflareService;
+use cert_auth::CertificateAuthService;
+use two_factor::TwoFactorAuthService;
+use bearer_auth::BearerAuthService;
+use auto_lock::AutoLockService;
+use gpo::GpoService;
+use login_detection::LoginDetectionService;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -254,6 +266,30 @@ pub fn run() {
       // Initialize Cloudflare service
       let cloudflare_service = cloudflare::CloudflareService::new();
       app.manage(cloudflare_service.clone());
+
+      // Initialize Certificate Authentication service
+      let cert_auth_service = CertificateAuthService::new();
+      app.manage(cert_auth_service.clone());
+
+      // Initialize Two-Factor Authentication service
+      let two_factor_service = TwoFactorAuthService::new();
+      app.manage(two_factor_service.clone());
+
+      // Initialize Bearer Authentication service
+      let bearer_auth_service = BearerAuthService::new();
+      app.manage(bearer_auth_service.clone());
+
+      // Initialize Auto-Lock service
+      let auto_lock_service = AutoLockService::new();
+      app.manage(auto_lock_service.clone());
+
+      // Initialize GPO service
+      let gpo_service = GpoService::new();
+      app.manage(gpo_service.clone());
+
+      // Initialize Login Detection service
+      let login_detection_service = LoginDetectionService::new();
+      app.manage(login_detection_service.clone());
 
       // Initialize API service
       let api_service = ApiService::new(
