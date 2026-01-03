@@ -211,7 +211,7 @@ pub async fn get_rpc_session(
     session_id: String,
 ) -> Result<RpcSession, String> {
     let rpc = state.lock().await;
-    rpc.get_rpc_session(&session_id)
+    rpc.get_rpc_session(&session_id).await
         .ok_or_else(|| format!("RPC session {} not found", session_id))
 }
 

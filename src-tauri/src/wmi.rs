@@ -172,7 +172,7 @@ pub async fn get_wmi_session(
     session_id: String,
 ) -> Result<WmiSession, String> {
     let wmi = state.lock().await;
-    wmi.get_wmi_session(&session_id)
+    wmi.get_wmi_session(&session_id).await
         .ok_or_else(|| format!("WMI session {} not found", session_id))
 }
 

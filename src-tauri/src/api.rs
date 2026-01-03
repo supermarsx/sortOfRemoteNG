@@ -32,6 +32,11 @@ pub struct ApiService {
     pub wol_service: Arc<Mutex<WolService>>,
     pub qr_service: Arc<Mutex<QrService>>,
     pub rustdesk_service: Arc<Mutex<RustDeskService>>,
+    pub wmi_service: Arc<Mutex<crate::wmi::WmiService>>,
+    pub rpc_service: Arc<Mutex<crate::rpc::RpcService>>,
+    pub meshcentral_service: Arc<Mutex<crate::meshcentral::MeshCentralService>>,
+    pub agent_service: Arc<Mutex<crate::agent::AgentService>>,
+    pub commander_service: Arc<Mutex<crate::commander::CommanderService>>,
 }
 
 impl ApiService {
@@ -45,6 +50,11 @@ impl ApiService {
         wol_service: Arc<Mutex<WolService>>,
         qr_service: Arc<Mutex<QrService>>,
         rustdesk_service: Arc<Mutex<RustDeskService>>,
+        wmi_service: Arc<Mutex<crate::wmi::WmiService>>,
+        rpc_service: Arc<Mutex<crate::rpc::RpcService>>,
+        meshcentral_service: Arc<Mutex<crate::meshcentral::MeshCentralService>>,
+        agent_service: Arc<Mutex<crate::agent::AgentService>>,
+        commander_service: Arc<Mutex<crate::commander::CommanderService>>,
     ) -> Self {
         Self {
             auth_service,
@@ -56,6 +66,11 @@ impl ApiService {
             wol_service,
             qr_service,
             rustdesk_service,
+            wmi_service,
+            rpc_service,
+            meshcentral_service,
+            agent_service,
+            commander_service,
         }
     }
 
@@ -109,6 +124,56 @@ impl ApiService {
             .route("/rustdesk/input/:session_id", post(send_rustdesk_input_api))
             .route("/rustdesk/screenshot/:session_id", get(get_rustdesk_screenshot_api))
             .route("/rustdesk/status", get(rustdesk_status_api))
+            // WMI
+            .route("/wmi/connect", post(connect_wmi_api))
+            .route("/wmi/disconnect/:session_id", post(disconnect_wmi_api))
+            .route("/wmi/sessions", get(list_wmi_sessions_api))
+            .route("/wmi/session/:session_id", get(get_wmi_session_api))
+            .route("/wmi/query/:session_id", post(execute_wmi_query_api))
+            .route("/wmi/classes/:session_id", get(get_wmi_classes_api))
+            .route("/wmi/namespaces/:session_id", get(get_wmi_namespaces_api))
+            // RPC
+            .route("/rpc/connect", post(connect_rpc_api))
+            .route("/rpc/disconnect/:session_id", post(disconnect_rpc_api))
+            .route("/rpc/sessions", get(list_rpc_sessions_api))
+            .route("/rpc/session/:session_id", get(get_rpc_session_api))
+            .route("/rpc/call/:session_id", post(call_rpc_method_api))
+            .route("/rpc/methods/:session_id", get(discover_rpc_methods_api))
+            .route("/rpc/batch/:session_id", post(batch_rpc_calls_api))
+            // MeshCentral
+            .route("/meshcentral/connect", post(connect_meshcentral_api))
+            .route("/meshcentral/disconnect/:session_id", post(disconnect_meshcentral_api))
+            .route("/meshcentral/sessions", get(list_meshcentral_sessions_api))
+            .route("/meshcentral/session/:session_id", get(get_meshcentral_session_api))
+            .route("/meshcentral/devices/:session_id", get(get_meshcentral_devices_api))
+            .route("/meshcentral/groups/:session_id", get(get_meshcentral_groups_api))
+            .route("/meshcentral/command/:session_id", post(execute_meshcentral_command_api))
+            .route("/meshcentral/command/:session_id/:command_id", get(get_meshcentral_command_result_api))
+            .route("/meshcentral/server/:session_id", get(get_meshcentral_server_info_api))
+            // Agent
+            .route("/agent/connect", post(connect_agent_api))
+            .route("/agent/disconnect/:session_id", post(disconnect_agent_api))
+            .route("/agent/sessions", get(list_agent_sessions_api))
+            .route("/agent/session/:session_id", get(get_agent_session_api))
+            .route("/agent/metrics/:session_id", get(get_agent_metrics_api))
+            .route("/agent/logs/:session_id", get(get_agent_logs_api))
+            .route("/agent/command/:session_id", post(execute_agent_command_api))
+            .route("/agent/command/:session_id/:command_id", get(get_agent_command_result_api))
+            .route("/agent/status/:session_id", post(update_agent_status_api))
+            .route("/agent/info/:session_id", get(get_agent_info_api))
+            // Commander
+            .route("/commander/connect", post(connect_commander_api))
+            .route("/commander/disconnect/:session_id", post(disconnect_commander_api))
+            .route("/commander/sessions", get(list_commander_sessions_api))
+            .route("/commander/session/:session_id", get(get_commander_session_api))
+            .route("/commander/command/:session_id", post(execute_commander_command_api))
+            .route("/commander/command/:session_id/:command_id", get(get_commander_command_result_api))
+            .route("/commander/upload/:session_id", post(upload_commander_file_api))
+            .route("/commander/download/:session_id", post(download_commander_file_api))
+            .route("/commander/transfer/:session_id/:transfer_id", get(get_commander_file_transfer_api))
+            .route("/commander/list/:session_id", get(list_commander_directory_api))
+            .route("/commander/status/:session_id", post(update_commander_status_api))
+            .route("/commander/system/:session_id", get(get_commander_system_info_api))
             .with_state(self)
     }
 }
@@ -585,4 +650,691 @@ async fn rustdesk_status_api(
         "available": available,
         "version": version
     })))
+}
+
+// WMI API handlers
+async fn connect_wmi_api(
+    State(services): State<Arc<ApiService>>,
+    Json(config): Json<crate::wmi::WmiConnectionConfig>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut wmi = services.wmi_service.lock().await;
+    match wmi.connect_wmi(config).await {
+        Ok(session_id) => Ok(Json(serde_json::json!({
+            "session_id": session_id,
+            "status": "connected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to connect WMI: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn disconnect_wmi_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut wmi = services.wmi_service.lock().await;
+    match wmi.disconnect_wmi(&session_id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "disconnected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to disconnect WMI: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_wmi_sessions_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let wmi = services.wmi_service.lock().await;
+    Ok(Json(serde_json::json!({
+        "sessions": wmi.list_wmi_sessions().await
+    })))
+}
+
+async fn get_wmi_session_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let wmi = services.wmi_service.lock().await;
+    match wmi.get_wmi_session(&session_id).await {
+        Some(session) => Ok(Json(serde_json::json!(session))),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+#[derive(Deserialize)]
+struct WmiQueryRequest {
+    query: String,
+}
+
+async fn execute_wmi_query_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(req): Json<WmiQueryRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let wmi = services.wmi_service.lock().await;
+    match wmi.execute_wmi_query(&session_id, req.query).await {
+        Ok(result) => Ok(Json(serde_json::json!(result))),
+        Err(e) => {
+            eprintln!("Failed to execute WMI query: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_wmi_classes_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let wmi = services.wmi_service.lock().await;
+    let namespace = params.get("namespace");
+    match wmi.get_wmi_classes(&session_id, namespace.cloned()).await {
+        Ok(classes) => Ok(Json(serde_json::json!({
+            "classes": classes
+        }))),
+        Err(e) => {
+            eprintln!("Failed to get WMI classes: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_wmi_namespaces_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let wmi = services.wmi_service.lock().await;
+    match wmi.get_wmi_namespaces(&session_id).await {
+        Ok(namespaces) => Ok(Json(serde_json::json!({
+            "namespaces": namespaces
+        }))),
+        Err(e) => {
+            eprintln!("Failed to get WMI namespaces: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// RPC API handlers
+async fn connect_rpc_api(
+    State(services): State<Arc<ApiService>>,
+    Json(config): Json<crate::rpc::RpcConnectionConfig>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut rpc = services.rpc_service.lock().await;
+    match rpc.connect_rpc(config).await {
+        Ok(session_id) => Ok(Json(serde_json::json!({
+            "session_id": session_id,
+            "status": "connected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to connect RPC: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn disconnect_rpc_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut rpc = services.rpc_service.lock().await;
+    match rpc.disconnect_rpc(&session_id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "disconnected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to disconnect RPC: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_rpc_sessions_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rpc = services.rpc_service.lock().await;
+    Ok(Json(serde_json::json!({
+        "sessions": rpc.list_rpc_sessions().await
+    })))
+}
+
+async fn get_rpc_session_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rpc = services.rpc_service.lock().await;
+    match rpc.get_rpc_session(&session_id).await {
+        Some(session) => Ok(Json(serde_json::json!(session))),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+async fn call_rpc_method_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(request): Json<crate::rpc::RpcRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rpc = services.rpc_service.lock().await;
+    match rpc.call_rpc_method(&session_id, request).await {
+        Ok(response) => Ok(Json(serde_json::json!(response))),
+        Err(e) => {
+            eprintln!("Failed to call RPC method: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn discover_rpc_methods_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rpc = services.rpc_service.lock().await;
+    match rpc.discover_rpc_methods(&session_id).await {
+        Ok(methods) => Ok(Json(serde_json::json!({
+            "methods": methods
+        }))),
+        Err(e) => {
+            eprintln!("Failed to discover RPC methods: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn batch_rpc_calls_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(requests): Json<Vec<crate::rpc::RpcRequest>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let rpc = services.rpc_service.lock().await;
+    match rpc.batch_rpc_calls(&session_id, requests).await {
+        Ok(responses) => Ok(Json(serde_json::json!({
+            "responses": responses
+        }))),
+        Err(e) => {
+            eprintln!("Failed to batch RPC calls: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// MeshCentral API handlers
+async fn connect_meshcentral_api(
+    State(services): State<Arc<ApiService>>,
+    Json(config): Json<crate::meshcentral::MeshCentralConnectionConfig>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut meshcentral = services.meshcentral_service.lock().await;
+    match meshcentral.connect_meshcentral(config).await {
+        Ok(session_id) => Ok(Json(serde_json::json!({
+            "session_id": session_id,
+            "status": "connected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to connect MeshCentral: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn disconnect_meshcentral_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut meshcentral = services.meshcentral_service.lock().await;
+    match meshcentral.disconnect_meshcentral(&session_id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "disconnected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to disconnect MeshCentral: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_meshcentral_sessions_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let meshcentral = services.meshcentral_service.lock().await;
+    Ok(Json(serde_json::json!({
+        "sessions": meshcentral.list_meshcentral_sessions().await
+    })))
+}
+
+async fn get_meshcentral_session_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let meshcentral = services.meshcentral_service.lock().await;
+    match meshcentral.get_meshcentral_session(&session_id).await {
+        Some(session) => Ok(Json(serde_json::json!(session))),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+async fn get_meshcentral_devices_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let meshcentral = services.meshcentral_service.lock().await;
+    match meshcentral.get_meshcentral_devices(&session_id).await {
+        Ok(devices) => Ok(Json(serde_json::json!({
+            "devices": devices
+        }))),
+        Err(e) => {
+            eprintln!("Failed to get MeshCentral devices: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_meshcentral_groups_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let meshcentral = services.meshcentral_service.lock().await;
+    match meshcentral.get_meshcentral_groups(&session_id).await {
+        Ok(groups) => Ok(Json(serde_json::json!({
+            "groups": groups
+        }))),
+        Err(e) => {
+            eprintln!("Failed to get MeshCentral groups: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn execute_meshcentral_command_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(command): Json<crate::meshcentral::MeshCentralCommand>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let meshcentral = services.meshcentral_service.lock().await;
+    match meshcentral.execute_meshcentral_command(&session_id, command).await {
+        Ok(command_id) => Ok(Json(serde_json::json!({
+            "command_id": command_id
+        }))),
+        Err(e) => {
+            eprintln!("Failed to execute MeshCentral command: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_meshcentral_command_result_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, command_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let meshcentral = services.meshcentral_service.lock().await;
+    match meshcentral.get_meshcentral_command_result(&session_id, &command_id).await {
+        Ok(result) => Ok(Json(serde_json::json!(result))),
+        Err(e) => {
+            eprintln!("Failed to get MeshCentral command result: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_meshcentral_server_info_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let meshcentral = services.meshcentral_service.lock().await;
+    match meshcentral.get_meshcentral_server_info(&session_id).await {
+        Ok(info) => Ok(Json(serde_json::json!(info))),
+        Err(e) => {
+            eprintln!("Failed to get MeshCentral server info: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Agent API handlers
+async fn connect_agent_api(
+    State(services): State<Arc<ApiService>>,
+    Json(config): Json<crate::agent::AgentConnectionConfig>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut agent = services.agent_service.lock().await;
+    match agent.connect_agent(config).await {
+        Ok(session_id) => Ok(Json(serde_json::json!({
+            "session_id": session_id,
+            "status": "connected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to connect agent: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn disconnect_agent_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut agent = services.agent_service.lock().await;
+    match agent.disconnect_agent(&session_id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "disconnected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to disconnect agent: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_agent_sessions_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let agent = services.agent_service.lock().await;
+    Ok(Json(serde_json::json!({
+        "sessions": agent.list_agent_sessions().await
+    })))
+}
+
+async fn get_agent_session_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let agent = services.agent_service.lock().await;
+    match agent.get_agent_session(&session_id).await {
+        Some(session) => Ok(Json(serde_json::json!(session))),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+async fn get_agent_metrics_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let agent = services.agent_service.lock().await;
+    match agent.get_agent_metrics(&session_id).await {
+        Ok(metrics) => Ok(Json(serde_json::json!(metrics))),
+        Err(e) => {
+            eprintln!("Failed to get agent metrics: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_agent_logs_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let agent = services.agent_service.lock().await;
+    let limit = params.get("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100);
+    match agent.get_agent_logs(&session_id, Some(limit)).await {
+        Ok(logs) => Ok(Json(serde_json::json!({
+            "logs": logs
+        }))),
+        Err(e) => {
+            eprintln!("Failed to get agent logs: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn execute_agent_command_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(command): Json<crate::agent::AgentCommand>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let agent = services.agent_service.lock().await;
+    match agent.execute_agent_command(&session_id, command).await {
+        Ok(command_id) => Ok(Json(serde_json::json!({
+            "command_id": command_id
+        }))),
+        Err(e) => {
+            eprintln!("Failed to execute agent command: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_agent_command_result_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, command_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let agent = services.agent_service.lock().await;
+    match agent.get_agent_command_result(&session_id, &command_id).await {
+        Ok(result) => Ok(Json(serde_json::json!(result))),
+        Err(e) => {
+            eprintln!("Failed to get agent command result: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn update_agent_status_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(status): Json<crate::agent::AgentStatus>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut agent = services.agent_service.lock().await;
+    match agent.update_agent_status(&session_id, status).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "updated"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to update agent status: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_agent_info_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let agent = services.agent_service.lock().await;
+    match agent.get_agent_info(&session_id).await {
+        Ok(info) => Ok(Json(info)),
+        Err(e) => {
+            eprintln!("Failed to get agent info: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// Commander API handlers
+async fn connect_commander_api(
+    State(services): State<Arc<ApiService>>,
+    Json(config): Json<crate::commander::CommanderConnectionConfig>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut commander = services.commander_service.lock().await;
+    match commander.connect_commander(config).await {
+        Ok(session_id) => Ok(Json(serde_json::json!({
+            "session_id": session_id,
+            "status": "connected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to connect commander: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn disconnect_commander_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut commander = services.commander_service.lock().await;
+    match commander.disconnect_commander(&session_id).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "disconnected"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to disconnect commander: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_commander_sessions_api(
+    State(services): State<Arc<ApiService>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let commander = services.commander_service.lock().await;
+    Ok(Json(serde_json::json!({
+        "sessions": commander.list_commander_sessions().await
+    })))
+}
+
+async fn get_commander_session_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let commander = services.commander_service.lock().await;
+    match commander.get_commander_session(&session_id).await {
+        Some(session) => Ok(Json(serde_json::json!(session))),
+        None => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+async fn execute_commander_command_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(command): Json<crate::commander::CommanderCommand>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let commander = services.commander_service.lock().await;
+    match commander.execute_commander_command(&session_id, command).await {
+        Ok(command_id) => Ok(Json(serde_json::json!({
+            "command_id": command_id
+        }))),
+        Err(e) => {
+            eprintln!("Failed to execute commander command: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_commander_command_result_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, command_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let commander = services.commander_service.lock().await;
+    match commander.get_commander_command_result(&session_id, &command_id).await {
+        Ok(result) => Ok(Json(serde_json::json!(result))),
+        Err(e) => {
+            eprintln!("Failed to get commander command result: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn upload_commander_file_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(params): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let commander = services.commander_service.lock().await;
+    let local_path = params.get("local_path")
+        .and_then(|v| v.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let remote_path = params.get("remote_path")
+        .and_then(|v| v.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    match commander.upload_commander_file(&session_id, local_path.to_string(), remote_path.to_string()).await {
+        Ok(transfer_id) => Ok(Json(serde_json::json!({
+            "transfer_id": transfer_id
+        }))),
+        Err(e) => {
+            eprintln!("Failed to upload commander file: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn download_commander_file_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(params): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let commander = services.commander_service.lock().await;
+    let remote_path = params.get("remote_path")
+        .and_then(|v| v.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let local_path = params.get("local_path")
+        .and_then(|v| v.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    match commander.download_commander_file(&session_id, remote_path.to_string(), local_path.to_string()).await {
+        Ok(transfer_id) => Ok(Json(serde_json::json!({
+            "transfer_id": transfer_id
+        }))),
+        Err(e) => {
+            eprintln!("Failed to download commander file: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_commander_file_transfer_api(
+    State(services): State<Arc<ApiService>>,
+    Path((session_id, transfer_id)): Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let commander = services.commander_service.lock().await;
+    match commander.get_commander_file_transfer(&session_id, &transfer_id).await {
+        Ok(transfer) => Ok(Json(serde_json::json!(transfer))),
+        Err(e) => {
+            eprintln!("Failed to get commander file transfer: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn list_commander_directory_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let commander = services.commander_service.lock().await;
+    let path = params.get("path").unwrap_or(&".".to_string()).clone();
+    match commander.list_commander_directory(&session_id, path).await {
+        Ok(files) => Ok(Json(serde_json::json!({
+            "files": files
+        }))),
+        Err(e) => {
+            eprintln!("Failed to list commander directory: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn update_commander_status_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+    Json(status): Json<crate::commander::CommanderStatus>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut commander = services.commander_service.lock().await;
+    match commander.update_commander_status(&session_id, status).await {
+        Ok(_) => Ok(Json(serde_json::json!({
+            "status": "updated"
+        }))),
+        Err(e) => {
+            eprintln!("Failed to update commander status: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn get_commander_system_info_api(
+    State(services): State<Arc<ApiService>>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let commander = services.commander_service.lock().await;
+    match commander.get_commander_system_info(&session_id).await {
+        Ok(info) => Ok(Json(info)),
+        Err(e) => {
+            eprintln!("Failed to get commander system info: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }

@@ -60,6 +60,11 @@ pub mod chaining;
 pub mod qr;
 pub mod api;
 pub mod rustdesk;
+pub mod wmi;
+pub mod rpc;
+pub mod meshcentral;
+pub mod agent;
+pub mod commander;
 
 #[cfg(test)]
 mod tests {
@@ -212,6 +217,26 @@ pub fn run() {
       let rustdesk_service = RustDeskService::new();
       app.manage(rustdesk_service.clone());
 
+      // Initialize WMI service
+      let wmi_service = wmi::WmiService::new();
+      app.manage(wmi_service.clone());
+
+      // Initialize RPC service
+      let rpc_service = rpc::RpcService::new();
+      app.manage(rpc_service.clone());
+
+      // Initialize MeshCentral service
+      let meshcentral_service = meshcentral::MeshCentralService::new();
+      app.manage(meshcentral_service.clone());
+
+      // Initialize Agent service
+      let agent_service = agent::AgentService::new();
+      app.manage(agent_service.clone());
+
+      // Initialize Commander service
+      let commander_service = commander::CommanderService::new();
+      app.manage(commander_service.clone());
+
       // Initialize API service
       let api_service = ApiService::new(
         auth_service.clone(),
@@ -223,6 +248,11 @@ pub fn run() {
         wol_service.clone(),
         qr_service.clone(),
         rustdesk_service.clone(),
+        wmi_service.clone(),
+        rpc_service.clone(),
+        meshcentral_service.clone(),
+        agent_service.clone(),
+        commander_service.clone(),
       );
       app.manage(api_service.clone());
 
@@ -352,7 +382,52 @@ pub fn run() {
         chaining::delete_connection_chain,
         chaining::update_connection_chain_layers,
         qr::generate_qr_code,
-        qr::generate_qr_code_png
+        qr::generate_qr_code_png,
+        wmi::connect_wmi,
+        wmi::disconnect_wmi,
+        wmi::execute_wmi_query,
+        wmi::get_wmi_session,
+        wmi::list_wmi_sessions,
+        wmi::get_wmi_classes,
+        wmi::get_wmi_namespaces,
+        rpc::connect_rpc,
+        rpc::disconnect_rpc,
+        rpc::call_rpc_method,
+        rpc::get_rpc_session,
+        rpc::list_rpc_sessions,
+        rpc::discover_rpc_methods,
+        rpc::batch_rpc_calls,
+        meshcentral::connect_meshcentral,
+        meshcentral::disconnect_meshcentral,
+        meshcentral::get_meshcentral_devices,
+        meshcentral::get_meshcentral_groups,
+        meshcentral::execute_meshcentral_command,
+        meshcentral::get_meshcentral_command_result,
+        meshcentral::get_meshcentral_session,
+        meshcentral::list_meshcentral_sessions,
+        meshcentral::get_meshcentral_server_info,
+        agent::connect_agent,
+        agent::disconnect_agent,
+        agent::get_agent_metrics,
+        agent::get_agent_logs,
+        agent::execute_agent_command,
+        agent::get_agent_command_result,
+        agent::get_agent_session,
+        agent::list_agent_sessions,
+        agent::update_agent_status,
+        agent::get_agent_info,
+        commander::connect_commander,
+        commander::disconnect_commander,
+        commander::execute_commander_command,
+        commander::get_commander_command_result,
+        commander::upload_commander_file,
+        commander::download_commander_file,
+        commander::get_commander_file_transfer,
+        commander::list_commander_directory,
+        commander::get_commander_session,
+        commander::list_commander_sessions,
+        commander::update_commander_status,
+        commander::get_commander_system_info
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
