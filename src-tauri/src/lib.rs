@@ -86,6 +86,9 @@ use tailscale::TailscaleService;
 use chaining::ChainingService;
 use qr::QrService;
 use api::ApiService;
+
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tauri::Manager;
 use std::sync::Arc;
 
@@ -206,14 +209,14 @@ pub fn run() {
 
       // Initialize API service
       let api_service = ApiService::new(
-        auth_service.clone(),
-        ssh_service.clone(),
-        db_service.clone(),
-        ftp_service.clone(),
-        network_service.clone(),
-        security_service.clone(),
-        wol_service.clone(),
-        qr_service.clone(),
+        Arc::new(Mutex::new(auth_service.clone())),
+        Arc::new(Mutex::new(ssh_service.clone())),
+        Arc::new(Mutex::new(db_service.clone())),
+        Arc::new(Mutex::new(ftp_service.clone())),
+        Arc::new(Mutex::new(network_service.clone())),
+        Arc::new(Mutex::new(security_service.clone())),
+        Arc::new(Mutex::new(wol_service.clone())),
+        Arc::new(Mutex::new(qr_service.clone())),
       );
       app.manage(api_service.clone());
 
