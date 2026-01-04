@@ -120,7 +120,19 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
   const applyTerminalTheme = useCallback(() => {
     if (!termRef.current || isDisposed.current) return;
-    termRef.current.setOption("theme", getTerminalTheme());
+    const theme = getTerminalTheme();
+    const terminal = termRef.current as any;
+    try {
+      if (typeof terminal.setOption === "function") {
+        terminal.setOption("theme", theme);
+        return;
+      }
+      if (terminal.options) {
+        terminal.options.theme = theme;
+      }
+    } catch {
+      // Ignore theme updates during teardown.
+    }
   }, [getTerminalTheme]);
 
   const formatErrorDetails = useCallback((err: unknown) => {
@@ -200,9 +212,17 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     setStatusState("connecting");
     setError("");
     if (typeof (termRef.current as any).reset === "function") {
-      (termRef.current as any).reset();
+      try {
+        (termRef.current as any).reset();
+      } catch {
+        // Ignore reset failures during early render.
+      }
     } else {
-      termRef.current.clear();
+      try {
+        termRef.current.clear();
+      } catch {
+        // Ignore clear failures during early render.
+      }
     }
 
     writeLine("\x1b[36mConnecting to SSH server...\x1b[0m");
@@ -467,7 +487,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     } else {
       const currentSession = sessionRef.current;
       safeWriteln(
-        `\x1b[32mTerminal ready for ${currentSession.protocol.toUpperCase()} session\x1b[0m`,
+              {session.protocol.toUpperCase()} - {session.hostname}
       );
       safeWriteln(`\x1b[36mConnected to: ${currentSession.hostname}\x1b[0m`);
       setStatusState("connected");
@@ -559,35 +579,41 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     }
   };
 
-  const statusTone = useMemo(() => {
+  const statusToneClass = useMemo(() => {
     switch (status) {
       case "connected":
-        return "bg-emerald-400/20 text-emerald-200";
+        return "app-badge--success";
       case "connecting":
-        return "bg-amber-400/20 text-amber-200";
+        return "app-badge--warning";
       case "error":
-        return "bg-rose-400/20 text-rose-200";
+        return "app-badge--error";
       default:
-        return "bg-slate-700/50 text-slate-300";
+        return "app-badge--neutral";
     }
   }, [status]);
 
   return (
-    <div className={`flex flex-col bg-slate-950 ${isFullscreen ? "fixed inset-0 z-50" : "h-full"}`}>
-      <div className="border-b border-slate-800 bg-slate-900/90">
+    <div
+      className={`flex flex-col ${isFullscreen ? "fixed inset-0 z-50" : "h-full"}`}
+      style={{
+        backgroundColor: "var(--color-background)",
+        color: "var(--color-text)",
+      }}
+    >
+      <div className="app-bar border-b">
         <div className="flex items-start justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-slate-100">
+            <div className="truncate text-sm font-semibold">
               {session.name || "Terminal"}
             </div>
-            <div className="truncate text-xs uppercase tracking-[0.2em] text-slate-400">
-              {session.protocol.toUpperCase()} · {session.hostname}
+            <div className="truncate text-xs uppercase tracking-[0.2em] text-gray-400">
+              {session.protocol.toUpperCase()} - {session.hostname}
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={copySelection}
-              className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+              className="app-bar-button p-2"
               data-tooltip="Copy selection"
               aria-label="Copy selection"
             >
@@ -595,7 +621,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
             </button>
             <button
               onClick={pasteFromClipboard}
-              className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+              className="app-bar-button p-2"
               data-tooltip="Paste"
               aria-label="Paste"
             >
@@ -604,7 +630,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
             {isSsh && (
               <button
                 onClick={handleReconnect}
-                className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+                className="app-bar-button p-2"
                 data-tooltip="Reconnect"
                 aria-label="Reconnect"
               >
@@ -613,7 +639,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
             )}
             <button
               onClick={clearTerminal}
-              className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+              className="app-bar-button p-2"
               data-tooltip="Clear"
               aria-label="Clear"
             >
@@ -621,7 +647,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
             </button>
             <button
               onClick={toggleFullscreen}
-              className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+              className="app-bar-button p-2"
               data-tooltip={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
               aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             >
@@ -630,7 +656,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 px-4 pb-3 text-[10px] uppercase tracking-[0.2em]">
-          <span className={`rounded-full px-2 py-1 ${statusTone}`}>
+          <span className={`app-badge ${statusToneClass}`}>
             {status === "connected"
               ? "Connected"
               : status === "connecting"
@@ -640,12 +666,12 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                   : "Idle"}
           </span>
           {error && (
-            <span className="rounded-full bg-rose-500/10 px-2 py-1 text-rose-200 normal-case tracking-normal">
+            <span className="app-badge app-badge--error normal-case tracking-normal">
               {error}
             </span>
           )}
           {isSsh && (
-            <span className="rounded-full bg-sky-500/10 px-2 py-1 text-sky-200">
+            <span className="app-badge app-badge--info">
               SSH lib: Rust
             </span>
           )}
@@ -655,7 +681,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       <div className="flex-1 min-h-0 p-3">
         <div
           ref={containerRef}
-          className="h-full w-full rounded-lg border border-slate-800 bg-slate-950/80 relative overflow-hidden"
+          className="h-full w-full rounded-lg border relative overflow-hidden"
+          style={{
+            backgroundColor: "var(--color-background)",
+            borderColor: "var(--color-border)",
+          }}
         />
       </div>
     </div>

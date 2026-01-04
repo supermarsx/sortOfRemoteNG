@@ -1223,7 +1223,7 @@ const AppContent: React.FC = () => {
       {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
       {/* Top bar */}
       <div
-        className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4 select-none"
+        className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
         data-tauri-drag-region
       >
         <div className="flex items-center gap-3">
@@ -1243,7 +1243,7 @@ const AppContent: React.FC = () => {
         <div className="flex items-center space-x-1">
           <button
             onClick={handleToggleTransparency}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button p-2"
             title={appSettings.windowTransparencyEnabled ? "Disable transparency" : "Enable transparency"}
           >
             {appSettings.windowTransparencyEnabled ? (
@@ -1254,28 +1254,28 @@ const AppContent: React.FC = () => {
           </button>
           <button
             onClick={handleToggleAlwaysOnTop}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button p-2"
             title={isAlwaysOnTop ? "Unpin window" : "Pin window"}
           >
             <Pin size={14} className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""} />
           </button>
           <button
             onClick={handleMinimize}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button p-2"
             title="Minimize"
           >
             <Minus size={14} />
           </button>
           <button
             onClick={handleMaximize}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button p-2"
             title="Maximize"
           >
             <Square size={12} />
           </button>
           <button
             onClick={handleClose}
-            className="p-2 hover:bg-red-600 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button app-bar-button-danger p-2"
             title="Close"
           >
             <X size={14} />
