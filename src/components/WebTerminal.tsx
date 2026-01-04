@@ -29,6 +29,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const pollTimer = useRef<NodeJS.Timeout | null>(null);
   const isSshReady = useRef(false);
   const isConnecting = useRef(false);
+  const isDisposed = useRef(false);
 
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [error, setError] = useState("");
@@ -253,6 +254,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     const container = containerRef.current;
     if (!container) return;
 
+    isDisposed.current = false;
     const term = new Terminal({
       theme: {
         background: "#0b1120",
@@ -283,7 +285,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     fitRef.current = fit;
 
     const doFit = () => {
-      if (!fitRef.current || !termRef.current) return;
+      if (isDisposed.current || !fitRef.current || !termRef.current) return;
+      if (!container.isConnected || !termRef.current.element?.isConnected) return;
       try {
         fitRef.current.fit();
         onResize?.(termRef.current.cols, termRef.current.rows);
@@ -306,6 +309,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     }
 
     return () => {
+      isDisposed.current = true;
       clearTimeout(resizeTimer);
       window.removeEventListener("resize", doFit);
       dataDisposable.dispose();
