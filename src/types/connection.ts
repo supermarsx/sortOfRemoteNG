@@ -154,6 +154,10 @@ export interface ConnectionSession {
     isDetached: boolean;
     windowId?: string;
   };
+
+  // Backend session handles
+  backendSessionId?: string;
+  shellId?: string;
   
   // Zoom level
   zoomLevel?: number;
