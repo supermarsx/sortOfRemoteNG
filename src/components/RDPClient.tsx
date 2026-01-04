@@ -17,53 +17,63 @@ import {
   Clipboard
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { useConnections } from '../contexts/useConnections';
 
 interface RDPClientProps {
   session: ConnectionSession;
 }
 
-export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
+const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
+  const { state } = useConnections();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState({
-    colorDepth: '32',
     resolution: '1024x768',
+    colorDepth: 32,
     audioEnabled: true,
     clipboardEnabled: true,
     compressionEnabled: true,
     encryptionEnabled: true
   });
 
+  // Get connection details
+  const connection = state.connections.find(c => c.id === session.connectionId);
+
   const initializeRDPConnection = useCallback(async () => {
+    if (!connection) return;
+
     try {
       setConnectionStatus('connecting');
-      
+
       // Get connection details
-      const connection = {
+      const connectionDetails = {
         host: session.hostname,
-        port: 3389, // Default RDP port
-        username: session.username || '',
-        password: session.password || ''
+        port: connection.port || 3389, // Use connection port or default RDP port
+        username: connection.username || '',
+        password: connection.password || ''
       };
 
-      debugLog(`Attempting RDP connection to ${connection.host}:${connection.port}`);
+      debugLog(`Attempting RDP connection to ${connectionDetails.host}:${connectionDetails.port}`);
 
       // Try to connect using Tauri RDP service
       try {
         const sessionId = await invoke('connect_rdp', {
-          host: connection.host,
-          port: connection.port,
-          username: connection.username,
-          password: connection.password
+          host: connectionDetails.host,
+          port: connectionDetails.port,
+          username: connectionDetails.username,
+          password: connectionDetails.password
         }) as string;
 
         debugLog(`RDP session established: ${sessionId}`);
         
         // Initialize canvas for RDP display
         const canvas = canvasRef.current;
+        if (!canvas) {
+          throw new Error('Canvas not available');
+        }
         const ctx = canvas.getContext('2d');
         
         if (ctx) {
@@ -91,6 +101,9 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         await new Promise(resolve => setTimeout(resolve, 2000));
         
         const canvas = canvasRef.current;
+        if (!canvas) {
+          throw new Error('Canvas not available');
+        }
         const ctx = canvas.getContext('2d');
         
         if (ctx) {
@@ -117,7 +130,7 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setConnectionStatus('error');
       console.error('RDP initialization failed:', error);
     }
-  }, [session, settings.resolution]);
+  }, [session, connection, settings.resolution]);
 
   const cleanup = useCallback(() => {
     setIsConnected(false);
@@ -151,6 +164,7 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     debugLog(`RDP Click at: ${canvasX}, ${canvasY}`);
     
     // Simulate click response
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (ctx) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
@@ -259,7 +273,7 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
               <label className="block text-gray-300 mb-1">Color Depth</label>
               <select
                 value={settings.colorDepth}
-                onChange={(e) => setSettings({...settings, colorDepth: e.target.value})}
+                onChange={(e) => setSettings({...settings, colorDepth: parseInt(e.target.value)})}
                 className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
               >
                 <option value="16">16-bit</option>
@@ -349,3 +363,5 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     </div>
   );
 };
+
+export default RDPClient;

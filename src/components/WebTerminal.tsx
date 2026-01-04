@@ -19,15 +19,86 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const fitAddon = useRef<FitAddon | null>(null);
   const sshSessionId = useRef<string | null>(null);
   const isConnectedRef = useRef<boolean>(false);
+  const websocket = useRef<WebSocket | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
-  const [commandBuffer, setCommandBuffer] = useState('');
-  const [isConnecting, setIsConnecting] = useState(false);
+  const [sshOutputInterval, setSshOutputInterval] = useState<NodeJS.Timeout | null>(null);
   const [currentLine, setCurrentLine] = useState('');
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [commandBuffer, setCommandBuffer] = useState('');
+
+  // Function to poll for SSH output
+  const pollSSHOutput = useCallback(async () => {
+    if (!sshSessionId.current || !isConnectedRef.current || !terminal.current) return;
+
+    try {
+      const output = await invoke('receive_ssh_output', {
+        sessionId: sshSessionId.current
+      }) as string;
+
+      if (output && output.length > 0) {
+        terminal.current.write(output);
+      }
+    } catch (error) {
+      // Ignore errors when polling - the session might not be ready yet
+    }
+  }, []);
+
+  // Start polling for SSH output when connected
+  useEffect(() => {
+    if (isConnected && session.protocol === 'ssh' && !sshOutputInterval) {
+      const interval = setInterval(pollSSHOutput, 100); // Poll every 100ms
+      setSshOutputInterval(interval);
+
+      return () => {
+        clearInterval(interval);
+        setSshOutputInterval(null);
+      };
+    } else if (!isConnected && sshOutputInterval) {
+      clearInterval(sshOutputInterval);
+      setSshOutputInterval(null);
+    }
+  }, [isConnected, session.protocol, pollSSHOutput, sshOutputInterval]);
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
+
+  const handleNonSSHInput = useCallback((data: string) => {
+    if (!terminal.current) return;
+
+    for (let i = 0; i < data.length; i++) {
+      const char = data[i];
+      const charCode = char.charCodeAt(0);
+
+      switch (charCode) {
+        case 13: // Enter (CR)
+          terminal.current.write('\r\n');
+          processCommand(currentLine);
+          setCurrentLine('');
+          break;
+        case 127: // Backspace
+          if (currentLine.length > 0) {
+            setCurrentLine(currentLine.slice(0, -1));
+            terminal.current.write('\b \b');
+          }
+          break;
+        case 3: // Ctrl+C
+          terminal.current.write('^C\r\n\x1b[33m$ \x1b[0m');
+          setCurrentLine('');
+          break;
+        case 4: // Ctrl+D
+          terminal.current.write('logout\r\n');
+          break;
+        default:
+          if (charCode >= 32 && charCode <= 126) { // Printable characters
+            setCurrentLine(currentLine + char);
+            terminal.current.write(char);
+          }
+          break;
+      }
+    }
+  }, [currentLine]);
 
   const executeCommand = useCallback((command: string) => {
     if (!terminal.current) return;
@@ -86,42 +157,6 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     }, 100);
   }, [executeCommand]);
 
-  const handleNonSSHInput = useCallback((data: string) => {
-    if (!terminal.current) return;
-
-    for (let i = 0; i < data.length; i++) {
-      const char = data[i];
-      const charCode = char.charCodeAt(0);
-
-      switch (charCode) {
-        case 13: // Enter (CR)
-          terminal.current.write('\r\n');
-          processCommand(currentLine);
-          setCurrentLine('');
-          break;
-        case 127: // Backspace
-          if (currentLine.length > 0) {
-            setCurrentLine(currentLine.slice(0, -1));
-            terminal.current.write('\b \b');
-          }
-          break;
-        case 3: // Ctrl+C
-          terminal.current.write('^C\r\n\x1b[33m$ \x1b[0m');
-          setCurrentLine('');
-          break;
-        case 4: // Ctrl+D
-          terminal.current.write('logout\r\n');
-          break;
-        default:
-          if (charCode >= 32 && charCode <= 126) { // Printable characters
-            setCurrentLine(currentLine + char);
-            terminal.current.write(char);
-          }
-          break;
-      }
-    }
-  }, [currentLine, processCommand]);
-
   const initializeSSHConnection = useCallback(async () => {
     if (!terminal.current || !connection) return;
 
@@ -133,14 +168,21 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       terminal.current.writeln('\x1b[90mPort: ' + (connection.port || 22) + '\x1b[0m');
       terminal.current.writeln('\x1b[90mUser: ' + (connection.username || 'unknown') + '\x1b[0m');
 
-      // Prepare SSH connection config
-      const sshConfig = {
+      // Determine authentication method based on authType
+      let authMethod = 'password'; // default
+      if (connection.authType) {
+        authMethod = connection.authType;
+      } else if (connection.privateKey) {
+        authMethod = 'key';
+      }
+
+      terminal.current.writeln('\x1b[90mAuth: ' + authMethod + '\x1b[0m');
+
+      // Prepare SSH connection config based on authentication method
+      const sshConfig: any = {
         host: session.hostname,
         port: connection.port || 22,
         username: connection.username || '',
-        password: connection.password || null,
-        private_key_path: connection.privateKey || null,
-        private_key_passphrase: connection.passphrase || null,
         jump_hosts: [],
         proxy_config: null,
         openvpn_config: null,
@@ -149,6 +191,40 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         strict_host_key_checking: false,
         known_hosts_path: null,
       };
+
+      // Set authentication parameters based on method
+      switch (authMethod) {
+        case 'password':
+          if (!connection.password) {
+            throw new Error('Password authentication selected but no password provided');
+          }
+          sshConfig.password = connection.password;
+          sshConfig.private_key_path = null;
+          sshConfig.private_key_passphrase = null;
+          break;
+
+        case 'key':
+          if (!connection.privateKey) {
+            throw new Error('Key authentication selected but no private key provided');
+          }
+          sshConfig.password = null;
+          sshConfig.private_key_path = connection.privateKey;
+          sshConfig.private_key_passphrase = connection.passphrase || null;
+          break;
+
+        case 'totp':
+          if (!connection.password || !connection.totpSecret) {
+            throw new Error('TOTP authentication requires both password and TOTP secret');
+          }
+          sshConfig.password = connection.password;
+          sshConfig.totp_secret = connection.totpSecret;
+          sshConfig.private_key_path = null;
+          sshConfig.private_key_passphrase = null;
+          break;
+
+        default:
+          throw new Error(`Unsupported authentication method: ${authMethod}`);
+      }
 
       // Connect to SSH server
       const sessionId = await invoke('connect_ssh', { config: sshConfig }) as string;
@@ -171,14 +247,22 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
       // Handle different types of authentication errors
       let errorMessage = 'SSH connection failed';
-      if (error.includes && error.includes('Authentication failed')) {
+      const errorString = error?.toString() || error?.message || '';
+
+      if (errorString.includes('All authentication methods failed')) {
+        errorMessage = 'Authentication failed - please check your credentials and authentication method';
+      } else if (errorString.includes('Authentication failed')) {
         errorMessage = 'Authentication failed - please check your credentials';
-      } else if (error.includes && error.includes('Connection refused')) {
+      } else if (errorString.includes('Connection refused')) {
         errorMessage = 'Connection refused - please check the host and port';
-      } else if (error.includes && error.includes('timeout')) {
+      } else if (errorString.includes('timeout')) {
         errorMessage = 'Connection timeout - please check network connectivity';
-      } else if (error.includes && error.includes('Host key verification failed')) {
+      } else if (errorString.includes('Host key verification failed')) {
         errorMessage = 'Host key verification failed - server may have changed';
+      } else if (errorString.includes('No such file or directory') && errorString.includes('private key')) {
+        errorMessage = 'Private key file not found - please check the key path';
+      } else if (errorString.includes('Permission denied')) {
+        errorMessage = 'Permission denied - please check your credentials';
       }
 
       setConnectionError(errorMessage);
@@ -269,45 +353,20 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     // Handle terminal input
     const dataDisposable = terminal.current.onData(async (data) => {
       if (session.protocol === 'ssh') {
+        // For SSH connections, send all input directly to the SSH session
         if (sshSessionId.current && isConnectedRef.current && !isConnecting) {
-          // Handle special keys
-          if (data === '\r' || data === '\n') {
-            // Enter pressed - execute command
-            try {
-              terminal.current?.writeln(''); // New line
-              if (commandBuffer.trim()) {
-                const output = await invoke('execute_command', {
-                  sessionId: sshSessionId.current,
-                  command: commandBuffer.trim(),
-                  timeout: 30000
-                }) as string;
-                terminal.current?.write(output);
-              }
-              terminal.current?.write('\x1b[33m$ \x1b[0m');
-              setCommandBuffer('');
-            } catch (error) {
-              console.error('Failed to execute SSH command:', error);
-              terminal.current?.writeln('\x1b[31mCommand execution failed\x1b[0m');
-              terminal.current?.write('\x1b[33m$ \x1b[0m');
-              setCommandBuffer('');
-            }
-          } else if (data === '\x7f' || data === '\b') {
-            // Backspace
-            if (commandBuffer.length > 0) {
-              const newBuffer = commandBuffer.slice(0, -1);
-              setCommandBuffer(newBuffer);
-              terminal.current?.write('\b \b');
-            }
-          } else if (data >= ' ' && data <= '~') {
-            // Printable character
-            const newBuffer = commandBuffer + data;
-            setCommandBuffer(newBuffer);
-            terminal.current?.write(data);
+          try {
+            await invoke('send_ssh_input', {
+              sessionId: sshSessionId.current,
+              data: data
+            });
+          } catch (error) {
+            console.error('Failed to send SSH input:', error);
           }
-          // Ignore other control characters for now
         }
-        // ignore input while connecting
+        // Ignore input while connecting
       } else {
+        // For non-SSH protocols, handle input locally
         handleNonSSHInput(data);
       }
     });
@@ -331,6 +390,12 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     return () => {
       window.removeEventListener('resize', handleResize);
       dataDisposable.dispose();
+
+      // Clear SSH output polling
+      if (sshOutputInterval) {
+        clearInterval(sshOutputInterval);
+        setSshOutputInterval(null);
+      }
 
       // Disconnect SSH session if connected
       if (sshSessionId.current && isConnectedRef.current) {

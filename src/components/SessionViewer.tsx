@@ -3,7 +3,7 @@ import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield } from 'l
 import { ConnectionSession } from '../types/connection';
 import { WebTerminal } from './WebTerminal';
 import { WebBrowser } from './WebBrowser';
-import { RDPClient } from './RDPClient';
+import RDPClient from './RDPClient';
 
 interface SessionViewerProps {
   session: ConnectionSession;

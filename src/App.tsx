@@ -1,6 +1,15 @@
 import React, { useState } from "react";
 import { Monitor, Zap, Menu, Globe, Minus, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Connection } from "./types/connection";
+import { SettingsManager } from "./utils/settingsManager";
+import { StatusChecker } from "./utils/statusChecker";
+import { CollectionManager } from "./utils/collectionManager";
+import { CollectionNotFoundError, InvalidPasswordError } from "./utils/errors";
+import { SecureStorage } from "./utils/storage";
+import { useSessionManager } from "./hooks/useSessionManager";
+import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { Sidebar } from "./components/Sidebar";
@@ -11,15 +20,7 @@ import { QuickConnect } from "./components/QuickConnect";
 import { PasswordDialog } from "./components/PasswordDialog";
 import { CollectionSelector } from "./components/CollectionSelector";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { Connection } from "./types/connection";
-import { SecureStorage } from "./utils/storage";
-import { SettingsManager } from "./utils/settingsManager";
-import { StatusChecker } from "./utils/statusChecker";
-import { CollectionManager } from "./utils/collectionManager";
-import { CollectionNotFoundError, InvalidPasswordError } from "./utils/errors";
-import { useSessionManager } from "./hooks/useSessionManager";
-import { useAppLifecycle } from "./hooks/useAppLifecycle";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -38,7 +39,17 @@ const AppContent: React.FC = () => {
   const [passwordDialogMode, setPasswordDialogMode] = useState<
     "setup" | "unlock"
   >("setup"); // current mode for password dialog
-  const [passwordError, setPasswordError] = useState<string>(""); // error message for password dialog
+  const [passwordError, setPasswordError] = useState(""); // password dialog error message
+  const [dialogState, setDialogState] = useState<{
+    isOpen: boolean;
+    message: string;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    message: "",
+    onConfirm: () => {},
+  }); // confirm dialog state
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
@@ -84,11 +95,11 @@ const AppContent: React.FC = () => {
     } catch (error) {
       console.error("Failed to select collection:", error);
       if (error instanceof CollectionNotFoundError) {
-        alert("Collection not found");
+        showAlert("Collection not found");
       } else if (error instanceof InvalidPasswordError) {
-        alert("Invalid or missing password");
+        showAlert("Invalid or missing password");
       } else {
-        alert("Failed to access collection. Please check your password.");
+        showAlert("Failed to access collection. Please check your password.");
       }
     }
   };
@@ -111,7 +122,7 @@ const AppContent: React.FC = () => {
         ? t("dialogs.confirmDelete")
         : null;
 
-    if (!confirmMessage || confirm(confirmMessage)) {
+    if (!confirmMessage) {
       dispatch({ type: "DELETE_CONNECTION", payload: connection.id });
       statusChecker.stopChecking(connection.id);
       settingsManager.logAction(
@@ -120,6 +131,17 @@ const AppContent: React.FC = () => {
         connection.id,
         `Connection "${connection.name}" deleted`,
       );
+    } else {
+      showConfirm(confirmMessage, () => {
+        dispatch({ type: "DELETE_CONNECTION", payload: connection.id });
+        statusChecker.stopChecking(connection.id);
+        settingsManager.logAction(
+          "info",
+          "Connection deleted",
+          connection.id,
+          `Connection "${connection.name}" deleted`,
+        );
+      });
     }
   };
 
@@ -183,6 +205,27 @@ const AppContent: React.FC = () => {
     setShowPasswordDialog(true);
   };
 
+  const showConfirm = (message: string, onConfirm: () => void, onCancel?: () => void) => {
+    setDialogState({
+      isOpen: true,
+      message,
+      onConfirm,
+      onCancel,
+    });
+  };
+
+  const showAlert = (message: string) => {
+    setDialogState({
+      isOpen: true,
+      message,
+      onConfirm: () => setDialogState(prev => ({ ...prev, isOpen: false })),
+    });
+  };
+
+  const closeConfirmDialog = () => {
+    setDialogState(prev => ({ ...prev, isOpen: false }));
+  };
+
   const handleMinimize = async () => {
     const window = getCurrentWindow();
     await window.minimize();
@@ -226,18 +269,18 @@ const AppContent: React.FC = () => {
             <span>{t("connections.quickConnect")}</span>
           </button>
 
-          <div className="flex items-center space-x-1 text-xs text-gray-400">
-            <Globe size={12} />
+          <div className="flex items-center space-x-1 text-xs">
+            <Globe size={12} className="text-gray-400" />
             <select
               value={i18n.language}
               onChange={(e) => i18n.changeLanguage(e.target.value)}
-              className="bg-transparent border-none text-gray-400 text-xs focus:outline-none"
+              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-300 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:bg-gray-600 transition-colors"
             >
-              <option value="en">English</option>
-              <option value="es">Español (España)</option>
-              <option value="fr">Français (France)</option>
-              <option value="de">Deutsch (Deutschland)</option>
-              <option value="pt-PT">Português (Portugal)</option>
+              <option value="en" className="bg-gray-700 text-white">English</option>
+              <option value="es" className="bg-gray-700 text-white">Español (España)</option>
+              <option value="fr" className="bg-gray-700 text-white">Français (France)</option>
+              <option value="de" className="bg-gray-700 text-white">Deutsch (Deutschland)</option>
+              <option value="pt-PT" className="bg-gray-700 text-white">Português (Portugal)</option>
             </select>
           </div>
 
@@ -353,7 +396,19 @@ const AppContent: React.FC = () => {
         onCancel={handlePasswordCancel}
         error={passwordError}
       />
-      {confirmDialog}
+
+      <ConfirmDialog
+        isOpen={dialogState.isOpen}
+        message={dialogState.message}
+        onConfirm={() => {
+          dialogState.onConfirm();
+          closeConfirmDialog();
+        }}
+        onCancel={dialogState.onCancel ? () => {
+          dialogState.onCancel!();
+          closeConfirmDialog();
+        } : closeConfirmDialog}
+      />
     </div>
   );
 };
