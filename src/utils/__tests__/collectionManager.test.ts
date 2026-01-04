@@ -84,7 +84,7 @@ describe("CollectionManager", () => {
 
   it("throws CorruptedDataError when decrypted data is invalid", async () => {
     const password = "secret";
-    const encrypted = CryptoJS.AES.encrypt("not-json", password).toString();
+    const encrypted = CryptoJS.AES.encrypt("{bad-json", password).toString();
     await IndexedDbService.setItem("mremote-collection-corrupt", encrypted);
     await expect(
       manager.loadCollectionData("corrupt", password),

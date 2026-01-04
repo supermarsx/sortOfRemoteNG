@@ -225,7 +225,18 @@ export class CollectionManager {
         if (!decrypted) {
           throw new InvalidPasswordError();
         }
-        return JSON.parse(decrypted);
+        try {
+          return JSON.parse(decrypted);
+        } catch (error) {
+          if (error instanceof SyntaxError) {
+            const trimmed = decrypted.trim();
+            if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+              throw new CorruptedDataError("Corrupted collection data");
+            }
+            throw new InvalidPasswordError();
+          }
+          throw error;
+        }
       } else {
         return stored as StorageData;
       }
