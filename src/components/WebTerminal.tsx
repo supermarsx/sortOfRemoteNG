@@ -63,9 +63,24 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     isSshReady.current = next === "connected";
   }, []);
 
-  const writeLine = useCallback((text: string) => {
-    termRef.current?.writeln(text);
+  const safeWrite = useCallback((text: string) => {
+    if (isDisposed.current || !termRef.current) return;
+    if (!termRef.current.element?.isConnected) return;
+    termRef.current.write(text);
   }, []);
+
+  const safeWriteln = useCallback((text: string) => {
+    if (isDisposed.current || !termRef.current) return;
+    if (!termRef.current.element?.isConnected) return;
+    termRef.current.writeln(text);
+  }, []);
+
+  const writeLine = useCallback(
+    (text: string) => {
+      safeWriteln(text);
+    },
+    [safeWriteln],
+  );
 
   const formatErrorDetails = useCallback((err: unknown) => {
     if (err instanceof Error) {
@@ -249,7 +264,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
   const handleInput = useCallback(
     async (data: string) => {
-      if (!termRef.current) return;
+      if (!termRef.current || isDisposed.current) return;
 
       if (isSsh) {
         if (!sshSessionId.current || !isSshReady.current || isConnecting.current) return;
@@ -262,9 +277,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       }
 
       // Local echo for non-SSH sessions
-      termRef.current.write(data);
+      safeWrite(data);
     },
-    [isSsh],
+    [isSsh, safeWrite],
   );
 
   useEffect(() => {
@@ -296,7 +311,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
     term.open(container);
-    term.focus();
+    if (container.isConnected) {
+      term.focus();
+    }
 
     termRef.current = term;
     fitRef.current = fit;
@@ -331,7 +348,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       try {
         const unlistenOutput = await listen<SshOutputEvent>("ssh-output", (event) => {
           if (event.payload.session_id !== sshSessionId.current) return;
-          termRef.current?.write(event.payload.data);
+          safeWrite(event.payload.data);
         });
         if (!cancelled) {
           outputUnlistenRef.current = unlistenOutput;
@@ -341,7 +358,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
         const unlistenError = await listen<SshErrorEvent>("ssh-error", (event) => {
           if (event.payload.session_id !== sshSessionId.current) return;
-          termRef.current?.writeln(`\r\n\x1b[31mSSH error: ${event.payload.message}\x1b[0m`);
+          safeWriteln(`\r\n\x1b[31mSSH error: ${event.payload.message}\x1b[0m`);
         });
         if (!cancelled) {
           errorUnlistenRef.current = unlistenError;
@@ -370,10 +387,10 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       initSsh();
     } else {
       const currentSession = sessionRef.current;
-      term.writeln(
+      safeWriteln(
         `\x1b[32mTerminal ready for ${currentSession.protocol.toUpperCase()} session\x1b[0m`,
       );
-      term.writeln(`\x1b[36mConnected to: ${currentSession.hostname}\x1b[0m`);
+      safeWriteln(`\x1b[36mConnected to: ${currentSession.hostname}\x1b[0m`);
       setStatusState("connected");
     }
 
@@ -399,6 +416,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     isSsh,
     onResize,
     session.id,
+    safeWriteln,
     setStatusState,
   ]);
 

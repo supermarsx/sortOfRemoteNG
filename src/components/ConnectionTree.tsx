@@ -469,6 +469,9 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
 
   const filteredConnections = useMemo(() => {
     return state.connections.filter((conn) => {
+      if (state.filter.showFavorites && !conn.favorite) {
+        return false;
+      }
       if (state.filter.searchTerm) {
         const searchLower = state.filter.searchTerm.toLowerCase();
         return (

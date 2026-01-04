@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
 import { useConnections } from "../../src/contexts/useConnections";
 import { Connection, ConnectionSession } from "../../src/types/connection";
 import { SessionViewer } from "../../src/components/SessionViewer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { Minus, Monitor, Pin, Square, X } from "lucide-react";
 
 const reviveSession = (session: ConnectionSession): ConnectionSession => ({
@@ -22,7 +24,9 @@ const reviveConnection = (connection: Connection): Connection => ({
   lastConnected: connection.lastConnected ? new Date(connection.lastConnected) : undefined,
 });
 
-const DetachedSessionContent: React.FC = () => {
+const DetachedSessionContent: React.FC<{
+  onRegisterDisconnect: (handler: () => Promise<void>) => void;
+}> = ({ onRegisterDisconnect }) => {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
   const { state, dispatch } = useConnections();
@@ -31,6 +35,7 @@ const DetachedSessionContent: React.FC = () => {
   const isTauri =
     typeof window !== "undefined" &&
     Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+  const closingRef = useRef(false);
 
   useEffect(() => {
     if (!sessionId) {
@@ -74,6 +79,10 @@ const DetachedSessionContent: React.FC = () => {
   }, [dispatch, sessionId, state.sessions]);
 
   useEffect(() => {
+    onRegisterDisconnect(disconnectActiveSession);
+  }, [disconnectActiveSession, onRegisterDisconnect]);
+
+  useEffect(() => {
     if (!isTauri) return;
     const currentWindow = getCurrentWindow();
     currentWindow
@@ -86,6 +95,24 @@ const DetachedSessionContent: React.FC = () => {
     () => state.sessions.find((session) => session.id === sessionId),
     [state.sessions, sessionId],
   );
+
+  const disconnectActiveSession = useCallback(async () => {
+    if (!activeSession || closingRef.current) return;
+    closingRef.current = true;
+    try {
+      if (activeSession.protocol === "ssh" && activeSession.backendSessionId) {
+        await invoke("disconnect_ssh", { sessionId: activeSession.backendSessionId });
+      }
+      if (isTauri) {
+        await emit("detached-session-closed", { sessionId: activeSession.id });
+      }
+      if (sessionId) {
+        localStorage.removeItem(`detached-session-${sessionId}`);
+      }
+    } catch (err) {
+      console.error("Failed to disconnect detached session:", err);
+    }
+  }, [activeSession, isTauri, sessionId]);
 
   if (error) {
     return (
@@ -160,6 +187,7 @@ const DetachedSessionContent: React.FC = () => {
           <button
             onClick={async () => {
               if (!isTauri) return;
+              await disconnectActiveSession();
               const currentWindow = getCurrentWindow();
               await currentWindow.close();
             }}
@@ -177,10 +205,48 @@ const DetachedSessionContent: React.FC = () => {
   );
 };
 
-const DetachedClient: React.FC = () => (
-  <ConnectionProvider>
-    <DetachedSessionContent />
-  </ConnectionProvider>
-);
+const DetachedWindowLifecycle: React.FC<{ onBeforeClose: () => Promise<void> }> = ({
+  onBeforeClose,
+}) => {
+  useEffect(() => {
+    const isTauri =
+      typeof window !== "undefined" &&
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    if (!isTauri) return;
+
+    let isClosing = false;
+    const currentWindow = getCurrentWindow();
+    const unlistenPromise = currentWindow.onCloseRequested(async (event) => {
+      if (isClosing) return;
+      isClosing = true;
+      event.preventDefault();
+      await onBeforeClose();
+      await currentWindow.close();
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => undefined);
+    };
+  }, [onBeforeClose]);
+
+  return null;
+};
+
+const DetachedClient: React.FC = () => {
+  const [disconnectHandler, setDisconnectHandler] = useState<
+    (() => Promise<void>) | null
+  >(null);
+
+  return (
+    <ConnectionProvider>
+      {disconnectHandler && (
+        <DetachedWindowLifecycle onBeforeClose={disconnectHandler} />
+      )}
+      <DetachedSessionContent
+        onRegisterDisconnect={(handler) => setDisconnectHandler(() => handler)}
+      />
+    </ConnectionProvider>
+  );
+};
 
 export default DetachedClient;

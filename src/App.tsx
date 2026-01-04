@@ -21,6 +21,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Connection, ConnectionSession, TabLayout } from "./types/connection";
@@ -766,6 +767,28 @@ const AppContent: React.FC = () => {
       .then(setIsAlwaysOnTop)
       .catch(console.error);
   }, []);
+
+  useEffect(() => {
+    const isTauri =
+      typeof window !== "undefined" &&
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    if (!isTauri) return;
+
+    let unlisten: (() => void) | null = null;
+    listen<{ sessionId?: string }>("detached-session-closed", (event) => {
+      const sessionId = event.payload?.sessionId;
+      if (!sessionId) return;
+      handleSessionClose(sessionId).catch(console.error);
+    })
+      .then((stop) => {
+        unlisten = stop;
+      })
+      .catch(console.error);
+
+    return () => {
+      unlisten?.();
+    };
+  }, [handleSessionClose]);
 
   useEffect(() => {
     if (!appSettings) return;

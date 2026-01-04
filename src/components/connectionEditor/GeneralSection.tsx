@@ -20,7 +20,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
 
   return (
     <>
-      <div className="flex items-center space-x-4">
+      <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center space-x-2">
           <input
             type="checkbox"
@@ -30,6 +30,17 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
           />
           <span className="text-gray-300">Create as folder/group</span>
         </label>
+        {!formData.isGroup && (
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={!!formData.favorite}
+              onChange={(e) => setFormData({ ...formData, favorite: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-gray-300">Mark as favorite</span>
+          </label>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
