@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { X, RefreshCw, Link2, ShieldCheck, Plug, PlugZap } from "lucide-react";
+import { X, RefreshCw, Link2, ShieldCheck, PlugZap } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../contexts/useConnections";
 import { ProxyOpenVPNManager } from "../utils/proxyOpenVPNManager";

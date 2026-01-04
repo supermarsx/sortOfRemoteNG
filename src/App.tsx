@@ -468,6 +468,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const tooltip = document.createElement("div");
     tooltip.className = "app-tooltip";
+    tooltip.style.display = "none";
     document.body.appendChild(tooltip);
     tooltipRef.current = tooltip;
 
@@ -589,11 +590,16 @@ const AppContent: React.FC = () => {
     const targetOpacity = appSettings.windowTransparencyEnabled
       ? Math.min(1, Math.max(0.4, appSettings.windowTransparencyOpacity || 1))
       : 1;
-    window.setOpacity(targetOpacity).catch((error) => {
-      if (!isWindowPermissionError(error)) {
-        console.error("Failed to set window opacity:", error);
-      }
-    });
+    const setOpacity = (window as any).setOpacity as
+      | ((value: number) => Promise<void>)
+      | undefined;
+    if (typeof setOpacity === "function") {
+      setOpacity.call(window, targetOpacity).catch((error) => {
+        if (!isWindowPermissionError(error)) {
+          console.error("Failed to set window opacity:", error);
+        }
+      });
+    }
   }, [
     appSettings,
     appSettings.windowTransparencyEnabled,

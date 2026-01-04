@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload, X, Layers } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
 import { ConnectionCollection } from '../types/connection';
 import { CollectionManager } from '../utils/collectionManager';
 import { ImportExport } from './ImportExport';
@@ -16,7 +15,6 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   onCollectionSelect,
   onClose,
 }) => {
-  const { t } = useTranslation();
   const [collections, setCollections] = useState<ConnectionCollection[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showImportForm, setShowImportForm] = useState(false);
@@ -929,6 +927,24 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                 </div>
               ))
             )}
+          </div>
+                </div>
+              )}
+
+              {activeTab === 'connections' && (
+                <div className="space-y-6">
+                  <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+                    <h3 className="text-lg font-medium text-white mb-2">
+                      Connection Import / Export
+                    </h3>
+                    <p className="text-sm text-gray-400 mb-4">
+                      Manage connection backups and transfers without leaving the collection center.
+                    </p>
+                    <ImportExport isOpen onClose={() => undefined} embedded />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
