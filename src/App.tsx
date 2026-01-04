@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Monitor, Zap, Menu, Globe, Minus, Square, X } from "lucide-react";
+import { Monitor, Zap, Menu, Globe, Minus, Square, X, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Connection } from "./types/connection";
@@ -40,6 +40,9 @@ const AppContent: React.FC = () => {
     "setup" | "unlock"
   >("setup"); // current mode for password dialog
   const [passwordError, setPasswordError] = useState(""); // password dialog error message
+  const [sidebarWidth, setSidebarWidth] = useState(320); // sidebar width in pixels
+  const [isResizing, setIsResizing] = useState(false); // whether sidebar is being resized
+  const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('left'); // sidebar position
   const [dialogState, setDialogState] = useState<{
     isOpen: boolean;
     message: string;
@@ -226,6 +229,43 @@ const AppContent: React.FC = () => {
     setDialogState(prev => ({ ...prev, isOpen: false }));
   };
 
+  // Sidebar resize handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsResizing(true);
+    e.preventDefault();
+  };
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+    const newWidth = Math.max(200, Math.min(600, e.clientX));
+    setSidebarWidth(newWidth);
+  }, [isResizing]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+
   const handleMinimize = async () => {
     const window = getCurrentWindow();
     await window.minimize();
@@ -292,6 +332,14 @@ const AppContent: React.FC = () => {
             <Menu size={16} />
           </button>
 
+          <button
+            onClick={() => setSidebarPosition(sidebarPosition === 'left' ? 'right' : 'left')}
+            className="p-2 hover:bg-gray-700 rounded transition-colors"
+            title={`Move sidebar to ${sidebarPosition === 'left' ? 'right' : 'left'}`}
+          >
+            <ChevronRight size={16} className={sidebarPosition === 'right' ? 'rotate-180' : ''} />
+          </button>
+
           {/* Window Controls */}
           <div className="flex items-center space-x-1 ml-2">
             <button
@@ -320,13 +368,26 @@ const AppContent: React.FC = () => {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          onNewConnection={handleNewConnection}
-          onEditConnection={handleEditConnection}
-          onDeleteConnection={handleDeleteConnection}
-          onConnect={handleConnect}
-          onShowPasswordDialog={handleShowPasswordDialog}
-        />
+        {sidebarPosition === 'left' && (
+          <div 
+            className="relative"
+            style={{ width: state.sidebarCollapsed ? '48px' : `${sidebarWidth}px` }}
+          >
+            <Sidebar
+              onNewConnection={handleNewConnection}
+              onEditConnection={handleEditConnection}
+              onDeleteConnection={handleDeleteConnection}
+              onConnect={handleConnect}
+              onShowPasswordDialog={handleShowPasswordDialog}
+            />
+            {!state.sidebarCollapsed && (
+              <div
+                className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-colors"
+                onMouseDown={handleMouseDown}
+              />
+            )}
+          </div>
+        )}
 
         <div className="flex-1 flex flex-col">
           <SessionTabs
@@ -368,6 +429,27 @@ const AppContent: React.FC = () => {
             )}
           </div>
         </div>
+
+        {sidebarPosition === 'right' && (
+          <div 
+            className="relative"
+            style={{ width: state.sidebarCollapsed ? '48px' : `${sidebarWidth}px` }}
+          >
+            {!state.sidebarCollapsed && (
+              <div
+                className="absolute top-0 left-0 w-1 h-full cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-colors"
+                onMouseDown={handleMouseDown}
+              />
+            )}
+            <Sidebar
+              onNewConnection={handleNewConnection}
+              onEditConnection={handleEditConnection}
+              onDeleteConnection={handleDeleteConnection}
+              onConnect={handleConnect}
+              onShowPasswordDialog={handleShowPasswordDialog}
+            />
+          </div>
+        )}
       </div>
 
       {/* Dialogs */}

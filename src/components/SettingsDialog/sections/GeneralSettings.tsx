@@ -99,19 +99,26 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Max Concurrent Connections
+            Primary Accent Color
           </label>
           <input
-            type="number"
-            value={settings.maxConcurrentConnections}
-            onChange={(e) =>
-              updateSettings({
-                maxConcurrentConnections: parseInt(e.target.value),
-              })
-            }
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-            min="1"
-            max="50"
+            type="color"
+            value={settings.primaryAccentColor || '#3b82f6'}
+            onChange={(e) => updateSettings({ primaryAccentColor: e.target.value })}
+            className="w-full h-10 bg-gray-700 border border-gray-600 rounded-md cursor-pointer"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Custom CSS
+          </label>
+          <textarea
+            value={settings.customCss || ''}
+            onChange={(e) => updateSettings({ customCss: e.target.value })}
+            rows={4}
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono text-sm"
+            placeholder="Enter custom CSS rules..."
           />
         </div>
       </div>

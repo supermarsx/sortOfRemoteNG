@@ -29,6 +29,8 @@ export interface GlobalSettings {
   language: string;
   theme: Theme;
   colorScheme: ColorScheme;
+  primaryAccentColor?: string;
+  customCss?: string;
   singleWindowMode: boolean;
   singleConnectionMode: boolean;
   reconnectOnReload: boolean;
