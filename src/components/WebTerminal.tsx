@@ -24,9 +24,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const [connectionError, setConnectionError] = useState<string>('');
   const [commandBuffer, setCommandBuffer] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
-
-  // Get connection details
-  const connection = state.connections.find(c => c.id === session.connectionId);
+  const [currentLine, setCurrentLine] = useState('');
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);

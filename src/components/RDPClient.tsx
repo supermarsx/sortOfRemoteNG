@@ -38,8 +38,6 @@ export const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   });
 
   const initializeRDPConnection = useCallback(async () => {
-    if (!canvasRef.current) return;
-
     try {
       setConnectionStatus('connecting');
       

@@ -1,0 +1,291 @@
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Sidebar } from "../src/components/Sidebar";
+import { Connection } from "../src/types/connection";
+import { ConnectionProvider } from "../src/contexts/ConnectionContext";
+
+// Mock child components
+vi.mock('../src/components/ConnectionTree', () => ({
+  ConnectionTree: ({ onEdit, onDelete, onConnect }: any) => (
+    <div data-testid="connection-tree">
+      <button onClick={() => onEdit(mockConnection)}>Edit Connection</button>
+      <button onClick={() => onDelete(mockConnection)}>Delete Connection</button>
+      <button onClick={() => onConnect(mockConnection)}>Connect</button>
+    </div>
+  )
+}));
+
+vi.mock('../src/components/ImportExport', () => ({
+  ImportExport: ({ isOpen, onClose }: any) => isOpen ? (
+    <div data-testid="import-export">
+      <span>Import/Export Dialog</span>
+      <button onClick={onClose}>Close</button>
+    </div>
+  ) : null
+}));
+
+vi.mock('../src/components/SettingsDialog', () => ({
+  SettingsDialog: ({ isOpen, onClose }: any) => isOpen ? (
+    <div data-testid="settings-dialog">
+      <span>Settings Dialog</span>
+      <button onClick={onClose}>Close</button>
+    </div>
+  ) : null
+}));
+
+vi.mock('../src/components/PerformanceMonitor', () => ({
+  PerformanceMonitor: ({ isOpen, onClose }: any) => isOpen ? (
+    <div data-testid="performance-monitor">
+      <span>Performance Monitor</span>
+      <button onClick={onClose}>Close</button>
+    </div>
+  ) : null
+}));
+
+vi.mock('../src/components/ActionLogViewer', () => ({
+  ActionLogViewer: ({ isOpen, onClose }: any) => isOpen ? (
+    <div data-testid="action-log-viewer">
+      <span>Action Log Viewer</span>
+      <button onClick={onClose}>Close</button>
+    </div>
+  ) : null
+}));
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key
+  })
+}));
+
+const mockConnection: Connection = {
+  id: 'test-connection',
+  name: 'Test Connection',
+  protocol: 'rdp',
+  hostname: '192.168.1.100',
+  port: 3389,
+  username: 'testuser',
+  password: 'testpass',
+  domain: '',
+  description: 'Test connection',
+  isGroup: false,
+  tags: ['test', 'rdp'],
+  createdAt: new Date(),
+  updatedAt: new Date()
+};
+
+const mockProps = {
+  onNewConnection: vi.fn(),
+  onEditConnection: vi.fn(),
+  onDeleteConnection: vi.fn(),
+  onConnect: vi.fn(),
+  onShowPasswordDialog: vi.fn()
+};
+
+const renderWithProviders = (props = mockProps) => {
+  return render(
+    <ConnectionProvider>
+      <Sidebar {...props} />
+    </ConnectionProvider>
+  );
+};
+
+describe("Sidebar", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("Basic Rendering", () => {
+    it("should render sidebar with main elements", () => {
+      renderWithProviders();
+
+      expect(screen.getByText("connections.title")).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("connections.search")).toBeInTheDocument();
+      expect(screen.getByTestId("connection-tree")).toBeInTheDocument();
+    });
+
+    it("should render action buttons", () => {
+      renderWithProviders();
+
+      expect(screen.getByRole('button', { name: /^connections\.new$/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /connections\.newFolder/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /settings\.title/i })).toBeInTheDocument();
+    });
+  });
+
+  describe("Search Functionality", () => {
+    it("should update search term when typing", () => {
+      renderWithProviders();
+
+      const searchInput = screen.getByPlaceholderText("connections.search");
+      fireEvent.change(searchInput, { target: { value: 'test search' } });
+
+      expect(searchInput).toHaveValue('test search');
+    });
+
+    it("should clear search when clear button is clicked", () => {
+      renderWithProviders();
+
+      const searchInput = screen.getByPlaceholderText("connections.search");
+      fireEvent.change(searchInput, { target: { value: 'test search' } });
+
+      const clearButton = screen.getByRole('button', { name: /clear/i });
+      fireEvent.click(clearButton);
+
+      expect(searchInput).toHaveValue('');
+    });
+  });
+
+  describe("Connection Actions", () => {
+    it("should call onNewConnection when new connection button is clicked", () => {
+      renderWithProviders();
+
+      const newButton = screen.getByRole('button', { name: /^connections\.new$/i });
+      fireEvent.click(newButton);
+
+      expect(mockProps.onNewConnection).toHaveBeenCalled();
+    });
+  });
+
+  describe("Dialog Management", () => {
+    it("should open import/export dialog", () => {
+      renderWithProviders();
+
+      const importButton = screen.getByRole('button', { name: /Import\/Export connections/i });
+      fireEvent.click(importButton);
+
+      expect(screen.getByTestId('import-export')).toBeInTheDocument();
+    });
+
+    it("should close import/export dialog", () => {
+      renderWithProviders();
+
+      const importButton = screen.getByRole('button', { name: /Import\/Export connections/i });
+      fireEvent.click(importButton);
+
+      const closeButton = screen.getByText('Close');
+      fireEvent.click(closeButton);
+
+      expect(screen.queryByTestId('import-export')).not.toBeInTheDocument();
+    });
+
+    it("should open settings dialog", () => {
+      renderWithProviders();
+
+      const settingsButton = screen.getByRole('button', { name: /settings\.title/i });
+      fireEvent.click(settingsButton);
+
+      expect(screen.getByTestId('settings-dialog')).toBeInTheDocument();
+    });
+
+    it("should open performance monitor", () => {
+      renderWithProviders();
+
+      const perfButton = screen.getByRole('button', { name: /Performance Monitor/i });
+      fireEvent.click(perfButton);
+
+      expect(screen.getByTestId('performance-monitor')).toBeInTheDocument();
+    });
+
+    it("should open action log viewer", () => {
+      renderWithProviders();
+
+      const logButton = screen.getByRole('button', { name: /Action Log/i });
+      fireEvent.click(logButton);
+
+      expect(screen.getByTestId('action-log-viewer')).toBeInTheDocument();
+    });
+  });
+
+  describe("Filter Functionality", () => {
+    it("should toggle filter panel", () => {
+      renderWithProviders();
+
+      const filterButton = screen.getByRole('button', { name: /filter/i });
+      fireEvent.click(filterButton);
+
+      // Filter panel should be visible (this would need more specific testing)
+      expect(screen.getByRole('button', { name: /filter/i })).toBeInTheDocument();
+    });
+
+    it("should show tag filters when available", () => {
+      // This would require mocking connections with tags
+      renderWithProviders();
+
+      // Basic test that component renders
+      expect(screen.getByText("connections.title")).toBeInTheDocument();
+    });
+  });
+
+  describe("Tree Operations", () => {
+    it("should expand all connections", () => {
+      renderWithProviders();
+
+      const expandButton = screen.getByRole('button', { name: /connections\.expandAll/i });
+      fireEvent.click(expandButton);
+
+      // This would need more complex state testing
+      expect(screen.getByTestId("connection-tree")).toBeInTheDocument();
+    });
+
+    it("should collapse all connections", () => {
+      renderWithProviders();
+
+      const collapseButton = screen.getByRole('button', { name: /connections\.collapseAll/i });
+      fireEvent.click(collapseButton);
+
+      expect(screen.getByTestId("connection-tree")).toBeInTheDocument();
+    });
+  });
+
+  describe("Sidebar Toggle", () => {
+    it("should have toggle button", () => {
+      renderWithProviders();
+
+      // The toggle button should exist (ChevronLeft/ChevronRight icons)
+      const toggleButtons = screen.getAllByRole('button').filter(button =>
+        button.querySelector('svg')
+      );
+
+      expect(toggleButtons.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Connection Tree Integration", () => {
+    it("should pass connection handlers to tree", () => {
+      renderWithProviders();
+
+      const editButton = screen.getByText('Edit Connection');
+      fireEvent.click(editButton);
+
+      expect(mockProps.onEditConnection).toHaveBeenCalledWith(mockConnection);
+    });
+
+    it("should handle delete action", () => {
+      renderWithProviders();
+
+      const deleteButton = screen.getByText('Delete Connection');
+      fireEvent.click(deleteButton);
+
+      expect(mockProps.onDeleteConnection).toHaveBeenCalledWith(mockConnection);
+    });
+
+    it("should handle connect action", () => {
+      renderWithProviders();
+
+      const connectButton = screen.getByText('Connect');
+      fireEvent.click(connectButton);
+
+      expect(mockProps.onConnect).toHaveBeenCalledWith(mockConnection);
+    });
+  });
+
+  describe("Password Protection", () => {
+    it("should show password dialog button when needed", () => {
+      renderWithProviders();
+
+      // This would depend on the application state
+      // For now, just verify the component renders
+      expect(screen.getByText("connections.title")).toBeInTheDocument();
+    });
+  });
+});

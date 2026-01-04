@@ -169,6 +169,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      data-testid="connection-editor-modal"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -181,6 +182,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
+            aria-label="Close"
           >
             <X size={20} />
           </button>

@@ -29,6 +29,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
   return (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      data-testid="quick-connect-modal"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -39,17 +40,19 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
+            aria-label="Close"
           >
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 space-y-4" role="form">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label htmlFor="hostname" className="block text-sm font-medium text-gray-300 mb-2">
               Hostname or IP Address
             </label>
             <input
+              id="hostname"
               type="text"
               required
               value={hostname}
@@ -61,10 +64,11 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label htmlFor="protocol" className="block text-sm font-medium text-gray-300 mb-2">
               Protocol
             </label>
             <select
+              id="protocol"
               value={protocol}
               onChange={(e) => setProtocol(e.target.value)}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
