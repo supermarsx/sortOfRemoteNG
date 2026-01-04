@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { Clipboard, Copy, Maximize2, Minimize2, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
 
@@ -14,22 +15,27 @@ interface WebTerminalProps {
 }
 
 type ConnectionStatus = "idle" | "connecting" | "connected" | "error";
+type SshOutputEvent = { session_id: string; data: string };
+type SshErrorEvent = { session_id: string; message: string };
+type SshClosedEvent = { session_id: string };
 
 /**
  * Ground-up SSH/web terminal built to keep IO clean and selection intact.
  */
 export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
-  const { state } = useConnections();
+  const { state, dispatch } = useConnections();
 
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const sshSessionId = useRef<string | null>(null);
-  const pollTimer = useRef<NodeJS.Timeout | null>(null);
   const isSshReady = useRef(false);
   const isConnecting = useRef(false);
   const isDisposed = useRef(false);
+  const outputUnlistenRef = useRef<(() => void) | null>(null);
+  const errorUnlistenRef = useRef<(() => void) | null>(null);
+  const closeUnlistenRef = useRef<(() => void) | null>(null);
 
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [error, setError] = useState("");
@@ -98,43 +104,17 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     return { kind: "unknown", friendly: "SSH connection failed - please check credentials and network" };
   }, []);
 
-  const clearPoller = useCallback(() => {
-    if (pollTimer.current) {
-      clearInterval(pollTimer.current);
-      pollTimer.current = null;
-    }
-  }, []);
-
-  const startPoller = useCallback(() => {
-    clearPoller();
-    pollTimer.current = setInterval(async () => {
-      if (!sshSessionId.current || !isSshReady.current || !termRef.current) return;
-      try {
-        const output = await invoke<string>("receive_ssh_output", {
-          sessionId: sshSessionId.current,
-        });
-        if (output) {
-          termRef.current.write(output);
-        }
-      } catch {
-        // Ignore transient polling errors.
-      }
-    }, 200);
-  }, [clearPoller]);
-
   const disconnectSsh = useCallback(() => {
     if (sshSessionId.current) {
       invoke("disconnect_ssh", { sessionId: sshSessionId.current }).catch(() => undefined);
       sshSessionId.current = null;
     }
-    clearPoller();
-  }, [clearPoller]);
+  }, []);
 
   const initSsh = useCallback(async () => {
     if (!isSsh || !connection || !termRef.current) return;
     setStatusState("connecting");
     setError("");
-    disconnectSsh();
     if (typeof (termRef.current as any).reset === "function") {
       (termRef.current as any).reset();
     } else {
@@ -152,20 +132,34 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       `\x1b[90mHost key checking: ${ignoreHostKey ? "disabled (ignore errors)" : "enabled"}\x1b[0m`,
     );
 
-    const sshConfig: Record<string, unknown> = {
-      host: session.hostname,
-      port: connection.port || 22,
-      username: connection.username || "",
-      jump_hosts: [],
-      proxy_config: null,
-      openvpn_config: null,
-      connect_timeout: 30000,
-      keep_alive_interval: 60,
-      strict_host_key_checking: !ignoreHostKey,
-      known_hosts_path: null,
-    };
-
     try {
+      if (session.backendSessionId) {
+        sshSessionId.current = session.backendSessionId;
+        const shellId = await invoke<string>("start_shell", { sessionId: session.backendSessionId });
+        dispatch({
+          type: "UPDATE_SESSION",
+          payload: { ...session, shellId },
+        });
+        writeLine("\x1b[32mReattached to SSH session\x1b[0m");
+        setStatusState("connected");
+        return;
+      }
+
+      disconnectSsh();
+
+      const sshConfig: Record<string, unknown> = {
+        host: session.hostname,
+        port: connection.port || 22,
+        username: connection.username || "",
+        jump_hosts: [],
+        proxy_config: null,
+        openvpn_config: null,
+        connect_timeout: 30000,
+        keep_alive_interval: 60,
+        strict_host_key_checking: !ignoreHostKey,
+        known_hosts_path: null,
+      };
+
       switch (authMethod) {
         case "password":
           if (!connection.password) throw new Error("Password authentication requires a password");
@@ -194,12 +188,19 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
       const sessionId = await invoke<string>("connect_ssh", { config: sshConfig });
       sshSessionId.current = sessionId;
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: { ...session, backendSessionId: sessionId },
+      });
       writeLine("\x1b[32mSSH connection established\x1b[0m");
 
-      await invoke("start_shell", { sessionId });
+      const shellId = await invoke<string>("start_shell", { sessionId });
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: { ...session, backendSessionId: sessionId, shellId },
+      });
       writeLine("\x1b[32mShell started successfully\x1b[0m");
       setStatusState("connected");
-      startPoller();
     } catch (err: unknown) {
       const details = formatErrorDetails(err);
       const msg = details.message;
@@ -224,9 +225,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     formatErrorDetails,
     ignoreHostKey,
     isSsh,
-    session.hostname,
+    session,
+    dispatch,
     setStatusState,
-    startPoller,
     writeLine,
   ]);
 
@@ -290,6 +291,13 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       try {
         fitRef.current.fit();
         onResize?.(termRef.current.cols, termRef.current.rows);
+        if (isSsh && sshSessionId.current) {
+          invoke("resize_ssh_shell", {
+            sessionId: sshSessionId.current,
+            cols: termRef.current.cols,
+            rows: termRef.current.rows,
+          }).catch(() => undefined);
+        }
       } catch {
         // ignore fit failures
       }
@@ -299,6 +307,48 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     window.addEventListener("resize", doFit);
 
     const dataDisposable = term.onData(handleInput);
+
+    let cancelled = false;
+
+    const attachListeners = async () => {
+      if (!isSsh) return;
+      try {
+        const unlistenOutput = await listen<SshOutputEvent>("ssh-output", (event) => {
+          if (event.payload.session_id !== sshSessionId.current) return;
+          termRef.current?.write(event.payload.data);
+        });
+        if (!cancelled) {
+          outputUnlistenRef.current = unlistenOutput;
+        } else {
+          unlistenOutput();
+        }
+
+        const unlistenError = await listen<SshErrorEvent>("ssh-error", (event) => {
+          if (event.payload.session_id !== sshSessionId.current) return;
+          termRef.current?.writeln(`\r\n\x1b[31mSSH error: ${event.payload.message}\x1b[0m`);
+        });
+        if (!cancelled) {
+          errorUnlistenRef.current = unlistenError;
+        } else {
+          unlistenError();
+        }
+
+        const unlistenClosed = await listen<SshClosedEvent>("ssh-shell-closed", (event) => {
+          if (event.payload.session_id !== sshSessionId.current) return;
+          setStatusState("error");
+          setError("Shell closed");
+        });
+        if (!cancelled) {
+          closeUnlistenRef.current = unlistenClosed;
+        } else {
+          unlistenClosed();
+        }
+      } catch (error) {
+        console.error("Failed to attach SSH listeners:", error);
+      }
+    };
+
+    attachListeners();
 
     if (isSsh) {
       initSsh();
@@ -310,10 +360,16 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
     return () => {
       isDisposed.current = true;
+      cancelled = true;
       clearTimeout(resizeTimer);
       window.removeEventListener("resize", doFit);
       dataDisposable.dispose();
-      disconnectSsh();
+      outputUnlistenRef.current?.();
+      errorUnlistenRef.current?.();
+      closeUnlistenRef.current?.();
+      outputUnlistenRef.current = null;
+      errorUnlistenRef.current = null;
+      closeUnlistenRef.current = null;
       term.dispose();
       termRef.current = null;
       fitRef.current = null;

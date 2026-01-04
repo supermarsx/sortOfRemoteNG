@@ -1,9 +1,9 @@
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 use std::collections::HashMap;
 use ssh2::Session;
 use std::net::{TcpStream, TcpListener};
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::path::Path;
 use std::time::Duration;
 use tokio::net::TcpStream as AsyncTcpStream;
@@ -97,6 +97,37 @@ pub struct SshSession {
 }
 
 #[derive(Debug)]
+pub struct SshShellHandle {
+    pub id: String,
+    pub sender: mpsc::UnboundedSender<SshShellCommand>,
+    pub thread: std::thread::JoinHandle<()>,
+}
+
+#[derive(Debug)]
+pub enum SshShellCommand {
+    Input(String),
+    Resize(u32, u32),
+    Close,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SshShellOutput {
+    pub session_id: String,
+    pub data: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SshShellError {
+    pub session_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SshShellClosed {
+    pub session_id: String,
+}
+
+#[derive(Debug)]
 pub struct PortForwardHandle {
     pub id: String,
     pub config: PortForwardConfig,
@@ -138,6 +169,7 @@ pub struct SshService {
     sessions: HashMap<String, SshSession>,
     connection_pool: HashMap<String, Vec<SshSession>>,
     known_hosts: HashMap<String, String>,
+    shells: HashMap<String, SshShellHandle>,
 }
 
 impl SshService {
@@ -146,6 +178,7 @@ impl SshService {
             sessions: HashMap::new(),
             connection_pool: HashMap::new(),
             known_hosts: HashMap::new(),
+            shells: HashMap::new(),
         }))
     }
 
@@ -514,7 +547,15 @@ impl SshService {
         Ok(output)
     }
 
-    pub async fn start_shell(&mut self, session_id: &str) -> Result<String, String> {
+    pub async fn start_shell(
+        &mut self,
+        session_id: &str,
+        app_handle: tauri::AppHandle,
+    ) -> Result<String, String> {
+        if let Some(existing) = self.shells.get(session_id) {
+            return Ok(existing.id.clone());
+        }
+
         let session = self.sessions.get_mut(session_id)
             .ok_or("Session not found")?;
 
@@ -530,9 +571,116 @@ impl SshService {
         channel.shell()
             .map_err(|e| format!("Failed to start shell: {}", e))?;
 
-        // Return channel ID for future operations
-        let channel_id = Uuid::new_v4().to_string();
-        Ok(channel_id)
+        channel.set_blocking(false);
+
+        let (tx, mut rx) = mpsc::unbounded_channel::<SshShellCommand>();
+        let shell_id = Uuid::new_v4().to_string();
+        let session_id_owned = session_id.to_string();
+        let app_handle_clone = app_handle.clone();
+
+        let thread = std::thread::spawn(move || {
+            let mut buffer = [0u8; 8192];
+            let mut running = true;
+
+            while running {
+                while let Ok(cmd) = rx.try_recv() {
+                    match cmd {
+                        SshShellCommand::Input(data) => {
+                            if let Err(error) = channel.write_all(data.as_bytes()) {
+                                let _ = app_handle_clone.emit_all(
+                                    "ssh-error",
+                                    SshShellError {
+                                        session_id: session_id_owned.clone(),
+                                        message: error.to_string(),
+                                    },
+                                );
+                                running = false;
+                                break;
+                            }
+                            let _ = channel.flush();
+                        }
+                        SshShellCommand::Resize(cols, rows) => {
+                            let _ = channel.request_pty_size(cols, rows, None, None);
+                        }
+                        SshShellCommand::Close => {
+                            let _ = channel.close();
+                            let _ = channel.wait_close();
+                            running = false;
+                        }
+                    }
+                }
+
+                match channel.read(&mut buffer) {
+                    Ok(bytes) if bytes > 0 => {
+                        let output = String::from_utf8_lossy(&buffer[..bytes]).to_string();
+                        let _ = app_handle_clone.emit_all(
+                            "ssh-output",
+                            SshShellOutput {
+                                session_id: session_id_owned.clone(),
+                                data: output,
+                            },
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == ErrorKind::WouldBlock => {}
+                    Err(error) => {
+                        let _ = app_handle_clone.emit_all(
+                            "ssh-error",
+                            SshShellError {
+                                session_id: session_id_owned.clone(),
+                                message: error.to_string(),
+                            },
+                        );
+                        running = false;
+                    }
+                }
+
+                if channel.eof() {
+                    running = false;
+                }
+
+                std::thread::sleep(Duration::from_millis(12));
+            }
+
+            let _ = app_handle_clone.emit_all(
+                "ssh-shell-closed",
+                SshShellClosed {
+                    session_id: session_id_owned,
+                },
+            );
+        });
+
+        self.shells.insert(
+            session_id.to_string(),
+            SshShellHandle {
+                id: shell_id.clone(),
+                sender: tx,
+                thread,
+            },
+        );
+
+        Ok(shell_id)
+    }
+
+    pub async fn send_shell_input(&mut self, session_id: &str, data: String) -> Result<(), String> {
+        let shell = self.shells.get(session_id)
+            .ok_or("Shell not started")?;
+        shell.sender.send(SshShellCommand::Input(data))
+            .map_err(|_| "Failed to send input to shell".to_string())
+    }
+
+    pub async fn resize_shell(&mut self, session_id: &str, cols: u32, rows: u32) -> Result<(), String> {
+        let shell = self.shells.get(session_id)
+            .ok_or("Shell not started")?;
+        shell.sender.send(SshShellCommand::Resize(cols, rows))
+            .map_err(|_| "Failed to resize shell".to_string())
+    }
+
+    pub async fn stop_shell(&mut self, session_id: &str) -> Result<(), String> {
+        if let Some(shell) = self.shells.remove(session_id) {
+            let _ = shell.sender.send(SshShellCommand::Close);
+        }
+        Ok(())
     }
 
     pub async fn setup_port_forward(&mut self, session_id: &str, config: PortForwardConfig) -> Result<String, String> {
@@ -731,6 +879,7 @@ impl SshService {
     }
 
     pub async fn disconnect_ssh(&mut self, session_id: &str) -> Result<(), String> {
+        let _ = self.stop_shell(session_id).await;
         if let Some(mut session) = self.sessions.remove(session_id) {
             // Stop keep-alive
             if let Some(handle) = session.keep_alive_handle.take() {
@@ -910,10 +1059,32 @@ pub async fn execute_command_interactive(
 #[tauri::command]
 pub async fn start_shell(
     state: tauri::State<'_, SshServiceState>,
+    app_handle: tauri::AppHandle,
     session_id: String
 ) -> Result<String, String> {
     let mut ssh = state.lock().await;
-    ssh.start_shell(&session_id).await
+    ssh.start_shell(&session_id, app_handle).await
+}
+
+#[tauri::command]
+pub async fn send_ssh_input(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    data: String
+) -> Result<(), String> {
+    let mut ssh = state.lock().await;
+    ssh.send_shell_input(&session_id, data).await
+}
+
+#[tauri::command]
+pub async fn resize_ssh_shell(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    cols: u32,
+    rows: u32
+) -> Result<(), String> {
+    let mut ssh = state.lock().await;
+    ssh.resize_shell(&session_id, cols, rows).await
 }
 
 #[tauri::command]

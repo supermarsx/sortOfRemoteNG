@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Monitor,
   Zap,
@@ -23,7 +23,8 @@ import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
-import { Connection } from "./types/connection";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { Connection, ConnectionSession, TabLayout } from "./types/connection";
 import { GlobalSettings } from "./types/settings";
 import { SettingsManager } from "./utils/settingsManager";
 import { StatusChecker } from "./utils/statusChecker";
@@ -38,6 +39,7 @@ import { Sidebar } from "./components/Sidebar";
 import { ConnectionEditor } from "./components/ConnectionEditor";
 import { SessionTabs } from "./components/SessionTabs";
 import { SessionViewer } from "./components/SessionViewer";
+import { TabLayoutManager } from "./components/TabLayoutManager";
 import { QuickConnect } from "./components/QuickConnect";
 import { PasswordDialog } from "./components/PasswordDialog";
 import { CollectionSelector } from "./components/CollectionSelector";
@@ -73,6 +75,10 @@ const AppContent: React.FC = () => {
   const [showImportExport, setShowImportExport] = useState(false);
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showProxyMenu, setShowProxyMenu] = useState(false);
+  const [tabLayout, setTabLayout] = useState<TabLayout>(() => ({
+    mode: "tabs",
+    sessions: [],
+  }));
   const [passwordDialogMode, setPasswordDialogMode] = useState<
     "setup" | "unlock"
   >("setup"); // current mode for password dialog
@@ -108,7 +114,6 @@ const AppContent: React.FC = () => {
   const {
     activeSessionId,
     setActiveSessionId,
-    activeSession,
     handleConnect,
     handleQuickConnect,
     handleSessionClose,
@@ -121,6 +126,104 @@ const AppContent: React.FC = () => {
     setShowPasswordDialog,
     setPasswordDialogMode,
   });
+
+  const visibleSessions = useMemo(
+    () => state.sessions.filter((session) => !session.layout?.isDetached),
+    [state.sessions],
+  );
+
+  const buildTabLayout = useCallback(
+    (mode: TabLayout["mode"], sessions: ConnectionSession[]): TabLayout => {
+      const orderedSessions = activeSessionId
+        ? [
+            ...sessions.filter((session) => session.id === activeSessionId),
+            ...sessions.filter((session) => session.id !== activeSessionId),
+          ]
+        : sessions;
+
+      const buildGridLayout = (cols: number, rows?: number) => {
+        const totalRows = rows ?? Math.ceil(orderedSessions.length / cols) || 1;
+        const width = 100 / cols;
+        const height = 100 / totalRows;
+        return orderedSessions.map((session, index) => ({
+          sessionId: session.id,
+          position: {
+            x: (index % cols) * width,
+            y: Math.floor(index / cols) * height,
+            width,
+            height,
+          },
+        }));
+      };
+
+      switch (mode) {
+        case "splitVertical": {
+          const cols = 2;
+          const rows = Math.ceil(orderedSessions.length / cols) || 1;
+          return { mode, sessions: buildGridLayout(cols, rows) };
+        }
+        case "splitHorizontal": {
+          const rows = 2;
+          const cols = Math.ceil(orderedSessions.length / rows) || 1;
+          return { mode, sessions: buildGridLayout(cols, rows) };
+        }
+        case "grid2":
+          return { mode, sessions: buildGridLayout(2, 1).slice(0, 2) };
+        case "grid4":
+          return { mode, sessions: buildGridLayout(2, 2).slice(0, 4) };
+        case "grid6":
+          return { mode, sessions: buildGridLayout(3, 2).slice(0, 6) };
+        case "cascade2": {
+          const tiles = orderedSessions.slice(0, 2);
+          return {
+            mode,
+            sessions: tiles.map((session, index) => ({
+              sessionId: session.id,
+              position: {
+                x: index * 12,
+                y: index * 12,
+                width: 75,
+                height: 75,
+              },
+            })),
+          };
+        }
+        case "sideBySide":
+          return { mode, sessions: buildGridLayout(2) };
+        case "mosaic": {
+          const cols = Math.ceil(Math.sqrt(orderedSessions.length)) || 1;
+          return { mode, sessions: buildGridLayout(cols) };
+        }
+        case "miniMosaic": {
+          const cols = Math.ceil(Math.sqrt(orderedSessions.length)) || 1;
+          return { mode, sessions: buildGridLayout(cols) };
+        }
+        default:
+          return { mode: "tabs", sessions: buildGridLayout(1, 1) };
+      }
+    },
+    [activeSessionId],
+  );
+
+  useEffect(() => {
+    setTabLayout((current) => {
+      const currentIds = new Set(current.sessions.map((item) => item.sessionId));
+      const visibleIds = new Set(visibleSessions.map((session) => session.id));
+      const hasDiff =
+        current.sessions.some((item) => !visibleIds.has(item.sessionId)) ||
+        visibleSessions.some((session) => !currentIds.has(session.id));
+      if (!hasDiff) {
+        return current;
+      }
+      return buildTabLayout(current.mode, visibleSessions);
+    });
+  }, [visibleSessions, buildTabLayout]);
+
+  useEffect(() => {
+    if (activeSessionId && !visibleSessions.some((session) => session.id === activeSessionId)) {
+      setActiveSessionId(visibleSessions[0]?.id);
+    }
+  }, [activeSessionId, visibleSessions, setActiveSessionId]);
 
   const languageOptions = [
     { value: "en", label: "English" },
@@ -216,6 +319,64 @@ const AppContent: React.FC = () => {
       });
     }
   };
+
+  const handleSessionDetach = useCallback(
+    (sessionId: string) => {
+      const session = state.sessions.find((item) => item.id === sessionId);
+      if (!session) return;
+      const connection = state.connections.find((item) => item.id === session.connectionId);
+      const windowLabel = `detached-${session.id}`;
+
+      try {
+        const payload = {
+          session,
+          connection: connection || null,
+          savedAt: Date.now(),
+        };
+        localStorage.setItem(`detached-session-${session.id}`, JSON.stringify(payload));
+      } catch (error) {
+        console.error("Failed to persist detached session payload:", error);
+      }
+
+      const existingWindow = WebviewWindow.getByLabel(windowLabel);
+      if (existingWindow) {
+        existingWindow.setFocus().catch(() => undefined);
+      } else {
+        const url = `/detached?sessionId=${session.id}`;
+        const windowTitle = session.name || "Detached Session";
+        new WebviewWindow(windowLabel, {
+          url,
+          title: windowTitle,
+          width: 1200,
+          height: 800,
+          resizable: true,
+          decorations: true,
+        });
+      }
+
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...session,
+          layout: {
+            x: session.layout?.x ?? 0,
+            y: session.layout?.y ?? 0,
+            width: session.layout?.width ?? 100,
+            height: session.layout?.height ?? 100,
+            zIndex: session.layout?.zIndex ?? 1,
+            isDetached: true,
+            windowId: windowLabel,
+          },
+        },
+      });
+
+      if (activeSessionId === sessionId) {
+        const remaining = visibleSessions.filter((item) => item.id !== sessionId);
+        setActiveSessionId(remaining[0]?.id);
+      }
+    },
+    [activeSessionId, dispatch, setActiveSessionId, state.connections, state.sessions, visibleSessions],
+  );
 
   /**
    * Process a submitted password for unlocking or securing data storage.
@@ -1063,13 +1224,24 @@ const AppContent: React.FC = () => {
             activeSessionId={activeSessionId}
             onSessionSelect={setActiveSessionId}
             onSessionClose={handleSessionClose}
+            onSessionDetach={handleSessionDetach}
             enableReorder={appSettings.enableTabReorder}
           />
 
           {/* Session viewer */}
           <div className="flex-1 overflow-hidden">
-            {activeSession ? (
-              <SessionViewer session={activeSession} />
+            {visibleSessions.length > 0 ? (
+              <TabLayoutManager
+                sessions={visibleSessions}
+                activeSessionId={activeSessionId}
+                layout={tabLayout}
+                onLayoutChange={setTabLayout}
+                onSessionSelect={setActiveSessionId}
+                onSessionClose={handleSessionClose}
+                onSessionDetach={handleSessionDetach}
+                renderSession={(session) => <SessionViewer session={session} />}
+                showTabBar={false}
+              />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-gray-400">
                 <Monitor size={64} className="mb-4" />
@@ -1195,4 +1367,3 @@ const App: React.FC = () => (
 );
 
 export default App;
-

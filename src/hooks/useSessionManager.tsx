@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../contexts/useConnections";
 import { Connection, ConnectionSession } from "../types/connection";
 import { SettingsManager } from "../utils/settingsManager";
@@ -320,6 +321,14 @@ export const useSessionManager = () => {
         // });
       } catch (error) {
         console.error("Script execution failed:", error);
+      }
+    }
+
+    if (session.protocol === "ssh" && session.backendSessionId) {
+      try {
+        await invoke("disconnect_ssh", { sessionId: session.backendSessionId });
+      } catch (error) {
+        console.error("Failed to disconnect SSH session:", error);
       }
     }
 

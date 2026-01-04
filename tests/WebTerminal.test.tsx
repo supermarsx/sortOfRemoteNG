@@ -4,9 +4,30 @@ import { WebTerminal } from "../src/components/WebTerminal";
 import { ConnectionSession } from "../src/types/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
+const mockConnection = {
+  id: 'test-connection',
+  name: 'Test SSH Server',
+  protocol: 'ssh' as const,
+  hostname: '192.168.1.100',
+  port: 22,
+  username: 'testuser',
+  password: 'testpass',
+  privateKey: null,
+  passphrase: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  isGroup: false
+};
+
+const mockDispatch = vi.fn();
+
 // Mock Tauri invoke
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn()
+}));
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => {})
 }));
 
 // Mock xterm.js
@@ -46,34 +67,21 @@ const mockInvoke = vi.mocked(tauriInvoke);
 vi.mock('../src/contexts/useConnections', () => ({
   useConnections: () => ({
     state: {
-      connections: [mockConnection]
-    }
+      connections: [mockConnection],
+      sessions: []
+    },
+    dispatch: mockDispatch
   })
 }));
-
-const mockConnection = {
-  id: 'test-connection',
-  name: 'Test SSH Server',
-  protocol: 'ssh' as const,
-  hostname: '192.168.1.100',
-  port: 22,
-  username: 'testuser',
-  password: 'testpass',
-  privateKey: null,
-  passphrase: null,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  isGroup: false
-};
 
 const mockSession: ConnectionSession = {
   id: 'test-session',
   connectionId: 'test-connection',
+  name: 'Test Session',
   protocol: 'ssh',
   hostname: '192.168.1.100',
-  username: 'testuser',
-  password: 'testpass',
-  status: 'connecting'
+  status: 'connecting',
+  startTime: new Date()
 };
 
 const renderWithProviders = (session: ConnectionSession) => {
@@ -87,6 +95,7 @@ const renderWithProviders = (session: ConnectionSession) => {
 describe("WebTerminal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockDispatch.mockClear();
     mockInvoke.mockResolvedValue('test-session-id');
   });
 
@@ -269,7 +278,7 @@ describe("WebTerminal", () => {
   });
 
   describe("Connection Cleanup", () => {
-    it("should disconnect SSH session on unmount", async () => {
+    it("should keep SSH session alive on unmount", async () => {
       mockInvoke.mockResolvedValueOnce('ssh-session-123');
 
       const { unmount } = renderWithProviders(mockSession);
@@ -280,7 +289,7 @@ describe("WebTerminal", () => {
 
       unmount();
 
-      expect(mockInvoke).toHaveBeenCalledWith('disconnect_ssh', {
+      expect(mockInvoke).not.toHaveBeenCalledWith('disconnect_ssh', {
         sessionId: 'ssh-session-123'
       });
     });

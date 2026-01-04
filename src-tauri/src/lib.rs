@@ -456,6 +456,8 @@ pub fn run() {
         ssh::execute_command,
         ssh::execute_command_interactive,
         ssh::start_shell,
+        ssh::send_ssh_input,
+        ssh::resize_ssh_shell,
         ssh::setup_port_forward,
         ssh::list_directory,
         ssh::upload_file,

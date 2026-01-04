@@ -181,7 +181,17 @@ export interface ConnectionSession {
 }
 
 export interface TabLayout {
-  mode: 'tabs' | 'sideBySide' | 'mosaic' | 'miniMosaic';
+  mode:
+    | 'tabs'
+    | 'sideBySide'
+    | 'mosaic'
+    | 'miniMosaic'
+    | 'splitVertical'
+    | 'splitHorizontal'
+    | 'grid2'
+    | 'grid4'
+    | 'grid6'
+    | 'cascade2';
   sessions: {
     sessionId: string;
     position: {
