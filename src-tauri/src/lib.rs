@@ -1066,6 +1066,8 @@ async fn create_desktop_shortcut(
   
   #[cfg(target_os = "linux")]
   {
+    use std::fs;
+
     // Get desktop path
     let desktop_path = dirs::desktop_dir()
       .ok_or("Failed to get desktop directory")?;

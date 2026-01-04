@@ -70,7 +70,7 @@ impl WmiService {
         }
     }
 
-    pub async fn execute_wmi_query(&self, session_id: &str, query: String) -> Result<WmiQueryResult, String> {
+    pub async fn execute_wmi_query(&self, session_id: &str, _query: String) -> Result<WmiQueryResult, String> {
         let _session = self.sessions.get(session_id)
             .ok_or_else(|| format!("WMI session {} not found", session_id))?;
 
@@ -104,7 +104,7 @@ impl WmiService {
         self.sessions.values().cloned().collect()
     }
 
-    pub async fn get_wmi_classes(&self, session_id: &str, namespace: Option<String>) -> Result<Vec<String>, String> {
+    pub async fn get_wmi_classes(&self, session_id: &str, _namespace: Option<String>) -> Result<Vec<String>, String> {
         let _session = self.sessions.get(session_id)
             .ok_or_else(|| format!("WMI session {} not found", session_id))?;
 

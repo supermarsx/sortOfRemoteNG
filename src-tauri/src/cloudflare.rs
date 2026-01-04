@@ -301,7 +301,7 @@ impl CloudflareService {
         Ok(format!("DNS record {} created in zone {}", record.name, zone_id))
     }
 
-    pub async fn update_cloudflare_dns_record(&self, session_id: &str, zone_id: &str, record_id: &str, record: CloudflareDNSRecord) -> Result<String, String> {
+    pub async fn update_cloudflare_dns_record(&self, session_id: &str, zone_id: &str, record_id: &str, _record: CloudflareDNSRecord) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
@@ -319,7 +319,7 @@ impl CloudflareService {
         Ok(format!("DNS record {} deleted from zone {}", record_id, zone_id))
     }
 
-    pub async fn list_cloudflare_workers(&self, session_id: &str, account_id: &str) -> Result<Vec<CloudflareWorker>, String> {
+    pub async fn list_cloudflare_workers(&self, session_id: &str, _account_id: &str) -> Result<Vec<CloudflareWorker>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
@@ -341,7 +341,7 @@ impl CloudflareService {
         ])
     }
 
-    pub async fn deploy_cloudflare_worker(&self, session_id: &str, account_id: &str, script_name: &str, script_content: &str) -> Result<String, String> {
+    pub async fn deploy_cloudflare_worker(&self, session_id: &str, account_id: &str, script_name: &str, _script_content: &str) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
@@ -350,7 +350,7 @@ impl CloudflareService {
         Ok(format!("Worker {} deployed to account {}", script_name, account_id))
     }
 
-    pub async fn list_cloudflare_page_rules(&self, session_id: &str, zone_id: &str) -> Result<Vec<CloudflarePageRule>, String> {
+    pub async fn list_cloudflare_page_rules(&self, session_id: &str, _zone_id: &str) -> Result<Vec<CloudflarePageRule>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }
@@ -382,7 +382,7 @@ impl CloudflareService {
         ])
     }
 
-    pub async fn get_cloudflare_analytics(&self, session_id: &str, zone_id: &str, since: Option<String>, until: Option<String>) -> Result<CloudflareAnalytics, String> {
+    pub async fn get_cloudflare_analytics(&self, session_id: &str, zone_id: &str, _since: Option<String>, _until: Option<String>) -> Result<CloudflareAnalytics, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Cloudflare session {} not found", session_id));
         }

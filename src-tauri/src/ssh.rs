@@ -11,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use shell_escape;
+use tauri::Emitter;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SshConnectionConfig {

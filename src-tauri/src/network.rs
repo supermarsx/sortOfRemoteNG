@@ -72,7 +72,7 @@ impl NetworkService {
         }
     }
 
-    pub async fn get_mac_address(&self, ip: &str) -> Option<String> {
+    pub async fn get_mac_address(&self, _ip: &str) -> Option<String> {
         // This is a simplified implementation
         // In a real implementation, you'd use ARP table lookup or send ARP requests
         match get_mac_address() {

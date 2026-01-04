@@ -113,7 +113,7 @@ impl AgentService {
     }
 
     pub async fn disconnect_agent(&mut self, session_id: &str) -> Result<(), String> {
-        if let Some(mut session) = self.sessions.get_mut(session_id) {
+        if let Some(session) = self.sessions.get_mut(session_id) {
             session.status = AgentStatus::Disconnected;
             Ok(())
         } else {
@@ -173,7 +173,7 @@ impl AgentService {
         }
     }
 
-    pub async fn execute_agent_command(&self, session_id: &str, command: AgentCommand) -> Result<String, String> {
+    pub async fn execute_agent_command(&self, session_id: &str, _command: AgentCommand) -> Result<String, String> {
         let session = self.sessions.get(session_id)
             .ok_or_else(|| format!("Agent session {} not found", session_id))?;
 

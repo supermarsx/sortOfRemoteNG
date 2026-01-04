@@ -299,7 +299,7 @@ impl DbService {
     }
 
     pub async fn export_table_chunked(&self, database: String, table: String, format: String, chunk_size: Option<u32>, max_chunks: Option<u32>) -> Result<String, String> {
-        if let Some(pool) = &self.pool {
+        if let Some(_pool) = &self.pool {
             let chunk_size = chunk_size.unwrap_or(1000); // Default chunk size
             let max_chunks = max_chunks.unwrap_or(100); // Default max chunks to prevent runaway exports
 
@@ -318,7 +318,7 @@ impl DbService {
     }
 
     async fn export_table_csv_chunked(&self, database: String, table: String, chunk_size: u32, max_chunks: u32) -> Result<String, String> {
-        if let Some(pool) = &self.pool {
+        if let Some(_pool) = &self.pool {
             // Get table structure first for headers
             let structure = self.get_table_structure(database.clone(), table.clone()).await?;
             let columns = structure.columns;
@@ -376,7 +376,7 @@ impl DbService {
     }
 
     async fn export_table_sql_chunked(&self, database: String, table: String, chunk_size: u32, max_chunks: u32) -> Result<String, String> {
-        if let Some(pool) = &self.pool {
+        if let Some(_pool) = &self.pool {
             let mut sql = String::new();
 
             // Add header
@@ -484,8 +484,8 @@ impl DbService {
         self.export_database_chunked(database, format, include_data, None, None).await
     }
 
-    pub async fn export_database_chunked(&self, database: String, format: String, include_data: bool, chunk_size: Option<u32>, max_chunks: Option<u32>) -> Result<String, String> {
-        if let Some(pool) = &self.pool {
+    pub async fn export_database_chunked(&self, database: String, _format: String, include_data: bool, chunk_size: Option<u32>, max_chunks: Option<u32>) -> Result<String, String> {
+        if let Some(_pool) = &self.pool {
             let mut output = String::new();
 
             // Add header

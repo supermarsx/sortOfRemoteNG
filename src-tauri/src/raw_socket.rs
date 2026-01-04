@@ -110,7 +110,7 @@ impl RawSocketService {
             }
             "raw_udp" => {
                 // Create raw UDP socket
-                let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
+                let _socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
                     .map_err(|e| format!("Failed to create raw UDP socket: {}", e))?;
 
                 // Convert to tokio UdpSocket
@@ -142,7 +142,6 @@ impl RawSocketService {
 
         // Spawn a task to handle the connection
         let handle = {
-            let session_id = session_id.clone();
             let mut socket_clone = socket;
 
             task::spawn(async move {

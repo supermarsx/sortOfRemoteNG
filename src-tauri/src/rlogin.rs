@@ -77,7 +77,7 @@ impl RloginService {
 
         // Spawn a task to handle the connection
         let handle = {
-            let session_id = session_id.clone();
+            let _session_id = session_id.clone();
 
             task::spawn(async move {
                 let mut buf = [0; 1024];

@@ -179,7 +179,7 @@ impl MeshCentralService {
         Ok(groups)
     }
 
-    pub async fn execute_meshcentral_command(&self, session_id: &str, command: MeshCentralCommand) -> Result<String, String> {
+    pub async fn execute_meshcentral_command(&self, session_id: &str, _command: MeshCentralCommand) -> Result<String, String> {
         let _session = self.sessions.get(session_id)
             .ok_or_else(|| format!("MeshCentral session {} not found", session_id))?;
 

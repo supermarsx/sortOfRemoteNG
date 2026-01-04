@@ -108,7 +108,7 @@ impl ScriptService {
                                                                 };
                                                                 
                                                                 let mut service = ssh_service.lock().await;
-                                                                service.connect_ssh(config).await.map_err(|e| rquickjs::Error::Exception)
+                            service.connect_ssh(config).await.map_err(|_e| rquickjs::Error::Exception)
                                                             }
                                                         })));
 
@@ -118,7 +118,7 @@ impl ScriptService {
                                                             let ssh_service = ssh_service_clone.clone();
                                                             async move {
                                                                 let mut service = ssh_service.lock().await;
-                                                                service.execute_command(&session_id, command, None).await.map_err(|e| rquickjs::Error::Exception)
+                            service.execute_command(&session_id, command, None).await.map_err(|_e| rquickjs::Error::Exception)
                                                             }
                                                         })));
 
@@ -128,7 +128,7 @@ impl ScriptService {
                                                             let ssh_service = ssh_service_clone.clone();
                                                             async move {
                                                                 let mut service = ssh_service.lock().await;
-                                                                service.disconnect_ssh(&session_id).await.map_err(|e| rquickjs::Error::Exception)
+                            service.disconnect_ssh(&session_id).await.map_err(|_e| rquickjs::Error::Exception)
                                                             }
                                                         })));
 

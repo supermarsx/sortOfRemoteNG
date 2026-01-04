@@ -144,7 +144,7 @@ impl CommanderService {
     }
 
     pub async fn disconnect_commander(&mut self, session_id: &str) -> Result<(), String> {
-        if let Some(mut session) = self.sessions.get_mut(session_id) {
+        if let Some(session) = self.sessions.get_mut(session_id) {
             session.status = CommanderStatus::Disconnected;
             Ok(())
         } else {
@@ -152,7 +152,7 @@ impl CommanderService {
         }
     }
 
-    pub async fn execute_commander_command(&self, session_id: &str, command: CommanderCommand) -> Result<String, String> {
+    pub async fn execute_commander_command(&self, session_id: &str, _command: CommanderCommand) -> Result<String, String> {
         let session = self.sessions.get(session_id)
             .ok_or_else(|| format!("Commander session {} not found", session_id))?;
 
@@ -206,7 +206,7 @@ impl CommanderService {
             // In a real implementation, this would perform actual file uploads
             let transfer_id = Uuid::new_v4().to_string();
 
-            let transfer = CommanderFileTransfer {
+            let _transfer = CommanderFileTransfer {
                 id: transfer_id.clone(),
                 session_id: session_id.to_string(),
                 direction: TransferDirection::Upload,
@@ -233,7 +233,7 @@ impl CommanderService {
             // In a real implementation, this would perform actual file downloads
             let transfer_id = Uuid::new_v4().to_string();
 
-            let transfer = CommanderFileTransfer {
+            let _transfer = CommanderFileTransfer {
                 id: transfer_id.clone(),
                 session_id: session_id.to_string(),
                 direction: TransferDirection::Download,
@@ -276,7 +276,7 @@ impl CommanderService {
         }
     }
 
-    pub async fn list_commander_directory(&self, session_id: &str, path: String) -> Result<Vec<serde_json::Value>, String> {
+    pub async fn list_commander_directory(&self, session_id: &str, _path: String) -> Result<Vec<serde_json::Value>, String> {
         let session = self.sessions.get(session_id)
             .ok_or_else(|| format!("Commander session {} not found", session_id))?;
 

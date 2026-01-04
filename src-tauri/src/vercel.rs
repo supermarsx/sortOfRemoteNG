@@ -189,7 +189,7 @@ impl VercelService {
         ])
     }
 
-    pub async fn list_vercel_deployments(&self, session_id: &str, project_id: Option<String>) -> Result<Vec<VercelDeployment>, String> {
+    pub async fn list_vercel_deployments(&self, session_id: &str, _project_id: Option<String>) -> Result<Vec<VercelDeployment>, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Vercel session {} not found", session_id));
         }
@@ -300,7 +300,7 @@ impl VercelService {
         Ok(format!("Domain {} added{}", domain_name, project_msg))
     }
 
-    pub async fn set_vercel_env_var(&self, session_id: &str, project_id: &str, key: &str, value: &str, target: Vec<String>) -> Result<String, String> {
+    pub async fn set_vercel_env_var(&self, session_id: &str, project_id: &str, key: &str, _value: &str, target: Vec<String>) -> Result<String, String> {
         if !self.sessions.contains_key(session_id) {
             return Err(format!("Vercel session {} not found", session_id));
         }

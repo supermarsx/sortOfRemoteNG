@@ -217,7 +217,7 @@ impl FtpService {
             sess.userauth_password(&username, &password.unwrap())
                 .map_err(|e| format!("Password authentication failed: {}", e))?;
             "password"
-        } else if let Some(private_key) = private_key {
+        } else if let Some(_private_key) = private_key {
             // For private _key auth, we'd need to parse the key
             // This is a simplified implementation
             return Err("Private key authentication not yet implemented".to_string());

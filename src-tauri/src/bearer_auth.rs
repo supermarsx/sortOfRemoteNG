@@ -122,7 +122,7 @@ impl BearerAuthService {
     }
 
     /// Authenticates with an external OAuth2 provider
-    async fn authenticate_with_provider(&mut self, username: String, password: String, provider_url: &str) -> Result<String, String> {
+    async fn authenticate_with_provider(&mut self, username: String, _password: String, provider_url: &str) -> Result<String, String> {
         // This is a simplified implementation
         // In a real implementation, you would:
         // 1. Redirect user to provider's authorization URL
@@ -244,7 +244,7 @@ impl BearerAuthService {
     }
 
     /// Handles OAuth2 callback
-    pub async fn handle_oauth_callback(&mut self, provider_name: &str, code: &str, state: &str) -> Result<String, String> {
+    pub async fn handle_oauth_callback(&mut self, provider_name: &str, code: &str, _state: &str) -> Result<String, String> {
         // This would complete the OAuth flow and return a token
         // Simplified implementation
         let token = format!("oauth_callback_{}_{}", provider_name, code);

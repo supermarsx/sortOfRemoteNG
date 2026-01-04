@@ -1540,16 +1540,16 @@ async fn get_s3_bucket_api(
 }
 
 async fn list_s3_objects_api(
-    State(services): State<Arc<ApiService>>,
-    Path((session_id, bucket_name)): Path<(String, String)>,
+    State(_services): State<Arc<ApiService>>,
+    Path((_session_id, _bucket_name)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // This method doesn't exist, return empty array for now
     Ok(Json(serde_json::json!([])))
 }
 
 async fn get_s3_object_api(
-    State(services): State<Arc<ApiService>>,
-    Path((session_id, bucket_name, key)): Path<(String, String, String)>,
+    State(_services): State<Arc<ApiService>>,
+    Path((_session_id, _bucket_name, _key)): Path<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // This method doesn't exist, return not found
     Err(StatusCode::NOT_FOUND)
@@ -1745,8 +1745,8 @@ async fn list_vercel_deployments_api(
 }
 
 async fn get_vercel_deployment_api(
-    State(services): State<Arc<ApiService>>,
-    Path((session_id, deployment_id)): Path<(String, String)>,
+    State(_services): State<Arc<ApiService>>,
+    Path((_session_id, _deployment_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // This method doesn't exist, return not found
     Err(StatusCode::NOT_FOUND)
