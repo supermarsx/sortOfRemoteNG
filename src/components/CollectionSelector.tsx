@@ -310,12 +310,12 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 flex items-stretch justify-center z-50"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
         <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white flex items-center space-x-2">
             <Database size={20} className="text-blue-400" />
