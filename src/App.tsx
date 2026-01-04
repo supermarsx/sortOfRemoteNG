@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { Monitor, Zap, Menu, Globe, Minus, Square, X, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -237,9 +237,11 @@ const AppContent: React.FC = () => {
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isResizing) return;
-    const newWidth = Math.max(200, Math.min(600, e.clientX));
+    const newWidth = sidebarPosition === 'left' 
+      ? Math.max(200, Math.min(600, e.clientX))
+      : Math.max(200, Math.min(600, window.innerWidth - e.clientX));
     setSidebarWidth(newWidth);
-  }, [isResizing]);
+  }, [isResizing, sidebarPosition]);
 
   const handleMouseUp = useCallback(() => {
     setIsResizing(false);

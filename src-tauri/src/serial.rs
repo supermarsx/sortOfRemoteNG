@@ -5,8 +5,8 @@ use tokio::task;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
-use serialport::{SerialPort, SerialPortType};
-use std::io::{Read, Write};
+use serialport::{};
+use std::io::Read;
 use std::time::Duration;
 
 pub type SerialServiceState = Arc<Mutex<SerialService>>;

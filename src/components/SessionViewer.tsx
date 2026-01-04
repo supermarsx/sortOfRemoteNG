@@ -4,6 +4,7 @@ import { ConnectionSession } from '../types/connection';
 import { WebTerminal } from './WebTerminal';
 import { WebBrowser } from './WebBrowser';
 import RDPClient from './RDPClient';
+import { AnyDeskClient } from './AnyDeskClient';
 
 interface SessionViewerProps {
   session: ConnectionSession;
@@ -37,6 +38,9 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session }) => {
           
           case 'rdp':
             return <RDPClient session={session} />;
+          
+          case 'anydesk':
+            return <AnyDeskClient session={session} />;
           
           case 'vnc':
             return (

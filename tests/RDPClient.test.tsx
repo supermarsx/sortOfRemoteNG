@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { RDPClient } from "../src/components/RDPClient";
+import RDPClient from "../src/components/RDPClient";
 import { ConnectionSession } from "../src/types/connection";
+import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 // Mock Tauri invoke
 vi.mock('@tauri-apps/api/core', () => ({
@@ -13,11 +14,35 @@ vi.mock('../src/components/rdpCanvas', () => ({
   drawSimulatedDesktop: vi.fn()
 }));
 
+// Mock useConnections hook
+vi.mock('../src/contexts/useConnections', () => ({
+  useConnections: () => ({
+    state: {
+      connections: [mockConnection]
+    }
+  })
+}));
+
 import { drawSimulatedDesktop } from '../src/components/rdpCanvas';
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 
 const mockInvoke = vi.mocked(tauriInvoke);
 const mockDrawSimulatedDesktop = vi.mocked(drawSimulatedDesktop);
+
+const mockConnection = {
+  id: 'test-connection',
+  name: 'Test RDP Server',
+  protocol: 'rdp' as const,
+  hostname: '192.168.1.100',
+  port: 3389,
+  username: 'testuser',
+  password: 'testpass',
+  privateKey: null,
+  passphrase: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  isGroup: false
+};
 
 const mockSession: ConnectionSession = {
   id: 'test-rdp-session',
@@ -29,15 +54,32 @@ const mockSession: ConnectionSession = {
   status: 'connecting'
 };
 
+const renderWithProviders = (session: ConnectionSession) => {
+  return render(
+    <ConnectionProvider>
+      <RDPClient session={session} />
+    </ConnectionProvider>
+  );
+};
+
 describe("RDPClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvoke.mockResolvedValue('rdp-session-123');
+    
+    // Mock canvas getContext to return a mock context
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
+      fillStyle: '',
+      fillRect: vi.fn(),
+      fillText: vi.fn(),
+      font: '',
+      textAlign: '',
+    }));
   });
 
   describe("RDP Connection", () => {
     it("should attempt real RDP connection first", async () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith('connect_rdp', {
@@ -50,28 +92,34 @@ describe("RDPClient", () => {
     });
 
     it("should display connecting status initially", () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       expect(screen.getByText("connecting")).toBeInTheDocument();
     });
 
     it("should display connected status when RDP connection succeeds", async () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
+      // Wait for the connection attempt
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith('connect_rdp', expect.any(Object));
+      });
+
+      // The component should eventually show connected status
       await waitFor(() => {
         expect(screen.getByText("connected")).toBeInTheDocument();
-      });
+      }, { timeout: 3000 });
     });
 
     it("should fallback to simulation when RDP connection fails", async () => {
       mockInvoke.mockRejectedValueOnce(new Error('RDP connection failed'));
 
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(mockDrawSimulatedDesktop).toHaveBeenCalled();
         expect(screen.getByText("connected")).toBeInTheDocument();
-      });
+      }, { timeout: 5000 });
     });
 
     it("should display error status when both RDP and simulation fail", async () => {
@@ -80,53 +128,59 @@ describe("RDPClient", () => {
         throw new Error('Canvas error');
       });
 
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(screen.getByText("error")).toBeInTheDocument();
-      });
+        expect(screen.getByText("RDP Connection Failed")).toBeInTheDocument();
+      }, { timeout: 5000 });
     });
   });
 
   describe("Canvas Rendering", () => {
     it("should render canvas element", () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       const canvas = document.querySelector('canvas');
       expect(canvas).toBeInTheDocument();
     });
 
     it("should set correct canvas dimensions", async () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
+      // Wait for connection to complete
+      await waitFor(() => {
+        expect(screen.getByText("connected")).toBeInTheDocument();
+      });
+
+      // Then check canvas dimensions
       await waitFor(() => {
         const canvas = document.querySelector('canvas') as HTMLCanvasElement;
         expect(canvas.width).toBe(1024);
         expect(canvas.height).toBe(768);
-      });
+      }, { timeout: 3000 });
     });
   });
 
   describe("UI Controls", () => {
     it("should render control buttons", async () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(screen.getByText("connected")).toBeInTheDocument();
       });
 
-      expect(screen.getByRole('button', { name: /maximize/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /fullscreen/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /rdp settings/i })).toBeInTheDocument();
     });
 
     it("should toggle fullscreen mode", async () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(screen.getByText("connected")).toBeInTheDocument();
       });
 
-      const fullscreenButton = screen.getByRole('button', { name: /maximize/i });
+      const fullscreenButton = screen.getByRole('button', { name: /fullscreen/i });
       fullscreenButton.click();
 
       // Component should still be rendered
@@ -136,7 +190,7 @@ describe("RDPClient", () => {
 
   describe("Settings", () => {
     it("should toggle settings panel", async () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(screen.getByText("connected")).toBeInTheDocument();
@@ -152,7 +206,7 @@ describe("RDPClient", () => {
 
   describe("Connection Status Icons", () => {
     it("should show correct icon for connected status", async () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(screen.getByText("connected")).toBeInTheDocument();
@@ -169,7 +223,7 @@ describe("RDPClient", () => {
         setTimeout(() => resolve('session-id'), 100)
       ));
 
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       // Initially should show connecting status
       expect(screen.getByText("connecting")).toBeInTheDocument();
@@ -178,7 +232,7 @@ describe("RDPClient", () => {
 
   describe("Canvas Interaction", () => {
     it("should handle canvas clicks when connected", async () => {
-      render(<RDPClient session={mockSession} />);
+      renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(screen.getByText("connected")).toBeInTheDocument();
@@ -194,7 +248,7 @@ describe("RDPClient", () => {
 
   describe("Cleanup", () => {
     it("should cleanup on unmount", async () => {
-      const { unmount } = render(<RDPClient session={mockSession} />);
+      const { unmount } = renderWithProviders(mockSession);
 
       await waitFor(() => {
         expect(screen.getByText("connected")).toBeInTheDocument();

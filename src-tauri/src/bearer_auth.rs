@@ -24,9 +24,8 @@ use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
-use oauth2::{AuthorizationCode, ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope, TokenResponse};
+use oauth2::{ClientId, ClientSecret, CsrfToken, PkceCodeChallenge, RedirectUrl, Scope};
 use oauth2::basic::BasicClient;
-use oauth2::reqwest::async_http_client;
 
 /// OAuth2 provider configuration
 #[derive(Serialize, Deserialize, Clone)]
@@ -162,7 +161,7 @@ impl BearerAuthService {
     /// Validates a JWT token
     fn validate_jwt_token(&self, token: &str) -> Result<String, String> {
         // Try to decode with available keys
-        for (issuer, key) in &self.jwt_keys {
+        for (_issuer, key) in &self.jwt_keys {
             let validation = Validation::new(Algorithm::RS256);
             match decode::<Claims>(token, key, &validation) {
                 Ok(token_data) => {

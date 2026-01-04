@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
-use rquickjs::{AsyncRuntime, AsyncContext, Function, Object, Value, async_with};
+use rquickjs::{AsyncRuntime, AsyncContext, Function, Object, async_with};
 use rquickjs::prelude::Async;
-use crate::ssh::{SshServiceState, SshConnectionConfig, JumpHostConfig};
+use crate::ssh::{SshServiceState, SshConnectionConfig};
 
 pub type ScriptServiceState = Arc<Mutex<ScriptService>>;
 

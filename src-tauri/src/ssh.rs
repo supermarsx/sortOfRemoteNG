@@ -260,7 +260,7 @@ impl SshService {
     fn authenticate_session(&self, session: &mut Session, config: &SshConnectionConfig) -> Result<(), String> {
         // Try public key authentication first if key is provided
         if let Some(private_key_path) = &config.private_key_path {
-            if let Ok(private_key_content) = std::fs::read_to_string(private_key_path) {
+            if let Ok(_private_key_content) = std::fs::read_to_string(private_key_path) {
                 let passphrase = config.private_key_passphrase.as_deref();
 
                 if session.userauth_pubkey_file(
@@ -401,7 +401,7 @@ impl SshService {
                 // We should use rsa crate to generate and then convert.
                 // OR checking if ssh-key has a specific RSA generation helper.
                 // Let's try utilizing the 'rsa' crate directly for generation as we imported it.
-                use rsa::{RsaPrivateKey, pkcs8::EncodePrivateKey};
+                use rsa::RsaPrivateKey;
                 let mut rng = OsRng;
                 let priv_key = RsaPrivateKey::new(&mut rng, bit_size)
                     .map_err(|e| format!("Failed to generate RSA key: {}", e))?;

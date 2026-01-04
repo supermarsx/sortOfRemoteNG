@@ -58,6 +58,7 @@ pub mod zerotier;
 pub mod tailscale;
 pub mod chaining;
 pub mod qr;
+pub mod anydesk;
 pub mod api;
 pub mod rustdesk;
 pub mod wmi;
@@ -113,10 +114,8 @@ use tailscale::TailscaleService;
 use chaining::ChainingService;
 use qr::QrService;
 use rustdesk::RustDeskService;
+use anydesk::AnyDeskService;
 use api::ApiService;
-use aws::AwsService;
-use vercel::VercelService;
-use cloudflare::CloudflareService;
 use cert_auth::CertAuthService;
 use two_factor::TwoFactorService;
 use bearer_auth::BearerAuthService;
@@ -137,7 +136,6 @@ use linode::LinodeService;
 use ovh::OvhService;
 
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -196,6 +194,10 @@ pub fn run() {
       // Initialize VNC service
       let vnc_service = VncService::new();
       app.manage(vnc_service);
+
+      // Initialize AnyDesk service
+      let anydesk_service = AnyDeskService::new();
+      app.manage(anydesk_service);
 
       // Initialize DB service
       let db_service = DbService::new();
@@ -437,6 +439,10 @@ pub fn run() {
         vnc::disconnect_vnc,
         vnc::get_vnc_session_info,
         vnc::list_vnc_sessions,
+        anydesk::launch_anydesk,
+        anydesk::disconnect_anydesk,
+        anydesk::get_anydesk_session,
+        anydesk::list_anydesk_sessions,
         db::connect_mysql,
         db::execute_query,
         db::disconnect_db,

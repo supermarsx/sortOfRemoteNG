@@ -209,7 +209,7 @@ impl CertAuthService {
     }
 
     /// Validates a certificate (internal)
-    fn validate_certificate_internal(&self, cert: &CertInfo) -> Result<bool, String> {
+    fn validate_certificate_internal(&self, _cert: &CertInfo) -> Result<bool, String> {
         // Parse the dates - for now, just return true since we don't have full validation
         // TODO: Add proper date validation and CRL checking
         Ok(true)

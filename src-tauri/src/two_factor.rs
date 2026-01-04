@@ -22,9 +22,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
-use totp_rs::{Algorithm, TOTP, Secret};
+use totp_rs::{Algorithm, TOTP};
+use image::Rgb;
 use qrcode::QrCode;
-use image::{ImageBuffer, Rgb};
 use base64::{Engine as _, engine::general_purpose};
 
 /// Supported 2FA methods

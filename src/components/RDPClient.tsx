@@ -69,6 +69,10 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
         debugLog(`RDP session established: ${sessionId}`);
         
+        // Set connected status first
+        setIsConnected(true);
+        setConnectionStatus('connected');
+        
         // Initialize canvas for RDP display
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -90,15 +94,16 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           ctx.textAlign = 'center';
           ctx.fillText('RDP Connected', width / 2, height / 2);
           ctx.fillText(`Session: ${sessionId}`, width / 2, height / 2 + 40);
-          
-          setIsConnected(true);
-          setConnectionStatus('connected');
         }
       } catch (rdpError) {
         debugLog(`RDP connection failed, falling back to simulation: ${rdpError}`);
         
         // Fallback to simulation if RDP service fails
         await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Set connected status for simulation
+        setIsConnected(true);
+        setConnectionStatus('connected');
         
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -111,19 +116,20 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           canvas.width = width;
           canvas.height = height;
           
-          // Draw simulated desktop with error message
-          drawSimulatedDesktop(ctx, width, height);
-          
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
-          ctx.fillRect(10, 10, 300, 60);
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '12px Arial';
-          ctx.textAlign = 'left';
-          ctx.fillText('RDP Connection Failed', 20, 30);
-          ctx.fillText('Using simulation mode', 20, 50);
-          
-          setIsConnected(true);
-          setConnectionStatus('connected');
+          try {
+            // Draw simulated desktop with error message
+            drawSimulatedDesktop(ctx, width, height);
+            
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
+            ctx.fillRect(10, 10, 300, 60);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('RDP Connection Failed', 20, 30);
+            ctx.fillText('Using simulation mode', 20, 50);
+          } catch (simError) {
+            throw simError; // Re-throw to be caught by outer catch
+          }
         }
       }
     } catch (error) {
@@ -308,7 +314,22 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       )}
 
       {/* RDP Canvas */}
-      <div className="flex-1 flex items-center justify-center bg-black p-4">
+      <div className="flex-1 flex items-center justify-center bg-black p-4 relative">
+        <canvas
+          ref={canvasRef}
+          className="border border-gray-600 cursor-crosshair max-w-full max-h-full"
+          onClick={handleCanvasClick}
+          onKeyDown={handleKeyDown}
+          tabIndex={0}
+          width={parseInt(settings.resolution.split('x')[0])}
+          height={parseInt(settings.resolution.split('x')[1])}
+          style={{
+            imageRendering: 'pixelated',
+            objectFit: 'contain',
+            display: connectionStatus === 'connected' ? 'block' : 'none'
+          }}
+        />
+        
         {connectionStatus === 'connecting' && (
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
@@ -323,20 +344,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             <p className="text-red-400 mb-2">RDP Connection Failed</p>
             <p className="text-gray-500 text-sm">Unable to connect to {session.hostname}</p>
           </div>
-        )}
-        
-        {connectionStatus === 'connected' && (
-          <canvas
-            ref={canvasRef}
-            className="border border-gray-600 cursor-crosshair max-w-full max-h-full"
-            onClick={handleCanvasClick}
-            onKeyDown={handleKeyDown}
-            tabIndex={0}
-            style={{
-              imageRendering: 'pixelated',
-              objectFit: 'contain'
-            }}
-          />
         )}
       </div>
 

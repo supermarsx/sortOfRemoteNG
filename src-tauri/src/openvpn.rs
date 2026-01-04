@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
-use regex::Regex;
 
 pub type OpenVPNServiceState = Arc<Mutex<OpenVPNService>>;
 

@@ -71,6 +71,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
                 <option value="rdp">RDP (Remote Desktop)</option>
                 <option value="ssh">SSH (Secure Shell)</option>
                 <option value="vnc">VNC (Virtual Network Computing)</option>
+                <option value="anydesk">AnyDesk</option>
                 <option value="http">HTTP</option>
                 <option value="https">HTTPS</option>
                 <option value="telnet">Telnet</option>

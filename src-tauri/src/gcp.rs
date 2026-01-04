@@ -6,8 +6,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-use sha2::{Sha256, Digest};
-use base64::{Engine as _, engine::general_purpose};
 
 pub type GcpServiceState = Arc<Mutex<GcpService>>;
 

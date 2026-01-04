@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use tokio::task;
 use tokio::sync::mpsc;
 use socket2::{Socket, Domain, Type, Protocol};
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use std::net::SocketAddr;
 
 pub type RawSocketServiceState = Arc<Mutex<RawSocketService>>;
 
