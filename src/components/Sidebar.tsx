@@ -121,8 +121,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <>
       <div className={`bg-gray-800 ${sideBorder} border-gray-700 flex flex-col transition-all duration-300 h-full w-full`}>
         {/* Header */}
-        <div className="p-4 border-b border-gray-700">
-          <div className="flex items-center justify-between">
+        <div className={`border-b border-gray-700 ${state.sidebarCollapsed ? "p-2" : "p-4"}`}>
+          <div className={`flex items-center ${state.sidebarCollapsed ? "justify-center" : "justify-between"}`}>
             {!state.sidebarCollapsed && (
               <div className="flex items-center space-x-2">
                 <h2 className="text-lg font-semibold text-white">{t('connections.title')}</h2>
@@ -141,7 +141,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
             )}
-            <div className="flex items-center space-x-1">
+            <div
+              className={
+                state.sidebarCollapsed
+                  ? "flex flex-col items-center gap-1"
+                  : "flex items-center space-x-1"
+              }
+            >
               <button
                 onClick={onToggleSidebarPosition}
                 className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400"
@@ -302,12 +308,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               enableReorder={enableConnectionReorder}
             />
 
-            {/* Footer */}
-            <div className="p-4 border-t border-gray-700 mt-auto">
-              <div className="text-xs text-gray-500">
-                Shortcuts moved to the top bar.
-              </div>
-            </div>
+            <div className="border-t border-gray-700 mt-auto" />
           </>
         )}
       </div>

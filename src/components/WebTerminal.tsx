@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Terminal, type IDisposable } from '@xterm/xterm';
+import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { ConnectionSession } from '../types/connection';
-import { Maximize2, Minimize2, Copy, Download, Upload } from 'lucide-react';
+import { Maximize2, Minimize2, Copy, Download } from 'lucide-react';
 import { useConnections } from '../contexts/useConnections';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -19,14 +19,13 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const fitAddon = useRef<FitAddon | null>(null);
   const sshSessionId = useRef<string | null>(null);
   const isConnectedRef = useRef<boolean>(false);
-  const websocket = useRef<WebSocket | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string>('');
-  const [sshOutputInterval, setSshOutputInterval] = useState<NodeJS.Timeout | null>(null);
+  const sshOutputIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [currentLine, setCurrentLine] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
-  const [commandBuffer, setCommandBuffer] = useState('');
+  const isConnectingRef = useRef(false);
 
   // Function to poll for SSH output
   const pollSSHOutput = useCallback(async () => {
@@ -47,19 +46,23 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
   // Start polling for SSH output when connected
   useEffect(() => {
-    if (isConnected && session.protocol === 'ssh' && !sshOutputInterval) {
+    if (isConnected && session.protocol === 'ssh' && !sshOutputIntervalRef.current) {
       const interval = setInterval(pollSSHOutput, 100); // Poll every 100ms
-      setSshOutputInterval(interval);
+      sshOutputIntervalRef.current = interval;
 
       return () => {
         clearInterval(interval);
-        setSshOutputInterval(null);
+        sshOutputIntervalRef.current = null;
       };
-    } else if (!isConnected && sshOutputInterval) {
-      clearInterval(sshOutputInterval);
-      setSshOutputInterval(null);
+    } else if (!isConnected && sshOutputIntervalRef.current) {
+      clearInterval(sshOutputIntervalRef.current);
+      sshOutputIntervalRef.current = null;
     }
-  }, [isConnected, session.protocol, pollSSHOutput, sshOutputInterval]);
+  }, [isConnected, session.protocol, pollSSHOutput]);
+
+  useEffect(() => {
+    isConnectingRef.current = isConnecting;
+  }, [isConnecting]);
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
@@ -356,7 +359,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     const dataDisposable = terminal.current.onData(async (data) => {
       if (session.protocol === 'ssh') {
         // For SSH connections, send all input directly to the SSH session
-        if (sshSessionId.current && isConnectedRef.current && !isConnecting) {
+        if (sshSessionId.current && isConnectedRef.current && !isConnectingRef.current) {
           try {
             await invoke('send_ssh_input', {
               sessionId: sshSessionId.current,
@@ -394,9 +397,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       dataDisposable.dispose();
 
       // Clear SSH output polling
-      if (sshOutputInterval) {
-        clearInterval(sshOutputInterval);
-        setSshOutputInterval(null);
+      if (sshOutputIntervalRef.current) {
+        clearInterval(sshOutputIntervalRef.current);
+        sshOutputIntervalRef.current = null;
       }
 
       // Disconnect SSH session if connected
@@ -420,7 +423,6 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       setConnectionError('');
       setCurrentLine('');
       setIsConnecting(false);
-      setCommandBuffer('');
     };
   }, [session.protocol, session.hostname, handleNonSSHInput, initializeSSHConnection, onResize]);
 
@@ -445,12 +447,13 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const pasteFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (terminal.current && websocket.current && isConnected) {
-        // Send paste data through WebSocket for SSH connections
-        websocket.current.send(JSON.stringify({
-          type: 'data',
-          data: text
-        }));
+      if (terminal.current && session.protocol === 'ssh') {
+        if (sshSessionId.current && isConnectedRef.current) {
+          await invoke('send_ssh_input', {
+            sessionId: sshSessionId.current,
+            data: text
+          });
+        }
       } else if (terminal.current) {
         // For non-SSH, handle paste character by character
         for (const char of text) {
@@ -464,65 +467,73 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
   return (
     <div className={`flex flex-col bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
-      {/* Terminal Header */}
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="flex space-x-1">
-            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-            <div className="w-3 h-3 rounded-full bg-green-500"></div>
+      <div className="bg-gray-800 border-b border-gray-700">
+        <div className="px-4 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div>
+              <div className="text-sm font-semibold text-gray-100">
+                {session.name || "Terminal"}
+              </div>
+              <div className="text-xs text-gray-400 uppercase tracking-wide">
+                {session.protocol.toUpperCase()} • {session.hostname}
+              </div>
+            </div>
           </div>
-          <span className="text-sm text-gray-300">
-            {session.name} - {session.hostname}
-          </span>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={copySelection}
+              className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Copy selection"
+            >
+              <Copy size={14} />
+            </button>
+            <button
+              onClick={pasteFromClipboard}
+              className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Paste"
+            >
+              <Download size={14} />
+            </button>
+            <button
+              onClick={toggleFullscreen}
+              className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 pb-3 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-wide">
+          {isConnecting && (
+            <span className="text-yellow-300 bg-yellow-400/20 px-2 py-0.5 rounded">
+              Connecting
+            </span>
+          )}
           {isConnected && (
-            <span className="text-xs text-green-400 bg-green-400/20 px-2 py-1 rounded">
+            <span className="text-green-300 bg-green-400/20 px-2 py-0.5 rounded">
               Connected
             </span>
           )}
           {connectionError && (
-            <span className="text-xs text-red-400 bg-red-400/20 px-2 py-1 rounded">
+            <span className="text-red-300 bg-red-400/20 px-2 py-0.5 rounded">
               Error: {connectionError}
             </span>
           )}
           {connection && session.protocol === 'ssh' && (
-            <span className="text-xs text-blue-400 bg-blue-400/20 px-2 py-1 rounded">
+            <span className="text-blue-300 bg-blue-400/20 px-2 py-0.5 rounded">
               SSH Library: Rust SSH Library
             </span>
           )}
         </div>
-        
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={copySelection}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title="Copy selection"
-          >
-            <Copy size={14} />
-          </button>
-          <button
-            onClick={pasteFromClipboard}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title="Paste"
-          >
-            <Download size={14} />
-          </button>
-          <button
-            onClick={toggleFullscreen}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          >
-            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </button>
-        </div>
       </div>
 
-      {/* Terminal */}
-      <div className="flex-1 p-2">
+      <div className="flex-1 p-3 min-h-0">
         <div
           ref={terminalRef}
-          className="w-full h-full rounded border border-gray-700"
-          style={{ minHeight: '300px' }}
+          className="w-full h-full rounded-md border border-gray-700 bg-gray-900 min-h-0"
+          style={{ minHeight: '320px' }}
         />
       </div>
     </div>

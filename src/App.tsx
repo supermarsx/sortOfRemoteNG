@@ -40,6 +40,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { PerformanceMonitor } from "./components/PerformanceMonitor";
 import { ActionLogViewer } from "./components/ActionLogViewer";
 import { ImportExport } from "./components/ImportExport";
+import { loadLanguage } from "./i18n";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -106,11 +107,24 @@ const AppContent: React.FC = () => {
 
   const languageOptions = [
     { value: "en", label: "English" },
-    { value: "es", label: "Español (España)" },
-    { value: "fr", label: "Français (France)" },
+    { value: "es", label: "Espanol (Espana)" },
+    { value: "fr", label: "Francais (France)" },
     { value: "de", label: "Deutsch (Deutschland)" },
-    { value: "pt-PT", label: "Português (Portugal)" },
+    { value: "pt-PT", label: "Portugues (Portugal)" },
   ];
+
+  const handleLanguageChange = async (language: string) => {
+    try {
+      if (language !== "en") {
+        await loadLanguage(language);
+      }
+      await i18n.changeLanguage(language);
+    } catch (error) {
+      console.error("Failed to change language:", error);
+    } finally {
+      setShowLanguageMenu(false);
+    }
+  };
 
   /**
    * Select a collection and load its data, handling common errors.
@@ -226,6 +240,12 @@ const AppContent: React.FC = () => {
 
   const handlePasswordCancel = () => {
     if (passwordDialogMode === "setup") {
+      if (!collectionManager.getCurrentCollection()) {
+        showAlert("No collection selected.");
+        setShowPasswordDialog(false);
+        setPasswordError("");
+        return;
+      }
       saveData().catch(console.error);
     }
     setShowPasswordDialog(false);
@@ -261,6 +281,15 @@ const AppContent: React.FC = () => {
       onConfirm: () => setDialogState(prev => ({ ...prev, isOpen: false })),
     });
   };
+
+  const isWindowPermissionError = useCallback((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      message.includes("not allowed") ||
+      message.includes("allow-set-size") ||
+      message.includes("allow-set-position")
+    );
+  }, []);
 
   const closeConfirmDialog = () => {
     setDialogState(prev => ({ ...prev, isOpen: false }));
@@ -351,6 +380,27 @@ const AppContent: React.FC = () => {
   }, [showLanguageMenu]);
 
   useEffect(() => {
+    const elements = document.querySelectorAll<HTMLElement>("[title]");
+    elements.forEach((element) => {
+      if (element.dataset.tooltip) return;
+      const title = element.getAttribute("title");
+      if (!title) return;
+      element.setAttribute("data-tooltip", title);
+      element.removeAttribute("title");
+    });
+  }, [
+    showSettings,
+    showQuickConnect,
+    showConnectionEditor,
+    showCollectionSelector,
+    showPerformanceMonitor,
+    showActionLog,
+    showImportExport,
+    showPasswordDialog,
+    state.sessions.length,
+  ]);
+
+  useEffect(() => {
     if (!appSettings) return;
 
     if (appSettings.persistSidebarWidth && appSettings.sidebarWidth) {
@@ -376,12 +426,20 @@ const AppContent: React.FC = () => {
 
     if (appSettings.persistWindowSize && appSettings.windowSize) {
       const { width, height } = appSettings.windowSize;
-      window.setSize(new LogicalSize(width, height)).catch(console.error);
+      window.setSize(new LogicalSize(width, height)).catch((error) => {
+        if (!isWindowPermissionError(error)) {
+          console.error(error);
+        }
+      });
     }
 
     if (appSettings.persistWindowPosition && appSettings.windowPosition) {
       const { x, y } = appSettings.windowPosition;
-      window.setPosition(new LogicalPosition(x, y)).catch(console.error);
+      window.setPosition(new LogicalPosition(x, y)).catch((error) => {
+        if (!isWindowPermissionError(error)) {
+          console.error(error);
+        }
+      });
     }
   }, [
     appSettings.persistWindowSize,
@@ -389,6 +447,7 @@ const AppContent: React.FC = () => {
     appSettings.windowSize,
     appSettings.windowPosition,
     isInitialized,
+    isWindowPermissionError,
   ]);
 
   useEffect(() => {
@@ -671,8 +730,7 @@ const AppContent: React.FC = () => {
                   <button
                     key={option.value}
                     onClick={() => {
-                      i18n.changeLanguage(option.value);
-                      setShowLanguageMenu(false);
+                      handleLanguageChange(option.value);
                     }}
                     className={`flex items-center w-full px-3 py-2 text-sm transition-colors ${
                       i18n.language === option.value
@@ -809,3 +867,4 @@ const App: React.FC = () => (
 );
 
 export default App;
+

@@ -10,6 +10,7 @@ vi.mock("react-i18next", () => ({
     t: (key: string) => key,
     i18n: { language: "en", changeLanguage: vi.fn() },
   }),
+  initReactI18next: { type: "3rdParty", init: vi.fn() },
 }));
 
 const mockSettings: GlobalSettings = {

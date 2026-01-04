@@ -28,15 +28,17 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
     setSchemes(themeManager.getAvailableColorSchemes());
   }, [themeManager]);
 
-  const schemeOptions = useMemo(
-    () =>
-      schemes.map((scheme) => ({
-        value: scheme,
-        label: formatLabel(scheme),
-        color: themeManager.getColorSchemeConfig(scheme)?.primary ?? "#3b82f6",
-      })),
-    [schemes, themeManager],
-  );
+  const schemeOptions = useMemo(() => {
+    const accent = settings.primaryAccentColor || "#3b82f6";
+    return schemes.map((scheme) => ({
+      value: scheme,
+      label: formatLabel(scheme),
+      color:
+        scheme === "other"
+          ? accent
+          : themeManager.getColorSchemeConfig(scheme)?.primary ?? "#3b82f6",
+    }));
+  }, [schemes, settings.primaryAccentColor, themeManager]);
 
   return (
     <div className="space-y-6">
@@ -127,7 +129,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
             </div>
           </div>
           <p className="text-xs text-gray-400 mt-2">
-            Overrides the scheme primary color.
+            Use the "Other" scheme to apply this accent.
           </p>
         </div>
 

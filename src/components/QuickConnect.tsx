@@ -48,21 +48,32 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
-        <div className="relative h-12 border-b border-gray-700">
-          <h2 className="absolute left-4 top-3 text-lg font-semibold text-white">
-            Quick Connect
-          </h2>
-          <button
-            onClick={onClose}
-            className="absolute right-3 top-2 text-gray-400 hover:text-white transition-colors"
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
-        </div>
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden flex flex-col">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1" role="form">
+          <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white">Quick Connect</h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                data-tooltip="Connect"
+                aria-label="Connect"
+                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              >
+                <Play size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                data-tooltip="Close"
+                aria-label="Close"
+                className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4" role="form">
+          <div className="p-4 space-y-4">
           <div>
             <label htmlFor="hostname" className="block text-sm font-medium text-gray-300 mb-2">
               Hostname or IP Address
@@ -97,22 +108,6 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
               <option value="telnet">Telnet</option>
             </select>
           </div>
-
-          <div className="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
-            >
-              <Play size={16} />
-              <span>Connect</span>
-            </button>
           </div>
         </form>
       </div>

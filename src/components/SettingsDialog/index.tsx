@@ -24,6 +24,7 @@ import ProxySettings from './sections/ProxySettings';
 import AdvancedSettings from './sections/AdvancedSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
+import { loadLanguage } from '../../i18n';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -72,7 +73,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       
       // Apply language change
       if (settings.language !== i18n.language) {
-        i18n.changeLanguage(settings.language);
+        if (settings.language !== "en") {
+          await loadLanguage(settings.language);
+        }
+        await i18n.changeLanguage(settings.language);
       }
       
       // Apply theme changes
@@ -127,7 +131,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       await settingsManager.saveSettings(newSettings);
 
       if (updates.language && updates.language !== i18n.language) {
-        i18n.changeLanguage(updates.language);
+        if (updates.language !== "en") {
+          await loadLanguage(updates.language);
+        }
+        await i18n.changeLanguage(updates.language);
       }
 
       if (
@@ -186,7 +193,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden relative">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         {autoSaveStatus && (
           <div className="fixed bottom-6 right-6 z-50">
             <div
@@ -209,18 +216,39 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
             </div>
           </div>
         )}
-        <div className="relative h-14 border-b border-gray-700">
-          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
+        <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white">
             {t("settings.title")}
           </h2>
-          <div className="absolute right-4 top-3 flex items-center space-x-2">
-            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-              <X size={20} />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleReset}
+              data-tooltip={t("settings.reset")}
+              aria-label={t("settings.reset")}
+              className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+            >
+              <RotateCcw size={16} />
+            </button>
+            <button
+              onClick={handleSave}
+              data-tooltip={t("settings.save")}
+              aria-label={t("settings.save")}
+              className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+            >
+              <Save size={16} />
+            </button>
+            <button
+              onClick={onClose}
+              data-tooltip={t("settings.cancel")}
+              aria-label={t("settings.cancel")}
+              className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+            >
+              <X size={16} />
             </button>
           </div>
         </div>
 
-        <div className="flex h-[600px]">
+        <div className="flex flex-1 min-h-0">
           {/* Sidebar */}
           <div className="w-64 bg-gray-900 border-r border-gray-700">
             <div className="p-4">
@@ -245,7 +273,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto min-h-0">
             <div className="p-6">
               {activeTab === 'general' && (
                 <GeneralSettings settings={settings} updateSettings={updateSettings} />
@@ -281,30 +309,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               )}
             </div>
           </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end space-x-3 p-6 border-t border-gray-700">
-          <button
-            onClick={handleReset}
-            className="px-4 py-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors flex items-center space-x-2"
-          >
-            <RotateCcw size={16} />
-            <span>{t('settings.reset')}</span>
-          </button>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
-          >
-            {t('settings.cancel')}
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
-          >
-            <Save size={16} />
-            <span>{t('settings.save')}</span>
-          </button>
         </div>
       </div>
     </div>

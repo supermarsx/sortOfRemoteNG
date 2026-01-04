@@ -179,6 +179,20 @@ export const useSessionManager = () => {
   const handleConnect = async (connection: Connection) => {
     const settings = settingsManager.getSettings();
 
+    if (connection.protocol === "ssh") {
+      const existingSession = state.sessions.find(
+        (session) =>
+          session.connectionId === connection.id &&
+          session.protocol === connection.protocol &&
+          session.status !== "disconnected" &&
+          session.status !== "error",
+      );
+      if (existingSession) {
+        setActiveSessionId(existingSession.id);
+        return;
+      }
+    }
+
     if (settings.singleConnectionMode && state.sessions.length > 0) {
       const proceed = await showConfirm(
         "Close existing connection and open new one?",

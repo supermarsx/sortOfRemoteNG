@@ -17,6 +17,7 @@ export const ColorSchemes = [
   "orange",
   "teal",
   "grey",
+  "other",
 ] as const;
 // Allow custom color scheme names beyond the predefined list
 export type ColorScheme = (typeof ColorSchemes)[number] | string;

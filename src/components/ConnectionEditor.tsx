@@ -168,66 +168,63 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative">
-        <div className="relative h-16 border-b border-gray-700">
-          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
-            {connection ? 'Edit Connection' : 'New Connection'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="absolute right-4 top-3 text-gray-400 hover:text-white transition-colors"
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <GeneralSection formData={formData} setFormData={setFormData} availableGroups={availableGroups} />
-          <SSHOptions formData={formData} setFormData={setFormData} />
-          <HTTPOptions formData={formData} setFormData={setFormData} />
-          <CloudProviderOptions formData={formData} setFormData={setFormData} />
-
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Description
-            </label>
-            <textarea
-              value={formData.description || ''}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              rows={3}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-              placeholder="Optional description"
-            />
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-white">
+              {connection ? 'Edit Connection' : 'New Connection'}
+            </h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                data-tooltip={connection ? 'Update' : 'Create'}
+                aria-label={connection ? 'Update' : 'Create'}
+                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              >
+                <Save size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                data-tooltip="Close"
+                aria-label="Close"
+                className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Tags
-            </label>
-            <TagManager
-              tags={formData.tags || []}
-              availableTags={allTags}
-              onChange={handleTagsChange}
-              onCreateTag={handleCreateTag}
-            />
-          </div>
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <GeneralSection formData={formData} setFormData={setFormData} availableGroups={availableGroups} />
+            <SSHOptions formData={formData} setFormData={setFormData} />
+            <HTTPOptions formData={formData} setFormData={setFormData} />
+            <CloudProviderOptions formData={formData} setFormData={setFormData} />
 
-          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-700">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
-            >
-              <Save size={16} />
-              <span>{connection ? 'Update' : 'Create'}</span>
-            </button>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Description
+              </label>
+              <textarea
+                value={formData.description || ''}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={3}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                placeholder="Optional description"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Tags
+              </label>
+              <TagManager
+                tags={formData.tags || []}
+                availableTags={allTags}
+                onChange={handleTagsChange}
+                onCreateTag={handleCreateTag}
+              />
+            </div>
           </div>
         </form>
       </div>

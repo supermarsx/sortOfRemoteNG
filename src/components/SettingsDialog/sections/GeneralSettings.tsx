@@ -28,11 +28,11 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             onChange={(e) => updateSettings({ language: e.target.value })}
             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
           >
-            <option value="en">English</option>
-            <option value="es">Español (España)</option>
-            <option value="fr">Français (France)</option>
+                        <option value="en">English</option>
+            <option value="es">Espanol (Espana)</option>
+            <option value="fr">Francais (France)</option>
             <option value="de">Deutsch (Deutschland)</option>
-            <option value="pt-PT">Português (Portugal)</option>
+            <option value="pt-PT">Portugues (Portugal)</option>
           </select>
         </div>
 
@@ -168,3 +168,4 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 };
 
 export default GeneralSettings;
+

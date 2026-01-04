@@ -168,7 +168,8 @@ export class ThemeManager {
     customAccent?: string,
   ): void {
     const theme = this.getAllThemes()[themeName];
-    const colors = this.getAllColorSchemes()[colorScheme];
+    const schemeKey = colorScheme === "other" ? "blue" : colorScheme;
+    const colors = this.getAllColorSchemes()[schemeKey];
 
     if (!theme || !colors) {
       console.error("Invalid theme or color scheme");
@@ -181,7 +182,7 @@ export class ThemeManager {
       root.style.setProperty(`--color-${key}`, value);
     });
 
-    if (customAccent) {
+    if (colorScheme === "other" && customAccent) {
       root.style.setProperty("--color-primary", customAccent);
       root.style.setProperty(
         "--color-secondary",
@@ -245,7 +246,7 @@ export class ThemeManager {
   }
 
   getAvailableColorSchemes(): ColorScheme[] {
-    return Object.keys(this.getAllColorSchemes()) as ColorScheme[];
+    return [...Object.keys(this.getAllColorSchemes()), "other"] as ColorScheme[];
   }
 
   private static shadeColor(hex: string, amount: number): string {
