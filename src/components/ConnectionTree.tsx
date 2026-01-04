@@ -804,6 +804,18 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                 type="text"
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (!renameTarget) return;
+                  const trimmed = renameValue.trim();
+                  if (!trimmed) return;
+                  dispatch({
+                    type: "UPDATE_CONNECTION",
+                    payload: { ...renameTarget, name: trimmed, updatedAt: new Date() },
+                  });
+                  setRenameTarget(null);
+                }}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="New name"
               />

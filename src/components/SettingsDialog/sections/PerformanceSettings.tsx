@@ -63,6 +63,21 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
+            Latency Target Host
+          </label>
+          <input
+            type="text"
+            value={settings.performanceLatencyTarget}
+            onChange={(e) =>
+              updateSettings({ performanceLatencyTarget: e.target.value || "1.1.1.1" })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+            placeholder="1.1.1.1"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
             Status Check Interval (seconds)
           </label>
           <input

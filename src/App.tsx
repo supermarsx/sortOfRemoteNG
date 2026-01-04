@@ -2,7 +2,6 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from "react"
 import {
   Monitor,
   Zap,
-  Globe,
   Terminal,
   Minus,
   Square,
@@ -51,14 +50,13 @@ import { ImportExport } from "./components/ImportExport";
 import { AutoLockManager } from "./components/AutoLockManager";
 import { ShortcutManagerDialog } from "./components/ShortcutManagerDialog";
 import { ProxyChainMenu } from "./components/ProxyChainMenu";
-import { loadLanguage } from "./i18n";
 
 /**
  * Core application component responsible for rendering the main layout and
  * managing global application state.
  */
 const AppContent: React.FC = () => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { state, dispatch, loadData, saveData } = useConnections();
   const settingsManager = SettingsManager.getInstance();
   const [editingConnection, setEditingConnection] = useState<Connection | undefined>(
@@ -96,8 +94,6 @@ const AppContent: React.FC = () => {
     message: "",
     onConfirm: () => {},
   }); // confirm dialog state
-  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
-  const languageMenuRef = useRef<HTMLDivElement | null>(null);
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const [appSettings, setAppSettings] = useState(() => settingsManager.getSettings());
   const windowSaveTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -272,27 +268,6 @@ const AppContent: React.FC = () => {
     }
   }, [activeSessionId, visibleSessions, setActiveSessionId]);
 
-  const languageOptions = [
-    { value: "en", label: "English" },
-    { value: "es", label: "Espanol (Espana)" },
-    { value: "fr", label: "Francais (France)" },
-    { value: "de", label: "Deutsch (Deutschland)" },
-    { value: "pt-PT", label: "Portugues (Portugal)" },
-  ];
-
-  const handleLanguageChange = async (language: string) => {
-    try {
-      if (language !== "en") {
-        await loadLanguage(language);
-      }
-      await i18n.changeLanguage(language);
-      await settingsManager.saveSettings({ language });
-    } catch (error) {
-      console.error("Failed to change language:", error);
-    } finally {
-      setShowLanguageMenu(false);
-    }
-  };
 
   const showAlert = useCallback((message: string) => {
     setDialogState({
@@ -614,19 +589,6 @@ const AppContent: React.FC = () => {
       window.removeEventListener("settings-updated", handleSettingsUpdated);
     };
   }, [settingsManager]);
-
-  useEffect(() => {
-    if (!showLanguageMenu) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (languageMenuRef.current && !languageMenuRef.current.contains(event.target as Node)) {
-        setShowLanguageMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showLanguageMenu]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1413,36 +1375,6 @@ const AppContent: React.FC = () => {
             >
               <Shield size={14} />
             </button>
-          )}
-          {appSettings.showLanguageSelectorIcon && (
-            <div className="relative" ref={languageMenuRef}>
-              <button
-                onClick={() => setShowLanguageMenu((prev) => !prev)}
-                className="app-bar-button p-2"
-                title="Change language"
-              >
-                <Globe size={14} />
-              </button>
-              {showLanguageMenu && (
-                <div className="absolute right-0 mt-2 w-44 bg-gray-800 border border-gray-700 rounded-md shadow-lg py-2 z-20">
-                  {languageOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => {
-                        handleLanguageChange(option.value);
-                      }}
-                      className={`flex items-center w-full px-3 py-2 text-sm transition-colors ${
-                        i18n.language === option.value
-                          ? "text-white bg-blue-700/40"
-                          : "text-gray-200 hover:bg-gray-700"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           )}
         </div>
       </div>

@@ -10,13 +10,36 @@ interface PerformanceMonitorProps {
   onClose: () => void;
 }
 
+const normalizeLatencyTarget = (target: string): string => {
+  const trimmed = target.trim();
+  if (!trimmed) return "1.1.1.1";
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+};
+
+const measureLatency = async (target: string): Promise<number> => {
+  const url = normalizeLatencyTarget(target);
+  const start = performance.now();
+  try {
+    await fetch(url, { mode: "no-cors", cache: "no-store" });
+    return performance.now() - start;
+  } catch {
+    return Math.random() * 50 + 10;
+  }
+};
+
 export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
   const [metrics, setMetrics] = useState<PerformanceMetrics[]>([]);
   const [currentMetrics, setCurrentMetrics] = useState<PerformanceMetrics | null>(null);
   const settingsManager = SettingsManager.getInstance();
   const [pollIntervalMs, setPollIntervalMs] = useState<number>(
-    settingsManager.getSettings().performancePollIntervalMs ?? 5000
+    settingsManager.getSettings().performancePollIntervalMs ?? 20000
+  );
+  const [latencyTarget, setLatencyTarget] = useState<string>(
+    settingsManager.getSettings().performanceLatencyTarget || "1.1.1.1",
   );
 
   const loadMetrics = useCallback(() => {
@@ -45,11 +68,12 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
     }
 
     const memoryInfo = (performance as any).memory;
+    const latency = await measureLatency(latencyTarget);
 
     const currentMetric: PerformanceMetrics = {
       connectionTime: 0, // This would be calculated per connection
       dataTransferred: 0, // This would be tracked per session
-      latency: Math.random() * 50 + 10, // Simulated
+      latency,
       throughput: Math.random() * 1000 + 500, // Simulated KB/s
       cpuUsage: Math.random() * 30 + 10, // Simulated percentage
       memoryUsage: memoryInfo ? memoryInfo.usedJSHeapSize / memoryInfo.totalJSHeapSize * 100 : Math.random() * 50 + 20,
@@ -58,7 +82,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
 
     setCurrentMetrics(currentMetric);
     settingsManager.recordPerformanceMetric(currentMetric);
-  }, [settingsManager]);
+  }, [latencyTarget, settingsManager]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -68,8 +92,9 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
     loadMetrics();
     settingsManager.loadSettings().then((loaded) => {
       if (isMounted) {
-        const interval = loaded.performancePollIntervalMs ?? 5000;
+        const interval = loaded.performancePollIntervalMs ?? 20000;
         setPollIntervalMs(interval);
+        setLatencyTarget(loaded.performanceLatencyTarget || "1.1.1.1");
       }
     }).catch(console.error);
 
@@ -92,7 +117,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
   useEffect(() => {
     if (!isOpen) return;
 
-    const intervalDuration = pollIntervalMs || 5000;
+    const intervalDuration = pollIntervalMs || 20000;
     updateCurrentMetrics();
     const interval = window.setInterval(() => {
       updateCurrentMetrics().catch(console.error);

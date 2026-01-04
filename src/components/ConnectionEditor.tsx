@@ -188,10 +188,10 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">
+          <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white">
               {connection ? 'Edit Connection' : 'New Connection'}
             </h2>
             <div className="flex items-center gap-2">
@@ -215,7 +215,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex-1 overflow-y-auto p-4 space-y-5">
             <GeneralSection formData={formData} setFormData={setFormData} availableGroups={availableGroups} />
             <SSHOptions formData={formData} setFormData={setFormData} />
             <HTTPOptions formData={formData} setFormData={setFormData} />

@@ -84,6 +84,7 @@ export interface GlobalSettings {
   retryDelay: number;
   enablePerformanceTracking: boolean;
   performancePollIntervalMs: number;
+  performanceLatencyTarget: string;
 
   // Security Settings
   encryptionAlgorithm: "AES-256-GCM" | "AES-256-CBC" | "ChaCha20-Poly1305";
