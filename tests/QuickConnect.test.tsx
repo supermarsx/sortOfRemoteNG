@@ -5,7 +5,10 @@ import { QuickConnect } from "../src/components/QuickConnect";
 const mockProps = {
   isOpen: true,
   onClose: vi.fn(),
-  onConnect: vi.fn()
+  onConnect: vi.fn(),
+  historyEnabled: true,
+  history: [],
+  onClearHistory: vi.fn(),
 };
 
 describe("QuickConnect", () => {

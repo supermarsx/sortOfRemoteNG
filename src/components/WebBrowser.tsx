@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { 
   ArrowLeft, 
@@ -23,35 +23,12 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const { state } = useConnections();
   const connection = state.connections.find(c => c.id === session.connectionId);
 
-  // Build a URL and apply basic auth credentials if configured
-  const buildUrlWithAuth = useCallback((url: string): string => {
-    if (
-      connection?.authType === 'basic' &&
-      connection.basicAuthUsername &&
-      connection.basicAuthPassword
-    ) {
-      try {
-        const parsed = new URL(url);
-
-        // Only inject credentials if not already present
-        if (!parsed.username && !parsed.password) {
-          parsed.username = connection.basicAuthUsername;
-          parsed.password = connection.basicAuthPassword;
-        }
-        return parsed.toString();
-      } catch (error) {
-        console.error('Failed to apply basic auth to URL:', error);
-      }
-    }
-    return url;
-  }, [connection]);
-
   const [currentUrl, setCurrentUrl] = useState(() => {
     const protocol = session.protocol === 'https' ? 'https' : 'http';
     const port = session.protocol === 'https' ? 443 : 80;
     const urlPort = port === 80 || port === 443 ? '' : `:${port}`;
     const baseUrl = `${protocol}://${session.hostname}${urlPort}`;
-    return buildUrlWithAuth(baseUrl);
+    return baseUrl;
   });
   const [inputUrl, setInputUrl] = useState(currentUrl);
   const [isLoading, setIsLoading] = useState(false);
@@ -59,13 +36,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const [isSecure, setIsSecure] = useState(session.protocol === 'https');
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Rebuild URL with credentials when connection data becomes available
-  useEffect(() => {
-    if (connection) {
-      setCurrentUrl(prev => buildUrlWithAuth(prev));
-      setInputUrl(prev => buildUrlWithAuth(prev));
-    }
-  }, [connection, buildUrlWithAuth]);
+  const iconCount = 2 + (connection?.authType === 'basic' ? 1 : 0);
+  const iconPadding = 12 + iconCount * 18;
 
 
   const handleUrlSubmit = (e: React.FormEvent) => {
@@ -76,8 +48,6 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = `http://${url}`;
     }
-
-    url = buildUrlWithAuth(url);
 
     setCurrentUrl(url);
     setIsSecure(url.startsWith('https://'));
@@ -138,8 +108,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   };
 
   const handleOpenExternal = () => {
-    const urlToOpen = buildUrlWithAuth(currentUrl);
-    window.open(urlToOpen, '_blank', 'noopener,noreferrer');
+    window.open(currentUrl, '_blank', 'noopener,noreferrer');
   };
 
   const getSecurityIcon = () => {
@@ -152,7 +121,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
   const getAuthIcon = () => {
     if (connection?.authType === 'basic') {
-      return <span title="Basic Authentication"><User size={14} className="text-blue-400" /></span>;
+      return <span data-tooltip="Basic Authentication"><User size={14} className="text-blue-400" /></span>;
     }
     return null;
   };
@@ -199,7 +168,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 type="text"
                 value={inputUrl}
                 onChange={(e) => setInputUrl(e.target.value)}
-                className="w-full pl-16 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full pr-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                style={{ paddingLeft: `${iconPadding}px` }}
                 placeholder="Enter URL..."
               />
             </div>

@@ -120,6 +120,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
   const applyTerminalTheme = useCallback(() => {
     if (!termRef.current || isDisposed.current) return;
+    if (!canRender()) return;
     const theme = getTerminalTheme();
     const terminal = termRef.current as any;
     try {
@@ -133,7 +134,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     } catch {
       // Ignore theme updates during teardown.
     }
-  }, [getTerminalTheme]);
+  }, [canRender, getTerminalTheme]);
 
   const formatErrorDetails = useCallback((err: unknown) => {
     if (err instanceof Error) {
@@ -487,7 +488,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     } else {
       const currentSession = sessionRef.current;
       safeWriteln(
-              {session.protocol.toUpperCase()} - {session.hostname}
+        `\x1b[32mTerminal ready for ${currentSession.protocol.toUpperCase()} session\x1b[0m`,
       );
       safeWriteln(`\x1b[36mConnected to: ${currentSession.hostname}\x1b[0m`);
       setStatusState("connected");
@@ -561,7 +562,12 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   }, [disconnectSsh, initSsh, isSsh, safeFit, setStatusState]);
 
   const clearTerminal = () => {
-    termRef.current?.clear();
+    if (!termRef.current || !canRender()) return;
+    try {
+      termRef.current.clear();
+    } catch {
+      // Ignore clear failures during teardown.
+    }
   };
 
   const copySelection = () => {

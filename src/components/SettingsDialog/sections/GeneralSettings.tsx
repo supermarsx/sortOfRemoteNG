@@ -164,7 +164,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
           <button
             type="button"
             onClick={() => updateSettings({ quickConnectHistory: [] })}
-            disabled={settings.quickConnectHistory.length === 0}
+            disabled={(settings.quickConnectHistory?.length ?? 0) === 0}
             className="px-3 py-1.5 text-xs rounded-md bg-gray-700 text-gray-200 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Clear history

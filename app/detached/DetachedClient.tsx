@@ -202,6 +202,7 @@ const DetachedSessionContent: React.FC<{
   const handleReattach = useCallback(async () => {
     if (!activeSession) return;
     try {
+      skipNextConfirmRef.current = true;
       await emit("detached-session-reattach", { sessionId: activeSession.id });
       if (sessionId) {
         localStorage.removeItem(`detached-session-${sessionId}`);
@@ -264,7 +265,7 @@ const DetachedSessionContent: React.FC<{
         }`}
       >
       <div
-        className="h-10 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-3 select-none"
+        className="h-10 app-bar border-b flex items-center justify-between px-3 select-none"
         data-tauri-drag-region
       >
         <div className="flex items-center gap-2">
@@ -282,14 +283,14 @@ const DetachedSessionContent: React.FC<{
               await currentWindow.setAlwaysOnTop(nextValue);
               setIsAlwaysOnTop(nextValue);
             }}
-            className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button p-1.5"
             data-tooltip={isAlwaysOnTop ? "Unpin window" : "Pin window"}
           >
             <Pin size={12} className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""} />
           </button>
           <button
             onClick={handleReattach}
-            className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button p-1.5"
             data-tooltip="Reattach"
           >
             <CornerUpLeft size={12} />
@@ -300,7 +301,7 @@ const DetachedSessionContent: React.FC<{
               const currentWindow = getCurrentWindow();
               await currentWindow.minimize();
             }}
-            className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button p-1.5"
             data-tooltip="Minimize"
           >
             <Minus size={12} />
@@ -316,7 +317,7 @@ const DetachedSessionContent: React.FC<{
               }
               await currentWindow.maximize();
             }}
-            className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button p-1.5"
             data-tooltip="Maximize"
           >
             <Square size={10} />
@@ -331,7 +332,7 @@ const DetachedSessionContent: React.FC<{
               const currentWindow = getCurrentWindow();
               await currentWindow.close();
             }}
-            className="p-1.5 hover:bg-red-600 rounded transition-colors text-gray-400 hover:text-white"
+            className="app-bar-button app-bar-button-danger p-1.5"
             data-tooltip="Close"
           >
             <X size={12} />

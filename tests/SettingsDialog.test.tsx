@@ -23,7 +23,10 @@ const mockSettings: GlobalSettings = {
   singleConnectionMode: false,
   reconnectOnReload: false,
   warnOnClose: false,
+  warnOnDetachClose: false,
   warnOnExit: false,
+  quickConnectHistoryEnabled: true,
+  quickConnectHistory: [],
   autoLock: {
     enabled: false,
     timeoutMinutes: 10,
