@@ -14,7 +14,7 @@
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-size",
     "core:window:allow-set-position",
-    "core:window:allow-set-opacity",
+    "core:window:allow-set-background-color",
     "core:window:allow-create",
     "core:webview:allow-internal-toggle-devtools"
   ]

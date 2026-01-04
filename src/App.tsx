@@ -751,13 +751,17 @@ const AppContent: React.FC = () => {
     const targetOpacity = appSettings.windowTransparencyEnabled
       ? Math.min(1, Math.max(0.4, appSettings.windowTransparencyOpacity || 1))
       : 1;
-    const setOpacity = (window as any).setOpacity as
-      | ((value: number) => Promise<void>)
-      | undefined;
-    if (typeof setOpacity === "function") {
-      setOpacity.call(window, targetOpacity).catch((error) => {
+    const setBackgroundColor = window.setBackgroundColor;
+    if (typeof setBackgroundColor === "function") {
+      const computed = getComputedStyle(document.body).backgroundColor;
+      const match = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+      const red = match ? Number(match[1]) : 17;
+      const green = match ? Number(match[2]) : 24;
+      const blue = match ? Number(match[3]) : 39;
+      const alpha = Math.round(255 * targetOpacity);
+      setBackgroundColor([red, green, blue, alpha]).catch((error) => {
         if (!isWindowPermissionError(error)) {
-          console.error("Failed to set window opacity:", error);
+          console.error("Failed to set window background color:", error);
         }
       });
     }
