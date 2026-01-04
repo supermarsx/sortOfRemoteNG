@@ -400,7 +400,7 @@ impl SshService {
         })
     }
 
-    pub async fn validate_key_file(&self, key_path: &str, passphrase: Option<&str>) -> Result<bool, String> {
+    pub async fn validate_key_file(&self, key_path: &str, _passphrase: Option<&str>) -> Result<bool, String> {
         if !Path::new(key_path).exists() {
             return Err(format!("Key file does not exist: {}", key_path));
         }
@@ -436,7 +436,7 @@ impl SshService {
                 // Let's try utilizing the 'rsa' crate directly for generation as we imported it.
                 use rsa::RsaPrivateKey;
                 let mut rng = OsRng;
-                let priv_key = RsaPrivateKey::new(&mut rng, bit_size)
+                let _priv_key = RsaPrivateKey::new(&mut rng, bit_size)
                     .map_err(|e| format!("Failed to generate RSA key: {}", e))?;
                 
                 // Convert to OpenSSH format
@@ -456,7 +456,7 @@ impl SshService {
             _ => return Err(format!("Unsupported key type: {}", key_type)),
         };
 
-        let final_priv_key = if let Some(pass) = passphrase {
+        let final_priv_key = if let Some(_pass) = passphrase {
              // Basic encryption support
              // Note: proper encryption requires more setup, returning unencrypted for now with warning
              // log::warn!("Passphrase provided but encryption not yet implemented");
@@ -561,6 +561,8 @@ impl SshService {
 
         session.last_activity = Utc::now();
 
+        session.session.set_blocking(false);
+
         let mut channel = session.session.channel_session()
             .map_err(|e| format!("Failed to create channel: {}", e))?;
 
@@ -570,8 +572,6 @@ impl SshService {
 
         channel.shell()
             .map_err(|e| format!("Failed to start shell: {}", e))?;
-
-        channel.set_blocking(false);
 
         let (tx, mut rx) = mpsc::unbounded_channel::<SshShellCommand>();
         let shell_id = Uuid::new_v4().to_string();
@@ -587,7 +587,7 @@ impl SshService {
                     match cmd {
                         SshShellCommand::Input(data) => {
                             if let Err(error) = channel.write_all(data.as_bytes()) {
-                                let _ = app_handle_clone.emit_all(
+                                let _ = app_handle_clone.emit(
                                     "ssh-error",
                                     SshShellError {
                                         session_id: session_id_owned.clone(),
@@ -613,7 +613,7 @@ impl SshService {
                 match channel.read(&mut buffer) {
                     Ok(bytes) if bytes > 0 => {
                         let output = String::from_utf8_lossy(&buffer[..bytes]).to_string();
-                        let _ = app_handle_clone.emit_all(
+                        let _ = app_handle_clone.emit(
                             "ssh-output",
                             SshShellOutput {
                                 session_id: session_id_owned.clone(),
@@ -624,7 +624,7 @@ impl SshService {
                     Ok(_) => {}
                     Err(error) if error.kind() == ErrorKind::WouldBlock => {}
                     Err(error) => {
-                        let _ = app_handle_clone.emit_all(
+                        let _ = app_handle_clone.emit(
                             "ssh-error",
                             SshShellError {
                                 session_id: session_id_owned.clone(),
@@ -642,7 +642,7 @@ impl SshService {
                 std::thread::sleep(Duration::from_millis(12));
             }
 
-            let _ = app_handle_clone.emit_all(
+            let _ = app_handle_clone.emit(
                 "ssh-shell-closed",
                 SshShellClosed {
                     session_id: session_id_owned,

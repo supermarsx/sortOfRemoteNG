@@ -5,7 +5,6 @@ use tokio::task;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
-use serialport::{};
 use std::io::Read;
 use std::time::Duration;
 
@@ -78,7 +77,7 @@ impl SerialService {
         };
 
         // Open serial port
-        let mut port = serialport::new(&port_name, baud_rate)
+        let port = serialport::new(&port_name, baud_rate)
             .data_bits(data_bits)
             .parity(parity)
             .stop_bits(stop_bits)
@@ -99,8 +98,6 @@ impl SerialService {
 
         // Spawn a task to handle the connection
         let handle = {
-            let session_id = session_id.clone();
-
             task::spawn(async move {
                 let mut buf = [0; 1024];
                 let mut shutdown_rx = shutdown_rx;
