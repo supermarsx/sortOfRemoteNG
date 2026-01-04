@@ -129,6 +129,50 @@ const AppContent: React.FC = () => {
     setPasswordDialogMode,
   });
 
+  const handleQuickConnectWithHistory = useCallback(
+    (payload: {
+      hostname: string;
+      protocol: string;
+      username?: string;
+      authType?: "password" | "key";
+      password?: string;
+      privateKey?: string;
+      passphrase?: string;
+    }) => {
+      if (appSettings.quickConnectHistoryEnabled) {
+        const entry = {
+          hostname: payload.hostname,
+          protocol: payload.protocol,
+          username: payload.username,
+          authType: payload.authType,
+        };
+        const current = appSettings.quickConnectHistory ?? [];
+        const next = [
+          entry,
+          ...current.filter(
+            (item) =>
+              item.hostname !== entry.hostname ||
+              item.protocol !== entry.protocol ||
+              item.username !== entry.username ||
+              item.authType !== entry.authType,
+          ),
+        ].slice(0, 12);
+        settingsManager.saveSettings({ quickConnectHistory: next }).catch(console.error);
+      }
+      handleQuickConnect(payload);
+    },
+    [
+      appSettings.quickConnectHistory,
+      appSettings.quickConnectHistoryEnabled,
+      handleQuickConnect,
+      settingsManager,
+    ],
+  );
+
+  const clearQuickConnectHistory = useCallback(() => {
+    settingsManager.saveSettings({ quickConnectHistory: [] }).catch(console.error);
+  }, [settingsManager]);
+
   const launchArgsHandledRef = useRef(false);
 
   const visibleSessions = useMemo(
@@ -1497,7 +1541,10 @@ const AppContent: React.FC = () => {
       <QuickConnect
         isOpen={showQuickConnect}
         onClose={() => setShowQuickConnect(false)}
-        onConnect={handleQuickConnect}
+        historyEnabled={appSettings.quickConnectHistoryEnabled}
+        history={appSettings.quickConnectHistory ?? []}
+        onClearHistory={clearQuickConnectHistory}
+        onConnect={handleQuickConnectWithHistory}
       />
 
       <PasswordDialog

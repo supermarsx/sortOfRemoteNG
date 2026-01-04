@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Play, X } from 'lucide-react';
+import { Clock, Play, Trash2, X } from 'lucide-react';
+import { QuickConnectHistoryEntry } from '../types/settings';
 
 interface QuickConnectProps {
   isOpen: boolean;
   onClose: () => void;
+  historyEnabled: boolean;
+  history: QuickConnectHistoryEntry[];
+  onClearHistory: () => void;
   onConnect: (payload: {
     hostname: string;
     protocol: string;
@@ -18,6 +22,9 @@ interface QuickConnectProps {
 export const QuickConnect: React.FC<QuickConnectProps> = ({
   isOpen,
   onClose,
+  historyEnabled,
+  history,
+  onClearHistory,
   onConnect,
 }) => {
   const [hostname, setHostname] = useState('');
@@ -27,7 +34,9 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
   const [password, setPassword] = useState('');
   const [privateKey, setPrivateKey] = useState('');
   const [passphrase, setPassphrase] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
   const isSsh = protocol === 'ssh';
+  const historyItems = historyEnabled ? history : [];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,6 +82,23 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setShowHistory(false);
+    }
+  }, [isOpen]);
+
+  const handleHistorySelect = (entry: QuickConnectHistoryEntry) => {
+    setHostname(entry.hostname);
+    setProtocol(entry.protocol);
+    setUsername(entry.username ?? '');
+    setAuthType(entry.authType ?? 'password');
+    setPassword('');
+    setPrivateKey('');
+    setPassphrase('');
+    setShowHistory(false);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -109,10 +135,22 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           </div>
 
           <div className="p-4 space-y-4">
-          <div>
-            <label htmlFor="hostname" className="block text-sm font-medium text-gray-300 mb-2">
-              Hostname or IP Address
-            </label>
+          <div className="relative">
+            <div className="flex items-center justify-between">
+              <label htmlFor="hostname" className="block text-sm font-medium text-gray-300 mb-2">
+                Hostname or IP Address
+              </label>
+              {historyItems.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowHistory((prev) => !prev)}
+                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors"
+                >
+                  <Clock size={12} />
+                  History
+                </button>
+              )}
+            </div>
             <input
               id="hostname"
               type="text"
@@ -123,6 +161,48 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
               placeholder="192.168.1.100 or server.example.com"
               autoFocus
             />
+            {showHistory && historyItems.length > 0 && (
+              <div className="absolute z-20 mt-2 w-full rounded-md border border-gray-700 bg-gray-800 shadow-lg overflow-hidden">
+                <div className="max-h-48 overflow-auto">
+                  {historyItems.map((entry, index) => (
+                    <button
+                      key={`${entry.protocol}-${entry.hostname}-${index}`}
+                      type="button"
+                      onClick={() => handleHistorySelect(entry)}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="truncate">{entry.hostname}</span>
+                        <span className="ml-3 text-[10px] uppercase text-gray-400">
+                          {entry.protocol}
+                        </span>
+                      </div>
+                      {entry.username && (
+                        <div className="text-[11px] text-gray-400 truncate">
+                          {entry.username}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <div className="border-t border-gray-700 px-3 py-2 flex items-center justify-between">
+                  <span className="text-[11px] text-gray-400">
+                    {historyEnabled ? "Saved Quick Connects" : "History disabled"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClearHistory();
+                      setShowHistory(false);
+                    }}
+                    className="flex items-center gap-1 text-[11px] text-gray-300 hover:text-white"
+                  >
+                    <Trash2 size={12} />
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
