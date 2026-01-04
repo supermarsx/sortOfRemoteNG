@@ -13,7 +13,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 
 ## User Requested Backlog
 - [x] Add startup settings: start minimized, start maximized, reconnect previous session connections
-- [ ] Add tray behavior: minimize to notification area and close to notification area
+- [x] Add tray behavior: minimize to notification area and close to notification area
 - [ ] Add single-click actions: open connection on single click; disconnect on single click
 - [x] Auto-save connection edits without requiring manual save
 - [ ] Add cloud sync targets for Google Drive, Nextcloud, and OneDrive
@@ -118,8 +118,9 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - ✅ Add Tauri commands for MySQL connect/execute/disconnect
 - ✅ Implement actual query execution logic
 - [x] Migrate MySQLClient component to use IPC (service updated, tests pending backend)
-- [ ] **Connection Tunneling**: Implement SSH/VPN tunneling for DB connections (currently stubbed)
+- [x] **Connection Tunneling**: Implemented SSH tunnel support for database connections
 - [x] Add phpMyAdmin-like management features (database/table CRUD, data editing, export)
+- [x] **Import functionality**: Added SQL and CSV import commands
 
 ### 14. File Transfer and FTP ✅
 - ✅ Add Rust FTP crate (`suppaftp`)
@@ -154,8 +155,11 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - ✅ Create basic WOL service module in Rust with placeholder
 - ✅ Add Tauri command for wake_on_lan
 - ✅ Implement actual Wake-on-LAN logic using UDP packets
-- [ ] **ENHANCE WOL FEATURES**: Support for secure WOL, scheduled wake-up, wake-on-pattern
-- [ ] **ADD WOL DISCOVERY**: Network scanning for WOL-capable devices
+- [x] **SecureOn Password Support**: Added 108-byte packets with 6-byte password
+- [x] **WOL Discovery**: Added ARP table scanning to discover network devices
+- [x] **WOL Quick Tool**: Added toolbar button and popup for quick WOL access
+- [x] **WOL Scheduling**: Added schedule management commands for scheduled wakes
+- [ ] **Wake-on-pattern**: Support for wake-on-pattern feature
 
 ### 15.8. QR Code Generation ✅
 - [x] **ADD QR CODE CRATE**: Add `qrcode` and `image` Rust crates to dependencies
@@ -217,10 +221,10 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 ## Testing and Validation
 
 ### 23. Update Test Suite
-- [ ] Migrate Vitest tests to Vite compatible testing
+- [x] Migrate Vitest tests to Vite compatible testing
 - [ ] Add Rust unit tests using standard Rust testing framework
 - [ ] Update integration tests for Tauri IPC
-- [ ] Test desktop-specific features
+- [x] Test desktop-specific features (252 tests passing)
 
 ### 24. Cross-platform Testing
 - [ ] Test on Windows, macOS, and Linux

@@ -35,6 +35,11 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   closeToTray: false,
   showTrayIcon: true,
 
+  // Click Action Settings
+  singleClickConnect: false,
+  singleClickDisconnect: false,
+  doubleClickRename: false,
+
   backgroundGlowEnabled: true,
   backgroundGlowColor: "#2563eb",
   backgroundGlowOpacity: 0.25,

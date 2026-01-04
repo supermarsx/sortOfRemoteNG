@@ -61,6 +61,11 @@ export interface GlobalSettings {
   closeToTray: boolean;
   showTrayIcon: boolean;
 
+  // Click Action Settings
+  singleClickConnect: boolean;
+  singleClickDisconnect: boolean;
+  doubleClickRename: boolean;
+
   // Theme Effects
   backgroundGlowEnabled: boolean;
   backgroundGlowColor: string;

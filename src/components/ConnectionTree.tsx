@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
+import { useSettings } from "../contexts/SettingsContext";
 import { generateId } from "../utils/id";
 import { ScriptEngine } from "../utils/scriptEngine";
 
@@ -129,6 +130,9 @@ interface ConnectionTreeItemProps {
   onDragOver: (connectionId: string) => void;
   onDragEnd: () => void;
   onDrop: (connectionId: string) => void;
+  singleClickConnect?: boolean;
+  singleClickDisconnect?: boolean;
+  doubleClickRename?: boolean;
 }
 
 /**
@@ -156,6 +160,9 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   onDragOver,
   onDragEnd,
   onDrop,
+  singleClickConnect,
+  singleClickDisconnect,
+  doubleClickRename,
 }) => {
   const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
@@ -182,6 +189,25 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
   const handleSelect = () => {
     dispatch({ type: "SELECT_CONNECTION", payload: connection });
+    
+    // Handle single-click actions
+    if (!connection.isGroup) {
+      if (activeSession && singleClickDisconnect) {
+        onDisconnect(connection);
+      } else if (!activeSession && singleClickConnect) {
+        onConnect(connection);
+      }
+    }
+  };
+
+  const handleDoubleClick = () => {
+    if (connection.isGroup) return;
+    
+    if (doubleClickRename) {
+      onRename(connection);
+    } else {
+      onConnect(connection);
+    }
   };
 
   const handleConnect = (e: React.MouseEvent) => {
@@ -221,7 +247,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         } ${isDragging ? "opacity-60" : ""} ${isDragOver ? "border-l-2 border-blue-500" : ""}`}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={handleSelect}
-        onDoubleClick={() => !connection.isGroup && onConnect(connection)}
+        onDoubleClick={handleDoubleClick}
         onContextMenu={handleContextMenu}
         draggable={enableReorder}
         onDragStart={(e) => {
@@ -533,6 +559,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   enableReorder = true,
 }) => {
   const { state, dispatch } = useConnections();
+  const { settings } = useSettings();
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
