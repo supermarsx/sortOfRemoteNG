@@ -15,6 +15,45 @@
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
+  
+  /* Animation variables */
+  --animation-duration: 200ms;
+  --animation-enabled: 1;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --animation-duration: 0ms;
+    --animation-enabled: 0;
+  }
+}
+
+/* Disable animations class */
+.animations-disabled {
+  --animation-duration: 0ms !important;
+  --animation-enabled: 0 !important;
+}
+
+.animations-disabled *,
+.animations-disabled *::before,
+.animations-disabled *::after {
+  animation-duration: 0ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0ms !important;
+  transition-delay: 0ms !important;
+}
+
+/* Reduced motion class */
+.reduce-motion {
+  --animation-duration: 50ms !important;
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 50ms !important;
+  transition-duration: 50ms !important;
 }
 
 body {

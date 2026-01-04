@@ -14,14 +14,14 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 ## User Requested Backlog
 - [x] Add startup settings: start minimized, start maximized, reconnect previous session connections
 - [x] Add tray behavior: minimize to notification area and close to notification area
-- [ ] Add single-click actions: open connection on single click; disconnect on single click
+- [x] Add single-click actions: open connection on single click; disconnect on single click
 - [x] Auto-save connection edits without requiring manual save
 - [ ] Add cloud sync targets for Google Drive, Nextcloud, and OneDrive
 - [ ] Add differential backup scheduling (daily and on-demand runs)
 - [ ] Add custom CSS tips plus theme import/export and custom theme manager
 - [ ] Add Serpent and Twofish encryption schemes
-- [ ] Add global animation toggle with smooth motion defaults
-- [ ] Allow resizing/adjusting layout matrices
+- [x] Add global animation toggle with smooth motion defaults
+- [x] Allow resizing/adjusting layout matrices
 
 ## Project Setup and Initialization
 

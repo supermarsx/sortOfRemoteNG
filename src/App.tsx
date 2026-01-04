@@ -1227,7 +1227,14 @@ const AppContent: React.FC = () => {
         appSettings.windowTransparencyEnabled
           ? "app-transparent bg-transparent"
           : "bg-gray-900"
+      } ${
+        !appSettings.animationsEnabled ? "animations-disabled" : ""
+      } ${
+        appSettings.reduceMotion ? "reduce-motion" : ""
       }`}
+      style={{
+        '--animation-duration': `${appSettings.animationDuration || 200}ms`,
+      } as React.CSSProperties}
     >
       {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
       {/* Top bar */}

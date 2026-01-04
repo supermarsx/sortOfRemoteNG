@@ -40,6 +40,11 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   singleClickDisconnect: false,
   doubleClickRename: false,
 
+  // Animation Settings
+  animationsEnabled: true,
+  animationDuration: 200,
+  reduceMotion: false,
+
   backgroundGlowEnabled: true,
   backgroundGlowColor: "#2563eb",
   backgroundGlowOpacity: 0.25,

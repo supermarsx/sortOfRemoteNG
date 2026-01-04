@@ -734,6 +734,9 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           enableReorder={enableReorder}
           isDragging={draggedId === connection.id}
           isDragOver={dragOverId === connection.id && draggedId !== connection.id}
+          singleClickConnect={settings.singleClickConnect}
+          singleClickDisconnect={settings.singleClickDisconnect}
+          doubleClickRename={settings.doubleClickRename}
           onDragStart={(connectionId) => {
             setDraggedId(connectionId);
           }}

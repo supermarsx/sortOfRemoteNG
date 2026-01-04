@@ -66,6 +66,11 @@ export interface GlobalSettings {
   singleClickDisconnect: boolean;
   doubleClickRename: boolean;
 
+  // Animation Settings
+  animationsEnabled: boolean;
+  animationDuration: number; // milliseconds
+  reduceMotion: boolean;
+
   // Theme Effects
   backgroundGlowEnabled: boolean;
   backgroundGlowColor: string;

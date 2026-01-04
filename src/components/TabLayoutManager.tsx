@@ -1,5 +1,5 @@
-import React, { useMemo, useRef } from "react";
-import { Columns, Grid3X3, LayoutGrid, Layers, Minimize2, Rows } from "lucide-react";
+import React, { useMemo, useRef, useState } from "react";
+import { Columns, Grid3X3, LayoutGrid, Layers, Minimize2, Rows, Settings2 } from "lucide-react";
 import { ConnectionSession, TabLayout } from "../types/connection";
 import { Resizable } from "react-resizable";
 
@@ -62,11 +62,22 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   showTabBar = true,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [showCustomGrid, setShowCustomGrid] = useState(false);
+  const [customCols, setCustomCols] = useState(2);
+  const [customRows, setCustomRows] = useState(2);
 
   const orderedSessions = useMemo(
     () => orderSessions(sessions, activeSessionId),
     [sessions, activeSessionId],
   );
+
+  const handleCustomGridApply = () => {
+    const maxSessions = customCols * customRows;
+    const sessionsToUse = orderedSessions.slice(0, maxSessions);
+    const customLayout = buildGridLayout("customGrid" as TabLayout["mode"], sessionsToUse, customCols, customRows);
+    onLayoutChange({ ...customLayout, mode: "mosaic" as TabLayout["mode"] });
+    setShowCustomGrid(false);
+  };
 
   const handleLayoutModeChange = (mode: TabLayout["mode"]) => {
     let updatedLayout: TabLayout;
@@ -363,6 +374,85 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           >
             <Layers size={16} />
           </button>
+          
+          {/* Custom Grid Button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowCustomGrid(!showCustomGrid)}
+              className={`p-2 rounded transition-colors ${
+                showCustomGrid ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+              }`}
+              title="Custom grid layout"
+            >
+              <Settings2 size={16} />
+            </button>
+            
+            {showCustomGrid && (
+              <div className="absolute top-full left-0 mt-2 bg-gray-800 border border-gray-600 rounded-lg p-4 z-50 shadow-lg min-w-[200px]">
+                <div className="text-white text-sm font-medium mb-3">Custom Grid Layout</div>
+                
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-gray-400 text-xs block mb-1">Columns</label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="range"
+                        min="1"
+                        max="4"
+                        value={customCols}
+                        onChange={(e) => setCustomCols(parseInt(e.target.value))}
+                        className="flex-1 accent-blue-500"
+                      />
+                      <span className="text-white text-sm w-6">{customCols}</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="text-gray-400 text-xs block mb-1">Rows</label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="range"
+                        min="1"
+                        max="4"
+                        value={customRows}
+                        onChange={(e) => setCustomRows(parseInt(e.target.value))}
+                        className="flex-1 accent-blue-500"
+                      />
+                      <span className="text-white text-sm w-6">{customRows}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Grid Preview */}
+                  <div className="border border-gray-600 rounded p-2">
+                    <div 
+                      className="grid gap-1"
+                      style={{ 
+                        gridTemplateColumns: `repeat(${customCols}, 1fr)`,
+                        gridTemplateRows: `repeat(${customRows}, 1fr)`,
+                      }}
+                    >
+                      {Array.from({ length: customCols * customRows }).map((_, i) => (
+                        <div 
+                          key={i} 
+                          className={`h-4 rounded ${i < sessions.length ? 'bg-blue-500' : 'bg-gray-600'}`}
+                        />
+                      ))}
+                    </div>
+                    <div className="text-gray-500 text-xs mt-1 text-center">
+                      {customCols * customRows} tiles ({Math.min(sessions.length, customCols * customRows)} sessions)
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={handleCustomGridApply}
+                    className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors"
+                  >
+                    Apply Layout
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="text-gray-400 text-sm">

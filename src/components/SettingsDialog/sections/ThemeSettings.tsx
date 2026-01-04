@@ -349,6 +349,61 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Animation Settings */}
+      <div className="space-y-4 mt-6">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2">
+          {t("settings.theme.animations", "Animations")}
+        </h4>
+
+        <label className="flex items-center space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.animationsEnabled}
+            onChange={(e) => updateSettings({ animationsEnabled: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+          />
+          <span className="text-gray-300">
+            {t("settings.theme.enableAnimations", "Enable animations and transitions")}
+          </span>
+        </label>
+
+        <label className="flex items-center space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.reduceMotion}
+            onChange={(e) => updateSettings({ reduceMotion: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            disabled={!settings.animationsEnabled}
+          />
+          <span className={`text-gray-300 ${!settings.animationsEnabled ? 'opacity-50' : ''}`}>
+            {t("settings.theme.reduceMotion", "Reduce motion (minimal animations)")}
+          </span>
+        </label>
+
+        <div className={`${!settings.animationsEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            {t("settings.theme.animationDuration", "Animation duration")}
+          </label>
+          <div className="flex items-center space-x-4">
+            <input
+              type="range"
+              min="50"
+              max="500"
+              step="25"
+              value={settings.animationDuration || 200}
+              onChange={(e) => updateSettings({ animationDuration: parseInt(e.target.value) })}
+              className="flex-1 accent-blue-500"
+            />
+            <span className="text-gray-400 text-sm w-16 text-right">
+              {settings.animationDuration || 200}ms
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            {t("settings.theme.animationDurationHint", "Controls the speed of UI transitions and animations")}
+          </p>
+        </div>
+      </div>
     </div>
   );
 };
