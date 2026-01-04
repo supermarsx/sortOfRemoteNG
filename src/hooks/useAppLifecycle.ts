@@ -132,14 +132,19 @@ export const useAppLifecycle = ({
 
     window.addEventListener("beforeunload", handleBeforeUnload);
 
-    const singleWindowInterval = setInterval(checkSingleWindow, 5000);
+    const settings = settingsManager.getSettings();
+    const singleWindowInterval = settings.singleWindowMode
+      ? setInterval(checkSingleWindow, 5000)
+      : null;
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      clearInterval(singleWindowInterval);
+      if (singleWindowInterval) {
+        clearInterval(singleWindowInterval);
+      }
       statusChecker.cleanup();
     };
-  }, [initializeApp, handleBeforeUnload, checkSingleWindow, statusChecker]);
+  }, [initializeApp, handleBeforeUnload, checkSingleWindow, settingsManager, statusChecker]);
 
   useEffect(() => {
     if (isInitialized) {

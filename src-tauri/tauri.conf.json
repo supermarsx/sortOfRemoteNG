@@ -18,11 +18,14 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": false,
-        "transparent": false
+        "transparent": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "capabilities": [
+        "default"
+      ]
     }
   },
   "bundle": {

@@ -25,6 +25,7 @@ import AdvancedSettings from './sections/AdvancedSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
+import { ConfirmDialog } from '../ConfirmDialog';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -37,6 +38,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
   const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'success' | 'error' | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const settingsManager = SettingsManager.getInstance();
   const themeManager = ThemeManager.getInstance();
 
@@ -92,11 +94,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     }
   };
 
-  const handleReset = async () => {
-    if (confirm(t('settings.reset'))) {
-      const defaultSettings = await settingsManager.loadSettings();
-      setSettings(defaultSettings);
-    }
+  const handleReset = () => {
+    setShowResetConfirm(true);
+  };
+
+  const confirmReset = async () => {
+    const defaultSettings = await settingsManager.loadSettings();
+    setSettings(defaultSettings);
+    setShowResetConfirm(false);
   };
 
   const handleBenchmark = async () => {
@@ -311,6 +316,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={showResetConfirm}
+        message={t("settings.reset")}
+        onConfirm={confirmReset}
+        onCancel={() => setShowResetConfirm(false)}
+      />
     </div>
   );
 };

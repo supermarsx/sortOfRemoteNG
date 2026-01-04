@@ -2,17 +2,31 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "enables the default permissions",
+  "windows": [
+    "*"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:*",
+      "http://127.0.0.1:*",
+      "http://172.20.32.1:*"
+    ]
+  },
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
+    "core:window:allow-is-always-on-top",
     "core:window:allow-set-always-on-top",
     "core:window:allow-set-size",
     "core:window:allow-set-position",
     "core:window:allow-set-background-color",
+    "core:window:allow-get-all-windows",
     "core:window:allow-create",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
     "core:webview:allow-create-webview",
     "core:webview:allow-create-webview-window",
     "core:webview:allow-internal-toggle-devtools"

@@ -75,6 +75,7 @@ const AppContent: React.FC = () => {
   const [showImportExport, setShowImportExport] = useState(false);
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showProxyMenu, setShowProxyMenu] = useState(false);
+  const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<string | null>(null);
   const [tabLayout, setTabLayout] = useState<TabLayout>(() => ({
     mode: "tabs",
     sessions: [],
@@ -126,6 +127,8 @@ const AppContent: React.FC = () => {
     setShowPasswordDialog,
     setPasswordDialogMode,
   });
+
+  const launchArgsHandledRef = useRef(false);
 
   const visibleSessions = useMemo(
     () => state.sessions.filter((session) => !session.layout?.isDetached),
@@ -247,37 +250,45 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const showAlert = useCallback((message: string) => {
+    setDialogState({
+      isOpen: true,
+      message,
+      onConfirm: () => setDialogState((prev) => ({ ...prev, isOpen: false })),
+    });
+  }, []);
+
   /**
    * Select a collection and load its data, handling common errors.
    *
    * @param collectionId - ID of the collection to select.
    * @param password - Optional password for encrypted collections.
    */
-  const handleCollectionSelect = async (
-    collectionId: string,
-    password?: string,
-  ): Promise<void> => {
-    try {
-      await collectionManager.selectCollection(collectionId, password);
-      await loadData();
-      setShowCollectionSelector(false);
-      settingsManager.logAction(
-        "info",
-        "Collection selected",
-        undefined,
-        `Collection: ${collectionManager.getCurrentCollection()?.name}`,
-      );
-    } catch (error) {
-      console.error("Failed to select collection:", error);
-      if (error instanceof CollectionNotFoundError) {
-        showAlert("Collection not found");
-      } else if (error instanceof InvalidPasswordError) {
-        showAlert("Invalid or missing password");
-      } else {
-        showAlert("Failed to access collection. Please check your password.");
+  const handleCollectionSelect = useCallback(
+    async (collectionId: string, password?: string): Promise<void> => {
+      try {
+        await collectionManager.selectCollection(collectionId, password);
+        await loadData();
+        setShowCollectionSelector(false);
+        settingsManager.logAction(
+          "info",
+          "Collection selected",
+          undefined,
+          `Collection: ${collectionManager.getCurrentCollection()?.name}`,
+        );
+      } catch (error) {
+        console.error("Failed to select collection:", error);
+        if (error instanceof CollectionNotFoundError) {
+          showAlert("Collection not found");
+        } else if (error instanceof InvalidPasswordError) {
+          showAlert("Invalid or missing password");
+        } else {
+          showAlert("Failed to access collection. Please check your password.");
+        }
       }
-    }
-  };
+    },
+    [collectionManager, loadData, setShowCollectionSelector, settingsManager, showAlert],
+  );
 
   /** Open the connection editor to create a new connection. */
   const handleNewConnection = (): void => {
@@ -473,14 +484,6 @@ const AppContent: React.FC = () => {
       message,
       onConfirm,
       onCancel,
-    });
-  };
-
-  const showAlert = (message: string) => {
-    setDialogState({
-      isOpen: true,
-      message,
-      onConfirm: () => setDialogState(prev => ({ ...prev, isOpen: false })),
     });
   };
 
@@ -769,6 +772,46 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!isInitialized || launchArgsHandledRef.current) return;
+    const isTauri =
+      typeof window !== "undefined" &&
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    if (!isTauri) return;
+
+    launchArgsHandledRef.current = true;
+    (async () => {
+      try {
+        const args = await invoke<{
+          collection_id?: string | null;
+          connection_id?: string | null;
+        }>("get_launch_args");
+
+        if (args.collection_id) {
+          await handleCollectionSelect(args.collection_id);
+        }
+
+        if (args.connection_id) {
+          setPendingLaunchConnectionId(args.connection_id);
+        }
+      } catch (error) {
+        console.error("Failed to read launch args:", error);
+      }
+    })();
+  }, [handleCollectionSelect, isInitialized]);
+
+  useEffect(() => {
+    if (!pendingLaunchConnectionId) return;
+    if (state.connections.length === 0) return;
+    const connection = state.connections.find(
+      (item) => item.id === pendingLaunchConnectionId,
+    );
+    if (connection) {
+      handleConnect(connection);
+    }
+    setPendingLaunchConnectionId(null);
+  }, [handleConnect, pendingLaunchConnectionId, state.connections]);
+
+  useEffect(() => {
     const isTauri =
       typeof window !== "undefined" &&
       Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
@@ -796,6 +839,12 @@ const AppContent: React.FC = () => {
     const targetOpacity = appSettings.windowTransparencyEnabled
       ? Math.min(1, Math.max(0.4, appSettings.windowTransparencyOpacity || 1))
       : 1;
+    document.documentElement.style.backgroundColor = appSettings.windowTransparencyEnabled
+      ? "transparent"
+      : "";
+    document.body.style.backgroundColor = appSettings.windowTransparencyEnabled
+      ? "transparent"
+      : "";
     const setBackgroundColor = window.setBackgroundColor;
     if (typeof setBackgroundColor === "function") {
       const computed = getComputedStyle(document.body).backgroundColor;
@@ -1074,9 +1123,14 @@ const AppContent: React.FC = () => {
 
   return (
     <div
-      className={`h-full bg-gray-900 text-white flex flex-col overflow-hidden app-shell ${
+      className={`h-full text-white flex flex-col overflow-hidden app-shell ${
         appSettings.backgroundGlowEnabled ? "app-glow" : ""
-      }`}
+      } ${appSettings.windowTransparencyEnabled ? "bg-transparent" : "bg-gray-900"}`}
+      style={
+        appSettings.windowTransparencyEnabled
+          ? { backgroundColor: "rgba(17, 24, 39, 0.85)" }
+          : undefined
+      }
     >
       {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
       {/* Top bar */}

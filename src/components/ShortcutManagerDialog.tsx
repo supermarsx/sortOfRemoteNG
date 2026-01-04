@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { X, Link, Plus } from "lucide-react";
 import { useConnections } from "../contexts/useConnections";
 import { CollectionManager } from "../utils/collectionManager";
+import { invoke } from "@tauri-apps/api/core";
 
 interface ShortcutManagerDialogProps {
   isOpen: boolean;
@@ -18,6 +19,8 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
   const [shortcutName, setShortcutName] = useState("");
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -38,9 +41,38 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  const handleCreateShortcut = () => {
-    // TODO: Hook into the native shortcut creation flow.
-    onClose();
+  const handleCreateShortcut = async () => {
+    const isTauri =
+      typeof window !== "undefined" &&
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    if (!isTauri) {
+      setErrorMessage("Desktop shortcuts are only available in the Tauri app.");
+      return;
+    }
+    if (!shortcutName.trim()) {
+      setErrorMessage("Shortcut name is required.");
+      return;
+    }
+
+    setErrorMessage("");
+    setStatusMessage("Creating shortcut...");
+    try {
+      const path = await invoke<string>("create_desktop_shortcut", {
+        name: shortcutName.trim(),
+        collectionId: selectedCollectionId || null,
+        connectionId: selectedConnectionId || null,
+        description: selectedConnectionId
+          ? `Open connection ${shortcutName.trim()}`
+          : "Launch sortOfRemoteNG",
+      });
+      setStatusMessage(`Shortcut created at: ${path}`);
+    } catch (error) {
+      console.error("Failed to create shortcut:", error);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to create shortcut.",
+      );
+      setStatusMessage("");
+    }
   };
 
   if (!isOpen) return null;
@@ -132,10 +164,20 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                 Create Shortcut
               </button>
             </div>
+            {errorMessage && (
+              <div className="mt-4 rounded-md border border-red-600/60 bg-red-900/20 px-3 py-2 text-sm text-red-200">
+                {errorMessage}
+              </div>
+            )}
+            {statusMessage && (
+              <div className="mt-4 rounded-md border border-blue-600/60 bg-blue-900/20 px-3 py-2 text-sm text-blue-200">
+                {statusMessage}
+              </div>
+            )}
           </div>
 
           <div className="rounded-lg border border-gray-700/60 bg-gray-900/40 p-5 text-sm text-gray-400">
-            Shortcut actions will appear here once native integration is wired.
+            Shortcuts can open a collection or a specific connection when the app starts.
           </div>
         </div>
       </div>

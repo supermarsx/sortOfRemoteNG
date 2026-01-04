@@ -94,7 +94,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             }
             className="rounded border-gray-600 bg-gray-700 text-blue-600"
           />
-          <span className="text-gray-300">{t("connections.singleWindow")}</span>
+          <span className="text-gray-300">Disallow multiple instances</span>
         </label>
 
         <label className="flex items-center space-x-2">

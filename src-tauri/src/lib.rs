@@ -138,6 +138,13 @@ use ovh::OvhService;
 use std::sync::Arc;
 use tauri::Manager;
 use std::env;
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+struct LaunchArgs {
+  collection_id: Option<String>,
+  connection_id: Option<String>,
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Initializes and runs the SortOfRemote NG Tauri application.
@@ -195,6 +202,11 @@ pub fn run() {
           }
         }
       }
+
+      app.manage(LaunchArgs {
+        collection_id: _collection_id.clone(),
+        connection_id: _connection_id.clone(),
+      });
 
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -441,6 +453,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
         greet,
         open_devtools,
+        get_launch_args,
         add_user,
         verify_user,
         list_users,
@@ -779,6 +792,11 @@ fn open_devtools(app: tauri::AppHandle) {
   if let Some(window) = app.get_webview_window("main") {
     window.open_devtools();
   }
+}
+
+#[tauri::command]
+fn get_launch_args(state: tauri::State<'_, LaunchArgs>) -> LaunchArgs {
+  state.inner().clone()
 }
 
 #[tauri::command]

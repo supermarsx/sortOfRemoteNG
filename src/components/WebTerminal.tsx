@@ -65,13 +65,13 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
   const safeWrite = useCallback((text: string) => {
     if (isDisposed.current || !termRef.current) return;
-    if (!termRef.current.element?.isConnected) return;
+    if (termRef.current.element && !termRef.current.element.isConnected) return;
     termRef.current.write(text);
   }, []);
 
   const safeWriteln = useCallback((text: string) => {
     if (isDisposed.current || !termRef.current) return;
-    if (!termRef.current.element?.isConnected) return;
+    if (termRef.current.element && !termRef.current.element.isConnected) return;
     termRef.current.writeln(text);
   }, []);
 
@@ -416,6 +416,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     isSsh,
     onResize,
     session.id,
+    safeWrite,
     safeWriteln,
     setStatusState,
   ]);
