@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { debugLog } from '../utils/debugLogger';
+import { invoke } from '@tauri-apps/api/core';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -14,6 +15,15 @@ import {
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
+
+interface HttpResponse {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+  content_type: string | null;
+  final_url: string;
+  response_time_ms: number;
+}
 
 interface WebBrowserProps {
   session: ConnectionSession;
@@ -34,11 +44,70 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string>('');
   const [isSecure, setIsSecure] = useState(session.protocol === 'https');
+  const [htmlContent, setHtmlContent] = useState<string>('');
+  const [useProxy, setUseProxy] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const iconCount = 2 + (connection?.authType === 'basic' ? 1 : 0);
   const iconPadding = 12 + iconCount * 18;
 
+  // Fetch content via Tauri backend with credentials
+  const fetchWithCredentials = useCallback(async (url: string) => {
+    setIsLoading(true);
+    setLoadError('');
+    setHtmlContent('');
+
+    try {
+      const hasAuth = connection?.authType === 'basic' && 
+                      connection.basicAuthUsername && 
+                      connection.basicAuthPassword;
+
+      const response: HttpResponse = await invoke('http_get', {
+        url,
+        username: hasAuth ? connection.basicAuthUsername : null,
+        password: hasAuth ? connection.basicAuthPassword : null,
+        headers: null,
+      });
+
+      if (response.status >= 200 && response.status < 400) {
+        // Rewrite relative URLs to absolute
+        const finalUrl = response.final_url || url;
+        const baseUrl = new URL(finalUrl);
+        let content = response.body;
+        
+        // Simple URL rewriting for resources
+        content = content.replace(
+          /(href|src)=["'](?!https?:\/\/|data:|javascript:|#)([^"']+)["']/gi,
+          (match, attr, path) => {
+            const absoluteUrl = new URL(path, baseUrl).href;
+            return `${attr}="${absoluteUrl}"`;
+          }
+        );
+
+        setHtmlContent(content);
+        setCurrentUrl(finalUrl);
+        setInputUrl(finalUrl);
+        setUseProxy(true);
+        debugLog('Content loaded via proxy with credentials:', finalUrl);
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Proxy fetch failed:', error);
+      // Fall back to iframe
+      setUseProxy(false);
+      setHtmlContent('');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [connection]);
+
+  // Initial load with credentials if configured
+  useEffect(() => {
+    if (connection?.authType === 'basic' && connection.basicAuthUsername) {
+      fetchWithCredentials(currentUrl);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,26 +121,20 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     setCurrentUrl(url);
     setIsSecure(url.startsWith('https://'));
     setLoadError('');
-    setIsLoading(true);
+    
+    // Use proxy if auth is configured
+    if (connection?.authType === 'basic' && connection.basicAuthUsername) {
+      fetchWithCredentials(url);
+    } else {
+      setUseProxy(false);
+      setHtmlContent('');
+      setIsLoading(true);
+    }
   };
 
   const handleIframeLoad = () => {
     setIsLoading(false);
     setLoadError('');
-
-    // Handle basic authentication if configured
-    if (connection?.authType === 'basic' && connection.basicAuthUsername && connection.basicAuthPassword) {
-      try {
-        const iframe = iframeRef.current;
-        if (iframe && iframe.contentWindow) {
-          // Note: Due to CORS restrictions, we can't directly inject auth headers
-          // This would need to be handled by a proxy server or browser extension
-          debugLog('Basic auth configured for:', connection.basicAuthUsername);
-        }
-      } catch (error) {
-        console.warn('Cannot access iframe content due to CORS restrictions');
-      }
-    }
   };
 
   const handleIframeError = () => {
@@ -80,7 +143,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   };
 
   const handleRefresh = () => {
-    if (iframeRef.current) {
+    if (useProxy && connection?.authType === 'basic') {
+      fetchWithCredentials(currentUrl);
+    } else if (iframeRef.current) {
       setIsLoading(true);
       setLoadError('');
       iframeRef.current.src = currentUrl;
@@ -250,6 +315,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               </button>
             </div>
           </div>
+        ) : useProxy && htmlContent ? (
+          <iframe
+            ref={iframeRef}
+            srcDoc={htmlContent}
+            className="w-full h-full border-0"
+            title={session.name}
+            onLoad={handleIframeLoad}
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+          />
         ) : (
           <iframe
             ref={iframeRef}

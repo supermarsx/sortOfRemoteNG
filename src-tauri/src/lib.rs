@@ -87,6 +87,7 @@ pub mod heroku;
 pub mod scaleway;
 pub mod linode;
 pub mod ovh;
+pub mod http;
 
 #[cfg(test)]
 mod tests {
@@ -134,6 +135,7 @@ use heroku::HerokuService;
 use scaleway::ScalewayService;
 use linode::LinodeService;
 use ovh::OvhService;
+use http::HttpService;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -415,6 +417,10 @@ pub fn run() {
       let ovh_service = OvhService::new();
       app.manage(ovh_service.clone());
 
+      // Initialize HTTP service
+      let http_service = HttpService::new();
+      app.manage(http_service.clone());
+
       // Initialize API service
       let api_service = ApiService::new(
         auth_service.clone(),
@@ -663,6 +669,9 @@ pub fn run() {
         ssh::validate_ssh_key_file,
         ssh::test_ssh_connection,
         ssh::generate_ssh_key,
+        http::http_fetch,
+        http::http_get,
+        http::http_post,
         // Authentication services - commented out until Tauri integration is complete
         // cert_auth::parse_certificate,
         // cert_auth::validate_certificate,

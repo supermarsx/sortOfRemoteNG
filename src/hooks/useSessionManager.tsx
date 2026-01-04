@@ -180,7 +180,9 @@ export const useSessionManager = () => {
   const handleConnect = async (connection: Connection) => {
     const settings = settingsManager.getSettings();
 
-    if (connection.protocol === "ssh") {
+    // Check for existing session for protocols that should reuse connections
+    const reuseSessionProtocols = ["ssh", "http", "https"];
+    if (reuseSessionProtocols.includes(connection.protocol)) {
       const existingSession = state.sessions.find(
         (session) =>
           session.connectionId === connection.id &&

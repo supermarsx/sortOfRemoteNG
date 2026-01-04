@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Download, Upload, X } from 'lucide-react';
 import { Connection } from '../../types/connection';
 import { useConnections } from '../../contexts/useConnections';
+import { useToastContext } from '../../contexts/ToastContext';
 import { CollectionManager } from '../../utils/collectionManager';
 import ExportTab from './ExportTab';
 import ImportTab from './ImportTab';
@@ -22,12 +23,14 @@ export const ImportExport: React.FC<ImportExportProps> = ({
   embedded = false,
 }) => {
   const { state, dispatch } = useConnections();
+  const { toast } = useToastContext();
   const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
   const [exportFormat, setExportFormat] = useState<'json' | 'xml' | 'csv'>('json');
   const [exportEncrypted, setExportEncrypted] = useState(false);
   const [exportPassword, setExportPassword] = useState('');
   const [includePasswords, setIncludePasswords] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importFilename, setImportFilename] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,9 +87,10 @@ export const ImportExport: React.FC<ImportExportProps> = ({
       }
 
       downloadFile(content, filename, mimeType);
+      toast.success(`Exported successfully: ${filename}`);
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      toast.error('Export failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsProcessing(false);
     }
@@ -185,18 +189,24 @@ export const ImportExport: React.FC<ImportExportProps> = ({
 
     setIsProcessing(true);
     setImportResult(null);
+    setImportFilename(file.name);
 
     try {
       const content = await readFileContent(file);
       const result = await processImportFile(file.name, content);
       setImportResult(result);
+      if (!result.success) {
+        toast.error(`Import failed: ${result.errors[0] || 'Unknown error'}`);
+      }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setImportResult({
         success: false,
         imported: 0,
-        errors: [error instanceof Error ? error.message : 'Unknown error'],
+        errors: [errorMessage],
         connections: []
       });
+      toast.error(`Import failed: ${errorMessage}`);
     } finally {
       setIsProcessing(false);
     }
@@ -311,11 +321,17 @@ export const ImportExport: React.FC<ImportExportProps> = ({
     return connections;
   };
 
-  const confirmImport = () => {
+  const confirmImport = (filename?: string) => {
     if (importResult && importResult.success) {
       importResult.connections.forEach(conn => {
         dispatch({ type: 'ADD_CONNECTION', payload: conn });
       });
+      const connectionCount = importResult.connections.length;
+      toast.success(
+        filename 
+          ? `Imported ${connectionCount} connection(s) from ${filename}` 
+          : `Imported ${connectionCount} connection(s) successfully`
+      );
       setImportResult(null);
       onClose();
     }
@@ -400,8 +416,11 @@ export const ImportExport: React.FC<ImportExportProps> = ({
             fileInputRef={fileInputRef}
             importResult={importResult}
             handleFileSelect={handleFileSelect}
-            confirmImport={confirmImport}
-            cancelImport={() => setImportResult(null)}
+            confirmImport={() => confirmImport(importFilename)}
+            cancelImport={() => {
+              setImportResult(null);
+              setImportFilename('');
+            }}
           />
         )}
       </div>
