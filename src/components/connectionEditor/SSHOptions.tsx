@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Key } from 'lucide-react';
+import { readTextFile } from '@tauri-apps/plugin-fs';
 import { Connection } from '../../types/connection';
+import { SSHKeyManager } from '../SSHKeyManager';
 
 interface SSHOptionsProps {
   formData: Partial<Connection>;
@@ -7,6 +10,8 @@ interface SSHOptionsProps {
 }
 
 export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData }) => {
+  const [showKeyManager, setShowKeyManager] = useState(false);
+  
   const isHttpProtocol = ['http', 'https'].includes(formData.protocol || '');
   if (formData.isGroup || isHttpProtocol) return null;
 
@@ -15,6 +20,15 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
     if (file) {
       const text = await file.text();
       setFormData(prev => ({ ...prev, privateKey: text }));
+    }
+  };
+  
+  const handleSelectKey = async (keyPath: string) => {
+    try {
+      const keyContent = await readTextFile(keyPath);
+      setFormData(prev => ({ ...prev, privateKey: keyContent }));
+    } catch (err) {
+      console.error('Failed to read selected key:', err);
     }
   };
 
