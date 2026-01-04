@@ -168,15 +168,15 @@ pub fn run() {
     .setup(|app| {
       // Parse command line arguments
       let args: Vec<String> = env::args().collect();
-      let mut collection_id = None;
-      let mut connection_id = None;
+      let mut _collection_id = None;
+      let mut _connection_id = None;
       
       let mut i = 1;
       while i < args.len() {
         match args[i].as_str() {
           "--collection" | "-c" => {
             if i + 1 < args.len() {
-              collection_id = Some(args[i + 1].clone());
+              _collection_id = Some(args[i + 1].clone());
               i += 2;
             } else {
               i += 1;
@@ -184,7 +184,7 @@ pub fn run() {
           }
           "--connection" | "-n" => {
             if i + 1 < args.len() {
-              connection_id = Some(args[i + 1].clone());
+              _connection_id = Some(args[i + 1].clone());
               i += 2;
             } else {
               i += 1;

@@ -54,7 +54,7 @@ pub struct GcpAccessConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ServiceAccountKey {
+pub struct ServiceAccountKey {
     r#type: String,
     project_id: String,
     private_key_id: String,
@@ -81,6 +81,7 @@ struct GcpApiResponse<T> {
     items: Option<Vec<T>>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 struct GcpComputeInstance {
     id: String,
@@ -93,6 +94,7 @@ struct GcpComputeInstance {
     tags: Option<GcpApiTags>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 struct GcpApiNetworkInterface {
     network: String,
@@ -101,6 +103,7 @@ struct GcpApiNetworkInterface {
     accessConfigs: Option<Vec<GcpApiAccessConfig>>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 struct GcpApiAccessConfig {
     natIP: Option<String>,
