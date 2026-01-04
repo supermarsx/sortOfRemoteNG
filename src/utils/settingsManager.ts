@@ -31,6 +31,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   retryAttempts: 3,
   retryDelay: 5000,
   enablePerformanceTracking: true,
+  performancePollIntervalMs: 5000,
 
   encryptionAlgorithm: 'AES-256-GCM',
   blockCipherMode: 'GCM',

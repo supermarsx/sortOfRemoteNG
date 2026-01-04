@@ -45,6 +45,24 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
+            Performance Poll Interval (seconds)
+          </label>
+          <input
+            type="number"
+            value={Math.round(settings.performancePollIntervalMs / 1000)}
+            onChange={(e) =>
+              updateSettings({
+                performancePollIntervalMs: Math.max(1, parseInt(e.target.value || '0')) * 1000,
+              })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+            min="1"
+            max="120"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
             Status Check Interval (seconds)
           </label>
           <input

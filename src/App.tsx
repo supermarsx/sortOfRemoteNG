@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect } from "react";
-import { Monitor, Zap, Menu, Globe, Minus, Square, X, ChevronRight, Settings } from "lucide-react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { Monitor, Zap, Menu, Globe, Minus, Square, X, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Connection } from "./types/connection";
@@ -56,6 +56,8 @@ const AppContent: React.FC = () => {
     message: "",
     onConfirm: () => {},
   }); // confirm dialog state
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const languageMenuRef = useRef<HTMLDivElement | null>(null);
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
@@ -277,6 +279,19 @@ const AppContent: React.FC = () => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!showLanguageMenu) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (languageMenuRef.current && !languageMenuRef.current.contains(event.target as Node)) {
+        setShowLanguageMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showLanguageMenu]);
 
   const handleMinimize = async () => {
     const window = getCurrentWindow();

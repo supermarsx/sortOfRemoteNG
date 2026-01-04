@@ -14,6 +14,9 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
   const [metrics, setMetrics] = useState<PerformanceMetrics[]>([]);
   const [currentMetrics, setCurrentMetrics] = useState<PerformanceMetrics | null>(null);
   const settingsManager = SettingsManager.getInstance();
+  const [pollIntervalMs, setPollIntervalMs] = useState<number>(
+    settingsManager.getSettings().performancePollIntervalMs ?? 5000
+  );
 
   const loadMetrics = useCallback(() => {
     const storedMetrics = settingsManager.getPerformanceMetrics();
@@ -39,12 +42,37 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
   }, [settingsManager]);
 
   useEffect(() => {
-    if (isOpen) {
-      loadMetrics();
-      const interval = setInterval(updateCurrentMetrics, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [isOpen, loadMetrics, updateCurrentMetrics]);
+    if (!isOpen) return;
+
+    let isMounted = true;
+
+    loadMetrics();
+    settingsManager.loadSettings().then((loaded) => {
+      if (isMounted && loaded.performancePollIntervalMs) {
+        setPollIntervalMs(loaded.performancePollIntervalMs);
+      }
+    }).catch(console.error);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, loadMetrics, settingsManager]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const intervalDuration = pollIntervalMs || 5000;
+    updateCurrentMetrics();
+    const interval = window.setInterval(updateCurrentMetrics, intervalDuration);
+    return () => clearInterval(interval);
+  }, [isOpen, pollIntervalMs, updateCurrentMetrics]);
+
+  const handlePollIntervalChange = (seconds: number) => {
+    const safeSeconds = Math.max(1, seconds || 0);
+    const intervalMs = safeSeconds * 1000;
+    setPollIntervalMs(intervalMs);
+    settingsManager.saveSettings({ performancePollIntervalMs: intervalMs }).catch(console.error);
+  };
 
   const exportMetrics = () => {
     const csvContent = [
@@ -96,7 +124,19 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-xl font-semibold text-white">{t('performance.title')}</h2>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 text-xs text-gray-300 bg-gray-700/60 border border-gray-600 rounded px-2 py-1">
+              <span>Update every</span>
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={Math.round(pollIntervalMs / 1000)}
+                onChange={(e) => handlePollIntervalChange(parseInt(e.target.value || '0'))}
+                className="w-12 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+              <span>s</span>
+            </div>
             <button
               onClick={exportMetrics}
               className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
