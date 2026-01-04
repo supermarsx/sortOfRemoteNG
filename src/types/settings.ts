@@ -25,6 +25,13 @@ export type ColorScheme = (typeof ColorSchemes)[number] | string;
 export const StatusCheckMethods = ["ping", "socket", "http"] as const;
 export type StatusCheckMethod = (typeof StatusCheckMethods)[number];
 
+export interface QuickConnectHistoryEntry {
+  hostname: string;
+  protocol: string;
+  username?: string;
+  authType?: "password" | "key";
+}
+
 export interface GlobalSettings {
   // General Settings
   language: string;
@@ -40,6 +47,8 @@ export interface GlobalSettings {
   warnOnClose: boolean;
   warnOnExit: boolean;
   warnOnDetachClose: boolean;
+  quickConnectHistoryEnabled: boolean;
+  quickConnectHistory: QuickConnectHistoryEntry[];
 
   // Theme Effects
   backgroundGlowEnabled: boolean;

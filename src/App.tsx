@@ -1284,12 +1284,12 @@ const AppContent: React.FC = () => {
       </div>
 
       {/* Secondary actions bar */}
-      <div className="h-9 bg-gray-800/80 border-b border-gray-700 flex items-center justify-between px-3 select-none">
+      <div className="h-9 app-bar-secondary border-b flex items-center justify-between px-3 select-none">
         <div className="flex items-center space-x-1">
           {appSettings.showQuickConnectIcon && (
             <button
               onClick={() => setShowQuickConnect(true)}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title={t("connections.quickConnect")}
             >
               <Zap size={14} />
@@ -1298,7 +1298,7 @@ const AppContent: React.FC = () => {
           {appSettings.showCollectionSwitcherIcon && (
             <button
               onClick={() => setShowCollectionSelector(true)}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title="Switch Collection"
             >
               <Database size={14} />
@@ -1307,7 +1307,7 @@ const AppContent: React.FC = () => {
           {appSettings.showImportExportIcon && (
             <button
               onClick={() => setShowImportExport(true)}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title="Import/Export"
             >
               <FileText size={14} />
@@ -1316,7 +1316,7 @@ const AppContent: React.FC = () => {
           {appSettings.showSettingsIcon && (
             <button
               onClick={() => setShowSettings(true)}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title="Settings"
             >
               <Settings size={14} />
@@ -1328,7 +1328,7 @@ const AppContent: React.FC = () => {
           {appSettings.showProxyMenuIcon && (
             <button
               onClick={() => setShowProxyMenu(true)}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title="Proxy & VPN"
             >
               <Network size={14} />
@@ -1337,7 +1337,7 @@ const AppContent: React.FC = () => {
           {appSettings.showShortcutManagerIcon && (
             <button
               onClick={() => setShowShortcutManager(true)}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title="Shortcut Manager"
             >
               <Keyboard size={14} />
@@ -1346,7 +1346,7 @@ const AppContent: React.FC = () => {
           {appSettings.showPerformanceMonitorIcon && (
             <button
               onClick={() => setShowPerformanceMonitor(true)}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title="Performance Monitor"
             >
               <BarChart3 size={14} />
@@ -1355,7 +1355,7 @@ const AppContent: React.FC = () => {
           {appSettings.showActionLogIcon && (
             <button
               onClick={() => setShowActionLog(true)}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title="Action Log"
             >
               <ScrollText size={14} />
@@ -1364,7 +1364,7 @@ const AppContent: React.FC = () => {
           {appSettings.showDevtoolsIcon && (
             <button
               onClick={handleOpenDevtools}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title="Open dev console"
             >
               <Terminal size={14} />
@@ -1373,7 +1373,7 @@ const AppContent: React.FC = () => {
           {appSettings.showSecurityIcon && (
             <button
               onClick={handleShowPasswordDialog}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              className="app-bar-button p-2"
               title="Security"
             >
               <Shield size={14} />
@@ -1383,7 +1383,7 @@ const AppContent: React.FC = () => {
             <div className="relative" ref={languageMenuRef}>
               <button
                 onClick={() => setShowLanguageMenu((prev) => !prev)}
-                className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+                className="app-bar-button p-2"
                 title="Change language"
               >
                 <Globe size={14} />

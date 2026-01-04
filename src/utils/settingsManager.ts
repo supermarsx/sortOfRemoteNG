@@ -21,6 +21,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   warnOnClose: true,
   warnOnExit: true,
   warnOnDetachClose: true,
+  quickConnectHistoryEnabled: true,
+  quickConnectHistory: [],
 
   backgroundGlowEnabled: true,
   backgroundGlowColor: "#2563eb",
