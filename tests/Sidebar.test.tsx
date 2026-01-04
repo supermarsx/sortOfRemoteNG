@@ -15,41 +15,6 @@ vi.mock('../src/components/ConnectionTree', () => ({
   )
 }));
 
-vi.mock('../src/components/ImportExport', () => ({
-  ImportExport: ({ isOpen, onClose }: any) => isOpen ? (
-    <div data-testid="import-export">
-      <span>Import/Export Dialog</span>
-      <button onClick={onClose}>Close</button>
-    </div>
-  ) : null
-}));
-
-vi.mock('../src/components/SettingsDialog', () => ({
-  SettingsDialog: ({ isOpen, onClose }: any) => isOpen ? (
-    <div data-testid="settings-dialog">
-      <span>Settings Dialog</span>
-      <button onClick={onClose}>Close</button>
-    </div>
-  ) : null
-}));
-
-vi.mock('../src/components/PerformanceMonitor', () => ({
-  PerformanceMonitor: ({ isOpen, onClose }: any) => isOpen ? (
-    <div data-testid="performance-monitor">
-      <span>Performance Monitor</span>
-      <button onClick={onClose}>Close</button>
-    </div>
-  ) : null
-}));
-
-vi.mock('../src/components/ActionLogViewer', () => ({
-  ActionLogViewer: ({ isOpen, onClose }: any) => isOpen ? (
-    <div data-testid="action-log-viewer">
-      <span>Action Log Viewer</span>
-      <button onClick={onClose}>Close</button>
-    </div>
-  ) : null
-}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -74,11 +39,14 @@ const mockConnection: Connection = {
 };
 
 const mockProps = {
+  sidebarPosition: "left" as const,
+  onToggleSidebarPosition: vi.fn(),
   onNewConnection: vi.fn(),
   onEditConnection: vi.fn(),
   onDeleteConnection: vi.fn(),
   onConnect: vi.fn(),
-  onShowPasswordDialog: vi.fn()
+  onShowPasswordDialog: vi.fn(),
+  enableConnectionReorder: true,
 };
 
 const renderWithProviders = (props = mockProps) => {
@@ -108,7 +76,6 @@ describe("Sidebar", () => {
 
       expect(screen.getByRole('button', { name: /^connections\.new$/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /connections\.newFolder/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /settings\.title/i })).toBeInTheDocument();
     });
   });
 
@@ -146,55 +113,6 @@ describe("Sidebar", () => {
     });
   });
 
-  describe("Dialog Management", () => {
-    it("should open import/export dialog", () => {
-      renderWithProviders();
-
-      const importButton = screen.getByRole('button', { name: /Import\/Export connections/i });
-      fireEvent.click(importButton);
-
-      expect(screen.getByTestId('import-export')).toBeInTheDocument();
-    });
-
-    it("should close import/export dialog", () => {
-      renderWithProviders();
-
-      const importButton = screen.getByRole('button', { name: /Import\/Export connections/i });
-      fireEvent.click(importButton);
-
-      const closeButton = screen.getByText('Close');
-      fireEvent.click(closeButton);
-
-      expect(screen.queryByTestId('import-export')).not.toBeInTheDocument();
-    });
-
-    it("should open settings dialog", () => {
-      renderWithProviders();
-
-      const settingsButton = screen.getByRole('button', { name: /settings\.title/i });
-      fireEvent.click(settingsButton);
-
-      expect(screen.getByTestId('settings-dialog')).toBeInTheDocument();
-    });
-
-    it("should open performance monitor", () => {
-      renderWithProviders();
-
-      const perfButton = screen.getByRole('button', { name: /Performance Monitor/i });
-      fireEvent.click(perfButton);
-
-      expect(screen.getByTestId('performance-monitor')).toBeInTheDocument();
-    });
-
-    it("should open action log viewer", () => {
-      renderWithProviders();
-
-      const logButton = screen.getByRole('button', { name: /Action Log/i });
-      fireEvent.click(logButton);
-
-      expect(screen.getByTestId('action-log-viewer')).toBeInTheDocument();
-    });
-  });
 
   describe("Filter Functionality", () => {
     it("should toggle filter panel", () => {

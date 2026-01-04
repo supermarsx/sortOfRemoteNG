@@ -82,6 +82,13 @@ interface ConnectionTreeItemProps {
   onConnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
   onDelete: (connection: Connection) => void;
+  enableReorder: boolean;
+  isDragging: boolean;
+  isDragOver: boolean;
+  onDragStart: (connectionId: string) => void;
+  onDragOver: (connectionId: string) => void;
+  onDragEnd: () => void;
+  onDrop: (connectionId: string) => void;
 }
 
 /**
@@ -94,6 +101,13 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   onConnect,
   onEdit,
   onDelete,
+  enableReorder,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  onDrop,
 }) => {
   const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
@@ -129,10 +143,27 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
       <div
         className={`group flex items-center h-8 px-2 cursor-pointer hover:bg-gray-700/50 transition-colors ${
           isSelected ? "bg-blue-600/20 text-blue-400" : "text-gray-300"
-        }`}
+        } ${isDragging ? "opacity-60" : ""} ${isDragOver ? "border-l-2 border-blue-500" : ""}`}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={handleSelect}
         onDoubleClick={() => !connection.isGroup && onConnect(connection)}
+        draggable={enableReorder}
+        onDragStart={(e) => {
+          if (!enableReorder) return;
+          e.dataTransfer.effectAllowed = "move";
+          onDragStart(connection.id);
+        }}
+        onDragOver={(e) => {
+          if (!enableReorder) return;
+          e.preventDefault();
+          onDragOver(connection.id);
+        }}
+        onDragEnd={onDragEnd}
+        onDrop={(e) => {
+          if (!enableReorder) return;
+          e.preventDefault();
+          onDrop(connection.id);
+        }}
       >
         {/* Group expand/collapse button */}
         {connection.isGroup && (
@@ -263,6 +294,7 @@ interface ConnectionTreeProps {
   onConnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
   onDelete: (connection: Connection) => void;
+  enableReorder?: boolean;
 }
 
 /**
@@ -274,8 +306,11 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   onConnect,
   onEdit,
   onDelete,
+  enableReorder = true,
 }) => {
-  const { state } = useConnections();
+  const { state, dispatch } = useConnections();
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const buildTree = useCallback(
     (connections: Connection[], parentId?: string): Connection[] =>
@@ -284,9 +319,14 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
         .sort((a, b) => {
           if (a.isGroup && !b.isGroup) return -1;
           if (!a.isGroup && b.isGroup) return 1;
+          if (enableReorder) {
+            const orderA = a.order ?? 0;
+            const orderB = b.order ?? 0;
+            if (orderA !== orderB) return orderA - orderB;
+          }
           return a.name.localeCompare(b.name);
         }),
-    [],
+    [enableReorder],
   );
 
   const renderTree = (
@@ -301,6 +341,49 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           onConnect={onConnect}
           onEdit={onEdit}
           onDelete={onDelete}
+          enableReorder={enableReorder}
+          isDragging={draggedId === connection.id}
+          isDragOver={dragOverId === connection.id && draggedId !== connection.id}
+          onDragStart={(connectionId) => {
+            setDraggedId(connectionId);
+          }}
+          onDragOver={(connectionId) => {
+            setDragOverId(connectionId);
+          }}
+          onDragEnd={() => {
+            setDraggedId(null);
+            setDragOverId(null);
+          }}
+          onDrop={(connectionId) => {
+            if (!draggedId || draggedId === connectionId) return;
+            const draggedConnection = state.connections.find((conn) => conn.id === draggedId);
+            const dropConnection = state.connections.find((conn) => conn.id === connectionId);
+            if (!draggedConnection || !dropConnection) return;
+            if (draggedConnection.parentId !== dropConnection.parentId) return;
+
+            const siblings = buildTree(state.connections, draggedConnection.parentId);
+            const orderedIds = siblings.map((conn) => conn.id);
+            const fromIndex = orderedIds.indexOf(draggedId);
+            const toIndex = orderedIds.indexOf(connectionId);
+            if (fromIndex < 0 || toIndex < 0) return;
+
+            const nextOrder = [...orderedIds];
+            const [moved] = nextOrder.splice(fromIndex, 1);
+            nextOrder.splice(toIndex, 0, moved);
+
+            nextOrder.forEach((id, index) => {
+              const current = state.connections.find((conn) => conn.id === id);
+              if (current && current.order !== index) {
+                dispatch({
+                  type: "UPDATE_CONNECTION",
+                  payload: { ...current, order: index },
+                });
+              }
+            });
+
+            setDraggedId(null);
+            setDragOverId(null);
+          }}
         />
         {connection.isGroup && connection.expanded && (
           <div>

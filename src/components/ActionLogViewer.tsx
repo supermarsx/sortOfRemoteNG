@@ -140,12 +140,12 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden relative">
+        <div className="relative h-16 border-b border-gray-700">
+          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
             {t("logs.title")}
           </h2>
-          <div className="flex items-center space-x-2">
+          <div className="absolute right-4 top-3 flex items-center space-x-2">
             <button
               onClick={exportLogs}
               className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"

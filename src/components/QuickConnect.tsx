@@ -48,12 +48,14 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between p-4 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-white">Quick Connect</h2>
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
+        <div className="relative h-12 border-b border-gray-700">
+          <h2 className="absolute left-4 top-3 text-lg font-semibold text-white">
+            Quick Connect
+          </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="absolute right-3 top-2 text-gray-400 hover:text-white transition-colors"
             aria-label="Close"
           >
             <X size={20} />

@@ -247,6 +247,7 @@ export class CollectionManager {
     collectionId: string,
     includePasswords: boolean = false,
     exportPassword?: string,
+    collectionPassword?: string,
   ): Promise<string> {
     const collection = await this.getCollection(collectionId);
     if (!collection) {
@@ -255,7 +256,7 @@ export class CollectionManager {
 
     const data = await this.loadCollectionData(
       collectionId,
-      this.currentPassword || undefined,
+      collectionPassword || this.currentPassword || undefined,
     );
     if (!data) {
       throw new Error("Failed to load collection data");
@@ -306,6 +307,91 @@ export class CollectionManager {
       this.currentPassword = null;
       this.currentCollection = { ...collection };
     }
+  }
+
+  async changeCollectionPassword(
+    collectionId: string,
+    currentPassword: string | undefined,
+    newPassword: string,
+  ): Promise<void> {
+    const collection = await this.getCollection(collectionId);
+    if (!collection) throw new Error("Collection not found");
+
+    const data = collection.isEncrypted
+      ? await this.loadCollectionData(collectionId, currentPassword)
+      : await this.loadCollectionData(collectionId);
+
+    if (data === null) {
+      throw new Error("Invalid password");
+    }
+
+    await this.saveCollectionData(collectionId, data, newPassword);
+    collection.isEncrypted = true;
+    await this.updateCollection(collection);
+
+    if (this.currentCollection?.id === collectionId) {
+      this.currentPassword = newPassword;
+      this.currentCollection = { ...collection };
+    }
+  }
+
+  async importCollection(
+    content: string,
+    options?: {
+      importPassword?: string;
+      collectionName?: string;
+      encryptPassword?: string;
+    },
+  ): Promise<ConnectionCollection> {
+    let parsed: any;
+    try {
+      parsed = JSON.parse(content);
+    } catch (error) {
+      if (!options?.importPassword) {
+        throw new InvalidPasswordError("Password required for encrypted export");
+      }
+      const decrypted = CryptoJS.AES.decrypt(
+        content,
+        options.importPassword,
+      ).toString(CryptoJS.enc.Utf8);
+      if (!decrypted) {
+        throw new InvalidPasswordError();
+      }
+      parsed = JSON.parse(decrypted);
+    }
+
+    const collectionName = options?.collectionName || parsed?.collection?.name;
+    if (!collectionName) {
+      throw new Error("Collection name missing in import");
+    }
+
+    const connections = (parsed?.connections ?? []).map((conn: any) => ({
+      ...conn,
+      password: conn.password === "***ENCRYPTED***" ? undefined : conn.password,
+      basicAuthPassword:
+        conn.basicAuthPassword === "***ENCRYPTED***"
+          ? undefined
+          : conn.basicAuthPassword,
+    }));
+
+    const collection = await this.createCollection(
+      collectionName,
+      parsed?.collection?.description,
+      Boolean(options?.encryptPassword),
+      options?.encryptPassword,
+    );
+
+    await this.saveCollectionData(
+      collection.id,
+      {
+        connections,
+        settings: parsed?.settings ?? {},
+        timestamp: Date.now(),
+      },
+      options?.encryptPassword,
+    );
+
+    return collection;
   }
 
   // Generate export filename

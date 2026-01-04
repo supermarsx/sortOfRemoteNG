@@ -230,10 +230,12 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       const sessionId = await invoke('connect_ssh', { config: sshConfig }) as string;
       sshSessionId.current = sessionId;
 
+      if (!terminal.current) return;
       terminal.current.writeln('\x1b[32mSSH connection established\x1b[0m');
 
       // Start the shell
       await invoke('start_shell', { sessionId });
+      if (!terminal.current) return;
       terminal.current.writeln('\x1b[32mShell started successfully\x1b[0m');
       terminal.current.write('\x1b[33m$ \x1b[0m');
 
@@ -420,7 +422,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       setIsConnecting(false);
       setCommandBuffer('');
     };
-  }, [session.protocol, session.hostname, handleNonSSHInput, initializeSSHConnection, onResize, isConnecting, sshOutputInterval]);
+  }, [session.protocol, session.hostname, handleNonSSHInput, initializeSSHConnection, onResize]);
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);

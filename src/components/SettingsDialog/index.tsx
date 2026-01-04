@@ -10,10 +10,14 @@ import {
   Wifi,
   CheckCircle,
   AlertCircle,
+  Palette,
+  LayoutGrid,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig } from '../../types/settings';
 import GeneralSettings from './sections/GeneralSettings';
+import ThemeSettings from './sections/ThemeSettings';
+import LayoutSettings from './sections/LayoutSettings';
 import SecuritySettings from './sections/SecuritySettings';
 import PerformanceSettings from './sections/PerformanceSettings';
 import ProxySettings from './sections/ProxySettings';
@@ -72,7 +76,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       }
       
       // Apply theme changes
-      themeManager.applyTheme(settings.theme, settings.colorScheme);
+      themeManager.applyTheme(
+        settings.theme,
+        settings.colorScheme,
+        settings.primaryAccentColor,
+      );
       
       onClose();
     } catch (error) {
@@ -122,8 +130,16 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         i18n.changeLanguage(updates.language);
       }
 
-      if (updates.theme || updates.colorScheme) {
-        themeManager.applyTheme(newSettings.theme, newSettings.colorScheme);
+      if (
+        updates.theme ||
+        updates.colorScheme ||
+        typeof updates.primaryAccentColor !== "undefined"
+      ) {
+        themeManager.applyTheme(
+          newSettings.theme,
+          newSettings.colorScheme,
+          newSettings.primaryAccentColor,
+        );
       }
 
       showAutoSave('success');
@@ -155,6 +171,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
   const tabs = [
     { id: 'general', label: t('settings.general'), icon: Monitor },
+    { id: 'theme', label: t('settings.theme'), icon: Palette },
+    { id: 'layout', label: 'Layout', icon: LayoutGrid },
     { id: 'security', label: t('settings.security'), icon: Shield },
     { id: 'performance', label: t('settings.performance'), icon: Zap },
     { id: 'proxy', label: 'Proxy', icon: Wifi },
@@ -170,26 +188,36 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     >
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden relative">
         {autoSaveStatus && (
-          <div className={`absolute top-2 right-2 flex items-center space-x-1 text-sm ${
-            autoSaveStatus === 'success' ? 'text-green-400' : 'text-red-400'
-          }`}>
-            {autoSaveStatus === 'success' ? (
-              <CheckCircle size={16} />
-            ) : (
-              <AlertCircle size={16} />
-            )}
-            <span>
-              {autoSaveStatus === 'success'
-                ? t('settings.autoSaveSuccess')
-                : t('settings.autoSaveError')}
-            </span>
+          <div className="fixed bottom-6 right-6 z-50">
+            <div
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg border shadow-lg bg-gray-800 ${
+                autoSaveStatus === "success"
+                  ? "border-green-500 text-green-400"
+                  : "border-red-500 text-red-400"
+              }`}
+            >
+              {autoSaveStatus === "success" ? (
+                <CheckCircle size={16} />
+              ) : (
+                <AlertCircle size={16} />
+              )}
+              <span className="text-sm">
+                {autoSaveStatus === "success"
+                  ? t("settings.autoSaveSuccess")
+                  : t("settings.autoSaveError")}
+              </span>
+            </div>
           </div>
         )}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">{t('settings.title')}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <X size={20} />
-          </button>
+        <div className="relative h-14 border-b border-gray-700">
+          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
+            {t("settings.title")}
+          </h2>
+          <div className="absolute right-4 top-3 flex items-center space-x-2">
+            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="flex h-[600px]">
@@ -221,6 +249,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
             <div className="p-6">
               {activeTab === 'general' && (
                 <GeneralSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'theme' && (
+                <ThemeSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'layout' && (
+                <LayoutSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'security' && (

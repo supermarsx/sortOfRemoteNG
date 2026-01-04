@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff } from 'lucide-react';
+import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionCollection } from '../types/connection';
 import { CollectionManager } from '../utils/collectionManager';
@@ -18,8 +18,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   const { t } = useTranslation();
   const [collections, setCollections] = useState<ConnectionCollection[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showImportForm, setShowImportForm] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [passwordAction, setPasswordAction] = useState<'unlock' | 'remove'>('unlock');
   const [selectedCollection, setSelectedCollection] = useState<ConnectionCollection | null>(null);
   const [newCollection, setNewCollection] = useState({
     name: '',
@@ -29,6 +29,22 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     confirmPassword: '',
   });
   const [editingCollection, setEditingCollection] = useState<ConnectionCollection | null>(null);
+  const [editPassword, setEditPassword] = useState({
+    current: '',
+    next: '',
+    confirm: '',
+    enableEncryption: false,
+  });
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPassword, setImportPassword] = useState('');
+  const [importCollectionName, setImportCollectionName] = useState('');
+  const [encryptImport, setEncryptImport] = useState(false);
+  const [importEncryptPassword, setImportEncryptPassword] = useState('');
+  const [importEncryptConfirmPassword, setImportEncryptConfirmPassword] = useState('');
+  const [exportingCollection, setExportingCollection] = useState<ConnectionCollection | null>(null);
+  const [includePasswords, setIncludePasswords] = useState(false);
+  const [exportPassword, setExportPassword] = useState('');
+  const [collectionPassword, setCollectionPassword] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -93,10 +109,83 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     }
   };
 
+  const handleImportCollection = async () => {
+    if (!importFile) {
+      setError('Select a collection file to import');
+      return;
+    }
+
+    if (encryptImport) {
+      if (!importEncryptPassword) {
+        setError('Password is required to encrypt the imported collection');
+        return;
+      }
+      if (importEncryptPassword !== importEncryptConfirmPassword) {
+        setError('Encryption passwords do not match');
+        return;
+      }
+    }
+
+    try {
+      const content = await importFile.text();
+      const collection = await collectionManager.importCollection(content, {
+        importPassword: importPassword || undefined,
+        collectionName: importCollectionName.trim() || undefined,
+        encryptPassword: encryptImport ? importEncryptPassword : undefined,
+      });
+
+      setCollections([...collections, collection]);
+      setShowImportForm(false);
+      setImportFile(null);
+      setImportPassword('');
+      setImportCollectionName('');
+      setEncryptImport(false);
+      setImportEncryptPassword('');
+      setImportEncryptConfirmPassword('');
+      setError('');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to import collection');
+    }
+  };
+
+  const handleExportCollection = (collection: ConnectionCollection) => {
+    setExportingCollection(collection);
+    setIncludePasswords(false);
+    setExportPassword('');
+    setCollectionPassword('');
+    setError('');
+  };
+
+  const handleExportDownload = async () => {
+    if (!exportingCollection) return;
+
+    try {
+      const content = await collectionManager.exportCollection(
+        exportingCollection.id,
+        includePasswords,
+        exportPassword || undefined,
+        collectionPassword || undefined,
+      );
+      const filename = collectionManager.generateExportFilename();
+      const blob = new Blob([content], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setExportingCollection(null);
+      setError('');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to export collection');
+    }
+  };
+
   const handleSelectCollection = (collection: ConnectionCollection) => {
     if (collection.isEncrypted) {
       setSelectedCollection(collection);
-      setPasswordAction('unlock');
       setShowPasswordDialog(true);
       setPassword('');
       setError('');
@@ -105,27 +194,11 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     }
   };
 
-  const handleRemovePassword = (collection: ConnectionCollection) => {
-    setSelectedCollection(collection);
-    setPasswordAction('remove');
-    setShowPasswordDialog(true);
-    setPassword('');
-    setError('');
-  };
-
   const handlePasswordSubmit = async () => {
     if (!selectedCollection) return;
 
     try {
-      if (passwordAction === 'unlock') {
-        onCollectionSelect(selectedCollection.id, password);
-      } else {
-        await collectionManager.removePasswordFromCollection(selectedCollection.id, password);
-        setCollections(collections.map(c => c.id === selectedCollection.id ? { ...c, isEncrypted: false } : c));
-        if (editingCollection && editingCollection.id === selectedCollection.id) {
-          setEditingCollection({ ...editingCollection, isEncrypted: false });
-        }
-      }
+      onCollectionSelect(selectedCollection.id, password);
       setShowPasswordDialog(false);
       setPassword('');
       setError('');
@@ -147,6 +220,12 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
   const handleEditCollection = (collection: ConnectionCollection) => {
     setEditingCollection({ ...collection });
+    setEditPassword({
+      current: '',
+      next: '',
+      confirm: '',
+      enableEncryption: collection.isEncrypted,
+    });
     setError('');
   };
 
@@ -157,9 +236,55 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
       return;
     }
 
+    const wantsEncryption = editPassword.enableEncryption;
+    const wantsPasswordChange = Boolean(editPassword.next);
+
+    if (wantsEncryption) {
+      if (!editingCollection.isEncrypted && !wantsPasswordChange) {
+        setError('Password is required to encrypt this collection');
+        return;
+      }
+      if (wantsPasswordChange) {
+        if (editPassword.next !== editPassword.confirm) {
+          setError('New passwords do not match');
+          return;
+        }
+        if (editPassword.next.length < 4) {
+          setError('Password must be at least 4 characters');
+          return;
+        }
+        if (editingCollection.isEncrypted && !editPassword.current) {
+          setError('Current password is required');
+          return;
+        }
+      }
+    } else if (editingCollection.isEncrypted && !editPassword.current) {
+      setError('Current password is required to remove encryption');
+      return;
+    }
+
     try {
-      await collectionManager.updateCollection(editingCollection);
-      setCollections(collections.map(c => c.id === editingCollection.id ? editingCollection : c));
+      let updatedCollection = { ...editingCollection, isEncrypted: wantsEncryption };
+
+      if (editingCollection.isEncrypted && !wantsEncryption) {
+        await collectionManager.removePasswordFromCollection(
+          editingCollection.id,
+          editPassword.current,
+        );
+        updatedCollection = { ...updatedCollection, isEncrypted: false };
+      }
+
+      if (wantsEncryption && wantsPasswordChange) {
+        await collectionManager.changeCollectionPassword(
+          editingCollection.id,
+          editingCollection.isEncrypted ? editPassword.current : undefined,
+          editPassword.next,
+        );
+        updatedCollection = { ...updatedCollection, isEncrypted: true };
+      }
+
+      await collectionManager.updateCollection(updatedCollection);
+      setCollections(collections.map(c => c.id === editingCollection.id ? updatedCollection : c));
       setEditingCollection(null);
       setError('');
     } catch (error) {
@@ -190,19 +315,35 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white flex items-center space-x-2">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden relative">
+        <div className="relative h-16 border-b border-gray-700">
+          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white flex items-center space-x-2">
             <Database size={20} className="text-blue-400" />
             <span>Connection Collections</span>
           </h2>
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
-          >
-            <Plus size={14} />
-            <span>New Collection</span>
-          </button>
+          <div className="absolute right-4 top-3 flex items-center space-x-2">
+            <button
+              onClick={() => setShowImportForm(true)}
+              className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+            >
+              <Upload size={14} />
+              <span>Import</span>
+            </button>
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+            >
+              <Plus size={14} />
+              <span>New</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+              title="Close"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
@@ -309,9 +450,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
           {showPasswordDialog && selectedCollection && (
             <div className="bg-gray-700 rounded-lg p-6 mb-6">
               <h3 className="text-lg font-medium text-white mb-4">
-                {passwordAction === 'unlock'
-                  ? `Unlock Collection: ${selectedCollection.name}`
-                  : `Remove Password From: ${selectedCollection.name}`}
+                Unlock Collection: {selectedCollection.name}
               </h3>
               
               {error && (
@@ -358,7 +497,192 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     onClick={handlePasswordSubmit}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
                   >
-                    {passwordAction === 'unlock' ? 'Unlock' : 'Remove'}
+                    Unlock
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Export Collection Form */}
+          {exportingCollection && (
+            <div className="bg-gray-700 rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-white mb-4">
+                Export Collection: {exportingCollection.name}
+              </h3>
+
+              {error && (
+                <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
+                  <p className="text-red-300 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {exportingCollection.isEncrypted && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Collection Password
+                    </label>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={collectionPassword}
+                      onChange={(e) => setCollectionPassword(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                      placeholder="Password"
+                    />
+                  </div>
+                )}
+
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={includePasswords}
+                    onChange={(e) => setIncludePasswords(e.target.checked)}
+                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  />
+                  <span className="text-gray-300">Include passwords</span>
+                </label>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Export Password (optional)
+                  </label>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={exportPassword}
+                    onChange={(e) => setExportPassword(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    placeholder="Encrypt export"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => {
+                      setExportingCollection(null);
+                      setError('');
+                    }}
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleExportDownload}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                  >
+                    <Download size={14} />
+                    <span>Export</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Import Collection Form */}
+          {showImportForm && (
+            <div className="bg-gray-700 rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-white mb-4">Import Collection</h3>
+
+              {error && (
+                <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
+                  <p className="text-red-300 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Collection File *
+                  </label>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Collection Name (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={importCollectionName}
+                    onChange={(e) => setImportCollectionName(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    placeholder="Leave blank to use the export name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Import Password (if encrypted)
+                  </label>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={importPassword}
+                    onChange={(e) => setImportPassword(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    placeholder="Password"
+                  />
+                </div>
+
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={encryptImport}
+                    onChange={(e) => setEncryptImport(e.target.checked)}
+                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  />
+                  <span className="text-gray-300">Encrypt imported collection</span>
+                </label>
+
+                {encryptImport && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        New Password
+                      </label>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={importEncryptPassword}
+                        onChange={(e) => setImportEncryptPassword(e.target.value)}
+                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        placeholder="New password"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Confirm Password
+                      </label>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={importEncryptConfirmPassword}
+                        onChange={(e) => setImportEncryptConfirmPassword(e.target.value)}
+                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        placeholder="Confirm password"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowImportForm(false);
+                      setError('');
+                    }}
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleImportCollection}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                  >
+                    <Upload size={14} />
+                    <span>Import</span>
                   </button>
                 </div>
               </div>
@@ -401,14 +725,85 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                   />
                 </div>
 
-                {editingCollection.isEncrypted && (
-                  <button
-                    type="button"
-                    onClick={() => handleRemovePassword(editingCollection)}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
-                  >
-                    Remove Password
-                  </button>
+                <label className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={editPassword.enableEncryption}
+                    onChange={(e) =>
+                      setEditPassword((prev) => ({
+                        ...prev,
+                        enableEncryption: e.target.checked,
+                      }))
+                    }
+                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  />
+                  <span className="text-gray-300">Encrypt this collection</span>
+                </label>
+
+                {(editingCollection.isEncrypted || editPassword.enableEncryption) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Current Password
+                      </label>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={editPassword.current}
+                        onChange={(e) =>
+                          setEditPassword((prev) => ({
+                            ...prev,
+                            current: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        placeholder="Current password"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        New Password
+                      </label>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={editPassword.next}
+                        onChange={(e) =>
+                          setEditPassword((prev) => ({
+                            ...prev,
+                            next: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        placeholder="New password"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Confirm Password
+                      </label>
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={editPassword.confirm}
+                        onChange={(e) =>
+                          setEditPassword((prev) => ({
+                            ...prev,
+                            confirm: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        placeholder="Confirm password"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="w-full px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors flex items-center justify-center space-x-2"
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        <span>{showPassword ? 'Hide' : 'Show'}</span>
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 <div className="flex justify-end space-x-3">
@@ -464,6 +859,16 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     </div>
                     
                     <div className="flex items-center space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleExportCollection(collection);
+                        }}
+                        className="p-2 hover:bg-gray-600 rounded transition-colors text-gray-400 hover:text-white"
+                        title="Export"
+                      >
+                        <Download size={16} />
+                      </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

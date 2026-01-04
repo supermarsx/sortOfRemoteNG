@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { X } from 'lucide-react';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -37,23 +38,39 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         if (e.target === e.currentTarget && onCancel) onCancel();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
-        <p className="text-white mb-6">{message}</p>
-        <div className="flex justify-end space-x-3">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
+        <div className="relative h-12 border-b border-gray-700">
+          <h2 className="absolute left-5 top-3 text-sm font-semibold text-white">
+            Confirmation
+          </h2>
           {onCancel && (
             <button
               onClick={onCancel}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
+              className="absolute right-3 top-2 text-gray-400 hover:text-white transition-colors"
+              aria-label="Close"
             >
-              Cancel
+              <X size={18} />
             </button>
           )}
-          <button
-            onClick={onConfirm}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
-          >
-            OK
-          </button>
+        </div>
+        <div className="p-6">
+          <p className="text-white mb-6">{message}</p>
+          <div className="flex justify-end space-x-3">
+            {onCancel && (
+              <button
+                onClick={onCancel}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+            <button
+              onClick={onConfirm}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+            >
+              OK
+            </button>
+          </div>
         </div>
       </div>
     </div>

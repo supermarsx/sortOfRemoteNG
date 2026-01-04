@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, FileText, Expand as ExpandAll, ListCollapse as CollapseAll, BarChart3, ScrollText, ArrowLeftRight } from 'lucide-react';
+import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionTree } from './ConnectionTree';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
 import { SecureStorage } from '../utils/storage';
 import { generateId } from '../utils/id';
-import { ImportExport } from './ImportExport';
-import { PerformanceMonitor } from './PerformanceMonitor';
-import { ActionLogViewer } from './ActionLogViewer';
 
 interface SidebarProps {
   sidebarPosition: 'left' | 'right';
@@ -18,6 +15,7 @@ interface SidebarProps {
   onDeleteConnection: (connection: Connection) => void;
   onConnect: (connection: Connection) => void;
   onShowPasswordDialog: () => void;
+  enableConnectionReorder: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -28,14 +26,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteConnection,
   onConnect,
   onShowPasswordDialog,
+  enableConnectionReorder,
 }) => {
   const { t } = useTranslation();
   const { state, dispatch } = useConnections();
   const [showFilters, setShowFilters] = useState(false);
-  const [showImportExport, setShowImportExport] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
-  const [showActionLog, setShowActionLog] = useState(false);
 
   // Get all available tags
   const allTags = Array.from(
@@ -304,70 +299,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onConnect={onConnect}
               onEdit={onEditConnection}
               onDelete={onDeleteConnection}
+              enableReorder={enableConnectionReorder}
             />
 
             {/* Footer */}
             <div className="p-4 border-t border-gray-700 mt-auto">
-              <div className="grid grid-cols-4 gap-2">
-                <button
-                  onClick={() => setShowImportExport(true)}
-                  className="flex items-center justify-center p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-                  title="Import/Export connections"
-                >
-                  <FileText size={16} />
-                </button>
-                <button
-                  onClick={() => setShowPerformanceMonitor(true)}
-                  className="flex items-center justify-center p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-                  title="Performance Monitor"
-                >
-                  <BarChart3 size={16} />
-                </button>
-                <button
-                  onClick={() => setShowActionLog(true)}
-                  className="flex items-center justify-center p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-                  title="Action Log"
-                >
-                  <ScrollText size={16} />
-                </button>
-                <button
-                  onClick={onShowPasswordDialog}
-                  className="flex items-center justify-center p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-                  title="Security settings"
-                >
-                  <Lock size={16} />
-                </button>
-              </div>
-              <div className="mt-2">
-                <button
-                  onClick={onShowPasswordDialog}
-                  className="w-full flex items-center justify-center p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-                  title="Security settings"
-                >
-                  <Lock size={16} className="mr-2" />
-                  <span className="text-sm">Security</span>
-                </button>
+              <div className="text-xs text-gray-500">
+                Shortcuts moved to the top bar.
               </div>
             </div>
           </>
         )}
       </div>
 
-      {/* Modals */}
-      <ImportExport
-        isOpen={showImportExport}
-        onClose={() => setShowImportExport(false)}
-      />
-      
-      <PerformanceMonitor
-        isOpen={showPerformanceMonitor}
-        onClose={() => setShowPerformanceMonitor(false)}
-      />
-      
-      <ActionLogViewer
-        isOpen={showActionLog}
-        onClose={() => setShowActionLog(false)}
-      />
     </>
   );
 };

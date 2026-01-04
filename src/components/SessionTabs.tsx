@@ -61,12 +61,14 @@ interface SessionTabsProps {
   activeSessionId?: string;
   onSessionSelect: (sessionId: string) => void;
   onSessionClose: (sessionId: string) => void;
+  enableReorder?: boolean;
 }
 
 export const SessionTabs: React.FC<SessionTabsProps> = ({
   activeSessionId,
   onSessionSelect,
   onSessionClose,
+  enableReorder = true,
 }) => {
   const { state, dispatch } = useConnections();
   const [draggedIndex, setDraggedIndex] = React.useState<number | null>(null);
@@ -78,11 +80,13 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   };
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
+    if (!enableReorder) return;
     setDraggedIndex(index);
     e.dataTransfer.effectAllowed = "move";
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
+    if (!enableReorder) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setDragOverIndex(index);
@@ -94,6 +98,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   };
 
   const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    if (!enableReorder) return;
     e.preventDefault();
     if (draggedIndex !== null && draggedIndex !== dropIndex) {
       dispatch({
@@ -123,7 +128,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         return (
           <div
             key={session.id}
-            draggable
+            draggable={enableReorder}
             className={`flex items-center h-full px-3 cursor-pointer border-r border-gray-700 min-w-0 ${
               isActive
                 ? "bg-gray-700 text-white"

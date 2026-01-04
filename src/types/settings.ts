@@ -74,6 +74,8 @@ export interface GlobalSettings {
   enableTabDetachment: boolean;
   enableTabResize: boolean;
   enableZoom: boolean;
+  enableTabReorder: boolean;
+  enableConnectionReorder: boolean;
 
   // Color Tags
   colorTags: {
@@ -88,6 +90,18 @@ export interface GlobalSettings {
   enableStatusChecking: boolean;
   statusCheckInterval: number;
   statusCheckMethod: StatusCheckMethod;
+
+  // Layout Persistence
+  persistWindowSize: boolean;
+  persistWindowPosition: boolean;
+  persistSidebarWidth: boolean;
+  persistSidebarPosition: boolean;
+  persistSidebarCollapsed: boolean;
+  windowSize?: { width: number; height: number };
+  windowPosition?: { x: number; y: number };
+  sidebarWidth?: number;
+  sidebarPosition?: "left" | "right";
+  sidebarCollapsed?: boolean;
 
   // Network Discovery
   networkDiscovery: NetworkDiscoveryConfig;

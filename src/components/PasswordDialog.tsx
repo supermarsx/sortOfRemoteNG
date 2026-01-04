@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Lock, Eye, EyeOff, Shield, AlertCircle } from 'lucide-react';
+import { Lock, Eye, EyeOff, Shield, AlertCircle, X } from 'lucide-react';
 
 interface PasswordDialogProps {
   isOpen: boolean;
@@ -70,14 +70,21 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <div className="flex items-center space-x-3">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
+        <div className="relative h-16 border-b border-gray-700">
+          <div className="absolute left-6 top-4 flex items-center space-x-3">
             <Shield className="text-blue-400" size={24} />
             <h2 className="text-xl font-semibold text-white">
               {mode === 'setup' ? 'Secure Your Connections' : 'Unlock Connections'}
             </h2>
           </div>
+          <button
+            onClick={handleCancel}
+            className="absolute right-4 top-3 text-gray-400 hover:text-white transition-colors"
+            aria-label="Close"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">

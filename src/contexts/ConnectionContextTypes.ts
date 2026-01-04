@@ -38,7 +38,8 @@ export type ConnectionAction =
   | { type: "REMOVE_SESSION"; payload: string }
   | { type: "REORDER_SESSIONS"; payload: { fromIndex: number; toIndex: number } }
   | { type: "SET_LOADING"; payload: boolean }
-  | { type: "TOGGLE_SIDEBAR" };
+  | { type: "TOGGLE_SIDEBAR" }
+  | { type: "SET_SIDEBAR_COLLAPSED"; payload: boolean };
 
 export interface ConnectionContextType {
   state: ConnectionState;

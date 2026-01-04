@@ -88,6 +88,8 @@ const connectionReducer = (
     case "TOGGLE_SIDEBAR":
       // Collapse or expand the sidebar
       return { ...state, sidebarCollapsed: !state.sidebarCollapsed };
+    case "SET_SIDEBAR_COLLAPSED":
+      return { ...state, sidebarCollapsed: action.payload };
     default:
       return state;
   }

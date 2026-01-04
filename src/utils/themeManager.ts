@@ -162,7 +162,11 @@ export class ThemeManager {
     return this.getAllColorSchemes()[name];
   }
 
-  private applyResolvedTheme(themeName: string, colorScheme: string): void {
+  private applyResolvedTheme(
+    themeName: string,
+    colorScheme: string,
+    customAccent?: string,
+  ): void {
     const theme = this.getAllThemes()[themeName];
     const colors = this.getAllColorSchemes()[colorScheme];
 
@@ -177,9 +181,21 @@ export class ThemeManager {
       root.style.setProperty(`--color-${key}`, value);
     });
 
-    root.style.setProperty("--color-primary", colors.primary);
-    root.style.setProperty("--color-secondary", colors.secondary);
-    root.style.setProperty("--color-accent", colors.accent);
+    if (customAccent) {
+      root.style.setProperty("--color-primary", customAccent);
+      root.style.setProperty(
+        "--color-secondary",
+        ThemeManager.shadeColor(customAccent, -12),
+      );
+      root.style.setProperty(
+        "--color-accent",
+        ThemeManager.shadeColor(customAccent, -24),
+      );
+    } else {
+      root.style.setProperty("--color-primary", colors.primary);
+      root.style.setProperty("--color-secondary", colors.secondary);
+      root.style.setProperty("--color-accent", colors.accent);
+    }
 
     document.body.className = document.body.className
       .replace(/theme-\w+/g, "")
@@ -188,7 +204,11 @@ export class ThemeManager {
     document.body.classList.add(`theme-${themeName}`, `scheme-${colorScheme}`);
   }
 
-  applyTheme(themeName: Theme, colorScheme: ColorScheme): void {
+  applyTheme(
+    themeName: Theme,
+    colorScheme: ColorScheme,
+    customAccent?: string,
+  ): void {
     this.currentTheme = themeName;
     this.currentColorScheme = colorScheme;
 
@@ -199,12 +219,12 @@ export class ThemeManager {
 
     if (themeName === "auto") {
       const systemTheme = this.detectSystemTheme();
-      this.applyResolvedTheme(systemTheme, colorScheme);
+      this.applyResolvedTheme(systemTheme, colorScheme, customAccent);
       this.systemThemeStop = this.watchSystemTheme((theme) => {
-        this.applyResolvedTheme(theme, colorScheme);
+        this.applyResolvedTheme(theme, colorScheme, customAccent);
       });
     } else {
-      this.applyResolvedTheme(themeName, colorScheme);
+      this.applyResolvedTheme(themeName, colorScheme, customAccent);
     }
 
     // Persist to IndexedDB
@@ -226,6 +246,19 @@ export class ThemeManager {
 
   getAvailableColorSchemes(): ColorScheme[] {
     return Object.keys(this.getAllColorSchemes()) as ColorScheme[];
+  }
+
+  private static shadeColor(hex: string, amount: number): string {
+    const normalized = hex.replace("#", "");
+    if (normalized.length !== 6) return hex;
+    const num = parseInt(normalized, 16);
+    const r = (num >> 16) & 0xff;
+    const g = (num >> 8) & 0xff;
+    const b = num & 0xff;
+    const adjust = (channel: number) =>
+      Math.max(0, Math.min(255, channel + Math.round((amount / 100) * 255)));
+    const toHex = (channel: number) => adjust(channel).toString(16).padStart(2, "0");
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   }
 
   async loadSavedTheme(): Promise<void> {

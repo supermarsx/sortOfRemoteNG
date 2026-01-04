@@ -61,6 +61,8 @@ describe("useAppLifecycle", () => {
       getSettings: vi.fn().mockReturnValue({
         language: "en",
         theme: "dark",
+        colorScheme: "blue",
+        primaryAccentColor: "",
       }),
       logAction: vi.fn(),
     };
@@ -68,6 +70,7 @@ describe("useAppLifecycle", () => {
     mockThemeManager = {
       loadSavedTheme: vi.fn().mockResolvedValue(undefined),
       injectThemeCSS: vi.fn(),
+      applyTheme: vi.fn(),
     };
 
     mockI18n = {
@@ -114,6 +117,8 @@ describe("useAppLifecycle", () => {
     mockSettingsManager.getSettings.mockReturnValue({
       language: "es",
       theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
     });
     (i18n as any).language = "en";
 
@@ -138,6 +143,8 @@ describe("useAppLifecycle", () => {
     mockSettingsManager.getSettings.mockReturnValue({
       language: "en",
       theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
     });
     (i18n as any).language = "en";
 
@@ -162,6 +169,8 @@ describe("useAppLifecycle", () => {
     mockSettingsManager.getSettings.mockReturnValue({
       language: "es",
       theme: "dark",
+      colorScheme: "blue",
+      primaryAccentColor: "",
     });
     (i18n as any).language = "en";
     mockI18n.changeLanguage.mockRejectedValue(

@@ -123,9 +123,11 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
       }}
     >
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">{t('performance.title')}</h2>
-          <div className="flex items-center space-x-4">
+        <div className="relative h-16 border-b border-gray-700">
+          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
+            {t('performance.title')}
+          </h2>
+          <div className="absolute right-4 top-3 flex items-center space-x-3">
             <div className="flex items-center space-x-2 text-xs text-gray-300 bg-gray-700/60 border border-gray-600 rounded px-2 py-1">
               <span>Update every</span>
               <input

@@ -325,12 +325,14 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">Import / Export Connections</h2>
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative">
+        <div className="relative h-16 border-b border-gray-700">
+          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
+            Import / Export Connections
+          </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="absolute right-4 top-3 text-gray-400 hover:text-white transition-colors"
           >
             <X size={20} />
           </button>

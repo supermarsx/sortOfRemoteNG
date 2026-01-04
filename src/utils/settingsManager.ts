@@ -57,11 +57,24 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   enableTabDetachment: false,
   enableTabResize: true,
   enableZoom: true,
+  enableTabReorder: true,
+  enableConnectionReorder: true,
   colorTags: {},
 
   enableStatusChecking: true,
   statusCheckInterval: 30,
   statusCheckMethod: 'socket',
+
+  persistWindowSize: true,
+  persistWindowPosition: true,
+  persistSidebarWidth: true,
+  persistSidebarPosition: true,
+  persistSidebarCollapsed: true,
+  windowSize: { width: 1280, height: 720 },
+  windowPosition: { x: 120, y: 80 },
+  sidebarWidth: 320,
+  sidebarPosition: 'left',
+  sidebarCollapsed: false,
 
   networkDiscovery: {
     enabled: false,
@@ -183,6 +196,11 @@ export class SettingsManager {
       this.settings = { ...this.settings, ...settings };
       await IndexedDbService.setItem('mremote-settings', this.settings);
       this.logAction('info', 'Settings updated', undefined, 'Settings saved successfully');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('settings-updated', { detail: this.settings }),
+        );
+      }
     } catch (error) {
       console.error('Failed to save settings:', error);
       throw error;

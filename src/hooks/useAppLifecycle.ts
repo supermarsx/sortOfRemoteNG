@@ -63,6 +63,11 @@ export const useAppLifecycle = ({
       console.log("Theme manager initialized");
 
       const settings = settingsManager.getSettings();
+      themeManager.applyTheme(
+        settings.theme,
+        settings.colorScheme,
+        settings.primaryAccentColor,
+      );
       if (
         settings.language &&
         settings.language !== i18n.language &&

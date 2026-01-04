@@ -1,8 +1,23 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Monitor, Zap, Menu, Globe, Minus, Square, X, ChevronRight, Settings } from "lucide-react";
+import {
+  Monitor,
+  Zap,
+  Globe,
+  Minus,
+  Square,
+  X,
+  Settings,
+  Database,
+  BarChart3,
+  ScrollText,
+  Shield,
+  FileText,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { Connection } from "./types/connection";
+import { GlobalSettings } from "./types/settings";
 import { SettingsManager } from "./utils/settingsManager";
 import { StatusChecker } from "./utils/statusChecker";
 import { CollectionManager } from "./utils/collectionManager";
@@ -22,6 +37,9 @@ import { CollectionSelector } from "./components/CollectionSelector";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { PerformanceMonitor } from "./components/PerformanceMonitor";
+import { ActionLogViewer } from "./components/ActionLogViewer";
+import { ImportExport } from "./components/ImportExport";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -30,6 +48,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 const AppContent: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { state, dispatch, loadData, saveData } = useConnections();
+  const settingsManager = SettingsManager.getInstance();
   const [editingConnection, setEditingConnection] = useState<Connection | undefined>(
     undefined,
   ); // connection currently being edited
@@ -38,6 +57,9 @@ const AppContent: React.FC = () => {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
   const [showCollectionSelector, setShowCollectionSelector] = useState(false); // collection selector visibility
   const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
+  const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
+  const [showActionLog, setShowActionLog] = useState(false);
+  const [showImportExport, setShowImportExport] = useState(false);
   const [passwordDialogMode, setPasswordDialogMode] = useState<
     "setup" | "unlock"
   >("setup"); // current mode for password dialog
@@ -45,7 +67,6 @@ const AppContent: React.FC = () => {
   const [sidebarWidth, setSidebarWidth] = useState(320); // sidebar width in pixels
   const [isResizing, setIsResizing] = useState(false); // whether sidebar is being resized
   const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('left'); // sidebar position
-  const [windowWidth, setWindowWidth] = useState(window.innerWidth); // window width for responsive design
   const [dialogState, setDialogState] = useState<{
     isOpen: boolean;
     message: string;
@@ -58,8 +79,11 @@ const AppContent: React.FC = () => {
   }); // confirm dialog state
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const languageMenuRef = useRef<HTMLDivElement | null>(null);
+  const layoutRef = useRef<HTMLDivElement | null>(null);
+  const [appSettings, setAppSettings] = useState(() => settingsManager.getSettings());
+  const windowSaveTimeout = useRef<NodeJS.Timeout | null>(null);
+  const sidebarSaveTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
   const collectionManager = CollectionManager.getInstance();
 
@@ -254,9 +278,12 @@ const AppContent: React.FC = () => {
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isResizing) return;
+    const layoutRect = layoutRef.current?.getBoundingClientRect();
+    const layoutLeft = layoutRect?.left ?? 0;
+    const layoutWidth = layoutRect?.width ?? window.innerWidth;
     const newWidth = sidebarPosition === 'left' 
-      ? Math.max(200, Math.min(600, e.clientX))
-      : Math.max(200, Math.min(600, window.innerWidth - e.clientX));
+      ? Math.max(200, Math.min(600, e.clientX - layoutLeft))
+      : Math.max(200, Math.min(600, layoutLeft + layoutWidth - e.clientX));
     setSidebarWidth(newWidth);
   }, [isResizing, sidebarPosition]);
 
@@ -285,12 +312,30 @@ const AppContent: React.FC = () => {
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
-  // Track window width for responsive design
   useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    let isMounted = true;
+    settingsManager
+      .loadSettings()
+      .then((settings) => {
+        if (isMounted) {
+          setAppSettings(settings);
+        }
+      })
+      .catch(console.error);
+
+    const handleSettingsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<GlobalSettings>).detail;
+      if (detail) {
+        setAppSettings(detail);
+      }
+    };
+
+    window.addEventListener("settings-updated", handleSettingsUpdated);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("settings-updated", handleSettingsUpdated);
+    };
+  }, [settingsManager]);
 
   useEffect(() => {
     if (!showLanguageMenu) return;
@@ -304,6 +349,165 @@ const AppContent: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showLanguageMenu]);
+
+  useEffect(() => {
+    if (!appSettings) return;
+
+    if (appSettings.persistSidebarWidth && appSettings.sidebarWidth) {
+      setSidebarWidth(appSettings.sidebarWidth);
+    }
+
+    if (appSettings.persistSidebarPosition && appSettings.sidebarPosition) {
+      setSidebarPosition(appSettings.sidebarPosition);
+    }
+
+    if (
+      appSettings.persistSidebarCollapsed &&
+      typeof appSettings.sidebarCollapsed === "boolean"
+    ) {
+      dispatch({ type: "SET_SIDEBAR_COLLAPSED", payload: appSettings.sidebarCollapsed });
+    }
+  }, [appSettings, dispatch]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const window = getCurrentWindow();
+
+    if (appSettings.persistWindowSize && appSettings.windowSize) {
+      const { width, height } = appSettings.windowSize;
+      window.setSize(new LogicalSize(width, height)).catch(console.error);
+    }
+
+    if (appSettings.persistWindowPosition && appSettings.windowPosition) {
+      const { x, y } = appSettings.windowPosition;
+      window.setPosition(new LogicalPosition(x, y)).catch(console.error);
+    }
+  }, [
+    appSettings.persistWindowSize,
+    appSettings.persistWindowPosition,
+    appSettings.windowSize,
+    appSettings.windowPosition,
+    isInitialized,
+  ]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const window = getCurrentWindow();
+    let unlistenResize: (() => void) | undefined;
+    let unlistenMove: (() => void) | undefined;
+
+    const saveWindowState = async () => {
+      try {
+        const [size, position] = await Promise.all([
+          window.outerSize(),
+          window.outerPosition(),
+        ]);
+
+        const updates: Partial<GlobalSettings> = {};
+        if (appSettings.persistWindowSize) {
+          updates.windowSize = { width: size.width, height: size.height };
+        }
+        if (appSettings.persistWindowPosition) {
+          updates.windowPosition = { x: position.x, y: position.y };
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await settingsManager.saveSettings(updates);
+        }
+      } catch (error) {
+        console.error("Failed to persist window state:", error);
+      }
+    };
+
+    const queueSave = () => {
+      if (windowSaveTimeout.current) {
+        clearTimeout(windowSaveTimeout.current);
+      }
+      windowSaveTimeout.current = setTimeout(() => {
+        saveWindowState().catch(console.error);
+      }, 500);
+    };
+
+    if (appSettings.persistWindowSize && (window as any).onResized) {
+      window.onResized(() => {
+        queueSave();
+      }).then((unlisten) => {
+        unlistenResize = unlisten;
+      }).catch(console.error);
+    }
+
+    if (appSettings.persistWindowPosition && (window as any).onMoved) {
+      window.onMoved(() => {
+        queueSave();
+      }).then((unlisten) => {
+        unlistenMove = unlisten;
+      }).catch(console.error);
+    }
+
+    return () => {
+      if (windowSaveTimeout.current) {
+        clearTimeout(windowSaveTimeout.current);
+      }
+      if (unlistenResize) {
+        unlistenResize();
+      }
+      if (unlistenMove) {
+        unlistenMove();
+      }
+    };
+  }, [
+    appSettings.persistWindowSize,
+    appSettings.persistWindowPosition,
+    isInitialized,
+    settingsManager,
+  ]);
+
+  useEffect(() => {
+    if (!appSettings) return;
+
+    if (
+      !appSettings.persistSidebarWidth &&
+      !appSettings.persistSidebarPosition &&
+      !appSettings.persistSidebarCollapsed
+    ) {
+      return;
+    }
+
+    if (sidebarSaveTimeout.current) {
+      clearTimeout(sidebarSaveTimeout.current);
+    }
+
+    sidebarSaveTimeout.current = setTimeout(() => {
+      const updates: Partial<GlobalSettings> = {};
+      if (appSettings.persistSidebarWidth) {
+        updates.sidebarWidth = sidebarWidth;
+      }
+      if (appSettings.persistSidebarPosition) {
+        updates.sidebarPosition = sidebarPosition;
+      }
+      if (appSettings.persistSidebarCollapsed) {
+        updates.sidebarCollapsed = state.sidebarCollapsed;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        settingsManager.saveSettings(updates).catch(console.error);
+      }
+    }, 300);
+
+    return () => {
+      if (sidebarSaveTimeout.current) {
+        clearTimeout(sidebarSaveTimeout.current);
+      }
+    };
+  }, [
+    appSettings,
+    sidebarWidth,
+    sidebarPosition,
+    state.sidebarCollapsed,
+    settingsManager,
+  ]);
 
   const handleMinimize = async () => {
     const window = getCurrentWindow();
@@ -337,6 +541,7 @@ const AppContent: React.FC = () => {
           onDeleteConnection={handleDeleteConnection}
           onConnect={handleConnect}
           onShowPasswordDialog={handleShowPasswordDialog}
+          enableConnectionReorder={appSettings.enableConnectionReorder}
         />
         {!state.sidebarCollapsed && (
           <div
@@ -354,8 +559,8 @@ const AppContent: React.FC = () => {
     <div className="h-screen bg-gray-900 text-white flex flex-col">
       {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
       {/* Top bar */}
-      <div 
-        className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4"
+      <div
+        className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4 select-none"
         data-tauri-drag-region
       >
         <div className="flex items-center gap-3">
@@ -371,15 +576,87 @@ const AppContent: React.FC = () => {
           )}
         </div>
 
-        <div className="flex items-center space-x-2">
+        {/* Window Controls */}
+        <div className="flex items-center space-x-1">
+          <button
+            onClick={handleMinimize}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title="Minimize"
+          >
+            <Minus size={14} />
+          </button>
+          <button
+            onClick={handleMaximize}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title="Maximize"
+          >
+            <Square size={12} />
+          </button>
+          <button
+            onClick={handleClose}
+            className="p-2 hover:bg-red-600 rounded transition-colors text-gray-400 hover:text-white"
+            title="Close"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Secondary actions bar */}
+      <div className="h-9 bg-gray-800/80 border-b border-gray-700 flex items-center justify-between px-3 select-none">
+        <div className="flex items-center space-x-1">
           <button
             onClick={() => setShowQuickConnect(true)}
-            className={`flex items-center space-x-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors ${windowWidth < 768 ? 'px-2' : ''}`}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+            title={t("connections.quickConnect")}
           >
             <Zap size={14} />
-            {windowWidth >= 768 && <span>{t("connections.quickConnect")}</span>}
           </button>
+          <button
+            onClick={() => setShowCollectionSelector(true)}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+            title="Switch Collection"
+          >
+            <Database size={14} />
+          </button>
+          <button
+            onClick={() => setShowImportExport(true)}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+            title="Import/Export"
+          >
+            <FileText size={14} />
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+            title="Settings"
+          >
+            <Settings size={14} />
+          </button>
+        </div>
 
+        <div className="flex items-center space-x-1">
+          <button
+            onClick={() => setShowPerformanceMonitor(true)}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+            title="Performance Monitor"
+          >
+            <BarChart3 size={14} />
+          </button>
+          <button
+            onClick={() => setShowActionLog(true)}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+            title="Action Log"
+          >
+            <ScrollText size={14} />
+          </button>
+          <button
+            onClick={handleShowPasswordDialog}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+            title="Security"
+          >
+            <Shield size={14} />
+          </button>
           <div className="relative" ref={languageMenuRef}>
             <button
               onClick={() => setShowLanguageMenu((prev) => !prev)}
@@ -409,51 +686,10 @@ const AppContent: React.FC = () => {
               </div>
             )}
           </div>
-
-          <button
-            onClick={() => setShowCollectionSelector(true)}
-            className="p-2 hover:bg-gray-700 rounded transition-colors"
-            title="Switch Collection"
-          >
-            <Menu size={16} />
-          </button>
-
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 hover:bg-gray-700 rounded transition-colors"
-            title="Settings"
-          >
-            <Settings size={16} />
-          </button>
-
-          {/* Window Controls */}
-          <div className="flex items-center space-x-1 ml-2">
-            <button
-              onClick={handleMinimize}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-              title="Minimize"
-            >
-              <Minus size={14} />
-            </button>
-            <button
-              onClick={handleMaximize}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-              title="Maximize"
-            >
-              <Square size={12} />
-            </button>
-            <button
-              onClick={handleClose}
-              className="p-2 hover:bg-red-600 rounded transition-colors text-gray-400 hover:text-white"
-              title="Close"
-            >
-              <X size={14} />
-            </button>
-          </div>
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden" ref={layoutRef}>
         {renderSidebar('left')}
 
         <div className="flex-1 flex flex-col">
@@ -461,6 +697,7 @@ const AppContent: React.FC = () => {
             activeSessionId={activeSessionId}
             onSessionSelect={setActiveSessionId}
             onSessionClose={handleSessionClose}
+            enableReorder={appSettings.enableTabReorder}
           />
 
           {/* Session viewer */}
@@ -543,6 +780,21 @@ const AppContent: React.FC = () => {
       <SettingsDialog
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
+      />
+
+      <ImportExport
+        isOpen={showImportExport}
+        onClose={() => setShowImportExport(false)}
+      />
+
+      <PerformanceMonitor
+        isOpen={showPerformanceMonitor}
+        onClose={() => setShowPerformanceMonitor(false)}
+      />
+
+      <ActionLogViewer
+        isOpen={showActionLog}
+        onClose={() => setShowActionLog(false)}
       />
     </div>
   );

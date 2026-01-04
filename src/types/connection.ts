@@ -17,6 +17,7 @@ export interface Connection {
   icon?: string;
   tags?: string[];
   colorTag?: string; // Color classification
+  order?: number;
   createdAt: Date;
   updatedAt: Date;
   

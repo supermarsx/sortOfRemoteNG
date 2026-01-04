@@ -168,16 +168,15 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     // Simulate click response
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.beginPath();
-      ctx.arc(canvasX, canvasY, 10, 0, 2 * Math.PI);
-      ctx.fill();
-      
-      setTimeout(() => {
-        drawSimulatedDesktop(ctx, canvas.width, canvas.height);
-      }, 200);
-    }
+    if (!ctx || typeof ctx.beginPath !== 'function') return;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.beginPath();
+    ctx.arc(canvasX, canvasY, 10, 0, 2 * Math.PI);
+    ctx.fill();
+
+    setTimeout(() => {
+      drawSimulatedDesktop(ctx, canvas.width, canvas.height);
+    }, 200);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
