@@ -33,6 +33,7 @@ export interface Connection {
   privateKey?: string;
   passphrase?: string;
   totpSecret?: string;
+  ignoreSshSecurityErrors?: boolean;
   httpHeaders?: Record<string, string>;
   basicAuthRealm?: string;
   basicAuthUsername?: string;

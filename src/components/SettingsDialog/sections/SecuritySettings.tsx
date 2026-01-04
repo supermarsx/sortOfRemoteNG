@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings } from '../../../types/settings';
+import { SecureStorage } from '../../../utils/storage';
 
 interface SecuritySettingsProps {
   settings: GlobalSettings;
@@ -16,6 +17,21 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   isBenchmarking,
 }) => {
   const { t } = useTranslation();
+  const [hasPassword, setHasPassword] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    SecureStorage.isStorageEncrypted()
+      .then((encrypted) => {
+        if (isMounted) {
+          setHasPassword(encrypted);
+        }
+      })
+      .catch(console.error);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white">{t('security.title')}</h3>
@@ -101,6 +117,52 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         />
         <span className="text-gray-300">{t('security.autoBenchmark')}</span>
       </label>
+
+      <div className="border-t border-gray-700 pt-5 space-y-4">
+        <h4 className="text-md font-medium text-white">Auto Lock</h4>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.autoLock.enabled && hasPassword}
+            onChange={(e) =>
+              updateSettings({
+                autoLock: { ...settings.autoLock, enabled: e.target.checked },
+              })
+            }
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            disabled={!hasPassword}
+          />
+          <span className="text-gray-300">
+            Enable auto lock after inactivity
+          </span>
+        </label>
+        {!hasPassword && (
+          <p className="text-xs text-gray-400">
+            Set a storage password to enable auto lock.
+          </p>
+        )}
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Auto lock timeout (minutes)
+          </label>
+          <input
+            type="number"
+            value={settings.autoLock.timeoutMinutes}
+            onChange={(e) =>
+              updateSettings({
+                autoLock: {
+                  ...settings.autoLock,
+                  timeoutMinutes: parseInt(e.target.value),
+                },
+              })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+            min="1"
+            max="240"
+            disabled={!hasPassword}
+          />
+        </div>
+      </div>
     </div>
   );
 };

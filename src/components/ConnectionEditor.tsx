@@ -37,6 +37,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     authType: 'password',
     privateKey: '',
     passphrase: '',
+    ignoreSshSecurityErrors: true,
     basicAuthUsername: '',
     basicAuthPassword: '',
     basicAuthRealm: '',
@@ -61,6 +62,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         ...connection,
         privateKey: connection.privateKey || '',
         passphrase: connection.passphrase || '',
+        ignoreSshSecurityErrors: connection.ignoreSshSecurityErrors ?? true,
         basicAuthUsername: connection.basicAuthUsername || '',
         basicAuthPassword: connection.basicAuthPassword || '',
         basicAuthRealm: connection.basicAuthRealm || '',
@@ -87,6 +89,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         basicAuthRealm: '',
         httpHeaders: {},
         cloudProvider: undefined,
+        ignoreSshSecurityErrors: true,
       });
     }
   }, [connection, isOpen]);
@@ -137,6 +140,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       basicAuthRealm: formData.basicAuthRealm,
       httpHeaders: formData.httpHeaders,
       cloudProvider: formData.cloudProvider,
+      ignoreSshSecurityErrors: formData.ignoreSshSecurityErrors ?? true,
     };
 
     if (connection) {

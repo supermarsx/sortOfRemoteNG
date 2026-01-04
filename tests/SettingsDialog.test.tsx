@@ -17,6 +17,8 @@ const mockSettings: GlobalSettings = {
   language: "en",
   theme: "dark",
   colorScheme: "blue",
+  autoSaveEnabled: false,
+  autoSaveIntervalMinutes: 5,
   singleWindowMode: false,
   singleConnectionMode: false,
   reconnectOnReload: false,

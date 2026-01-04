@@ -66,6 +66,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
+  const ignoreSshSecurityErrors = connection?.ignoreSshSecurityErrors ?? true;
 
   const executeCommand = useCallback((command: string) => {
     if (!terminal.current) return;
@@ -191,7 +192,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         openvpn_config: null,
         connect_timeout: 30000,
         keep_alive_interval: 60,
-        strict_host_key_checking: false,
+        strict_host_key_checking: !ignoreSshSecurityErrors,
         known_hosts_path: null,
       };
 
@@ -274,7 +275,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       terminal.current?.writeln(`\x1b[31m${errorMessage}\x1b[0m`);
       terminal.current?.writeln('\x1b[33m$ \x1b[0m');
     }
-  }, [session.hostname, connection]);
+  }, [session.hostname, connection, ignoreSshSecurityErrors]);
 
   useEffect(() => {
     const terminalElement = terminalRef.current;
@@ -523,7 +524,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
           )}
           {connection && session.protocol === 'ssh' && (
             <span className="text-blue-300 bg-blue-400/20 px-2 py-0.5 rounded">
-              SSH Library: Rust SSH Library
+              SSH lib: Rust
             </span>
           )}
         </div>

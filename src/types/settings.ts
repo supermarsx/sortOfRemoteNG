@@ -32,6 +32,8 @@ export interface GlobalSettings {
   colorScheme: ColorScheme;
   primaryAccentColor?: string;
   customCss?: string;
+  autoSaveEnabled: boolean;
+  autoSaveIntervalMinutes: number;
   singleWindowMode: boolean;
   singleConnectionMode: boolean;
   reconnectOnReload: boolean;

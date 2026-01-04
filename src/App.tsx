@@ -6,6 +6,7 @@ import {
   Minus,
   Square,
   X,
+  Pin,
   Settings,
   Database,
   BarChart3,
@@ -40,6 +41,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { PerformanceMonitor } from "./components/PerformanceMonitor";
 import { ActionLogViewer } from "./components/ActionLogViewer";
 import { ImportExport } from "./components/ImportExport";
+import { AutoLockManager } from "./components/AutoLockManager";
 import { loadLanguage } from "./i18n";
 
 /**
@@ -84,6 +86,10 @@ const AppContent: React.FC = () => {
   const [appSettings, setAppSettings] = useState(() => settingsManager.getSettings());
   const windowSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const sidebarSaveTimeout = useRef<NodeJS.Timeout | null>(null);
+  const lastWorkAtRef = useRef<number>(Date.now());
+  const hasUnsavedWorkRef = useRef(false);
+  const [hasStoragePassword, setHasStoragePassword] = useState(false);
+  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
 
   const statusChecker = StatusChecker.getInstance();
   const collectionManager = CollectionManager.getInstance();
@@ -380,6 +386,57 @@ const AppContent: React.FC = () => {
   }, [showLanguageMenu]);
 
   useEffect(() => {
+    let isMounted = true;
+    SecureStorage.isStorageEncrypted()
+      .then((encrypted) => {
+        if (isMounted) {
+          setHasStoragePassword(encrypted);
+        }
+      })
+      .catch(console.error);
+    return () => {
+      isMounted = false;
+    };
+  }, [showPasswordDialog]);
+
+  useEffect(() => {
+    hasUnsavedWorkRef.current = true;
+    lastWorkAtRef.current = Date.now();
+  }, [state.connections, state.sessions]);
+
+  useEffect(() => {
+    if (!appSettings.autoSaveEnabled) return;
+    const intervalMs = Math.max(1, appSettings.autoSaveIntervalMinutes || 1) * 60 * 1000;
+
+    const interval = setInterval(() => {
+      if (!hasUnsavedWorkRef.current) return;
+      const elapsed = Date.now() - lastWorkAtRef.current;
+      if (elapsed < intervalMs) return;
+      if (!collectionManager.getCurrentCollection()) return;
+
+      saveData()
+        .then(() => {
+          hasUnsavedWorkRef.current = false;
+        })
+        .catch(console.error);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [
+    appSettings.autoSaveEnabled,
+    appSettings.autoSaveIntervalMinutes,
+    collectionManager,
+    saveData,
+  ]);
+
+  useEffect(() => {
+    const window = getCurrentWindow();
+    window.isAlwaysOnTop()
+      .then(setIsAlwaysOnTop)
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
     const elements = document.querySelectorAll<HTMLElement>("[title]");
     elements.forEach((element) => {
       if (element.dataset.tooltip) return;
@@ -573,6 +630,13 @@ const AppContent: React.FC = () => {
     await window.minimize();
   };
 
+  const handleToggleAlwaysOnTop = async () => {
+    const window = getCurrentWindow();
+    const nextValue = !isAlwaysOnTop;
+    await window.setAlwaysOnTop(nextValue);
+    setIsAlwaysOnTop(nextValue);
+  };
+
   const handleMaximize = async () => {
     const window = getCurrentWindow();
     await window.toggleMaximize();
@@ -615,7 +679,7 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="h-screen bg-gray-900 text-white flex flex-col">
+    <div className="h-full bg-gray-900 text-white flex flex-col overflow-hidden">
       {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
       {/* Top bar */}
       <div
@@ -637,6 +701,13 @@ const AppContent: React.FC = () => {
 
         {/* Window Controls */}
         <div className="flex items-center space-x-1">
+          <button
+            onClick={handleToggleAlwaysOnTop}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title={isAlwaysOnTop ? "Unpin window" : "Pin window"}
+          >
+            <Pin size={14} className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""} />
+          </button>
           <button
             onClick={handleMinimize}
             className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
@@ -792,8 +863,18 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
-        {renderSidebar('right')}
+      {renderSidebar('right')}
       </div>
+
+      {appSettings.autoLock.enabled && hasStoragePassword && (
+        <AutoLockManager
+          config={appSettings.autoLock}
+          onConfigChange={(config) => settingsManager.saveSettings({ autoLock: config }).catch(console.error)}
+          onLock={() => {
+            settingsManager.logAction("info", "Auto lock", undefined, "Session locked due to inactivity");
+          }}
+        />
+      )}
 
       {/* Dialogs */}
       <CollectionSelector

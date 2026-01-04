@@ -9,6 +9,9 @@ import {
   InvalidPasswordError,
 } from "./errors";
 
+// @ts-expect-error - injected by Tauri at runtime
+const invoke = (globalThis as any).__TAURI__?.core?.invoke;
+
 /**
  * Handles persistence and encryption of connection collections.
  *
@@ -172,6 +175,15 @@ export class CollectionManager {
   ): Promise<void> {
     const key = `mremote-collection-${collectionId}`;
 
+    if (invoke) {
+      try {
+        await invoke("save_collection_data", { collectionId, data, password });
+        return;
+      } catch (error) {
+        console.error("Failed to save collection via IPC:", error);
+      }
+    }
+
     if (password) {
       const encrypted = CryptoJS.AES.encrypt(
         JSON.stringify(data),
@@ -188,7 +200,19 @@ export class CollectionManager {
     password?: string,
   ): Promise<StorageData | null> {
     const key = `mremote-collection-${collectionId}`;
-    const stored = await IndexedDbService.getItem<any>(key);
+    let stored: any = null;
+
+    if (invoke) {
+      try {
+        stored = await invoke("load_collection_data", { collectionId });
+      } catch (error) {
+        console.error("Failed to load collection via IPC:", error);
+      }
+    }
+
+    if (!stored) {
+      stored = await IndexedDbService.getItem<any>(key);
+    }
 
     if (!stored) {
       throw new CollectionNotFoundError();

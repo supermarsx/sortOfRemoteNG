@@ -193,7 +193,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 h-[90vh] overflow-hidden flex flex-col">
         {autoSaveStatus && (
           <div className="fixed bottom-6 right-6 z-50">
             <div

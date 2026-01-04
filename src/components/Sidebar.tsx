@@ -121,11 +121,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <>
       <div className={`bg-gray-800 ${sideBorder} border-gray-700 flex flex-col transition-all duration-300 h-full w-full`}>
         {/* Header */}
-        <div className={`border-b border-gray-700 ${state.sidebarCollapsed ? "p-2" : "p-4"}`}>
+        <div className={`border-b border-gray-700 ${state.sidebarCollapsed ? "p-2" : "p-3"}`}>
           <div className={`flex items-center ${state.sidebarCollapsed ? "justify-center" : "justify-between"}`}>
             {!state.sidebarCollapsed && (
               <div className="flex items-center space-x-2">
-                <h2 className="text-lg font-semibold text-white">{t('connections.title')}</h2>
+                <h2 className="text-sm font-light text-white tracking-wide">{t('connections.title')}</h2>
                 {isStorageEncrypted && (
                   <div className="flex items-center">
                     {isStorageUnlocked ? (
@@ -169,7 +169,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {!state.sidebarCollapsed && (
           <>
             {/* Search */}
-            <div className="p-4 border-b border-gray-700">
+            <div className="p-3 border-b border-gray-700">
               <div className="relative">
                 <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <input
@@ -177,14 +177,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   placeholder={t('connections.search')}
                   value={state.filter.searchTerm}
                   onChange={(e) => handleSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
                 />
               </div>
               
-              <div className="flex items-center justify-between mt-3">
+              <div className="flex items-center justify-between mt-2">
                 <button
                   onClick={() => setShowFilters(!showFilters)}
-                  className="flex items-center space-x-1 px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                  className="flex items-center space-x-1 px-2 py-0.5 text-[11px] text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
                 >
                   <Filter size={12} />
                   <span>{t('connections.filters')}</span>

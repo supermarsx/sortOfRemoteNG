@@ -12,6 +12,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
   theme: 'dark',
   colorScheme: 'blue',
+  autoSaveEnabled: false,
+  autoSaveIntervalMinutes: 5,
   singleWindowMode: false,
   singleConnectionMode: false,
   reconnectOnReload: true,
@@ -20,7 +22,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   autoLock: {
     enabled: false,
-    timeoutMinutes: 10,
+    timeoutMinutes: 15,
     lockOnIdle: true,
     lockOnSuspend: true,
     requirePassword: true,

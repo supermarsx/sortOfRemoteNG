@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, Clock, Shield, Eye, EyeOff } from 'lucide-react';
 import { AutoLockConfig } from '../types/settings';
+import { SecureStorage } from '../utils/storage';
 
 interface AutoLockManagerProps {
   config: AutoLockConfig;
@@ -86,8 +87,7 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
 
   const handleUnlock = () => {
     if (config.requirePassword) {
-      // In a real implementation, verify password against stored hash
-      if (password === 'admin') { // Simplified for demo
+      if (SecureStorage.verifyPassword(password)) {
         setIsLocked(false);
         setPassword('');
         setLastActivity(Date.now());

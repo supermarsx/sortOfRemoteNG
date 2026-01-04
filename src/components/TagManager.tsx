@@ -39,14 +39,14 @@ export const TagManager: React.FC<TagManagerProps> = ({
   const unusedTags = availableTags.filter(tag => !tags.includes(tag));
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {/* Selected Tags */}
       {tags.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {tags.map(tag => (
             <span
               key={tag}
-              className="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs rounded-full"
+              className="inline-flex items-center px-2 py-0.5 bg-blue-600 text-white text-[11px] rounded-full"
             >
               <Tag size={10} className="mr-1" />
               {tag}
@@ -64,7 +64,7 @@ export const TagManager: React.FC<TagManagerProps> = ({
       {/* Available Tags */}
       {unusedTags.length > 0 && (
         <div>
-          <label className="block text-xs font-medium text-gray-400 mb-2">
+          <label className="block text-[11px] font-medium text-gray-400 mb-1">
             Available Tags
           </label>
           <div className="flex flex-wrap gap-1">
@@ -72,7 +72,7 @@ export const TagManager: React.FC<TagManagerProps> = ({
               <button
                 key={tag}
                 onClick={() => handleAddTag(tag)}
-                className="inline-flex items-center px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded-full transition-colors"
+                className="inline-flex items-center px-2 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-[11px] rounded-full transition-colors"
               >
                 <Plus size={10} className="mr-1" />
                 {tag}
@@ -114,7 +114,7 @@ export const TagManager: React.FC<TagManagerProps> = ({
         ) : (
           <button
             onClick={() => setShowInput(true)}
-            className="inline-flex items-center px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded-full transition-colors"
+            className="inline-flex items-center px-2 py-0.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-[11px] rounded-full transition-colors"
           >
             <Plus size={10} className="mr-1" />
             Create Tag

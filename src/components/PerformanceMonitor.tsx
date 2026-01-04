@@ -3,6 +3,7 @@ import { X, Download, BarChart3, Activity, Cpu, HardDrive, Wifi, Clock } from 'l
 import { useTranslation } from 'react-i18next';
 import { PerformanceMetrics } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
+import { invoke } from '@tauri-apps/api/core';
 
 interface PerformanceMonitorProps {
   isOpen: boolean;
@@ -23,10 +24,28 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
     setMetrics(storedMetrics);
   }, [settingsManager]);
 
-  const updateCurrentMetrics = useCallback(() => {
+  const updateCurrentMetrics = useCallback(async () => {
     const now = performance.now();
+    try {
+      const backendMetrics = await invoke<Partial<PerformanceMetrics>>('get_system_metrics');
+      const metric: PerformanceMetrics = {
+        connectionTime: backendMetrics.connectionTime ?? 0,
+        dataTransferred: backendMetrics.dataTransferred ?? 0,
+        latency: backendMetrics.latency ?? 0,
+        throughput: backendMetrics.throughput ?? 0,
+        cpuUsage: backendMetrics.cpuUsage ?? 0,
+        memoryUsage: backendMetrics.memoryUsage ?? 0,
+        timestamp: backendMetrics.timestamp ?? now,
+      };
+      setCurrentMetrics(metric);
+      settingsManager.recordPerformanceMetric(metric);
+      return;
+    } catch {
+      // Fall back to browser-side sampling when backend metrics are unavailable.
+    }
+
     const memoryInfo = (performance as any).memory;
-    
+
     const currentMetric: PerformanceMetrics = {
       connectionTime: 0, // This would be calculated per connection
       dataTransferred: 0, // This would be tracked per session
@@ -64,7 +83,9 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
 
     const intervalDuration = pollIntervalMs || 5000;
     updateCurrentMetrics();
-    const interval = window.setInterval(updateCurrentMetrics, intervalDuration);
+    const interval = window.setInterval(() => {
+      updateCurrentMetrics().catch(console.error);
+    }, intervalDuration);
     return () => clearInterval(interval);
   }, [isOpen, pollIntervalMs, updateCurrentMetrics]);
 

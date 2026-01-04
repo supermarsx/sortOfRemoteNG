@@ -182,7 +182,7 @@ describe("WebTerminal", () => {
 
       await waitFor(() => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
-        expect(screen.getByText("SSH Library: Rust SSH Library")).toBeInTheDocument();
+        expect(screen.getByText("SSH lib: Rust")).toBeInTheDocument();
       });
     });
   });

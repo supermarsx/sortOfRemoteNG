@@ -32,16 +32,29 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
       </div>
 
       {formData.protocol === 'ssh' && (
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Authentication Type</label>
-          <select
-            value={formData.authType}
-            onChange={(e) => setFormData({ ...formData, authType: e.target.value as any })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="password">Password</option>
-            <option value="key">Private Key</option>
-          </select>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Authentication Type</label>
+            <select
+              value={formData.authType}
+              onChange={(e) => setFormData({ ...formData, authType: e.target.value as any })}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="password">Password</option>
+              <option value="key">Private Key</option>
+            </select>
+          </div>
+          <label className="flex items-center space-x-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={formData.ignoreSshSecurityErrors ?? true}
+              onChange={(e) =>
+                setFormData({ ...formData, ignoreSshSecurityErrors: e.target.checked })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            />
+            <span>Ignore SSH security errors (host keys/certs)</span>
+          </label>
         </div>
       )}
 

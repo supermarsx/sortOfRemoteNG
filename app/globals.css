@@ -17,6 +17,13 @@
   --color-error: #ef4444;
 }
 
+html,
+body,
+#__next {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   background-color: var(--color-background);
   color: var(--color-text);

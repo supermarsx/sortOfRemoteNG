@@ -52,10 +52,40 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
           />
         </div>
 
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Autosave Interval (minutes)
+          </label>
+          <input
+            type="number"
+            value={settings.autoSaveIntervalMinutes}
+            onChange={(e) =>
+              updateSettings({ autoSaveIntervalMinutes: parseInt(e.target.value) })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+            min="1"
+            max="120"
+          />
+        </div>
+
+        <div className="flex items-end">
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={settings.autoSaveEnabled}
+              onChange={(e) =>
+                updateSettings({ autoSaveEnabled: e.target.checked })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            />
+            <span className="text-gray-300">Enable autosave</span>
+          </label>
+        </div>
+
       </div>
 
-      <div className="space-y-4">
-        <h4 className="text-md font-medium text-white">Desktop Shortcuts</h4>
+      <div className="space-y-4 border-t border-gray-700 pt-5">
+        <h4 className="text-md font-medium text-white">Shortcut Manager</h4>
         <p className="text-sm text-gray-400">
           Create desktop shortcuts to quickly launch the application with specific connections.
         </p>

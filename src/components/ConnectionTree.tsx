@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -111,6 +111,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 }) => {
   const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [isExpanded, setIsExpanded] = useState(connection.expanded || false);
 
   const ProtocolIcon = getProtocolIcon(connection.protocol);
@@ -138,6 +139,20 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
     onConnect(connection);
   };
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenuPosition({ x: e.clientX, y: e.clientY });
+    setShowMenu(true);
+  };
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = () => setShowMenu(false);
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showMenu]);
+
   return (
     <div className="relative">
       <div
@@ -147,6 +162,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={handleSelect}
         onDoubleClick={() => !connection.isGroup && onConnect(connection)}
+        onContextMenu={handleContextMenu}
         draggable={enableReorder}
         onDragStart={(e) => {
           if (!enableReorder) return;
@@ -233,7 +249,10 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         </div>
 
         {showMenu && (
-          <div className="absolute right-0 top-8 bg-gray-800 border border-gray-700 rounded-md shadow-lg z-10 min-w-[120px]">
+          <div
+            className="fixed bg-gray-800 border border-gray-700 rounded-md shadow-lg z-50 min-w-[140px]"
+            style={menuPosition ? { left: menuPosition.x, top: menuPosition.y } : undefined}
+          >
             {/* Edit action */}
             <button
               onClick={(e) => {
