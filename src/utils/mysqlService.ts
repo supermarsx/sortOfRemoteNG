@@ -1,6 +1,16 @@
 import { invoke } from '@tauri-apps/api/core';
 import { ProxyConfig } from '../types/settings';
 
+export interface SshTunnelConfig {
+  enabled: boolean;
+  sshHost: string;
+  sshPort: number;
+  sshUsername: string;
+  sshPassword?: string;
+  sshPrivateKey?: string;
+  sshPassphrase?: string;
+}
+
 export interface MySQLConfig {
   host: string;
   port: number;
@@ -13,6 +23,7 @@ export interface MySQLConfig {
     configId?: string;
     chainPosition?: number;
   };
+  sshTunnel?: SshTunnelConfig;
 }
 
 export type MySQLValue =
@@ -40,6 +51,17 @@ export class MySQLService {
 
   async connect(connectionId: string, config: MySQLConfig): Promise<ConnectionInfo> {
     try {
+      // Transform SSH tunnel config to match Rust backend expectations
+      const sshTunnel = config.sshTunnel ? {
+        enabled: config.sshTunnel.enabled,
+        ssh_host: config.sshTunnel.sshHost,
+        ssh_port: config.sshTunnel.sshPort,
+        ssh_username: config.sshTunnel.sshUsername,
+        ssh_password: config.sshTunnel.sshPassword,
+        ssh_private_key: config.sshTunnel.sshPrivateKey,
+        ssh_passphrase: config.sshTunnel.sshPassphrase,
+      } : undefined;
+
       // Use Tauri IPC to connect to MySQL database
       const result = await invoke<string>('connect_mysql', {
         host: config.host,
@@ -49,6 +71,7 @@ export class MySQLService {
         database: config.database || '',
         proxy: config.proxy,
         openvpn: config.openvpn,
+        sshTunnel,
       });
 
       const connection: ConnectionInfo = {
@@ -136,4 +159,92 @@ export class MySQLService {
   async exportTable(database: string, table: string, format: 'csv' | 'sql'): Promise<string> {
     return await invoke<string>('export_table', { database, table, format });
   }
+
+  async importSql(sqlContent: string): Promise<number> {
+    return await invoke<number>('import_sql', { sqlContent });
+  }
+
+  async importCsv(database: string, table: string, csvContent: string, hasHeader: boolean): Promise<number> {
+    return await invoke<number>('import_csv', { database, table, csvContent, hasHeader });
+  }
+
+  async exportDatabase(database: string, format: 'sql', includeData: boolean): Promise<string> {
+    return await invoke<string>('export_database', { database, format, includeData });
+  }
 }
+
+// Singleton instance for simpler API
+class MySqlServiceSimple {
+  async connect(config: MySQLConfig): Promise<string> {
+    const sshTunnel = config.sshTunnel ? {
+      enabled: config.sshTunnel.enabled,
+      ssh_host: config.sshTunnel.sshHost,
+      ssh_port: config.sshTunnel.sshPort,
+      ssh_username: config.sshTunnel.sshUsername,
+      ssh_password: config.sshTunnel.sshPassword,
+      ssh_private_key: config.sshTunnel.sshPrivateKey,
+      ssh_passphrase: config.sshTunnel.sshPassphrase,
+    } : undefined;
+
+    return await invoke<string>('connect_mysql', {
+      host: config.host,
+      port: config.port,
+      username: config.user,
+      password: config.password,
+      database: config.database || '',
+      proxy: config.proxy,
+      openvpn: config.openvpn,
+      sshTunnel,
+    });
+  }
+
+  async executeQuery(query: string): Promise<QueryResult> {
+    return await invoke<QueryResult>('execute_query', { query });
+  }
+
+  async getDatabases(): Promise<string[]> {
+    return await invoke<string[]>('get_databases');
+  }
+
+  async getTables(database: string): Promise<string[]> {
+    return await invoke<string[]>('get_tables', { database });
+  }
+
+  async getTableStructure(database: string, table: string): Promise<QueryResult> {
+    return await invoke<QueryResult>('get_table_structure', { database, table });
+  }
+
+  async getTableData(database: string, table: string, limit?: number, offset?: number): Promise<QueryResult> {
+    return await invoke<QueryResult>('get_table_data', { database, table, limit, offset });
+  }
+
+  async insertRow(database: string, table: string, columns: string[], values: string[]): Promise<number> {
+    return await invoke<number>('insert_row', { database, table, columns, values });
+  }
+
+  async updateRow(database: string, table: string, columns: string[], values: string[], whereClause: string): Promise<number> {
+    return await invoke<number>('update_row', { database, table, columns, values, whereClause });
+  }
+
+  async deleteRow(database: string, table: string, whereClause: string): Promise<number> {
+    return await invoke<number>('delete_row', { database, table, whereClause });
+  }
+
+  async exportTable(database: string, table: string, format: 'csv' | 'sql'): Promise<string> {
+    return await invoke<string>('export_table', { database, table, format });
+  }
+
+  async importSql(sqlContent: string): Promise<number> {
+    return await invoke<number>('import_sql', { sqlContent });
+  }
+
+  async importCsv(database: string, table: string, csvContent: string, hasHeader: boolean): Promise<number> {
+    return await invoke<number>('import_csv', { database, table, csvContent, hasHeader });
+  }
+
+  async disconnect(): Promise<void> {
+    await invoke('disconnect_db');
+  }
+}
+
+export const mysqlService = new MySqlServiceSimple();
