@@ -82,6 +82,29 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     [safeWriteln],
   );
 
+  const getTerminalTheme = useCallback(() => {
+    if (typeof window === "undefined") {
+      return {
+        background: "#0b1120",
+        foreground: "#e2e8f0",
+        cursor: "#7dd3fc",
+        selectionBackground: "#1e293b",
+      };
+    }
+    const styles = getComputedStyle(document.documentElement);
+    const background = styles.getPropertyValue("--color-background").trim() || "#0b1120";
+    const foreground = styles.getPropertyValue("--color-text").trim() || "#e2e8f0";
+    const cursor = styles.getPropertyValue("--color-primary").trim() || "#7dd3fc";
+    const selectionBackground =
+      styles.getPropertyValue("--color-border").trim() || "#1e293b";
+    return { background, foreground, cursor, selectionBackground };
+  }, []);
+
+  const applyTerminalTheme = useCallback(() => {
+    if (!termRef.current || isDisposed.current) return;
+    termRef.current.setOption("theme", getTerminalTheme());
+  }, [getTerminalTheme]);
+
   const formatErrorDetails = useCallback((err: unknown) => {
     if (err instanceof Error) {
       return {
@@ -144,10 +167,17 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     }
   }, []);
 
-  const initSsh = useCallback(async () => {
+  const initSsh = useCallback(async (force = false) => {
     const currentSession = sessionRef.current;
     const currentConnection = connectionRef.current;
     if (!isSsh || !currentConnection || !termRef.current) return;
+    if (!force && (isConnecting.current || isSshReady.current)) {
+      return;
+    }
+    if (!force && sshSessionId.current && currentSession.shellId) {
+      setStatusState("connected");
+      return;
+    }
     const ignoreHostKey = currentConnection.ignoreSshSecurityErrors ?? true;
     setStatusState("connecting");
     setError("");
@@ -171,6 +201,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
     try {
       if (currentSession.backendSessionId) {
+        if (!force && currentSession.shellId) {
+          sshSessionId.current = currentSession.backendSessionId;
+          setStatusState("connected");
+          return;
+        }
         sshSessionId.current = currentSession.backendSessionId;
         const shellId = await invoke<string>("start_shell", {
           sessionId: currentSession.backendSessionId,
@@ -297,12 +332,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
     isDisposed.current = false;
     const term = new Terminal({
-      theme: {
-        background: "#0b1120",
-        foreground: "#e2e8f0",
-        cursor: "#7dd3fc",
-        selectionBackground: "#1e293b",
-      },
+      theme: getTerminalTheme(),
       fontFamily:
         '"Cascadia Code", "Fira Code", Menlo, Monaco, "Ubuntu Mono", "Courier New", monospace',
       fontSize: 13,
@@ -446,6 +476,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       fitRef.current = null;
     };
   }, [
+    getTerminalTheme,
     handleInput,
     initSsh,
     isSsh,
@@ -455,6 +486,15 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     safeWriteln,
     setStatusState,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleSettingsUpdate = () => {
+      applyTerminalTheme();
+    };
+    window.addEventListener("settings-updated", handleSettingsUpdate);
+    return () => window.removeEventListener("settings-updated", handleSettingsUpdate);
+  }, [applyTerminalTheme]);
 
   const safeFit = useCallback(() => {
     if (isDisposed.current || !fitRef.current || !termRef.current) return;
@@ -478,7 +518,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     if (!isSsh) return;
     setStatusState("connecting");
     disconnectSsh();
-    await initSsh();
+    await initSsh(true);
     setTimeout(() => safeFit(), 80);
   }, [disconnectSsh, initSsh, isSsh, safeFit, setStatusState]);
 
