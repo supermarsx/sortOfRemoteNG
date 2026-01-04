@@ -48,8 +48,9 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
 
     loadMetrics();
     settingsManager.loadSettings().then((loaded) => {
-      if (isMounted && loaded.performancePollIntervalMs) {
-        setPollIntervalMs(loaded.performancePollIntervalMs);
+      if (isMounted) {
+        const interval = loaded.performancePollIntervalMs ?? 5000;
+        setPollIntervalMs(interval);
       }
     }).catch(console.error);
 

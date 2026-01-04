@@ -14,6 +14,7 @@ import {
   Trash2,
   Copy,
   Play,
+  Database,
 } from "lucide-react";
 import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
@@ -40,6 +41,8 @@ const getProtocolIcon = (protocol: string) => {
     case "telnet":
     case "rlogin":
       return Phone;
+    case "mysql":
+      return Database;
     default:
       return Monitor;
   }

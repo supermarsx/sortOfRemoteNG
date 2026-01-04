@@ -111,7 +111,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     const now = new Date();
     
     // Prepare description with SSH library info
-    let description = formData.description || '';
+    const description = formData.description || '';
 
     const connectionData: Connection = {
       id: connection?.id || generateId(),

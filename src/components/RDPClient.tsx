@@ -116,20 +116,16 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           canvas.width = width;
           canvas.height = height;
           
-          try {
-            // Draw simulated desktop with error message
-            drawSimulatedDesktop(ctx, width, height);
-            
-            ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
-            ctx.fillRect(10, 10, 300, 60);
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '12px Arial';
-            ctx.textAlign = 'left';
-            ctx.fillText('RDP Connection Failed', 20, 30);
-            ctx.fillText('Using simulation mode', 20, 50);
-          } catch (simError) {
-            throw simError; // Re-throw to be caught by outer catch
-          }
+          // Draw simulated desktop with error message
+          drawSimulatedDesktop(ctx, width, height);
+          
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
+          ctx.fillRect(10, 10, 300, 60);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = '12px Arial';
+          ctx.textAlign = 'left';
+          ctx.fillText('RDP Connection Failed', 20, 30);
+          ctx.fillText('Using simulation mode', 20, 50);
         }
       }
     } catch (error) {

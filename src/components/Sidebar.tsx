@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FolderPlus, Download, Upload, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, FileText, Expand as ExpandAll, ListCollapse as CollapseAll, BarChart3, ScrollText, Globe } from 'lucide-react';
+import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, FileText, Expand as ExpandAll, ListCollapse as CollapseAll, BarChart3, ScrollText, ArrowLeftRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionTree } from './ConnectionTree';
 import { Connection } from '../types/connection';
@@ -11,6 +11,8 @@ import { PerformanceMonitor } from './PerformanceMonitor';
 import { ActionLogViewer } from './ActionLogViewer';
 
 interface SidebarProps {
+  sidebarPosition: 'left' | 'right';
+  onToggleSidebarPosition: () => void;
   onNewConnection: () => void;
   onEditConnection: (connection: Connection) => void;
   onDeleteConnection: (connection: Connection) => void;
@@ -19,6 +21,8 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
+  sidebarPosition,
+  onToggleSidebarPosition,
   onNewConnection,
   onEditConnection,
   onDeleteConnection,
@@ -116,11 +120,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     SecureStorage.isStorageEncrypted().then(setIsStorageEncrypted);
   }, []);
 
+  const sideBorder = sidebarPosition === 'left' ? 'border-r' : 'border-l';
+
   return (
     <>
-      <div className={`bg-gray-800 border-r border-gray-700 flex flex-col transition-all duration-300 ${
-        state.sidebarCollapsed ? 'w-12' : 'w-80'
-      }`}>
+      <div className={`bg-gray-800 ${sideBorder} border-gray-700 flex flex-col transition-all duration-300 h-full w-full`}>
         {/* Header */}
         <div className="p-4 border-b border-gray-700">
           <div className="flex items-center justify-between">
@@ -142,13 +146,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
             )}
-            <button
-              onClick={toggleSidebar}
-              className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400"
-              title={state.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              {state.sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-            </button>
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={onToggleSidebarPosition}
+                className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400"
+                title={`Dock to ${sidebarPosition === 'left' ? 'right' : 'left'}`}
+              >
+                <ArrowLeftRight size={16} className={sidebarPosition === 'right' ? 'rotate-180' : ''} />
+              </button>
+              <button
+                onClick={toggleSidebar}
+                className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400"
+                title={state.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {state.sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+              </button>
+            </div>
           </div>
         </div>
 

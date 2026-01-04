@@ -260,6 +260,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
               <h3 className="text-lg font-medium text-white mb-4">
                 Scan QR Code
               </h3>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={qrCodeUrl}
                 alt="TOTP QR Code"

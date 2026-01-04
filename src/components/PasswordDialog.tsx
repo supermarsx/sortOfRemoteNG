@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Lock, Eye, EyeOff, Shield, AlertCircle } from 'lucide-react';
 
 interface PasswordDialogProps {
@@ -40,12 +40,12 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
     setConfirmPassword('');
   };
 
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
     setPassword('');
     setConfirmPassword('');
     setPasswordError('');
     onCancel();
-  };
+  }, [onCancel]);
 
   // Handle ESC key to close dialog
   useEffect(() => {
@@ -59,7 +59,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  }, [isOpen, handleCancel]);
 
   if (!isOpen) return null;
 

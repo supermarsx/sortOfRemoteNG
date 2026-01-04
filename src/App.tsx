@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Monitor, Zap, Menu, Globe, Minus, Square, X, Settings } from "lucide-react";
+import { Monitor, Zap, Menu, Globe, Minus, Square, X, ChevronRight, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Connection } from "./types/connection";
@@ -82,10 +82,10 @@ const AppContent: React.FC = () => {
 
   const languageOptions = [
     { value: "en", label: "English" },
-    { value: "es", label: "Espanol (Spain)" },
-    { value: "fr", label: "Francais (France)" },
+    { value: "es", label: "Español (España)" },
+    { value: "fr", label: "Français (France)" },
     { value: "de", label: "Deutsch (Deutschland)" },
-    { value: "pt-PT", label: "Portugues (Portugal)" },
+    { value: "pt-PT", label: "Português (Portugal)" },
   ];
 
   /**
@@ -242,6 +242,10 @@ const AppContent: React.FC = () => {
     setDialogState(prev => ({ ...prev, isOpen: false }));
   };
 
+  const toggleSidebarPosition = () => {
+    setSidebarPosition(prev => (prev === 'left' ? 'right' : 'left'));
+  };
+
   // Sidebar resize handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsResizing(true);
@@ -316,6 +320,36 @@ const AppContent: React.FC = () => {
     await window.close();
   };
 
+  const renderSidebar = (position: 'left' | 'right') => {
+    if (sidebarPosition !== position) return null;
+    const resizerEdge = position === 'left' ? 'right-0' : 'left-0';
+
+    return (
+      <div
+        className="relative flex-shrink-0"
+        style={{ width: state.sidebarCollapsed ? '48px' : `${sidebarWidth}px` }}
+      >
+        <Sidebar
+          sidebarPosition={sidebarPosition}
+          onToggleSidebarPosition={toggleSidebarPosition}
+          onNewConnection={handleNewConnection}
+          onEditConnection={handleEditConnection}
+          onDeleteConnection={handleDeleteConnection}
+          onConnect={handleConnect}
+          onShowPasswordDialog={handleShowPasswordDialog}
+        />
+        {!state.sidebarCollapsed && (
+          <div
+            className={`absolute top-0 ${resizerEdge} w-2 h-full cursor-col-resize bg-gray-700/50 hover:bg-blue-500 transition-all duration-200 group`}
+            onMouseDown={handleMouseDown}
+          >
+            <div className="absolute inset-y-0 left-1/2 transform -translate-x-1/2 w-0.5 bg-gray-500 group-hover:bg-blue-400 transition-colors duration-200"></div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="h-screen bg-gray-900 text-white flex flex-col">
       {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
@@ -347,18 +381,33 @@ const AppContent: React.FC = () => {
           </button>
 
           <div className="relative" ref={languageMenuRef}>
-            <Globe size={12} className="text-gray-400" />
-            <select
-              value={i18n.language}
-              onChange={(e) => i18n.changeLanguage(e.target.value)}
-              className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-gray-300 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent hover:bg-gray-600 transition-colors"
+            <button
+              onClick={() => setShowLanguageMenu((prev) => !prev)}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Change language"
             >
-              <option value="en" className="bg-gray-700 text-white">English</option>
-              <option value="es" className="bg-gray-700 text-white">Español (España)</option>
-              <option value="fr" className="bg-gray-700 text-white">Français (France)</option>
-              <option value="de" className="bg-gray-700 text-white">Deutsch (Deutschland)</option>
-              <option value="pt-PT" className="bg-gray-700 text-white">Português (Portugal)</option>
-            </select>
+              <Globe size={14} />
+            </button>
+            {showLanguageMenu && (
+              <div className="absolute right-0 mt-2 w-44 bg-gray-800 border border-gray-700 rounded-md shadow-lg py-2 z-20">
+                {languageOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => {
+                      i18n.changeLanguage(option.value);
+                      setShowLanguageMenu(false);
+                    }}
+                    className={`flex items-center w-full px-3 py-2 text-sm transition-colors ${
+                      i18n.language === option.value
+                        ? "text-white bg-blue-700/40"
+                        : "text-gray-200 hover:bg-gray-700"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <button
@@ -375,14 +424,6 @@ const AppContent: React.FC = () => {
             title="Settings"
           >
             <Settings size={16} />
-          </button>
-
-          <button
-            onClick={() => setSidebarPosition(sidebarPosition === 'left' ? 'right' : 'left')}
-            className="p-2 hover:bg-gray-700 rounded transition-colors"
-            title={`Move sidebar to ${sidebarPosition === 'left' ? 'right' : 'left'}`}
-          >
-            <ChevronRight size={16} className={sidebarPosition === 'right' ? 'rotate-180' : ''} />
           </button>
 
           {/* Window Controls */}
@@ -413,28 +454,7 @@ const AppContent: React.FC = () => {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {sidebarPosition === 'left' && (
-          <div 
-            className="relative"
-            style={{ width: state.sidebarCollapsed ? '48px' : `${sidebarWidth}px` }}
-          >
-            <Sidebar
-              onNewConnection={handleNewConnection}
-              onEditConnection={handleEditConnection}
-              onDeleteConnection={handleDeleteConnection}
-              onConnect={handleConnect}
-              onShowPasswordDialog={handleShowPasswordDialog}
-            />
-            {!state.sidebarCollapsed && (
-              <div
-                className={`absolute top-0 ${sidebarPosition === 'left' ? 'right-0' : 'left-0'} w-2 h-full cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-all duration-200 group`}
-                onMouseDown={handleMouseDown}
-              >
-                <div className="absolute inset-y-0 left-1/2 transform -translate-x-1/2 w-0.5 bg-gray-500 group-hover:bg-blue-400 transition-colors duration-200"></div>
-              </div>
-            )}
-          </div>
-        )}
+        {renderSidebar('left')}
 
         <div className="flex-1 flex flex-col">
           <SessionTabs
@@ -477,28 +497,7 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
-        {sidebarPosition === 'right' && (
-          <div 
-            className="relative"
-            style={{ width: state.sidebarCollapsed ? '48px' : `${sidebarWidth}px` }}
-          >
-            {!state.sidebarCollapsed && (
-              <div
-                className={`absolute top-0 ${sidebarPosition === 'left' ? 'right-0' : 'left-0'} w-2 h-full cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-all duration-200 group`}
-                onMouseDown={handleMouseDown}
-              >
-                <div className="absolute inset-y-0 left-1/2 transform -translate-x-1/2 w-0.5 bg-gray-500 group-hover:bg-blue-400 transition-colors duration-200"></div>
-              </div>
-            )}
-            <Sidebar
-              onNewConnection={handleNewConnection}
-              onEditConnection={handleEditConnection}
-              onDeleteConnection={handleDeleteConnection}
-              onConnect={handleConnect}
-              onShowPasswordDialog={handleShowPasswordDialog}
-            />
-          </div>
-        )}
+        {renderSidebar('right')}
       </div>
 
       {/* Dialogs */}

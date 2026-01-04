@@ -64,42 +64,6 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
 
-  const handleNonSSHInput = useCallback((data: string) => {
-    if (!terminal.current) return;
-
-    for (let i = 0; i < data.length; i++) {
-      const char = data[i];
-      const charCode = char.charCodeAt(0);
-
-      switch (charCode) {
-        case 13: // Enter (CR)
-          terminal.current.write('\r\n');
-          processCommand(currentLine);
-          setCurrentLine('');
-          break;
-        case 127: // Backspace
-          if (currentLine.length > 0) {
-            setCurrentLine(currentLine.slice(0, -1));
-            terminal.current.write('\b \b');
-          }
-          break;
-        case 3: // Ctrl+C
-          terminal.current.write('^C\r\n\x1b[33m$ \x1b[0m');
-          setCurrentLine('');
-          break;
-        case 4: // Ctrl+D
-          terminal.current.write('logout\r\n');
-          break;
-        default:
-          if (charCode >= 32 && charCode <= 126) { // Printable characters
-            setCurrentLine(currentLine + char);
-            terminal.current.write(char);
-          }
-          break;
-      }
-    }
-  }, [currentLine]);
-
   const executeCommand = useCallback((command: string) => {
     if (!terminal.current) return;
 
@@ -156,6 +120,42 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       executeCommand(cmd);
     }, 100);
   }, [executeCommand]);
+
+  const handleNonSSHInput = useCallback((data: string) => {
+    if (!terminal.current) return;
+
+    for (let i = 0; i < data.length; i++) {
+      const char = data[i];
+      const charCode = char.charCodeAt(0);
+
+      switch (charCode) {
+        case 13: // Enter (CR)
+          terminal.current.write('\r\n');
+          processCommand(currentLine);
+          setCurrentLine('');
+          break;
+        case 127: // Backspace
+          if (currentLine.length > 0) {
+            setCurrentLine(currentLine.slice(0, -1));
+            terminal.current.write('\b \b');
+          }
+          break;
+        case 3: // Ctrl+C
+          terminal.current.write('^C\r\n\x1b[33m$ \x1b[0m');
+          setCurrentLine('');
+          break;
+        case 4: // Ctrl+D
+          terminal.current.write('logout\r\n');
+          break;
+        default:
+          if (charCode >= 32 && charCode <= 126) { // Printable characters
+            setCurrentLine(currentLine + char);
+            terminal.current.write(char);
+          }
+          break;
+      }
+    }
+  }, [currentLine, processCommand]);
 
   const initializeSSHConnection = useCallback(async () => {
     if (!terminal.current || !connection) return;
@@ -269,7 +269,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       terminal.current?.writeln(`\x1b[31m${errorMessage}\x1b[0m`);
       terminal.current?.writeln('\x1b[33m$ \x1b[0m');
     }
-  }, [session.id, session.connectionId, session.hostname, connection]);
+  }, [session.hostname, connection]);
 
   useEffect(() => {
     const terminalElement = terminalRef.current;
@@ -420,7 +420,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       setIsConnecting(false);
       setCommandBuffer('');
     };
-  }, [session.id, session.protocol, session.hostname, handleNonSSHInput, initializeSSHConnection, onResize]);
+  }, [session.protocol, session.hostname, handleNonSSHInput, initializeSSHConnection, onResize, isConnecting, sshOutputInterval]);
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);

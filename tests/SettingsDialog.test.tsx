@@ -33,6 +33,7 @@ const mockSettings: GlobalSettings = {
   retryAttempts: 0,
   retryDelay: 5000,
   enablePerformanceTracking: false,
+  performancePollIntervalMs: 5000,
   encryptionAlgorithm: "AES-256-GCM",
   blockCipherMode: "GCM",
   keyDerivationIterations: 1000,
