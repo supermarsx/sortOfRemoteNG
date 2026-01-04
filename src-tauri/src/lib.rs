@@ -173,7 +173,10 @@ struct LaunchArgs {
 ///
 /// Panics if the Tauri application fails to initialize or run.
 pub fn run() {
+  use tauri_plugin_autostart::MacosLauncher;
+  
   tauri::Builder::default()
+    .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
     .setup(|app| {
       // Parse command line arguments
       let args: Vec<String> = env::args().collect();
@@ -766,6 +769,7 @@ pub fn run() {
         // ovh::get_ovh_session,
         // ovh::list_ovh_sessions
         create_desktop_shortcut,
+        set_autostart,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
@@ -1176,4 +1180,35 @@ StartupNotify=false
   {
     Err("Desktop shortcuts are not supported on this platform".to_string())
   }
+}
+
+#[tauri::command]
+/// Enable or disable autostart for the application.
+///
+/// Uses the tauri-plugin-autostart to manage system autostart entries.
+///
+/// # Arguments
+///
+/// * `enabled` - Whether to enable or disable autostart
+/// * `app` - The Tauri application handle
+///
+/// # Returns
+///
+/// `Ok(())` if successful, `Err(String)` if an error occurred
+async fn set_autostart(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
+  use tauri_plugin_autostart::ManagerExt;
+  
+  let autostart_manager = app.autolaunch();
+  
+  if enabled {
+    autostart_manager
+      .enable()
+      .map_err(|e| format!("Failed to enable autostart: {}", e))?;
+  } else {
+    autostart_manager
+      .disable()
+      .map_err(|e| format!("Failed to disable autostart: {}", e))?;
+  }
+  
+  Ok(())
 }

@@ -50,6 +50,17 @@ export interface GlobalSettings {
   quickConnectHistoryEnabled: boolean;
   quickConnectHistory: QuickConnectHistoryEntry[];
 
+  // Startup Settings
+  startMinimized: boolean;
+  startMaximized: boolean;
+  startWithSystem: boolean;
+  reconnectPreviousSessions: boolean;
+  
+  // Tray Settings
+  minimizeToTray: boolean;
+  closeToTray: boolean;
+  showTrayIcon: boolean;
+
   // Theme Effects
   backgroundGlowEnabled: boolean;
   backgroundGlowColor: string;

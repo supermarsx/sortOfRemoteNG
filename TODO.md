@@ -12,10 +12,10 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [Documentation and Deployment](#documentation-and-deployment)
 
 ## User Requested Backlog
-- [ ] Add startup settings: start minimized, start maximized, reconnect previous session connections
+- [x] Add startup settings: start minimized, start maximized, reconnect previous session connections
 - [ ] Add tray behavior: minimize to notification area and close to notification area
 - [ ] Add single-click actions: open connection on single click; disconnect on single click
-- [ ] Auto-save connection edits without requiring manual save
+- [x] Auto-save connection edits without requiring manual save
 - [ ] Add cloud sync targets for Google Drive, Nextcloud, and OneDrive
 - [ ] Add differential backup scheduling (daily and on-demand runs)
 - [ ] Add custom CSS tips plus theme import/export and custom theme manager

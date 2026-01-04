@@ -206,41 +206,12 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const now = new Date();
-    
-    // Prepare description with SSH library info
-    const description = formData.description || '';
+    // Clear auto-save timer if pending
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
 
-    const connectionData: Connection = {
-      id: connection?.id || generateId(),
-      name: formData.name || 'New Connection',
-      protocol: formData.protocol as Connection['protocol'],
-      hostname: formData.hostname || '',
-      port: formData.port || getDefaultPort(formData.protocol as string),
-      username: formData.username,
-      password: formData.password,
-      privateKey: formData.privateKey,
-      passphrase: formData.passphrase,
-      domain: formData.domain,
-      description,
-      isGroup: formData.isGroup || false,
-      tags: formData.tags || [],
-      parentId: formData.parentId,
-      icon: formData.icon || undefined,
-      order: connection?.order ?? Date.now(),
-      createdAt: connection?.createdAt || now,
-      updatedAt: now,
-      authType: formData.authType,
-      basicAuthUsername: formData.basicAuthUsername,
-      basicAuthPassword: formData.basicAuthPassword,
-      basicAuthRealm: formData.basicAuthRealm,
-      httpHeaders: formData.httpHeaders,
-      cloudProvider: formData.cloudProvider,
-      ignoreSshSecurityErrors: formData.ignoreSshSecurityErrors ?? true,
-      sshConnectTimeout: formData.sshConnectTimeout,
-      sshKeepAliveInterval: formData.sshKeepAliveInterval,
-      sshKnownHostsPath: formData.sshKnownHostsPath || undefined,
-    };
+    const connectionData = buildConnectionData();
 
     if (connection) {
       dispatch({ type: 'UPDATE_CONNECTION', payload: connectionData });
@@ -278,6 +249,23 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
               {connection ? 'Edit Connection' : 'New Connection'}
             </h2>
             <div className="flex items-center gap-2">
+              {/* Auto-save indicator */}
+              {connection && settings.autoSaveEnabled && (
+                <div className="flex items-center gap-1.5 text-xs">
+                  {autoSaveStatus === 'pending' && (
+                    <span className="text-yellow-400 flex items-center gap-1">
+                      <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+                      Saving...
+                    </span>
+                  )}
+                  {autoSaveStatus === 'saved' && (
+                    <span className="text-green-400 flex items-center gap-1">
+                      <Check size={14} />
+                      Saved
+                    </span>
+                  )}
+                </div>
+              )}
               <button
                 type="submit"
                 data-tooltip={connection ? 'Update' : 'Create'}

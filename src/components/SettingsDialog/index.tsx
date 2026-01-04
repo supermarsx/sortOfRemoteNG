@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Palette,
   LayoutGrid,
+  Power,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig } from '../../types/settings';
@@ -22,6 +23,7 @@ import SecuritySettings from './sections/SecuritySettings';
 import PerformanceSettings from './sections/PerformanceSettings';
 import ProxySettings from './sections/ProxySettings';
 import AdvancedSettings from './sections/AdvancedSettings';
+import StartupSettings from './sections/StartupSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
@@ -183,6 +185,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
   const tabs = [
     { id: 'general', label: t('settings.general'), icon: Monitor },
+    { id: 'startup', label: t('settings.startup.title', 'Startup & Tray'), icon: Power },
     { id: 'theme', label: t('settings.theme'), icon: Palette },
     { id: 'layout', label: 'Layout', icon: LayoutGrid },
     { id: 'security', label: t('settings.security'), icon: Shield },
@@ -282,6 +285,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
             <div className="p-6">
               {activeTab === 'general' && (
                 <GeneralSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'startup' && (
+                <StartupSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'theme' && (

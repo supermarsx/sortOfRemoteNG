@@ -24,6 +24,17 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   quickConnectHistoryEnabled: true,
   quickConnectHistory: [],
 
+  // Startup Settings
+  startMinimized: false,
+  startMaximized: false,
+  startWithSystem: false,
+  reconnectPreviousSessions: false,
+  
+  // Tray Settings
+  minimizeToTray: false,
+  closeToTray: false,
+  showTrayIcon: true,
+
   backgroundGlowEnabled: true,
   backgroundGlowColor: "#2563eb",
   backgroundGlowOpacity: 0.25,

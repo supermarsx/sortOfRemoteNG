@@ -118,6 +118,7 @@ export const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({
     if (isOpen) {
       loadKeys();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const handleGenerateKey = async () => {
