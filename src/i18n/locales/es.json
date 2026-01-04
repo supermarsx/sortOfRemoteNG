@@ -64,6 +64,7 @@
     "iterations": "Iteraciones",
     "autoBenchmark": "Benchmark Automático",
     "benchmarkTime": "Tiempo de Benchmark (segundos)",
+    "benchmarking": "Ejecutando benchmark de derivacion...",
     "proxy": "Configuración de Proxy",
     "proxyType": "Tipo de Proxy",
     "proxyHost": "Host del Proxy",
@@ -117,7 +118,7 @@
   },
   "dialogs": {
     "confirmClose": "¿Está seguro de que desea cerrar esta conexión?",
-    "confirmCloseDetached": "Close detached window and disconnect the session?",
+    "confirmCloseDetached": "Cerrar ventana desacoplada y desconectar la sesion?",
     "confirmExit": "¿Está seguro de que desea salir? Todas las conexiones se cerrarán.",
     "confirmDelete": "¿Está seguro de que desea eliminar esta conexión?",
     "unsavedChanges": "Tiene cambios sin guardar. ¿Desea guardar antes de cerrar?",

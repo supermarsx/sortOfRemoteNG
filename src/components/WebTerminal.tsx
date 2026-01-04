@@ -63,17 +63,35 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     isSshReady.current = next === "connected";
   }, []);
 
+  const canRender = useCallback(() => {
+    const core = (termRef.current as any)?._core;
+    if (!core) return true;
+    const renderService = core?.renderService ?? core?._renderService;
+    if (!renderService) return false;
+    return Boolean(renderService?.dimensions);
+  }, []);
+
   const safeWrite = useCallback((text: string) => {
     if (isDisposed.current || !termRef.current) return;
     if (termRef.current.element && !termRef.current.element.isConnected) return;
-    termRef.current.write(text);
-  }, []);
+    if (!canRender()) return;
+    try {
+      termRef.current.write(text);
+    } catch {
+      // Ignore transient render errors during resize/dispose.
+    }
+  }, [canRender]);
 
   const safeWriteln = useCallback((text: string) => {
     if (isDisposed.current || !termRef.current) return;
     if (termRef.current.element && !termRef.current.element.isConnected) return;
-    termRef.current.writeln(text);
-  }, []);
+    if (!canRender()) return;
+    try {
+      termRef.current.writeln(text);
+    } catch {
+      // Ignore transient render errors during resize/dispose.
+    }
+  }, [canRender]);
 
   const writeLine = useCallback(
     (text: string) => {

@@ -322,6 +322,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         onConfirm={confirmReset}
         onCancel={() => setShowResetConfirm(false)}
       />
+      {isBenchmarking && (
+        <div className="fixed bottom-6 right-6 z-50 bg-gray-800/95 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200 shadow-lg">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
+            <span>{t("security.benchmarking")}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

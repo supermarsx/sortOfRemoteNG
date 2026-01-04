@@ -867,7 +867,7 @@ const AppContent: React.FC = () => {
     if (!appSettings) return;
     const window = getCurrentWindow();
     const targetOpacity = appSettings.windowTransparencyEnabled
-      ? Math.min(1, Math.max(0.4, appSettings.windowTransparencyOpacity || 1))
+      ? Math.min(1, Math.max(0, appSettings.windowTransparencyOpacity || 1))
       : 1;
     const root = document.documentElement;
     const alpha = appSettings.windowTransparencyEnabled ? targetOpacity : 1;
@@ -1029,6 +1029,10 @@ const AppContent: React.FC = () => {
         ]);
 
         const updates: Partial<GlobalSettings> = {};
+        const isMaximized = await window.isMaximized();
+        if (isMaximized) {
+          return;
+        }
         if (appSettings.persistWindowSize) {
           const logicalSize = size.toLogical(scaleFactor);
           updates.windowSize = { width: logicalSize.width, height: logicalSize.height };
@@ -1153,7 +1157,16 @@ const AppContent: React.FC = () => {
 
   const handleMaximize = async () => {
     const window = getCurrentWindow();
-    await window.toggleMaximize();
+    const isMaximized = await window.isMaximized();
+    if (isMaximized) {
+      await window.unmaximize();
+      if (appSettings.persistWindowSize && appSettings.windowSize) {
+        const { width, height } = appSettings.windowSize;
+        await window.setSize(new LogicalSize(width, height));
+      }
+      return;
+    }
+    await window.maximize();
   };
 
   const handleOpenDevtools = async () => {

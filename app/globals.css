@@ -171,6 +171,31 @@ input[type="checkbox"]:disabled {
   cursor: not-allowed;
 }
 
+input[type="range"] {
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-border);
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--color-surface);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--color-surface);
+}
+
 .app-tooltip {
   position: fixed;
   max-width: min(260px, 80vw);
@@ -191,6 +216,64 @@ input[type="checkbox"]:disabled {
 .app-tooltip.is-visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+.css-editor {
+  position: relative;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(31, 41, 55, 0.6);
+  overflow: hidden;
+}
+
+.css-editor-highlight,
+.css-editor-input {
+  font-family: "Cascadia Code", "Fira Code", Menlo, Monaco, "Ubuntu Mono", "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: auto;
+  max-height: 240px;
+}
+
+.css-editor-highlight {
+  position: absolute;
+  inset: 0;
+  color: var(--color-textSecondary);
+  pointer-events: none;
+}
+
+.css-editor-input {
+  position: relative;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--color-text);
+  resize: vertical;
+}
+
+.css-editor-input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.css-token-comment {
+  color: #94a3b8;
+}
+
+.css-token-selector {
+  color: #38bdf8;
+}
+
+.css-token-property {
+  color: #a78bfa;
+}
+
+.css-token-value {
+  color: #34d399;
 }
 
 /* Map commonly used Tailwind utility classes to theme variables */

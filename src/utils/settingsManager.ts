@@ -12,6 +12,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   language: 'en',
   theme: 'dark',
   colorScheme: 'blue',
+  primaryAccentColor: '#3b82f6',
   autoSaveEnabled: false,
   autoSaveIntervalMinutes: 5,
   singleWindowMode: false,

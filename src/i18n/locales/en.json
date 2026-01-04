@@ -64,6 +64,7 @@
     "iterations": "Iterations",
     "autoBenchmark": "Auto Benchmark",
     "benchmarkTime": "Benchmark Time (seconds)",
+    "benchmarking": "Benchmarking key derivation...",
     "proxy": "Proxy Settings",
     "proxyType": "Proxy Type",
     "proxyHost": "Proxy Host",

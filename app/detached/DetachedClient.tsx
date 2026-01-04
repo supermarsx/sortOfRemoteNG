@@ -44,11 +44,12 @@ const DetachedSessionContent: React.FC<{
     Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
   const closingRef = useRef(false);
   const hasLoadedRef = useRef(false);
+  const skipNextConfirmRef = useRef(false);
   const closeResolverRef = useRef<((value: boolean) => void) | null>(null);
 
   const applyTransparency = useCallback(
     (enabled: boolean, opacity?: number) => {
-      const targetOpacity = enabled ? Math.min(1, Math.max(0.4, opacity ?? 1)) : 1;
+      const targetOpacity = enabled ? Math.min(1, Math.max(0, opacity ?? 1)) : 1;
       setIsTransparent(enabled);
       const alpha = enabled ? targetOpacity : 1;
       const root = document.documentElement;
@@ -215,11 +216,15 @@ const DetachedSessionContent: React.FC<{
   }, [activeSession, isTauri, sessionId]);
 
   const handleCloseRequest = useCallback(async () => {
-    if (warnOnDetachClose) {
+    if (warnOnDetachClose && !skipNextConfirmRef.current) {
       const confirmed = await requestCloseConfirmation();
       if (!confirmed) {
         return false;
       }
+      skipNextConfirmRef.current = true;
+    }
+    if (skipNextConfirmRef.current) {
+      skipNextConfirmRef.current = false;
     }
     await disconnectActiveSession();
     return true;
@@ -304,7 +309,12 @@ const DetachedSessionContent: React.FC<{
             onClick={async () => {
               if (!isTauri) return;
               const currentWindow = getCurrentWindow();
-              await currentWindow.toggleMaximize();
+              const isMaximized = await currentWindow.isMaximized();
+              if (isMaximized) {
+                await currentWindow.unmaximize();
+                return;
+              }
+              await currentWindow.maximize();
             }}
             className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
             data-tooltip="Maximize"
@@ -377,15 +387,17 @@ const DetachedClient: React.FC = () => {
   const [disconnectHandler, setDisconnectHandler] = useState<
     (() => Promise<boolean>) | null
   >(null);
+  const handleRegisterDisconnect = useCallback(
+    (handler: () => Promise<boolean>) => setDisconnectHandler(() => handler),
+    [],
+  );
 
   return (
     <ConnectionProvider>
       {disconnectHandler && (
         <DetachedWindowLifecycle onBeforeClose={disconnectHandler} />
       )}
-      <DetachedSessionContent
-        onRegisterDisconnect={(handler) => setDisconnectHandler(() => handler)}
-      />
+      <DetachedSessionContent onRegisterDisconnect={handleRegisterDisconnect} />
     </ConnectionProvider>
   );
 };

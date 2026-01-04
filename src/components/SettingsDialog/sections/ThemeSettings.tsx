@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { GlobalSettings, Theme, ColorScheme } from "../../../types/settings";
 import { ThemeManager } from "../../../utils/themeManager";
@@ -22,6 +22,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
   const themeManager = ThemeManager.getInstance();
   const [themes, setThemes] = useState<Theme[]>([]);
   const [schemes, setSchemes] = useState<ColorScheme[]>([]);
+  const cssHighlightRef = useRef<HTMLPreElement | null>(null);
 
   useEffect(() => {
     setThemes(themeManager.getAvailableThemes());
@@ -46,6 +47,50 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
       colorScheme: "other",
     });
   };
+
+  const escapeHtml = useCallback((value: string) => {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }, []);
+
+  const highlightCss = useCallback(
+    (code: string) => {
+      let html = escapeHtml(code);
+      html = html.replace(/\/\*[\s\S]*?\*\//g, '<span class="css-token-comment">$&</span>');
+      html = html.replace(
+        /(^|\n)(\s*)([^\n{}]+)(\s*\{)/g,
+        '$1$2<span class="css-token-selector">$3</span>$4',
+      );
+      html = html.replace(
+        /([a-zA-Z-]+)(\s*):/g,
+        '<span class="css-token-property">$1</span>$2:',
+      );
+      html = html.replace(
+        /:(\s*)([^;\n}]+)/g,
+        ':$1<span class="css-token-value">$2</span>',
+      );
+      return html;
+    },
+    [escapeHtml],
+  );
+
+  const highlightedCss = useMemo(
+    () => highlightCss(settings.customCss || ""),
+    [highlightCss, settings.customCss],
+  );
+
+  const handleCssScroll = useCallback(
+    (event: React.UIEvent<HTMLTextAreaElement>) => {
+      if (!cssHighlightRef.current) return;
+      cssHighlightRef.current.scrollTop = event.currentTarget.scrollTop;
+      cssHighlightRef.current.scrollLeft = event.currentTarget.scrollLeft;
+    },
+    [],
+  );
+
+  const opacityValue = Number(settings.windowTransparencyOpacity ?? 1);
 
   return (
     <div className="space-y-6">
@@ -241,22 +286,40 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
             </label>
             <div>
               <label className="block text-xs text-gray-400 mb-1">Opacity</label>
-              <input
-                type="number"
-                step="0.02"
-                min="0.4"
-                max="1"
-                value={settings.windowTransparencyOpacity}
-                onChange={(e) =>
-                  updateSettings({
-                    windowTransparencyOpacity: Math.min(
-                      1,
-                      Math.max(0.4, parseFloat(e.target.value || "1")),
-                    ),
-                  })
-                }
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-              />
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={opacityValue}
+                  onChange={(e) =>
+                    updateSettings({
+                      windowTransparencyOpacity: Math.min(
+                        1,
+                        Math.max(0, parseFloat(e.target.value || "1")),
+                      ),
+                    })
+                  }
+                  className="flex-1 accent-blue-500"
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="1"
+                  value={opacityValue.toFixed(2)}
+                  onChange={(e) =>
+                    updateSettings({
+                      windowTransparencyOpacity: Math.min(
+                        1,
+                        Math.max(0, parseFloat(e.target.value || "1")),
+                      ),
+                    })
+                  }
+                  className="w-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded-md text-white text-xs"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -265,13 +328,25 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Custom CSS
           </label>
-          <textarea
-            value={settings.customCss || ""}
-            onChange={(e) => updateSettings({ customCss: e.target.value })}
-            rows={4}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none font-mono text-sm"
-            placeholder="Enter custom CSS rules..."
-          />
+          <div className="css-editor">
+            <pre
+              ref={cssHighlightRef}
+              className="css-editor-highlight"
+              aria-hidden="true"
+              dangerouslySetInnerHTML={{
+                __html: highlightedCss + (highlightedCss.endsWith("\n") ? "" : "\n"),
+              }}
+            />
+            <textarea
+              value={settings.customCss || ""}
+              onChange={(e) => updateSettings({ customCss: e.target.value })}
+              onScroll={handleCssScroll}
+              rows={6}
+              spellCheck={false}
+              className="css-editor-input"
+              placeholder="Enter custom CSS rules..."
+            />
+          </div>
         </div>
       </div>
     </div>

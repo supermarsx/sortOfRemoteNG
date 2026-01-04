@@ -182,15 +182,16 @@ export class ThemeManager {
       root.style.setProperty(`--color-${key}`, value);
     });
 
-    if (colorScheme === "other" && customAccent) {
-      root.style.setProperty("--color-primary", customAccent);
+    if (colorScheme === "other") {
+      const accent = customAccent || colors.primary;
+      root.style.setProperty("--color-primary", accent);
       root.style.setProperty(
         "--color-secondary",
-        ThemeManager.shadeColor(customAccent, -12),
+        ThemeManager.shadeColor(accent, -12),
       );
       root.style.setProperty(
         "--color-accent",
-        ThemeManager.shadeColor(customAccent, -24),
+        ThemeManager.shadeColor(accent, -24),
       );
     } else {
       root.style.setProperty("--color-primary", colors.primary);
