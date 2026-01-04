@@ -140,7 +140,17 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
       {formData.protocol === 'ssh' && formData.authType === 'key' && (
         <>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Private Key</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-300">Private Key</label>
+              <button
+                type="button"
+                onClick={() => setShowKeyManager(true)}
+                className="flex items-center gap-1.5 px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              >
+                <Key className="w-3.5 h-3.5" />
+                Manage Keys
+              </button>
+            </div>
             <textarea
               value={formData.privateKey || ''}
               onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
@@ -167,6 +177,12 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
           </div>
         </>
       )}
+      
+      <SSHKeyManager
+        isOpen={showKeyManager}
+        onClose={() => setShowKeyManager(false)}
+        onSelectKey={handleSelectKey}
+      />
     </>
   );
 };

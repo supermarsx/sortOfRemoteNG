@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Save, Check } from 'lucide-react';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
 import { TagManager } from './TagManager';
@@ -9,6 +9,7 @@ import GeneralSection from './connectionEditor/GeneralSection';
 import SSHOptions from './connectionEditor/SSHOptions';
 import HTTPOptions from './connectionEditor/HTTPOptions';
 import CloudProviderOptions from './connectionEditor/CloudProviderOptions';
+import { useSettings } from '../contexts/SettingsContext';
 
 interface ConnectionEditorProps {
   connection?: Connection;
@@ -22,6 +23,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   onClose,
 }) => {
   const { state, dispatch } = useConnections();
+  const { settings } = useSettings();
   const [formData, setFormData] = useState<Partial<Connection>>({
     name: '',
     protocol: 'rdp',
@@ -47,6 +49,11 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     basicAuthRealm: '',
     httpHeaders: {},
   });
+  
+  // Auto-save state
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'pending' | 'saved'>('idle');
+  const autoSaveTimerRef = useRef<number | null>(null);
+  const isInitializedRef = useRef(false);
 
   // Get all available tags from existing connections
   const allTags = Array.from(
@@ -76,6 +83,10 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         basicAuthRealm: connection.basicAuthRealm || '',
         httpHeaders: connection.httpHeaders || {},
       });
+      // Mark as initialized after setting initial data
+      setTimeout(() => {
+        isInitializedRef.current = true;
+      }, 100);
     } else {
       setFormData({
         name: '',
@@ -103,8 +114,80 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         sshKnownHostsPath: '',
         icon: '',
       });
+      isInitializedRef.current = false;
     }
+    // Reset auto-save status when connection changes
+    setAutoSaveStatus('idle');
   }, [connection, isOpen]);
+  
+  // Build connection data from form
+  const buildConnectionData = useCallback((): Connection => {
+    const now = new Date();
+    const description = formData.description || '';
+    
+    return {
+      id: connection?.id || generateId(),
+      name: formData.name || 'New Connection',
+      protocol: formData.protocol as Connection['protocol'],
+      hostname: formData.hostname || '',
+      port: formData.port || getDefaultPort(formData.protocol as string),
+      username: formData.username,
+      password: formData.password,
+      privateKey: formData.privateKey,
+      passphrase: formData.passphrase,
+      domain: formData.domain,
+      description,
+      isGroup: formData.isGroup || false,
+      tags: formData.tags || [],
+      parentId: formData.parentId,
+      icon: formData.icon || undefined,
+      order: connection?.order ?? Date.now(),
+      createdAt: connection?.createdAt || now,
+      updatedAt: now,
+      authType: formData.authType,
+      basicAuthUsername: formData.basicAuthUsername,
+      basicAuthPassword: formData.basicAuthPassword,
+      basicAuthRealm: formData.basicAuthRealm,
+      httpHeaders: formData.httpHeaders,
+      cloudProvider: formData.cloudProvider,
+      ignoreSshSecurityErrors: formData.ignoreSshSecurityErrors ?? true,
+      sshConnectTimeout: formData.sshConnectTimeout,
+      sshKeepAliveInterval: formData.sshKeepAliveInterval,
+      sshKnownHostsPath: formData.sshKnownHostsPath || undefined,
+    };
+  }, [formData, connection]);
+
+  // Auto-save effect - only for existing connections when autoSaveEnabled
+  useEffect(() => {
+    // Only auto-save for existing connections and when enabled
+    if (!connection || !settings.autoSaveEnabled || !isInitializedRef.current) {
+      return;
+    }
+    
+    // Clear any existing timer
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    
+    // Set status to pending
+    setAutoSaveStatus('pending');
+    
+    // Debounce auto-save (1 second delay)
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      const connectionData = buildConnectionData();
+      dispatch({ type: 'UPDATE_CONNECTION', payload: connectionData });
+      setAutoSaveStatus('saved');
+      
+      // Reset status after 2 seconds
+      setTimeout(() => setAutoSaveStatus('idle'), 2000);
+    }, 1000);
+    
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [formData, connection, settings.autoSaveEnabled, buildConnectionData, dispatch]);
 
   // Keyboard handling for ESC and Enter
   useEffect(() => {

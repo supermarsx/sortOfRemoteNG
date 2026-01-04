@@ -96,7 +96,8 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add Tauri commands for SSH connect/execute/disconnect
 - [x] Implement actual SSH connection logic using ssh2 crate
 - [x] Migrate WebTerminal component to use Tauri IPC (pending)
-- [ ] Implement SSH key management in Rust
+- [x] Implement SSH key management in Rust
+- [x] Add SSH Key Manager frontend component
 - [ ] Handle terminal resizing and interactions
 
 ### 12. RDP and VNC Clients (Partially Implemented)
