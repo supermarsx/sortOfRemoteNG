@@ -68,11 +68,41 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   onSessionSelect,
   onSessionClose,
 }) => {
-  const { state } = useConnections();
+  const { state, dispatch } = useConnections();
+  const [draggedIndex, setDraggedIndex] = React.useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = React.useState<number | null>(null);
 
   const handleCloseSession = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     onSessionClose(sessionId);
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex !== null && draggedIndex !== dropIndex) {
+      dispatch({
+        type: "REORDER_SESSIONS",
+        payload: { fromIndex: draggedIndex, toIndex: dropIndex },
+      });
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
   };
 
   if (state.sessions.length === 0) {
@@ -85,7 +115,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
   return (
     <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center overflow-x-auto">
-      {state.sessions.map((session) => {
+      {state.sessions.map((session, index) => {
         const ProtocolIcon = getProtocolIcon(session.protocol);
         const StatusIcon = getStatusIcon(session.status);
         const isActive = session.id === activeSessionId;
@@ -93,12 +123,21 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
         return (
           <div
             key={session.id}
+            draggable
             className={`flex items-center h-full px-3 cursor-pointer border-r border-gray-700 min-w-0 ${
               isActive
                 ? "bg-gray-700 text-white"
                 : "text-gray-300 hover:bg-gray-700/50"
-            } transition-colors`}
+            } ${
+              draggedIndex === index ? "opacity-50" : ""
+            } ${
+              dragOverIndex === index && draggedIndex !== index ? "border-l-2 border-blue-500" : ""
+            } transition-all`}
             onClick={() => onSessionSelect(session.id)}
+            onDragStart={(e) => handleDragStart(e, index)}
+            onDragOver={(e) => handleDragOver(e, index)}
+            onDragEnd={handleDragEnd}
+            onDrop={(e) => handleDrop(e, index)}
           >
             <ProtocolIcon size={14} className="mr-2 flex-shrink-0" />
             <span className="truncate text-sm mr-2 max-w-32">

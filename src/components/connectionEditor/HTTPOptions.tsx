@@ -1,10 +1,9 @@
 import React from 'react';
 import { Connection } from '../../types/connection';
-import { SSHLibraryType } from '../../utils/sshLibraries';
 
 interface HTTPOptionsProps {
-  formData: Partial<Connection & { sshLibrary?: SSHLibraryType }>;
-  setFormData: React.Dispatch<React.SetStateAction<Partial<Connection & { sshLibrary?: SSHLibraryType }>>>;
+  formData: Partial<Connection>;
+  setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
 }
 
 export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData }) => {

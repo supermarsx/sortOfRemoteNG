@@ -3,7 +3,6 @@ import { X, Save } from 'lucide-react';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
 import { TagManager } from './TagManager';
-import { SSHLibraryType } from '../utils/sshLibraries';
 import { getDefaultPort } from '../utils/defaultPorts';
 import { generateId } from '../utils/id';
 import GeneralSection from './connectionEditor/GeneralSection';
@@ -23,7 +22,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
   onClose,
 }) => {
   const { state, dispatch } = useConnections();
-  const [formData, setFormData] = useState<Partial<Connection & { sshLibrary?: SSHLibraryType }>>({
+  const [formData, setFormData] = useState<Partial<Connection>>({
     name: '',
     protocol: 'rdp',
     hostname: '',
@@ -35,7 +34,6 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     isGroup: false,
     tags: [],
     parentId: undefined,
-    sshLibrary: 'webssh',
     authType: 'password',
     privateKey: '',
     passphrase: '',
@@ -59,18 +57,8 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
 
   useEffect(() => {
     if (connection) {
-      // Extract SSH library from description if it exists
-      let sshLibrary: SSHLibraryType = 'webssh';
-      if (connection.description) {
-        const match = connection.description.match(/\[SSH_LIBRARY:([^\]]+)\]/);
-        if (match) {
-          sshLibrary = match[1] as SSHLibraryType;
-        }
-      }
-
       setFormData({
         ...connection,
-        sshLibrary,
         privateKey: connection.privateKey || '',
         passphrase: connection.passphrase || '',
         basicAuthUsername: connection.basicAuthUsername || '',
@@ -93,7 +81,6 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         isGroup: false,
         tags: [],
         parentId: undefined,
-        sshLibrary: 'webssh',
         authType: 'password',
         basicAuthUsername: '',
         basicAuthPassword: '',
@@ -111,14 +98,6 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     
     // Prepare description with SSH library info
     let description = formData.description || '';
-    
-    // Remove existing SSH library marker
-    description = description.replace(/\[SSH_LIBRARY:[^\]]+\]\s*/g, '').trim();
-    
-    // Add SSH library marker if SSH protocol and library is selected
-    if (formData.protocol === 'ssh' && formData.sshLibrary && formData.sshLibrary !== 'webssh') {
-      description = description ? `${description}\n[SSH_LIBRARY:${formData.sshLibrary}]` : `[SSH_LIBRARY:${formData.sshLibrary}]`;
-    }
 
     const connectionData: Connection = {
       id: connection?.id || generateId(),

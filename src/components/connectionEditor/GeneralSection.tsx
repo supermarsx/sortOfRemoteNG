@@ -1,11 +1,10 @@
 import React from 'react';
 import { Connection } from '../../types/connection';
-import { SSHLibraryType } from '../../utils/sshLibraries';
 import { getDefaultPort } from '../../utils/defaultPorts';
 
 interface GeneralSectionProps {
-  formData: Partial<Connection & { sshLibrary?: SSHLibraryType }>;
-  setFormData: React.Dispatch<React.SetStateAction<Partial<Connection & { sshLibrary?: SSHLibraryType }>>>;
+  formData: Partial<Connection>;
+  setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
   availableGroups: Connection[];
 }
 
@@ -89,18 +88,11 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
 
             {formData.protocol === 'ssh' && (
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">SSH Library</label>
-                <select
-                  value={formData.sshLibrary}
-                  onChange={(e) => setFormData({ ...formData, sshLibrary: e.target.value as SSHLibraryType })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="webssh">WebSSH Library (Default)</option>
-                  <option value="ssh2">SSH2 Library</option>
-                  <option value="node-ssh">Node-SSH Library</option>
-                  <option value="simple-ssh">Simple-SSH Library</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">Choose the SSH library implementation for this connection</p>
+                <label className="block text-sm font-medium text-gray-300 mb-2">SSH Implementation</label>
+                <div className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-400">
+                  Rust SSH Library
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Using secure Rust-based SSH implementation</p>
               </div>
             )}
 

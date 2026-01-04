@@ -36,6 +36,7 @@ export type ConnectionAction =
   | { type: "ADD_SESSION"; payload: ConnectionSession }
   | { type: "UPDATE_SESSION"; payload: ConnectionSession }
   | { type: "REMOVE_SESSION"; payload: string }
+  | { type: "REORDER_SESSIONS"; payload: { fromIndex: number; toIndex: number } }
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "TOGGLE_SIDEBAR" };
 

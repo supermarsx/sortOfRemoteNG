@@ -75,6 +75,13 @@ const connectionReducer = (
           (session) => session.id !== action.payload,
         ),
       };
+    case "REORDER_SESSIONS":
+      // Reorder sessions by moving from one index to another
+      const { fromIndex, toIndex } = action.payload;
+      const sessions = [...state.sessions];
+      const [movedSession] = sessions.splice(fromIndex, 1);
+      sessions.splice(toIndex, 0, movedSession);
+      return { ...state, sessions };
     case "SET_LOADING":
       // Toggle loading indicator
       return { ...state, isLoading: action.payload };

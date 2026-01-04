@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Monitor, Zap, Menu, Globe } from "lucide-react";
+import { Monitor, Zap, Menu, Globe, Minus, Square, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
@@ -19,6 +19,7 @@ import { CollectionManager } from "./utils/collectionManager";
 import { CollectionNotFoundError, InvalidPasswordError } from "./utils/errors";
 import { useSessionManager } from "./hooks/useSessionManager";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -182,11 +183,29 @@ const AppContent: React.FC = () => {
     setShowPasswordDialog(true);
   };
 
+  const handleMinimize = async () => {
+    const window = getCurrentWindow();
+    await window.minimize();
+  };
+
+  const handleMaximize = async () => {
+    const window = getCurrentWindow();
+    await window.toggleMaximize();
+  };
+
+  const handleClose = async () => {
+    const window = getCurrentWindow();
+    await window.close();
+  };
+
   return (
     <div className="h-screen bg-gray-900 text-white flex flex-col">
       {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
       {/* Top bar */}
-      <div className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4">
+      <div 
+        className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4"
+        data-tauri-drag-region
+      >
         <div className="flex items-center space-x-3">
           <Monitor size={20} className="text-blue-400" />
           <span className="font-semibold">{t("app.title")}</span>
@@ -229,6 +248,31 @@ const AppContent: React.FC = () => {
           >
             <Menu size={16} />
           </button>
+
+          {/* Window Controls */}
+          <div className="flex items-center space-x-1 ml-2">
+            <button
+              onClick={handleMinimize}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+              title="Minimize"
+            >
+              <Minus size={14} />
+            </button>
+            <button
+              onClick={handleMaximize}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+              title="Maximize"
+            >
+              <Square size={12} />
+            </button>
+            <button
+              onClick={handleClose}
+              className="p-2 hover:bg-red-600 rounded transition-colors text-gray-400 hover:text-white"
+              title="Close"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
       </div>
 

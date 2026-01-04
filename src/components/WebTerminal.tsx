@@ -420,7 +420,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
           )}
           {connection && session.protocol === 'ssh' && (
             <span className="text-xs text-blue-400 bg-blue-400/20 px-2 py-1 rounded">
-              SSH Library: {connection.description?.match(/\[SSH_LIBRARY:([^\]]+)\]/)?.[1] || 'webssh'}
+              SSH Library: Rust SSH Library
             </span>
           )}
         </div>
