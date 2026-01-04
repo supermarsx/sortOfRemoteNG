@@ -80,6 +80,14 @@ const AppContent: React.FC = () => {
     setPasswordDialogMode,
   });
 
+  const languageOptions = [
+    { value: "en", label: "English" },
+    { value: "es", label: "Espanol (Spain)" },
+    { value: "fr", label: "Francais (France)" },
+    { value: "de", label: "Deutsch (Deutschland)" },
+    { value: "pt-PT", label: "Portugues (Portugal)" },
+  ];
+
   /**
    * Select a collection and load its data, handling common errors.
    *
@@ -316,12 +324,14 @@ const AppContent: React.FC = () => {
         className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-4"
         data-tauri-drag-region
       >
-        <div className="flex items-center space-x-3">
-          <Monitor size={20} className="text-blue-400" />
-          <span className="font-semibold">{t("app.title")}</span>
-          <span className="text-sm text-gray-400">{t("app.subtitle")}</span>
+        <div className="flex items-center gap-3">
+          <Monitor size={18} className="text-blue-400" />
+          <div className="leading-tight">
+            <div className="text-sm font-semibold tracking-tight">{t("app.title")}</div>
+            <div className="text-[10px] text-gray-500 uppercase">{t("app.subtitle")}</div>
+          </div>
           {collectionManager.getCurrentCollection() && (
-            <span className="text-xs text-blue-400 bg-blue-900/30 px-2 py-1 rounded">
+            <span className="text-[10px] text-blue-300 bg-blue-900/30 px-2 py-1 rounded">
               {collectionManager.getCurrentCollection()?.name}
             </span>
           )}
@@ -336,7 +346,7 @@ const AppContent: React.FC = () => {
             {windowWidth >= 768 && <span>{t("connections.quickConnect")}</span>}
           </button>
 
-          <div className="flex items-center space-x-1 text-xs">
+          <div className="relative" ref={languageMenuRef}>
             <Globe size={12} className="text-gray-400" />
             <select
               value={i18n.language}

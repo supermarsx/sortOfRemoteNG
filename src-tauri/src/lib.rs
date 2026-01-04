@@ -740,6 +740,7 @@ pub fn run() {
         // ovh::list_ovh_instances,
         // ovh::get_ovh_session,
         // ovh::list_ovh_sessions
+        create_desktop_shortcut,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
@@ -952,4 +953,191 @@ async fn update_password(
 ) -> Result<bool, String> {
   let mut service = auth_service.lock().await;
   service.update_password(username, new_password).await
+}
+
+#[tauri::command]
+/// Creates a desktop shortcut to launch the application with specific collection/connection parameters.
+///
+/// This command creates a desktop shortcut (.lnk on Windows, .desktop on Linux, .app on macOS)
+/// that will launch the application with command line arguments to open a specific collection
+/// and/or connection.
+///
+/// # Arguments
+///
+/// * `name` - The name for the shortcut
+/// * `collection_id` - Optional collection ID to open
+/// * `connection_id` - Optional connection ID to connect to
+/// * `description` - Optional description for the shortcut
+///
+/// # Returns
+///
+/// `Ok(String)` with the path to the created shortcut, `Err(String)` on error
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - The shortcut cannot be created
+/// - File system permissions are insufficient
+/// - The application path cannot be determined
+///
+/// # Example
+///
+/// ```javascript
+/// const shortcutPath = await invoke('create_desktop_shortcut', {
+///   name: 'My Server Connection',
+///   collection_id: 'collection-123',
+///   connection_id: 'connection-456',
+///   description: 'Quick access to my server'
+/// });
+/// ```
+async fn create_desktop_shortcut(
+  name: String,
+  collection_id: Option<String>,
+  connection_id: Option<String>,
+  description: Option<String>,
+) -> Result<String, String> {
+  use std::fs;
+  use std::path::PathBuf;
+  
+  // Get the application executable path
+  let app_path = std::env::current_exe()
+    .map_err(|e| format!("Failed to get application path: {}", e))?;
+  
+  // Build command line arguments
+  let mut args = Vec::new();
+  if let Some(collection_id) = collection_id {
+    args.push("--collection".to_string());
+    args.push(collection_id);
+  }
+  if let Some(connection_id) = connection_id {
+    args.push("--connection".to_string());
+    args.push(connection_id);
+  }
+  
+  let args_string = args.join(" ");
+  
+  #[cfg(target_os = "windows")]
+  {
+    use std::process::Command;
+    
+    // Get desktop path
+    let desktop_path = dirs::desktop_dir()
+      .ok_or("Failed to get desktop directory")?;
+    
+    let shortcut_path = desktop_path.join(format!("{}.lnk", name));
+    
+    // Use PowerShell to create the shortcut
+    let powershell_script = format!(
+      r#"
+      $WshShell = New-Object -comObject WScript.Shell
+      $Shortcut = $WshShell.CreateShortcut("{}")
+      $Shortcut.TargetPath = "{}"
+      $Shortcut.Arguments = "{}"
+      $Shortcut.WorkingDirectory = "{}"
+      $Shortcut.Description = "{}"
+      $Shortcut.Save()
+      "#,
+      shortcut_path.display(),
+      app_path.display(),
+      args_string,
+      app_path.parent().unwrap_or(&app_path).display(),
+      description.unwrap_or_else(|| format!("Launch {} with specific connection", name))
+    );
+    
+    let output = Command::new("powershell")
+      .arg("-Command")
+      .arg(&powershell_script)
+      .output()
+      .map_err(|e| format!("Failed to create shortcut: {}", e))?;
+    
+    if !output.status.success() {
+      return Err(format!("PowerShell command failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+    
+    Ok(shortcut_path.to_string_lossy().to_string())
+  }
+  
+  #[cfg(target_os = "linux")]
+  {
+    // Get desktop path
+    let desktop_path = dirs::desktop_dir()
+      .ok_or("Failed to get desktop directory")?;
+    
+    let shortcut_path = desktop_path.join(format!("{}.desktop", name));
+    
+    let desktop_file_content = format!(
+      r#"[Desktop Entry]
+Version=1.0
+Type=Application
+Name={}
+Comment={}
+Exec="{}" {}
+Path={}
+Terminal=false
+StartupNotify=false
+"#,
+      name,
+      description.unwrap_or_else(|| format!("Launch {} with specific connection", name)),
+      app_path.display(),
+      args_string,
+      app_path.parent().unwrap_or(&app_path).display()
+    );
+    
+    fs::write(&shortcut_path, desktop_file_content)
+      .map_err(|e| format!("Failed to write desktop file: {}", e))?;
+    
+    // Make the file executable
+    #[cfg(unix)]
+    {
+      use std::os::unix::fs::PermissionsExt;
+      let mut perms = fs::metadata(&shortcut_path)
+        .map_err(|e| format!("Failed to get file metadata: {}", e))?
+        .permissions();
+      perms.set_mode(0o755);
+      fs::set_permissions(&shortcut_path, perms)
+        .map_err(|e| format!("Failed to set file permissions: {}", e))?;
+    }
+    
+    Ok(shortcut_path.to_string_lossy().to_string())
+  }
+  
+  #[cfg(target_os = "macos")]
+  {
+    // For macOS, we'll create an alias using osascript
+    use std::process::Command;
+    
+    let desktop_path = dirs::desktop_dir()
+      .ok_or("Failed to get desktop directory")?;
+    
+    let alias_name = format!("{} alias", name);
+    let alias_path = desktop_path.join(&alias_name);
+    
+    // Use AppleScript to create an alias
+    let applescript = format!(
+      r#"
+      tell application "Finder"
+        make new alias file at desktop to POSIX file "{}" with properties {{name:"{}"}}
+      end tell
+      "#,
+      app_path.display(),
+      alias_name
+    );
+    
+    let output = Command::new("osascript")
+      .arg("-e")
+      .arg(&applescript)
+      .output()
+      .map_err(|e| format!("Failed to create alias: {}", e))?;
+    
+    if !output.status.success() {
+      return Err(format!("AppleScript command failed: {}", String::from_utf8_lossy(&output.stderr)));
+    }
+    
+    Ok(alias_path.to_string_lossy().to_string())
+  }
+  
+  #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+  {
+    Err("Desktop shortcuts are not supported on this platform".to_string())
+  }
 }
