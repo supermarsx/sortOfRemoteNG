@@ -29,7 +29,7 @@ describe('TOTPService', () => {
 
   it('generates and verifies tokens with custom options', () => {
     const secret = service.generateSecret();
-    const options = { digits: 8, period: 60, algorithm: 'SHA256' as const };
+    const options = { digits: 8, period: 60, algorithm: 'sha256' as const };
 
     const token = service.generateToken(secret, options);
 
@@ -37,7 +37,7 @@ describe('TOTPService', () => {
       .clone({
         digits: options.digits,
         step: options.period,
-        algorithm: options.algorithm.toLowerCase(),
+        algorithm: options.algorithm as any,
       })
       .generate(secret);
     expect(token).toBe(expected);
@@ -49,7 +49,7 @@ describe('TOTPService', () => {
     const step = 30;
 
     const oldToken = authenticator
-      .clone({ digits: 6, step, algorithm: 'sha1', epoch: Date.now() - step * 1000 })
+      .clone({ digits: 6, step, algorithm: 'sha1' as any, epoch: Date.now() - step * 1000 })
       .generate(secret);
 
     expect(service.verifyToken(oldToken, secret)).toBe(true);
@@ -70,7 +70,7 @@ describe('TOTPService', () => {
       account: 'acc',
       digits: 6,
       period: 30,
-      algorithm: 'SHA1' as const
+      algorithm: 'sha1' as const
     };
 
     await service.generateQRCode(config);

@@ -35,7 +35,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   encryptionAlgorithm: 'AES-256-GCM',
   blockCipherMode: 'GCM',
   keyDerivationIterations: 100000,
-  autoBenchmarkIterations: true,
+  autoBenchmarkIterations: false,
   benchmarkTimeSeconds: 1,
 
   totpEnabled: false,

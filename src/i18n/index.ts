@@ -32,25 +32,6 @@ const loadLanguage = async (lng: string) => {
   }
 };
 
-const originalChangeLanguage = i18n.changeLanguage.bind(i18n);
-const changeLanguage = async (lng: string, ...args: any[]) => {
-  if (typeof lng === "string") {
-    const baseLng = getBaseLanguage(lng);
-    const hasLngBundle = i18n.hasResourceBundle(lng, "translation");
-    const hasBaseBundle = i18n.hasResourceBundle(baseLng, "translation");
-    const hasLngLoader = Boolean(languageLoaders[lng]);
-    const hasBaseLoader = Boolean(languageLoaders[baseLng]);
-
-    if (
-      !hasLngBundle &&
-      (hasLngLoader || (!hasBaseBundle && hasBaseLoader))
-    ) {
-      await loadLanguage(lng);
-    }
-  }
-  return originalChangeLanguage(lng, ...args);
-};
-
 i18n
   .use(LanguageDetector)
   .use(initReactI18next)
@@ -65,10 +46,7 @@ i18n
       order: ["navigator", "htmlTag"],
       caches: [],
     },
-  })
-  .then(async () => {
-    (i18n as any).changeLanguage = changeLanguage;
-    await changeLanguage(i18n.language);
   });
 
+export { loadLanguage };
 export default i18n;

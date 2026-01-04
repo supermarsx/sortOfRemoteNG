@@ -387,7 +387,7 @@ export interface TOTPConfig {
   account: string;
   digits: number;
   period: number;
-  algorithm: "SHA1" | "SHA256" | "SHA512";
+  algorithm: "sha1" | "sha256" | "sha512";
 }
 
 export interface ThemeConfig {

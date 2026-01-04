@@ -39,7 +39,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
     account: "",
     digits: 6,
     period: 30,
-    algorithm: "SHA1",
+    algorithm: "sha1",
   });
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [currentCodes, setCurrentCodes] = useState<Record<string, string>>({});
@@ -85,7 +85,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
       account: newConfig.account,
       digits: newConfig.digits || 6,
       period: newConfig.period || 30,
-      algorithm: newConfig.algorithm || "SHA1",
+      algorithm: newConfig.algorithm || "sha1",
     };
 
     // Generate QR code
@@ -104,7 +104,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
       account: "",
       digits: 6,
       period: 30,
-      algorithm: "SHA1",
+      algorithm: "sha1",
     });
     setShowAddForm(false);
   };

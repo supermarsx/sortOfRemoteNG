@@ -1,7 +1,7 @@
 import { render, screen, act } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { I18nextProvider } from "react-i18next";
-import i18n from "../src/i18n";
+import i18n, { loadLanguage } from "../src/i18n";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 import { NetworkDiscovery } from "../src/components/NetworkDiscovery";
 
@@ -21,6 +21,7 @@ describe("NetworkDiscovery i18n", () => {
     expect(await screen.findByText("Network Discovery")).toBeInTheDocument();
 
     await act(async () => {
+      await loadLanguage("es");
       await i18n.changeLanguage("es");
     });
     rerender(
@@ -35,6 +36,7 @@ describe("NetworkDiscovery i18n", () => {
     ).toBeInTheDocument();
 
     await act(async () => {
+      await loadLanguage("fr");
       await i18n.changeLanguage("fr");
     });
     rerender(
@@ -47,6 +49,7 @@ describe("NetworkDiscovery i18n", () => {
     expect(await screen.findByText("Découverte du Réseau")).toBeInTheDocument();
 
     await act(async () => {
+      await loadLanguage("pt-PT");
       await i18n.changeLanguage("pt-PT");
     });
     rerender(

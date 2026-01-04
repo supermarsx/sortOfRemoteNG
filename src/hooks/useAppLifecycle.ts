@@ -7,6 +7,7 @@ import { CollectionManager } from "../utils/collectionManager";
 import { ThemeManager } from "../utils/themeManager";
 import { SecureStorage } from "../utils/storage";
 import { Connection, ConnectionSession } from "../types/connection";
+import i18n, { loadLanguage } from "../i18n";
 
 /**
  * Options for {@link useAppLifecycle}.
@@ -53,22 +54,34 @@ export const useAppLifecycle = ({
 
   const initializeApp = useCallback(async () => {
     try {
-      console.log('Initializing app...');
+      console.log("Initializing app...");
       await settingsManager.initialize();
-      console.log('Settings manager initialized');
+      console.log("Settings manager initialized");
 
       await themeManager.loadSavedTheme();
       themeManager.injectThemeCSS();
-      console.log('Theme manager initialized');
+      console.log("Theme manager initialized");
 
       const settings = settingsManager.getSettings();
-      if (settings.language !== i18n.language) {
-        i18n.changeLanguage(settings.language);
+      if (
+        settings.language &&
+        settings.language !== i18n.language &&
+        typeof i18n.changeLanguage === "function"
+      ) {
+        try {
+          // Load language resources if not already loaded
+          if (settings.language !== "en") {
+            await loadLanguage(settings.language);
+          }
+          await i18n.changeLanguage(settings.language);
+          console.log(`Language changed to: ${settings.language}`);
+        } catch (error) {
+          console.warn("Failed to change language:", error);
+        }
       }
-      console.log('Language set');
 
       setIsInitialized(true);
-      console.log('App initialized successfully');
+      console.log("App initialized successfully");
       settingsManager.logAction(
         "info",
         "Application initialized",
@@ -77,6 +90,8 @@ export const useAppLifecycle = ({
       );
     } catch (error) {
       console.error("Failed to initialize application:", error);
+      // Set initialized to true even on error to prevent loading screen forever
+      setIsInitialized(true);
       settingsManager.logAction(
         "error",
         "Application initialization failed",
