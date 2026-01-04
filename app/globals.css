@@ -34,6 +34,61 @@ body {
   isolation: isolate;
 }
 
+.app-shell.app-transparent {
+  background-color: var(--app-surface-900);
+}
+
+.app-transparent .bg-gray-900,
+.app-transparent .bg-gray-900\/40,
+.app-transparent .bg-gray-900\/50,
+.app-transparent .bg-gray-900\/60 {
+  background-color: var(--app-surface-900) !important;
+}
+
+.app-transparent .bg-gray-800,
+.app-transparent .bg-gray-800\/60,
+.app-transparent .bg-gray-800\/80,
+.app-transparent .bg-gray-800\/90 {
+  background-color: var(--app-surface-800) !important;
+}
+
+.app-transparent .bg-gray-700,
+.app-transparent .bg-gray-700\/50,
+.app-transparent .bg-gray-700\/60 {
+  background-color: var(--app-surface-700) !important;
+}
+
+.app-transparent .bg-gray-750 {
+  background-color: var(--app-surface-700) !important;
+}
+
+.app-transparent .bg-gray-600,
+.app-transparent .bg-gray-500 {
+  background-color: var(--app-surface-600) !important;
+}
+
+.app-transparent .bg-slate-950,
+.app-transparent .bg-slate-950\/80 {
+  background-color: var(--app-slate-950) !important;
+}
+
+.app-transparent .bg-slate-900,
+.app-transparent .bg-slate-900\/90,
+.app-transparent .bg-slate-900\/80 {
+  background-color: var(--app-slate-900) !important;
+}
+
+.app-transparent .bg-slate-800,
+.app-transparent .bg-slate-800\/80,
+.app-transparent .bg-slate-800\/50 {
+  background-color: var(--app-slate-800) !important;
+}
+
+.app-transparent .bg-slate-700,
+.app-transparent .bg-slate-700\/50 {
+  background-color: var(--app-slate-700) !important;
+}
+
 .app-shell.app-glow::before {
   content: "";
   position: absolute;

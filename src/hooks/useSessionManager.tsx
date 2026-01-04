@@ -277,17 +277,33 @@ export const useSessionManager = () => {
    * @param hostname - Target host name.
    * @param protocol - Connection protocol.
    */
-  const handleQuickConnect = (hostname: string, protocol: string) => {
+  const handleQuickConnect = (payload: {
+    hostname: string;
+    protocol: string;
+    username?: string;
+    authType?: "password" | "key";
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+  }) => {
     const tempConnection: Connection = {
       id: generateId(),
-      name: `${t("connections.quickConnect")} - ${hostname}`,
-      protocol: protocol as Connection["protocol"],
-      hostname,
-      port: getDefaultPort(protocol),
+      name: `${t("connections.quickConnect")} - ${payload.hostname}`,
+      protocol: payload.protocol as Connection["protocol"],
+      hostname: payload.hostname,
+      port: getDefaultPort(payload.protocol),
       isGroup: false,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
+
+    if (payload.protocol === "ssh") {
+      tempConnection.username = payload.username;
+      tempConnection.authType = payload.authType;
+      tempConnection.password = payload.password;
+      tempConnection.privateKey = payload.privateKey;
+      tempConnection.passphrase = payload.passphrase;
+    }
 
     handleConnect(tempConnection);
   };

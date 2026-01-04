@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   reconnectOnReload: true,
   warnOnClose: true,
   warnOnExit: true,
+  warnOnDetachClose: true,
 
   backgroundGlowEnabled: true,
   backgroundGlowColor: "#2563eb",

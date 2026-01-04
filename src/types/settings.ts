@@ -39,6 +39,7 @@ export interface GlobalSettings {
   reconnectOnReload: boolean;
   warnOnClose: boolean;
   warnOnExit: boolean;
+  warnOnDetachClose: boolean;
 
   // Theme Effects
   backgroundGlowEnabled: boolean;

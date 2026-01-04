@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { Clipboard, Copy, Maximize2, Minimize2, Trash2 } from "lucide-react";
+import { Clipboard, Copy, Maximize2, Minimize2, RotateCcw, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
@@ -101,19 +101,25 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   }, []);
 
   const classifySshError = useCallback((message: string) => {
+    const lower = message.toLowerCase();
     if (message.includes("All authentication methods failed") || message.includes("Authentication failed")) {
       return { kind: "auth", friendly: "Authentication failed - please check your credentials" };
     }
-    if (message.includes("Connection refused")) {
+    if (lower.includes("connection refused") || lower.includes("os error 10061")) {
       return { kind: "connection_refused", friendly: "Connection refused - please check the host and port" };
     }
-    if (message.toLowerCase().includes("timeout")) {
+    if (
+      lower.includes("timeout") ||
+      lower.includes("timed out") ||
+      lower.includes("os error 10060") ||
+      lower.includes("connection attempt failed")
+    ) {
       return { kind: "timeout", friendly: "Connection timeout - please check network connectivity" };
     }
     if (message.includes("Host key verification failed")) {
       return { kind: "host_key", friendly: "Host key verification failed - server may have changed" };
     }
-    if (message.toLowerCase().includes("certificate") || message.toLowerCase().includes("x509")) {
+    if (lower.includes("certificate") || lower.includes("x509")) {
       return { kind: "certificate", friendly: "Certificate validation failed - please verify the server identity" };
     }
     if (message.includes("No such file or directory") && message.includes("private key")) {
@@ -122,8 +128,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     if (message.includes("Permission denied")) {
       return { kind: "permission", friendly: "Permission denied - please check your credentials" };
     }
-    if (message.includes("Failed to establish TCP connection")) {
+    if (lower.includes("failed to establish tcp connection") || lower.includes("failed to connect")) {
       return { kind: "tcp_connect", friendly: "TCP connection failed - please verify the host and port" };
+    }
+    if (lower.includes("no route to host") || lower.includes("network unreachable")) {
+      return { kind: "network_unreachable", friendly: "Network unreachable - please check routing or VPN" };
     }
     return { kind: "unknown", friendly: "SSH connection failed - please check credentials and network" };
   }, []);
@@ -318,9 +327,18 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     termRef.current = term;
     fitRef.current = fit;
 
+    let rafId = 0;
+    const canFit = () => {
+      const core = (termRef.current as any)?._core;
+      const renderService = core?.renderService ?? core?._renderService;
+      if (!renderService?.dimensions) return false;
+      return true;
+    };
+
     const doFit = () => {
       if (isDisposed.current || !fitRef.current || !termRef.current) return;
       if (!container.isConnected || !termRef.current.element?.isConnected) return;
+      if (!canFit()) return;
       try {
         fitRef.current.fit();
         onResize?.(termRef.current.cols, termRef.current.rows);
@@ -336,8 +354,21 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       }
     };
 
-    const resizeTimer = setTimeout(doFit, 50);
-    window.addEventListener("resize", doFit);
+    const scheduleFit = () => {
+      if (isDisposed.current) return;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(doFit);
+    };
+
+    const resizeTimer = setTimeout(scheduleFit, 50);
+    window.addEventListener("resize", scheduleFit);
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(scheduleFit)
+        : null;
+    resizeObserver?.observe(container);
 
     const dataDisposable = term.onData(handleInput);
 
@@ -397,8 +428,12 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     return () => {
       isDisposed.current = true;
       cancelled = true;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
       clearTimeout(resizeTimer);
-      window.removeEventListener("resize", doFit);
+      window.removeEventListener("resize", scheduleFit);
+      resizeObserver?.disconnect();
       dataDisposable.dispose();
       outputUnlistenRef.current?.();
       errorUnlistenRef.current?.();
@@ -424,6 +459,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const safeFit = useCallback(() => {
     if (isDisposed.current || !fitRef.current || !termRef.current) return;
     if (!termRef.current.element?.isConnected) return;
+    const core = (termRef.current as any)?._core;
+    const renderService = core?.renderService ?? core?._renderService;
+    if (!renderService?.dimensions) return;
     try {
       fitRef.current.fit();
     } catch {
@@ -435,6 +473,14 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     setIsFullscreen((prev) => !prev);
     setTimeout(() => safeFit(), 60);
   };
+
+  const handleReconnect = useCallback(async () => {
+    if (!isSsh) return;
+    setStatusState("connecting");
+    disconnectSsh();
+    await initSsh();
+    setTimeout(() => safeFit(), 80);
+  }, [disconnectSsh, initSsh, isSsh, safeFit, setStatusState]);
 
   const clearTerminal = () => {
     termRef.current?.clear();
@@ -484,28 +530,42 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
             <button
               onClick={copySelection}
               className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
-              title="Copy selection"
+              data-tooltip="Copy selection"
+              aria-label="Copy selection"
             >
               <Copy size={14} />
             </button>
             <button
               onClick={pasteFromClipboard}
               className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
-              title="Paste"
+              data-tooltip="Paste"
+              aria-label="Paste"
             >
               <Clipboard size={14} />
             </button>
+            {isSsh && (
+              <button
+                onClick={handleReconnect}
+                className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+                data-tooltip="Reconnect"
+                aria-label="Reconnect"
+              >
+                <RotateCcw size={14} />
+              </button>
+            )}
             <button
               onClick={clearTerminal}
               className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
-              title="Clear"
+              data-tooltip="Clear"
+              aria-label="Clear"
             >
               <Trash2 size={14} />
             </button>
             <button
               onClick={toggleFullscreen}
               className="rounded-md p-2 text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
-              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              data-tooltip={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+              aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
             >
               {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>

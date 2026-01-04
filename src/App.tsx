@@ -19,7 +19,7 @@ import {
   Network,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
@@ -108,6 +108,7 @@ const AppContent: React.FC = () => {
   const [hasStoragePassword, setHasStoragePassword] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const closingMainRef = useRef(false);
 
   const statusChecker = StatusChecker.getInstance();
   const collectionManager = CollectionManager.getInstance();
@@ -834,11 +835,51 @@ const AppContent: React.FC = () => {
   }, [handleSessionClose]);
 
   useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<{ sessionId?: string }>("detached-session-reattach", (event) => {
+      const sessionId = event.payload?.sessionId;
+      if (!sessionId) return;
+      const session = state.sessions.find((item) => item.id === sessionId);
+      if (!session) return;
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...session,
+          layout: {
+            ...(session.layout ?? {}),
+            isDetached: false,
+          },
+        },
+      });
+      setActiveSessionId(sessionId);
+    })
+      .then((stop) => {
+        unlisten = stop;
+      })
+      .catch(console.error);
+
+    return () => {
+      unlisten?.();
+    };
+  }, [dispatch, setActiveSessionId, state.sessions]);
+
+  useEffect(() => {
     if (!appSettings) return;
     const window = getCurrentWindow();
     const targetOpacity = appSettings.windowTransparencyEnabled
       ? Math.min(1, Math.max(0.4, appSettings.windowTransparencyOpacity || 1))
       : 1;
+    const root = document.documentElement;
+    const alpha = appSettings.windowTransparencyEnabled ? targetOpacity : 1;
+    root.style.setProperty("--app-surface-900", `rgba(17, 24, 39, ${alpha})`);
+    root.style.setProperty("--app-surface-800", `rgba(31, 41, 55, ${alpha})`);
+    root.style.setProperty("--app-surface-700", `rgba(55, 65, 81, ${alpha})`);
+    root.style.setProperty("--app-surface-600", `rgba(75, 85, 99, ${alpha})`);
+    root.style.setProperty("--app-surface-500", `rgba(107, 114, 128, ${alpha})`);
+    root.style.setProperty("--app-slate-950", `rgba(2, 6, 23, ${alpha})`);
+    root.style.setProperty("--app-slate-900", `rgba(15, 23, 42, ${alpha})`);
+    root.style.setProperty("--app-slate-800", `rgba(30, 41, 59, ${alpha})`);
+    root.style.setProperty("--app-slate-700", `rgba(51, 65, 85, ${alpha})`);
     document.documentElement.style.backgroundColor = appSettings.windowTransparencyEnabled
       ? "transparent"
       : "";
@@ -865,6 +906,41 @@ const AppContent: React.FC = () => {
     appSettings.windowTransparencyOpacity,
     isWindowPermissionError,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isTauri =
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    if (!isTauri) return;
+    const currentWindow = getCurrentWindow();
+    let unlisten: (() => void) | null = null;
+
+    currentWindow
+      .onCloseRequested(async (event) => {
+        if (closingMainRef.current) return;
+        closingMainRef.current = true;
+        event.preventDefault();
+        try {
+          const windows = await getAllWindows();
+          await Promise.all(
+            windows
+              .filter((win) => win.label !== currentWindow.label)
+              .map((win) => win.close().catch(() => undefined)),
+          );
+        } catch (error) {
+          console.error("Failed to close detached windows:", error);
+        }
+        currentWindow.close().catch(() => undefined);
+      })
+      .then((stop) => {
+        unlisten = stop;
+      })
+      .catch(console.error);
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     const elements = document.querySelectorAll<HTMLElement>("[title]");
@@ -1125,12 +1201,11 @@ const AppContent: React.FC = () => {
     <div
       className={`h-full text-white flex flex-col overflow-hidden app-shell ${
         appSettings.backgroundGlowEnabled ? "app-glow" : ""
-      } ${appSettings.windowTransparencyEnabled ? "bg-transparent" : "bg-gray-900"}`}
-      style={
+      } ${
         appSettings.windowTransparencyEnabled
-          ? { backgroundColor: "rgba(17, 24, 39, 0.85)" }
-          : undefined
-      }
+          ? "app-transparent bg-transparent"
+          : "bg-gray-900"
+      }`}
     >
       {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
       {/* Top bar */}

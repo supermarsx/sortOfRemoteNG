@@ -564,7 +564,7 @@ impl SshService {
 
         session.last_activity = Utc::now();
 
-        session.session.set_blocking(false);
+        session.session.set_blocking(true);
 
         let mut channel = session.session.channel_session()
             .map_err(|e| format!("Failed to create channel: {}", e))?;
@@ -575,6 +575,8 @@ impl SshService {
 
         channel.shell()
             .map_err(|e| format!("Failed to start shell: {}", e))?;
+
+        session.session.set_blocking(false);
 
         let (tx, mut rx) = mpsc::unbounded_channel::<SshShellCommand>();
         let shell_id = Uuid::new_v4().to_string();

@@ -4,7 +4,15 @@ import { Play, X } from 'lucide-react';
 interface QuickConnectProps {
   isOpen: boolean;
   onClose: () => void;
-  onConnect: (hostname: string, protocol: string) => void;
+  onConnect: (payload: {
+    hostname: string;
+    protocol: string;
+    username?: string;
+    authType?: "password" | "key";
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+  }) => void;
 }
 
 export const QuickConnect: React.FC<QuickConnectProps> = ({
@@ -14,12 +22,39 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
 }) => {
   const [hostname, setHostname] = useState('');
   const [protocol, setProtocol] = useState('rdp');
+  const [username, setUsername] = useState('');
+  const [authType, setAuthType] = useState<'password' | 'key'>('password');
+  const [password, setPassword] = useState('');
+  const [privateKey, setPrivateKey] = useState('');
+  const [passphrase, setPassphrase] = useState('');
+  const isSsh = protocol === 'ssh';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (hostname.trim()) {
-      onConnect(hostname.trim(), protocol);
+      if (isSsh && !username.trim()) {
+        return;
+      }
+      if (isSsh && authType === 'password' && !password) {
+        return;
+      }
+      if (isSsh && authType === 'key' && !privateKey.trim()) {
+        return;
+      }
+      onConnect({
+        hostname: hostname.trim(),
+        protocol,
+        username: isSsh ? username.trim() : undefined,
+        authType: isSsh ? authType : undefined,
+        password: isSsh && authType === 'password' ? password : undefined,
+        privateKey: isSsh && authType === 'key' ? privateKey.trim() : undefined,
+        passphrase: isSsh && authType === 'key' ? passphrase : undefined,
+      });
       setHostname('');
+      setUsername('');
+      setPassword('');
+      setPrivateKey('');
+      setPassphrase('');
       onClose();
     }
   };
@@ -108,6 +143,82 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
               <option value="telnet">Telnet</option>
             </select>
           </div>
+          {isSsh && (
+            <>
+              <div>
+                <label htmlFor="ssh-username" className="block text-sm font-medium text-gray-300 mb-2">
+                  Username
+                </label>
+                <input
+                  id="ssh-username"
+                  type="text"
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="root"
+                />
+              </div>
+              <div>
+                <label htmlFor="ssh-auth" className="block text-sm font-medium text-gray-300 mb-2">
+                  Auth Method
+                </label>
+                <select
+                  id="ssh-auth"
+                  value={authType}
+                  onChange={(e) => setAuthType(e.target.value as 'password' | 'key')}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="password">Password</option>
+                  <option value="key">Private Key</option>
+                </select>
+              </div>
+              {authType === 'password' ? (
+                <div>
+                  <label htmlFor="ssh-password" className="block text-sm font-medium text-gray-300 mb-2">
+                    Password
+                  </label>
+                  <input
+                    id="ssh-password"
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label htmlFor="ssh-key" className="block text-sm font-medium text-gray-300 mb-2">
+                      Private Key Path
+                    </label>
+                    <input
+                      id="ssh-key"
+                      type="text"
+                      required
+                      value={privateKey}
+                      onChange={(e) => setPrivateKey(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="C:\\Users\\me\\.ssh\\id_rsa"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="ssh-passphrase" className="block text-sm font-medium text-gray-300 mb-2">
+                      Passphrase (optional)
+                    </label>
+                    <input
+                      id="ssh-passphrase"
+                      type="password"
+                      value={passphrase}
+                      onChange={(e) => setPassphrase(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                </>
+              )}
+            </>
+          )}
           </div>
         </form>
       </div>

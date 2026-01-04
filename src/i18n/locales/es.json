@@ -18,6 +18,7 @@
     "singleWindow": "Modo ventana única",
     "singleConnection": "Modo conexión única",
     "warnOnClose": "Advertir al cerrar",
+    "warnOnDetachClose": "Advertir antes de cerrar ventanas desacopladas",
     "warnOnExit": "Advertir al salir"
   },
   "connection": {
@@ -116,6 +117,7 @@
   },
   "dialogs": {
     "confirmClose": "¿Está seguro de que desea cerrar esta conexión?",
+    "confirmCloseDetached": "Close detached window and disconnect the session?",
     "confirmExit": "¿Está seguro de que desea salir? Todas las conexiones se cerrarán.",
     "confirmDelete": "¿Está seguro de que desea eliminar esta conexión?",
     "unsavedChanges": "Tiene cambios sin guardar. ¿Desea guardar antes de cerrar?",

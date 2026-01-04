@@ -24,6 +24,7 @@
     "core:window:allow-set-position",
     "core:window:allow-set-background-color",
     "core:window:allow-get-all-windows",
+    "core:window:allow-destroy",
     "core:window:allow-create",
     "core:event:allow-listen",
     "core:event:allow-emit",

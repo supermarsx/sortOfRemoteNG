@@ -2,14 +2,17 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useTranslation } from "react-i18next";
 import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
 import { useConnections } from "../../src/contexts/useConnections";
 import { Connection, ConnectionSession } from "../../src/types/connection";
 import { SessionViewer } from "../../src/components/SessionViewer";
+import { ConfirmDialog } from "../../src/components/ConfirmDialog";
+import { SettingsManager } from "../../src/utils/settingsManager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import { Minus, Monitor, Pin, Square, X } from "lucide-react";
+import { CornerUpLeft, Minus, Monitor, Pin, Square, X } from "lucide-react";
 
 const reviveSession = (session: ConnectionSession): ConnectionSession => ({
   ...session,
@@ -25,24 +28,74 @@ const reviveConnection = (connection: Connection): Connection => ({
 });
 
 const DetachedSessionContent: React.FC<{
-  onRegisterDisconnect: (handler: () => Promise<void>) => void;
+  onRegisterDisconnect: (handler: () => Promise<boolean>) => void;
 }> = ({ onRegisterDisconnect }) => {
+  const { t } = useTranslation();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId");
   const { state, dispatch } = useConnections();
   const [error, setError] = useState("");
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  const [isTransparent, setIsTransparent] = useState(false);
+  const [warnOnDetachClose, setWarnOnDetachClose] = useState(true);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const isTauri =
     typeof window !== "undefined" &&
     Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
   const closingRef = useRef(false);
+  const hasLoadedRef = useRef(false);
+  const closeResolverRef = useRef<((value: boolean) => void) | null>(null);
+
+  const applyTransparency = useCallback(
+    (enabled: boolean, opacity?: number) => {
+      const targetOpacity = enabled ? Math.min(1, Math.max(0.4, opacity ?? 1)) : 1;
+      setIsTransparent(enabled);
+      const alpha = enabled ? targetOpacity : 1;
+      const root = document.documentElement;
+      root.style.setProperty("--app-surface-900", `rgba(17, 24, 39, ${alpha})`);
+      root.style.setProperty("--app-surface-800", `rgba(31, 41, 55, ${alpha})`);
+      root.style.setProperty("--app-surface-700", `rgba(55, 65, 81, ${alpha})`);
+      root.style.setProperty("--app-surface-600", `rgba(75, 85, 99, ${alpha})`);
+      root.style.setProperty("--app-surface-500", `rgba(107, 114, 128, ${alpha})`);
+      root.style.setProperty("--app-slate-950", `rgba(2, 6, 23, ${alpha})`);
+      root.style.setProperty("--app-slate-900", `rgba(15, 23, 42, ${alpha})`);
+      root.style.setProperty("--app-slate-800", `rgba(30, 41, 59, ${alpha})`);
+      root.style.setProperty("--app-slate-700", `rgba(51, 65, 85, ${alpha})`);
+      document.documentElement.style.backgroundColor = enabled ? "transparent" : "";
+      document.body.style.backgroundColor = enabled ? "transparent" : "";
+      if (isTauri) {
+        const currentWindow = getCurrentWindow();
+        const setBackgroundColor = currentWindow.setBackgroundColor;
+        if (typeof setBackgroundColor === "function") {
+          const alphaByte = Math.round(255 * targetOpacity);
+          setBackgroundColor([17, 24, 39, alphaByte]).catch(() => undefined);
+        }
+      }
+    },
+    [isTauri],
+  );
+
+  const requestCloseConfirmation = useCallback(() => {
+    return new Promise<boolean>((resolve) => {
+      closeResolverRef.current = resolve;
+      setShowCloseConfirm(true);
+    });
+  }, []);
+
+  const resolveCloseConfirmation = useCallback((confirmed: boolean) => {
+    closeResolverRef.current?.(confirmed);
+    closeResolverRef.current = null;
+    setShowCloseConfirm(false);
+  }, []);
 
   useEffect(() => {
+    if (hasLoadedRef.current) return;
     if (!sessionId) {
       setError("Missing detached session id.");
       return;
     }
 
+    hasLoadedRef.current = true;
     try {
       const raw = localStorage.getItem(`detached-session-${sessionId}`);
       if (!raw) {
@@ -79,10 +132,6 @@ const DetachedSessionContent: React.FC<{
   }, [dispatch, sessionId, state.sessions]);
 
   useEffect(() => {
-    onRegisterDisconnect(disconnectActiveSession);
-  }, [disconnectActiveSession, onRegisterDisconnect]);
-
-  useEffect(() => {
     if (!isTauri) return;
     const currentWindow = getCurrentWindow();
     currentWindow
@@ -90,6 +139,41 @@ const DetachedSessionContent: React.FC<{
       .then(setIsAlwaysOnTop)
       .catch(() => undefined);
   }, [isTauri]);
+
+  useEffect(() => {
+    const manager = SettingsManager.getInstance();
+    manager
+      .loadSettings()
+      .then((settings) => {
+        applyTransparency(
+          settings.windowTransparencyEnabled,
+          settings.windowTransparencyOpacity,
+        );
+        setWarnOnDetachClose(settings.warnOnDetachClose);
+      })
+      .catch(() => undefined);
+  }, [applyTransparency]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleSettingsUpdate = (event: Event) => {
+      const detail = (event as CustomEvent).detail as {
+        windowTransparencyEnabled?: boolean;
+        windowTransparencyOpacity?: number;
+        warnOnDetachClose?: boolean;
+      };
+      if (!detail) return;
+      applyTransparency(
+        Boolean(detail.windowTransparencyEnabled),
+        detail.windowTransparencyOpacity,
+      );
+      if (typeof detail.warnOnDetachClose === "boolean") {
+        setWarnOnDetachClose(detail.warnOnDetachClose);
+      }
+    };
+    window.addEventListener("settings-updated", handleSettingsUpdate);
+    return () => window.removeEventListener("settings-updated", handleSettingsUpdate);
+  }, [applyTransparency]);
 
   const activeSession = useMemo(
     () => state.sessions.find((session) => session.id === sessionId),
@@ -114,6 +198,37 @@ const DetachedSessionContent: React.FC<{
     }
   }, [activeSession, isTauri, sessionId]);
 
+  const handleReattach = useCallback(async () => {
+    if (!activeSession) return;
+    try {
+      await emit("detached-session-reattach", { sessionId: activeSession.id });
+      if (sessionId) {
+        localStorage.removeItem(`detached-session-${sessionId}`);
+      }
+      if (isTauri) {
+        const currentWindow = getCurrentWindow();
+        await currentWindow.close();
+      }
+    } catch (err) {
+      console.error("Failed to reattach detached session:", err);
+    }
+  }, [activeSession, isTauri, sessionId]);
+
+  const handleCloseRequest = useCallback(async () => {
+    if (warnOnDetachClose) {
+      const confirmed = await requestCloseConfirmation();
+      if (!confirmed) {
+        return false;
+      }
+    }
+    await disconnectActiveSession();
+    return true;
+  }, [disconnectActiveSession, requestCloseConfirmation, warnOnDetachClose]);
+
+  useEffect(() => {
+    onRegisterDisconnect(handleCloseRequest);
+  }, [handleCloseRequest, onRegisterDisconnect]);
+
   if (error) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-900 text-gray-200">
@@ -137,7 +252,12 @@ const DetachedSessionContent: React.FC<{
   }
 
   return (
-    <div className="h-screen w-screen bg-gray-900 flex flex-col">
+    <>
+      <div
+        className={`h-screen w-screen flex flex-col app-shell ${
+          isTransparent ? "app-transparent" : "bg-gray-900"
+        }`}
+      >
       <div
         className="h-10 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-3 select-none"
         data-tauri-drag-region
@@ -158,9 +278,16 @@ const DetachedSessionContent: React.FC<{
               setIsAlwaysOnTop(nextValue);
             }}
             className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title={isAlwaysOnTop ? "Unpin window" : "Pin window"}
+            data-tooltip={isAlwaysOnTop ? "Unpin window" : "Pin window"}
           >
             <Pin size={12} className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""} />
+          </button>
+          <button
+            onClick={handleReattach}
+            className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            data-tooltip="Reattach"
+          >
+            <CornerUpLeft size={12} />
           </button>
           <button
             onClick={async () => {
@@ -169,7 +296,7 @@ const DetachedSessionContent: React.FC<{
               await currentWindow.minimize();
             }}
             className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title="Minimize"
+            data-tooltip="Minimize"
           >
             <Minus size={12} />
           </button>
@@ -180,19 +307,22 @@ const DetachedSessionContent: React.FC<{
               await currentWindow.toggleMaximize();
             }}
             className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title="Maximize"
+            data-tooltip="Maximize"
           >
             <Square size={10} />
           </button>
           <button
             onClick={async () => {
               if (!isTauri) return;
-              await disconnectActiveSession();
+              const shouldClose = await handleCloseRequest();
+              if (!shouldClose) {
+                return;
+              }
               const currentWindow = getCurrentWindow();
               await currentWindow.close();
             }}
             className="p-1.5 hover:bg-red-600 rounded transition-colors text-gray-400 hover:text-white"
-            title="Close"
+            data-tooltip="Close"
           >
             <X size={12} />
           </button>
@@ -201,13 +331,20 @@ const DetachedSessionContent: React.FC<{
       <div className="flex-1 overflow-hidden">
         <SessionViewer session={activeSession} />
       </div>
-    </div>
+      </div>
+      <ConfirmDialog
+        isOpen={showCloseConfirm}
+        message={t("dialogs.confirmCloseDetached") || "Close detached window?"}
+        onConfirm={() => resolveCloseConfirmation(true)}
+        onCancel={() => resolveCloseConfirmation(false)}
+      />
+    </>
   );
 };
 
-const DetachedWindowLifecycle: React.FC<{ onBeforeClose: () => Promise<void> }> = ({
-  onBeforeClose,
-}) => {
+const DetachedWindowLifecycle: React.FC<{
+  onBeforeClose: () => Promise<boolean>;
+}> = ({ onBeforeClose }) => {
   useEffect(() => {
     const isTauri =
       typeof window !== "undefined" &&
@@ -218,9 +355,13 @@ const DetachedWindowLifecycle: React.FC<{ onBeforeClose: () => Promise<void> }> 
     const currentWindow = getCurrentWindow();
     const unlistenPromise = currentWindow.onCloseRequested(async (event) => {
       if (isClosing) return;
-      isClosing = true;
       event.preventDefault();
-      await onBeforeClose();
+      isClosing = true;
+      const shouldClose = await onBeforeClose();
+      if (!shouldClose) {
+        isClosing = false;
+        return;
+      }
       await currentWindow.close();
     });
 
@@ -234,7 +375,7 @@ const DetachedWindowLifecycle: React.FC<{ onBeforeClose: () => Promise<void> }> 
 
 const DetachedClient: React.FC = () => {
   const [disconnectHandler, setDisconnectHandler] = useState<
-    (() => Promise<void>) | null
+    (() => Promise<boolean>) | null
   >(null);
 
   return (

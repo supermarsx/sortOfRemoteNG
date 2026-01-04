@@ -63,7 +63,7 @@ describe("QuickConnect", () => {
   });
 
   describe("Form Submission", () => {
-    it("should call onConnect with hostname and protocol when submitted", () => {
+    it("should call onConnect with SSH payload when submitted", () => {
       render(<QuickConnect {...mockProps} />);
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
@@ -72,9 +72,19 @@ describe("QuickConnect", () => {
 
       fireEvent.change(hostnameInput, { target: { value: '192.168.1.100' } });
       fireEvent.change(protocolSelect, { target: { value: 'ssh' } });
+      fireEvent.change(screen.getByLabelText("Username"), { target: { value: 'root' } });
+      fireEvent.change(screen.getByLabelText("Password"), { target: { value: 'secret' } });
       fireEvent.click(connectButton);
 
-      expect(mockProps.onConnect).toHaveBeenCalledWith('192.168.1.100', 'ssh');
+      expect(mockProps.onConnect).toHaveBeenCalledWith({
+        hostname: '192.168.1.100',
+        protocol: 'ssh',
+        username: 'root',
+        authType: 'password',
+        password: 'secret',
+        privateKey: undefined,
+        passphrase: undefined,
+      });
     });
 
     it("should call onClose after successful connection", () => {
@@ -98,7 +108,15 @@ describe("QuickConnect", () => {
       fireEvent.change(hostnameInput, { target: { value: '  192.168.1.100  ' } });
       fireEvent.click(connectButton);
 
-      expect(mockProps.onConnect).toHaveBeenCalledWith('192.168.1.100', 'rdp');
+      expect(mockProps.onConnect).toHaveBeenCalledWith({
+        hostname: '192.168.1.100',
+        protocol: 'rdp',
+        username: undefined,
+        authType: undefined,
+        password: undefined,
+        privateKey: undefined,
+        passphrase: undefined,
+      });
     });
 
     it("should not submit with empty hostname", () => {
@@ -136,7 +154,15 @@ describe("QuickConnect", () => {
       const form = screen.getByRole('form');
       fireEvent.submit(form);
 
-      expect(mockProps.onConnect).toHaveBeenCalledWith('192.168.1.100', 'rdp');
+      expect(mockProps.onConnect).toHaveBeenCalledWith({
+        hostname: '192.168.1.100',
+        protocol: 'rdp',
+        username: undefined,
+        authType: undefined,
+        password: undefined,
+        privateKey: undefined,
+        passphrase: undefined,
+      });
     });
   });
 

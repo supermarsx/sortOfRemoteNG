@@ -138,6 +138,20 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
         <label className="flex items-center space-x-2">
           <input
             type="checkbox"
+            checked={settings.warnOnDetachClose}
+            onChange={(e) =>
+              updateSettings({ warnOnDetachClose: e.target.checked })
+            }
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-gray-300">
+            {t("connections.warnOnDetachClose")}
+          </span>
+        </label>
+
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
             checked={settings.warnOnExit}
             onChange={(e) => updateSettings({ warnOnExit: e.target.checked })}
             className="rounded border-gray-600 bg-gray-700 text-blue-600"

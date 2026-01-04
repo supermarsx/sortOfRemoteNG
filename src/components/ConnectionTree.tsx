@@ -16,6 +16,7 @@ import {
   Play,
   Power,
   Database,
+  Star,
 } from "lucide-react";
 import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
@@ -247,7 +248,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 <button
                   onClick={handleDisconnect}
                   className="p-1 hover:bg-gray-600 rounded transition-colors"
-                  title="Disconnect"
+                  data-tooltip="Disconnect"
                 >
                   <Power size={12} />
                 </button>
@@ -255,7 +256,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 <button
                   onClick={handleConnect}
                   className="p-1 hover:bg-gray-600 rounded transition-colors"
-                  title="Connect"
+                  data-tooltip="Connect"
                 >
                   <Play size={12} />
                 </button>
@@ -303,19 +304,39 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 {activeSession ? "Disconnect" : "Connect"}
               </button>
             )}
-            {!connection.isGroup && <hr className="border-gray-700" />}
+          {!connection.isGroup && <hr className="border-gray-700" />}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(connection);
+              setShowMenu(false);
+            }}
+            className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+          >
+            <Edit size={14} className="mr-2" />
+            Edit
+          </button>
+          {!connection.isGroup && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onEdit(connection);
+                dispatch({
+                  type: "UPDATE_CONNECTION",
+                  payload: { ...connection, favorite: !connection.favorite },
+                });
                 setShowMenu(false);
               }}
               className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
             >
-              <Edit size={14} className="mr-2" />
-              Edit
+              <Star
+                size={12}
+                className={`mr-2 ${connection.favorite ? "text-yellow-300" : "text-gray-400"}`}
+                fill={connection.favorite ? "currentColor" : "none"}
+              />
+              {connection.favorite ? "Remove favorite" : "Add to favorites"}
             </button>
-            {/* Duplicate action */}
+          )}
+          {/* Duplicate action */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
