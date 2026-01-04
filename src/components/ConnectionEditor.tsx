@@ -38,6 +38,10 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     privateKey: '',
     passphrase: '',
     ignoreSshSecurityErrors: true,
+    sshConnectTimeout: 30,
+    sshKeepAliveInterval: 60,
+    sshKnownHostsPath: '',
+    icon: '',
     basicAuthUsername: '',
     basicAuthPassword: '',
     basicAuthRealm: '',
@@ -63,6 +67,10 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         privateKey: connection.privateKey || '',
         passphrase: connection.passphrase || '',
         ignoreSshSecurityErrors: connection.ignoreSshSecurityErrors ?? true,
+        sshConnectTimeout: connection.sshConnectTimeout ?? 30,
+        sshKeepAliveInterval: connection.sshKeepAliveInterval ?? 60,
+        sshKnownHostsPath: connection.sshKnownHostsPath || '',
+        icon: connection.icon || '',
         basicAuthUsername: connection.basicAuthUsername || '',
         basicAuthPassword: connection.basicAuthPassword || '',
         basicAuthRealm: connection.basicAuthRealm || '',
@@ -90,6 +98,10 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         httpHeaders: {},
         cloudProvider: undefined,
         ignoreSshSecurityErrors: true,
+        sshConnectTimeout: 30,
+        sshKeepAliveInterval: 60,
+        sshKnownHostsPath: '',
+        icon: '',
       });
     }
   }, [connection, isOpen]);
@@ -131,6 +143,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       isGroup: formData.isGroup || false,
       tags: formData.tags || [],
       parentId: formData.parentId,
+      icon: formData.icon || undefined,
       order: connection?.order ?? Date.now(),
       createdAt: connection?.createdAt || now,
       updatedAt: now,
@@ -141,6 +154,9 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       httpHeaders: formData.httpHeaders,
       cloudProvider: formData.cloudProvider,
       ignoreSshSecurityErrors: formData.ignoreSshSecurityErrors ?? true,
+      sshConnectTimeout: formData.sshConnectTimeout,
+      sshKeepAliveInterval: formData.sshKeepAliveInterval,
+      sshKnownHostsPath: formData.sshKnownHostsPath || undefined,
     };
 
     if (connection) {

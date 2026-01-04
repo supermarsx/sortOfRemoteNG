@@ -45,6 +45,7 @@ const DetachedSessionContent: React.FC<{
   const closingRef = useRef(false);
   const hasLoadedRef = useRef(false);
   const skipNextConfirmRef = useRef(false);
+  const reattachRef = useRef(false);
   const closeResolverRef = useRef<((value: boolean) => void) | null>(null);
 
   const applyTransparency = useCallback(
@@ -202,6 +203,7 @@ const DetachedSessionContent: React.FC<{
   const handleReattach = useCallback(async () => {
     if (!activeSession) return;
     try {
+      reattachRef.current = true;
       skipNextConfirmRef.current = true;
       await emit("detached-session-reattach", { sessionId: activeSession.id });
       if (sessionId) {
@@ -217,6 +219,10 @@ const DetachedSessionContent: React.FC<{
   }, [activeSession, isTauri, sessionId]);
 
   const handleCloseRequest = useCallback(async () => {
+    if (reattachRef.current) {
+      reattachRef.current = false;
+      return true;
+    }
     if (warnOnDetachClose && !skipNextConfirmRef.current) {
       const confirmed = await requestCloseConfirmation();
       if (!confirmed) {

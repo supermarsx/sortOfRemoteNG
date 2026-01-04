@@ -92,6 +92,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     if (!enableReorder) return;
     setDraggedSessionId(sessionId);
     e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", sessionId);
   };
 
   const handleDragOver = (e: React.DragEvent, sessionId: string) => {

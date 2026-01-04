@@ -55,6 +55,58 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
             />
             <span>Ignore SSH security errors (host keys/certs)</span>
           </label>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Connect Timeout (sec)
+              </label>
+              <input
+                type="number"
+                min={5}
+                max={300}
+                value={formData.sshConnectTimeout ?? 30}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    sshConnectTimeout: Number(e.target.value) || 30,
+                  })
+                }
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Keep Alive (sec)
+              </label>
+              <input
+                type="number"
+                min={10}
+                max={600}
+                value={formData.sshKeepAliveInterval ?? 60}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    sshKeepAliveInterval: Number(e.target.value) || 60,
+                  })
+                }
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Known Hosts Path
+              </label>
+              <input
+                type="text"
+                value={formData.sshKnownHostsPath || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, sshKnownHostsPath: e.target.value })
+                }
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="C:\\Users\\me\\.ssh\\known_hosts"
+              />
+            </div>
+          </div>
         </div>
       )}
 

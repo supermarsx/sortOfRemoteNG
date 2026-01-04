@@ -1,4 +1,5 @@
 import React from 'react';
+import { Cloud, Database, Folder, Globe, HardDrive, Monitor, Server, Shield, Star, Terminal } from 'lucide-react';
 import { Connection } from '../../types/connection';
 import { getDefaultPort } from '../../utils/defaultPorts';
 
@@ -9,6 +10,19 @@ interface GeneralSectionProps {
 }
 
 export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFormData, availableGroups }) => {
+  const iconOptions = [
+    { value: '', label: 'Default', icon: Monitor },
+    { value: 'terminal', label: 'Terminal', icon: Terminal },
+    { value: 'globe', label: 'Web', icon: Globe },
+    { value: 'database', label: 'Database', icon: Database },
+    { value: 'server', label: 'Server', icon: Server },
+    { value: 'shield', label: 'Shield', icon: Shield },
+    { value: 'cloud', label: 'Cloud', icon: Cloud },
+    { value: 'folder', label: 'Folder', icon: Folder },
+    { value: 'star', label: 'Star', icon: Star },
+    { value: 'drive', label: 'Drive', icon: HardDrive },
+  ];
+
   const handleProtocolChange = (protocol: string) => {
     setFormData(prev => ({
       ...prev,
@@ -54,6 +68,31 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder={formData.isGroup ? 'Folder name' : 'Connection name'}
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">Icon</label>
+          <div className="grid grid-cols-5 gap-2">
+            {iconOptions.map(({ value, label, icon: Icon }) => {
+              const isActive = (formData.icon || '') === value;
+              return (
+                <button
+                  key={value || 'default'}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, icon: value || undefined })}
+                  className={`flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors ${
+                    isActive
+                      ? 'border-blue-500 bg-blue-500/10 text-blue-200'
+                      : 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                  title={label}
+                >
+                  <Icon size={16} />
+                  <span className="text-[10px] uppercase tracking-wide">{label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>

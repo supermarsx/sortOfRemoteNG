@@ -35,6 +35,9 @@ export interface Connection {
   passphrase?: string;
   totpSecret?: string;
   ignoreSshSecurityErrors?: boolean;
+  sshConnectTimeout?: number;
+  sshKeepAliveInterval?: number;
+  sshKnownHostsPath?: string;
   httpHeaders?: Record<string, string>;
   basicAuthRealm?: string;
   basicAuthUsername?: string;

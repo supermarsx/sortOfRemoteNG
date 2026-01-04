@@ -17,10 +17,19 @@ import {
   Power,
   Database,
   Star,
+  Cloud,
+  ExternalLink,
+  FileDown,
+  HardDrive,
+  Server,
+  Shield,
+  SlidersHorizontal,
+  UserX,
 } from "lucide-react";
 import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
 import { generateId } from "../utils/id";
+import { ScriptEngine } from "../utils/scriptEngine";
 
 /**
  * Maps a connection protocol to a Lucide icon component.
@@ -48,6 +57,27 @@ const getProtocolIcon = (protocol: string) => {
     default:
       return Monitor;
   }
+};
+
+const iconRegistry: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  monitor: Monitor,
+  terminal: Terminal,
+  globe: Globe,
+  database: Database,
+  server: Server,
+  shield: Shield,
+  cloud: Cloud,
+  folder: Folder,
+  star: Star,
+  drive: HardDrive,
+};
+
+const getConnectionIcon = (connection: Connection) => {
+  const key = (connection.icon || "").toLowerCase();
+  if (key && iconRegistry[key]) {
+    return iconRegistry[key];
+  }
+  return getProtocolIcon(connection.protocol);
 };
 
 /**
@@ -85,6 +115,13 @@ interface ConnectionTreeItemProps {
   onDisconnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
   onDelete: (connection: Connection) => void;
+  onCopyHostname: (connection: Connection) => void;
+  onRename: (connection: Connection) => void;
+  onExport: (connection: Connection) => void;
+  onConnectWithOptions: (connection: Connection) => void;
+  onConnectWithoutCredentials: (connection: Connection) => void;
+  onExecuteScripts: (connection: Connection, sessionId?: string) => void;
+  onDetachSession: (sessionId: string) => void;
   enableReorder: boolean;
   isDragging: boolean;
   isDragOver: boolean;
@@ -105,6 +142,13 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   onDisconnect,
   onEdit,
   onDelete,
+  onCopyHostname,
+  onRename,
+  onExport,
+  onConnectWithOptions,
+  onConnectWithoutCredentials,
+  onExecuteScripts,
+  onDetachSession,
   enableReorder,
   isDragging,
   isDragOver,
@@ -120,7 +164,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [isExpanded, setIsExpanded] = useState(connection.expanded || false);
 
-  const ProtocolIcon = getProtocolIcon(connection.protocol);
+  const ProtocolIcon = getConnectionIcon(connection);
   const isSelected = state.selectedConnection?.id === connection.id;
   const activeSession = state.sessions.find(
     (s) => s.connectionId === connection.id,
@@ -183,11 +227,13 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         onDragStart={(e) => {
           if (!enableReorder) return;
           e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", connection.id);
           onDragStart(connection.id);
         }}
         onDragOver={(e) => {
           if (!enableReorder) return;
           e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
           onDragOver(connection.id);
         }}
         onDragEnd={onDragEnd}
@@ -286,7 +332,6 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             style={menuPosition ? { left: menuPosition.x, top: menuPosition.y } : undefined}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Edit action */}
             {!connection.isGroup && (
               <button
                 onClick={(e) => {
@@ -304,39 +349,125 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 {activeSession ? "Disconnect" : "Connect"}
               </button>
             )}
-          {!connection.isGroup && <hr className="border-gray-700" />}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(connection);
-              setShowMenu(false);
-            }}
-            className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
-          >
-            <Edit size={14} className="mr-2" />
-            Edit
-          </button>
-          {!connection.isGroup && (
+            {!connection.isGroup && (
+              <>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConnectWithOptions(connection);
+                    setShowMenu(false);
+                  }}
+                  className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                >
+                  <SlidersHorizontal size={14} className="mr-2" />
+                  Connect with options
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConnectWithoutCredentials(connection);
+                    setShowMenu(false);
+                  }}
+                  className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                >
+                  <UserX size={14} className="mr-2" />
+                  Connect without credentials
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onExecuteScripts(connection, activeSession?.id);
+                    setShowMenu(false);
+                  }}
+                  className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                >
+                  <Play size={14} className="mr-2" />
+                  Execute scripts
+                </button>
+                {activeSession && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDetachSession(activeSession.id);
+                      setShowMenu(false);
+                    }}
+                    className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                  >
+                    <ExternalLink size={14} className="mr-2" />
+                    Detach window
+                  </button>
+                )}
+              </>
+            )}
+            {!connection.isGroup && <hr className="border-gray-700" />}
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                dispatch({
-                  type: "UPDATE_CONNECTION",
-                  payload: { ...connection, favorite: !connection.favorite },
-                });
+                onEdit(connection);
                 setShowMenu(false);
               }}
               className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
             >
-              <Star
-                size={12}
-                className={`mr-2 ${connection.favorite ? "text-yellow-300" : "text-gray-400"}`}
-                fill={connection.favorite ? "currentColor" : "none"}
-              />
-              {connection.favorite ? "Remove favorite" : "Add to favorites"}
+              <Edit size={14} className="mr-2" />
+              Edit
             </button>
-          )}
-          {/* Duplicate action */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onRename(connection);
+                setShowMenu(false);
+              }}
+              className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+            >
+              <Edit size={14} className="mr-2" />
+              Rename
+            </button>
+            {!connection.isGroup && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  dispatch({
+                    type: "UPDATE_CONNECTION",
+                    payload: { ...connection, favorite: !connection.favorite },
+                  });
+                  setShowMenu(false);
+                }}
+                className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+              >
+                <Star
+                  size={12}
+                  className={`mr-2 ${connection.favorite ? "text-yellow-300" : "text-gray-400"}`}
+                  fill={connection.favorite ? "currentColor" : "none"}
+                />
+                {connection.favorite ? "Remove favorite" : "Add to favorites"}
+              </button>
+            )}
+            {!connection.isGroup && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCopyHostname(connection);
+                  setShowMenu(false);
+                }}
+                className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+              >
+                <Copy size={14} className="mr-2" />
+                Copy hostname
+              </button>
+            )}
+            {!connection.isGroup && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExport(connection);
+                  setShowMenu(false);
+                }}
+                className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+              >
+                <FileDown size={14} className="mr-2" />
+                Export to file
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -354,7 +485,6 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
               Duplicate
             </button>
             <hr className="border-gray-700" />
-            {/* Delete action */}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -385,6 +515,7 @@ interface ConnectionTreeProps {
   onDisconnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
   onDelete: (connection: Connection) => void;
+  onSessionDetach: (sessionId: string) => void;
   enableReorder?: boolean;
 }
 
@@ -398,11 +529,143 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   onDisconnect,
   onEdit,
   onDelete,
+  onSessionDetach,
   enableReorder = true,
 }) => {
   const { state, dispatch } = useConnections();
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [connectOptionsTarget, setConnectOptionsTarget] = useState<Connection | null>(null);
+  const [connectOptionsData, setConnectOptionsData] = useState<{
+    username: string;
+    authType: "password" | "key";
+    password: string;
+    privateKey: string;
+    passphrase: string;
+    saveToConnection: boolean;
+  } | null>(null);
+
+  const handleCopyHostname = useCallback((connection: Connection) => {
+    if (!connection.hostname) return;
+    navigator.clipboard.writeText(connection.hostname).catch(() => undefined);
+  }, []);
+
+  const handleExportConnection = useCallback((connection: Connection) => {
+    const safeConnection = {
+      ...connection,
+      password: undefined,
+      privateKey: undefined,
+      passphrase: undefined,
+      totpSecret: undefined,
+      basicAuthPassword: undefined,
+    };
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      connection: safeConnection,
+    };
+    const content = JSON.stringify(payload, null, 2);
+    const filename = `connection-${connection.name || connection.id}.json`
+      .replace(/[^a-z0-9-_]+/gi, "-")
+      .toLowerCase();
+    const blob = new Blob([content], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleRename = useCallback((connection: Connection) => {
+    setRenameTarget(connection);
+    setRenameValue(connection.name || "");
+  }, []);
+
+  const handleConnectWithOptions = useCallback((connection: Connection) => {
+    setConnectOptionsTarget(connection);
+    setConnectOptionsData({
+      username: connection.username || "",
+      authType: connection.authType === "key" ? "key" : "password",
+      password: connection.password || "",
+      privateKey: connection.privateKey || "",
+      passphrase: connection.passphrase || "",
+      saveToConnection: false,
+    });
+  }, []);
+
+  const handleConnectWithoutCredentials = useCallback(
+    (connection: Connection) => {
+      const stripped: Connection = {
+        ...connection,
+        username: undefined,
+        password: undefined,
+        privateKey: undefined,
+        passphrase: undefined,
+        totpSecret: undefined,
+        basicAuthPassword: undefined,
+      };
+      onConnect(stripped);
+    },
+    [onConnect],
+  );
+
+  const handleExecuteScripts = useCallback(
+    async (connection: Connection, sessionId?: string) => {
+      try {
+        const engine = ScriptEngine.getInstance();
+        const session = state.sessions.find((item) => item.id === sessionId);
+        const scripts = engine.getScriptsForTrigger("manual", connection.protocol);
+        for (const script of scripts) {
+          await engine.executeScript(script, {
+            trigger: "manual",
+            connection,
+            session,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to execute scripts:", error);
+      }
+    },
+    [state.sessions],
+  );
+
+  const handleConnectOptionsSubmit = useCallback(() => {
+    if (!connectOptionsTarget || !connectOptionsData) return;
+    const isSsh = connectOptionsTarget.protocol === "ssh";
+    const overrides: Partial<Connection> = {
+      username: connectOptionsData.username || undefined,
+    };
+
+    if (isSsh) {
+      overrides.authType = connectOptionsData.authType;
+      if (connectOptionsData.authType === "password") {
+        overrides.password = connectOptionsData.password;
+        overrides.privateKey = undefined;
+        overrides.passphrase = undefined;
+      } else {
+        overrides.privateKey = connectOptionsData.privateKey;
+        overrides.passphrase = connectOptionsData.passphrase || undefined;
+        overrides.password = undefined;
+      }
+    } else {
+      overrides.password = connectOptionsData.password || undefined;
+    }
+
+    const nextConnection = { ...connectOptionsTarget, ...overrides };
+    if (connectOptionsData.saveToConnection) {
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...nextConnection, updatedAt: new Date() },
+      });
+    }
+    onConnect(nextConnection);
+    setConnectOptionsTarget(null);
+    setConnectOptionsData(null);
+  }, [connectOptionsData, connectOptionsTarget, dispatch, onConnect]);
 
   const buildTree = useCallback(
     (connections: Connection[], parentId?: string): Connection[] =>
@@ -434,6 +697,13 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           onDisconnect={onDisconnect}
           onEdit={onEdit}
           onDelete={onDelete}
+          onCopyHostname={handleCopyHostname}
+          onRename={handleRename}
+          onExport={handleExportConnection}
+          onConnectWithOptions={handleConnectWithOptions}
+          onConnectWithoutCredentials={handleConnectWithoutCredentials}
+          onExecuteScripts={handleExecuteScripts}
+          onDetachSession={onSessionDetach}
           enableReorder={enableReorder}
           isDragging={draggedId === connection.id}
           isDragOver={dragOverId === connection.id && draggedId !== connection.id}
@@ -506,15 +776,225 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   }, [state.connections, state.filter]);
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      {filteredConnections.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-32 text-gray-500">
-          <Monitor size={24} className="mb-2" />
-          <p className="text-sm">No connections found</p>
+    <>
+      <div className="flex-1 overflow-y-auto">
+        {filteredConnections.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-32 text-gray-500">
+            <Monitor size={24} className="mb-2" />
+            <p className="text-sm">No connections found</p>
+          </div>
+        ) : (
+          renderTree(buildTree(filteredConnections))
+        )}
+      </div>
+
+      {renameTarget && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setRenameTarget(null);
+          }}
+        >
+          <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="border-b border-gray-700 px-4 py-3">
+              <h3 className="text-sm font-semibold text-white">Rename Connection</h3>
+            </div>
+            <div className="p-4 space-y-3">
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="New name"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRenameTarget(null)}
+                  className="px-3 py-2 text-sm text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!renameTarget) return;
+                    const trimmed = renameValue.trim();
+                    if (!trimmed) return;
+                    dispatch({
+                      type: "UPDATE_CONNECTION",
+                      payload: { ...renameTarget, name: trimmed, updatedAt: new Date() },
+                    });
+                    setRenameTarget(null);
+                  }}
+                  className="px-3 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      ) : (
-        renderTree(buildTree(filteredConnections))
       )}
-    </div>
+
+      {connectOptionsTarget && connectOptionsData && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setConnectOptionsTarget(null);
+              setConnectOptionsData(null);
+            }
+          }}
+        >
+          <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="border-b border-gray-700 px-4 py-3">
+              <h3 className="text-sm font-semibold text-white">
+                Connect with Options
+              </h3>
+            </div>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={connectOptionsData.username}
+                  onChange={(e) =>
+                    setConnectOptionsData({ ...connectOptionsData, username: e.target.value })
+                  }
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              {connectOptionsTarget.protocol === "ssh" ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Auth Type
+                    </label>
+                    <select
+                      value={connectOptionsData.authType}
+                      onChange={(e) =>
+                        setConnectOptionsData({
+                          ...connectOptionsData,
+                          authType: e.target.value as "password" | "key",
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="password">Password</option>
+                      <option value="key">Private Key</option>
+                    </select>
+                  </div>
+                  {connectOptionsData.authType === "password" ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Password
+                      </label>
+                      <input
+                        type="password"
+                        value={connectOptionsData.password}
+                        onChange={(e) =>
+                          setConnectOptionsData({
+                            ...connectOptionsData,
+                            password: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Private Key
+                        </label>
+                        <textarea
+                          value={connectOptionsData.privateKey}
+                          onChange={(e) =>
+                            setConnectOptionsData({
+                              ...connectOptionsData,
+                              privateKey: e.target.value,
+                            })
+                          }
+                          rows={3}
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                          Passphrase (optional)
+                        </label>
+                        <input
+                          type="password"
+                          value={connectOptionsData.passphrase}
+                          onChange={(e) =>
+                            setConnectOptionsData({
+                              ...connectOptionsData,
+                              passphrase: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={connectOptionsData.password}
+                    onChange={(e) =>
+                      setConnectOptionsData({
+                        ...connectOptionsData,
+                        password: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={connectOptionsData.saveToConnection}
+                  onChange={(e) =>
+                    setConnectOptionsData({
+                      ...connectOptionsData,
+                      saveToConnection: e.target.checked,
+                    })
+                  }
+                />
+                <span>Save credentials to this connection</span>
+              </label>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConnectOptionsTarget(null);
+                    setConnectOptionsData(null);
+                  }}
+                  className="px-3 py-2 text-sm text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConnectOptionsSubmit}
+                  className="px-3 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+                >
+                  Connect
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

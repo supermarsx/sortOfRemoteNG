@@ -209,6 +209,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       setStatusState("connected");
       return;
     }
+    if (force) {
+      sshSessionId.current = null;
+    }
     const ignoreHostKey = currentConnection.ignoreSshSecurityErrors ?? true;
     setStatusState("connecting");
     setError("");
@@ -239,8 +242,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     );
 
     try {
-      if (currentSession.backendSessionId) {
-        if (!force && currentSession.shellId) {
+      if (currentSession.backendSessionId && !force) {
+        if (currentSession.shellId) {
           sshSessionId.current = currentSession.backendSessionId;
           setStatusState("connected");
           return;
@@ -267,10 +270,10 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         jump_hosts: [],
         proxy_config: null,
         openvpn_config: null,
-        connect_timeout: 30000,
-        keep_alive_interval: 60,
+        connect_timeout: currentConnection.sshConnectTimeout ?? 30,
+        keep_alive_interval: currentConnection.sshKeepAliveInterval ?? 60,
         strict_host_key_checking: !ignoreHostKey,
-        known_hosts_path: null,
+        known_hosts_path: currentConnection.sshKnownHostsPath || null,
       };
 
       switch (authMethod) {
@@ -557,9 +560,20 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     if (!isSsh) return;
     setStatusState("connecting");
     disconnectSsh();
+    const currentSession = sessionRef.current;
+    if (currentSession.backendSessionId || currentSession.shellId) {
+      dispatch({
+        type: "UPDATE_SESSION",
+        payload: {
+          ...currentSession,
+          backendSessionId: undefined,
+          shellId: undefined,
+        },
+      });
+    }
     await initSsh(true);
     setTimeout(() => safeFit(), 80);
-  }, [disconnectSsh, initSsh, isSsh, safeFit, setStatusState]);
+  }, [dispatch, disconnectSsh, initSsh, isSsh, safeFit, setStatusState]);
 
   const clearTerminal = () => {
     if (!termRef.current || !canRender()) return;

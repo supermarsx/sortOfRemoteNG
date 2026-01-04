@@ -13,7 +13,6 @@ import {
   BarChart3,
   ScrollText,
   Shield,
-  FileText,
   Droplet,
   Keyboard,
   Network,
@@ -1239,6 +1238,7 @@ const AppContent: React.FC = () => {
           onDeleteConnection={handleDeleteConnection}
           onConnect={handleConnect}
           onDisconnect={handleDisconnectConnection}
+          onSessionDetach={handleSessionDetach}
           onShowPasswordDialog={handleShowPasswordDialog}
           enableConnectionReorder={appSettings.enableConnectionReorder}
         />
@@ -1346,15 +1346,6 @@ const AppContent: React.FC = () => {
               title="Switch Collection"
             >
               <Database size={14} />
-            </button>
-          )}
-          {appSettings.showImportExportIcon && (
-            <button
-              onClick={() => setShowImportExport(true)}
-              className="app-bar-button p-2"
-              title="Import/Export"
-            >
-              <FileText size={14} />
             </button>
           )}
           {appSettings.showSettingsIcon && (

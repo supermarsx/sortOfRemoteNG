@@ -131,7 +131,7 @@ describe("WebTerminal", () => {
             jump_hosts: [],
             proxy_config: null,
             openvpn_config: null,
-            connect_timeout: 30000,
+            connect_timeout: 30,
             keep_alive_interval: 60,
             strict_host_key_checking: false,
             known_hosts_path: null
