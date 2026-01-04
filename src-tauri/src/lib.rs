@@ -1006,9 +1006,6 @@ async fn create_desktop_shortcut(
   connection_id: Option<String>,
   description: Option<String>,
 ) -> Result<String, String> {
-  use std::fs;
-  use std::path::PathBuf;
-  
   // Get the application executable path
   let app_path = std::env::current_exe()
     .map_err(|e| format!("Failed to get application path: {}", e))?;
