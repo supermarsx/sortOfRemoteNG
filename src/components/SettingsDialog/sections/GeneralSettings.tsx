@@ -101,12 +101,33 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
           <label className="block text-sm font-medium text-gray-300 mb-2">
             Primary Accent Color
           </label>
-          <input
-            type="color"
-            value={settings.primaryAccentColor || '#3b82f6'}
-            onChange={(e) => updateSettings({ primaryAccentColor: e.target.value })}
-            className="w-full h-10 bg-gray-700 border border-gray-600 rounded-md cursor-pointer"
-          />
+          <div className="relative">
+            <input
+              type="color"
+              value={settings.primaryAccentColor || '#3b82f6'}
+              onChange={(e) => updateSettings({ primaryAccentColor: e.target.value })}
+              className="w-full h-12 bg-gray-700 border-2 border-gray-600 rounded-md cursor-pointer transition-all duration-200 hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+              style={{
+                background: `linear-gradient(45deg, #808080 25%, transparent 25%), 
+                           linear-gradient(-45deg, #808080 25%, transparent 25%), 
+                           linear-gradient(45deg, transparent 75%, #808080 75%), 
+                           linear-gradient(-45deg, transparent 75%, #808080 75%)`,
+                backgroundSize: '8px 8px',
+                backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px'
+              }}
+            />
+            <div 
+              className="absolute inset-0 rounded-md pointer-events-none border-2 border-transparent"
+              style={{
+                background: `conic-gradient(from 0deg, ${settings.primaryAccentColor || '#3b82f6'}, transparent 90deg)`,
+                opacity: 0.3,
+                filter: 'blur(1px)'
+              }}
+            />
+            <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-xs text-gray-400 bg-gray-800 px-2 py-1 rounded">
+              {settings.primaryAccentColor || '#3b82f6'}
+            </div>
+          </div>
         </div>
 
         <div>

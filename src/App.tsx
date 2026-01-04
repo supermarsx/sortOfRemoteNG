@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { Monitor, Zap, Menu, Globe, Minus, Square, X, ChevronRight } from "lucide-react";
+import { Monitor, Zap, Menu, Globe, Minus, Square, X, ChevronRight, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Connection } from "./types/connection";
@@ -21,6 +21,7 @@ import { PasswordDialog } from "./components/PasswordDialog";
 import { CollectionSelector } from "./components/CollectionSelector";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -36,6 +37,7 @@ const AppContent: React.FC = () => {
   const [showQuickConnect, setShowQuickConnect] = useState(false); // quick connect dialog visibility
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
   const [showCollectionSelector, setShowCollectionSelector] = useState(false); // collection selector visibility
+  const [showSettings, setShowSettings] = useState(false); // settings dialog visibility
   const [passwordDialogMode, setPasswordDialogMode] = useState<
     "setup" | "unlock"
   >("setup"); // current mode for password dialog
@@ -43,6 +45,7 @@ const AppContent: React.FC = () => {
   const [sidebarWidth, setSidebarWidth] = useState(320); // sidebar width in pixels
   const [isResizing, setIsResizing] = useState(false); // whether sidebar is being resized
   const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('left'); // sidebar position
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth); // window width for responsive design
   const [dialogState, setDialogState] = useState<{
     isOpen: boolean;
     message: string;
@@ -268,6 +271,13 @@ const AppContent: React.FC = () => {
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
+  // Track window width for responsive design
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleMinimize = async () => {
     const window = getCurrentWindow();
     await window.minimize();
@@ -305,10 +315,10 @@ const AppContent: React.FC = () => {
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setShowQuickConnect(true)}
-            className="flex items-center space-x-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors text-sm"
+            className={`flex items-center space-x-2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors ${windowWidth < 768 ? 'px-2' : ''}`}
           >
             <Zap size={14} />
-            <span>{t("connections.quickConnect")}</span>
+            {windowWidth >= 768 && <span>{t("connections.quickConnect")}</span>}
           </button>
 
           <div className="flex items-center space-x-1 text-xs">
@@ -332,6 +342,14 @@ const AppContent: React.FC = () => {
             title="Switch Collection"
           >
             <Menu size={16} />
+          </button>
+
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 hover:bg-gray-700 rounded transition-colors"
+            title="Settings"
+          >
+            <Settings size={16} />
           </button>
 
           <button
@@ -384,9 +402,11 @@ const AppContent: React.FC = () => {
             />
             {!state.sidebarCollapsed && (
               <div
-                className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-colors"
+                className={`absolute top-0 ${sidebarPosition === 'left' ? 'right-0' : 'left-0'} w-2 h-full cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-all duration-200 group`}
                 onMouseDown={handleMouseDown}
-              />
+              >
+                <div className="absolute inset-y-0 left-1/2 transform -translate-x-1/2 w-0.5 bg-gray-500 group-hover:bg-blue-400 transition-colors duration-200"></div>
+              </div>
             )}
           </div>
         )}
@@ -439,9 +459,11 @@ const AppContent: React.FC = () => {
           >
             {!state.sidebarCollapsed && (
               <div
-                className="absolute top-0 left-0 w-1 h-full cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-colors"
+                className={`absolute top-0 ${sidebarPosition === 'left' ? 'right-0' : 'left-0'} w-2 h-full cursor-col-resize bg-gray-600 hover:bg-blue-500 transition-all duration-200 group`}
                 onMouseDown={handleMouseDown}
-              />
+              >
+                <div className="absolute inset-y-0 left-1/2 transform -translate-x-1/2 w-0.5 bg-gray-500 group-hover:bg-blue-400 transition-colors duration-200"></div>
+              </div>
             )}
             <Sidebar
               onNewConnection={handleNewConnection}
@@ -492,6 +514,11 @@ const AppContent: React.FC = () => {
           dialogState.onCancel!();
           closeConfirmDialog();
         } : closeConfirmDialog}
+      />
+
+      <SettingsDialog
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
       />
     </div>
   );

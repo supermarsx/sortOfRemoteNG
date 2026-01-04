@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FolderPlus, Settings, Download, Upload, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, FileText, Expand as ExpandAll, ListCollapse as CollapseAll, BarChart3, ScrollText, Globe } from 'lucide-react';
+import { Search, Plus, FolderPlus, Download, Upload, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, FileText, Expand as ExpandAll, ListCollapse as CollapseAll, BarChart3, ScrollText, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionTree } from './ConnectionTree';
 import { Connection } from '../types/connection';
@@ -7,7 +7,6 @@ import { useConnections } from '../contexts/useConnections';
 import { SecureStorage } from '../utils/storage';
 import { generateId } from '../utils/id';
 import { ImportExport } from './ImportExport';
-import { SettingsDialog } from './SettingsDialog';
 import { PerformanceMonitor } from './PerformanceMonitor';
 import { ActionLogViewer } from './ActionLogViewer';
 
@@ -328,12 +327,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
               <div className="mt-2">
                 <button
-                  onClick={() => setShowSettings(true)}
+                  onClick={onShowPasswordDialog}
                   className="w-full flex items-center justify-center p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-                  title={t('settings.title')}
+                  title="Security settings"
                 >
-                  <Settings size={16} className="mr-2" />
-                  <span className="text-sm">{t('settings.title')}</span>
+                  <Lock size={16} className="mr-2" />
+                  <span className="text-sm">Security</span>
                 </button>
               </div>
             </div>
@@ -345,11 +344,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <ImportExport
         isOpen={showImportExport}
         onClose={() => setShowImportExport(false)}
-      />
-      
-      <SettingsDialog
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
       />
       
       <PerformanceMonitor

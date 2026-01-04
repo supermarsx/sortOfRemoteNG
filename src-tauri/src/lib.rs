@@ -137,6 +137,7 @@ use ovh::OvhService;
 
 use std::sync::Arc;
 use tauri::Manager;
+use std::env;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Initializes and runs the SortOfRemote NG Tauri application.
@@ -165,6 +166,36 @@ use tauri::Manager;
 pub fn run() {
   tauri::Builder::default()
     .setup(|app| {
+      // Parse command line arguments
+      let args: Vec<String> = env::args().collect();
+      let mut collection_id = None;
+      let mut connection_id = None;
+      
+      let mut i = 1;
+      while i < args.len() {
+        match args[i].as_str() {
+          "--collection" | "-c" => {
+            if i + 1 < args.len() {
+              collection_id = Some(args[i + 1].clone());
+              i += 2;
+            } else {
+              i += 1;
+            }
+          }
+          "--connection" | "-n" => {
+            if i + 1 < args.len() {
+              connection_id = Some(args[i + 1].clone());
+              i += 2;
+            } else {
+              i += 1;
+            }
+          }
+          _ => {
+            i += 1;
+          }
+        }
+      }
+
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
