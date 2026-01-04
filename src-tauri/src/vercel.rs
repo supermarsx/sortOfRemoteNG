@@ -109,6 +109,7 @@ pub struct VercelTeamMember {
 
 pub struct VercelService {
     sessions: HashMap<String, VercelSession>,
+    #[allow(dead_code)]
     http_client: Client,
 }
 

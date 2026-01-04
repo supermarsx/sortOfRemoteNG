@@ -39,6 +39,7 @@ pub struct LinodeInstance {
 
 pub struct LinodeService {
     sessions: HashMap<String, LinodeSession>,
+    #[allow(dead_code)]
     client: Client,
 }
 

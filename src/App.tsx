@@ -319,6 +319,17 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleDisconnectConnection = useCallback(
+    async (connection: Connection) => {
+      const session = state.sessions.find((item) => item.connectionId === connection.id);
+      if (!session) {
+        return;
+      }
+      await handleSessionClose(session.id);
+    },
+    [handleSessionClose, state.sessions],
+  );
+
   const handleSessionDetach = useCallback(
     async (sessionId: string) => {
       const session = state.sessions.find((item) => item.id === sessionId);
@@ -337,20 +348,32 @@ const AppContent: React.FC = () => {
         console.error("Failed to persist detached session payload:", error);
       }
 
-      const existingWindow = await WebviewWindow.getByLabel(windowLabel);
-      if (existingWindow) {
-        existingWindow.setFocus().catch(() => undefined);
+      const url = `/detached?sessionId=${session.id}`;
+      const windowTitle = session.name || "Detached Session";
+      const isTauri =
+        typeof window !== "undefined" &&
+        Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+
+      if (isTauri) {
+        try {
+          const existingWindow = await WebviewWindow.getByLabel(windowLabel);
+          if (existingWindow) {
+            existingWindow.setFocus().catch(() => undefined);
+          } else {
+            new WebviewWindow(windowLabel, {
+              url,
+              title: windowTitle,
+              width: 1200,
+              height: 800,
+              resizable: true,
+              decorations: false,
+            });
+          }
+        } catch (error) {
+          console.error("Failed to detach session window:", error);
+        }
       } else {
-        const url = `/detached?sessionId=${session.id}`;
-        const windowTitle = session.name || "Detached Session";
-        new WebviewWindow(windowLabel, {
-          url,
-          title: windowTitle,
-          width: 1200,
-          height: 800,
-          resizable: true,
-          decorations: true,
-        });
+        window.open(url, "_blank", "noopener,noreferrer");
       }
 
       dispatch({
@@ -1010,6 +1033,7 @@ const AppContent: React.FC = () => {
           onEditConnection={handleEditConnection}
           onDeleteConnection={handleDeleteConnection}
           onConnect={handleConnect}
+          onDisconnect={handleDisconnectConnection}
           onShowPasswordDialog={handleShowPasswordDialog}
           enableConnectionReorder={appSettings.enableConnectionReorder}
         />

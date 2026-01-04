@@ -168,7 +168,9 @@ pub type SshServiceState = Arc<Mutex<SshService>>;
 
 pub struct SshService {
     sessions: HashMap<String, SshSession>,
+    #[allow(dead_code)]
     connection_pool: HashMap<String, Vec<SshSession>>,
+    #[allow(dead_code)]
     known_hosts: HashMap<String, String>,
     shells: HashMap<String, SshShellHandle>,
 }

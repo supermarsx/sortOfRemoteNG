@@ -160,6 +160,7 @@ pub struct CloudflareAnalyticsTimeseries {
 
 pub struct CloudflareService {
     sessions: HashMap<String, CloudflareSession>,
+    #[allow(dead_code)]
     http_client: Client,
 }
 

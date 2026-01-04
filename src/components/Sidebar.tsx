@@ -14,6 +14,7 @@ interface SidebarProps {
   onEditConnection: (connection: Connection) => void;
   onDeleteConnection: (connection: Connection) => void;
   onConnect: (connection: Connection) => void;
+  onDisconnect: (connection: Connection) => void;
   onShowPasswordDialog: () => void;
   enableConnectionReorder: boolean;
 }
@@ -25,6 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onEditConnection,
   onDeleteConnection,
   onConnect,
+  onDisconnect,
   onShowPasswordDialog,
   enableConnectionReorder,
 }) => {
@@ -320,6 +322,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {/* Connection Tree */}
             <ConnectionTree
               onConnect={onConnect}
+              onDisconnect={onDisconnect}
               onEdit={onEditConnection}
               onDelete={onDeleteConnection}
               enableReorder={enableConnectionReorder}

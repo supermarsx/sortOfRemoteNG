@@ -284,6 +284,7 @@ impl ChainingService {
         }
     }
 
+    #[allow(dead_code)]
     async fn connect_layer(&self, layer: &ChainLayer) -> Result<u16, String> {
         match layer.connection_type {
             ConnectionType::Proxy => {
@@ -394,6 +395,7 @@ impl ChainingService {
         }
     }
 
+    #[allow(dead_code)]
     async fn disconnect_layer(&self, layer: &ChainLayer) -> Result<(), String> {
         match layer.connection_type {
             ConnectionType::Proxy => {

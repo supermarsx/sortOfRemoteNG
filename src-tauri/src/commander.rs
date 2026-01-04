@@ -113,6 +113,7 @@ pub enum TransferStatus {
 
 pub struct CommanderService {
     sessions: HashMap<String, CommanderSession>,
+    #[allow(dead_code)]
     active_transfers: HashMap<String, CommanderFileTransfer>,
 }
 

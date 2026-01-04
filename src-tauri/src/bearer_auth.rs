@@ -80,6 +80,7 @@ pub type BearerAuthServiceState = Arc<Mutex<BearerAuthService>>;
 /// Service for managing HTTP Bearer token authentication
 pub struct BearerAuthService {
     /// HTTP client for API calls
+    #[allow(dead_code)]
     client: Client,
     /// OAuth2 providers
     providers: HashMap<String, OAuthProvider>,

@@ -91,6 +91,7 @@ pub struct CloudWatchMetric {
 
 pub struct AwsService {
     sessions: HashMap<String, AwsSession>,
+    #[allow(dead_code)]
     http_client: Client,
 }
 

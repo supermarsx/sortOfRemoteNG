@@ -40,6 +40,7 @@ pub struct OvhInstance {
 
 pub struct OvhService {
     sessions: HashMap<String, OvhSession>,
+    #[allow(dead_code)]
     client: Client,
 }
 

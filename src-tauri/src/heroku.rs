@@ -38,6 +38,7 @@ pub struct HerokuDyno {
 
 pub struct HerokuService {
     sessions: HashMap<String, HerokuSession>,
+    #[allow(dead_code)]
     client: Client,
 }
 

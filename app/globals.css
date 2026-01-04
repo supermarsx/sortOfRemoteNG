@@ -48,8 +48,11 @@ body {
 }
 
 .app-shell > * {
-  position: relative;
   z-index: 1;
+}
+
+.app-shell > :not(.fixed):not(.absolute):not(.sticky) {
+  position: relative;
 }
 
 * {

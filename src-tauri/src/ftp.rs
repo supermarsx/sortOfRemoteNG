@@ -39,6 +39,7 @@ struct FtpConnection {
     _handle: task::JoinHandle<()>,
 }
 
+#[allow(dead_code)]
 struct SftpConnection {
     session: SftpSession,
     session_handle: Option<Session>,

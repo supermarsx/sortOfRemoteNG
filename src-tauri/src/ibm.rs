@@ -59,6 +59,7 @@ pub struct IbmFloatingIp {
 
 pub struct IbmService {
     sessions: HashMap<String, IbmSession>,
+    #[allow(dead_code)]
     client: Client,
 }
 

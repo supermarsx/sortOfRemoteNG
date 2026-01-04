@@ -50,6 +50,7 @@ pub struct AzureNetworkInterface {
     pub public_ip_address: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct AzureTokenResponse {
     access_token: String,
@@ -71,6 +72,7 @@ struct AzureApiVirtualMachine {
     tags: Option<HashMap<String, String>>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 struct AzureApiVmProperties {
     vmId: String,
@@ -81,21 +83,25 @@ struct AzureApiVmProperties {
     instanceView: Option<AzureApiInstanceView>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 struct AzureApiHardwareProfile {
     vmSize: String,
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 struct AzureApiStorageProfile {
     osDisk: Option<AzureApiOsDisk>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 struct AzureApiOsDisk {
     osType: Option<String>,
 }
 
+#[allow(non_snake_case)]
 #[derive(Debug, Deserialize)]
 struct AzureApiNetworkProfile {
     networkInterfaces: Vec<AzureApiNetworkInterfaceRef>,

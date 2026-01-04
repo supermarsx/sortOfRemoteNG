@@ -14,6 +14,7 @@ import {
   Trash2,
   Copy,
   Play,
+  Power,
   Database,
 } from "lucide-react";
 import { Connection } from "../types/connection";
@@ -80,6 +81,7 @@ interface ConnectionTreeItemProps {
   connection: Connection;
   level: number;
   onConnect: (connection: Connection) => void;
+  onDisconnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
   onDelete: (connection: Connection) => void;
   enableReorder: boolean;
@@ -99,6 +101,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   connection,
   level,
   onConnect,
+  onDisconnect,
   onEdit,
   onDelete,
   enableReorder,
@@ -139,6 +142,11 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   const handleConnect = (e: React.MouseEvent) => {
     e.stopPropagation();
     onConnect(connection);
+  };
+
+  const handleDisconnect = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDisconnect(connection);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -234,13 +242,25 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
         <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
           {!connection.isGroup && (
-            <button
-              onClick={handleConnect}
-              className="p-1 hover:bg-gray-600 rounded transition-colors"
-              title="Connect"
-            >
-              <Play size={12} />
-            </button>
+            <>
+              {activeSession ? (
+                <button
+                  onClick={handleDisconnect}
+                  className="p-1 hover:bg-gray-600 rounded transition-colors"
+                  title="Disconnect"
+                >
+                  <Power size={12} />
+                </button>
+              ) : (
+                <button
+                  onClick={handleConnect}
+                  className="p-1 hover:bg-gray-600 rounded transition-colors"
+                  title="Connect"
+                >
+                  <Play size={12} />
+                </button>
+              )}
+            </>
           )}
 
           {/* Context menu trigger */}
@@ -266,6 +286,24 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Edit action */}
+            {!connection.isGroup && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (activeSession) {
+                    onDisconnect(connection);
+                  } else {
+                    onConnect(connection);
+                  }
+                  setShowMenu(false);
+                }}
+                className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+              >
+                {activeSession ? <Power size={14} className="mr-2" /> : <Play size={14} className="mr-2" />}
+                {activeSession ? "Disconnect" : "Connect"}
+              </button>
+            )}
+            {!connection.isGroup && <hr className="border-gray-700" />}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -323,6 +361,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
  */
 interface ConnectionTreeProps {
   onConnect: (connection: Connection) => void;
+  onDisconnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
   onDelete: (connection: Connection) => void;
   enableReorder?: boolean;
@@ -335,6 +374,7 @@ interface ConnectionTreeProps {
  */
 export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   onConnect,
+  onDisconnect,
   onEdit,
   onDelete,
   enableReorder = true,
@@ -370,6 +410,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           connection={connection}
           level={level}
           onConnect={onConnect}
+          onDisconnect={onDisconnect}
           onEdit={onEdit}
           onDelete={onDelete}
           enableReorder={enableReorder}

@@ -41,12 +41,21 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const [error, setError] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const sessionRef = useRef(session);
   const connection = useMemo(
     () => state.connections.find((c) => c.id === session.connectionId),
     [state.connections, session.connectionId],
   );
+  const connectionRef = useRef(connection);
   const isSsh = session.protocol === "ssh";
-  const ignoreHostKey = connection?.ignoreSshSecurityErrors ?? true;
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    connectionRef.current = connection;
+  }, [connection]);
 
   const setStatusState = useCallback((next: ConnectionStatus) => {
     setStatus(next);
@@ -112,7 +121,10 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   }, []);
 
   const initSsh = useCallback(async () => {
-    if (!isSsh || !connection || !termRef.current) return;
+    const currentSession = sessionRef.current;
+    const currentConnection = connectionRef.current;
+    if (!isSsh || !currentConnection || !termRef.current) return;
+    const ignoreHostKey = currentConnection.ignoreSshSecurityErrors ?? true;
     setStatusState("connecting");
     setError("");
     if (typeof (termRef.current as any).reset === "function") {
@@ -122,23 +134,26 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     }
 
     writeLine("\x1b[36mConnecting to SSH server...\x1b[0m");
-    writeLine(`\x1b[90mHost: ${session.hostname}\x1b[0m`);
-    writeLine(`\x1b[90mPort: ${connection.port || 22}\x1b[0m`);
-    writeLine(`\x1b[90mUser: ${connection.username || "unknown"}\x1b[0m`);
+    writeLine(`\x1b[90mHost: ${currentSession.hostname}\x1b[0m`);
+    writeLine(`\x1b[90mPort: ${currentConnection.port || 22}\x1b[0m`);
+    writeLine(`\x1b[90mUser: ${currentConnection.username || "unknown"}\x1b[0m`);
 
-    const authMethod = connection.authType || (connection.privateKey ? "key" : "password");
+    const authMethod =
+      currentConnection.authType || (currentConnection.privateKey ? "key" : "password");
     writeLine(`\x1b[90mAuth: ${authMethod}\x1b[0m`);
     writeLine(
       `\x1b[90mHost key checking: ${ignoreHostKey ? "disabled (ignore errors)" : "enabled"}\x1b[0m`,
     );
 
     try {
-      if (session.backendSessionId) {
-        sshSessionId.current = session.backendSessionId;
-        const shellId = await invoke<string>("start_shell", { sessionId: session.backendSessionId });
+      if (currentSession.backendSessionId) {
+        sshSessionId.current = currentSession.backendSessionId;
+        const shellId = await invoke<string>("start_shell", {
+          sessionId: currentSession.backendSessionId,
+        });
         dispatch({
           type: "UPDATE_SESSION",
-          payload: { ...session, shellId },
+          payload: { ...currentSession, shellId },
         });
         writeLine("\x1b[32mReattached to SSH session\x1b[0m");
         setStatusState("connected");
@@ -148,9 +163,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       disconnectSsh();
 
       const sshConfig: Record<string, unknown> = {
-        host: session.hostname,
-        port: connection.port || 22,
-        username: connection.username || "",
+        host: currentSession.hostname,
+        port: currentConnection.port || 22,
+        username: currentConnection.username || "",
         jump_hosts: [],
         proxy_config: null,
         openvpn_config: null,
@@ -162,23 +177,27 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
       switch (authMethod) {
         case "password":
-          if (!connection.password) throw new Error("Password authentication requires a password");
-          sshConfig.password = connection.password;
+          if (!currentConnection.password) {
+            throw new Error("Password authentication requires a password");
+          }
+          sshConfig.password = currentConnection.password;
           sshConfig.private_key_path = null;
           sshConfig.private_key_passphrase = null;
           break;
         case "key":
-          if (!connection.privateKey) throw new Error("Key authentication requires a key path");
+          if (!currentConnection.privateKey) {
+            throw new Error("Key authentication requires a key path");
+          }
           sshConfig.password = null;
-          sshConfig.private_key_path = connection.privateKey;
-          sshConfig.private_key_passphrase = connection.passphrase || null;
+          sshConfig.private_key_path = currentConnection.privateKey;
+          sshConfig.private_key_passphrase = currentConnection.passphrase || null;
           break;
         case "totp":
-          if (!connection.password || !connection.totpSecret) {
+          if (!currentConnection.password || !currentConnection.totpSecret) {
             throw new Error("TOTP requires password and TOTP secret");
           }
-          sshConfig.password = connection.password;
-          sshConfig.totp_secret = connection.totpSecret;
+          sshConfig.password = currentConnection.password;
+          sshConfig.totp_secret = currentConnection.totpSecret;
           sshConfig.private_key_path = null;
           sshConfig.private_key_passphrase = null;
           break;
@@ -190,14 +209,14 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       sshSessionId.current = sessionId;
       dispatch({
         type: "UPDATE_SESSION",
-        payload: { ...session, backendSessionId: sessionId },
+        payload: { ...currentSession, backendSessionId: sessionId },
       });
       writeLine("\x1b[32mSSH connection established\x1b[0m");
 
       const shellId = await invoke<string>("start_shell", { sessionId });
       dispatch({
         type: "UPDATE_SESSION",
-        payload: { ...session, backendSessionId: sessionId, shellId },
+        payload: { ...currentSession, backendSessionId: sessionId, shellId },
       });
       writeLine("\x1b[32mShell started successfully\x1b[0m");
       setStatusState("connected");
@@ -220,12 +239,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     }
   }, [
     classifySshError,
-    connection,
     disconnectSsh,
     formatErrorDetails,
-    ignoreHostKey,
     isSsh,
-    session,
     dispatch,
     setStatusState,
     writeLine,
@@ -353,8 +369,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     if (isSsh) {
       initSsh();
     } else {
-      term.writeln(`\x1b[32mTerminal ready for ${session.protocol.toUpperCase()} session\x1b[0m`);
-      term.writeln(`\x1b[36mConnected to: ${session.hostname}\x1b[0m`);
+      const currentSession = sessionRef.current;
+      term.writeln(
+        `\x1b[32mTerminal ready for ${currentSession.protocol.toUpperCase()} session\x1b[0m`,
+      );
+      term.writeln(`\x1b[36mConnected to: ${currentSession.hostname}\x1b[0m`);
       setStatusState("connected");
     }
 
@@ -373,23 +392,29 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
-      setStatusState("idle");
-      setError("");
     };
   }, [
     handleInput,
     initSsh,
     isSsh,
     onResize,
-    session.hostname,
-    session.protocol,
+    session.id,
     setStatusState,
-    disconnectSsh,
   ]);
+
+  const safeFit = useCallback(() => {
+    if (isDisposed.current || !fitRef.current || !termRef.current) return;
+    if (!termRef.current.element?.isConnected) return;
+    try {
+      fitRef.current.fit();
+    } catch {
+      // ignore fit failures
+    }
+  }, []);
 
   const toggleFullscreen = () => {
     setIsFullscreen((prev) => !prev);
-    setTimeout(() => fitRef.current?.fit(), 60);
+    setTimeout(() => safeFit(), 60);
   };
 
   const clearTerminal = () => {

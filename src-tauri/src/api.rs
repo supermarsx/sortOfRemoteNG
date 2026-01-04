@@ -372,6 +372,7 @@ async fn connect_mysql(
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct QueryRequest {
     connection_id: String,
     query: String,
@@ -513,6 +514,7 @@ async fn verify_totp(
 
 // WOL handlers
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct WolRequest {
     mac_address: String,
     broadcast_addr: Option<String>,

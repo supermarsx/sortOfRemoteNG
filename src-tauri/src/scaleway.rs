@@ -40,6 +40,7 @@ pub struct ScalewayInstance {
 
 pub struct ScalewayService {
     sessions: HashMap<String, ScalewaySession>,
+    #[allow(dead_code)]
     client: Client,
 }
 

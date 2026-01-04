@@ -6,7 +6,8 @@ import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
 import { useConnections } from "../../src/contexts/useConnections";
 import { Connection, ConnectionSession } from "../../src/types/connection";
 import { SessionViewer } from "../../src/components/SessionViewer";
-import { Monitor } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Minus, Monitor, Pin, Square, X } from "lucide-react";
 
 const reviveSession = (session: ConnectionSession): ConnectionSession => ({
   ...session,
@@ -26,6 +27,10 @@ const DetachedSessionContent: React.FC = () => {
   const sessionId = searchParams.get("sessionId");
   const { state, dispatch } = useConnections();
   const [error, setError] = useState("");
+  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  const isTauri =
+    typeof window !== "undefined" &&
+    Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
 
   useEffect(() => {
     if (!sessionId) {
@@ -68,6 +73,15 @@ const DetachedSessionContent: React.FC = () => {
     }
   }, [dispatch, sessionId, state.sessions]);
 
+  useEffect(() => {
+    if (!isTauri) return;
+    const currentWindow = getCurrentWindow();
+    currentWindow
+      .isAlwaysOnTop()
+      .then(setIsAlwaysOnTop)
+      .catch(() => undefined);
+  }, [isTauri]);
+
   const activeSession = useMemo(
     () => state.sessions.find((session) => session.id === sessionId),
     [state.sessions, sessionId],
@@ -96,8 +110,69 @@ const DetachedSessionContent: React.FC = () => {
   }
 
   return (
-    <div className="h-screen w-screen bg-gray-900">
-      <SessionViewer session={activeSession} />
+    <div className="h-screen w-screen bg-gray-900 flex flex-col">
+      <div
+        className="h-10 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-3 select-none"
+        data-tauri-drag-region
+      >
+        <div className="flex items-center gap-2">
+          <Monitor size={14} className="text-blue-400" />
+          <div className="text-xs text-gray-200 truncate max-w-[60vw]">
+            {activeSession.name || "Detached Session"}
+          </div>
+        </div>
+        <div className="flex items-center space-x-1">
+          <button
+            onClick={async () => {
+              if (!isTauri) return;
+              const currentWindow = getCurrentWindow();
+              const nextValue = !isAlwaysOnTop;
+              await currentWindow.setAlwaysOnTop(nextValue);
+              setIsAlwaysOnTop(nextValue);
+            }}
+            className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title={isAlwaysOnTop ? "Unpin window" : "Pin window"}
+          >
+            <Pin size={12} className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""} />
+          </button>
+          <button
+            onClick={async () => {
+              if (!isTauri) return;
+              const currentWindow = getCurrentWindow();
+              await currentWindow.minimize();
+            }}
+            className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title="Minimize"
+          >
+            <Minus size={12} />
+          </button>
+          <button
+            onClick={async () => {
+              if (!isTauri) return;
+              const currentWindow = getCurrentWindow();
+              await currentWindow.toggleMaximize();
+            }}
+            className="p-1.5 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title="Maximize"
+          >
+            <Square size={10} />
+          </button>
+          <button
+            onClick={async () => {
+              if (!isTauri) return;
+              const currentWindow = getCurrentWindow();
+              await currentWindow.close();
+            }}
+            className="p-1.5 hover:bg-red-600 rounded transition-colors text-gray-400 hover:text-white"
+            title="Close"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-hidden">
+        <SessionViewer session={activeSession} />
+      </div>
     </div>
   );
 };
