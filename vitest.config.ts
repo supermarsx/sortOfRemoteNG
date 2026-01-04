@@ -6,7 +6,17 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: './vitest.setup.ts'
+    setupFiles: './vitest.setup.ts',
+    deps: {
+      inline: [
+        '@tauri-apps/plugin-fs',
+        '@tauri-apps/plugin-dialog',
+        '@tauri-apps/api'
+      ]
+    },
+    alias: {
+      '@tauri-apps/plugin-fs': new URL('./vitest.mocks/tauri-plugin-fs.ts', import.meta.url).pathname,
+      '@tauri-apps/plugin-dialog': new URL('./vitest.mocks/tauri-plugin-dialog.ts', import.meta.url).pathname
+    }
   }
-
 });

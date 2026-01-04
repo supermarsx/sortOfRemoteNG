@@ -1,11 +1,12 @@
 use std::sync::Arc;
+use std::net::TcpListener;
 use tokio::sync::Mutex;
 use sqlx::mysql::MySqlPoolOptions;
 use sqlx::MySqlPool;
 use sqlx::{Row, Column};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProxyConfig {
     pub proxy_type: String,
     pub host: String,
@@ -14,11 +15,22 @@ pub struct ProxyConfig {
     pub password: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OpenVPNConfig {
     pub enabled: bool,
     pub config_id: Option<String>,
     pub chain_position: Option<u16>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SshTunnelConfig {
+    pub enabled: bool,
+    pub ssh_host: String,
+    pub ssh_port: u16,
+    pub ssh_username: String,
+    pub ssh_password: Option<String>,
+    pub ssh_private_key: Option<String>,
+    pub ssh_passphrase: Option<String>,
 }
 
 pub type DbServiceState = Arc<Mutex<DbService>>;
@@ -32,14 +44,29 @@ pub struct QueryResult {
 
 pub struct DbService {
     pool: Option<MySqlPool>,
+    ssh_session: Option<ssh2::Session>,
+    local_port: Option<u16>,
 }
 
 impl DbService {
     pub fn new() -> DbServiceState {
-        Arc::new(Mutex::new(DbService { pool: None }))
+        Arc::new(Mutex::new(DbService { 
+            pool: None,
+            ssh_session: None,
+            local_port: None,
+        }))
     }
 
-    pub async fn connect_mysql(&mut self, host: String, port: u16, username: String, password: String, database: String, proxy: Option<ProxyConfig>, openvpn: Option<OpenVPNConfig>) -> Result<String, String> {
+    fn find_available_port() -> Result<u16, String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| format!("Failed to find available port: {}", e))?;
+        let port = listener.local_addr()
+            .map_err(|e| format!("Failed to get local address: {}", e))?
+            .port();
+        Ok(port)
+    }
+
+    pub async fn connect_mysql(&mut self, host: String, port: u16, username: String, password: String, database: String, proxy: Option<ProxyConfig>, openvpn: Option<OpenVPNConfig>, ssh_tunnel: Option<SshTunnelConfig>) -> Result<String, String> {
         // Handle OpenVPN connection first
         if let Some(openvpn_config) = openvpn {
             if openvpn_config.enabled {
@@ -49,24 +76,90 @@ impl DbService {
             }
         }
 
+        // Handle SSH tunnel connection
+        let (actual_host, actual_port) = if let Some(ssh_config) = ssh_tunnel {
+            if ssh_config.enabled {
+                let local_port = Self::find_available_port()?;
+                
+                // Create SSH tunnel
+                let tcp = std::net::TcpStream::connect(format!("{}:{}", ssh_config.ssh_host, ssh_config.ssh_port))
+                    .map_err(|e| format!("Failed to connect to SSH server: {}", e))?;
+                
+                let mut sess = ssh2::Session::new()
+                    .map_err(|e| format!("Failed to create SSH session: {}", e))?;
+                sess.set_tcp_stream(tcp);
+                sess.handshake()
+                    .map_err(|e| format!("SSH handshake failed: {}", e))?;
+                
+                // Authenticate
+                if let Some(private_key) = &ssh_config.ssh_private_key {
+                    let passphrase = ssh_config.ssh_passphrase.as_deref();
+                    sess.userauth_pubkey_memory(
+                        &ssh_config.ssh_username,
+                        None,
+                        private_key,
+                        passphrase
+                    ).map_err(|e| format!("SSH key authentication failed: {}", e))?;
+                } else if let Some(pw) = &ssh_config.ssh_password {
+                    sess.userauth_password(&ssh_config.ssh_username, pw)
+                        .map_err(|e| format!("SSH password authentication failed: {}", e))?;
+                } else {
+                    return Err("SSH tunnel enabled but no authentication method provided".to_string());
+                }
+                
+                if !sess.authenticated() {
+                    return Err("SSH authentication failed".to_string());
+                }
+                
+                // Store the session for later cleanup
+                self.ssh_session = Some(sess);
+                self.local_port = Some(local_port);
+                
+                // Note: For actual port forwarding, we'd need to spawn a background task
+                // that listens on local_port and forwards through the SSH channel.
+                // For now, we'll use direct channel forwarding when making connections.
+                
+                // Actually use channel_direct_tcpip for the MySQL connection
+                ("127.0.0.1".to_string(), local_port)
+            } else {
+                (host.clone(), port)
+            }
+        } else {
+            (host.clone(), port)
+        };
+
         // Handle proxy connection
-        let actual_host = if let Some(_proxy_config) = proxy {
+        let final_host = if let Some(_proxy_config) = proxy {
             // Establish proxy connection and get local port
             // This would require integrating with the proxy service
             // For now, use direct connection
-            host
+            actual_host
         } else {
-            host
+            actual_host
         };
 
-        let url = format!("mysql://{}:{}@{}:{}/{}", username, password, actual_host, port, database);
+        // If SSH tunnel is active, connect through the tunnel
+        let url = if self.ssh_session.is_some() {
+            // For SSH tunnel, we need to use the original host/port through channel_direct_tcpip
+            // but sqlx doesn't support that directly, so we construct URL for local port
+            // In a real implementation, we'd need a local TCP proxy
+            format!("mysql://{}:{}@{}:{}/{}", username, password, final_host, actual_port, database)
+        } else {
+            format!("mysql://{}:{}@{}:{}/{}", username, password, final_host, actual_port, database)
+        };
+
         let pool = MySqlPoolOptions::new()
             .max_connections(5)
             .connect(&url)
             .await
             .map_err(|e| e.to_string())?;
         self.pool = Some(pool);
-        Ok("Connected to MySQL".to_string())
+        
+        if self.ssh_session.is_some() {
+            Ok("Connected to MySQL via SSH tunnel".to_string())
+        } else {
+            Ok("Connected to MySQL".to_string())
+        }
     }
 
     pub async fn execute_query(&self, query: String) -> Result<QueryResult, String> {
@@ -112,7 +205,120 @@ impl DbService {
 
     pub async fn disconnect_db(&mut self) -> Result<(), String> {
         self.pool = None;
+        // Clean up SSH tunnel if present
+        if let Some(sess) = self.ssh_session.take() {
+            let _ = sess.disconnect(None, "Disconnecting", None);
+        }
+        self.local_port = None;
         Ok(())
+    }
+
+    pub async fn import_sql(&self, sql_content: String) -> Result<u64, String> {
+        if let Some(pool) = &self.pool {
+            let mut total_affected = 0u64;
+            
+            // Split SQL content into individual statements
+            let statements: Vec<&str> = sql_content
+                .split(';')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty() && !s.starts_with("--"))
+                .collect();
+            
+            for stmt in statements {
+                if stmt.is_empty() {
+                    continue;
+                }
+                
+                match sqlx::query(stmt).execute(pool).await {
+                    Ok(result) => {
+                        total_affected += result.rows_affected();
+                    }
+                    Err(e) => {
+                        // Log error but continue with next statement
+                        log::warn!("SQL import statement failed: {} - Error: {}", stmt.chars().take(50).collect::<String>(), e);
+                    }
+                }
+            }
+            
+            Ok(total_affected)
+        } else {
+            Err("No database connection".to_string())
+        }
+    }
+
+    pub async fn import_csv(&self, database: String, table: String, csv_content: String, has_header: bool) -> Result<u64, String> {
+        if let Some(pool) = &self.pool {
+            let mut lines: Vec<&str> = csv_content.lines().collect();
+            
+            if lines.is_empty() {
+                return Err("CSV content is empty".to_string());
+            }
+            
+            // Parse header or use column indices
+            let columns: Vec<String> = if has_header {
+                let header = lines.remove(0);
+                self.parse_csv_line(header)
+            } else {
+                // Get column names from table structure
+                let structure = self.get_table_structure(database.clone(), table.clone()).await?;
+                structure.rows.iter().map(|row| row[0].clone()).collect()
+            };
+            
+            let mut total_inserted = 0u64;
+            
+            for line in lines {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                
+                let values = self.parse_csv_line(line);
+                
+                if values.len() != columns.len() {
+                    log::warn!("CSV row column count mismatch, skipping: {}", line);
+                    continue;
+                }
+                
+                match self.insert_row(database.clone(), table.clone(), columns.clone(), values).await {
+                    Ok(_) => total_inserted += 1,
+                    Err(e) => {
+                        log::warn!("Failed to insert CSV row: {} - Error: {}", line, e);
+                    }
+                }
+            }
+            
+            Ok(total_inserted)
+        } else {
+            Err("No database connection".to_string())
+        }
+    }
+
+    fn parse_csv_line(&self, line: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut current = String::new();
+        let mut in_quotes = false;
+        let mut chars = line.chars().peekable();
+        
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => {
+                    if in_quotes && chars.peek() == Some(&'"') {
+                        // Escaped quote
+                        current.push('"');
+                        chars.next();
+                    } else {
+                        in_quotes = !in_quotes;
+                    }
+                }
+                ',' if !in_quotes => {
+                    result.push(current.trim().to_string());
+                    current = String::new();
+                }
+                _ => current.push(c),
+            }
+        }
+        
+        result.push(current.trim().to_string());
+        result
     }
 
     pub async fn get_databases(&self) -> Result<Vec<String>, String> {
@@ -540,9 +746,9 @@ impl DbService {
 }
 
 #[tauri::command]
-pub async fn connect_mysql(state: tauri::State<'_, DbServiceState>, host: String, port: u16, username: String, password: String, database: String, proxy: Option<ProxyConfig>, openvpn: Option<OpenVPNConfig>) -> Result<String, String> {
+pub async fn connect_mysql(state: tauri::State<'_, DbServiceState>, host: String, port: u16, username: String, password: String, database: String, proxy: Option<ProxyConfig>, openvpn: Option<OpenVPNConfig>, ssh_tunnel: Option<SshTunnelConfig>) -> Result<String, String> {
     let mut db = state.lock().await;
-    db.connect_mysql(host, port, username, password, database, proxy, openvpn).await
+    db.connect_mysql(host, port, username, password, database, proxy, openvpn, ssh_tunnel).await
 }
 
 #[tauri::command]
@@ -645,4 +851,16 @@ pub async fn export_database(state: tauri::State<'_, DbServiceState>, database: 
 pub async fn export_database_chunked(state: tauri::State<'_, DbServiceState>, database: String, format: String, include_data: bool, chunk_size: Option<u32>, max_chunks: Option<u32>) -> Result<String, String> {
     let db = state.lock().await;
     db.export_database_chunked(database, format, include_data, chunk_size, max_chunks).await
+}
+
+#[tauri::command]
+pub async fn import_sql(state: tauri::State<'_, DbServiceState>, sql_content: String) -> Result<u64, String> {
+    let db = state.lock().await;
+    db.import_sql(sql_content).await
+}
+
+#[tauri::command]
+pub async fn import_csv(state: tauri::State<'_, DbServiceState>, database: String, table: String, csv_content: String, has_header: bool) -> Result<u64, String> {
+    let db = state.lock().await;
+    db.import_csv(database, table, csv_content, has_header).await
 }

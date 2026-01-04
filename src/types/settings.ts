@@ -84,6 +84,7 @@ export interface GlobalSettings {
   showLanguageSelectorIcon: boolean;
   showProxyMenuIcon: boolean;
   showShortcutManagerIcon: boolean;
+  showWolIcon: boolean;
 
   // Auto Lock
   autoLock: AutoLockConfig;

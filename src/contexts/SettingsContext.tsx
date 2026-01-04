@@ -47,6 +47,7 @@ const defaultSettings: GlobalSettings = {
   showLanguageSelectorIcon: true,
   showProxyMenuIcon: true,
   showShortcutManagerIcon: true,
+  showWolIcon: true,
   autoLock: {
     enabled: false,
     timeoutMinutes: 15,

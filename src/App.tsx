@@ -15,6 +15,7 @@ import {
   Droplet,
   Keyboard,
   Network,
+  Power,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -50,6 +51,7 @@ import { ImportExport } from "./components/ImportExport";
 import { AutoLockManager } from "./components/AutoLockManager";
 import { ShortcutManagerDialog } from "./components/ShortcutManagerDialog";
 import { ProxyChainMenu } from "./components/ProxyChainMenu";
+import { WOLQuickTool } from "./components/WOLQuickTool";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -72,6 +74,7 @@ const AppContent: React.FC = () => {
   const [showImportExport, setShowImportExport] = useState(false);
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showProxyMenu, setShowProxyMenu] = useState(false);
+  const [showWol, setShowWol] = useState(false);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<string | null>(null);
   const [tabLayout, setTabLayout] = useState<TabLayout>(() => ({
     mode: "tabs",
@@ -1340,6 +1343,15 @@ const AppContent: React.FC = () => {
               <Keyboard size={14} />
             </button>
           )}
+          {appSettings.showWolIcon && (
+            <button
+              onClick={() => setShowWol(true)}
+              className="app-bar-button p-2"
+              title="Wake-on-LAN"
+            >
+              <Power size={14} />
+            </button>
+          )}
           {appSettings.showPerformanceMonitorIcon && (
             <button
               onClick={() => setShowPerformanceMonitor(true)}
@@ -1519,6 +1531,11 @@ const AppContent: React.FC = () => {
       <ProxyChainMenu
         isOpen={showProxyMenu}
         onClose={() => setShowProxyMenu(false)}
+      />
+
+      <WOLQuickTool
+        isOpen={showWol}
+        onClose={() => setShowWol(false)}
       />
     </div>
   );
