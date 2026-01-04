@@ -128,6 +128,10 @@ export interface Connection {
     onConnect?: string[];
     onDisconnect?: string[];
   };
+
+  // Proxy/VPN chaining
+  proxyChainId?: string;
+  connectionChainId?: string;
 }
 
 export interface ConnectionSession {

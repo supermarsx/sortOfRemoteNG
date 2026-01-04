@@ -84,6 +84,98 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
           <span className="text-gray-300">Allow connection reordering</span>
         </label>
       </div>
+
+      <div className="space-y-4">
+        <h4 className="text-sm font-semibold text-gray-200">Secondary Bar</h4>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showQuickConnectIcon}
+            onChange={(e) => updateSettings({ showQuickConnectIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Quick Connect</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showCollectionSwitcherIcon}
+            onChange={(e) => updateSettings({ showCollectionSwitcherIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Collection Switcher</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showImportExportIcon}
+            onChange={(e) => updateSettings({ showImportExportIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Import/Export</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showSettingsIcon}
+            onChange={(e) => updateSettings({ showSettingsIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Settings</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showProxyMenuIcon}
+            onChange={(e) => updateSettings({ showProxyMenuIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Proxy/VPN Menu</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showShortcutManagerIcon}
+            onChange={(e) => updateSettings({ showShortcutManagerIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Shortcut Manager</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showPerformanceMonitorIcon}
+            onChange={(e) => updateSettings({ showPerformanceMonitorIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Performance Monitor</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showActionLogIcon}
+            onChange={(e) => updateSettings({ showActionLogIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Action Log</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showDevtoolsIcon}
+            onChange={(e) => updateSettings({ showDevtoolsIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Devtools</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showSecurityIcon}
+            onChange={(e) => updateSettings({ showSecurityIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Security</span>
+        </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={settings.showLanguageSelectorIcon}
+            onChange={(e) => updateSettings({ showLanguageSelectorIcon: e.target.checked })}
+          />
+          <span className="text-gray-300">Show Language Selector</span>
+        </label>
+      </div>
     </div>
   );
 };

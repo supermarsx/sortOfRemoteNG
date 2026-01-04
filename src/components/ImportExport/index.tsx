@@ -13,9 +13,14 @@ import { generateId } from '../../utils/id';
 interface ImportExportProps {
   isOpen: boolean;
   onClose: () => void;
+  embedded?: boolean;
 }
 
-export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) => {
+export const ImportExport: React.FC<ImportExportProps> = ({
+  isOpen,
+  onClose,
+  embedded = false,
+}) => {
   const { state, dispatch } = useConnections();
   const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
   const [exportFormat, setExportFormat] = useState<'json' | 'xml' | 'csv'>('json');
@@ -316,16 +321,20 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
     }
   };
 
-  if (!isOpen) return null;
+  React.useEffect(() => {
+    if (!isOpen || embedded) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [embedded, isOpen, onClose]);
 
-  return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative">
+  const content = (
+    <div className={embedded ? "" : "bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative"}>
+      {!embedded && (
         <div className="relative h-16 border-b border-gray-700">
           <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
             Import / Export Connections
@@ -337,65 +346,79 @@ export const ImportExport: React.FC<ImportExportProps> = ({ isOpen, onClose }) =
             <X size={20} />
           </button>
         </div>
+      )}
 
-        <div className="p-6">
-          {/* Tabs */}
-          <div className="flex space-x-1 mb-6 bg-gray-700 rounded-lg p-1">
-            <button
-              onClick={() => setActiveTab('export')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                activeTab === 'export'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              <Download size={16} className="inline mr-2" />
-              Export
-            </button>
-            <button
-              onClick={() => setActiveTab('import')}
-              className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                activeTab === 'import'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:text-white'
-              }`}
-            >
-              <Upload size={16} className="inline mr-2" />
-              Import
-            </button>
-          </div>
-
-          {/* Export Tab */}
-          {activeTab === 'export' && (
-            <ExportTab
-              connections={state.connections}
-              exportFormat={exportFormat}
-              setExportFormat={setExportFormat}
-              includePasswords={includePasswords}
-              setIncludePasswords={setIncludePasswords}
-              exportEncrypted={exportEncrypted}
-              setExportEncrypted={setExportEncrypted}
-              exportPassword={exportPassword}
-              setExportPassword={setExportPassword}
-              isProcessing={isProcessing}
-              handleExport={handleExport}
-            />
-          )}
-
-          {/* Import Tab */}
-          {activeTab === 'import' && (
-            <ImportTab
-              isProcessing={isProcessing}
-              handleImport={handleImport}
-              fileInputRef={fileInputRef}
-              importResult={importResult}
-              handleFileSelect={handleFileSelect}
-              confirmImport={confirmImport}
-              cancelImport={() => setImportResult(null)}
-            />
-          )}
+      <div className={embedded ? "p-0" : "p-6"}>
+        {/* Tabs */}
+        <div className="flex space-x-1 mb-6 bg-gray-700 rounded-lg p-1">
+          <button
+            onClick={() => setActiveTab("export")}
+            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === "export"
+                ? "bg-blue-600 text-white"
+                : "text-gray-300 hover:text-white"
+            }`}
+          >
+            <Download size={16} className="inline mr-2" />
+            Export
+          </button>
+          <button
+            onClick={() => setActiveTab("import")}
+            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === "import"
+                ? "bg-blue-600 text-white"
+                : "text-gray-300 hover:text-white"
+            }`}
+          >
+            <Upload size={16} className="inline mr-2" />
+            Import
+          </button>
         </div>
+
+        {/* Export Tab */}
+        {activeTab === "export" && (
+          <ExportTab
+            connections={state.connections}
+            exportFormat={exportFormat}
+            setExportFormat={setExportFormat}
+            includePasswords={includePasswords}
+            setIncludePasswords={setIncludePasswords}
+            exportEncrypted={exportEncrypted}
+            setExportEncrypted={setExportEncrypted}
+            exportPassword={exportPassword}
+            setExportPassword={setExportPassword}
+            isProcessing={isProcessing}
+            handleExport={handleExport}
+          />
+        )}
+
+        {/* Import Tab */}
+        {activeTab === "import" && (
+          <ImportTab
+            isProcessing={isProcessing}
+            handleImport={handleImport}
+            fileInputRef={fileInputRef}
+            importResult={importResult}
+            handleFileSelect={handleFileSelect}
+            confirmImport={confirmImport}
+            cancelImport={() => setImportResult(null)}
+          />
+        )}
       </div>
+    </div>
+  );
+
+  if (!isOpen && !embedded) return null;
+  if (embedded) return content;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {content}
     </div>
   );
 };

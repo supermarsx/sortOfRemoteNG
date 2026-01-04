@@ -14,6 +14,10 @@ import {
   ScrollText,
   Shield,
   FileText,
+  Droplet,
+  DropletOff,
+  Keyboard,
+  Network,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -44,6 +48,8 @@ import { PerformanceMonitor } from "./components/PerformanceMonitor";
 import { ActionLogViewer } from "./components/ActionLogViewer";
 import { ImportExport } from "./components/ImportExport";
 import { AutoLockManager } from "./components/AutoLockManager";
+import { ShortcutManagerDialog } from "./components/ShortcutManagerDialog";
+import { ProxyChainMenu } from "./components/ProxyChainMenu";
 import { loadLanguage } from "./i18n";
 
 /**
@@ -65,6 +71,8 @@ const AppContent: React.FC = () => {
   const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
   const [showActionLog, setShowActionLog] = useState(false);
   const [showImportExport, setShowImportExport] = useState(false);
+  const [showShortcutManager, setShowShortcutManager] = useState(false);
+  const [showProxyMenu, setShowProxyMenu] = useState(false);
   const [passwordDialogMode, setPasswordDialogMode] = useState<
     "setup" | "unlock"
   >("setup"); // current mode for password dialog
@@ -92,6 +100,7 @@ const AppContent: React.FC = () => {
   const hasUnsavedWorkRef = useRef(false);
   const [hasStoragePassword, setHasStoragePassword] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
 
   const statusChecker = StatusChecker.getInstance();
   const collectionManager = CollectionManager.getInstance();
@@ -127,6 +136,7 @@ const AppContent: React.FC = () => {
         await loadLanguage(language);
       }
       await i18n.changeLanguage(language);
+      await settingsManager.saveSettings({ language });
     } catch (error) {
       console.error("Failed to change language:", error);
     } finally {
@@ -432,11 +442,164 @@ const AppContent: React.FC = () => {
   ]);
 
   useEffect(() => {
+    if (!appSettings) return;
+    const root = document.documentElement;
+    root.style.setProperty("--app-glow-color", appSettings.backgroundGlowColor || "#2563eb");
+    root.style.setProperty(
+      "--app-glow-opacity",
+      `${appSettings.backgroundGlowOpacity ?? 0}`,
+    );
+    root.style.setProperty(
+      "--app-glow-radius",
+      `${appSettings.backgroundGlowRadius ?? 520}px`,
+    );
+    root.style.setProperty(
+      "--app-glow-blur",
+      `${appSettings.backgroundGlowBlur ?? 140}px`,
+    );
+  }, [
+    appSettings,
+    appSettings.backgroundGlowBlur,
+    appSettings.backgroundGlowColor,
+    appSettings.backgroundGlowOpacity,
+    appSettings.backgroundGlowRadius,
+  ]);
+
+  useEffect(() => {
+    const tooltip = document.createElement("div");
+    tooltip.className = "app-tooltip";
+    document.body.appendChild(tooltip);
+    tooltipRef.current = tooltip;
+
+    let activeTarget: HTMLElement | null = null;
+
+    const positionTooltip = (target: HTMLElement) => {
+      const tooltipEl = tooltipRef.current;
+      if (!tooltipEl) return;
+      const rect = target.getBoundingClientRect();
+      const tooltipRect = tooltipEl.getBoundingClientRect();
+      const spacing = 8;
+
+      let top = rect.top - tooltipRect.height - spacing;
+      let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+
+      if (top < spacing) {
+        top = rect.bottom + spacing;
+      }
+      left = Math.min(
+        Math.max(spacing, left),
+        window.innerWidth - tooltipRect.width - spacing,
+      );
+      top = Math.min(
+        Math.max(spacing, top),
+        window.innerHeight - tooltipRect.height - spacing,
+      );
+
+      tooltipEl.style.left = `${left}px`;
+      tooltipEl.style.top = `${top}px`;
+    };
+
+    const showTooltip = (target: HTMLElement) => {
+      const tooltipEl = tooltipRef.current;
+      if (!tooltipEl) return;
+      const text = target.getAttribute("data-tooltip");
+      if (!text) return;
+      tooltipEl.textContent = text;
+      tooltipEl.classList.add("is-visible");
+      tooltipEl.style.display = "block";
+      positionTooltip(target);
+    };
+
+    const hideTooltip = () => {
+      const tooltipEl = tooltipRef.current;
+      if (!tooltipEl) return;
+      tooltipEl.classList.remove("is-visible");
+      tooltipEl.style.display = "none";
+    };
+
+    const handlePointerOver = (event: MouseEvent) => {
+      const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+        "[data-tooltip]",
+      );
+      if (!target) return;
+      if (activeTarget === target) return;
+      activeTarget = target;
+      showTooltip(target);
+    };
+
+    const handlePointerOut = (event: MouseEvent) => {
+      if (!activeTarget) return;
+      const related = event.relatedTarget as HTMLElement | null;
+      if (related && activeTarget.contains(related)) {
+        return;
+      }
+      activeTarget = null;
+      hideTooltip();
+    };
+
+    const handleFocusIn = (event: FocusEvent) => {
+      const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+        "[data-tooltip]",
+      );
+      if (!target) return;
+      activeTarget = target;
+      showTooltip(target);
+    };
+
+    const handleFocusOut = () => {
+      activeTarget = null;
+      hideTooltip();
+    };
+
+    const handleWindowChange = () => {
+      if (activeTarget) {
+        positionTooltip(activeTarget);
+      }
+    };
+
+    document.addEventListener("mouseover", handlePointerOver);
+    document.addEventListener("mouseout", handlePointerOut);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    window.addEventListener("resize", handleWindowChange);
+    window.addEventListener("scroll", handleWindowChange, true);
+
+    return () => {
+      document.removeEventListener("mouseover", handlePointerOver);
+      document.removeEventListener("mouseout", handlePointerOut);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+      window.removeEventListener("resize", handleWindowChange);
+      window.removeEventListener("scroll", handleWindowChange, true);
+      tooltipRef.current?.remove();
+      tooltipRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     const window = getCurrentWindow();
     window.isAlwaysOnTop()
       .then(setIsAlwaysOnTop)
       .catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (!appSettings) return;
+    const window = getCurrentWindow();
+    const targetOpacity = appSettings.windowTransparencyEnabled
+      ? Math.min(1, Math.max(0.4, appSettings.windowTransparencyOpacity || 1))
+      : 1;
+    window.setOpacity(targetOpacity).catch((error) => {
+      if (!isWindowPermissionError(error)) {
+        console.error("Failed to set window opacity:", error);
+      }
+    });
+  }, [
+    appSettings,
+    appSettings.windowTransparencyEnabled,
+    appSettings.windowTransparencyOpacity,
+    isWindowPermissionError,
+  ]);
 
   useEffect(() => {
     const elements = document.querySelectorAll<HTMLElement>("[title]");
@@ -635,6 +798,11 @@ const AppContent: React.FC = () => {
     await window.minimize();
   };
 
+  const handleToggleTransparency = async () => {
+    const nextValue = !appSettings.windowTransparencyEnabled;
+    await settingsManager.saveSettings({ windowTransparencyEnabled: nextValue });
+  };
+
   const handleToggleAlwaysOnTop = async () => {
     const window = getCurrentWindow();
     const nextValue = !isAlwaysOnTop;
@@ -688,7 +856,11 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="h-full bg-gray-900 text-white flex flex-col overflow-hidden">
+    <div
+      className={`h-full bg-gray-900 text-white flex flex-col overflow-hidden app-shell ${
+        appSettings.backgroundGlowEnabled ? "app-glow" : ""
+      }`}
+    >
       {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
       {/* Top bar */}
       <div
@@ -710,6 +882,13 @@ const AppContent: React.FC = () => {
 
         {/* Window Controls */}
         <div className="flex items-center space-x-1">
+          <button
+            onClick={handleToggleTransparency}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title={appSettings.windowTransparencyEnabled ? "Disable transparency" : "Enable transparency"}
+          >
+            {appSettings.windowTransparencyEnabled ? <Droplet size={14} /> : <DropletOff size={14} />}
+          </button>
           <button
             onClick={handleToggleAlwaysOnTop}
             className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
@@ -744,93 +923,129 @@ const AppContent: React.FC = () => {
       {/* Secondary actions bar */}
       <div className="h-9 bg-gray-800/80 border-b border-gray-700 flex items-center justify-between px-3 select-none">
         <div className="flex items-center space-x-1">
-          <button
-            onClick={() => setShowQuickConnect(true)}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
-            title={t("connections.quickConnect")}
-          >
-            <Zap size={14} />
-          </button>
-          <button
-            onClick={() => setShowCollectionSelector(true)}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
-            title="Switch Collection"
-          >
-            <Database size={14} />
-          </button>
-          <button
-            onClick={() => setShowImportExport(true)}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
-            title="Import/Export"
-          >
-            <FileText size={14} />
-          </button>
-          <button
-            onClick={() => setShowSettings(true)}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
-            title="Settings"
-          >
-            <Settings size={14} />
-          </button>
+          {appSettings.showQuickConnectIcon && (
+            <button
+              onClick={() => setShowQuickConnect(true)}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title={t("connections.quickConnect")}
+            >
+              <Zap size={14} />
+            </button>
+          )}
+          {appSettings.showCollectionSwitcherIcon && (
+            <button
+              onClick={() => setShowCollectionSelector(true)}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Switch Collection"
+            >
+              <Database size={14} />
+            </button>
+          )}
+          {appSettings.showImportExportIcon && (
+            <button
+              onClick={() => setShowImportExport(true)}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Import/Export"
+            >
+              <FileText size={14} />
+            </button>
+          )}
+          {appSettings.showSettingsIcon && (
+            <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Settings"
+            >
+              <Settings size={14} />
+            </button>
+          )}
         </div>
 
         <div className="flex items-center space-x-1">
-          <button
-            onClick={() => setShowPerformanceMonitor(true)}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
-            title="Performance Monitor"
-          >
-            <BarChart3 size={14} />
-          </button>
-          <button
-            onClick={() => setShowActionLog(true)}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
-            title="Action Log"
-          >
-            <ScrollText size={14} />
-          </button>
-          <button
-            onClick={handleOpenDevtools}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
-            title="Open dev console"
-          >
-            <Terminal size={14} />
-          </button>
-          <button
-            onClick={handleShowPasswordDialog}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
-            title="Security"
-          >
-            <Shield size={14} />
-          </button>
-          <div className="relative" ref={languageMenuRef}>
+          {appSettings.showProxyMenuIcon && (
             <button
-              onClick={() => setShowLanguageMenu((prev) => !prev)}
+              onClick={() => setShowProxyMenu(true)}
               className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
-              title="Change language"
+              title="Proxy & VPN"
             >
-              <Globe size={14} />
+              <Network size={14} />
             </button>
-            {showLanguageMenu && (
-              <div className="absolute right-0 mt-2 w-44 bg-gray-800 border border-gray-700 rounded-md shadow-lg py-2 z-20">
-                {languageOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    onClick={() => {
-                      handleLanguageChange(option.value);
-                    }}
-                    className={`flex items-center w-full px-3 py-2 text-sm transition-colors ${
-                      i18n.language === option.value
-                        ? "text-white bg-blue-700/40"
-                        : "text-gray-200 hover:bg-gray-700"
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
+          {appSettings.showShortcutManagerIcon && (
+            <button
+              onClick={() => setShowShortcutManager(true)}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Shortcut Manager"
+            >
+              <Keyboard size={14} />
+            </button>
+          )}
+          {appSettings.showPerformanceMonitorIcon && (
+            <button
+              onClick={() => setShowPerformanceMonitor(true)}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Performance Monitor"
+            >
+              <BarChart3 size={14} />
+            </button>
+          )}
+          {appSettings.showActionLogIcon && (
+            <button
+              onClick={() => setShowActionLog(true)}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Action Log"
+            >
+              <ScrollText size={14} />
+            </button>
+          )}
+          {appSettings.showDevtoolsIcon && (
+            <button
+              onClick={handleOpenDevtools}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Open dev console"
+            >
+              <Terminal size={14} />
+            </button>
+          )}
+          {appSettings.showSecurityIcon && (
+            <button
+              onClick={handleShowPasswordDialog}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+              title="Security"
+            >
+              <Shield size={14} />
+            </button>
+          )}
+          {appSettings.showLanguageSelectorIcon && (
+            <div className="relative" ref={languageMenuRef}>
+              <button
+                onClick={() => setShowLanguageMenu((prev) => !prev)}
+                className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+                title="Change language"
+              >
+                <Globe size={14} />
+              </button>
+              {showLanguageMenu && (
+                <div className="absolute right-0 mt-2 w-44 bg-gray-800 border border-gray-700 rounded-md shadow-lg py-2 z-20">
+                  {languageOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => {
+                        handleLanguageChange(option.value);
+                      }}
+                      className={`flex items-center w-full px-3 py-2 text-sm transition-colors ${
+                        i18n.language === option.value
+                          ? "text-white bg-blue-700/40"
+                          : "text-gray-200 hover:bg-gray-700"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -950,6 +1165,16 @@ const AppContent: React.FC = () => {
       <ActionLogViewer
         isOpen={showActionLog}
         onClose={() => setShowActionLog(false)}
+      />
+
+      <ShortcutManagerDialog
+        isOpen={showShortcutManager}
+        onClose={() => setShowShortcutManager(false)}
+      />
+
+      <ProxyChainMenu
+        isOpen={showProxyMenu}
+        onClose={() => setShowProxyMenu(false)}
       />
     </div>
   );

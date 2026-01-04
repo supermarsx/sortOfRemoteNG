@@ -29,6 +29,29 @@ body {
   color: var(--color-text);
 }
 
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-shell.app-glow::before {
+  content: "";
+  position: absolute;
+  inset: -15%;
+  background:
+    radial-gradient(circle at 15% -10%, var(--app-glow-color) 0, transparent var(--app-glow-radius)),
+    radial-gradient(circle at 85% 0%, var(--app-glow-color) 0, transparent var(--app-glow-radius));
+  opacity: var(--app-glow-opacity);
+  filter: blur(var(--app-glow-blur));
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
 * {
   scrollbar-color: var(--color-primary) var(--color-surface);
   scrollbar-width: thin;
@@ -90,34 +113,26 @@ input[type="checkbox"]:disabled {
   cursor: not-allowed;
 }
 
-[data-tooltip] {
-  position: relative;
-}
-
-[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: 120%;
-  left: 50%;
-  transform: translate(-50%, 6px);
-  opacity: 0;
-  pointer-events: none;
-  white-space: nowrap;
-  padding: 4px 8px;
+.app-tooltip {
+  position: fixed;
+  max-width: min(260px, 80vw);
+  padding: 6px 10px;
   font-size: 11px;
   color: var(--color-text);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
-[data-tooltip]:hover::after,
-[data-tooltip]:focus-visible::after {
+.app-tooltip.is-visible {
   opacity: 1;
-  transform: translate(-50%, 0);
+  transform: translateY(0);
 }
 
 /* Map commonly used Tailwind utility classes to theme variables */

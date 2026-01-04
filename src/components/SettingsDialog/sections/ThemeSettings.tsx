@@ -40,6 +40,13 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
     }));
   }, [schemes, settings.primaryAccentColor, themeManager]);
 
+  const handleAccentChange = (value: string) => {
+    updateSettings({
+      primaryAccentColor: value,
+      colorScheme: "other",
+    });
+  };
+
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white">
@@ -101,9 +108,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
             <input
               type="color"
               value={settings.primaryAccentColor || "#3b82f6"}
-              onChange={(e) =>
-                updateSettings({ primaryAccentColor: e.target.value })
-              }
+              onChange={(e) => handleAccentChange(e.target.value)}
               className="w-full h-12 bg-gray-700 border-2 border-gray-600 rounded-md cursor-pointer transition-all duration-200 hover:border-blue-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               style={{
                 background: `linear-gradient(45deg, #808080 25%, transparent 25%),
@@ -131,6 +136,129 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
           <p className="text-xs text-gray-400 mt-2">
             Use the "Other" scheme to apply this accent.
           </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Background Glow
+          </label>
+          <div className="space-y-3 rounded-lg border border-gray-700 bg-gray-800/60 p-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={settings.backgroundGlowEnabled}
+                onChange={(e) =>
+                  updateSettings({ backgroundGlowEnabled: e.target.checked })
+                }
+              />
+              <span className="text-sm text-gray-300">Enable glow</span>
+            </label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Glow Color</label>
+                <input
+                  type="color"
+                  value={settings.backgroundGlowColor || "#2563eb"}
+                  onChange={(e) =>
+                    updateSettings({ backgroundGlowColor: e.target.value })
+                  }
+                  className="w-full h-10 bg-gray-700 border border-gray-600 rounded-md cursor-pointer"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Opacity</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={settings.backgroundGlowOpacity}
+                  onChange={(e) =>
+                    updateSettings({
+                      backgroundGlowOpacity: Math.min(
+                        1,
+                        Math.max(0, parseFloat(e.target.value || "0")),
+                      ),
+                    })
+                  }
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Glow Radius (px)</label>
+                <input
+                  type="number"
+                  min="200"
+                  max="1200"
+                  value={settings.backgroundGlowRadius}
+                  onChange={(e) =>
+                    updateSettings({
+                      backgroundGlowRadius: Math.max(
+                        200,
+                        parseInt(e.target.value || "0"),
+                      ),
+                    })
+                  }
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Glow Blur (px)</label>
+                <input
+                  type="number"
+                  min="40"
+                  max="320"
+                  value={settings.backgroundGlowBlur}
+                  onChange={(e) =>
+                    updateSettings({
+                      backgroundGlowBlur: Math.max(
+                        40,
+                        parseInt(e.target.value || "0"),
+                      ),
+                    })
+                  }
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-2">
+            Window Transparency
+          </label>
+          <div className="space-y-3 rounded-lg border border-gray-700 bg-gray-800/60 p-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={settings.windowTransparencyEnabled}
+                onChange={(e) =>
+                  updateSettings({ windowTransparencyEnabled: e.target.checked })
+                }
+              />
+              <span className="text-sm text-gray-300">Enable transparency</span>
+            </label>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Opacity</label>
+              <input
+                type="number"
+                step="0.02"
+                min="0.4"
+                max="1"
+                value={settings.windowTransparencyOpacity}
+                onChange={(e) =>
+                  updateSettings({
+                    windowTransparencyOpacity: Math.min(
+                      1,
+                      Math.max(0.4, parseFloat(e.target.value || "1")),
+                    ),
+                  })
+                }
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+              />
+            </div>
+          </div>
         </div>
 
         <div>

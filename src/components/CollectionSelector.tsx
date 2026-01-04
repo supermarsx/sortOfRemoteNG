@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload, X } from 'lucide-react';
+import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload, X, Layers } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionCollection } from '../types/connection';
 import { CollectionManager } from '../utils/collectionManager';
+import { ImportExport } from './ImportExport';
 
 interface CollectionSelectorProps {
   isOpen: boolean;
@@ -48,6 +49,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState<'collections' | 'connections'>('collections');
 
   const collectionManager = CollectionManager.getInstance();
 
@@ -315,27 +317,31 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden relative">
-        <div className="relative h-16 border-b border-gray-700">
-          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white flex items-center space-x-2">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-5xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white flex items-center space-x-2">
             <Database size={20} className="text-blue-400" />
-            <span>Connection Collections</span>
+            <span>Collection Center</span>
           </h2>
-          <div className="absolute right-4 top-3 flex items-center space-x-2">
-            <button
-              onClick={() => setShowImportForm(true)}
-              className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
-            >
-              <Upload size={14} />
-              <span>Import</span>
-            </button>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
-            >
-              <Plus size={14} />
-              <span>New</span>
-            </button>
+          <div className="flex items-center space-x-2">
+            {activeTab === 'collections' && (
+              <>
+                <button
+                  onClick={() => setShowImportForm(true)}
+                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                >
+                  <Upload size={14} />
+                  <span>Import</span>
+                </button>
+                <button
+                  onClick={() => setShowCreateForm(true)}
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                >
+                  <Plus size={14} />
+                  <span>New</span>
+                </button>
+              </>
+            )}
             <button
               onClick={onClose}
               className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
@@ -346,7 +352,36 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
           </div>
         </div>
 
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+        <div className="flex flex-1 min-h-0">
+          <div className="w-60 bg-gray-900 border-r border-gray-700 p-4 space-y-2">
+            <button
+              onClick={() => setActiveTab('collections')}
+              className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
+                activeTab === 'collections'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <Database size={16} />
+              <span>Collections</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('connections')}
+              className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
+                activeTab === 'connections'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <Layers size={16} />
+              <span>Connections</span>
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="p-6">
+              {activeTab === 'collections' && (
+                <div className="space-y-6">
           {/* Create Collection Form */}
           {showCreateForm && (
             <div className="bg-gray-700 rounded-lg p-6 mb-6">

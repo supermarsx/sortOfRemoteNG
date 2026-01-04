@@ -20,6 +20,27 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   warnOnClose: true,
   warnOnExit: true,
 
+  backgroundGlowEnabled: true,
+  backgroundGlowColor: "#2563eb",
+  backgroundGlowOpacity: 0.25,
+  backgroundGlowRadius: 520,
+  backgroundGlowBlur: 140,
+
+  windowTransparencyEnabled: false,
+  windowTransparencyOpacity: 0.94,
+
+  showQuickConnectIcon: true,
+  showCollectionSwitcherIcon: true,
+  showImportExportIcon: true,
+  showSettingsIcon: true,
+  showPerformanceMonitorIcon: true,
+  showActionLogIcon: true,
+  showDevtoolsIcon: true,
+  showSecurityIcon: true,
+  showLanguageSelectorIcon: true,
+  showProxyMenuIcon: true,
+  showShortcutManagerIcon: true,
+
   autoLock: {
     enabled: false,
     timeoutMinutes: 15,

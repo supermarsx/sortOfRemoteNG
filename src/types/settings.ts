@@ -40,6 +40,30 @@ export interface GlobalSettings {
   warnOnClose: boolean;
   warnOnExit: boolean;
 
+  // Theme Effects
+  backgroundGlowEnabled: boolean;
+  backgroundGlowColor: string;
+  backgroundGlowOpacity: number;
+  backgroundGlowRadius: number;
+  backgroundGlowBlur: number;
+
+  // Window Effects
+  windowTransparencyEnabled: boolean;
+  windowTransparencyOpacity: number;
+
+  // Secondary Bar Toggles
+  showQuickConnectIcon: boolean;
+  showCollectionSwitcherIcon: boolean;
+  showImportExportIcon: boolean;
+  showSettingsIcon: boolean;
+  showPerformanceMonitorIcon: boolean;
+  showActionLogIcon: boolean;
+  showDevtoolsIcon: boolean;
+  showSecurityIcon: boolean;
+  showLanguageSelectorIcon: boolean;
+  showProxyMenuIcon: boolean;
+  showShortcutManagerIcon: boolean;
+
   // Auto Lock
   autoLock: AutoLockConfig;
 
