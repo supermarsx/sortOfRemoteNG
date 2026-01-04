@@ -15,7 +15,6 @@ import {
   Shield,
   FileText,
   Droplet,
-  DropletOff,
   Keyboard,
   Network,
 } from "lucide-react";
@@ -142,7 +141,7 @@ const AppContent: React.FC = () => {
         : sessions;
 
       const buildGridLayout = (cols: number, rows?: number) => {
-        const totalRows = rows ?? Math.ceil(orderedSessions.length / cols) || 1;
+        const totalRows = (rows ?? Math.ceil(orderedSessions.length / cols)) || 1;
         const width = 100 / cols;
         const height = 100 / totalRows;
         return orderedSessions.map((session, index) => ({
@@ -321,7 +320,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleSessionDetach = useCallback(
-    (sessionId: string) => {
+    async (sessionId: string) => {
       const session = state.sessions.find((item) => item.id === sessionId);
       if (!session) return;
       const connection = state.connections.find((item) => item.id === session.connectionId);
@@ -338,7 +337,7 @@ const AppContent: React.FC = () => {
         console.error("Failed to persist detached session payload:", error);
       }
 
-      const existingWindow = WebviewWindow.getByLabel(windowLabel);
+      const existingWindow = await WebviewWindow.getByLabel(windowLabel);
       if (existingWindow) {
         existingWindow.setFocus().catch(() => undefined);
       } else {
@@ -1058,7 +1057,11 @@ const AppContent: React.FC = () => {
             className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
             title={appSettings.windowTransparencyEnabled ? "Disable transparency" : "Enable transparency"}
           >
-            {appSettings.windowTransparencyEnabled ? <Droplet size={14} /> : <DropletOff size={14} />}
+            {appSettings.windowTransparencyEnabled ? (
+              <Droplet size={14} />
+            ) : (
+              <Droplet size={14} className="opacity-40" />
+            )}
           </button>
           <button
             onClick={handleToggleAlwaysOnTop}

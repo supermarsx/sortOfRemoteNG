@@ -28,7 +28,7 @@ const buildGridLayout = (
   cols: number,
   rows?: number,
 ) => {
-  const totalRows = rows ?? Math.ceil(sessions.length / cols) || 1;
+  const totalRows = (rows ?? Math.ceil(sessions.length / cols)) || 1;
   const width = 100 / cols;
   const height = 100 / totalRows;
 
