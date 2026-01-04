@@ -3,6 +3,7 @@ import {
   Monitor,
   Zap,
   Globe,
+  Terminal,
   Minus,
   Square,
   X,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { Connection } from "./types/connection";
 import { GlobalSettings } from "./types/settings";
@@ -516,17 +518,20 @@ const AppContent: React.FC = () => {
 
     const saveWindowState = async () => {
       try {
-        const [size, position] = await Promise.all([
-          window.outerSize(),
+        const [size, position, scaleFactor] = await Promise.all([
+          window.innerSize(),
           window.outerPosition(),
+          window.scaleFactor(),
         ]);
 
         const updates: Partial<GlobalSettings> = {};
         if (appSettings.persistWindowSize) {
-          updates.windowSize = { width: size.width, height: size.height };
+          const logicalSize = size.toLogical(scaleFactor);
+          updates.windowSize = { width: logicalSize.width, height: logicalSize.height };
         }
         if (appSettings.persistWindowPosition) {
-          updates.windowPosition = { x: position.x, y: position.y };
+          const logicalPosition = position.toLogical(scaleFactor);
+          updates.windowPosition = { x: logicalPosition.x, y: logicalPosition.y };
         }
 
         if (Object.keys(updates).length > 0) {
@@ -640,6 +645,10 @@ const AppContent: React.FC = () => {
   const handleMaximize = async () => {
     const window = getCurrentWindow();
     await window.toggleMaximize();
+  };
+
+  const handleOpenDevtools = async () => {
+    await invoke("open_devtools");
   };
 
   const handleClose = async () => {
@@ -779,6 +788,13 @@ const AppContent: React.FC = () => {
             title="Action Log"
           >
             <ScrollText size={14} />
+          </button>
+          <button
+            onClick={handleOpenDevtools}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-300 hover:text-white"
+            title="Open dev console"
+          >
+            <Terminal size={14} />
           </button>
           <button
             onClick={handleShowPasswordDialog}

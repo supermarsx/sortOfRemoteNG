@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -112,6 +112,8 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [isExpanded, setIsExpanded] = useState(connection.expanded || false);
 
   const ProtocolIcon = getProtocolIcon(connection.protocol);
@@ -148,7 +150,12 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
   useEffect(() => {
     if (!showMenu) return;
-    const handleClick = () => setShowMenu(false);
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (menuRef.current?.contains(target || null)) return;
+      if (triggerRef.current?.contains(target || null)) return;
+      setShowMenu(false);
+    };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showMenu]);
@@ -238,9 +245,12 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
           {/* Context menu trigger */}
           <button
+            ref={triggerRef}
             onClick={(e) => {
               e.stopPropagation();
-              setShowMenu(!showMenu);
+              const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+              setMenuPosition({ x: Math.max(8, rect.right - 140), y: rect.bottom + 6 });
+              setShowMenu((prev) => !prev);
             }}
             className="p-1 hover:bg-gray-600 rounded transition-colors"
           >
@@ -250,8 +260,10 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
         {showMenu && (
           <div
+            ref={menuRef}
             className="fixed bg-gray-800 border border-gray-700 rounded-md shadow-lg z-50 min-w-[140px]"
             style={menuPosition ? { left: menuPosition.x, top: menuPosition.y } : undefined}
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Edit action */}
             <button

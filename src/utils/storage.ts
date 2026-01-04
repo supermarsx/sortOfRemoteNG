@@ -1,4 +1,3 @@
-// @ts-expect-error - injected by Tauri at runtime
 const invoke = (globalThis as any).__TAURI__?.core?.invoke;
 
 const STORAGE_KEY = "mremote-connections";

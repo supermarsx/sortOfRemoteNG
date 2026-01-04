@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight } from 'lucide-react';
+import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight, Star } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionTree } from './ConnectionTree';
 import { Connection } from '../types/connection';
@@ -116,6 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, []);
 
   const sideBorder = sidebarPosition === 'left' ? 'border-r' : 'border-l';
+  const isFavoritesActive = state.filter.showFavorites;
 
   return (
     <>
@@ -196,6 +197,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
                 
                 <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() =>
+                      dispatch({
+                        type: 'SET_FILTER',
+                        payload: { showFavorites: !state.filter.showFavorites },
+                      })
+                    }
+                    className={`p-1 text-xs rounded transition-colors ${
+                      isFavoritesActive
+                        ? 'text-yellow-300 bg-yellow-400/20'
+                        : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                    }`}
+                    title={isFavoritesActive ? "Showing favorites" : "Toggle favorites"}
+                  >
+                    <Star size={12} />
+                  </button>
                   <button
                     onClick={expandAllFolders}
                     className="p-1 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"

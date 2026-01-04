@@ -440,6 +440,7 @@ pub fn run() {
     })
     .invoke_handler(tauri::generate_handler![
         greet,
+        open_devtools,
         add_user,
         verify_user,
         list_users,
@@ -769,6 +770,13 @@ pub fn run() {
 /// ```
 fn greet(name: &str) -> String {
   format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn open_devtools(app: tauri::AppHandle) {
+  if let Some(window) = app.get_webview_window("main") {
+    window.open_devtools();
+  }
 }
 
 #[tauri::command]
