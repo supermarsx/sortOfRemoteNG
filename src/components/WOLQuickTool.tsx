@@ -185,7 +185,10 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
       className="fixed inset-0 bg-black/50 backdrop-animate flex items-center justify-center z-50"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden modal-content-animate border border-gray-700">
+      <div 
+        className="bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden modal-content-animate border border-gray-700 resize-y"
+        style={{ minHeight: '400px', maxHeight: '90vh', height: '85vh' }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700 bg-gradient-to-r from-gray-800 to-gray-750">
           <div className="flex items-center space-x-3">
@@ -206,7 +209,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-5 overflow-y-auto max-h-[calc(85vh-80px)]">
+        <div className="p-5 space-y-5 overflow-y-auto" style={{ height: 'calc(100% - 80px)' }}>
           {/* Quick Wake Section */}
           <div className="space-y-3">
             <label className="block text-sm font-medium text-gray-300">

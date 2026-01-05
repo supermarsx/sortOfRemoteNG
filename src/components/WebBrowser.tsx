@@ -132,8 +132,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           // Listen for proxied resource responses from parent
           window.addEventListener('message', function(e) {
             if (e.data && e.data.type === 'resource_proxied') {
-              // Find images with matching src and update them
-              var imgs = document.querySelectorAll('img[src="' + e.data.originalUrl + '"]');
+              // Find images with matching src or originalSrc and update them
+              var imgs = document.querySelectorAll('img[data-original-src="' + e.data.originalUrl + '"], img[src="' + e.data.originalUrl + '"]');
               imgs.forEach(function(img) {
                 img.src = e.data.blobUrl;
               });
@@ -196,14 +196,21 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           // Also proactively try to proxy images that might need auth
           setTimeout(function() {
             document.querySelectorAll('img').forEach(function(img) {
-              if (img.src && !img.complete && !img.src.startsWith('blob:') && !img.src.startsWith('data:') && !img.dataset.proxyAttempted) {
+              // Proxy ALL images when basic auth is configured (data-needs-proxy attribute or any external image)
+              var needsProxy = img.dataset.needsProxy === 'true' || 
+                              (img.src && !img.src.startsWith('blob:') && !img.src.startsWith('data:'));
+              if (needsProxy && img.src && !img.dataset.proxyAttempted) {
                 img.dataset.proxyAttempted = 'true';
                 var elementId = img.id || ('img_' + Math.random().toString(36).substr(2, 9));
                 pendingResources[elementId] = img;
-                window.parent.postMessage({ type: 'proxy_resource', url: img.src, elementId: elementId }, '*');
+                // Stop the browser from loading the image directly (prevents auth dialog)
+                var originalSrc = img.src;
+                img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // Tiny transparent gif
+                img.dataset.originalSrc = originalSrc;
+                window.parent.postMessage({ type: 'proxy_resource', url: originalSrc, elementId: elementId }, '*');
               }
             });
-          }, 500);
+          }, 50);
         })();
       </script>
     `;
@@ -264,6 +271,21 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             return `${attr}="${absoluteUrl}"`;
           }
         );
+
+        // When basic auth is required, proactively proxy all images to prevent auth dialogs
+        if (requiresBasicAuth) {
+          // Mark all images for immediate proxying via message events
+          // The interceptor script will handle proxying them
+          const imgRegex = /<img\s+([^>]*src=["']([^"']+)["'][^>]*)>/gi;
+          content = content.replace(imgRegex, (match, attrs, src) => {
+            // Skip already processed images (blob: or data:)
+            if (src.startsWith('blob:') || src.startsWith('data:')) {
+              return match;
+            }
+            // Add a data attribute to mark for proxying
+            return match.replace(/<img\s+/, '<img data-needs-proxy="true" ');
+          });
+        }
 
         // Inject navigation interceptor for proxy mode
         content = injectNavigationInterceptor(content, finalUrl);

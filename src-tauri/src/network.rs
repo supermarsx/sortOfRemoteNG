@@ -271,6 +271,310 @@ pub async fn ping_host(state: tauri::State<'_, NetworkServiceState>, host: Strin
     network.ping_host(host).await
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PingResult {
+    pub success: bool,
+    pub time_ms: Option<u64>,
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn ping_host_detailed(
+    state: tauri::State<'_, NetworkServiceState>, 
+    host: String,
+    count: Option<u32>,
+    timeout_secs: Option<u64>,
+) -> Result<PingResult, String> {
+    let network = state.lock().await;
+    let start = std::time::Instant::now();
+    
+    match network.ping_host(host).await {
+        Ok(success) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            Ok(PingResult {
+                success,
+                time_ms: if success { Some(elapsed) } else { None },
+                error: None,
+            })
+        }
+        Err(e) => Ok(PingResult {
+            success: false,
+            time_ms: None,
+            error: Some(e),
+        })
+    }
+}
+
+#[tauri::command]
+pub async fn ping_gateway(timeout_secs: Option<u64>) -> Result<PingResult, String> {
+    // Try to get the default gateway
+    let gateway = get_default_gateway()?;
+    
+    let start = std::time::Instant::now();
+    let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(5));
+    
+    // Try to connect to the gateway
+    let addr = format!("{}:80", gateway);
+    match timeout(timeout_duration, TcpStream::connect(&addr)).await {
+        Ok(Ok(_)) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            Ok(PingResult {
+                success: true,
+                time_ms: Some(elapsed),
+                error: None,
+            })
+        }
+        _ => {
+            // TCP failed, try ICMP ping via system command
+            let mut cmd = Command::new("ping");
+            #[cfg(target_os = "windows")]
+            cmd.arg("-n").arg("1").arg("-w").arg("1000");
+            #[cfg(not(target_os = "windows"))]
+            cmd.arg("-c").arg("1").arg("-W").arg("1");
+            cmd.arg(&gateway)
+               .stdout(Stdio::null())
+               .stderr(Stdio::null());
+
+            match cmd.status().await {
+                Ok(status) if status.success() => {
+                    let elapsed = start.elapsed().as_millis() as u64;
+                    Ok(PingResult {
+                        success: true,
+                        time_ms: Some(elapsed),
+                        error: None,
+                    })
+                }
+                _ => Ok(PingResult {
+                    success: false,
+                    time_ms: None,
+                    error: Some("Gateway not reachable".to_string()),
+                })
+            }
+        }
+    }
+}
+
+fn get_default_gateway() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, use ipconfig
+        let output = std::process::Command::new("ipconfig")
+            .output()
+            .map_err(|e| format!("Failed to get gateway: {}", e))?;
+        
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        for line in output_str.lines() {
+            if line.contains("Default Gateway") && line.contains(":") {
+                let parts: Vec<&str> = line.split(':').collect();
+                if parts.len() > 1 {
+                    let gateway = parts[1].trim();
+                    if !gateway.is_empty() && gateway.contains('.') {
+                        return Ok(gateway.to_string());
+                    }
+                }
+            }
+        }
+        Err("Could not find default gateway".to_string())
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        let output = std::process::Command::new("ip")
+            .args(["route", "show", "default"])
+            .output()
+            .map_err(|e| format!("Failed to get gateway: {}", e))?;
+        
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        for line in output_str.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() > 2 && parts[0] == "default" {
+                return Ok(parts[2].to_string());
+            }
+        }
+        Err("Could not find default gateway".to_string())
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("netstat")
+            .args(["-nr"])
+            .output()
+            .map_err(|e| format!("Failed to get gateway: {}", e))?;
+        
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        for line in output_str.lines() {
+            if line.starts_with("default") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() > 1 {
+                    return Ok(parts[1].to_string());
+                }
+            }
+        }
+        Err("Could not find default gateway".to_string())
+    }
+    
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        Err("Gateway detection not supported on this platform".to_string())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PortCheckResult {
+    pub port: u16,
+    pub open: bool,
+    pub service: Option<String>,
+    pub time_ms: Option<u64>,
+}
+
+#[tauri::command]
+pub async fn check_port(
+    host: String,
+    port: u16,
+    timeout_secs: Option<u64>,
+) -> Result<PortCheckResult, String> {
+    let start = std::time::Instant::now();
+    let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(5));
+    let addr = format!("{}:{}", host, port);
+    
+    let service = NetworkService::get_common_ports()
+        .iter()
+        .find(|(p, _)| *p == port)
+        .map(|(_, s)| s.clone());
+    
+    match timeout(timeout_duration, TcpStream::connect(&addr)).await {
+        Ok(Ok(_)) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            Ok(PortCheckResult {
+                port,
+                open: true,
+                service,
+                time_ms: Some(elapsed),
+            })
+        }
+        _ => Ok(PortCheckResult {
+            port,
+            open: false,
+            service,
+            time_ms: None,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TracerouteHop {
+    pub hop: u32,
+    pub ip: Option<String>,
+    pub hostname: Option<String>,
+    pub time_ms: Option<u64>,
+    pub timeout: bool,
+}
+
+#[tauri::command]
+pub async fn traceroute(
+    host: String,
+    max_hops: Option<u32>,
+    timeout_secs: Option<u64>,
+) -> Result<Vec<TracerouteHop>, String> {
+    let max_hops = max_hops.unwrap_or(30);
+    
+    #[cfg(target_os = "windows")]
+    let cmd_name = "tracert";
+    #[cfg(not(target_os = "windows"))]
+    let cmd_name = "traceroute";
+    
+    let mut cmd = Command::new(cmd_name);
+    
+    #[cfg(target_os = "windows")]
+    {
+        cmd.arg("-d") // Don't resolve hostnames (faster)
+           .arg("-h").arg(max_hops.to_string())
+           .arg("-w").arg((timeout_secs.unwrap_or(3) * 1000).to_string())
+           .arg(&host);
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        cmd.arg("-n") // Don't resolve hostnames
+           .arg("-m").arg(max_hops.to_string())
+           .arg("-w").arg(timeout_secs.unwrap_or(3).to_string())
+           .arg(&host);
+    }
+    
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run traceroute: {}", e))?;
+    
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let mut hops = Vec::new();
+    
+    for line in output_str.lines() {
+        // Parse traceroute output - format varies by OS
+        let trimmed = line.trim();
+        
+        // Skip empty lines and headers
+        if trimmed.is_empty() || trimmed.starts_with("Tracing") || trimmed.starts_with("traceroute") {
+            continue;
+        }
+        
+        // Try to parse hop number
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.is_empty() {
+            continue;
+        }
+        
+        if let Ok(hop_num) = parts[0].parse::<u32>() {
+            let mut hop = TracerouteHop {
+                hop: hop_num,
+                ip: None,
+                hostname: None,
+                time_ms: None,
+                timeout: false,
+            };
+            
+            // Check for timeout (asterisks)
+            if trimmed.contains("*") && !trimmed.contains("ms") {
+                hop.timeout = true;
+            } else {
+                // Try to find IP address
+                for part in &parts[1..] {
+                    // Check if it looks like an IP
+                    if part.contains('.') && !part.contains("ms") {
+                        let ip = part.trim_matches(|c| c == '(' || c == ')' || c == '[' || c == ']');
+                        hop.ip = Some(ip.to_string());
+                        break;
+                    }
+                }
+                
+                // Try to find timing
+                for (i, part) in parts.iter().enumerate() {
+                    if *part == "ms" || part.ends_with("ms") {
+                        // Get the number before "ms"
+                        let num_str = if *part == "ms" {
+                            if i > 0 { parts[i - 1] } else { continue }
+                        } else {
+                            part.trim_end_matches("ms")
+                        };
+                        
+                        if let Ok(time) = num_str.parse::<f64>() {
+                            hop.time_ms = Some(time as u64);
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            hops.push(hop);
+            
+            // Stop if we've reached the target (check if "Trace complete" or similar)
+            if trimmed.contains("Trace complete") || hop.hop >= max_hops {
+                break;
+            }
+        }
+    }
+    
+    Ok(hops)
+}
+
 #[tauri::command]
 pub async fn scan_network(state: tauri::State<'_, NetworkServiceState>, subnet: String) -> Result<Vec<String>, String> {
     let network = state.lock().await;

@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { GlobalSettings } from "../../../types/settings";
-import { Power, Monitor, Play, RefreshCw, Minimize2, X as XIcon, MousePointer, MousePointerClick, AppWindow } from "lucide-react";
+import { Power, Monitor, Play, RefreshCw, Minimize2, X as XIcon, MousePointer, MousePointerClick, AppWindow, FolderOpen } from "lucide-react";
 
 interface StartupSettingsProps {
   settings: GlobalSettings;
@@ -97,6 +97,21 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             <RefreshCw className="w-4 h-4 text-gray-400" />
             <span className="text-gray-300">
               {t("settings.startup.reconnectSessions", "Reconnect previous sessions on startup")}
+            </span>
+          </div>
+        </label>
+
+        <label className="flex items-center space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.autoOpenLastCollection}
+            onChange={(e) => updateSettings({ autoOpenLastCollection: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+          />
+          <div className="flex items-center gap-2">
+            <FolderOpen className="w-4 h-4 text-gray-400" />
+            <span className="text-gray-300">
+              {t("settings.startup.autoOpenLastCollection", "Auto-open last used connection collection")}
             </span>
           </div>
         </label>

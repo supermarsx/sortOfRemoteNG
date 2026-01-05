@@ -62,6 +62,7 @@ import { ProxyChainMenu } from "./components/ProxyChainMenu";
 import { WOLQuickTool } from "./components/WOLQuickTool";
 import { SplashScreen } from "./components/SplashScreen";
 import { ErrorLogBar } from "./components/ErrorLogBar";
+import { ConnectionDiagnostics } from "./components/ConnectionDiagnostics";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -86,6 +87,8 @@ const AppContent: React.FC = () => {
   const [showProxyMenu, setShowProxyMenu] = useState(false);
   const [showWol, setShowWol] = useState(false);
   const [showErrorLog, setShowErrorLog] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
   >(null);
@@ -351,6 +354,15 @@ const AppContent: React.FC = () => {
           undefined,
           `Collection: ${collectionManager.getCurrentCollection()?.name}`,
         );
+        
+        // Save the last opened collection ID for auto-open feature
+        const currentSettings = settingsManager.getSettings();
+        if (currentSettings.autoOpenLastCollection) {
+          await settingsManager.saveSettings({
+            ...currentSettings,
+            lastOpenedCollectionId: collectionId,
+          }, { silent: true });
+        }
       } catch (error) {
         console.error("Failed to select collection:", error);
         if (error instanceof CollectionNotFoundError) {
@@ -411,6 +423,11 @@ const AppContent: React.FC = () => {
       });
     }
   };
+
+  const handleDiagnostics = useCallback((connection: Connection) => {
+    setDiagnosticsConnection(connection);
+    setShowDiagnostics(true);
+  }, []);
 
   const handleDisconnectConnection = useCallback(
     async (connection: Connection) => {
@@ -1116,8 +1133,8 @@ const AppContent: React.FC = () => {
         }
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    appSettings,
     appSettings?.windowTransparencyEnabled,
     appSettings?.windowTransparencyOpacity,
     appSettings?.theme,
@@ -1441,6 +1458,7 @@ const AppContent: React.FC = () => {
           onDeleteConnection={handleDeleteConnection}
           onConnect={handleConnect}
           onDisconnect={handleDisconnectConnection}
+          onDiagnostics={handleDiagnostics}
           onSessionDetach={handleSessionDetach}
           onShowPasswordDialog={handleShowPasswordDialog}
           enableConnectionReorder={appSettings.enableConnectionReorder}
@@ -1505,21 +1523,23 @@ const AppContent: React.FC = () => {
 
         {/* Window Controls */}
         <div className="flex items-center space-x-1">
-          <button
-            onClick={handleToggleTransparency}
-            className="app-bar-button p-2"
-            title={
-              appSettings.windowTransparencyEnabled
-                ? "Disable transparency"
-                : "Enable transparency"
-            }
-          >
-            {appSettings.windowTransparencyEnabled ? (
-              <Droplet size={14} />
-            ) : (
-              <Droplet size={14} className="opacity-40" />
-            )}
-          </button>
+          {(appSettings.showTransparencyToggle ?? true) && (
+            <button
+              onClick={handleToggleTransparency}
+              className="app-bar-button p-2"
+              data-tooltip={
+                appSettings.windowTransparencyEnabled
+                  ? "Disable transparency"
+                  : "Enable transparency"
+              }
+            >
+              {appSettings.windowTransparencyEnabled ? (
+                <Droplet size={14} />
+              ) : (
+                <Droplet size={14} className="opacity-40" />
+              )}
+            </button>
+          )}
           <button
             onClick={handleToggleAlwaysOnTop}
             className="app-bar-button p-2"
@@ -1821,6 +1841,16 @@ const AppContent: React.FC = () => {
       />
 
       <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
+
+      {showDiagnostics && diagnosticsConnection && (
+        <ConnectionDiagnostics
+          connection={diagnosticsConnection}
+          onClose={() => {
+            setShowDiagnostics(false);
+            setDiagnosticsConnection(null);
+          }}
+        />
+      )}
 
       {/* Error Log Bar - togglable console error catcher */}
       <ErrorLogBar

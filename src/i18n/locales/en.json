@@ -90,6 +90,8 @@
     "connection": "Connection",
     "details": "Details",
     "clear": "Clear Log",
+    "clearConfirmTitle": "Clear Action Log",
+    "clearConfirmMessage": "Are you sure you want to clear all log entries? This action cannot be undone.",
     "export": "Export Log",
     "filter": "Filter",
     "level": "Level"

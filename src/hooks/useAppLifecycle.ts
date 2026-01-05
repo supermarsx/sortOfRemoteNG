@@ -105,6 +105,38 @@ export const useAppLifecycle = ({
         }
       }
 
+      // Auto-open last used collection if enabled and available
+      if (settings.autoOpenLastCollection && settings.lastOpenedCollectionId) {
+        try {
+          const collections = await collectionManager.getAllCollections();
+          const lastCollection = collections.find(c => c.id === settings.lastOpenedCollectionId);
+          
+          if (lastCollection) {
+            if (lastCollection.isEncrypted) {
+              // For encrypted collections, show the collection selector so user can enter password
+              console.log(`Last collection "${lastCollection.name}" requires password, showing selector`);
+              setShowCollectionSelector(true);
+            } else {
+              // For unencrypted collections, auto-open directly
+              await collectionManager.selectCollection(lastCollection.id);
+              console.log(`Auto-opened last collection: ${lastCollection.name}`);
+              settingsManager.logAction(
+                "info",
+                "Collection auto-opened",
+                undefined,
+                `Auto-opened last collection: ${lastCollection.name}`,
+              );
+            }
+          } else {
+            console.log("Last opened collection no longer exists, showing selector");
+            setShowCollectionSelector(true);
+          }
+        } catch (error) {
+          console.warn("Failed to auto-open last collection:", error);
+          setShowCollectionSelector(true);
+        }
+      }
+
       setIsInitialized(true);
       console.log("App initialized successfully");
       settingsManager.logAction(

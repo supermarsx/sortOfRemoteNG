@@ -9,7 +9,7 @@ import ExportTab from './ExportTab';
 import ImportTab from './ImportTab';
 import { ImportResult } from './types';
 import CryptoJS from 'crypto-js';
-import { parseCSVLine, importFromCSV } from './utils';
+import { parseCSVLine, importFromCSV, importConnections, detectImportFormat, getFormatName } from './utils';
 import { generateId } from '../../utils/id';
 
 interface ImportExportProps {
@@ -253,20 +253,18 @@ export const ImportExport: React.FC<ImportExportProps> = ({
         }
       }
 
+      // Use unified importConnections with format auto-detection
       const actualExtension = filename.replace('.encrypted', '').split('.').pop()?.toLowerCase();
+      const detected = detectImportFormat(content, filename);
       
-      switch (actualExtension) {
-        case 'json':
-          connections = await importFromJSON(content);
-          break;
-        case 'xml':
-          connections = await importFromXML(content);
-          break;
-        case 'csv':
-          connections = await importFromCSV(content);
-          break;
-        default:
-          throw new Error(`Unsupported file format: ${actualExtension}`);
+      // Use the detected format for better accuracy
+      connections = await importConnections(content, detected.format);
+      
+      // Log the detected format for debugging
+      console.log(`Import format detected: ${getFormatName(detected.format)} (confidence: ${(detected.confidence * 100).toFixed(0)}%)`);
+      
+      if (!connections || connections.length === 0) {
+        throw new Error(`No connections found in ${actualExtension?.toUpperCase()} file`);
       }
 
       return {
@@ -283,51 +281,6 @@ export const ImportExport: React.FC<ImportExportProps> = ({
         connections: []
       };
     }
-  };
-
-  const importFromJSON = async (content: string): Promise<Connection[]> => {
-    const data = JSON.parse(content);
-    
-    if (data.connections && Array.isArray(data.connections)) {
-      return data.connections.map((conn: any) => ({
-        ...conn,
-        id: conn.id || generateId(),
-        createdAt: new Date(conn.createdAt || Date.now()),
-        updatedAt: new Date(conn.updatedAt || Date.now()),
-        password: conn.password === '***ENCRYPTED***' ? undefined : conn.password
-      }));
-    }
-    
-    throw new Error('Invalid JSON format');
-  };
-
-  const importFromXML = async (content: string): Promise<Connection[]> => {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(content, 'application/xml');
-    const connections: Connection[] = [];
-    
-    const connectionNodes = doc.querySelectorAll('Connection');
-    
-    connectionNodes.forEach(node => {
-      const conn: Connection = {
-        id: node.getAttribute('Id') || generateId(),
-        name: node.getAttribute('Name') || 'Imported Connection',
-        protocol: (node.getAttribute('Type')?.toLowerCase() || 'rdp') as Connection['protocol'],
-        hostname: node.getAttribute('Server') || '',
-        port: parseInt(node.getAttribute('Port') || '3389'),
-        username: node.getAttribute('Username') || undefined,
-        domain: node.getAttribute('Domain') || undefined,
-        description: node.getAttribute('Description') || undefined,
-        parentId: node.getAttribute('ParentId') || undefined,
-        isGroup: node.getAttribute('IsGroup') === 'true',
-        tags: node.getAttribute('Tags')?.split(',').filter(t => t.trim()) || [],
-        createdAt: new Date(node.getAttribute('CreatedAt') || Date.now()),
-        updatedAt: new Date(node.getAttribute('UpdatedAt') || Date.now())
-      };
-      connections.push(conn);
-    });
-    
-    return connections;
   };
 
   const confirmImport = (filename?: string) => {

@@ -75,6 +75,8 @@ export interface GlobalSettings {
   startMaximized: boolean;
   startWithSystem: boolean;
   reconnectPreviousSessions: boolean;
+  autoOpenLastCollection: boolean;
+  lastOpenedCollectionId?: string;
   
   // Tray Settings
   minimizeToTray: boolean;
@@ -102,6 +104,7 @@ export interface GlobalSettings {
   // Window Effects
   windowTransparencyEnabled: boolean;
   windowTransparencyOpacity: number;
+  showTransparencyToggle: boolean;
 
   // Secondary Bar Toggles
   showQuickConnectIcon: boolean;
@@ -193,6 +196,7 @@ export interface GlobalSettings {
   restApi: {
     enabled: boolean;
     port: number;
+    useRandomPort: boolean;
     authentication: boolean;
     apiKey?: string;
     corsEnabled: boolean;
@@ -200,9 +204,14 @@ export interface GlobalSettings {
     startOnLaunch: boolean;
     allowRemoteConnections: boolean;
     sslEnabled: boolean;
+    sslMode: 'manual' | 'self-signed' | 'letsencrypt';
     sslCertPath?: string;
     sslKeyPath?: string;
+    sslDomain?: string;
+    sslEmail?: string;
     maxRequestsPerMinute: number;
+    maxThreads: number;
+    requestTimeout: number;
   };
 
   // Wake on LAN

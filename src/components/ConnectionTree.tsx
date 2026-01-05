@@ -25,6 +25,7 @@ import {
   Shield,
   SlidersHorizontal,
   UserX,
+  Activity,
 } from "lucide-react";
 import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
@@ -123,6 +124,7 @@ interface ConnectionTreeItemProps {
   onConnectWithOptions: (connection: Connection) => void;
   onConnectWithoutCredentials: (connection: Connection) => void;
   onExecuteScripts: (connection: Connection, sessionId?: string) => void;
+  onDiagnostics: (connection: Connection) => void;
   onDetachSession: (sessionId: string) => void;
   enableReorder: boolean;
   isDragging: boolean;
@@ -153,6 +155,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   onConnectWithOptions,
   onConnectWithoutCredentials,
   onExecuteScripts,
+  onDiagnostics,
   onDetachSession,
   enableReorder,
   isDragging,
@@ -355,7 +358,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         {showMenu && (
           <div
             ref={menuRef}
-            className="fixed bg-gray-800 border border-gray-700 rounded-md shadow-lg z-50 min-w-[140px]"
+            className="fixed bg-gray-800 border border-gray-700 rounded-md shadow-lg z-[100] min-w-[140px]"
             style={menuPosition ? { left: menuPosition.x, top: menuPosition.y } : undefined}
             onClick={(e) => e.stopPropagation()}
           >
@@ -410,6 +413,17 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 >
                   <Play size={14} className="mr-2" />
                   Execute scripts
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDiagnostics(connection);
+                    setShowMenu(false);
+                  }}
+                  className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                >
+                  <Activity size={14} className="mr-2" />
+                  Diagnostics
                 </button>
                 {activeSession && (
                   <button
@@ -542,6 +556,7 @@ interface ConnectionTreeProps {
   onDisconnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
   onDelete: (connection: Connection) => void;
+  onDiagnostics: (connection: Connection) => void;
   onSessionDetach: (sessionId: string) => void;
   enableReorder?: boolean;
 }
@@ -556,6 +571,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   onDisconnect,
   onEdit,
   onDelete,
+  onDiagnostics,
   onSessionDetach,
   enableReorder = true,
 }) => {
@@ -731,6 +747,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           onConnectWithOptions={handleConnectWithOptions}
           onConnectWithoutCredentials={handleConnectWithoutCredentials}
           onExecuteScripts={handleExecuteScripts}
+          onDiagnostics={onDiagnostics}
           onDetachSession={onSessionDetach}
           enableReorder={enableReorder}
           isDragging={draggedId === connection.id}

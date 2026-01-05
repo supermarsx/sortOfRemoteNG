@@ -54,14 +54,17 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
   const originalConsoleWarn = useRef<typeof console.warn | null>(null);
 
   const addError = useCallback((entry: Omit<ErrorLogEntry, "id" | "timestamp">) => {
-    setErrors((prev) => {
-      const newEntry: ErrorLogEntry = {
-        ...entry,
-        id: generateId(),
-        timestamp: new Date(),
-      };
-      // Keep last 100 errors
-      return [newEntry, ...prev].slice(0, 100);
+    // Defer state update to avoid setState during render
+    queueMicrotask(() => {
+      setErrors((prev) => {
+        const newEntry: ErrorLogEntry = {
+          ...entry,
+          id: generateId(),
+          timestamp: new Date(),
+        };
+        // Keep last 100 errors
+        return [newEntry, ...prev].slice(0, 100);
+      });
     });
   }, []);
 

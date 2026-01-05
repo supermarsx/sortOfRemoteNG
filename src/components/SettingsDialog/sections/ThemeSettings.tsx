@@ -331,6 +331,16 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
               />
             </div>
           </div>
+
+          <label className="flex items-center space-x-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={settings.showTransparencyToggle ?? true}
+              onChange={(e) => updateSettings({ showTransparencyToggle: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <span className="text-sm text-gray-300">Show transparency toggle in title bar</span>
+          </label>
         </div>
       </div>
 

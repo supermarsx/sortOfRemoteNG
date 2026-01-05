@@ -16,12 +16,18 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add tray behavior: minimize to notification area and close to notification area
 - [x] Add single-click actions: open connection on single click; disconnect on single click
 - [x] Auto-save connection edits without requiring manual save
+- [x] Auto-open last collection on startup (with toggle setting)
 - [ ] Add cloud sync targets for Google Drive, Nextcloud, and OneDrive
 - [ ] Add differential backup scheduling (daily and on-demand runs)
 - [ ] Add custom CSS tips plus theme import/export and custom theme manager
 - [ ] Add Serpent and Twofish encryption schemes
 - [x] Add global animation toggle with smooth motion defaults
 - [x] Allow resizing/adjusting layout matrices
+- [x] Desktop shortcut manager with tracking, editing, and folder presets
+- [x] Connection diagnostics (ping, traceroute, port checks, gateway/internet tests)
+- [x] mRemoteNG XML file import support
+- [x] Template downloads with toast notifications
+- [x] WebBrowser proxy auth fix for image loading
 
 ## Project Setup and Initialization
 
@@ -142,7 +148,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - ✅ Implement actual network scanning logic
 - [x] **FULLY IMPLEMENT NETWORK DISCOVERY**: Added port scanning, service detection, hostname resolution, MAC address lookup
 - [x] Update NetworkDiscovery component to use Tauri IPC (basic implementation done, needs enhancement)
-- [ ] **ADD ADVANCED NETWORK FEATURES**: ARP scanning, traceroute, DNS resolution, network topology mapping
+- [x] **ADD ADVANCED NETWORK FEATURES**: Traceroute, ping with detailed results, gateway detection, port checking for diagnostics
 
 ### 15.5. VPN Integration (CLI Wrappers)
 - [x] **OpenVPN**: Wrapper structure created, CLI execution stubbed.

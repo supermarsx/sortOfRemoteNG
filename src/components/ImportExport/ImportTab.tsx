@@ -1,6 +1,8 @@
 import React from 'react';
-import { Upload, File, FolderOpen, CheckCircle, AlertCircle, FileText, FileCode } from 'lucide-react';
+import { Upload, File, FolderOpen, CheckCircle, AlertCircle, FileText, FileCode, Download } from 'lucide-react';
 import { ImportResult } from './types';
+import { useToastContext } from '../../contexts/ToastContext';
+import { useTranslation } from 'react-i18next';
 
 interface ImportTabProps {
   isProcessing: boolean;
@@ -13,6 +15,95 @@ interface ImportTabProps {
   detectedFormat?: string;
 }
 
+// Template data for CSV
+const CSV_TEMPLATE = `Name,Protocol,Hostname,Port,Username,Domain,Description,ParentId,IsGroup,Tags
+"Web Server 1",SSH,192.168.1.10,22,admin,,Web server in datacenter,,false,"production;linux"
+"Database Server",RDP,192.168.1.20,3389,administrator,DOMAIN,SQL Server,,false,"production;database"
+"Dev Folder",SSH,,,,,Development servers,,true,""
+"Dev Server 1",SSH,10.0.0.5,22,devuser,,Dev environment,Dev Folder,false,"development;test"
+"Router Admin",HTTP,192.168.1.1,80,admin,,Network router,,false,"network;router"
+"VNC Desktop",VNC,192.168.1.30,5900,,,Remote desktop access,,false,"desktop;vnc"`;
+
+// Template data for JSON
+const JSON_TEMPLATE = {
+  version: "1.0",
+  exportDate: new Date().toISOString(),
+  connections: [
+    {
+      name: "Web Server 1",
+      protocol: "SSH",
+      hostname: "192.168.1.10",
+      port: 22,
+      username: "admin",
+      domain: "",
+      description: "Web server in datacenter",
+      parentId: null,
+      isGroup: false,
+      tags: ["production", "linux"]
+    },
+    {
+      name: "Database Server",
+      protocol: "RDP",
+      hostname: "192.168.1.20",
+      port: 3389,
+      username: "administrator",
+      domain: "DOMAIN",
+      description: "SQL Server",
+      parentId: null,
+      isGroup: false,
+      tags: ["production", "database"]
+    },
+    {
+      name: "Dev Folder",
+      protocol: "SSH",
+      hostname: "",
+      port: 22,
+      username: "",
+      domain: "",
+      description: "Development servers",
+      parentId: null,
+      isGroup: true,
+      tags: []
+    },
+    {
+      name: "Dev Server 1",
+      protocol: "SSH",
+      hostname: "10.0.0.5",
+      port: 22,
+      username: "devuser",
+      domain: "",
+      description: "Dev environment",
+      parentId: "Dev Folder",
+      isGroup: false,
+      tags: ["development", "test"]
+    },
+    {
+      name: "Router Admin",
+      protocol: "HTTP",
+      hostname: "192.168.1.1",
+      port: 80,
+      username: "admin",
+      domain: "",
+      description: "Network router",
+      parentId: null,
+      isGroup: false,
+      tags: ["network", "router"]
+    },
+    {
+      name: "VNC Desktop",
+      protocol: "VNC",
+      hostname: "192.168.1.30",
+      port: 5900,
+      username: "",
+      domain: "",
+      description: "Remote desktop access",
+      parentId: null,
+      isGroup: false,
+      tags: ["desktop", "vnc"]
+    }
+  ]
+};
+
 const ImportTab: React.FC<ImportTabProps> = ({
   isProcessing,
   handleImport,
@@ -23,6 +114,41 @@ const ImportTab: React.FC<ImportTabProps> = ({
   cancelImport,
   detectedFormat,
 }) => {
+  const toast = useToastContext();
+  const { t } = useTranslation();
+
+  const downloadTemplate = (format: 'csv' | 'json') => {
+    let content: string;
+    let filename: string;
+    let mimeType: string;
+
+    if (format === 'csv') {
+      content = CSV_TEMPLATE;
+      filename = 'sortofremoteng-import-template.csv';
+      mimeType = 'text/csv';
+    } else {
+      content = JSON.stringify(JSON_TEMPLATE, null, 2);
+      filename = 'sortofremoteng-import-template.json';
+      mimeType = 'application/json';
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    // Show toast with download location info
+    toast.success(t('import.templateDownloaded', { 
+      filename,
+      defaultValue: `Template "${filename}" downloaded to your Downloads folder`
+    }));
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -84,6 +210,27 @@ const ImportTab: React.FC<ImportTabProps> = ({
           <p className="text-xs text-gray-500 mt-2">
             Formats auto-detected: .json, .xml, .csv, .ini, .reg
           </p>
+          
+          {/* Download Templates Section */}
+          <div className="mt-6 pt-4 border-t border-gray-700">
+            <p className="text-sm text-gray-400 mb-3">Download import templates:</p>
+            <div className="flex justify-center gap-3">
+              <button
+                onClick={() => downloadTemplate('csv')}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors text-sm"
+              >
+                <Download size={14} />
+                <span>CSV Template</span>
+              </button>
+              <button
+                onClick={() => downloadTemplate('json')}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors text-sm"
+              >
+                <Download size={14} />
+                <span>JSON Template</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

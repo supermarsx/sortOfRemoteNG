@@ -43,6 +43,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   ],
   startup: [
     'startMinimized', 'startMaximized', 'startWithSystem', 'reconnectPreviousSessions',
+    'autoOpenLastCollection', 'lastOpenedCollectionId',
     'minimizeToTray', 'closeToTray', 'showTrayIcon', 'singleClickConnect',
     'singleClickDisconnect', 'doubleClickRename',
   ],
@@ -50,7 +51,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'theme', 'colorScheme', 'primaryAccentColor', 'backgroundGlowEnabled',
     'backgroundGlowColor', 'backgroundGlowOpacity', 'backgroundGlowRadius',
     'backgroundGlowBlur', 'windowTransparencyEnabled', 'windowTransparencyOpacity',
-    'customCss', 'animationsEnabled', 'animationDuration', 'reduceMotion',
+    'showTransparencyToggle', 'customCss', 'animationsEnabled', 'animationDuration', 'reduceMotion',
   ],
   layout: [
     'persistWindowSize', 'persistWindowPosition', 'persistSidebarWidth',
@@ -98,6 +99,8 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
   startMaximized: false,
   startWithSystem: false,
   reconnectPreviousSessions: false,
+  autoOpenLastCollection: true,
+  lastOpenedCollectionId: undefined,
   minimizeToTray: false,
   closeToTray: false,
   showTrayIcon: true,
@@ -114,6 +117,7 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
   backgroundGlowBlur: 140,
   windowTransparencyEnabled: false,
   windowTransparencyOpacity: 0.94,
+  showTransparencyToggle: true,
   showQuickConnectIcon: true,
   showCollectionSwitcherIcon: true,
   showImportExportIcon: true,
@@ -381,22 +385,37 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 h-[90vh] overflow-hidden flex flex-col ${contextSettings.backgroundGlowEnabled ? 'settings-glow' : ''}`}>
+      <div className={`bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 h-[90vh] overflow-hidden flex flex-col ${contextSettings.backgroundGlowEnabled ? 'settings-glow' : ''} relative`}>
         {autoSaveStatus && (
-          <div className="fixed bottom-6 right-6 z-50">
+          <div 
+            className="absolute bottom-4 right-4 z-[60] animate-in fade-in slide-in-from-bottom-2 duration-300"
+            role="status"
+            aria-live="polite"
+          >
             <div
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg border shadow-lg bg-gray-800 ${
+              className={`flex items-center space-x-2 px-4 py-3 rounded-lg border shadow-xl backdrop-blur-sm ${
                 autoSaveStatus === "success"
-                  ? "border-green-500 text-green-400"
-                  : "border-red-500 text-red-400"
+                  ? "bg-green-500/10 border-green-500/50 text-green-400"
+                  : "bg-red-500/10 border-red-500/50 text-red-400"
               }`}
+              style={{
+                backgroundColor: autoSaveStatus === "success" 
+                  ? 'var(--app-success-surface, rgba(34, 197, 94, 0.1))'
+                  : 'var(--app-error-surface, rgba(239, 68, 68, 0.1))',
+                borderColor: autoSaveStatus === "success"
+                  ? 'var(--app-success-border, rgba(34, 197, 94, 0.5))'
+                  : 'var(--app-error-border, rgba(239, 68, 68, 0.5))',
+                color: autoSaveStatus === "success"
+                  ? 'var(--app-success-text, #4ade80)'
+                  : 'var(--app-error-text, #f87171)',
+              }}
             >
               {autoSaveStatus === "success" ? (
-                <CheckCircle size={16} />
+                <CheckCircle size={18} className="flex-shrink-0" />
               ) : (
-                <AlertCircle size={16} />
+                <AlertCircle size={18} className="flex-shrink-0" />
               )}
-              <span className="text-sm">
+              <span className="text-sm font-medium">
                 {autoSaveStatus === "success"
                   ? t("settings.autoSaveSuccess")
                   : t("settings.autoSaveError")}

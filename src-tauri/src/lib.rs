@@ -538,6 +538,10 @@ pub fn run() {
         ftp::list_sftp_files,
         ftp::disconnect_sftp,
         network::ping_host,
+        network::ping_host_detailed,
+        network::ping_gateway,
+        network::check_port,
+        network::traceroute,
         network::scan_network,
         network::scan_network_comprehensive,
         security::generate_totp_secret,
@@ -797,6 +801,12 @@ pub fn run() {
         // ovh::list_ovh_sessions
         create_desktop_shortcut,
         set_autostart,
+        get_desktop_path,
+        get_documents_path,
+        get_appdata_path,
+        check_file_exists,
+        delete_file,
+        open_folder,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
@@ -1063,6 +1073,7 @@ async fn create_desktop_shortcut(
   collection_id: Option<String>,
   connection_id: Option<String>,
   description: Option<String>,
+  folder_path: Option<String>,
 ) -> Result<String, String> {
   // Get the application executable path
   let app_path = std::env::current_exe()
@@ -1085,11 +1096,20 @@ async fn create_desktop_shortcut(
   {
     use std::process::Command;
     
-    // Get desktop path
-    let desktop_path = dirs::desktop_dir()
-      .ok_or("Failed to get desktop directory")?;
+    // Get target path - use provided folder_path or default to desktop
+    let target_dir = if let Some(ref path) = folder_path {
+      std::path::PathBuf::from(path)
+    } else {
+      dirs::desktop_dir().ok_or("Failed to get desktop directory")?
+    };
     
-    let shortcut_path = desktop_path.join(format!("{}.lnk", name));
+    // Ensure the directory exists
+    if !target_dir.exists() {
+      std::fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+    
+    let shortcut_path = target_dir.join(format!("{}.lnk", name));
     
     // Use PowerShell to create the shortcut
     let powershell_script = format!(
@@ -1126,11 +1146,20 @@ async fn create_desktop_shortcut(
   {
     use std::fs;
 
-    // Get desktop path
-    let desktop_path = dirs::desktop_dir()
-      .ok_or("Failed to get desktop directory")?;
+    // Get target path - use provided folder_path or default to desktop
+    let target_dir = if let Some(ref path) = folder_path {
+      std::path::PathBuf::from(path)
+    } else {
+      dirs::desktop_dir().ok_or("Failed to get desktop directory")?
+    };
     
-    let shortcut_path = desktop_path.join(format!("{}.desktop", name));
+    // Ensure the directory exists
+    if !target_dir.exists() {
+      std::fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+    
+    let shortcut_path = target_dir.join(format!("{}.desktop", name));
     
     let desktop_file_content = format!(
       r#"[Desktop Entry]
@@ -1173,11 +1202,21 @@ StartupNotify=false
     // For macOS, we'll create an alias using osascript
     use std::process::Command;
     
-    let desktop_path = dirs::desktop_dir()
-      .ok_or("Failed to get desktop directory")?;
+    // Get target path - use provided folder_path or default to desktop
+    let target_dir = if let Some(ref path) = folder_path {
+      std::path::PathBuf::from(path)
+    } else {
+      dirs::desktop_dir().ok_or("Failed to get desktop directory")?
+    };
+    
+    // Ensure the directory exists
+    if !target_dir.exists() {
+      std::fs::create_dir_all(&target_dir)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
     
     let alias_name = format!("{} alias", name);
-    let alias_path = desktop_path.join(&alias_name);
+    let alias_path = target_dir.join(&alias_name);
     
     // Use AppleScript to create an alias
     let applescript = format!(
@@ -1235,6 +1274,101 @@ async fn set_autostart(enabled: bool, app: tauri::AppHandle) -> Result<(), Strin
     autostart_manager
       .disable()
       .map_err(|e| format!("Failed to disable autostart: {}", e))?;
+  }
+  
+  Ok(())
+}
+
+#[tauri::command]
+/// Get the path to the user's Desktop directory.
+fn get_desktop_path() -> Result<String, String> {
+  dirs::desktop_dir()
+    .map(|p| p.to_string_lossy().to_string())
+    .ok_or_else(|| "Failed to get desktop directory".to_string())
+}
+
+#[tauri::command]
+/// Get the path to the user's Documents directory.
+fn get_documents_path() -> Result<String, String> {
+  dirs::document_dir()
+    .map(|p| p.to_string_lossy().to_string())
+    .ok_or_else(|| "Failed to get documents directory".to_string())
+}
+
+#[tauri::command]
+/// Get the path to the user's AppData (or equivalent) directory.
+/// On Windows: %APPDATA%\Microsoft\Windows\Start Menu\Programs
+/// On Linux: ~/.local/share/applications
+/// On macOS: ~/Applications
+fn get_appdata_path() -> Result<String, String> {
+  #[cfg(target_os = "windows")]
+  {
+    dirs::data_dir()
+      .map(|p| p.join("Microsoft").join("Windows").join("Start Menu").join("Programs"))
+      .map(|p| p.to_string_lossy().to_string())
+      .ok_or_else(|| "Failed to get appdata directory".to_string())
+  }
+  
+  #[cfg(target_os = "linux")]
+  {
+    dirs::data_local_dir()
+      .map(|p| p.join("applications"))
+      .map(|p| p.to_string_lossy().to_string())
+      .ok_or_else(|| "Failed to get applications directory".to_string())
+  }
+  
+  #[cfg(target_os = "macos")]
+  {
+    dirs::home_dir()
+      .map(|p| p.join("Applications"))
+      .map(|p| p.to_string_lossy().to_string())
+      .ok_or_else(|| "Failed to get applications directory".to_string())
+  }
+  
+  #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+  {
+    Err("AppData path not supported on this platform".to_string())
+  }
+}
+
+#[tauri::command]
+/// Check if a file exists at the given path.
+fn check_file_exists(path: String) -> Result<bool, String> {
+  Ok(std::path::Path::new(&path).exists())
+}
+
+#[tauri::command]
+/// Delete a file at the given path.
+fn delete_file(path: String) -> Result<(), String> {
+  std::fs::remove_file(&path)
+    .map_err(|e| format!("Failed to delete file: {}", e))
+}
+
+#[tauri::command]
+/// Open a folder in the system's file explorer.
+fn open_folder(path: String) -> Result<(), String> {
+  #[cfg(target_os = "windows")]
+  {
+    std::process::Command::new("explorer")
+      .arg(&path)
+      .spawn()
+      .map_err(|e| format!("Failed to open folder: {}", e))?;
+  }
+  
+  #[cfg(target_os = "linux")]
+  {
+    std::process::Command::new("xdg-open")
+      .arg(&path)
+      .spawn()
+      .map_err(|e| format!("Failed to open folder: {}", e))?;
+  }
+  
+  #[cfg(target_os = "macos")]
+  {
+    std::process::Command::new("open")
+      .arg(&path)
+      .spawn()
+      .map_err(|e| format!("Failed to open folder: {}", e))?;
   }
   
   Ok(())

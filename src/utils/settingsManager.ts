@@ -29,6 +29,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   startMaximized: false,
   startWithSystem: false,
   reconnectPreviousSessions: false,
+  autoOpenLastCollection: true,
+  lastOpenedCollectionId: undefined,
   
   // Tray Settings
   minimizeToTray: false,
