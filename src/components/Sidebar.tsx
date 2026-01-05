@@ -306,23 +306,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* Toolbar */}
-            <div className="p-4 border-b border-gray-700">
-              <div className="flex space-x-2">
-                <button
-                  onClick={onNewConnection}
-                  className="flex items-center justify-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors text-sm flex-1"
-                >
-                  <Plus size={14} className="mr-1" />
-                  {t('connections.new')}
-                </button>
-                <button
-                  onClick={handleNewGroup}
-                  className="flex items-center justify-center px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors text-sm"
-                  title={t('connections.newFolder')}
-                >
-                  <FolderPlus size={14} />
-                </button>
-              </div>
+            <div className="px-3 py-2 border-b border-gray-700 flex items-center space-x-1">
+              <button
+                onClick={onNewConnection}
+                className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                title={t('connections.new')}
+              >
+                <Plus size={14} />
+              </button>
+              <button
+                onClick={handleNewGroup}
+                className="p-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
+                title={t('connections.newFolder')}
+              >
+                <FolderPlus size={14} />
+              </button>
             </div>
 
             {/* Connection Tree */}
