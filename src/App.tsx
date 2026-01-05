@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   Monitor,
   Zap,
@@ -62,9 +68,9 @@ const AppContent: React.FC = () => {
   const { t } = useTranslation();
   const { state, dispatch, loadData, saveData } = useConnections();
   const settingsManager = SettingsManager.getInstance();
-  const [editingConnection, setEditingConnection] = useState<Connection | undefined>(
-    undefined,
-  ); // connection currently being edited
+  const [editingConnection, setEditingConnection] = useState<
+    Connection | undefined
+  >(undefined); // connection currently being edited
   const [showConnectionEditor, setShowConnectionEditor] = useState(false); // connection editor visibility
   const [showQuickConnect, setShowQuickConnect] = useState(false); // quick connect dialog visibility
   const [showPasswordDialog, setShowPasswordDialog] = useState(false); // password dialog visibility
@@ -76,7 +82,9 @@ const AppContent: React.FC = () => {
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showProxyMenu, setShowProxyMenu] = useState(false);
   const [showWol, setShowWol] = useState(false);
-  const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<string | null>(null);
+  const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
+    string | null
+  >(null);
   const [tabLayout, setTabLayout] = useState<TabLayout>(() => ({
     mode: "tabs",
     sessions: [],
@@ -87,7 +95,9 @@ const AppContent: React.FC = () => {
   const [passwordError, setPasswordError] = useState(""); // password dialog error message
   const [sidebarWidth, setSidebarWidth] = useState(320); // sidebar width in pixels
   const [isResizing, setIsResizing] = useState(false); // whether sidebar is being resized
-  const [sidebarPosition, setSidebarPosition] = useState<'left' | 'right'>('left'); // sidebar position
+  const [sidebarPosition, setSidebarPosition] = useState<"left" | "right">(
+    "left",
+  ); // sidebar position
   const [dialogState, setDialogState] = useState<{
     isOpen: boolean;
     message: string;
@@ -99,7 +109,9 @@ const AppContent: React.FC = () => {
     onConfirm: () => {},
   }); // confirm dialog state
   const layoutRef = useRef<HTMLDivElement | null>(null);
-  const [appSettings, setAppSettings] = useState(() => settingsManager.getSettings());
+  const [appSettings, setAppSettings] = useState(() =>
+    settingsManager.getSettings(),
+  );
   const windowSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const sidebarSaveTimeout = useRef<NodeJS.Timeout | null>(null);
   const lastWorkAtRef = useRef<number>(Date.now());
@@ -118,11 +130,13 @@ const AppContent: React.FC = () => {
     handleConnect,
     handleQuickConnect,
     handleSessionClose,
+    restoreSession,
     confirmDialog,
   } = useSessionManager();
 
   const { isInitialized } = useAppLifecycle({
     handleConnect,
+    restoreSession,
     setShowCollectionSelector,
     setShowPasswordDialog,
     setPasswordDialogMode,
@@ -156,7 +170,9 @@ const AppContent: React.FC = () => {
               item.authType !== entry.authType,
           ),
         ].slice(0, 12);
-        settingsManager.saveSettings({ quickConnectHistory: next }).catch(console.error);
+        settingsManager
+          .saveSettings({ quickConnectHistory: next })
+          .catch(console.error);
       }
       handleQuickConnect(payload);
     },
@@ -169,7 +185,9 @@ const AppContent: React.FC = () => {
   );
 
   const clearQuickConnectHistory = useCallback(() => {
-    settingsManager.saveSettings({ quickConnectHistory: [] }).catch(console.error);
+    settingsManager
+      .saveSettings({ quickConnectHistory: [] })
+      .catch(console.error);
   }, [settingsManager]);
 
   const launchArgsHandledRef = useRef(false);
@@ -189,7 +207,8 @@ const AppContent: React.FC = () => {
         : sessions;
 
       const buildGridLayout = (cols: number, rows?: number) => {
-        const totalRows = (rows ?? Math.ceil(orderedSessions.length / cols)) || 1;
+        const totalRows =
+          (rows ?? Math.ceil(orderedSessions.length / cols)) || 1;
         const width = 100 / cols;
         const height = 100 / totalRows;
         return orderedSessions.map((session, index) => ({
@@ -254,7 +273,9 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     setTabLayout((current) => {
-      const currentIds = new Set(current.sessions.map((item) => item.sessionId));
+      const currentIds = new Set(
+        current.sessions.map((item) => item.sessionId),
+      );
       const visibleIds = new Set(visibleSessions.map((session) => session.id));
       const hasDiff =
         current.sessions.some((item) => !visibleIds.has(item.sessionId)) ||
@@ -267,11 +288,13 @@ const AppContent: React.FC = () => {
   }, [visibleSessions, buildTabLayout]);
 
   useEffect(() => {
-    if (activeSessionId && !visibleSessions.some((session) => session.id === activeSessionId)) {
+    if (
+      activeSessionId &&
+      !visibleSessions.some((session) => session.id === activeSessionId)
+    ) {
       setActiveSessionId(visibleSessions[0]?.id);
     }
   }, [activeSessionId, visibleSessions, setActiveSessionId]);
-
 
   const showAlert = useCallback((message: string) => {
     setDialogState({
@@ -310,7 +333,13 @@ const AppContent: React.FC = () => {
         }
       }
     },
-    [collectionManager, loadData, setShowCollectionSelector, settingsManager, showAlert],
+    [
+      collectionManager,
+      loadData,
+      setShowCollectionSelector,
+      settingsManager,
+      showAlert,
+    ],
   );
 
   /** Open the connection editor to create a new connection. */
@@ -356,7 +385,9 @@ const AppContent: React.FC = () => {
 
   const handleDisconnectConnection = useCallback(
     async (connection: Connection) => {
-      const session = state.sessions.find((item) => item.connectionId === connection.id);
+      const session = state.sessions.find(
+        (item) => item.connectionId === connection.id,
+      );
       if (!session) {
         return;
       }
@@ -369,7 +400,9 @@ const AppContent: React.FC = () => {
     async (sessionId: string) => {
       const session = state.sessions.find((item) => item.id === sessionId);
       if (!session) return;
-      const connection = state.connections.find((item) => item.id === session.connectionId);
+      const connection = state.connections.find(
+        (item) => item.id === session.connectionId,
+      );
       const windowLabel = `detached-${session.id}`;
 
       try {
@@ -378,7 +411,10 @@ const AppContent: React.FC = () => {
           connection: connection || null,
           savedAt: Date.now(),
         };
-        localStorage.setItem(`detached-session-${session.id}`, JSON.stringify(payload));
+        localStorage.setItem(
+          `detached-session-${session.id}`,
+          JSON.stringify(payload),
+        );
       } catch (error) {
         console.error("Failed to persist detached session payload:", error);
       }
@@ -387,7 +423,9 @@ const AppContent: React.FC = () => {
       const windowTitle = session.name || "Detached Session";
       const isTauri =
         typeof window !== "undefined" &&
-        Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+        Boolean(
+          (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
+        );
 
       if (isTauri) {
         try {
@@ -428,11 +466,20 @@ const AppContent: React.FC = () => {
       });
 
       if (activeSessionId === sessionId) {
-        const remaining = visibleSessions.filter((item) => item.id !== sessionId);
+        const remaining = visibleSessions.filter(
+          (item) => item.id !== sessionId,
+        );
         setActiveSessionId(remaining[0]?.id);
       }
     },
-    [activeSessionId, dispatch, setActiveSessionId, state.connections, state.sessions, visibleSessions],
+    [
+      activeSessionId,
+      dispatch,
+      setActiveSessionId,
+      state.connections,
+      state.sessions,
+      visibleSessions,
+    ],
   );
 
   /**
@@ -501,7 +548,11 @@ const AppContent: React.FC = () => {
     setShowPasswordDialog(true);
   };
 
-  const showConfirm = (message: string, onConfirm: () => void, onCancel?: () => void) => {
+  const showConfirm = (
+    message: string,
+    onConfirm: () => void,
+    onCancel?: () => void,
+  ) => {
     setDialogState({
       isOpen: true,
       message,
@@ -520,11 +571,11 @@ const AppContent: React.FC = () => {
   }, []);
 
   const closeConfirmDialog = () => {
-    setDialogState(prev => ({ ...prev, isOpen: false }));
+    setDialogState((prev) => ({ ...prev, isOpen: false }));
   };
 
   const toggleSidebarPosition = () => {
-    setSidebarPosition(prev => (prev === 'left' ? 'right' : 'left'));
+    setSidebarPosition((prev) => (prev === "left" ? "right" : "left"));
   };
 
   // Sidebar resize handlers
@@ -533,16 +584,20 @@ const AppContent: React.FC = () => {
     e.preventDefault();
   };
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isResizing) return;
-    const layoutRect = layoutRef.current?.getBoundingClientRect();
-    const layoutLeft = layoutRect?.left ?? 0;
-    const layoutWidth = layoutRect?.width ?? window.innerWidth;
-    const newWidth = sidebarPosition === 'left' 
-      ? Math.max(200, Math.min(600, e.clientX - layoutLeft))
-      : Math.max(200, Math.min(600, layoutLeft + layoutWidth - e.clientX));
-    setSidebarWidth(newWidth);
-  }, [isResizing, sidebarPosition]);
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isResizing) return;
+      const layoutRect = layoutRef.current?.getBoundingClientRect();
+      const layoutLeft = layoutRect?.left ?? 0;
+      const layoutWidth = layoutRect?.width ?? window.innerWidth;
+      const newWidth =
+        sidebarPosition === "left"
+          ? Math.max(200, Math.min(600, e.clientX - layoutLeft))
+          : Math.max(200, Math.min(600, layoutLeft + layoutWidth - e.clientX));
+      setSidebarWidth(newWidth);
+    },
+    [isResizing, sidebarPosition],
+  );
 
   const handleMouseUp = useCallback(() => {
     setIsResizing(false);
@@ -550,22 +605,22 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
     } else {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     }
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
@@ -615,7 +670,8 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (!appSettings.autoSaveEnabled) return;
-    const intervalMs = Math.max(1, appSettings.autoSaveIntervalMinutes || 1) * 60 * 1000;
+    const intervalMs =
+      Math.max(1, appSettings.autoSaveIntervalMinutes || 1) * 60 * 1000;
 
     const interval = setInterval(() => {
       if (!hasUnsavedWorkRef.current) return;
@@ -641,7 +697,10 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (!appSettings) return;
     const root = document.documentElement;
-    root.style.setProperty("--app-glow-color", appSettings.backgroundGlowColor || "#2563eb");
+    root.style.setProperty(
+      "--app-glow-color",
+      appSettings.backgroundGlowColor || "#2563eb",
+    );
     root.style.setProperty(
       "--app-glow-opacity",
       `${appSettings.backgroundGlowOpacity ?? 0}`,
@@ -776,9 +835,7 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     const window = getCurrentWindow();
-    window.isAlwaysOnTop()
-      .then(setIsAlwaysOnTop)
-      .catch(console.error);
+    window.isAlwaysOnTop().then(setIsAlwaysOnTop).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -889,14 +946,16 @@ const AppContent: React.FC = () => {
     root.style.setProperty("--app-surface-800", `rgba(31, 41, 55, ${alpha})`);
     root.style.setProperty("--app-surface-700", `rgba(55, 65, 81, ${alpha})`);
     root.style.setProperty("--app-surface-600", `rgba(75, 85, 99, ${alpha})`);
-    root.style.setProperty("--app-surface-500", `rgba(107, 114, 128, ${alpha})`);
+    root.style.setProperty(
+      "--app-surface-500",
+      `rgba(107, 114, 128, ${alpha})`,
+    );
     root.style.setProperty("--app-slate-950", `rgba(2, 6, 23, ${alpha})`);
     root.style.setProperty("--app-slate-900", `rgba(15, 23, 42, ${alpha})`);
     root.style.setProperty("--app-slate-800", `rgba(30, 41, 59, ${alpha})`);
     root.style.setProperty("--app-slate-700", `rgba(51, 65, 85, ${alpha})`);
-    document.documentElement.style.backgroundColor = appSettings.windowTransparencyEnabled
-      ? "transparent"
-      : "";
+    document.documentElement.style.backgroundColor =
+      appSettings.windowTransparencyEnabled ? "transparent" : "";
     document.body.style.backgroundColor = appSettings.windowTransparencyEnabled
       ? "transparent"
       : "";
@@ -923,8 +982,9 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const isTauri =
-      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    const isTauri = Boolean(
+      (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
+    );
     if (!isTauri) return;
     const currentWindow = getCurrentWindow();
     let unlisten: (() => void) | null = null;
@@ -992,7 +1052,10 @@ const AppContent: React.FC = () => {
       appSettings.persistSidebarCollapsed &&
       typeof appSettings.sidebarCollapsed === "boolean"
     ) {
-      dispatch({ type: "SET_SIDEBAR_COLLAPSED", payload: appSettings.sidebarCollapsed });
+      dispatch({
+        type: "SET_SIDEBAR_COLLAPSED",
+        payload: appSettings.sidebarCollapsed,
+      });
     }
   }, [appSettings, dispatch]);
 
@@ -1049,11 +1112,17 @@ const AppContent: React.FC = () => {
         }
         if (appSettings.persistWindowSize) {
           const logicalSize = size.toLogical(scaleFactor);
-          updates.windowSize = { width: logicalSize.width, height: logicalSize.height };
+          updates.windowSize = {
+            width: logicalSize.width,
+            height: logicalSize.height,
+          };
         }
         if (appSettings.persistWindowPosition) {
           const logicalPosition = position.toLogical(scaleFactor);
-          updates.windowPosition = { x: logicalPosition.x, y: logicalPosition.y };
+          updates.windowPosition = {
+            x: logicalPosition.x,
+            y: logicalPosition.y,
+          };
         }
 
         if (Object.keys(updates).length > 0) {
@@ -1074,19 +1143,25 @@ const AppContent: React.FC = () => {
     };
 
     if (appSettings.persistWindowSize && (window as any).onResized) {
-      window.onResized(() => {
-        queueSave();
-      }).then((unlisten) => {
-        unlistenResize = unlisten;
-      }).catch(console.error);
+      window
+        .onResized(() => {
+          queueSave();
+        })
+        .then((unlisten) => {
+          unlistenResize = unlisten;
+        })
+        .catch(console.error);
     }
 
     if (appSettings.persistWindowPosition && (window as any).onMoved) {
-      window.onMoved(() => {
-        queueSave();
-      }).then((unlisten) => {
-        unlistenMove = unlisten;
-      }).catch(console.error);
+      window
+        .onMoved(() => {
+          queueSave();
+        })
+        .then((unlisten) => {
+          unlistenMove = unlisten;
+        })
+        .catch(console.error);
     }
 
     return () => {
@@ -1159,7 +1234,9 @@ const AppContent: React.FC = () => {
 
   const handleToggleTransparency = async () => {
     const nextValue = !appSettings.windowTransparencyEnabled;
-    await settingsManager.saveSettings({ windowTransparencyEnabled: nextValue });
+    await settingsManager.saveSettings({
+      windowTransparencyEnabled: nextValue,
+    });
   };
 
   const handleToggleAlwaysOnTop = async () => {
@@ -1192,14 +1269,14 @@ const AppContent: React.FC = () => {
     await window.close();
   };
 
-  const renderSidebar = (position: 'left' | 'right') => {
+  const renderSidebar = (position: "left" | "right") => {
     if (sidebarPosition !== position) return null;
-    const resizerEdge = position === 'left' ? 'right-0' : 'left-0';
+    const resizerEdge = position === "left" ? "right-0" : "left-0";
 
     return (
       <div
         className="relative flex-shrink-0"
-        style={{ width: state.sidebarCollapsed ? '48px' : `${sidebarWidth}px` }}
+        style={{ width: state.sidebarCollapsed ? "48px" : `${sidebarWidth}px` }}
       >
         <Sidebar
           sidebarPosition={sidebarPosition}
@@ -1233,16 +1310,20 @@ const AppContent: React.FC = () => {
         appSettings.windowTransparencyEnabled
           ? "app-transparent bg-transparent"
           : "bg-gray-900"
-      } ${
-        !appSettings.animationsEnabled ? "animations-disabled" : ""
-      } ${
+      } ${!appSettings.animationsEnabled ? "animations-disabled" : ""} ${
         appSettings.reduceMotion ? "reduce-motion" : ""
       }`}
-      style={{
-        '--animation-duration': `${appSettings.animationDuration || 200}ms`,
-      } as React.CSSProperties}
+      style={
+        {
+          "--animation-duration": `${appSettings.animationDuration || 200}ms`,
+        } as React.CSSProperties
+      }
     >
-      {!isInitialized && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"><div className="text-white">Initializing...</div></div>}
+      {!isInitialized && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="text-white">Initializing...</div>
+        </div>
+      )}
       {/* Top bar */}
       <div
         className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
@@ -1251,8 +1332,12 @@ const AppContent: React.FC = () => {
         <div className="flex items-center gap-3">
           <Monitor size={18} className="text-blue-400" />
           <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight">{t("app.title")}</div>
-            <div className="text-[10px] text-gray-500 uppercase">{t("app.subtitle")}</div>
+            <div className="text-sm font-semibold tracking-tight">
+              {t("app.title")}
+            </div>
+            <div className="text-[10px] text-gray-500 uppercase">
+              {t("app.subtitle")}
+            </div>
           </div>
           {collectionManager.getCurrentCollection() && (
             <span className="text-[10px] text-blue-300 bg-blue-900/30 px-2 py-1 rounded">
@@ -1266,7 +1351,11 @@ const AppContent: React.FC = () => {
           <button
             onClick={handleToggleTransparency}
             className="app-bar-button p-2"
-            title={appSettings.windowTransparencyEnabled ? "Disable transparency" : "Enable transparency"}
+            title={
+              appSettings.windowTransparencyEnabled
+                ? "Disable transparency"
+                : "Enable transparency"
+            }
           >
             {appSettings.windowTransparencyEnabled ? (
               <Droplet size={14} />
@@ -1279,7 +1368,10 @@ const AppContent: React.FC = () => {
             className="app-bar-button p-2"
             title={isAlwaysOnTop ? "Unpin window" : "Pin window"}
           >
-            <Pin size={14} className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""} />
+            <Pin
+              size={14}
+              className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""}
+            />
           </button>
           <button
             onClick={handleMinimize}
@@ -1405,7 +1497,7 @@ const AppContent: React.FC = () => {
       </div>
 
       <div className="flex flex-1 overflow-hidden" ref={layoutRef}>
-        {renderSidebar('left')}
+        {renderSidebar("left")}
 
         <div className="flex-1 flex flex-col">
           <SessionTabs
@@ -1460,15 +1552,24 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
-      {renderSidebar('right')}
+        {renderSidebar("right")}
       </div>
 
       {appSettings.autoLock.enabled && hasStoragePassword && (
         <AutoLockManager
           config={appSettings.autoLock}
-          onConfigChange={(config) => settingsManager.saveSettings({ autoLock: config }).catch(console.error)}
+          onConfigChange={(config) =>
+            settingsManager
+              .saveSettings({ autoLock: config })
+              .catch(console.error)
+          }
           onLock={() => {
-            settingsManager.logAction("info", "Auto lock", undefined, "Session locked due to inactivity");
+            settingsManager.logAction(
+              "info",
+              "Auto lock",
+              undefined,
+              "Session locked due to inactivity",
+            );
           }}
         />
       )}
@@ -1510,10 +1611,14 @@ const AppContent: React.FC = () => {
           dialogState.onConfirm();
           closeConfirmDialog();
         }}
-        onCancel={dialogState.onCancel ? () => {
-          dialogState.onCancel!();
-          closeConfirmDialog();
-        } : closeConfirmDialog}
+        onCancel={
+          dialogState.onCancel
+            ? () => {
+                dialogState.onCancel!();
+                closeConfirmDialog();
+              }
+            : closeConfirmDialog
+        }
       />
 
       <SettingsDialog
@@ -1546,10 +1651,7 @@ const AppContent: React.FC = () => {
         onClose={() => setShowProxyMenu(false)}
       />
 
-      <WOLQuickTool
-        isOpen={showWol}
-        onClose={() => setShowWol(false)}
-      />
+      <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
     </div>
   );
 };

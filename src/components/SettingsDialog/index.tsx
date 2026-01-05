@@ -13,6 +13,8 @@ import {
   Palette,
   LayoutGrid,
   Power,
+  Loader2,
+  Gauge,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig } from '../../types/settings';
@@ -500,10 +502,24 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         onCancel={() => setShowResetConfirm(false)}
       />
       {isBenchmarking && (
-        <div className="fixed bottom-6 right-6 z-50 bg-gray-800/95 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200 shadow-lg">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
-            <span>{t("security.benchmarking")}</span>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
+          <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 shadow-2xl max-w-sm mx-4">
+            <div className="flex flex-col items-center text-center">
+              <div className="relative mb-6">
+                <div className="w-20 h-20 rounded-full border-4 border-gray-700 border-t-blue-500 animate-spin" />
+                <Gauge className="w-8 h-8 text-blue-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+              </div>
+              <h3 className="text-lg font-semibold text-white mb-2">
+                {t("security.benchmarking", "Running Benchmark")}
+              </h3>
+              <p className="text-sm text-gray-400 mb-4">
+                Testing encryption performance to find optimal iteration count...
+              </p>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>This may take {settings.benchmarkTimeSeconds || 1} second(s)</span>
+              </div>
+            </div>
           </div>
         </div>
       )}

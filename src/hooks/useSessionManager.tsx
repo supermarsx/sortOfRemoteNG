@@ -370,6 +370,76 @@ export const useSessionManager = () => {
 
   const activeSession = state.sessions.find((s) => s.id === activeSessionId);
 
+  /**
+   * Restores a session from persisted data without creating a new one.
+   * Used to restore sessions on page reload.
+   * @param sessionData - Saved session data to restore.
+   * @param connection - The connection definition.
+   */
+  const restoreSession = async (
+    sessionData: {
+      id: string;
+      connectionId: string;
+      name: string;
+      protocol: string;
+      hostname: string;
+      status: string;
+      backendSessionId?: string;
+      shellId?: string;
+      zoomLevel?: number;
+      layout?: ConnectionSession["layout"];
+      group?: string;
+      startTime?: string;
+      lastActivity?: string;
+    },
+    connection: Connection,
+  ) => {
+    const settings = settingsManager.getSettings();
+
+    // Check if session already exists (avoid duplicates)
+    const existingSession = state.sessions.find(
+      (s) =>
+        s.id === sessionData.id ||
+        (s.connectionId === sessionData.connectionId &&
+          s.protocol === sessionData.protocol &&
+          s.status !== "disconnected" &&
+          s.status !== "error"),
+    );
+    if (existingSession) {
+      setActiveSessionId(existingSession.id);
+      return;
+    }
+
+    // Restore the session with its original state
+    const restoredSession: ConnectionSession = {
+      id: sessionData.id,
+      connectionId: sessionData.connectionId,
+      name: sessionData.name || connection.name,
+      status: "reconnecting", // Start as reconnecting since we need to re-establish
+      startTime: sessionData.startTime
+        ? new Date(sessionData.startTime)
+        : new Date(),
+      protocol: sessionData.protocol as Connection["protocol"],
+      hostname: sessionData.hostname,
+      reconnectAttempts: 0,
+      maxReconnectAttempts: connection.retryAttempts || settings.retryAttempts,
+      backendSessionId: sessionData.backendSessionId,
+      shellId: sessionData.shellId,
+      zoomLevel: sessionData.zoomLevel,
+      layout: sessionData.layout,
+      group: sessionData.group,
+      lastActivity: sessionData.lastActivity
+        ? new Date(sessionData.lastActivity)
+        : undefined,
+    };
+
+    dispatch({ type: "ADD_SESSION", payload: restoredSession });
+    setActiveSessionId(restoredSession.id);
+
+    // For protocols that need backend reconnection, attempt to re-establish
+    await connectSession(restoredSession, connection);
+  };
+
   const confirmDialog = dialogState ? (
     <ConfirmDialog
       isOpen={true}
@@ -397,6 +467,7 @@ export const useSessionManager = () => {
     handleReconnect,
     handleQuickConnect,
     handleSessionClose,
+    restoreSession,
     confirmDialog,
   };
 };

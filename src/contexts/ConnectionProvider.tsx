@@ -1,4 +1,4 @@
-import React, { useReducer, useEffect, useCallback, useMemo } from "react";
+import React, { useReducer, useEffect, useCallback, useMemo, useRef } from "react";
 import { CollectionManager } from "../utils/collectionManager";
 import { StorageData } from "../utils/storage";
 import {
@@ -103,6 +103,10 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [state, dispatch] = useReducer(connectionReducer, initialState);
   const collectionManager = useMemo(() => CollectionManager.getInstance(), []);
+  // Track whether data has been loaded to prevent overwriting on initial mount
+  const hasLoadedRef = useRef(false);
+  // Track if this is the first render to skip auto-save on mount
+  const isInitialMountRef = useRef(true);
 
   const saveData = useCallback(async () => {
     try {
@@ -131,6 +135,8 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
         }));
         dispatch({ type: "SET_CONNECTIONS", payload: connections });
       }
+      // Mark as loaded after successfully loading data
+      hasLoadedRef.current = true;
     } catch (error) {
       console.error("Failed to load data:", error);
       throw error;
@@ -138,8 +144,16 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [collectionManager]);
 
   // Auto-save whenever the list of connections is modified
+  // BUT only after data has been loaded to prevent overwriting on mount/HMR
   useEffect(() => {
-    if (collectionManager.getCurrentCollection()) {
+    // Skip auto-save on initial mount
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      return;
+    }
+    
+    // Only save if we've loaded data first and have a collection selected
+    if (hasLoadedRef.current && collectionManager.getCurrentCollection()) {
       // Persist updated connections to storage
       saveData().catch(console.error);
     }

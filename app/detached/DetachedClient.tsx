@@ -9,9 +9,10 @@ import { Connection, ConnectionSession } from "../../src/types/connection";
 import { SessionViewer } from "../../src/components/SessionViewer";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { SettingsManager } from "../../src/utils/settingsManager";
+import { ThemeManager } from "../../src/utils/themeManager";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { CornerUpLeft, Minus, Monitor, Pin, Square, X } from "lucide-react";
 
 const reviveSession = (session: ConnectionSession): ConnectionSession => ({
@@ -144,6 +145,7 @@ const DetachedSessionContent: React.FC<{
 
   useEffect(() => {
     const manager = SettingsManager.getInstance();
+    const themeManager = ThemeManager.getInstance();
     manager
       .loadSettings()
       .then((settings) => {
@@ -152,9 +154,37 @@ const DetachedSessionContent: React.FC<{
           settings.windowTransparencyOpacity,
         );
         setWarnOnDetachClose(settings.warnOnDetachClose);
+        // Apply the same theme as main window
+        themeManager.applyTheme(
+          settings.theme,
+          settings.colorScheme,
+          settings.primaryAccentColor,
+        );
       })
       .catch(() => undefined);
   }, [applyTransparency]);
+
+  // Listen for theme changes from main window
+  useEffect(() => {
+    if (!isTauri) return;
+    
+    const unlistenPromise = listen<{
+      theme: string;
+      colorScheme: string;
+      primaryAccentColor?: string;
+    }>("theme-changed", (event) => {
+      const themeManager = ThemeManager.getInstance();
+      themeManager.applyTheme(
+        event.payload.theme as any,
+        event.payload.colorScheme as any,
+        event.payload.primaryAccentColor,
+      );
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => undefined);
+    };
+  }, [isTauri]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

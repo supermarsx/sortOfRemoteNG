@@ -12,12 +12,31 @@ import i18n, { loadLanguage } from "../i18n";
 /**
  * Options for {@link useAppLifecycle}.
  * @property handleConnect - Invoked to initiate a connection.
+ * @property restoreSession - Invoked to restore a saved session.
  * @property setShowCollectionSelector - Toggles the collection selector dialog.
  * @property setShowPasswordDialog - Toggles the password dialog visibility.
  * @property setPasswordDialogMode - Sets the password dialog mode.
  */
 interface Options {
   handleConnect: (connection: Connection) => void;
+  restoreSession?: (
+    sessionData: {
+      id: string;
+      connectionId: string;
+      name: string;
+      protocol: string;
+      hostname: string;
+      status: string;
+      backendSessionId?: string;
+      shellId?: string;
+      zoomLevel?: number;
+      layout?: ConnectionSession["layout"];
+      group?: string;
+      startTime?: string;
+      lastActivity?: string;
+    },
+    connection: Connection,
+  ) => Promise<void>;
   setShowCollectionSelector: (value: boolean) => void;
   setShowPasswordDialog: (value: boolean) => void;
   setPasswordDialogMode: (mode: "setup" | "unlock") => void;
@@ -36,6 +55,7 @@ interface Options {
  */
 export const useAppLifecycle = ({
   handleConnect,
+  restoreSession,
   setShowCollectionSelector,
   setShowPasswordDialog,
   setPasswordDialogMode,
@@ -144,7 +164,13 @@ export const useAppLifecycle = ({
       }
       statusChecker.cleanup();
     };
-  }, [initializeApp, handleBeforeUnload, checkSingleWindow, settingsManager, statusChecker]);
+  }, [
+    initializeApp,
+    handleBeforeUnload,
+    checkSingleWindow,
+    settingsManager,
+    statusChecker,
+  ]);
 
   useEffect(() => {
     if (isInitialized) {
@@ -177,7 +203,21 @@ export const useAppLifecycle = ({
       const savedSessions = sessionStorage.getItem("mremote-active-sessions");
       if (savedSessions && !hasReconnected.current) {
         try {
-          const sessions: ConnectionSession[] = JSON.parse(savedSessions);
+          const sessions: Array<{
+            id: string;
+            connectionId: string;
+            name: string;
+            protocol: string;
+            hostname: string;
+            status: string;
+            backendSessionId?: string;
+            shellId?: string;
+            zoomLevel?: number;
+            layout?: ConnectionSession["layout"];
+            group?: string;
+            startTime?: string;
+            lastActivity?: string;
+          }> = JSON.parse(savedSessions);
           sessionStorage.removeItem("mremote-active-sessions");
 
           sessions.forEach((sessionData) => {
@@ -186,12 +226,20 @@ export const useAppLifecycle = ({
             );
             if (
               connection &&
-              !reconnectingSessions.current.has(connection.id)
+              !reconnectingSessions.current.has(sessionData.id)
             ) {
-              reconnectingSessions.current.add(connection.id);
+              reconnectingSessions.current.add(sessionData.id);
               setTimeout(() => {
-                handleConnect(connection);
-                reconnectingSessions.current.delete(connection.id);
+                // Use restoreSession to preserve session state when available
+                if (restoreSession) {
+                  restoreSession(sessionData, connection).finally(() => {
+                    reconnectingSessions.current.delete(sessionData.id);
+                  });
+                } else {
+                  // Fallback to handleConnect for new sessions
+                  handleConnect(connection);
+                  reconnectingSessions.current.delete(sessionData.id);
+                }
               }, 1000);
             }
           });
@@ -201,14 +249,38 @@ export const useAppLifecycle = ({
         hasReconnected.current = true;
       }
     }
-  }, [isInitialized, state.connections, handleConnect, settingsManager]);
+  }, [
+    isInitialized,
+    state.connections,
+    handleConnect,
+    restoreSession,
+    settingsManager,
+  ]);
 
   useEffect(() => {
     const settings = settingsManager.getSettings();
     if (settings.reconnectOnReload && state.sessions.length > 0) {
+      // Save full session state for restoration
       const sessionData = state.sessions.map((session) => ({
+        id: session.id,
         connectionId: session.connectionId,
         name: session.name,
+        protocol: session.protocol,
+        hostname: session.hostname,
+        status: session.status,
+        backendSessionId: session.backendSessionId,
+        shellId: session.shellId,
+        zoomLevel: session.zoomLevel,
+        layout: session.layout,
+        group: session.group,
+        startTime:
+          session.startTime instanceof Date
+            ? session.startTime.toISOString()
+            : session.startTime,
+        lastActivity:
+          session.lastActivity instanceof Date
+            ? session.lastActivity?.toISOString()
+            : session.lastActivity,
       }));
       sessionStorage.setItem(
         "mremote-active-sessions",

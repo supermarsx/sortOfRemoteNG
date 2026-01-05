@@ -2,6 +2,16 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings } from '../../../types/settings';
 import { SecureStorage } from '../../../utils/storage';
+import {
+  Shield,
+  Lock,
+  Key,
+  Timer,
+  Gauge,
+  Clock,
+  ShieldCheck,
+  Loader2,
+} from 'lucide-react';
 
 interface SecuritySettingsProps {
   settings: GlobalSettings;
@@ -22,6 +32,12 @@ const VALID_CIPHER_MODES: Record<string, { value: string; label: string }[]> = {
     // ChaCha20-Poly1305 is a stream cipher with built-in AEAD, no block cipher mode needed
   ],
 };
+
+const ENCRYPTION_ALGORITHMS = [
+  { value: 'AES-256-GCM', label: 'AES-256-GCM', description: 'Industry standard, hardware accelerated', recommended: true },
+  { value: 'AES-256-CBC', label: 'AES-256-CBC', description: 'Classic block cipher mode', recommended: false },
+  { value: 'ChaCha20-Poly1305', label: 'ChaCha20-Poly1305', description: 'Modern stream cipher, mobile friendly', recommended: false },
+];
 
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   settings,
@@ -61,149 +77,217 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       isMounted = false;
     };
   }, []);
+
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-white">{t('security.title')}</h3>
+      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <Shield className="w-5 h-5" />
+        {t('security.title')}
+      </h3>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            {t('security.algorithm')}
-          </label>
-          <select
-            value={settings.encryptionAlgorithm}
-            onChange={(e) => updateSettings({ encryptionAlgorithm: e.target.value as any })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-          >
-            <option value="AES-256-GCM">AES-256-GCM</option>
-            <option value="AES-256-CBC">AES-256-CBC</option>
-            <option value="ChaCha20-Poly1305">ChaCha20-Poly1305</option>
-          </select>
-        </div>
+      {/* Encryption Algorithm Section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Lock className="w-4 h-4 text-blue-400" />
+          {t('security.algorithm')}
+        </h4>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            {t('security.blockCipher')}
-          </label>
-          {validModes.length > 0 ? (
-            <select
-              value={settings.blockCipherMode}
-              onChange={(e) => updateSettings({ blockCipherMode: e.target.value as any })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-              disabled={validModes.length === 1}
-            >
-              {validModes.map((mode) => (
-                <option key={mode.value} value={mode.value}>
-                  {mode.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-gray-400 italic">
-              {settings.encryptionAlgorithm === 'ChaCha20-Poly1305'
-                ? 'Stream cipher (no block mode)'
-                : 'N/A for this algorithm'}
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {ENCRYPTION_ALGORITHMS.map((algo) => (
+              <button
+                key={algo.value}
+                onClick={() => updateSettings({ encryptionAlgorithm: algo.value as any })}
+                className={`relative flex flex-col items-center p-4 rounded-lg border transition-all ${
+                  settings.encryptionAlgorithm === algo.value
+                    ? 'border-blue-500 bg-blue-600/20 text-white ring-1 ring-blue-500/50'
+                    : 'border-gray-600 bg-gray-700/50 text-gray-300 hover:bg-gray-600 hover:border-gray-500'
+                }`}
+              >
+                {algo.recommended && (
+                  <span className="absolute top-1 right-1 px-1.5 py-0.5 text-[10px] bg-green-600/30 text-green-400 rounded">
+                    Recommended
+                  </span>
+                )}
+                <Lock className={`w-6 h-6 mb-2 ${settings.encryptionAlgorithm === algo.value ? 'text-blue-400' : ''}`} />
+                <span className="text-sm font-medium">{algo.label}</span>
+                <span className="text-xs text-gray-400 mt-1 text-center">{algo.description}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Block Cipher Mode */}
+          {validModes.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-700">
+              <label className="flex items-center gap-2 text-sm text-gray-400 mb-2">
+                <ShieldCheck className="w-4 h-4" />
+                {t('security.blockCipher')}
+              </label>
+              <select
+                value={settings.blockCipherMode}
+                onChange={(e) => updateSettings({ blockCipherMode: e.target.value as any })}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                disabled={validModes.length === 1}
+              >
+                {validModes.map((mode) => (
+                  <option key={mode.value} value={mode.value}>
+                    {mode.label}
+                  </option>
+                ))}
+              </select>
+              {validModes.length === 1 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Mode is determined by the algorithm
+                </p>
+              )}
             </div>
           )}
-          {validModes.length === 1 && (
-            <p className="text-xs text-gray-500 mt-1">
-              Mode is determined by the algorithm
-            </p>
+
+          {settings.encryptionAlgorithm === 'ChaCha20-Poly1305' && (
+            <div className="mt-4 pt-4 border-t border-gray-700">
+              <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-gray-400 text-sm">
+                <ShieldCheck className="w-4 h-4" />
+                Stream cipher with built-in AEAD (no block mode needed)
+              </div>
+            </div>
           )}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            {t('security.iterations')}
-          </label>
-          <div className="flex space-x-2">
-            <input
-              type="number"
-              value={settings.keyDerivationIterations}
-              onChange={(e) => updateSettings({ keyDerivationIterations: parseInt(e.target.value) })}
-              className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-              min="10000"
-              max="1000000"
-            />
-            <button
-              onClick={handleBenchmark}
-              disabled={isBenchmarking}
-              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-md transition-colors"
-            >
-              {isBenchmarking ? '...' : 'Benchmark'}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            {t('security.benchmarkTime')}
-          </label>
-          <input
-            type="number"
-            value={settings.benchmarkTimeSeconds}
-            onChange={(e) => updateSettings({ benchmarkTimeSeconds: parseInt(e.target.value) })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-            min="0.5"
-            max="10"
-            step="0.5"
-          />
         </div>
       </div>
 
-      <label className="flex items-center space-x-2">
-        <input
-          type="checkbox"
-          checked={settings.autoBenchmarkIterations}
-          onChange={(e) => updateSettings({ autoBenchmarkIterations: e.target.checked })}
-          className="rounded border-gray-600 bg-gray-700 text-blue-600"
-        />
-        <span className="text-gray-300">{t('security.autoBenchmark')}</span>
-      </label>
+      {/* Key Derivation Section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Key className="w-4 h-4 text-purple-400" />
+          Key Derivation (PBKDF2)
+        </h4>
 
-      <div className="border-t border-gray-700 pt-5 space-y-4">
-        <h4 className="text-md font-medium text-white">Auto Lock</h4>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.autoLock.enabled && hasPassword}
-            onChange={(e) =>
-              updateSettings({
-                autoLock: { ...settings.autoLock, enabled: e.target.checked },
-              })
-            }
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
-            disabled={!hasPassword}
-          />
-          <span className="text-gray-300">
-            Enable auto lock after inactivity
-          </span>
-        </label>
-        {!hasPassword && (
-          <p className="text-xs text-gray-400">
-            Set a storage password to enable auto lock.
-          </p>
-        )}
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Auto lock timeout (minutes)
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-gray-400">
+                <Gauge className="w-4 h-4" />
+                {t('security.iterations')}
+              </label>
+              <div className="flex space-x-2">
+                <input
+                  type="number"
+                  value={settings.keyDerivationIterations}
+                  onChange={(e) => updateSettings({ keyDerivationIterations: parseInt(e.target.value) })}
+                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  min="10000"
+                  max="1000000"
+                />
+                <button
+                  onClick={handleBenchmark}
+                  disabled={isBenchmarking}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-md transition-colors"
+                >
+                  {isBenchmarking ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Testing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Gauge className="w-4 h-4" />
+                      <span>Benchmark</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Higher values = more secure but slower. Benchmark to find optimal value.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-gray-400">
+                <Timer className="w-4 h-4" />
+                {t('security.benchmarkTime')}
+              </label>
+              <input
+                type="number"
+                value={settings.benchmarkTimeSeconds}
+                onChange={(e) => updateSettings({ benchmarkTimeSeconds: parseInt(e.target.value) })}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                min="0.5"
+                max="10"
+                step="0.5"
+              />
+              <p className="text-xs text-gray-500">
+                Target time for key derivation during benchmark
+              </p>
+            </div>
+          </div>
+
+          <label className="flex items-center space-x-3 cursor-pointer group pt-2">
+            <input
+              type="checkbox"
+              checked={settings.autoBenchmarkIterations}
+              onChange={(e) => updateSettings({ autoBenchmarkIterations: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Gauge className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
+            <span className="text-gray-300 group-hover:text-white">{t('security.autoBenchmark')}</span>
           </label>
-          <input
-            type="number"
-            value={settings.autoLock.timeoutMinutes}
-            onChange={(e) =>
-              updateSettings({
-                autoLock: {
-                  ...settings.autoLock,
-                  timeoutMinutes: parseInt(e.target.value),
-                },
-              })
-            }
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-            min="1"
-            max="240"
-            disabled={!hasPassword}
-          />
+        </div>
+      </div>
+
+      {/* Auto Lock Section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Clock className="w-4 h-4 text-yellow-400" />
+          Auto Lock
+        </h4>
+
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+          {!hasPassword && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-yellow-900/20 border border-yellow-700/50 rounded-md text-yellow-400 text-sm">
+              <Lock className="w-4 h-4" />
+              Set a storage password to enable auto lock.
+            </div>
+          )}
+
+          <label className={`flex items-center space-x-3 cursor-pointer group ${!hasPassword ? 'opacity-50' : ''}`}>
+            <input
+              type="checkbox"
+              checked={settings.autoLock.enabled && hasPassword}
+              onChange={(e) =>
+                updateSettings({
+                  autoLock: { ...settings.autoLock, enabled: e.target.checked },
+                })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+              disabled={!hasPassword}
+            />
+            <Clock className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
+            <span className="text-gray-300 group-hover:text-white">
+              Enable auto lock after inactivity
+            </span>
+          </label>
+
+          <div className={`space-y-2 ${!hasPassword || !settings.autoLock.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+            <label className="flex items-center gap-2 text-sm text-gray-400">
+              <Timer className="w-4 h-4" />
+              Auto lock timeout (minutes)
+            </label>
+            <input
+              type="number"
+              value={settings.autoLock.timeoutMinutes}
+              onChange={(e) =>
+                updateSettings({
+                  autoLock: {
+                    ...settings.autoLock,
+                    timeoutMinutes: parseInt(e.target.value),
+                  },
+                })
+              }
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+              min="1"
+              max="240"
+              disabled={!hasPassword}
+            />
+          </div>
         </div>
       </div>
     </div>

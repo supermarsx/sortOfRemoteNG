@@ -232,6 +232,31 @@ export class ThemeManager {
     // Persist to IndexedDB
     void IndexedDbService.setItem("mremote-theme", themeName);
     void IndexedDbService.setItem("mremote-color-scheme", colorScheme);
+
+    // Emit theme change event for detached windows
+    this.emitThemeChange(themeName, colorScheme, customAccent);
+  }
+
+  /**
+   * Emit theme change event to all windows (including detached ones)
+   */
+  private async emitThemeChange(
+    theme: Theme,
+    colorScheme: ColorScheme,
+    customAccent?: string,
+  ): Promise<void> {
+    try {
+      const tauri = (globalThis as any).__TAURI__;
+      if (tauri?.event?.emit) {
+        await tauri.event.emit("theme-changed", {
+          theme,
+          colorScheme,
+          primaryAccentColor: customAccent,
+        });
+      }
+    } catch {
+      // Ignore - might not be in Tauri context
+    }
   }
 
   getCurrentTheme(): Theme {
