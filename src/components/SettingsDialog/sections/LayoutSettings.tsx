@@ -1,5 +1,25 @@
 import React from "react";
 import { GlobalSettings } from "../../../types/settings";
+import { 
+  Layout, 
+  Maximize2, 
+  Move, 
+  PanelLeft, 
+  ArrowLeftRight,
+  FoldVertical,
+  GripVertical,
+  Network,
+  Zap,
+  FolderSync,
+  FileStack,
+  Settings,
+  Shield,
+  Keyboard,
+  Activity,
+  Code,
+  ShieldCheck,
+  Languages
+} from "lucide-react";
 
 interface LayoutSettingsProps {
   settings: GlobalSettings;
@@ -12,169 +32,229 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
 }) => {
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-white">Layout</h3>
+      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <Layout className="w-5 h-5" />
+        Layout
+      </h3>
 
+      {/* Window Persistence Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-200">Persistence</h4>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.persistWindowSize}
-            onChange={(e) => updateSettings({ persistWindowSize: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
-          />
-          <span className="text-gray-300">Remember window size</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.persistWindowPosition}
-            onChange={(e) => updateSettings({ persistWindowPosition: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
-          />
-          <span className="text-gray-300">Remember window position</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.persistSidebarWidth}
-            onChange={(e) => updateSettings({ persistSidebarWidth: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
-          />
-          <span className="text-gray-300">Remember sidebar width</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.persistSidebarPosition}
-            onChange={(e) => updateSettings({ persistSidebarPosition: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
-          />
-          <span className="text-gray-300">Remember sidebar position</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.persistSidebarCollapsed}
-            onChange={(e) => updateSettings({ persistSidebarCollapsed: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
-          />
-          <span className="text-gray-300">Remember sidebar collapsed state</span>
-        </label>
+        <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Maximize2 className="w-4 h-4 text-blue-400" />
+          Window Persistence
+        </h4>
+        <div className="space-y-3 ml-1">
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.persistWindowSize}
+              onChange={(e) => updateSettings({ persistWindowSize: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Maximize2 className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Remember window size</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.persistWindowPosition}
+              onChange={(e) => updateSettings({ persistWindowPosition: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Move className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Remember window position</span>
+          </label>
+        </div>
       </div>
 
+      {/* Sidebar Persistence Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-200">Reordering</h4>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.enableTabReorder}
-            onChange={(e) => updateSettings({ enableTabReorder: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
-          />
-          <span className="text-gray-300">Allow tab reordering</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.enableConnectionReorder}
-            onChange={(e) => updateSettings({ enableConnectionReorder: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
-          />
-          <span className="text-gray-300">Allow connection reordering</span>
-        </label>
+        <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <PanelLeft className="w-4 h-4 text-green-400" />
+          Sidebar Persistence
+        </h4>
+        <div className="space-y-3 ml-1">
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.persistSidebarWidth}
+              onChange={(e) => updateSettings({ persistSidebarWidth: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <ArrowLeftRight className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Remember sidebar width</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.persistSidebarPosition}
+              onChange={(e) => updateSettings({ persistSidebarPosition: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Move className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Remember sidebar position</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.persistSidebarCollapsed}
+              onChange={(e) => updateSettings({ persistSidebarCollapsed: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <FoldVertical className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Remember sidebar collapsed state</span>
+          </label>
+        </div>
       </div>
 
+      {/* Reordering Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-200">Secondary Bar</h4>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showQuickConnectIcon}
-            onChange={(e) => updateSettings({ showQuickConnectIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Quick Connect</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showCollectionSwitcherIcon}
-            onChange={(e) => updateSettings({ showCollectionSwitcherIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Collection Switcher</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showImportExportIcon}
-            onChange={(e) => updateSettings({ showImportExportIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Import/Export</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showSettingsIcon}
-            onChange={(e) => updateSettings({ showSettingsIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Settings</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showProxyMenuIcon}
-            onChange={(e) => updateSettings({ showProxyMenuIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Proxy/VPN Menu</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showShortcutManagerIcon}
-            onChange={(e) => updateSettings({ showShortcutManagerIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Shortcut Manager</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showPerformanceMonitorIcon}
-            onChange={(e) => updateSettings({ showPerformanceMonitorIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Performance Monitor</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showActionLogIcon}
-            onChange={(e) => updateSettings({ showActionLogIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Action Log</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showDevtoolsIcon}
-            onChange={(e) => updateSettings({ showDevtoolsIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Devtools</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showSecurityIcon}
-            onChange={(e) => updateSettings({ showSecurityIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Security</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={settings.showLanguageSelectorIcon}
-            onChange={(e) => updateSettings({ showLanguageSelectorIcon: e.target.checked })}
-          />
-          <span className="text-gray-300">Show Language Selector</span>
-        </label>
+        <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <GripVertical className="w-4 h-4 text-purple-400" />
+          Drag & Drop Reordering
+        </h4>
+        <div className="space-y-3 ml-1">
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.enableTabReorder}
+              onChange={(e) => updateSettings({ enableTabReorder: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <FileStack className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Allow tab reordering</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.enableConnectionReorder}
+              onChange={(e) => updateSettings({ enableConnectionReorder: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Network className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Allow connection reordering</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Secondary Bar Icons Section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Settings className="w-4 h-4 text-orange-400" />
+          Secondary Bar Icons
+        </h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 ml-1">
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showQuickConnectIcon}
+              onChange={(e) => updateSettings({ showQuickConnectIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Zap className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400" />
+            <span className="text-gray-300 group-hover:text-white">Quick Connect</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showCollectionSwitcherIcon}
+              onChange={(e) => updateSettings({ showCollectionSwitcherIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <FolderSync className="w-4 h-4 text-blue-500 group-hover:text-blue-400" />
+            <span className="text-gray-300 group-hover:text-white">Collection Switcher</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showImportExportIcon}
+              onChange={(e) => updateSettings({ showImportExportIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <FileStack className="w-4 h-4 text-green-500 group-hover:text-green-400" />
+            <span className="text-gray-300 group-hover:text-white">Import/Export</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showSettingsIcon}
+              onChange={(e) => updateSettings({ showSettingsIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Settings className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Settings</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showProxyMenuIcon}
+              onChange={(e) => updateSettings({ showProxyMenuIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Shield className="w-4 h-4 text-indigo-500 group-hover:text-indigo-400" />
+            <span className="text-gray-300 group-hover:text-white">Proxy/VPN Menu</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showShortcutManagerIcon}
+              onChange={(e) => updateSettings({ showShortcutManagerIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Keyboard className="w-4 h-4 text-pink-500 group-hover:text-pink-400" />
+            <span className="text-gray-300 group-hover:text-white">Shortcut Manager</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showPerformanceMonitorIcon}
+              onChange={(e) => updateSettings({ showPerformanceMonitorIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Activity className="w-4 h-4 text-red-500 group-hover:text-red-400" />
+            <span className="text-gray-300 group-hover:text-white">Performance Monitor</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showActionLogIcon}
+              onChange={(e) => updateSettings({ showActionLogIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <FileStack className="w-4 h-4 text-cyan-500 group-hover:text-cyan-400" />
+            <span className="text-gray-300 group-hover:text-white">Action Log</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showDevtoolsIcon}
+              onChange={(e) => updateSettings({ showDevtoolsIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Code className="w-4 h-4 text-amber-500 group-hover:text-amber-400" />
+            <span className="text-gray-300 group-hover:text-white">Devtools</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showSecurityIcon}
+              onChange={(e) => updateSettings({ showSecurityIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <ShieldCheck className="w-4 h-4 text-emerald-500 group-hover:text-emerald-400" />
+            <span className="text-gray-300 group-hover:text-white">Security</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showLanguageSelectorIcon}
+              onChange={(e) => updateSettings({ showLanguageSelectorIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Languages className="w-4 h-4 text-teal-500 group-hover:text-teal-400" />
+            <span className="text-gray-300 group-hover:text-white">Language Selector</span>
+          </label>
+        </div>
       </div>
     </div>
   );

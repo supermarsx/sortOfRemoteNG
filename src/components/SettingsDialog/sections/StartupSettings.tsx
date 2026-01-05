@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { GlobalSettings } from "../../../types/settings";
-import { Power, Monitor, Play, RefreshCw, Minimize2, X as XIcon, MousePointer, MousePointerClick } from "lucide-react";
+import { Power, Monitor, Play, RefreshCw, Minimize2, X as XIcon, MousePointer, MousePointerClick, AppWindow } from "lucide-react";
 
 interface StartupSettingsProps {
   settings: GlobalSettings;
@@ -115,9 +115,12 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             onChange={(e) => updateSettings({ showTrayIcon: e.target.checked })}
             className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
           />
-          <span className="text-gray-300">
-            {t("settings.startup.showTrayIcon", "Show system tray icon")}
-          </span>
+          <div className="flex items-center gap-2">
+            <AppWindow className="w-4 h-4 text-gray-400" />
+            <span className="text-gray-300">
+              {t("settings.startup.showTrayIcon", "Show system tray icon")}
+            </span>
+          </div>
         </label>
 
         <label className="flex items-center space-x-3 cursor-pointer">
@@ -198,6 +201,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           />
           <div className="flex items-center gap-2">
             <MousePointerClick className="w-4 h-4 text-gray-400" />
+
             <span className="text-gray-300">
               {t("settings.startup.doubleClickRename", "Rename on double click")}
             </span>

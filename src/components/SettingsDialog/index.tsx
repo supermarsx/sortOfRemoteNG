@@ -29,6 +29,145 @@ import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
 import { ConfirmDialog } from '../ConfirmDialog';
 
+// Default settings for each tab section
+const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
+  general: [
+    'language', 'autoSaveEnabled', 'autoSaveIntervalMinutes', 'singleWindowMode',
+    'singleConnectionMode', 'reconnectOnReload', 'warnOnClose', 'warnOnExit',
+    'warnOnDetachClose', 'quickConnectHistoryEnabled',
+  ],
+  startup: [
+    'startMinimized', 'startMaximized', 'startWithSystem', 'reconnectPreviousSessions',
+    'minimizeToTray', 'closeToTray', 'showTrayIcon', 'singleClickConnect',
+    'singleClickDisconnect', 'doubleClickRename',
+  ],
+  theme: [
+    'theme', 'colorScheme', 'primaryAccentColor', 'backgroundGlowEnabled',
+    'backgroundGlowColor', 'backgroundGlowOpacity', 'backgroundGlowRadius',
+    'backgroundGlowBlur', 'windowTransparencyEnabled', 'windowTransparencyOpacity',
+    'customCss', 'animationsEnabled', 'animationDuration', 'reduceMotion',
+  ],
+  layout: [
+    'persistWindowSize', 'persistWindowPosition', 'persistSidebarWidth',
+    'persistSidebarPosition', 'persistSidebarCollapsed', 'enableTabReorder',
+    'enableConnectionReorder', 'showQuickConnectIcon', 'showCollectionSwitcherIcon',
+    'showImportExportIcon', 'showSettingsIcon', 'showProxyMenuIcon',
+    'showShortcutManagerIcon', 'showPerformanceMonitorIcon', 'showActionLogIcon',
+    'showDevtoolsIcon', 'showSecurityIcon', 'showLanguageSelectorIcon', 'showWolIcon',
+  ],
+  security: [
+    'encryptionAlgorithm', 'blockCipherMode', 'keyDerivationIterations',
+    'autoBenchmarkIterations', 'benchmarkTimeSeconds', 'totpEnabled',
+    'totpIssuer', 'totpDigits', 'totpPeriod',
+  ],
+  performance: [
+    'maxConcurrentConnections', 'connectionTimeout', 'retryAttempts', 'retryDelay',
+    'enablePerformanceTracking', 'performancePollIntervalMs', 'performanceLatencyTarget',
+  ],
+  proxy: ['globalProxy'],
+  advanced: [
+    'tabGrouping', 'hostnameOverride', 'defaultTabLayout', 'enableTabDetachment',
+    'enableTabResize', 'enableZoom', 'enableStatusChecking', 'statusCheckInterval',
+    'statusCheckMethod', 'networkDiscovery', 'restApi', 'wolEnabled', 'wolPort',
+    'wolBroadcastAddress', 'enableActionLog', 'logLevel', 'maxLogEntries',
+    'exportEncryption',
+  ],
+};
+
+// Default values for settings (mirrors settingsManager.ts)
+const DEFAULT_VALUES: Partial<GlobalSettings> = {
+  language: 'en',
+  theme: 'dark',
+  colorScheme: 'blue',
+  primaryAccentColor: '#3b82f6',
+  autoSaveEnabled: false,
+  autoSaveIntervalMinutes: 5,
+  singleWindowMode: false,
+  singleConnectionMode: false,
+  reconnectOnReload: true,
+  warnOnClose: true,
+  warnOnExit: true,
+  warnOnDetachClose: true,
+  quickConnectHistoryEnabled: true,
+  startMinimized: false,
+  startMaximized: false,
+  startWithSystem: false,
+  reconnectPreviousSessions: false,
+  minimizeToTray: false,
+  closeToTray: false,
+  showTrayIcon: true,
+  singleClickConnect: false,
+  singleClickDisconnect: false,
+  doubleClickRename: false,
+  animationsEnabled: true,
+  animationDuration: 200,
+  reduceMotion: false,
+  backgroundGlowEnabled: true,
+  backgroundGlowColor: '#2563eb',
+  backgroundGlowOpacity: 0.25,
+  backgroundGlowRadius: 520,
+  backgroundGlowBlur: 140,
+  windowTransparencyEnabled: false,
+  windowTransparencyOpacity: 0.94,
+  showQuickConnectIcon: true,
+  showCollectionSwitcherIcon: true,
+  showImportExportIcon: true,
+  showSettingsIcon: true,
+  showPerformanceMonitorIcon: true,
+  showActionLogIcon: true,
+  showDevtoolsIcon: true,
+  showSecurityIcon: true,
+  showLanguageSelectorIcon: true,
+  showProxyMenuIcon: true,
+  showShortcutManagerIcon: true,
+  showWolIcon: true,
+  maxConcurrentConnections: 10,
+  connectionTimeout: 30,
+  retryAttempts: 3,
+  retryDelay: 5000,
+  enablePerformanceTracking: true,
+  performancePollIntervalMs: 20000,
+  performanceLatencyTarget: '1.1.1.1',
+  encryptionAlgorithm: 'AES-256-GCM',
+  blockCipherMode: 'GCM',
+  keyDerivationIterations: 100000,
+  autoBenchmarkIterations: false,
+  benchmarkTimeSeconds: 1,
+  totpEnabled: false,
+  totpIssuer: 'sortOfRemoteNG',
+  totpDigits: 6,
+  totpPeriod: 30,
+  tabGrouping: 'none',
+  hostnameOverride: false,
+  defaultTabLayout: 'tabs',
+  enableTabDetachment: false,
+  enableTabResize: true,
+  enableZoom: true,
+  enableTabReorder: true,
+  enableConnectionReorder: true,
+  enableStatusChecking: true,
+  statusCheckInterval: 30,
+  statusCheckMethod: 'socket',
+  persistWindowSize: true,
+  persistWindowPosition: true,
+  persistSidebarWidth: true,
+  persistSidebarPosition: true,
+  persistSidebarCollapsed: true,
+  wolEnabled: false,
+  wolPort: 9,
+  wolBroadcastAddress: '255.255.255.255',
+  enableActionLog: true,
+  logLevel: 'info',
+  maxLogEntries: 1000,
+  exportEncryption: false,
+  globalProxy: {
+    type: 'http',
+    host: '',
+    port: 8080,
+    enabled: false,
+  },
+};
+
 interface SettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -101,8 +240,39 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   };
 
   const confirmReset = async () => {
-    const defaultSettings = await settingsManager.loadSettings();
-    setSettings(defaultSettings);
+    if (!settings) return;
+    
+    // Reset only the current tab's settings to defaults
+    const tabKeys = TAB_DEFAULTS[activeTab] || [];
+    const resetUpdates: Partial<GlobalSettings> = {};
+    
+    for (const key of tabKeys) {
+      if (key in DEFAULT_VALUES) {
+        (resetUpdates as Record<string, unknown>)[key] = (DEFAULT_VALUES as Record<string, unknown>)[key];
+      }
+    }
+    
+    const newSettings = { ...settings, ...resetUpdates };
+    setSettings(newSettings);
+    
+    try {
+      await settingsManager.saveSettings(newSettings);
+      
+      // Re-apply theme if we reset theme settings
+      if (activeTab === 'theme') {
+        themeManager.applyTheme(
+          newSettings.theme,
+          newSettings.colorScheme,
+          newSettings.primaryAccentColor,
+        );
+      }
+      
+      showAutoSave('success');
+    } catch (error) {
+      console.error('Failed to reset tab settings:', error);
+      showAutoSave('error');
+    }
+    
     setShowResetConfirm(false);
   };
 
@@ -325,7 +495,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       </div>
       <ConfirmDialog
         isOpen={showResetConfirm}
-        message={t("settings.reset")}
+        message={t("settings.resetTabConfirm", `Reset "${tabs.find(t => t.id === activeTab)?.label}" settings to defaults?`)}
         onConfirm={confirmReset}
         onCancel={() => setShowResetConfirm(false)}
       />

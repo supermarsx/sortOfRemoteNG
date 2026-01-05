@@ -102,16 +102,35 @@ const defaultSettings: GlobalSettings = {
   persistSidebarCollapsed: true,
   networkDiscovery: {
     enabled: true,
-    autoScan: false,
-    scanInterval: 300000,
-    subnet: '',
-    portRange: '22,3389,5900',
+    ipRange: '192.168.1.0/24',
+    portRanges: ['22', '3389', '5900'],
+    protocols: ['ssh', 'rdp', 'vnc'],
     timeout: 1000,
+    maxConcurrent: 50,
+    maxPortConcurrent: 10,
+    customPorts: {},
+    probeStrategies: {},
+    cacheTTL: 300000,
+    hostnameTtl: 600000,
+    macTtl: 3600000,
   },
   restApi: {
     enabled: false,
     port: 8081,
+    authentication: false,
+    corsEnabled: true,
+    rateLimiting: false,
   },
+  // Wake on LAN
+  wolEnabled: true,
+  wolPort: 9,
+  wolBroadcastAddress: '255.255.255.255',
+  // Logging
+  enableActionLog: true,
+  logLevel: 'info',
+  maxLogEntries: 1000,
+  // Export Settings
+  exportEncryption: true,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

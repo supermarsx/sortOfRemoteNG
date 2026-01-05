@@ -94,12 +94,20 @@ impl DbService {
                 // Authenticate
                 if let Some(private_key) = &ssh_config.ssh_private_key {
                     let passphrase = ssh_config.ssh_passphrase.as_deref();
-                    sess.userauth_pubkey_memory(
+                    // Write key to temp file for authentication
+                    let temp_dir = std::env::temp_dir();
+                    let key_path = temp_dir.join(format!("ssh_key_{}", std::process::id()));
+                    std::fs::write(&key_path, private_key)
+                        .map_err(|e| format!("Failed to write temp key file: {}", e))?;
+                    let result = sess.userauth_pubkey_file(
                         &ssh_config.ssh_username,
                         None,
-                        private_key,
+                        &key_path,
                         passphrase
-                    ).map_err(|e| format!("SSH key authentication failed: {}", e))?;
+                    );
+                    // Clean up temp file immediately
+                    let _ = std::fs::remove_file(&key_path);
+                    result.map_err(|e| format!("SSH key authentication failed: {}", e))?;
                 } else if let Some(pw) = &ssh_config.ssh_password {
                     sess.userauth_password(&ssh_config.ssh_username, pw)
                         .map_err(|e| format!("SSH password authentication failed: {}", e))?;

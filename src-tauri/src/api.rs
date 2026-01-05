@@ -362,7 +362,7 @@ async fn connect_mysql(
     Json(req): Json<DbConnectRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut db = services.db_service.lock().await;
-    match db.connect_mysql(req.host, req.port, req.username, req.password, req.database.unwrap_or_default(), None, None).await {
+    match db.connect_mysql(req.host, req.port, req.username, req.password, req.database.unwrap_or_default(), None, None, None).await {
         Ok(connection_id) => Ok(Json(serde_json::json!({
             "success": true,
             "connection_id": connection_id
@@ -525,7 +525,7 @@ async fn wake_on_lan(
     Json(req): Json<WolRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let wol = services.wol_service.lock().await;
-    match wol.wake_on_lan(req.mac_address).await {
+    match wol.wake_on_lan(req.mac_address, req.broadcast_addr, None, None).await {
         Ok(_) => Ok(Json(serde_json::json!({
             "success": true,
             "message": "Wake-on-LAN packet sent"

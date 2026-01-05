@@ -1,0 +1,17 @@
+# Cargo configuration
+# Using crates.io with sparse protocol (fast, default since Rust 1.70)
+
+[net]
+# Retry failed downloads up to 3 times
+retry = 3
+# Use git CLI for fetching (more reliable in some network conditions)
+git-fetch-with-cli = true
+
+[http]
+# Increase timeout for slow connections (in seconds)
+timeout = 60
+# Lower-level timeout settings
+low-speed-limit = 5
+
+# Sparse protocol is already the default in modern Rust
+# No source replacement needed - crates.io works directly

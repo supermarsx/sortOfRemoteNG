@@ -34,6 +34,7 @@ import { useSessionManager } from "./hooks/useSessionManager";
 import { useAppLifecycle } from "./hooks/useAppLifecycle";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
+import { ToastProvider } from "./contexts/ToastContext";
 import { Sidebar } from "./components/Sidebar";
 import { ConnectionEditor } from "./components/ConnectionEditor";
 import { SessionTabs } from "./components/SessionTabs";
@@ -854,8 +855,13 @@ const AppContent: React.FC = () => {
         payload: {
           ...session,
           layout: {
-            ...(session.layout ?? {}),
+            x: session.layout?.x ?? 0,
+            y: session.layout?.y ?? 0,
+            width: session.layout?.width ?? 800,
+            height: session.layout?.height ?? 600,
+            zIndex: session.layout?.zIndex ?? 1,
             isDetached: false,
+            windowId: session.layout?.windowId,
           },
         },
       });
@@ -1549,11 +1555,13 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => (
-  <ConnectionProvider>
-    <ErrorBoundary>
-      <AppContent />
-    </ErrorBoundary>
-  </ConnectionProvider>
+  <ToastProvider>
+    <ConnectionProvider>
+      <ErrorBoundary>
+        <AppContent />
+      </ErrorBoundary>
+    </ConnectionProvider>
+  </ToastProvider>
 );
 
 export default App;

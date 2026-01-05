@@ -177,6 +177,8 @@ pub fn run() {
   
   tauri::Builder::default()
     .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_fs::init())
     .setup(|app| {
       // Parse command line arguments
       let args: Vec<String> = env::args().collect();

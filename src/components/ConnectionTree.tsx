@@ -60,7 +60,8 @@ const getProtocolIcon = (protocol: string) => {
   }
 };
 
-const iconRegistry: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+// Use 'typeof Monitor' to match Lucide icon type exactly
+const iconRegistry: Record<string, typeof Monitor> = {
   monitor: Monitor,
   terminal: Terminal,
   globe: Globe,

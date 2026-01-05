@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings } from '../../../types/settings';
 import { SecureStorage } from '../../../utils/storage';
@@ -10,6 +10,19 @@ interface SecuritySettingsProps {
   isBenchmarking: boolean;
 }
 
+// Valid block cipher modes for each encryption algorithm
+const VALID_CIPHER_MODES: Record<string, { value: string; label: string }[]> = {
+  'AES-256-GCM': [
+    { value: 'GCM', label: 'GCM (Galois/Counter Mode)' },
+  ],
+  'AES-256-CBC': [
+    { value: 'CBC', label: 'CBC (Cipher Block Chaining)' },
+  ],
+  'ChaCha20-Poly1305': [
+    // ChaCha20-Poly1305 is a stream cipher with built-in AEAD, no block cipher mode needed
+  ],
+};
+
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   settings,
   updateSettings,
@@ -18,6 +31,22 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 }) => {
   const { t } = useTranslation();
   const [hasPassword, setHasPassword] = useState(false);
+
+  // Get valid modes for current algorithm
+  const validModes = useMemo(() => {
+    return VALID_CIPHER_MODES[settings.encryptionAlgorithm] || [];
+  }, [settings.encryptionAlgorithm]);
+
+  // Auto-update block cipher mode when algorithm changes
+  useEffect(() => {
+    const modes = VALID_CIPHER_MODES[settings.encryptionAlgorithm] || [];
+    if (modes.length > 0) {
+      const currentModeValid = modes.some(m => m.value === settings.blockCipherMode);
+      if (!currentModeValid) {
+        updateSettings({ blockCipherMode: modes[0].value as any });
+      }
+    }
+  }, [settings.encryptionAlgorithm, settings.blockCipherMode, updateSettings]);
 
   useEffect(() => {
     let isMounted = true;
@@ -56,17 +85,31 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           <label className="block text-sm font-medium text-gray-300 mb-2">
             {t('security.blockCipher')}
           </label>
-          <select
-            value={settings.blockCipherMode}
-            onChange={(e) => updateSettings({ blockCipherMode: e.target.value as any })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-          >
-            <option value="GCM">GCM</option>
-            <option value="CBC">CBC</option>
-            <option value="CTR">CTR</option>
-            <option value="OFB">OFB</option>
-            <option value="CFB">CFB</option>
-          </select>
+          {validModes.length > 0 ? (
+            <select
+              value={settings.blockCipherMode}
+              onChange={(e) => updateSettings({ blockCipherMode: e.target.value as any })}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+              disabled={validModes.length === 1}
+            >
+              {validModes.map((mode) => (
+                <option key={mode.value} value={mode.value}>
+                  {mode.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-gray-400 italic">
+              {settings.encryptionAlgorithm === 'ChaCha20-Poly1305'
+                ? 'Stream cipher (no block mode)'
+                : 'N/A for this algorithm'}
+            </div>
+          )}
+          {validModes.length === 1 && (
+            <p className="text-xs text-gray-500 mt-1">
+              Mode is determined by the algorithm
+            </p>
+          )}
         </div>
 
         <div>
