@@ -345,3 +345,5 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
     </div>
   );
 };
+
+export default ApiSettings;

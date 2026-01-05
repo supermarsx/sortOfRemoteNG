@@ -153,6 +153,8 @@ const AppContent: React.FC = () => {
     const showWindow = async () => {
       try {
         const currentWindow = getCurrentWindow();
+        // Center the window first, then show it
+        await currentWindow.center();
         await currentWindow.show();
         await currentWindow.setFocus();
       } catch {
@@ -962,21 +964,30 @@ const AppContent: React.FC = () => {
       handleSessionClose(sessionId).catch(console.error);
     })
       .then((stop) => {
-        if (isCancelled) {
-          stop();
-        } else {
-          unlistenFn = stop;
+        if (typeof stop === 'function') {
+          if (isCancelled) {
+            stop();
+          } else {
+            unlistenFn = stop;
+          }
         }
       })
       .catch(console.error);
 
     return () => {
       isCancelled = true;
-      unlistenFn?.();
+      if (typeof unlistenFn === 'function') {
+        unlistenFn();
+      }
     };
   }, [handleSessionClose]);
 
   useEffect(() => {
+    const isTauri =
+      typeof window !== "undefined" &&
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    if (!isTauri) return;
+
     let isCancelled = false;
     let unlistenFn: (() => void) | null = null;
     
@@ -1004,17 +1015,21 @@ const AppContent: React.FC = () => {
       setActiveSessionId(sessionId);
     })
       .then((stop) => {
-        if (isCancelled) {
-          stop();
-        } else {
-          unlistenFn = stop;
+        if (typeof stop === 'function') {
+          if (isCancelled) {
+            stop();
+          } else {
+            unlistenFn = stop;
+          }
         }
       })
       .catch(console.error);
 
     return () => {
       isCancelled = true;
-      unlistenFn?.();
+      if (typeof unlistenFn === 'function') {
+        unlistenFn();
+      }
     };
   }, [dispatch, setActiveSessionId, state.sessions]);
 

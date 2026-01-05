@@ -1,0 +1,376 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import {
+  Globe,
+  RefreshCw,
+  ArrowLeft,
+  ArrowRight,
+  Home,
+  Lock,
+  Unlock,
+  ExternalLink,
+  Maximize2,
+  Minimize2,
+  AlertCircle,
+  Loader2,
+  Settings,
+  Shield,
+  X,
+} from 'lucide-react';
+import { ConnectionSession } from '../types/connection';
+import { useConnections } from '../contexts/useConnections';
+
+interface HTTPViewerProps {
+  session: ConnectionSession;
+}
+
+interface ProxyMediatorResponse {
+  local_port: number;
+  session_id: string;
+  proxy_url: string;
+}
+
+type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error';
+
+/**
+ * HTTP/HTTPS Viewer Component
+ * 
+ * All connections are mediated through the Rust backend proxy.
+ * This provides:
+ * - Basic auth handling without browser prompts
+ * - Session state preservation on detach/reattach
+ * - SSL termination and certificate handling
+ * - Consistent authentication state
+ */
+export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
+  const { state } = useConnections();
+  const connection = state.connections.find((c) => c.id === session.connectionId);
+
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [status, setStatus] = useState<ConnectionStatus>('idle');
+  const [error, setError] = useState<string>('');
+  const [proxyUrl, setProxyUrl] = useState<string>('');
+  const [proxySessionId, setProxySessionId] = useState<string>('');
+  const [currentUrl, setCurrentUrl] = useState<string>('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [isSecure, setIsSecure] = useState(false);
+
+  // Build the target URL from connection config
+  const buildTargetUrl = useCallback(() => {
+    if (!connection) return '';
+    
+    const protocol = session.protocol === 'https' ? 'https' : 'http';
+    const port = connection.port || (session.protocol === 'https' ? 443 : 80);
+    const host = connection.hostname;
+    
+    // Don't include standard ports in URL
+    const portSuffix = (protocol === 'https' && port === 443) || (protocol === 'http' && port === 80)
+      ? ''
+      : `:${port}`;
+    
+    return `${protocol}://${host}${portSuffix}`;
+  }, [connection, session.protocol]);
+
+  // Initialize proxy connection
+  const initProxy = useCallback(async () => {
+    if (!connection) {
+      setStatus('error');
+      setError('Connection not found');
+      return;
+    }
+
+    setStatus('connecting');
+    setError('');
+
+    try {
+      const targetUrl = buildTargetUrl();
+      setCurrentUrl(targetUrl);
+      setIsSecure(targetUrl.startsWith('https'));
+
+      // Check if basic auth is configured
+      const hasAuth = connection.username && connection.password;
+
+      if (hasAuth) {
+        // Start the proxy mediator for authenticated connections
+        const proxyConfig = {
+          target_url: targetUrl,
+          username: connection.username || '',
+          password: connection.password || '',
+          local_port: 0, // Auto-assign
+          verify_ssl: true, // TODO: Make configurable
+        };
+
+        const response = await invoke<ProxyMediatorResponse>('start_basic_auth_proxy', {
+          config: proxyConfig,
+        });
+
+        setProxyUrl(response.proxy_url);
+        setProxySessionId(response.session_id);
+        setHistory([response.proxy_url]);
+        setHistoryIndex(0);
+        setStatus('connected');
+      } else {
+        // No auth needed, connect directly
+        setProxyUrl(targetUrl);
+        setHistory([targetUrl]);
+        setHistoryIndex(0);
+        setStatus('connected');
+      }
+    } catch (err) {
+      console.error('Failed to initialize HTTP proxy:', err);
+      setStatus('error');
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [connection, buildTargetUrl]);
+
+  // Initialize on mount
+  useEffect(() => {
+    initProxy();
+  }, [initProxy]);
+
+  // Navigation handlers
+  const navigateTo = useCallback((url: string) => {
+    if (!iframeRef.current) return;
+    
+    // Update history
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(url);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    
+    // Navigate iframe
+    iframeRef.current.src = url;
+    setCurrentUrl(url);
+  }, [history, historyIndex]);
+
+  const goBack = useCallback(() => {
+    if (historyIndex > 0 && iframeRef.current) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      iframeRef.current.src = history[newIndex];
+      setCurrentUrl(history[newIndex]);
+    }
+  }, [history, historyIndex]);
+
+  const goForward = useCallback(() => {
+    if (historyIndex < history.length - 1 && iframeRef.current) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      iframeRef.current.src = history[newIndex];
+      setCurrentUrl(history[newIndex]);
+    }
+  }, [history, historyIndex]);
+
+  const refresh = useCallback(() => {
+    if (iframeRef.current && proxyUrl) {
+      iframeRef.current.src = proxyUrl;
+    }
+  }, [proxyUrl]);
+
+  const goHome = useCallback(() => {
+    if (proxyUrl) {
+      navigateTo(proxyUrl);
+    }
+  }, [proxyUrl, navigateTo]);
+
+  const toggleFullscreen = () => {
+    setIsFullscreen((prev) => !prev);
+  };
+
+  const openExternal = useCallback(() => {
+    const targetUrl = buildTargetUrl();
+    if (targetUrl) {
+      window.open(targetUrl, '_blank');
+    }
+  }, [buildTargetUrl]);
+
+  // Handle iframe load events
+  const handleIframeLoad = useCallback(() => {
+    try {
+      // Try to get the current URL from iframe (may fail due to CORS)
+      const iframe = iframeRef.current;
+      if (iframe?.contentWindow?.location?.href) {
+        setCurrentUrl(iframe.contentWindow.location.href);
+      }
+    } catch {
+      // CORS prevents access to iframe location
+    }
+  }, []);
+
+  if (status === 'error') {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-900 text-white p-8">
+        <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Connection Failed</h2>
+        <p className="text-gray-400 mb-4 text-center max-w-md">{error}</p>
+        <button
+          onClick={initProxy}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Retry Connection
+        </button>
+      </div>
+    );
+  }
+
+  if (status === 'connecting') {
+    return (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-900 text-white">
+        <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
+        <h2 className="text-lg font-medium">Connecting...</h2>
+        <p className="text-gray-400 text-sm mt-2">{buildTargetUrl()}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`flex flex-col h-full bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+      {/* Navigation Bar */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 border-b border-gray-700">
+        {/* Navigation Buttons */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={goBack}
+            disabled={historyIndex <= 0}
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Back"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+          <button
+            onClick={goForward}
+            disabled={historyIndex >= history.length - 1}
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Forward"
+          >
+            <ArrowRight className="w-4 h-4" />
+          </button>
+          <button
+            onClick={refresh}
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            title="Refresh"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+          <button
+            onClick={goHome}
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            title="Home"
+          >
+            <Home className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* URL Bar */}
+        <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-gray-700/50 border border-gray-600 rounded-lg">
+          {isSecure ? (
+            <Lock className="w-4 h-4 text-green-500 flex-shrink-0" />
+          ) : (
+            <Unlock className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+          )}
+          <span className="text-gray-300 text-sm truncate flex-1">{currentUrl}</span>
+          {connection?.username && (
+            <span className="flex items-center gap-1 text-xs text-blue-400 flex-shrink-0">
+              <Shield className="w-3 h-3" />
+              Authenticated
+            </span>
+          )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={openExternal}
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            title="Open in Browser"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className={`p-1.5 rounded ${showSettings ? 'text-blue-400 bg-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+            title="Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          <button
+            onClick={toggleFullscreen}
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="px-4 py-3 bg-gray-800/80 border-b border-gray-700">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-white">Connection Settings</h3>
+            <button
+              onClick={() => setShowSettings(false)}
+              className="p-1 text-gray-400 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-gray-400">Target URL:</span>
+              <p className="text-white truncate">{buildTargetUrl()}</p>
+            </div>
+            <div>
+              <span className="text-gray-400">Proxy Session:</span>
+              <p className="text-white font-mono text-xs truncate">{proxySessionId || 'Direct'}</p>
+            </div>
+            <div>
+              <span className="text-gray-400">Authentication:</span>
+              <p className="text-white">{connection?.username ? 'Basic Auth' : 'None'}</p>
+            </div>
+            <div>
+              <span className="text-gray-400">Protocol:</span>
+              <p className="text-white">{session.protocol.toUpperCase()}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content Area */}
+      <div className="flex-1 relative min-h-0">
+        {proxyUrl && (
+          <iframe
+            ref={iframeRef}
+            src={proxyUrl}
+            className="absolute inset-0 w-full h-full border-0 bg-white"
+            onLoad={handleIframeLoad}
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+            title={`HTTP Viewer - ${connection?.name || session.hostname}`}
+          />
+        )}
+      </div>
+
+      {/* Status Bar */}
+      <div className="flex items-center justify-between px-3 py-1 bg-gray-800 border-t border-gray-700 text-xs text-gray-400">
+        <div className="flex items-center gap-2">
+          <Globe className="w-3 h-3" />
+          <span>{connection?.name || session.hostname}</span>
+        </div>
+        <div className="flex items-center gap-4">
+          {proxySessionId && (
+            <span className="text-gray-500">Proxied via localhost</span>
+          )}
+          <span className={status === 'connected' ? 'text-green-400' : 'text-yellow-400'}>
+            {status === 'connected' ? 'Connected' : 'Loading...'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default HTTPViewer;

@@ -557,10 +557,19 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
-    term.open(container);
-    if (container.isConnected) {
-      term.focus();
-    }
+    
+    // Defer terminal open to next frame to ensure DOM is ready
+    const openTimer = requestAnimationFrame(() => {
+      if (isDisposed.current) return;
+      try {
+        term.open(container);
+        if (container.isConnected && !isDisposed.current) {
+          term.focus();
+        }
+      } catch (err) {
+        console.warn('Failed to open terminal:', err);
+      }
+    });
 
     termRef.current = term;
     fitRef.current = fit;
@@ -680,6 +689,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     return () => {
       isDisposed.current = true;
       cancelled = true;
+      cancelAnimationFrame(openTimer);
       if (rafId) {
         cancelAnimationFrame(rafId);
       }
@@ -693,7 +703,14 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       outputUnlistenRef.current = null;
       errorUnlistenRef.current = null;
       closeUnlistenRef.current = null;
-      term.dispose();
+      // Dispose terminal in next frame to avoid sync scroll errors
+      requestAnimationFrame(() => {
+        try {
+          term.dispose();
+        } catch {
+          // Ignore disposal errors
+        }
+      });
       termRef.current = null;
       fitRef.current = null;
     };
