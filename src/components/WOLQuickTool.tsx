@@ -81,7 +81,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
       const result = await invoke<WolDevice[]>('discover_wol_devices');
       
       // Add local vendor lookup first (fast)
-      const devicesWithLocalVendor = result.map(device => ({
+      const devicesWithLocalVendor: WolDevice[] = result.map(device => ({
         ...device,
         vendor: lookupVendorLocal(device.mac),
         vendorSource: lookupVendorLocal(device.mac) ? 'local' as const : null,
@@ -169,10 +169,10 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
   const getVendorSourceIcon = (source: string | null | undefined) => {
     switch (source) {
       case 'local':
-        return <Database size={10} className="text-blue-400" title="Local database" />;
+        return <span title="Local database"><Database size={10} className="text-blue-400" /></span>;
       case 'maclookup':
       case 'macvendors':
-        return <Globe size={10} className="text-green-400" title="Online lookup" />;
+        return <span title="Online lookup"><Globe size={10} className="text-green-400" /></span>;
       default:
         return null;
     }

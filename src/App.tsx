@@ -26,7 +26,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Connection, ConnectionSession, TabLayout } from "./types/connection";
@@ -59,6 +59,7 @@ import { AutoLockManager } from "./components/AutoLockManager";
 import { ShortcutManagerDialog } from "./components/ShortcutManagerDialog";
 import { ProxyChainMenu } from "./components/ProxyChainMenu";
 import { WOLQuickTool } from "./components/WOLQuickTool";
+import { SplashScreen } from "./components/SplashScreen";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -118,6 +119,8 @@ const AppContent: React.FC = () => {
   const hasUnsavedWorkRef = useRef(false);
   const [hasStoragePassword, setHasStoragePassword] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [appReady, setAppReady] = useState(false);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const closingMainRef = useRef(false);
 
@@ -141,6 +144,25 @@ const AppContent: React.FC = () => {
     setShowPasswordDialog,
     setPasswordDialogMode,
   });
+
+  // Show window only after fully loaded
+  useEffect(() => {
+    if (isInitialized && !appReady) {
+      // Small delay to ensure all UI is rendered
+      const timeout = setTimeout(async () => {
+        setAppReady(true);
+        // Show the Tauri window if it was initially hidden
+        try {
+          const currentWindow = getCurrentWindow();
+          await currentWindow.show();
+          await currentWindow.setFocus();
+        } catch {
+          // Not in Tauri environment, ignore
+        }
+      }, 300);
+      return () => clearTimeout(timeout);
+    }
+  }, [isInitialized, appReady]);
 
   const handleQuickConnectWithHistory = useCallback(
     (payload: {
@@ -1386,11 +1408,11 @@ const AppContent: React.FC = () => {
         } as React.CSSProperties
       }
     >
-      {!isInitialized && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="text-white">Initializing...</div>
-        </div>
-      )}
+      {/* Splash Screen */}
+      <SplashScreen
+        isLoading={showSplash}
+        onLoadComplete={() => setShowSplash(false)}
+      />
       {/* Top bar */}
       <div
         className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
@@ -1671,6 +1693,7 @@ const AppContent: React.FC = () => {
         onSubmit={handlePasswordSubmit}
         onCancel={handlePasswordCancel}
         error={passwordError}
+        noCollectionSelected={!collectionManager.getCurrentCollection()}
       />
 
       <ConfirmDialog

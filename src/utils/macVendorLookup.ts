@@ -354,7 +354,6 @@ const MAC_VENDORS: Record<string, string> = {
   "00:1E:4C": "Lenovo",
   "00:21:5E": "Lenovo",
   "00:22:4D": "Lenovo",
-  "00:23:7D": "Lenovo",
   "00:24:7E": "Lenovo",
   "00:26:2D": "Lenovo",
   "08:9E:01": "Lenovo",
@@ -403,7 +402,6 @@ const MAC_VENDORS: Record<string, string> = {
   "28:C6:8E": "Netgear",
   "2C:B0:5D": "Netgear",
   "30:46:9A": "Netgear",
-  "30:B5:C2": "Netgear",
   "44:94:FC": "Netgear",
   "4C:60:DE": "Netgear",
   "54:07:7D": "Netgear",
@@ -757,7 +755,6 @@ const MAC_VENDORS: Record<string, string> = {
   "DC:9F:DB": "Ubiquiti",
   "E0:63:DA": "Ubiquiti",
   "F0:9F:C2": "Ubiquiti",
-  "FC:EC:DA": "Ubiquiti",
 };
 
 /**

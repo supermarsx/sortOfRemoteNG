@@ -88,6 +88,7 @@ pub mod scaleway;
 pub mod linode;
 pub mod ovh;
 pub mod http;
+pub mod passkey;
 
 #[cfg(test)]
 mod tests {
@@ -136,6 +137,7 @@ use scaleway::ScalewayService;
 use linode::LinodeService;
 use ovh::OvhService;
 use http::HttpService;
+use passkey::PasskeyService;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -426,6 +428,10 @@ pub fn run() {
       let http_service = HttpService::new();
       app.manage(http_service.clone());
 
+      // Initialize Passkey service
+      let passkey_service = PasskeyService::new();
+      app.manage(passkey_service.clone());
+
       // Initialize API service
       let api_service = ApiService::new(
         auth_service.clone(),
@@ -687,6 +693,11 @@ pub fn run() {
         http::http_get,
         http::http_post,
         http::start_basic_auth_proxy,
+        passkey::passkey_is_available,
+        passkey::passkey_authenticate,
+        passkey::passkey_register,
+        passkey::passkey_list_credentials,
+        passkey::passkey_remove_credential,
         // Authentication services - commented out until Tauri integration is complete
         // cert_auth::parse_certificate,
         // cert_auth::validate_certificate,
