@@ -1,5 +1,5 @@
 import React from 'react';
-import { Upload, File, FolderOpen, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, File, FolderOpen, CheckCircle, AlertCircle, FileText, FileCode } from 'lucide-react';
 import { ImportResult } from './types';
 
 interface ImportTabProps {
@@ -10,6 +10,7 @@ interface ImportTabProps {
   handleFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
   confirmImport: () => void;
   cancelImport: () => void;
+  detectedFormat?: string;
 }
 
 const ImportTab: React.FC<ImportTabProps> = ({
@@ -20,14 +21,43 @@ const ImportTab: React.FC<ImportTabProps> = ({
   handleFileSelect,
   confirmImport,
   cancelImport,
+  detectedFormat,
 }) => {
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-medium text-white mb-4">Import Connections</h3>
         <p className="text-gray-400 mb-4">
-          Import connections from JSON, XML, or CSV files. Encrypted files are automatically detected.
+          Import connections from various applications and formats.
         </p>
+        
+        {/* Supported Formats Info */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+            <FileCode className="w-4 h-4 text-blue-400" />
+            mRemoteNG
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+            <FileCode className="w-4 h-4 text-green-400" />
+            RDCMan
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+            <FileCode className="w-4 h-4 text-purple-400" />
+            MobaXterm
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+            <FileCode className="w-4 h-4 text-yellow-400" />
+            PuTTY
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+            <FileCode className="w-4 h-4 text-cyan-400" />
+            Termius
+          </div>
+          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+            <FileText className="w-4 h-4 text-orange-400" />
+            CSV / JSON
+          </div>
+        </div>
       </div>
 
       {!importResult && (
@@ -52,7 +82,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
             )}
           </button>
           <p className="text-xs text-gray-500 mt-2">
-            Supported formats: .json, .xml, .csv (encrypted files supported)
+            Formats auto-detected: .json, .xml, .csv, .ini, .reg
           </p>
         </div>
       )}
@@ -71,6 +101,11 @@ const ImportTab: React.FC<ImportTabProps> = ({
               <span className={`font-medium ${importResult.success ? 'text-green-400' : 'text-red-400'}`}>
                 {importResult.success ? 'Import Successful' : 'Import Failed'}
               </span>
+              {detectedFormat && importResult.success && (
+                <span className="text-xs px-2 py-0.5 bg-blue-600/30 text-blue-300 rounded">
+                  {detectedFormat}
+                </span>
+              )}
             </div>
 
             {importResult.success && (
@@ -120,7 +155,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,.xml,.csv,.encrypted"
+        accept=".json,.xml,.csv,.ini,.reg,.encrypted"
         onChange={handleFileSelect}
         className="hidden"
       />
