@@ -23,6 +23,7 @@ import {
   Network,
   Power,
   Bug,
+  Plus,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -1700,27 +1701,33 @@ const AppContent: React.FC = () => {
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                <Monitor size={64} className="mb-4" />
-                <h2 className="text-xl font-medium mb-2">
-                  Welcome to {t("app.title")}
-                </h2>
-                <p className="text-center max-w-md mb-6">
-                  Manage your remote connections efficiently. Create new
-                  connections or select an existing one from the sidebar to get
-                  started.
-                </p>
+                {!appSettings.hideQuickStartMessage && (
+                  <>
+                    <Monitor size={64} className="mb-4" />
+                    <h2 className="text-xl font-medium mb-2">
+                      Welcome to {t("app.title")}
+                    </h2>
+                    <p className="text-center max-w-md mb-6">
+                      Manage your remote connections efficiently. Create new
+                      connections or select an existing one from the sidebar to get
+                      started.
+                    </p>
+                  </>
+                )}
                 <div className="flex space-x-4">
                   <button
                     onClick={handleNewConnection}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
                   >
-                    {t("connections.new")} Connection
+                    <Plus size={16} />
+                    <span>{t("connections.new")} Connection</span>
                   </button>
                   <button
                     onClick={() => setShowQuickConnect(true)}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
                   >
-                    {t("connections.quickConnect")}
+                    <Zap size={16} />
+                    <span>{t("connections.quickConnect")}</span>
                   </button>
                 </div>
               </div>

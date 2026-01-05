@@ -869,19 +869,19 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               collections.map(collection => (
                 <div
                   key={collection.id}
-                  className="bg-gray-700 rounded-lg p-4 hover:bg-gray-600 transition-colors cursor-pointer"
+                  className="bg-gray-700/60 rounded-lg p-4 hover:bg-gray-600/80 hover:shadow-lg hover:shadow-blue-500/5 border border-transparent hover:border-gray-600 transition-all duration-200 cursor-pointer group"
                   onClick={() => handleSelectCollection(collection)}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div className="flex items-center space-x-2">
-                        <Database size={20} className="text-blue-400" />
+                        <Database size={20} className="text-blue-400 group-hover:text-blue-300 transition-colors" />
                         {collection.isEncrypted && (
                           <Lock size={16} className="text-yellow-400" />
                         )}
                       </div>
                       <div>
-                        <h4 className="text-white font-medium">{collection.name}</h4>
+                        <h4 className="text-white font-medium group-hover:text-blue-100 transition-colors">{collection.name}</h4>
                         {collection.description && (
                           <p className="text-gray-400 text-sm">{collection.description}</p>
                         )}

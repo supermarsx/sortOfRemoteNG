@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight, Star } from 'lucide-react';
+import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight, Star, TableProperties } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionTree } from './ConnectionTree';
+import { BulkConnectionEditor } from './BulkConnectionEditor';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
 import { SecureStorage } from '../utils/storage';
@@ -39,6 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { t } = useTranslation();
   const { state, dispatch } = useConnections();
   const [showFilters, setShowFilters] = useState(false);
+  const [showBulkEditor, setShowBulkEditor] = useState(false);
 
   // Get all available tags
   const allTags = Array.from(
@@ -321,6 +323,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <FolderPlus size={14} />
               </button>
+              <div className="flex-1" />
+              <button
+                onClick={() => setShowBulkEditor(true)}
+                className="p-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
+                title="Bulk Edit"
+              >
+                <TableProperties size={14} />
+              </button>
             </div>
 
             {/* Connection Tree */}
@@ -340,6 +350,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
+      <BulkConnectionEditor
+        isOpen={showBulkEditor}
+        onClose={() => setShowBulkEditor(false)}
+      />
     </>
   );
 };
