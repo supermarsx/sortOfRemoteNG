@@ -255,13 +255,13 @@ export const ImportExport: React.FC<ImportExportProps> = ({
 
       // Use unified importConnections with format auto-detection
       const actualExtension = filename.replace('.encrypted', '').split('.').pop()?.toLowerCase();
-      const detected = detectImportFormat(content, filename);
+      const detectedFormat = detectImportFormat(content, filename);
       
       // Use the detected format for better accuracy
-      connections = await importConnections(content, detected.format);
+      connections = await importConnections(content, detectedFormat);
       
       // Log the detected format for debugging
-      console.log(`Import format detected: ${getFormatName(detected.format)} (confidence: ${(detected.confidence * 100).toFixed(0)}%)`);
+      console.log(`Import format detected: ${getFormatName(detectedFormat)}`);
       
       if (!connections || connections.length === 0) {
         throw new Error(`No connections found in ${actualExtension?.toUpperCase()} file`);

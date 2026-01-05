@@ -4,6 +4,10 @@ import { X } from 'lucide-react';
 interface ConfirmDialogProps {
   isOpen: boolean;
   message: string;
+  title?: string;
+  confirmText?: string;
+  cancelText?: string;
+  variant?: 'default' | 'danger' | 'warning';
   onConfirm: () => void;
   onCancel?: () => void;
 }
@@ -11,6 +15,10 @@ interface ConfirmDialogProps {
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   isOpen,
   message,
+  title = 'Confirmation',
+  confirmText = 'OK',
+  cancelText = 'Cancel',
+  variant = 'default',
   onConfirm,
   onCancel,
 }) => {
@@ -41,7 +49,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
         <div className="relative h-12 border-b border-gray-700">
           <h2 className="absolute left-5 top-3 text-sm font-semibold text-white">
-            Confirmation
+            {title}
           </h2>
           {onCancel && (
             <button
@@ -61,14 +69,20 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 onClick={onCancel}
                 className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
               >
-                Cancel
+                {cancelText}
               </button>
             )}
             <button
               onClick={onConfirm}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              className={`px-4 py-2 text-white rounded-md transition-colors ${
+                variant === 'danger'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : variant === 'warning'
+                  ? 'bg-yellow-600 hover:bg-yellow-700'
+                  : 'bg-blue-600 hover:bg-blue-700'
+              }`}
             >
-              OK
+              {confirmText}
             </button>
           </div>
         </div>

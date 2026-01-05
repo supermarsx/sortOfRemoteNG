@@ -45,6 +45,7 @@ const defaultSettings: GlobalSettings = {
   backgroundGlowBlur: 140,
   windowTransparencyEnabled: false,
   windowTransparencyOpacity: 0.94,
+  showTransparencyToggle: true,
   showQuickConnectIcon: true,
   showCollectionSwitcherIcon: true,
   showImportExportIcon: true,

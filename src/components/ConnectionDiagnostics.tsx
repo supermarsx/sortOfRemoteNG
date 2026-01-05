@@ -6,7 +6,6 @@ import { Connection } from '../types/connection';
 
 interface ConnectionDiagnosticsProps {
   connection: Connection;
-  isOpen: boolean;
   onClose: () => void;
 }
 
@@ -51,7 +50,6 @@ const initialResults: DiagnosticResults = {
 
 export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   connection,
-  isOpen,
   onClose,
 }) => {
   const { t } = useTranslation();
@@ -202,15 +200,12 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   }, [connection, t]);
 
   useEffect(() => {
-    if (isOpen) {
-      runDiagnostics();
-    } else {
-      setResults(initialResults);
-    }
-  }, [isOpen, runDiagnostics]);
+    // Run diagnostics on mount
+    runDiagnostics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
@@ -218,9 +213,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
-  if (!isOpen) return null;
+  }, [onClose]);
 
   const StatusIcon = ({ status }: { status: 'pending' | 'success' | 'failed' }) => {
     switch (status) {

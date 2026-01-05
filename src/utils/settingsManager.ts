@@ -56,6 +56,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   windowTransparencyEnabled: false,
   windowTransparencyOpacity: 0.94,
+  showTransparencyToggle: true,
 
   showQuickConnectIcon: true,
   showCollectionSwitcherIcon: true,
@@ -167,6 +168,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   restApi: {
     enabled: false,
     port: 8080,
+    useRandomPort: false,
     authentication: false,
     apiKey: '',
     corsEnabled: true,
@@ -174,9 +176,12 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     startOnLaunch: false,
     allowRemoteConnections: false,
     sslEnabled: false,
+    sslMode: 'manual' as const,
     sslCertPath: '',
     sslKeyPath: '',
     maxRequestsPerMinute: 60,
+    maxThreads: 4,
+    requestTimeout: 30,
   },
 
   wolEnabled: false,

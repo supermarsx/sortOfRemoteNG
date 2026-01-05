@@ -1,9 +1,16 @@
 use crate::script::{ScriptService, ScriptContext};
+use crate::ssh::SshService;
+
+/// Helper function to create a script service with a mock SSH service
+fn create_script_service() -> crate::script::ScriptServiceState {
+    let ssh_service = SshService::new();
+    ScriptService::new(ssh_service)
+}
 
 /// Test script service creation
 #[tokio::test]
 async fn test_new_script_service() {
-    let _service = ScriptService::new();
+    let _service = create_script_service();
     // Service should be created successfully
     assert!(true);
 }
@@ -11,7 +18,7 @@ async fn test_new_script_service() {
 /// Test JavaScript execution with simple expression
 #[tokio::test]
 async fn test_execute_javascript_simple() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: None,
@@ -33,7 +40,7 @@ async fn test_execute_javascript_simple() {
 /// Test JavaScript execution with console.log
 #[tokio::test]
 async fn test_execute_javascript_console_log() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: None,
@@ -58,7 +65,7 @@ async fn test_execute_javascript_console_log() {
 /// Test JavaScript execution with variable assignment
 #[tokio::test]
 async fn test_execute_javascript_variables() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: None,
@@ -84,7 +91,7 @@ async fn test_execute_javascript_variables() {
 /// Test JavaScript execution with function
 #[tokio::test]
 async fn test_execute_javascript_function() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: None,
@@ -111,7 +118,7 @@ async fn test_execute_javascript_function() {
 /// Test JavaScript execution with syntax error
 #[tokio::test]
 async fn test_execute_javascript_syntax_error() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: None,
@@ -132,7 +139,7 @@ async fn test_execute_javascript_syntax_error() {
 /// Test JavaScript execution with dangerous code (should be blocked)
 #[tokio::test]
 async fn test_execute_javascript_dangerous_code() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: None,
@@ -153,7 +160,7 @@ async fn test_execute_javascript_dangerous_code() {
 /// Test JavaScript execution with require (should be blocked)
 #[tokio::test]
 async fn test_execute_javascript_require_blocked() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: None,
@@ -174,7 +181,7 @@ async fn test_execute_javascript_require_blocked() {
 /// Test JavaScript execution with Function constructor (should be blocked)
 #[tokio::test]
 async fn test_execute_javascript_function_constructor_blocked() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: None,
@@ -195,7 +202,7 @@ async fn test_execute_javascript_function_constructor_blocked() {
 /// Test execution with unsupported script type
 #[tokio::test]
 async fn test_execute_unsupported_script_type() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: None,
@@ -216,7 +223,7 @@ async fn test_execute_unsupported_script_type() {
 /// Test script execution with connection context
 #[tokio::test]
 async fn test_execute_script_with_connection_context() {
-    let service = ScriptService::new();
+    let service = create_script_service();
 
     let context = ScriptContext {
         connection_id: Some("conn_123".to_string()),

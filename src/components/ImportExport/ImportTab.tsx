@@ -114,7 +114,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
   cancelImport,
   detectedFormat,
 }) => {
-  const toast = useToastContext();
+  const { toast } = useToastContext();
   const { t } = useTranslation();
 
   const downloadTemplate = (format: 'csv' | 'json') => {

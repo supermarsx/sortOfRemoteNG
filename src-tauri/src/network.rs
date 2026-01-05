@@ -563,10 +563,11 @@ pub async fn traceroute(
                 }
             }
             
+            let hop_num_check = hop.hop;
             hops.push(hop);
             
             // Stop if we've reached the target (check if "Trace complete" or similar)
-            if trimmed.contains("Trace complete") || hop.hop >= max_hops {
+            if trimmed.contains("Trace complete") || hop_num_check >= max_hops {
                 break;
             }
         }

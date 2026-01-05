@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { WOLQuickTool } from '../src/components/WOLQuickTool';
 
 // Mock Tauri invoke
@@ -20,6 +20,12 @@ describe('WOLQuickTool', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    // Wait for any pending async operations to complete
+    vi.clearAllTimers();
   });
 
   it('renders when open', () => {
