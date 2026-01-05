@@ -187,6 +187,28 @@ const DetachedSessionContent: React.FC<{
     };
   }, [isTauri]);
 
+  // Listen for session closed from main window
+  useEffect(() => {
+    if (!isTauri || !sessionId) return;
+
+    const unlistenPromise = listen<{ sessionId: string }>("main-session-closed", async (event) => {
+      if (event.payload.sessionId === sessionId) {
+        // Main window closed this session, close the detached window
+        closingRef.current = true;
+        skipNextConfirmRef.current = true;
+        if (sessionId) {
+          localStorage.removeItem(`detached-session-${sessionId}`);
+        }
+        const currentWindow = getCurrentWindow();
+        await currentWindow.close();
+      }
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => undefined);
+    };
+  }, [isTauri, sessionId]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleSettingsUpdate = (event: Event) => {
@@ -425,7 +447,7 @@ const DetachedSessionContent: React.FC<{
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden min-h-0">
         <SessionViewer session={activeSession} />
       </div>
       </div>

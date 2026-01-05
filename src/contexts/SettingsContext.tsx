@@ -55,6 +55,7 @@ const defaultSettings: GlobalSettings = {
   showProxyMenuIcon: true,
   showShortcutManagerIcon: true,
   showWolIcon: true,
+  showErrorLogBar: false,
   autoLock: {
     enabled: false,
     timeoutMinutes: 15,
@@ -122,6 +123,12 @@ const defaultSettings: GlobalSettings = {
     authentication: false,
     corsEnabled: true,
     rateLimiting: false,
+    startOnLaunch: false,
+    allowRemoteConnections: false,
+    sslEnabled: false,
+    sslCertPath: '',
+    sslKeyPath: '',
+    maxRequestsPerMinute: 60,
   },
   // Wake on LAN
   wolEnabled: true,

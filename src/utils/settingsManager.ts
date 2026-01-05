@@ -67,6 +67,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showProxyMenuIcon: true,
   showShortcutManagerIcon: true,
   showWolIcon: true,
+  showErrorLogBar: false,
 
   autoLock: {
     enabled: false,
@@ -168,6 +169,12 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     apiKey: '',
     corsEnabled: true,
     rateLimiting: true,
+    startOnLaunch: false,
+    allowRemoteConnections: false,
+    sslEnabled: false,
+    sslCertPath: '',
+    sslKeyPath: '',
+    maxRequestsPerMinute: 60,
   },
 
   wolEnabled: false,

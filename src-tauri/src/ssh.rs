@@ -1337,31 +1337,6 @@ pub async fn reattach_session(
     ssh.start_shell(&session_id, app_handle).await
 }
 
-/// Pause shell output (stop emitting events, but keep buffering)
-#[tauri::command]
-pub async fn pause_shell(
-    state: tauri::State<'_, SshServiceState>,
-    session_id: String
-) -> Result<(), String> {
-    let ssh = state.lock().await;
-    // Just check if shell exists - actual pause would need more complex impl
-    if !ssh.shells.contains_key(&session_id) {
-        return Err("Shell not found".to_string());
-    }
-    // For now, we don't actually pause - the buffer keeps growing
-    // A full implementation would set a flag to stop event emission
-    Ok(())
-}
-
-/// Resume shell output (start emitting events again)
-#[tauri::command]
-pub async fn resume_shell(
-    state: tauri::State<'_, SshServiceState>,
-    session_id: String
-) -> Result<(), String> {
-    let ssh = state.lock().await;
-    if !ssh.shells.contains_key(&session_id) {
-        return Err("Shell not found".to_string());
-    }
-    Ok(())
-}
+// NOTE: pause_shell and resume_shell commands removed
+// The terminal buffer always captures the full session output (up to MAX_BUFFER_SIZE)
+// This ensures users never lose output when detaching and reattaching sessions

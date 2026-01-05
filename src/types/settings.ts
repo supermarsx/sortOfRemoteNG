@@ -116,6 +116,7 @@ export interface GlobalSettings {
   showProxyMenuIcon: boolean;
   showShortcutManagerIcon: boolean;
   showWolIcon: boolean;
+  showErrorLogBar: boolean;
 
   // Auto Lock
   autoLock: AutoLockConfig;
@@ -130,8 +131,8 @@ export interface GlobalSettings {
   performanceLatencyTarget: string;
 
   // Security Settings
-  encryptionAlgorithm: "AES-256-GCM" | "AES-256-CBC" | "ChaCha20-Poly1305";
-  blockCipherMode: "GCM" | "CBC" | "CTR" | "OFB" | "CFB";
+  encryptionAlgorithm: "AES-256-GCM" | "AES-256-CBC" | "ChaCha20-Poly1305" | "AES-256-GCM-SIV" | "Salsa20" | "XSalsa20-Poly1305" | "Threefish-256" | "Threefish-512" | "Threefish-1024";
+  blockCipherMode: "GCM" | "CBC" | "CTR" | "OFB" | "CFB" | "GCM-SIV" | "SIV";
   keyDerivationIterations: number;
   autoBenchmarkIterations: boolean;
   benchmarkTimeSeconds: number;
@@ -188,7 +189,7 @@ export interface GlobalSettings {
   // Network Discovery
   networkDiscovery: NetworkDiscoveryConfig;
 
-  // REST API
+  // REST API / Internal Server
   restApi: {
     enabled: boolean;
     port: number;
@@ -196,6 +197,12 @@ export interface GlobalSettings {
     apiKey?: string;
     corsEnabled: boolean;
     rateLimiting: boolean;
+    startOnLaunch: boolean;
+    allowRemoteConnections: boolean;
+    sslEnabled: boolean;
+    sslCertPath?: string;
+    sslKeyPath?: string;
+    maxRequestsPerMinute: number;
   };
 
   // Wake on LAN

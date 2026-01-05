@@ -22,6 +22,7 @@ import {
   Keyboard,
   Network,
   Power,
+  Bug,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -60,6 +61,7 @@ import { ShortcutManagerDialog } from "./components/ShortcutManagerDialog";
 import { ProxyChainMenu } from "./components/ProxyChainMenu";
 import { WOLQuickTool } from "./components/WOLQuickTool";
 import { SplashScreen } from "./components/SplashScreen";
+import { ErrorLogBar } from "./components/ErrorLogBar";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -83,6 +85,7 @@ const AppContent: React.FC = () => {
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showProxyMenu, setShowProxyMenu] = useState(false);
   const [showWol, setShowWol] = useState(false);
+  const [showErrorLog, setShowErrorLog] = useState(false);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
   >(null);
@@ -1568,6 +1571,15 @@ const AppContent: React.FC = () => {
               <ScrollText size={14} />
             </button>
           )}
+          {appSettings.showErrorLogBar && (
+            <button
+              onClick={() => setShowErrorLog(!showErrorLog)}
+              className={`app-bar-button p-2 ${showErrorLog ? "text-red-400" : ""}`}
+              title="Toggle Error Log"
+            >
+              <Bug size={14} />
+            </button>
+          )}
           {appSettings.showDevtoolsIcon && (
             <button
               onClick={handleOpenDevtools}
@@ -1748,6 +1760,12 @@ const AppContent: React.FC = () => {
       />
 
       <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
+
+      {/* Error Log Bar - togglable console error catcher */}
+      <ErrorLogBar
+        isVisible={showErrorLog || appSettings.showErrorLogBar}
+        onToggle={() => setShowErrorLog(!showErrorLog)}
+      />
     </div>
   );
 };

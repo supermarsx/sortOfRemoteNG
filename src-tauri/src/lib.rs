@@ -692,8 +692,7 @@ pub fn run() {
         ssh::is_session_alive,
         ssh::get_shell_info,
         ssh::reattach_session,
-        ssh::pause_shell,
-        ssh::resume_shell,
+        // NOTE: pause_shell and resume_shell removed - buffer always captures full session
         http::http_fetch,
         http::http_get,
         http::http_post,

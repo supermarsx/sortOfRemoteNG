@@ -15,6 +15,7 @@ import {
   Power,
   Loader2,
   Gauge,
+  Server,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig } from '../../types/settings';
@@ -26,6 +27,7 @@ import PerformanceSettings from './sections/PerformanceSettings';
 import ProxySettings from './sections/ProxySettings';
 import AdvancedSettings from './sections/AdvancedSettings';
 import StartupSettings from './sections/StartupSettings';
+import ApiSettings from './sections/ApiSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
@@ -368,6 +370,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     { id: 'security', label: t('settings.security'), icon: Shield },
     { id: 'performance', label: t('settings.performance'), icon: Zap },
     { id: 'proxy', label: 'Proxy', icon: Wifi },
+    { id: 'api', label: 'API Server', icon: Server },
     { id: 'advanced', label: t('settings.advanced'), icon: Code },
   ];
 
@@ -491,6 +494,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
               {activeTab === 'proxy' && (
                 <ProxySettings settings={settings} updateProxy={updateProxy} />
+              )}
+
+              {activeTab === 'api' && (
+                <ApiSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'advanced' && (

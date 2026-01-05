@@ -350,6 +350,18 @@ export const useSessionManager = () => {
       }
     }
 
+    // Notify detached windows that this session has been closed from main window
+    const isTauri = typeof window !== "undefined" && 
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    if (isTauri && session.layout?.isDetached) {
+      try {
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("main-session-closed", { sessionId });
+      } catch (error) {
+        console.error("Failed to emit main-session-closed event:", error);
+      }
+    }
+
     dispatch({ type: "REMOVE_SESSION", payload: sessionId });
 
     if (connection) {
