@@ -272,21 +272,6 @@ const AppContent: React.FC = () => {
           return { mode, sessions: buildGridLayout(2, 2).slice(0, 4) };
         case "grid6":
           return { mode, sessions: buildGridLayout(3, 2).slice(0, 6) };
-        case "cascade2": {
-          const tiles = orderedSessions.slice(0, 2);
-          return {
-            mode,
-            sessions: tiles.map((session, index) => ({
-              sessionId: session.id,
-              position: {
-                x: index * 12,
-                y: index * 12,
-                width: 75,
-                height: 75,
-              },
-            })),
-          };
-        }
         case "sideBySide":
           return { mode, sessions: buildGridLayout(2) };
         case "mosaic": {

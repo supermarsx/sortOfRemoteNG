@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { Columns, Grid3X3, LayoutGrid, Layers, Minimize2, Rows, Settings2 } from "lucide-react";
+import { Columns, Grid3X3, LayoutGrid, Minimize2, Rows, Settings2 } from "lucide-react";
 import { ConnectionSession, TabLayout } from "../types/connection";
 import { Resizable } from "react-resizable";
 
@@ -115,22 +115,6 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
       }
       case "grid6": {
         updatedLayout = buildGridLayout(mode, orderedSessions.slice(0, 6), 3, 2);
-        break;
-      }
-      case "cascade2": {
-        const tiles = orderedSessions.slice(0, 2);
-        updatedLayout = {
-          mode,
-          sessions: tiles.map((session, index) => ({
-            sessionId: session.id,
-            position: {
-              x: index * 12,
-              y: index * 12,
-              width: 75,
-              height: 75,
-            },
-          })),
-        };
         break;
       }
       case "sideBySide": {
@@ -387,15 +371,6 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           >
             <Grid3X3 size={16} />
           </button>
-          <button
-            onClick={() => handleLayoutModeChange("cascade2")}
-            className={`p-2 rounded transition-colors ${
-              layout.mode === "cascade2" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
-            }`}
-            title="2 cascade"
-          >
-            <Layers size={16} />
-          </button>
           
           {/* Custom Grid Button */}
           <div className="relative">
@@ -490,8 +465,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           layout.mode === "splitHorizontal" ||
           layout.mode === "grid2" ||
           layout.mode === "grid4" ||
-          layout.mode === "grid6" ||
-          layout.mode === "cascade2") && renderMosaicLayout()}
+          layout.mode === "grid6") && renderMosaicLayout()}
         {layout.mode === "miniMosaic" && renderMiniMosaicLayout()}
       </div>
     </div>

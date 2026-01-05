@@ -197,8 +197,7 @@ export interface TabLayout {
     | 'splitHorizontal'
     | 'grid2'
     | 'grid4'
-    | 'grid6'
-    | 'cascade2';
+    | 'grid6';
   sessions: {
     sessionId: string;
     position: {
