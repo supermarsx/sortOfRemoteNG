@@ -231,20 +231,6 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     [safeWriteln],
   );
 
-  const restoreBuffer = useCallback(
-    (buffer: string) => {
-      if (!termRef.current || isDisposed.current) return;
-      try {
-        // Clear the terminal first, then write the restored buffer
-        termRef.current.clear();
-        termRef.current.write(buffer);
-      } catch {
-        // Ignore errors during restore
-      }
-    },
-    [],
-  );
-
   const getTerminalTheme = useCallback(() => {
     if (typeof window === "undefined") {
       return {
@@ -523,6 +509,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     formatErrorDetails,
     isSsh,
     dispatch,
+    restoreBuffer,
     setStatusState,
     writeLine,
   ]);
