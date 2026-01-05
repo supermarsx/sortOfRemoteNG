@@ -231,6 +231,20 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     [safeWriteln],
   );
 
+  const restoreBuffer = useCallback(
+    (buffer: string) => {
+      if (!termRef.current || isDisposed.current) return;
+      try {
+        // Clear the terminal first, then write the restored buffer
+        termRef.current.clear();
+        termRef.current.write(buffer);
+      } catch {
+        // Ignore errors during restore
+      }
+    },
+    [],
+  );
+
   const getTerminalTheme = useCallback(() => {
     if (typeof window === "undefined") {
       return {
@@ -373,23 +387,57 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     );
 
     try {
+      // Check if we have an existing backend session that might still be alive
       if (currentSession.backendSessionId && !force) {
-        if (currentSession.shellId) {
+        // First, check if the session is still alive in the Rust backend
+        const isAlive = await invoke<boolean>("is_session_alive", {
+          sessionId: currentSession.backendSessionId,
+        }).catch(() => false);
+        
+        if (isAlive) {
           sshSessionId.current = currentSession.backendSessionId;
+          
+          // Get the buffer from Rust backend and restore it
+          const buffer = await invoke<string>("get_terminal_buffer", {
+            sessionId: currentSession.backendSessionId,
+          }).catch(() => "");
+          
+          if (buffer) {
+            restoreBuffer(buffer);
+            writeLine("\x1b[32mRestored terminal buffer from session\x1b[0m");
+          }
+          
+          // Check if shell exists, if not, start a new one
+          const existingShellId = await invoke<string | null>("get_shell_info", {
+            sessionId: currentSession.backendSessionId,
+          }).catch(() => null);
+          
+          if (existingShellId) {
+            // Shell already exists, just reconnect to events
+            dispatch({
+              type: "UPDATE_SESSION",
+              payload: { ...currentSession, shellId: existingShellId },
+            });
+            writeLine("\x1b[32mReattached to existing SSH session\x1b[0m");
+            setStatusState("connected");
+            return;
+          }
+          
+          // No shell, start a new one on the existing connection
+          const shellId = await invoke<string>("reattach_session", {
+            sessionId: currentSession.backendSessionId,
+          });
+          dispatch({
+            type: "UPDATE_SESSION",
+            payload: { ...currentSession, shellId },
+          });
+          writeLine("\x1b[32mRestarted shell on existing SSH connection\x1b[0m");
           setStatusState("connected");
           return;
+        } else {
+          // Session no longer alive, will create new connection
+          writeLine("\x1b[33mPrevious session expired, creating new connection...\x1b[0m");
         }
-        sshSessionId.current = currentSession.backendSessionId;
-        const shellId = await invoke<string>("start_shell", {
-          sessionId: currentSession.backendSessionId,
-        });
-        dispatch({
-          type: "UPDATE_SESSION",
-          payload: { ...currentSession, shellId },
-        });
-        writeLine("\x1b[32mReattached to SSH session\x1b[0m");
-        setStatusState("connected");
-        return;
       }
 
       disconnectSsh();
