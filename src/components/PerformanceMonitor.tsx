@@ -129,7 +129,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
     const safeSeconds = Math.max(1, seconds || 0);
     const intervalMs = safeSeconds * 1000;
     setPollIntervalMs(intervalMs);
-    settingsManager.saveSettings({ performancePollIntervalMs: intervalMs }).catch(console.error);
+    settingsManager.saveSettings({ performancePollIntervalMs: intervalMs }, { silent: true }).catch(console.error);
   };
 
   const exportMetrics = () => {

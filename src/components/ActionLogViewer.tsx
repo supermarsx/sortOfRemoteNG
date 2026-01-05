@@ -14,6 +14,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { ActionLogEntry } from "../types/settings";
 import { SettingsManager } from "../utils/settingsManager";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 const LEVEL_ICONS: Record<string, JSX.Element> = {
   debug: <Bug className="text-gray-400" size={14} />,
@@ -53,6 +54,7 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
   const [filteredLogs, setFilteredLogs] = useState<ActionLogEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const settingsManager = SettingsManager.getInstance();
 
   const loadLogs = useCallback(() => {
@@ -108,10 +110,13 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
   }, [filterLogs]);
 
   const clearLogs = () => {
-    if (confirm("Are you sure you want to clear all logs?")) {
-      settingsManager.clearActionLog();
-      setLogs([]);
-    }
+    setShowClearConfirm(true);
+  };
+
+  const confirmClearLogs = () => {
+    settingsManager.clearActionLog();
+    setLogs([]);
+    setShowClearConfirm(false);
   };
 
   const exportLogs = () => {
@@ -295,6 +300,16 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
           )}
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={showClearConfirm}
+        title={t("logs.clearConfirmTitle") || "Clear Action Log"}
+        message={t("logs.clearConfirmMessage") || "Are you sure you want to clear all log entries? This action cannot be undone."}
+        confirmText={t("logs.clear") || "Clear"}
+        cancelText={t("common.cancel") || "Cancel"}
+        onConfirm={confirmClearLogs}
+        onCancel={() => setShowClearConfirm(false)}
+        variant="danger"
+      />
     </div>
   );
 };

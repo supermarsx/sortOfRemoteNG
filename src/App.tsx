@@ -195,7 +195,7 @@ const AppContent: React.FC = () => {
           ),
         ].slice(0, 12);
         settingsManager
-          .saveSettings({ quickConnectHistory: next })
+          .saveSettings({ quickConnectHistory: next }, { silent: true })
           .catch(console.error);
       }
       handleQuickConnect(payload);
@@ -210,7 +210,7 @@ const AppContent: React.FC = () => {
 
   const clearQuickConnectHistory = useCallback(() => {
     settingsManager
-      .saveSettings({ quickConnectHistory: [] })
+      .saveSettings({ quickConnectHistory: [] }, { silent: true })
       .catch(console.error);
   }, [settingsManager]);
 
@@ -1217,7 +1217,7 @@ const AppContent: React.FC = () => {
         }
 
         if (Object.keys(updates).length > 0) {
-          await settingsManager.saveSettings(updates);
+          await settingsManager.saveSettings(updates, { silent: true });
         }
       } catch (error) {
         console.error("Failed to persist window state:", error);
@@ -1301,7 +1301,7 @@ const AppContent: React.FC = () => {
       }
 
       if (Object.keys(updates).length > 0) {
-        settingsManager.saveSettings(updates).catch(console.error);
+        settingsManager.saveSettings(updates, { silent: true }).catch(console.error);
       }
     }, 300);
 
@@ -1327,7 +1327,7 @@ const AppContent: React.FC = () => {
     const nextValue = !appSettings.windowTransparencyEnabled;
     await settingsManager.saveSettings({
       windowTransparencyEnabled: nextValue,
-    });
+    }, { silent: true });
   };
 
   const handleToggleAlwaysOnTop = async () => {
@@ -1655,7 +1655,7 @@ const AppContent: React.FC = () => {
           config={appSettings.autoLock}
           onConfigChange={(config) =>
             settingsManager
-              .saveSettings({ autoLock: config })
+              .saveSettings({ autoLock: config }, { silent: true })
               .catch(console.error)
           }
           onLock={() => {

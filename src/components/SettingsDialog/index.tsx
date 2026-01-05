@@ -310,7 +310,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     setSettings(newSettings);
 
     try {
-      await settingsManager.saveSettings(newSettings);
+      // Use silent save for auto-save to prevent action log spam
+      await settingsManager.saveSettings(newSettings, { silent: true });
 
       if (updates.language && updates.language !== i18n.language) {
         if (updates.language !== "en") {
@@ -348,7 +349,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     setSettings(newSettings);
 
     try {
-      await settingsManager.saveSettings(newSettings);
+      // Use silent save for auto-save to prevent action log spam
+      await settingsManager.saveSettings(newSettings, { silent: true });
       showAutoSave('success');
     } catch (error) {
       console.error('Failed to auto save settings:', error);

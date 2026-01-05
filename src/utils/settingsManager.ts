@@ -243,11 +243,14 @@ export class SettingsManager {
    * @returns {Promise<void>} Resolves when saving succeeds.
    * @throws {Error} If the settings could not be persisted.
    */
-  async saveSettings(settings: Partial<GlobalSettings>): Promise<void> {
+  async saveSettings(settings: Partial<GlobalSettings>, options?: { silent?: boolean }): Promise<void> {
     try {
       this.settings = { ...this.settings, ...settings };
       await IndexedDbService.setItem('mremote-settings', this.settings);
-      this.logAction('info', 'Settings updated', undefined, 'Settings saved successfully');
+      // Only log explicit user-initiated saves, not auto-saves or intermediate changes
+      if (!options?.silent) {
+        this.logAction('info', 'Settings saved', undefined, 'User settings updated');
+      }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
           new CustomEvent('settings-updated', { detail: this.settings }),
