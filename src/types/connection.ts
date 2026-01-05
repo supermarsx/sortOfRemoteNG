@@ -166,6 +166,9 @@ export interface ConnectionSession {
   // Zoom level
   zoomLevel?: number;
   
+  // Terminal buffer for detach/reattach preservation
+  terminalBuffer?: string;
+  
   // Performance Metrics
   metrics?: {
     connectionTime: number;

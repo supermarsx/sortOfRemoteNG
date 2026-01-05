@@ -4,6 +4,7 @@ import { Connection } from '../../types/connection';
 import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
 import { CollectionManager } from '../../utils/collectionManager';
+import { SettingsManager } from '../../utils/settingsManager';
 import ExportTab from './ExportTab';
 import ImportTab from './ImportTab';
 import { ImportResult } from './types';
@@ -35,6 +36,7 @@ export const ImportExport: React.FC<ImportExportProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const collectionManager = CollectionManager.getInstance();
+  const settingsManager = SettingsManager.getInstance();
 
   const generateExportFilename = (format: string): string => {
     const now = new Date();
@@ -88,6 +90,13 @@ export const ImportExport: React.FC<ImportExportProps> = ({
 
       downloadFile(content, filename, mimeType);
       toast.success(`Exported successfully: ${filename}`);
+      
+      settingsManager.logAction(
+        'info',
+        'Data exported',
+        undefined,
+        `Exported ${state.connections.length} connections to ${exportFormat.toUpperCase()}${exportEncrypted ? ' (encrypted)' : ''}`
+      );
     } catch (error) {
       console.error('Export failed:', error);
       toast.error('Export failed: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -332,6 +341,14 @@ export const ImportExport: React.FC<ImportExportProps> = ({
           ? `Imported ${connectionCount} connection(s) from ${filename}` 
           : `Imported ${connectionCount} connection(s) successfully`
       );
+      
+      settingsManager.logAction(
+        'info',
+        'Data imported',
+        undefined,
+        `Imported ${connectionCount} connection(s)${filename ? ` from ${filename}` : ''}`
+      );
+      
       setImportResult(null);
       onClose();
     }

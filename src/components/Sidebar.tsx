@@ -124,7 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      <div className={`bg-gray-800 ${sideBorder} border-gray-700 flex flex-col transition-all duration-300 h-full w-full`}>
+      <div className={`bg-gray-800 ${sideBorder} border-gray-700 flex flex-col transition-all duration-300 h-full w-full sidebar-glow`}>
         {/* Header */}
         <div className={`border-b border-gray-700 ${state.sidebarCollapsed ? "p-2" : "p-3"}`}>
           <div className={`flex items-center ${state.sidebarCollapsed ? "justify-center" : "justify-between"}`}>

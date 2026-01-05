@@ -684,6 +684,7 @@ pub fn run() {
         http::http_fetch,
         http::http_get,
         http::http_post,
+        http::start_basic_auth_proxy,
         // Authentication services - commented out until Tauri integration is complete
         // cert_auth::parse_certificate,
         // cert_auth::validate_certificate,

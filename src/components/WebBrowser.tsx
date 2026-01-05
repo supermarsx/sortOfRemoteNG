@@ -53,7 +53,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const iconCount = 2 + (connection?.authType === 'basic' ? 1 : 0);
   const iconPadding = 12 + iconCount * 18;
 
-  // Check if basic auth is required
+  // Check if basic auth is required - when true, ALL requests go through Rust backend
   const requiresBasicAuth = connection?.authType === 'basic' && 
                             connection.basicAuthUsername && 
                             connection.basicAuthPassword;
@@ -218,23 +218,37 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     }
   }, []);
 
-  // Fetch content via Tauri backend with credentials
+  // Fetch content via Rust backend with credentials - ALL basic auth requests go through here
   const fetchWithCredentials = useCallback(async (url: string, addToHistory = true, method: string = 'GET', postData?: Record<string, string>) => {
     setIsLoading(true);
     setLoadError('');
     setHtmlContent('');
 
     try {
-      const response: HttpResponse = await invoke('http_get', {
-        url,
-        username: requiresBasicAuth ? connection?.basicAuthUsername : null,
-        password: requiresBasicAuth ? connection?.basicAuthPassword : null,
-        headers: method === 'POST' && postData ? {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        } : null,
-        // Note: For POST, we'd need a separate http_post command or modify http_get
-        // For now, POST data is passed via query string as a workaround
-      });
+      debugLog('WebBrowser', 'Fetching via Rust backend', { url, method, hasAuth: requiresBasicAuth });
+      
+      // Use http_fetch for full control, or http_get/http_post for simpler requests
+      let response: HttpResponse;
+      
+      if (method === 'POST' && postData) {
+        // Use http_post for POST requests
+        const body = new URLSearchParams(postData).toString();
+        response = await invoke('http_post', {
+          url,
+          body,
+          username: requiresBasicAuth ? connection?.basicAuthUsername : null,
+          password: requiresBasicAuth ? connection?.basicAuthPassword : null,
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        });
+      } else {
+        // Use http_get for GET requests
+        response = await invoke('http_get', {
+          url,
+          username: requiresBasicAuth ? connection?.basicAuthUsername : null,
+          password: requiresBasicAuth ? connection?.basicAuthPassword : null,
+          headers: null,
+        });
+      }
 
       if (response.status >= 200 && response.status < 400) {
         // Rewrite relative URLs to absolute
@@ -269,12 +283,12 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           setHistoryIndex(prev => prev + 1);
         }
         
-        debugLog('Content loaded via proxy with credentials:', finalUrl);
+        debugLog('WebBrowser', 'Content loaded via Rust backend', { finalUrl, status: response.status });
       } else {
         throw new Error(`HTTP ${response.status}`);
       }
     } catch (error) {
-      console.error('Proxy fetch failed:', error);
+      console.error('Rust backend fetch failed:', error);
       setLoadError(`Failed to load page: ${error instanceof Error ? error.message : String(error)}`);
       // Fall back to iframe only if basic auth is not required
       if (!requiresBasicAuth) {
@@ -286,27 +300,27 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     }
   }, [connection, requiresBasicAuth, injectNavigationInterceptor, historyIndex]);
 
-  // Listen for navigation messages from the iframe
+  // Listen for navigation messages from the iframe - all go through Rust backend
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       if (!event.data) return;
 
       if (event.data.type === 'navigate' && event.data.url) {
-        // Navigate to the clicked URL through the proxy
+        // Navigate to the clicked URL through Rust backend
         fetchWithCredentials(event.data.url);
       } else if (event.data.type === 'form_submit' && event.data.url) {
-        // Handle form submission
+        // Handle form submission through Rust backend
         if (event.data.method === 'POST') {
-          // For POST, we need to encode the data
+          // POST requests go through Rust backend with proper body
+          fetchWithCredentials(event.data.url, true, 'POST', event.data.data);
+        } else {
+          // GET requests with form data
           const params = new URLSearchParams(event.data.data).toString();
           const separator = event.data.url.includes('?') ? '&' : '?';
-          // Workaround: append POST data to URL for GET request (many forms work this way)
           fetchWithCredentials(event.data.url + separator + params);
-        } else {
-          fetchWithCredentials(event.data.url);
         }
       } else if (event.data.type === 'proxy_resource' && event.data.url) {
-        // Proxy the resource and send blob URL back
+        // Proxy the resource through Rust backend and send blob URL back
         const blobUrl = await proxyResource(event.data.url);
         if (iframeRef.current?.contentWindow) {
           iframeRef.current.contentWindow.postMessage({

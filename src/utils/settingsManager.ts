@@ -42,7 +42,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   // Animation Settings
   animationsEnabled: true,
-  animationDuration: 200,
+  animationDuration: 550,
   reduceMotion: false,
 
   backgroundGlowEnabled: true,

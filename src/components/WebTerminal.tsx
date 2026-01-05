@@ -5,7 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { Clipboard, Copy, Maximize2, Minimize2, RotateCcw, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
 
@@ -62,6 +62,65 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     isConnecting.current = next === "connecting";
     isSshReady.current = next === "connected";
   }, []);
+
+  // Serialize terminal buffer content for detach/reattach
+  const serializeBuffer = useCallback(() => {
+    if (!termRef.current) return "";
+    const buffer = termRef.current.buffer.active;
+    const lines: string[] = [];
+    for (let i = 0; i < buffer.length; i++) {
+      const line = buffer.getLine(i);
+      if (line) {
+        lines.push(line.translateToString(true));
+      }
+    }
+    return lines.join("\n");
+  }, []);
+
+  // Restore terminal buffer from serialized content
+  const restoreBuffer = useCallback((content: string) => {
+    if (!termRef.current || !content || isDisposed.current) return;
+    try {
+      termRef.current.clear();
+      const lines = content.split("\n");
+      for (const line of lines) {
+        termRef.current.writeln(line);
+      }
+    } catch (err) {
+      console.error("Failed to restore terminal buffer:", err);
+    }
+  }, []);
+
+  // Listen for buffer request events (from main window before detach)
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    
+    listen<{ sessionId: string }>("request-terminal-buffer", async (event) => {
+      if (event.payload.sessionId !== session.id) return;
+      const buffer = serializeBuffer();
+      await emit("terminal-buffer-response", { 
+        sessionId: session.id, 
+        buffer 
+      });
+    }).then(fn => {
+      unlisten = fn;
+    }).catch(console.error);
+
+    return () => {
+      unlisten?.();
+    };
+  }, [session.id, serializeBuffer]);
+
+  // Restore buffer from session data on mount
+  useEffect(() => {
+    if (session.terminalBuffer && termRef.current) {
+      // Delay to ensure terminal is initialized
+      const timer = setTimeout(() => {
+        restoreBuffer(session.terminalBuffer!);
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [session.terminalBuffer, restoreBuffer]);
 
   const canRender = useCallback(() => {
     if (!termRef.current) return false;

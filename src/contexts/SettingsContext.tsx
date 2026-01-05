@@ -33,7 +33,7 @@ const defaultSettings: GlobalSettings = {
   singleClickDisconnect: false,
   doubleClickRename: false,
   animationsEnabled: true,
-  animationDuration: 200,
+  animationDuration: 550,
   reduceMotion: false,
   backgroundGlowEnabled: true,
   backgroundGlowFollowsColorScheme: true,
@@ -150,6 +150,31 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);
     await settingsManager.saveSettings(newSettings);
+    
+    // Log each changed setting
+    const changedKeys = Object.keys(updates) as (keyof GlobalSettings)[];
+    if (changedKeys.length > 0) {
+      const settingDetails = changedKeys
+        .map(key => {
+          const oldVal = settings[key];
+          const newVal = updates[key];
+          // Format the value for display
+          const formatVal = (v: unknown): string => {
+            if (v === null || v === undefined) return 'null';
+            if (typeof v === 'object') return JSON.stringify(v);
+            return String(v);
+          };
+          return `${key}: ${formatVal(oldVal)} → ${formatVal(newVal)}`;
+        })
+        .join(', ');
+      
+      settingsManager.logAction(
+        'info',
+        'Settings changed',
+        undefined,
+        settingDetails
+      );
+    }
   }, [settings, settingsManager]);
 
   useEffect(() => {

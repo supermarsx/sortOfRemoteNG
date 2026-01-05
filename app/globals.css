@@ -114,12 +114,97 @@ body {
   background-color: var(--color-surface);
   border-color: var(--color-border);
   color: var(--color-text);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Top bar glow effect */
+.app-glow .app-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(ellipse 30% 200% at 0% 50%, color-mix(in srgb, var(--app-glow-color) 30%, transparent) 0%, transparent 70%),
+    radial-gradient(ellipse 25% 180% at 15% 60%, color-mix(in srgb, var(--app-glow-color) 22%, transparent) 0%, transparent 60%),
+    radial-gradient(ellipse 20% 150% at 35% 40%, color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%, transparent 50%),
+    radial-gradient(ellipse 18% 140% at 55% 55%, color-mix(in srgb, var(--app-glow-color) 10%, transparent) 0%, transparent 45%),
+    radial-gradient(ellipse 22% 160% at 75% 45%, color-mix(in srgb, var(--app-glow-color) 14%, transparent) 0%, transparent 55%),
+    radial-gradient(ellipse 28% 190% at 90% 50%, color-mix(in srgb, var(--app-glow-color) 25%, transparent) 0%, transparent 65%),
+    radial-gradient(ellipse 35% 220% at 100% 50%, color-mix(in srgb, var(--app-glow-color) 32%, transparent) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--app-glow-opacity);
+}
+
+.app-bar > * {
+  position: relative;
+  z-index: 1;
 }
 
 .app-bar-secondary {
   background-color: color-mix(in srgb, var(--color-surface) 88%, transparent);
   border-color: var(--color-border);
   color: var(--color-text);
+}
+
+/* Sidebar glow effect */
+.sidebar-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.app-glow .sidebar-glow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(ellipse 120% 40% at 50% 0%, color-mix(in srgb, var(--app-glow-color) 25%, transparent) 0%, transparent 70%),
+    radial-gradient(circle at 10% 20%, color-mix(in srgb, var(--app-glow-color) 18%, transparent) 0%, transparent 35%),
+    radial-gradient(circle at 90% 35%, color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%, transparent 30%),
+    radial-gradient(circle at 20% 60%, color-mix(in srgb, var(--app-glow-color) 8%, transparent) 0%, transparent 25%),
+    radial-gradient(circle at 80% 75%, color-mix(in srgb, var(--app-glow-color) 10%, transparent) 0%, transparent 28%),
+    radial-gradient(ellipse 80% 30% at 50% 100%, color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--app-glow-opacity);
+}
+
+.sidebar-glow > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Settings dialog glow effect */
+.settings-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.app-glow .settings-glow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(ellipse 100% 50% at 50% 0%, color-mix(in srgb, var(--app-glow-color) 18%, transparent) 0%, transparent 60%),
+    radial-gradient(circle at 0% 30%, color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%, transparent 40%),
+    radial-gradient(circle at 100% 40%, color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%, transparent 40%),
+    radial-gradient(circle at 20% 70%, color-mix(in srgb, var(--app-glow-color) 8%, transparent) 0%, transparent 30%),
+    radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--app-glow-color) 8%, transparent) 0%, transparent 30%),
+    radial-gradient(ellipse 90% 40% at 50% 100%, color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--app-glow-opacity);
+}
+
+.settings-glow > * {
+  position: relative;
+  z-index: 1;
 }
 
 .app-bar-button {
@@ -496,6 +581,17 @@ input[type="range"]::-moz-range-thumb {
   }
 }
 
+@keyframes fadeOutScale {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
 @keyframes slideInRight {
   from {
     opacity: 0;
@@ -558,23 +654,37 @@ input[type="range"]::-moz-range-thumb {
 
 /* Modal/Dialog backdrop animation */
 .backdrop-animate {
-  animation: fadeIn 150ms ease-out forwards;
+  animation: fadeIn var(--animation-duration, 550ms) ease-out forwards;
   backdrop-filter: blur(4px);
 }
 
 /* Modal/Dialog content animation */
 .modal-content-animate {
-  animation: fadeInScale 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeInScale var(--animation-duration, 550ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Dropdown/Popup animation */
 .popup-animate {
-  animation: fadeInUp 150ms ease-out forwards;
+  animation: fadeInUp var(--animation-duration, 550ms) ease-out forwards;
+}
+
+/* Popup fade-out animation */
+.popup-animate-out {
+  animation: fadeOut var(--animation-duration, 550ms) ease-out forwards;
+}
+
+/* Modal close animation */
+.modal-content-animate-out {
+  animation: fadeOutScale var(--animation-duration, 550ms) ease-out forwards;
+}
+
+.backdrop-animate-out {
+  animation: fadeOut var(--animation-duration, 550ms) ease-out forwards;
 }
 
 /* Sidebar animation */
 .sidebar-animate {
-  animation: slideInLeft 200ms ease-out forwards;
+  animation: slideInLeft var(--animation-duration, 550ms) ease-out forwards;
 }
 
 /* Toast notification animation */

@@ -13,8 +13,10 @@
     "windows": [
       {
         "title": "sortOfRemoteNG",
-        "width": 800,
-        "height": 600,
+        "width": 1280,
+        "height": 720,
+        "minWidth": 800,
+        "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
         "decorations": false,

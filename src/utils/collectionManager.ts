@@ -8,6 +8,7 @@ import {
   CorruptedDataError,
   InvalidPasswordError,
 } from "./errors";
+import { SettingsManager } from "./settingsManager";
 
 const invoke = (globalThis as any).__TAURI__?.core?.invoke;
 
@@ -81,6 +82,14 @@ export class CollectionManager {
       });
     }
 
+    // Log collection creation
+    SettingsManager.getInstance().logAction(
+      'info',
+      'Database created',
+      undefined,
+      `Database "${name}" created${isEncrypted ? ' (encrypted)' : ''}`
+    );
+
     return collection;
   }
 
@@ -128,6 +137,14 @@ export class CollectionManager {
     // Update last accessed time
     collection.lastAccessed = new Date();
     await this.updateCollection(collection);
+    
+    // Log collection selection/opening
+    SettingsManager.getInstance().logAction(
+      'info',
+      'Database opened',
+      undefined,
+      `Switched to database "${collection.name}"`
+    );
   }
 
   getCurrentCollection(): ConnectionCollection | null {
@@ -147,12 +164,21 @@ export class CollectionManager {
   }
 
   async deleteCollection(id: string): Promise<void> {
+    const collection = await this.getCollection(id);
     const collections = await this.getAllCollections();
     const filteredCollections = collections.filter((c) => c.id !== id);
     await this.saveCollections(filteredCollections);
 
     // Remove collection data
     await IndexedDbService.removeItem(`mremote-collection-${id}`);
+
+    // Log collection deletion
+    SettingsManager.getInstance().logAction(
+      'info',
+      'Database deleted',
+      undefined,
+      `Database "${collection?.name || id}" deleted`
+    );
 
     if (this.currentCollection?.id === id) {
       this.currentCollection = null;

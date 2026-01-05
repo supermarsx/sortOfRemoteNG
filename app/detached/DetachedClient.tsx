@@ -235,7 +235,32 @@ const DetachedSessionContent: React.FC<{
     try {
       reattachRef.current = true;
       skipNextConfirmRef.current = true;
-      await emit("detached-session-reattach", { sessionId: activeSession.id });
+      
+      // Get terminal buffer before reattaching
+      let terminalBuffer = "";
+      try {
+        const bufferPromise = new Promise<string>((resolve) => {
+          const timeout = setTimeout(() => resolve(""), 500);
+          listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
+            if (event.payload.sessionId === activeSession.id) {
+              clearTimeout(timeout);
+              resolve(event.payload.buffer);
+            }
+          }).then(unlisten => {
+            setTimeout(() => unlisten(), 600);
+          });
+        });
+        
+        await emit("request-terminal-buffer", { sessionId: activeSession.id });
+        terminalBuffer = await bufferPromise;
+      } catch (error) {
+        console.warn("Failed to get terminal buffer:", error);
+      }
+      
+      await emit("detached-session-reattach", { 
+        sessionId: activeSession.id,
+        terminalBuffer,
+      });
       if (sessionId) {
         localStorage.removeItem(`detached-session-${sessionId}`);
       }
@@ -249,20 +274,24 @@ const DetachedSessionContent: React.FC<{
   }, [activeSession, isTauri, sessionId]);
 
   const handleCloseRequest = useCallback(async () => {
+    // Skip confirmation if reattaching
     if (reattachRef.current) {
       reattachRef.current = false;
       return true;
     }
+    
+    // Show confirmation dialog if warning is enabled and not already confirmed
     if (warnOnDetachClose && !skipNextConfirmRef.current) {
       const confirmed = await requestCloseConfirmation();
       if (!confirmed) {
         return false;
       }
-      skipNextConfirmRef.current = true;
     }
-    if (skipNextConfirmRef.current) {
-      skipNextConfirmRef.current = false;
-    }
+    
+    // Reset the skip flag
+    skipNextConfirmRef.current = false;
+    
+    // Disconnect and close
     await disconnectActiveSession();
     return true;
   }, [disconnectActiveSession, requestCloseConfirmation, warnOnDetachClose]);

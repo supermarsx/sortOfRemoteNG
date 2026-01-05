@@ -405,9 +405,34 @@ const AppContent: React.FC = () => {
       );
       const windowLabel = `detached-${session.id}`;
 
+      // Request terminal buffer before detaching
+      let terminalBuffer = "";
       try {
+        const bufferPromise = new Promise<string>((resolve) => {
+          const timeout = setTimeout(() => resolve(""), 500);
+          listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
+            if (event.payload.sessionId === sessionId) {
+              clearTimeout(timeout);
+              resolve(event.payload.buffer);
+            }
+          }).then(unlisten => {
+            setTimeout(() => unlisten(), 600);
+          });
+        });
+        
+        await emit("request-terminal-buffer", { sessionId });
+        terminalBuffer = await bufferPromise;
+      } catch (error) {
+        console.warn("Failed to get terminal buffer:", error);
+      }
+
+      try {
+        const sessionWithBuffer = {
+          ...session,
+          terminalBuffer,
+        };
         const payload = {
-          session,
+          session: sessionWithBuffer,
           connection: connection || null,
           savedAt: Date.now(),
         };
@@ -912,7 +937,7 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
-    listen<{ sessionId?: string }>("detached-session-reattach", (event) => {
+    listen<{ sessionId?: string; terminalBuffer?: string }>("detached-session-reattach", (event) => {
       const sessionId = event.payload?.sessionId;
       if (!sessionId) return;
       const session = state.sessions.find((item) => item.id === sessionId);
@@ -921,6 +946,7 @@ const AppContent: React.FC = () => {
         type: "UPDATE_SESSION",
         payload: {
           ...session,
+          terminalBuffer: event.payload.terminalBuffer || session.terminalBuffer,
           layout: {
             x: session.layout?.x ?? 0,
             y: session.layout?.y ?? 0,
@@ -1074,9 +1100,16 @@ const AppContent: React.FC = () => {
 
     const window = getCurrentWindow();
 
+    // Minimum window size constraints
+    const MIN_WIDTH = 800;
+    const MIN_HEIGHT = 600;
+
     if (appSettings.persistWindowSize && appSettings.windowSize) {
       const { width, height } = appSettings.windowSize;
-      window.setSize(new LogicalSize(width, height)).catch((error) => {
+      // Validate and enforce minimum size
+      const validWidth = Math.max(width || MIN_WIDTH, MIN_WIDTH);
+      const validHeight = Math.max(height || MIN_HEIGHT, MIN_HEIGHT);
+      window.setSize(new LogicalSize(validWidth, validHeight)).catch((error) => {
         if (!isWindowPermissionError(error)) {
           console.error(error);
         }
@@ -1085,7 +1118,10 @@ const AppContent: React.FC = () => {
 
     if (appSettings.persistWindowPosition && appSettings.windowPosition) {
       const { x, y } = appSettings.windowPosition;
-      window.setPosition(new LogicalPosition(x, y)).catch((error) => {
+      // Ensure position is not negative (off-screen)
+      const validX = Math.max(x || 0, 0);
+      const validY = Math.max(y || 0, 0);
+      window.setPosition(new LogicalPosition(validX, validY)).catch((error) => {
         if (!isWindowPermissionError(error)) {
           console.error(error);
         }
@@ -1516,7 +1552,7 @@ const AppContent: React.FC = () => {
             onSessionClose={handleSessionClose}
             onSessionDetach={handleSessionDetach}
             enableReorder={appSettings.enableTabReorder}
-            middleClickCloseTab={settings.middleClickCloseTab}
+            middleClickCloseTab={appSettings.middleClickCloseTab}
           />
 
           {/* Session viewer */}
@@ -1532,7 +1568,7 @@ const AppContent: React.FC = () => {
                 onSessionDetach={handleSessionDetach}
                 renderSession={(session) => <SessionViewer session={session} />}
                 showTabBar={false}
-                middleClickCloseTab={settings.middleClickCloseTab}
+                middleClickCloseTab={appSettings.middleClickCloseTab}
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-gray-400">

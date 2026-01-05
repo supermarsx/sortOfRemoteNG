@@ -1,6 +1,7 @@
 import React, { useReducer, useEffect, useCallback, useMemo, useRef } from "react";
 import { CollectionManager } from "../utils/collectionManager";
 import { StorageData } from "../utils/storage";
+import { SettingsManager } from "../utils/settingsManager";
 import {
   ConnectionState,
   ConnectionAction,
@@ -101,12 +102,79 @@ const connectionReducer = (
 export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [state, dispatch] = useReducer(connectionReducer, initialState);
+  const [state, baseDispatch] = useReducer(connectionReducer, initialState);
   const collectionManager = useMemo(() => CollectionManager.getInstance(), []);
+  const settingsManager = useMemo(() => SettingsManager.getInstance(), []);
   // Track whether data has been loaded to prevent overwriting on initial mount
   const hasLoadedRef = useRef(false);
   // Track if this is the first render to skip auto-save on mount
   const isInitialMountRef = useRef(true);
+
+  // Wrap dispatch to add action logging
+  const dispatch = useCallback((action: ConnectionAction) => {
+    // Log specific actions
+    switch (action.type) {
+      case "ADD_CONNECTION": {
+        const conn = action.payload;
+        settingsManager.logAction(
+          'info',
+          conn.isGroup ? 'Folder created' : 'Connection created',
+          conn.id,
+          `Name: "${conn.name}"${conn.hostname ? `, Host: ${conn.hostname}` : ''}${conn.protocol ? `, Protocol: ${conn.protocol}` : ''}`
+        );
+        break;
+      }
+      case "UPDATE_CONNECTION": {
+        const conn = action.payload;
+        settingsManager.logAction(
+          'info',
+          'Connection edited',
+          conn.id,
+          `Name: "${conn.name}" updated`
+        );
+        break;
+      }
+      case "DELETE_CONNECTION": {
+        settingsManager.logAction(
+          'info',
+          'Connection deleted',
+          action.payload,
+          `Connection ID: ${action.payload}`
+        );
+        break;
+      }
+      case "ADD_SESSION": {
+        const session = action.payload;
+        settingsManager.logAction(
+          'info',
+          'Session opened',
+          session.connectionId,
+          `Session "${session.name}" opened via ${session.protocol}`
+        );
+        break;
+      }
+      case "REMOVE_SESSION": {
+        settingsManager.logAction(
+          'info',
+          'Session removed',
+          undefined,
+          `Session ID: ${action.payload}`
+        );
+        break;
+      }
+      case "REORDER_SESSIONS": {
+        settingsManager.logAction(
+          'debug',
+          'Sessions reordered',
+          undefined,
+          `Moved from index ${action.payload.fromIndex} to ${action.payload.toIndex}`
+        );
+        break;
+      }
+    }
+    
+    baseDispatch(action);
+  }, [settingsManager]);
 
   const saveData = useCallback(async () => {
     try {
@@ -133,7 +201,7 @@ export const ConnectionProvider: React.FC<{ children: React.ReactNode }> = ({
           createdAt: conn.createdAt ? new Date(conn.createdAt) : new Date(),
           updatedAt: conn.updatedAt ? new Date(conn.updatedAt) : new Date(),
         }));
-        dispatch({ type: "SET_CONNECTIONS", payload: connections });
+        baseDispatch({ type: "SET_CONNECTIONS", payload: connections });
       }
       // Mark as loaded after successfully loading data
       hasLoadedRef.current = true;
