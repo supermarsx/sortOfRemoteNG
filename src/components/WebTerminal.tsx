@@ -121,7 +121,24 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     
     listen<{ sessionId: string }>("request-terminal-buffer", async (event) => {
       if (event.payload.sessionId !== session.id) return;
-      const buffer = serializeBuffer();
+      
+      // Try to get buffer from Rust backend first (most reliable)
+      let buffer = "";
+      if (sshSessionId.current && session.protocol === "ssh") {
+        try {
+          buffer = await invoke<string>("get_terminal_buffer", { 
+            sessionId: sshSessionId.current 
+          });
+          console.log("Got buffer from Rust backend:", buffer?.length || 0, "chars");
+        } catch (err) {
+          console.warn("Failed to get buffer from backend, using local:", err);
+          buffer = serializeBuffer();
+        }
+      } else {
+        // For non-SSH sessions, use local buffer
+        buffer = serializeBuffer();
+      }
+      
       await emit("terminal-buffer-response", { 
         sessionId: session.id, 
         buffer 
@@ -133,7 +150,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     return () => {
       unlisten?.();
     };
-  }, [session.id, serializeBuffer]);
+  }, [session.id, session.protocol, serializeBuffer]);
 
   // Track if we've already restored buffer for this session
   const bufferRestoredRef = useRef(false);

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
+import "../../src/i18n";
 import { ConnectionProvider } from "../../src/contexts/ConnectionProvider";
 import { useConnections } from "../../src/contexts/useConnections";
 import { Connection, ConnectionSession } from "../../src/types/connection";
@@ -238,30 +239,46 @@ const DetachedSessionContent: React.FC<{
       
       // Get terminal buffer before reattaching
       let terminalBuffer = "";
-      try {
-        const bufferPromise = new Promise<string>((resolve) => {
-          const timeout = setTimeout(() => {
-            console.log("Buffer request timed out");
-            resolve("");
-          }, 1000); // Increased timeout
-          
-          listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
-            if (event.payload.sessionId === activeSession.id) {
-              clearTimeout(timeout);
-              console.log("Received buffer response:", event.payload.buffer?.length || 0, "chars");
-              resolve(event.payload.buffer);
-            }
-          }).then(unlisten => {
-            setTimeout(() => unlisten(), 1200);
+      
+      // For SSH sessions, get buffer directly from Rust backend (most reliable)
+      if (activeSession.protocol === "ssh" && activeSession.backendSessionId) {
+        try {
+          terminalBuffer = await invoke<string>("get_terminal_buffer", { 
+            sessionId: activeSession.backendSessionId 
           });
-        });
-        
-        console.log("Requesting terminal buffer for session:", activeSession.id);
-        await emit("request-terminal-buffer", { sessionId: activeSession.id });
-        terminalBuffer = await bufferPromise;
-        console.log("Got terminal buffer:", terminalBuffer?.length || 0, "chars");
-      } catch (error) {
-        console.warn("Failed to get terminal buffer:", error);
+          console.log("Got buffer from Rust backend:", terminalBuffer?.length || 0, "chars");
+        } catch (err) {
+          console.warn("Failed to get buffer from backend:", err);
+        }
+      }
+      
+      // Fallback to event-based buffer request if backend didn't return anything
+      if (!terminalBuffer) {
+        try {
+          const bufferPromise = new Promise<string>((resolve) => {
+            const timeout = setTimeout(() => {
+              console.log("Buffer request timed out");
+              resolve("");
+            }, 1000);
+            
+            listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
+              if (event.payload.sessionId === activeSession.id) {
+                clearTimeout(timeout);
+                console.log("Received buffer response:", event.payload.buffer?.length || 0, "chars");
+                resolve(event.payload.buffer);
+              }
+            }).then(unlisten => {
+              setTimeout(() => unlisten(), 1200);
+            });
+          });
+          
+          console.log("Requesting terminal buffer for session:", activeSession.id);
+          await emit("request-terminal-buffer", { sessionId: activeSession.id });
+          terminalBuffer = await bufferPromise;
+          console.log("Got terminal buffer via event:", terminalBuffer?.length || 0, "chars");
+        } catch (error) {
+          console.warn("Failed to get terminal buffer:", error);
+        }
       }
       
       await emit("detached-session-reattach", { 
@@ -397,10 +414,7 @@ const DetachedSessionContent: React.FC<{
           <button
             onClick={async () => {
               if (!isTauri) return;
-              const shouldClose = await handleCloseRequest();
-              if (!shouldClose) {
-                return;
-              }
+              // Just request close - the onCloseRequested handler will handle confirmation
               const currentWindow = getCurrentWindow();
               await currentWindow.close();
             }}

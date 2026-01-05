@@ -681,6 +681,8 @@ pub fn run() {
         ssh::validate_ssh_key_file,
         ssh::test_ssh_connection,
         ssh::generate_ssh_key,
+        ssh::get_terminal_buffer,
+        ssh::clear_terminal_buffer,
         http::http_fetch,
         http::http_get,
         http::http_post,

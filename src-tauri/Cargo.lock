@@ -148,6 +148,7 @@ dependencies = [
  "hyper 1.8.1",
  "image",
  "jsonwebtoken",
+ "lazy_static",
  "log",
  "mac_address",
  "mockall",

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
+use std::sync::Mutex as StdMutex;
 use std::collections::HashMap;
 use ssh2::Session;
 use std::net::{TcpStream, TcpListener};
@@ -12,6 +13,14 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use shell_escape;
 use tauri::Emitter;
+
+// Maximum buffer size in bytes (1MB)
+const MAX_BUFFER_SIZE: usize = 1024 * 1024;
+
+// Global terminal buffer storage
+lazy_static::lazy_static! {
+    static ref TERMINAL_BUFFERS: StdMutex<HashMap<String, String>> = StdMutex::new(HashMap::new());
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SshConnectionConfig {
@@ -618,6 +627,18 @@ impl SshService {
                 match channel.read(&mut buffer) {
                     Ok(bytes) if bytes > 0 => {
                         let output = String::from_utf8_lossy(&buffer[..bytes]).to_string();
+                        
+                        // Store output in the global buffer
+                        if let Ok(mut buffers) = TERMINAL_BUFFERS.lock() {
+                            let session_buffer = buffers.entry(session_id_owned.clone()).or_insert_with(String::new);
+                            session_buffer.push_str(&output);
+                            // Trim buffer if too large, keeping the most recent output
+                            if session_buffer.len() > MAX_BUFFER_SIZE {
+                                let excess = session_buffer.len() - MAX_BUFFER_SIZE;
+                                *session_buffer = session_buffer[excess..].to_string();
+                            }
+                        }
+                        
                         let _ = app_handle_clone.emit(
                             "ssh-output",
                             SshShellOutput {
@@ -1243,4 +1264,21 @@ pub async fn generate_ssh_key(
 ) -> Result<(String, String), String> {
     let ssh = state.lock().await;
     ssh.generate_ssh_key(&key_type, bits, passphrase).await
+}
+
+/// Get the terminal buffer for a session
+#[tauri::command]
+pub fn get_terminal_buffer(session_id: String) -> Result<String, String> {
+    let buffers = TERMINAL_BUFFERS.lock()
+        .map_err(|e| format!("Failed to lock buffer: {}", e))?;
+    Ok(buffers.get(&session_id).cloned().unwrap_or_default())
+}
+
+/// Clear the terminal buffer for a session
+#[tauri::command]
+pub fn clear_terminal_buffer(session_id: String) -> Result<(), String> {
+    let mut buffers = TERMINAL_BUFFERS.lock()
+        .map_err(|e| format!("Failed to lock buffer: {}", e))?;
+    buffers.remove(&session_id);
+    Ok(())
 }

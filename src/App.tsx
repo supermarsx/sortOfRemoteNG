@@ -926,24 +926,33 @@ const AppContent: React.FC = () => {
       Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
     if (!isTauri) return;
 
-    let unlisten: (() => void) | null = null;
+    let isCancelled = false;
+    let unlistenFn: (() => void) | null = null;
+    
     listen<{ sessionId?: string }>("detached-session-closed", (event) => {
       const sessionId = event.payload?.sessionId;
       if (!sessionId) return;
       handleSessionClose(sessionId).catch(console.error);
     })
       .then((stop) => {
-        unlisten = stop;
+        if (isCancelled) {
+          stop();
+        } else {
+          unlistenFn = stop;
+        }
       })
       .catch(console.error);
 
     return () => {
-      unlisten?.();
+      isCancelled = true;
+      unlistenFn?.();
     };
   }, [handleSessionClose]);
 
   useEffect(() => {
-    let unlisten: (() => void) | null = null;
+    let isCancelled = false;
+    let unlistenFn: (() => void) | null = null;
+    
     listen<{ sessionId?: string; terminalBuffer?: string }>("detached-session-reattach", (event) => {
       const sessionId = event.payload?.sessionId;
       if (!sessionId) return;
@@ -968,12 +977,17 @@ const AppContent: React.FC = () => {
       setActiveSessionId(sessionId);
     })
       .then((stop) => {
-        unlisten = stop;
+        if (isCancelled) {
+          stop();
+        } else {
+          unlistenFn = stop;
+        }
       })
       .catch(console.error);
 
     return () => {
-      unlisten?.();
+      isCancelled = true;
+      unlistenFn?.();
     };
   }, [dispatch, setActiveSessionId, state.sessions]);
 
