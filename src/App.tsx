@@ -1040,19 +1040,68 @@ const AppContent: React.FC = () => {
       ? Math.min(1, Math.max(0, appSettings.windowTransparencyOpacity || 1))
       : 1;
     const root = document.documentElement;
+    
+    // Get the current theme colors from CSS variables (set by ThemeManager)
+    const computedStyle = getComputedStyle(root);
+    const background = computedStyle.getPropertyValue('--color-background').trim() || '#111827';
+    const surface = computedStyle.getPropertyValue('--color-surface').trim() || '#1f2937';
+    const border = computedStyle.getPropertyValue('--color-border').trim() || '#374151';
+    
+    // Helper to convert hex to rgba
+    const hexToRgba = (hex: string, alpha: number): string => {
+      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+      if (result) {
+        const r = parseInt(result[1], 16);
+        const g = parseInt(result[2], 16);
+        const b = parseInt(result[3], 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
+      return hex;
+    };
+    
+    // Helper to extract RGB values from color
+    const extractRgb = (color: string): { r: number; g: number; b: number } => {
+      const hex = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color);
+      if (hex) {
+        return {
+          r: parseInt(hex[1], 16),
+          g: parseInt(hex[2], 16),
+          b: parseInt(hex[3], 16),
+        };
+      }
+      const rgb = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+      if (rgb) {
+        return {
+          r: parseInt(rgb[1]),
+          g: parseInt(rgb[2]),
+          b: parseInt(rgb[3]),
+        };
+      }
+      return { r: 17, g: 24, b: 39 };
+    };
+    
     const alpha = appSettings.windowTransparencyEnabled ? targetOpacity : 1;
-    root.style.setProperty("--app-surface-900", `rgba(17, 24, 39, ${alpha})`);
-    root.style.setProperty("--app-surface-800", `rgba(31, 41, 55, ${alpha})`);
-    root.style.setProperty("--app-surface-700", `rgba(55, 65, 81, ${alpha})`);
-    root.style.setProperty("--app-surface-600", `rgba(75, 85, 99, ${alpha})`);
-    root.style.setProperty(
-      "--app-surface-500",
-      `rgba(107, 114, 128, ${alpha})`,
-    );
-    root.style.setProperty("--app-slate-950", `rgba(2, 6, 23, ${alpha})`);
-    root.style.setProperty("--app-slate-900", `rgba(15, 23, 42, ${alpha})`);
-    root.style.setProperty("--app-slate-800", `rgba(30, 41, 59, ${alpha})`);
-    root.style.setProperty("--app-slate-700", `rgba(51, 65, 85, ${alpha})`);
+    
+    // Apply transparency to theme-derived colors
+    const bgRgb = extractRgb(background);
+    const surfaceRgb = extractRgb(surface);
+    const borderRgb = extractRgb(border);
+    
+    // Create shades based on theme background color
+    root.style.setProperty("--app-surface-900", `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${alpha})`);
+    root.style.setProperty("--app-surface-800", `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, ${alpha})`);
+    root.style.setProperty("--app-surface-700", `rgba(${borderRgb.r}, ${borderRgb.g}, ${borderRgb.b}, ${alpha})`);
+    
+    // Lighter shades (derived from surface color)
+    root.style.setProperty("--app-surface-600", `rgba(${Math.min(255, surfaceRgb.r + 20)}, ${Math.min(255, surfaceRgb.g + 20)}, ${Math.min(255, surfaceRgb.b + 20)}, ${alpha})`);
+    root.style.setProperty("--app-surface-500", `rgba(${Math.min(255, surfaceRgb.r + 40)}, ${Math.min(255, surfaceRgb.g + 40)}, ${Math.min(255, surfaceRgb.b + 40)}, ${alpha})`);
+    
+    // Darker shades (derived from background color)
+    root.style.setProperty("--app-slate-950", `rgba(${Math.max(0, bgRgb.r - 15)}, ${Math.max(0, bgRgb.g - 18)}, ${Math.max(0, bgRgb.b - 16)}, ${alpha})`);
+    root.style.setProperty("--app-slate-900", `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${alpha})`);
+    root.style.setProperty("--app-slate-800", `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, ${alpha})`);
+    root.style.setProperty("--app-slate-700", `rgba(${borderRgb.r}, ${borderRgb.g}, ${borderRgb.b}, ${alpha})`);
+    
     document.documentElement.style.backgroundColor =
       appSettings.windowTransparencyEnabled ? "transparent" : "";
     document.body.style.backgroundColor = appSettings.windowTransparencyEnabled
@@ -1060,13 +1109,8 @@ const AppContent: React.FC = () => {
       : "";
     const setBackgroundColor = window.setBackgroundColor;
     if (typeof setBackgroundColor === "function") {
-      const computed = getComputedStyle(document.body).backgroundColor;
-      const match = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-      const red = match ? Number(match[1]) : 17;
-      const green = match ? Number(match[2]) : 24;
-      const blue = match ? Number(match[3]) : 39;
       const alpha = Math.round(255 * targetOpacity);
-      setBackgroundColor([red, green, blue, alpha]).catch((error) => {
+      setBackgroundColor([bgRgb.r, bgRgb.g, bgRgb.b, alpha]).catch((error) => {
         if (!isWindowPermissionError(error)) {
           console.error("Failed to set window background color:", error);
         }
@@ -1074,8 +1118,10 @@ const AppContent: React.FC = () => {
     }
   }, [
     appSettings,
-    appSettings.windowTransparencyEnabled,
-    appSettings.windowTransparencyOpacity,
+    appSettings?.windowTransparencyEnabled,
+    appSettings?.windowTransparencyOpacity,
+    appSettings?.theme,
+    appSettings?.colorScheme,
     isWindowPermissionError,
   ]);
 
