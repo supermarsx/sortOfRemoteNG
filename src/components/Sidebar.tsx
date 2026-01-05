@@ -19,6 +19,7 @@ interface SidebarProps {
   onSessionDetach: (sessionId: string) => void;
   onShowPasswordDialog: () => void;
   enableConnectionReorder: boolean;
+  onOpenImport?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -33,6 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSessionDetach,
   onShowPasswordDialog,
   enableConnectionReorder,
+  onOpenImport,
 }) => {
   const { t } = useTranslation();
   const { state, dispatch } = useConnections();
@@ -332,6 +334,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onDiagnostics={onDiagnostics}
               onSessionDetach={onSessionDetach}
               enableReorder={enableConnectionReorder}
+              onOpenImport={onOpenImport}
             />
 
             <div className="border-t border-gray-700 mt-auto" />

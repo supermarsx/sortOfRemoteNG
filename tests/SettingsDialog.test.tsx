@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { SettingsDialog } from "../src/components/SettingsDialog";
 import { GlobalSettings } from "../src/types/settings";
+import { ToastProvider } from "../src/contexts/ToastContext";
 
 // mock i18n
 vi.mock("react-i18next", () => ({
@@ -125,7 +126,11 @@ vi.mock("../src/utils/themeManager", () => ({
 
 describe("SettingsDialog", () => {
   it("renders general tab content", async () => {
-    render(<SettingsDialog isOpen onClose={() => {}} />);
+    render(
+      <ToastProvider>
+        <SettingsDialog isOpen onClose={() => {}} />
+      </ToastProvider>
+    );
     const items = await screen.findAllByText("settings.general");
     expect(items.length).toBeGreaterThan(0);
   });

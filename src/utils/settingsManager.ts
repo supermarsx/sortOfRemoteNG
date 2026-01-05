@@ -235,6 +235,17 @@ export class SettingsManager {
     try {
       const stored = await IndexedDbService.getItem<GlobalSettings>('mremote-settings');
       if (stored) {
+        // Validate colorScheme - migrate invalid values like "other" or "custom" to "blue"
+        const validColorSchemes = [
+          "red", "rose", "pink", "orange", "amber", "yellow", "lime",
+          "green", "emerald", "teal", "cyan", "sky", "blue", "indigo",
+          "violet", "purple", "fuchsia", "slate", "grey"
+        ];
+        if (stored.colorScheme && !validColorSchemes.includes(stored.colorScheme)) {
+          console.warn(`Invalid colorScheme "${stored.colorScheme}" found in settings, resetting to "blue"`);
+          stored.colorScheme = "blue";
+        }
+
         this.settings = {
           ...DEFAULT_SETTINGS,
           ...stored,

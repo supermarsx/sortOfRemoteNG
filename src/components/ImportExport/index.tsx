@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Download, Upload, X } from 'lucide-react';
 import { Connection } from '../../types/connection';
 import { useConnections } from '../../contexts/useConnections';
@@ -16,16 +16,18 @@ interface ImportExportProps {
   isOpen: boolean;
   onClose: () => void;
   embedded?: boolean;
+  initialTab?: 'export' | 'import';
 }
 
 export const ImportExport: React.FC<ImportExportProps> = ({
   isOpen,
   onClose,
   embedded = false,
+  initialTab = 'export',
 }) => {
   const { state, dispatch } = useConnections();
   const { toast } = useToastContext();
-  const [activeTab, setActiveTab] = useState<'export' | 'import'>('export');
+  const [activeTab, setActiveTab] = useState<'export' | 'import'>(initialTab);
   const [exportFormat, setExportFormat] = useState<'json' | 'xml' | 'csv'>('json');
   const [exportEncrypted, setExportEncrypted] = useState(false);
   const [exportPassword, setExportPassword] = useState('');
@@ -37,6 +39,13 @@ export const ImportExport: React.FC<ImportExportProps> = ({
 
   const collectionManager = CollectionManager.getInstance();
   const settingsManager = SettingsManager.getInstance();
+
+  // Update active tab when initialTab changes (dialog reopens)
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   const generateExportFilename = (format: string): string => {
     const now = new Date();

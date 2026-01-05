@@ -371,7 +371,7 @@ const DetachedSessionContent: React.FC<{
   return (
     <>
       <div
-        className={`h-screen w-screen flex flex-col app-shell ${
+        className={`h-full w-screen flex flex-col app-shell ${
           isTransparent ? "app-transparent" : "bg-gray-900"
         }`}
       >
@@ -447,7 +447,7 @@ const DetachedSessionContent: React.FC<{
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-hidden min-h-0">
+      <div className="flex-1 overflow-hidden min-h-0 h-full">
         <SessionViewer session={activeSession} />
       </div>
       </div>

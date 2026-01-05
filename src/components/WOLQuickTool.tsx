@@ -209,9 +209,9 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-5 overflow-y-auto" style={{ height: 'calc(100% - 80px)' }}>
+        <div className="p-5 space-y-5 overflow-y-auto flex flex-col" style={{ height: 'calc(100% - 80px)' }}>
           {/* Quick Wake Section */}
-          <div className="space-y-3">
+          <div className="space-y-3 flex-shrink-0">
             <label className="block text-sm font-medium text-gray-300">
               {t('wake.macAddress', 'MAC Address')}
             </label>
@@ -243,7 +243,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
           </div>
 
           {/* Advanced Options */}
-          <details className="group">
+          <details className="group flex-shrink-0">
             <summary className="text-sm text-gray-400 cursor-pointer hover:text-white flex items-center gap-2 transition-colors">
               <Cpu size={14} />
               {t('wake.advancedOptions', 'Advanced Options')}
@@ -309,7 +309,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
 
           {/* Recent MACs */}
           {recentMacs.length > 0 && (
-            <div className="animate-fade-in">
+            <div className="animate-fade-in flex-shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
                   <Clock size={14} className="text-gray-400" />
@@ -331,7 +331,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
           )}
 
           {/* Network Scan */}
-          <div className="animate-fade-in">
+          <div className="animate-fade-in flex-1 min-h-0 flex flex-col">
             <div className="flex items-center justify-between mb-3">
               <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
                 <Search size={14} className="text-gray-400" />
@@ -354,7 +354,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
             </div>
             
             {devices.length > 0 && (
-              <div className="max-h-64 overflow-y-auto space-y-2 stagger-animate">
+              <div className="flex-1 min-h-0 overflow-y-auto space-y-2 stagger-animate">
                 {devices.map((device, idx) => (
                   <div
                     key={idx}

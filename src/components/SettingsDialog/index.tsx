@@ -8,8 +8,6 @@ import {
   Monitor,
   Code,
   Wifi,
-  CheckCircle,
-  AlertCircle,
   Palette,
   LayoutGrid,
   Power,
@@ -28,11 +26,13 @@ import ProxySettings from './sections/ProxySettings';
 import AdvancedSettings from './sections/AdvancedSettings';
 import StartupSettings from './sections/StartupSettings';
 import ApiSettings from './sections/ApiSettings';
+import RecoverySettings from './sections/RecoverySettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useToastContext } from '../../contexts/ToastContext';
 
 // Default settings for each tab section
 const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
@@ -189,7 +189,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [activeTab, setActiveTab] = useState('general');
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
   const [isBenchmarking, setIsBenchmarking] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'success' | 'error' | null>(null);
+  const { toast } = useToastContext();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const settingsManager = SettingsManager.getInstance();
   const themeManager = ThemeManager.getInstance();
@@ -305,8 +305,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   };
 
   const showAutoSave = (status: 'success' | 'error') => {
-    setAutoSaveStatus(status);
-    setTimeout(() => setAutoSaveStatus(null), 2000);
+    if (status === 'success') {
+      toast.success(t('settings.autoSaveSuccess'), 2000);
+    } else {
+      toast.error(t('settings.autoSaveError'), 3000);
+    }
   };
 
   const updateSettings = async (updates: Partial<GlobalSettings>) => {
@@ -376,6 +379,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     { id: 'proxy', label: 'Proxy', icon: Wifi },
     { id: 'api', label: 'API Server', icon: Server },
     { id: 'advanced', label: t('settings.advanced'), icon: Code },
+    { id: 'recovery', label: 'Recovery', icon: RotateCcw },
   ];
 
   return (
@@ -386,43 +390,6 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       }}
     >
       <div className={`bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 h-[90vh] overflow-hidden flex flex-col ${contextSettings.backgroundGlowEnabled ? 'settings-glow' : ''} relative`}>
-        {autoSaveStatus && (
-          <div 
-            className="absolute bottom-4 right-4 z-[60] animate-in fade-in slide-in-from-bottom-2 duration-300"
-            role="status"
-            aria-live="polite"
-          >
-            <div
-              className={`flex items-center space-x-2 px-4 py-3 rounded-lg border shadow-xl backdrop-blur-sm ${
-                autoSaveStatus === "success"
-                  ? "bg-green-500/10 border-green-500/50 text-green-400"
-                  : "bg-red-500/10 border-red-500/50 text-red-400"
-              }`}
-              style={{
-                backgroundColor: autoSaveStatus === "success" 
-                  ? 'var(--app-success-surface, rgba(34, 197, 94, 0.1))'
-                  : 'var(--app-error-surface, rgba(239, 68, 68, 0.1))',
-                borderColor: autoSaveStatus === "success"
-                  ? 'var(--app-success-border, rgba(34, 197, 94, 0.5))'
-                  : 'var(--app-error-border, rgba(239, 68, 68, 0.5))',
-                color: autoSaveStatus === "success"
-                  ? 'var(--app-success-text, #4ade80)'
-                  : 'var(--app-error-text, #f87171)',
-              }}
-            >
-              {autoSaveStatus === "success" ? (
-                <CheckCircle size={18} className="flex-shrink-0" />
-              ) : (
-                <AlertCircle size={18} className="flex-shrink-0" />
-              )}
-              <span className="text-sm font-medium">
-                {autoSaveStatus === "success"
-                  ? t("settings.autoSaveSuccess")
-                  : t("settings.autoSaveError")}
-              </span>
-            </div>
-          </div>
-        )}
         <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">
             {t("settings.title")}
@@ -521,6 +488,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
               {activeTab === 'advanced' && (
                 <AdvancedSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'recovery' && (
+                <RecoverySettings onClose={onClose} />
               )}
             </div>
           </div>

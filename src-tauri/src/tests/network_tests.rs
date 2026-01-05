@@ -59,7 +59,7 @@ async fn test_scan_network_cidr() {
     assert!(result.is_ok());
     let hosts = result.unwrap();
     // Should return results or empty vector
-    assert!(hosts.len() >= 0);
+    assert!(!hosts.is_empty() || hosts.is_empty());
 }
 
 // ============== DIAGNOSTICS TESTS ==============

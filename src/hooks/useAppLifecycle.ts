@@ -8,6 +8,10 @@ import { ThemeManager } from "../utils/themeManager";
 import { SecureStorage } from "../utils/storage";
 import { Connection, ConnectionSession } from "../types/connection";
 import i18n, { loadLanguage } from "../i18n";
+import { IndexedDbService } from "../utils/indexedDbService";
+
+const CLEAN_EXIT_KEY = "mremote-clean-exit";
+const LAST_SESSION_KEY = "mremote-last-session-time";
 
 /**
  * Options for {@link useAppLifecycle}.
@@ -69,6 +73,7 @@ export const useAppLifecycle = ({
   const themeManager = ThemeManager.getInstance();
 
   const [isInitialized, setIsInitialized] = useState(false);
+  const [didUnexpectedClose, setDidUnexpectedClose] = useState(false);
   const hasReconnected = useRef(false);
   const reconnectingSessions = useRef<Set<string>>(new Set());
 
@@ -77,6 +82,33 @@ export const useAppLifecycle = ({
       console.log("Initializing app...");
       await settingsManager.initialize();
       console.log("Settings manager initialized");
+
+      // Check for unexpected close (if enabled in settings)
+      const initialSettings = settingsManager.getSettings();
+      if (initialSettings.detectUnexpectedClose) {
+        // Check both localStorage (set on beforeunload) and IndexedDB (for persistence)
+        const localCleanExit = localStorage.getItem(CLEAN_EXIT_KEY) === "true";
+        const dbCleanExit = await IndexedDbService.getItem<boolean>(CLEAN_EXIT_KEY);
+        const lastSession = await IndexedDbService.getItem<number>(LAST_SESSION_KEY);
+        
+        const wasCleanExit = localCleanExit || dbCleanExit;
+        
+        // If there was a previous session and it wasn't a clean exit, it was unexpected
+        if (lastSession !== null && !wasCleanExit) {
+          setDidUnexpectedClose(true);
+          settingsManager.logAction(
+            "warning",
+            "Unexpected close detected",
+            undefined,
+            "The application was not closed properly in the previous session",
+          );
+        }
+        
+        // Clear localStorage flag and reset IndexedDB for new session
+        localStorage.removeItem(CLEAN_EXIT_KEY);
+        await IndexedDbService.setItem(CLEAN_EXIT_KEY, false);
+        await IndexedDbService.setItem(LAST_SESSION_KEY, Date.now());
+      }
 
       await themeManager.loadSavedTheme();
       themeManager.injectThemeCSS();
@@ -161,6 +193,13 @@ export const useAppLifecycle = ({
   const handleBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {
       const settings = settingsManager.getSettings();
+      
+      // Mark as clean exit when user intentionally closes
+      if (settings.detectUnexpectedClose) {
+        // Use synchronous localStorage as IndexedDB won't complete in time
+        localStorage.setItem(CLEAN_EXIT_KEY, "true");
+      }
+      
       if (settings.warnOnExit && state.sessions.length > 0) {
         e.preventDefault();
         e.returnValue = t("dialogs.confirmExit");
@@ -323,5 +362,5 @@ export const useAppLifecycle = ({
     }
   }, [state.sessions, settingsManager]);
 
-  return { isInitialized };
+  return { isInitialized, didUnexpectedClose, dismissUnexpectedClose: () => setDidUnexpectedClose(false) };
 };

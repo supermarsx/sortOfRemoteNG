@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   UserX,
   Activity,
+  Upload,
 } from "lucide-react";
 import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
@@ -246,6 +247,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   return (
     <div className="relative">
       <div
+        data-connection-item="true"
         className={`group flex items-center h-8 px-2 cursor-pointer hover:bg-gray-700/50 transition-colors ${
           isSelected ? "bg-blue-600/20 text-blue-400" : "text-gray-300"
         } ${isDragging ? "opacity-60" : ""} ${isDragOver ? "border-l-2 border-blue-500" : ""}`}
@@ -558,6 +560,7 @@ interface ConnectionTreeProps {
   onDelete: (connection: Connection) => void;
   onDiagnostics: (connection: Connection) => void;
   onSessionDetach: (sessionId: string) => void;
+  onOpenImport?: () => void;
   enableReorder?: boolean;
 }
 
@@ -573,6 +576,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   onDelete,
   onDiagnostics,
   onSessionDetach,
+  onOpenImport,
   enableReorder = true,
 }) => {
   const { state, dispatch } = useConnections();
@@ -581,6 +585,8 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [panelMenuPosition, setPanelMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const panelMenuRef = useRef<HTMLDivElement>(null);
   const [connectOptionsTarget, setConnectOptionsTarget] = useState<Connection | null>(null);
   const [connectOptionsData, setConnectOptionsData] = useState<{
     username: string;
@@ -823,9 +829,34 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
     });
   }, [state.connections, state.filter]);
 
+  // Handle panel-level context menu (right-click on empty area)
+  const handlePanelContextMenu = useCallback((e: React.MouseEvent) => {
+    // Only show if clicking on the panel itself, not on a connection item
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-connection-item]')) {
+      return;
+    }
+    e.preventDefault();
+    setPanelMenuPosition({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  // Close panel menu when clicking outside
+  useEffect(() => {
+    if (!panelMenuPosition) return;
+    const handleClick = (event: MouseEvent) => {
+      if (panelMenuRef.current?.contains(event.target as Node)) return;
+      setPanelMenuPosition(null);
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [panelMenuPosition]);
+
   return (
     <>
-      <div className="flex-1 overflow-y-auto">
+      <div 
+        className="flex-1 overflow-y-auto"
+        onContextMenu={handlePanelContextMenu}
+      >
         {filteredConnections.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-500">
             <Monitor size={24} className="mb-2" />
@@ -835,6 +866,26 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           renderTree(buildTree(filteredConnections))
         )}
       </div>
+
+      {/* Panel context menu */}
+      {panelMenuPosition && onOpenImport && (
+        <div
+          ref={panelMenuRef}
+          className="fixed z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-[160px]"
+          style={{ left: panelMenuPosition.x, top: panelMenuPosition.y }}
+        >
+          <button
+            onClick={() => {
+              onOpenImport();
+              setPanelMenuPosition(null);
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+          >
+            <Upload size={14} />
+            Import Connections
+          </button>
+        </div>
+      )}
 
       {renameTarget && (
         <div

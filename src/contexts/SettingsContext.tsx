@@ -22,6 +22,7 @@ const defaultSettings: GlobalSettings = {
   warnOnDetachClose: true,
   quickConnectHistoryEnabled: true,
   quickConnectHistory: [],
+  detectUnexpectedClose: true,
   startMinimized: false,
   startMaximized: false,
   startWithSystem: false,

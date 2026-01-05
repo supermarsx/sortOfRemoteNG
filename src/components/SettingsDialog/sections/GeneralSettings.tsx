@@ -14,6 +14,7 @@ import {
   History,
   LogOut,
   Trash2,
+  ShieldAlert,
 } from "lucide-react";
 
 interface GeneralSettingsProps {
@@ -214,6 +215,17 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             />
             <LogOut className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
             <span className="text-gray-300 group-hover:text-white">{t("connections.warnOnExit")}</span>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.detectUnexpectedClose}
+              onChange={(e) => updateSettings({ detectUnexpectedClose: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <ShieldAlert className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
+            <span className="text-gray-300 group-hover:text-white">Detect unexpected app close</span>
           </label>
         </div>
       </div>

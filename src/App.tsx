@@ -83,6 +83,7 @@ const AppContent: React.FC = () => {
   const [showPerformanceMonitor, setShowPerformanceMonitor] = useState(false);
   const [showActionLog, setShowActionLog] = useState(false);
   const [showImportExport, setShowImportExport] = useState(false);
+  const [importExportInitialTab, setImportExportInitialTab] = useState<'export' | 'import'>('export');
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showProxyMenu, setShowProxyMenu] = useState(false);
   const [showWol, setShowWol] = useState(false);
@@ -1244,9 +1245,9 @@ const AppContent: React.FC = () => {
 
     if (appSettings.persistWindowPosition && appSettings.windowPosition) {
       const { x, y } = appSettings.windowPosition;
-      // Ensure position is not negative (off-screen)
-      const validX = Math.max(x || 0, 0);
-      const validY = Math.max(y || 0, 0);
+      // Allow negative coordinates for multi-monitor setups
+      const validX = x ?? 0;
+      const validY = y ?? 0;
       window.setPosition(new LogicalPosition(validX, validY)).catch((error) => {
         if (!isWindowPermissionError(error)) {
           console.error(error);
@@ -1462,14 +1463,16 @@ const AppContent: React.FC = () => {
           onSessionDetach={handleSessionDetach}
           onShowPasswordDialog={handleShowPasswordDialog}
           enableConnectionReorder={appSettings.enableConnectionReorder}
+          onOpenImport={() => {
+            setImportExportInitialTab('import');
+            setShowImportExport(true);
+          }}
         />
         {!state.sidebarCollapsed && (
           <div
-            className={`absolute top-0 ${resizerEdge} w-2 h-full cursor-col-resize bg-gray-700/50 hover:bg-blue-500 transition-all duration-200 group`}
+            className={`absolute top-0 ${resizerEdge} w-1 h-full cursor-col-resize hover:w-1.5 bg-gray-700/30 hover:bg-blue-500/60 transition-all duration-150`}
             onMouseDown={handleMouseDown}
-          >
-            <div className="absolute inset-y-0 left-1/2 transform -translate-x-1/2 w-0.5 bg-gray-500 group-hover:bg-blue-400 transition-colors duration-200"></div>
-          </div>
+          />
         )}
       </div>
     );
@@ -1818,6 +1821,7 @@ const AppContent: React.FC = () => {
       <ImportExport
         isOpen={showImportExport}
         onClose={() => setShowImportExport(false)}
+        initialTab={importExportInitialTab}
       />
 
       <PerformanceMonitor

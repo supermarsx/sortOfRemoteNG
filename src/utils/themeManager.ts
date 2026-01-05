@@ -204,12 +204,6 @@ export class ThemeManager {
       secondary: "#6b7280",
       accent: "#4b5563",
     },
-    // Custom placeholder (will be overridden by customAccent)
-    custom: {
-      primary: "#3b82f6",
-      secondary: "#2563eb",
-      accent: "#1d4ed8",
-    },
   };
 
   // Containers for user-defined themes and color schemes
@@ -241,12 +235,18 @@ export class ThemeManager {
     customAccent?: string,
   ): void {
     const theme = this.getAllThemes()[themeName];
-    // For custom scheme, use blue as base but override with customAccent
-    const schemeKey = colorScheme === "custom" ? "blue" : colorScheme;
-    const colors = this.getAllColorSchemes()[schemeKey];
+    const colors = this.getAllColorSchemes()[colorScheme];
 
     if (!theme || !colors) {
-      console.error("Invalid theme or color scheme");
+      console.error("Invalid theme or color scheme:", themeName, colorScheme);
+      // Fallback to defaults
+      const fallbackTheme = this.getAllThemes()["dark"];
+      const fallbackColors = this.getAllColorSchemes()["blue"];
+      if (fallbackTheme && fallbackColors) {
+        this.currentTheme = "dark" as Theme;
+        this.currentColorScheme = "blue" as ColorScheme;
+        this.applyResolvedTheme("dark", "blue", customAccent);
+      }
       return;
     }
 
@@ -256,8 +256,8 @@ export class ThemeManager {
       root.style.setProperty(`--color-${key}`, value);
     });
 
-    if (colorScheme === "custom" && customAccent) {
-      // Custom scheme: derive full color scheme from the custom accent color
+    if (customAccent) {
+      // Custom accent: derive full color scheme from the custom accent color
       root.style.setProperty("--color-primary", customAccent);
       root.style.setProperty(
         "--color-secondary",
@@ -346,7 +346,7 @@ export class ThemeManager {
   }
 
   getAvailableColorSchemes(): ColorScheme[] {
-    return [...Object.keys(this.getAllColorSchemes()), "other"] as ColorScheme[];
+    return Object.keys(this.getAllColorSchemes()) as ColorScheme[];
   }
 
   private static shadeColor(hex: string, amount: number): string {
@@ -381,7 +381,21 @@ export class ThemeManager {
       (await IndexedDbService.getItem<ColorScheme>("mremote-color-scheme")) ??
       "blue";
 
-    this.applyTheme(savedTheme, savedColorScheme);
+    // Validate saved values - migrate invalid values to defaults
+    const validTheme = this.getAllThemes()[savedTheme] ? savedTheme : "dark";
+    const validColorScheme = this.getAllColorSchemes()[savedColorScheme] ? savedColorScheme : "blue";
+
+    // If values were invalid, persist the corrected values
+    if (validTheme !== savedTheme) {
+      console.warn(`Invalid theme "${savedTheme}" found, resetting to "${validTheme}"`);
+      await IndexedDbService.setItem("mremote-theme", validTheme);
+    }
+    if (validColorScheme !== savedColorScheme) {
+      console.warn(`Invalid color scheme "${savedColorScheme}" found, resetting to "${validColorScheme}"`);
+      await IndexedDbService.setItem("mremote-color-scheme", validColorScheme);
+    }
+
+    this.applyTheme(validTheme as Theme, validColorScheme as ColorScheme);
   }
 
   private async saveCustomThemes(): Promise<void> {

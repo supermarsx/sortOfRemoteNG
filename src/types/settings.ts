@@ -36,8 +36,6 @@ export const ColorSchemes = [
   // Neutrals
   "slate",
   "grey",
-  // Custom
-  "custom",
 ] as const;
 // Allow custom color scheme names beyond the predefined list
 export type ColorScheme = (typeof ColorSchemes)[number] | string;
@@ -69,6 +67,7 @@ export interface GlobalSettings {
   warnOnDetachClose: boolean;
   quickConnectHistoryEnabled: boolean;
   quickConnectHistory: QuickConnectHistoryEntry[];
+  detectUnexpectedClose: boolean;
 
   // Startup Settings
   startMinimized: boolean;
