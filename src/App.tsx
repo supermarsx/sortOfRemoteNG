@@ -1516,6 +1516,7 @@ const AppContent: React.FC = () => {
             onSessionClose={handleSessionClose}
             onSessionDetach={handleSessionDetach}
             enableReorder={appSettings.enableTabReorder}
+            middleClickCloseTab={settings.middleClickCloseTab}
           />
 
           {/* Session viewer */}
@@ -1531,6 +1532,7 @@ const AppContent: React.FC = () => {
                 onSessionDetach={handleSessionDetach}
                 renderSession={(session) => <SessionViewer session={session} />}
                 showTabBar={false}
+                middleClickCloseTab={settings.middleClickCloseTab}
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-gray-400">

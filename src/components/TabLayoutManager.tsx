@@ -13,6 +13,7 @@ interface TabLayoutManagerProps {
   onSessionDetach: (sessionId: string) => void;
   renderSession: (session: ConnectionSession) => React.ReactNode;
   showTabBar?: boolean;
+  middleClickCloseTab?: boolean;
 }
 
 const orderSessions = (sessions: ConnectionSession[], activeSessionId?: string) => {
@@ -60,11 +61,20 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   onSessionDetach,
   renderSession,
   showTabBar = true,
+  middleClickCloseTab = true,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showCustomGrid, setShowCustomGrid] = useState(false);
   const [customCols, setCustomCols] = useState(2);
   const [customRows, setCustomRows] = useState(2);
+
+  const handleMiddleClick = (sessionId: string, e: React.MouseEvent) => {
+    if (e.button === 1 && middleClickCloseTab) {
+      e.preventDefault();
+      e.stopPropagation();
+      onSessionClose(sessionId);
+    }
+  };
 
   const orderedSessions = useMemo(
     () => orderSessions(sessions, activeSessionId),
@@ -185,6 +195,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                     : "text-gray-300 hover:bg-gray-700/50"
                 }`}
                 onClick={() => onSessionSelect(session.id)}
+                onAuxClick={(e) => handleMiddleClick(session.id, e)}
               >
                 <span className="truncate mr-2">{session.name}</span>
                 <button

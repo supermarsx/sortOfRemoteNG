@@ -58,35 +58,152 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                             connection.basicAuthUsername && 
                             connection.basicAuthPassword;
 
-  // Inject a script to intercept link clicks and form submissions in proxy mode
+  // Create a blob URL map for proxied resources
+  const blobUrlCache = useRef<Map<string, string>>(new Map());
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    const cache = blobUrlCache.current;
+    return () => {
+      cache.forEach((blobUrl) => URL.revokeObjectURL(blobUrl));
+      cache.clear();
+    };
+  }, []);
+
+  // Proxy a resource and return a blob URL
+  const proxyResource = useCallback(async (url: string): Promise<string> => {
+    // Check cache first
+    if (blobUrlCache.current.has(url)) {
+      return blobUrlCache.current.get(url)!;
+    }
+
+    try {
+      const response: HttpResponse = await invoke('http_get', {
+        url,
+        username: requiresBasicAuth ? connection?.basicAuthUsername : null,
+        password: requiresBasicAuth ? connection?.basicAuthPassword : null,
+        headers: null,
+      });
+
+      if (response.status >= 200 && response.status < 400) {
+        // Determine MIME type
+        const contentType = response.content_type || 'application/octet-stream';
+        
+        // Convert response body to blob - check if it's binary data (base64)
+        let blob: Blob;
+        if (contentType.startsWith('image/') || contentType.includes('font') || 
+            contentType.includes('application/javascript') || contentType.includes('text/css')) {
+          // For binary content, try to decode as base64 if the backend sends it that way
+          // Otherwise use the raw body
+          try {
+            const binaryString = atob(response.body);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            blob = new Blob([bytes], { type: contentType });
+          } catch {
+            // Not base64, use as text
+            blob = new Blob([response.body], { type: contentType });
+          }
+        } else {
+          blob = new Blob([response.body], { type: contentType });
+        }
+        
+        const blobUrl = URL.createObjectURL(blob);
+        blobUrlCache.current.set(url, blobUrl);
+        return blobUrl;
+      }
+    } catch (error) {
+      console.warn('Failed to proxy resource:', url, error);
+    }
+    
+    return url; // Fall back to original URL
+  }, [connection, requiresBasicAuth]);
+
+  // Inject a script to intercept link clicks, form submissions, and resource loading
   const injectNavigationInterceptor = useCallback((html: string, baseUrl: string): string => {
     const interceptorScript = `
       <script>
         (function() {
+          // Map to track pending resource proxy requests
+          var pendingResources = {};
+
+          // Listen for proxied resource responses from parent
+          window.addEventListener('message', function(e) {
+            if (e.data && e.data.type === 'resource_proxied') {
+              // Find images with matching src and update them
+              var imgs = document.querySelectorAll('img[src="' + e.data.originalUrl + '"]');
+              imgs.forEach(function(img) {
+                img.src = e.data.blobUrl;
+              });
+              // Also try to find by element ID
+              if (e.data.elementId && pendingResources[e.data.elementId]) {
+                pendingResources[e.data.elementId].src = e.data.blobUrl;
+                delete pendingResources[e.data.elementId];
+              }
+            }
+          });
+
           // Intercept link clicks
           document.addEventListener('click', function(e) {
             var target = e.target;
             while (target && target.tagName !== 'A') {
               target = target.parentElement;
             }
-            if (target && target.href && !target.href.startsWith('javascript:') && !target.href.startsWith('#')) {
+            if (target && target.href && !target.href.startsWith('javascript:') && !target.href.startsWith('#') && !target.href.startsWith('blob:')) {
               e.preventDefault();
               window.parent.postMessage({ type: 'navigate', url: target.href }, '*');
             }
           }, true);
 
-          // Intercept form submissions
+          // Intercept form submissions (both GET and POST)
           document.addEventListener('submit', function(e) {
             var form = e.target;
-            if (form.method && form.method.toLowerCase() === 'get') {
-              e.preventDefault();
-              var formData = new FormData(form);
+            e.preventDefault();
+            var formData = new FormData(form);
+            var url = form.action || window.location.href;
+            
+            if (form.method && form.method.toLowerCase() === 'post') {
+              // For POST, serialize form data
+              var data = {};
+              formData.forEach(function(value, key) { data[key] = value; });
+              window.parent.postMessage({ 
+                type: 'form_submit', 
+                url: url, 
+                method: 'POST',
+                data: data
+              }, '*');
+            } else {
+              // GET request
               var params = new URLSearchParams(formData);
-              var url = form.action || window.location.href;
               var separator = url.includes('?') ? '&' : '?';
               window.parent.postMessage({ type: 'navigate', url: url + separator + params.toString() }, '*');
             }
           }, true);
+
+          // Request resource proxying for failed images
+          document.addEventListener('error', function(e) {
+            var target = e.target;
+            if (target.tagName === 'IMG' && target.src && !target.src.startsWith('blob:') && !target.src.startsWith('data:') && !target.dataset.proxyAttempted) {
+              target.dataset.proxyAttempted = 'true';
+              var elementId = target.id || ('img_' + Math.random().toString(36).substr(2, 9));
+              pendingResources[elementId] = target;
+              window.parent.postMessage({ type: 'proxy_resource', url: target.src, elementId: elementId }, '*');
+            }
+          }, true);
+
+          // Also proactively try to proxy images that might need auth
+          setTimeout(function() {
+            document.querySelectorAll('img').forEach(function(img) {
+              if (img.src && !img.complete && !img.src.startsWith('blob:') && !img.src.startsWith('data:') && !img.dataset.proxyAttempted) {
+                img.dataset.proxyAttempted = 'true';
+                var elementId = img.id || ('img_' + Math.random().toString(36).substr(2, 9));
+                pendingResources[elementId] = img;
+                window.parent.postMessage({ type: 'proxy_resource', url: img.src, elementId: elementId }, '*');
+              }
+            });
+          }, 500);
         })();
       </script>
     `;
@@ -102,7 +219,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   }, []);
 
   // Fetch content via Tauri backend with credentials
-  const fetchWithCredentials = useCallback(async (url: string, addToHistory = true) => {
+  const fetchWithCredentials = useCallback(async (url: string, addToHistory = true, method: string = 'GET', postData?: Record<string, string>) => {
     setIsLoading(true);
     setLoadError('');
     setHtmlContent('');
@@ -112,7 +229,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         url,
         username: requiresBasicAuth ? connection?.basicAuthUsername : null,
         password: requiresBasicAuth ? connection?.basicAuthPassword : null,
-        headers: null,
+        headers: method === 'POST' && postData ? {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        } : null,
+        // Note: For POST, we'd need a separate http_post command or modify http_get
+        // For now, POST data is passed via query string as a workaround
       });
 
       if (response.status >= 200 && response.status < 400) {
@@ -123,7 +244,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         
         // Simple URL rewriting for resources
         content = content.replace(
-          /(href|src)=["'](?!https?:\/\/|data:|javascript:|#)([^"']+)["']/gi,
+          /(href|src)=["'](?!https?:\/\/|data:|javascript:|#|blob:)([^"']+)["']/gi,
           (match, attr, path) => {
             const absoluteUrl = new URL(path, baseUrl).href;
             return `${attr}="${absoluteUrl}"`;
@@ -167,16 +288,40 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
   // Listen for navigation messages from the iframe
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data && event.data.type === 'navigate' && event.data.url) {
+    const handleMessage = async (event: MessageEvent) => {
+      if (!event.data) return;
+
+      if (event.data.type === 'navigate' && event.data.url) {
         // Navigate to the clicked URL through the proxy
         fetchWithCredentials(event.data.url);
+      } else if (event.data.type === 'form_submit' && event.data.url) {
+        // Handle form submission
+        if (event.data.method === 'POST') {
+          // For POST, we need to encode the data
+          const params = new URLSearchParams(event.data.data).toString();
+          const separator = event.data.url.includes('?') ? '&' : '?';
+          // Workaround: append POST data to URL for GET request (many forms work this way)
+          fetchWithCredentials(event.data.url + separator + params);
+        } else {
+          fetchWithCredentials(event.data.url);
+        }
+      } else if (event.data.type === 'proxy_resource' && event.data.url) {
+        // Proxy the resource and send blob URL back
+        const blobUrl = await proxyResource(event.data.url);
+        if (iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage({
+            type: 'resource_proxied',
+            originalUrl: event.data.url,
+            blobUrl: blobUrl,
+            elementId: event.data.elementId
+          }, '*');
+        }
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [fetchWithCredentials]);
+  }, [fetchWithCredentials, proxyResource]);
 
   // Initial load with credentials if configured
   useEffect(() => {

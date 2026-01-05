@@ -165,6 +165,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
                 : ""
             } transition-all`}
             onClick={() => onSessionSelect(session.id)}
+            onAuxClick={(e) => handleMiddleClick(session.id, e)}
             onDragStart={(e) => handleDragStart(e, session.id)}
             onDragOver={(e) => handleDragOver(e, session.id)}
             onDragEnd={handleDragEnd}

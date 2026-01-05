@@ -52,7 +52,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   layout: [
     'persistWindowSize', 'persistWindowPosition', 'persistSidebarWidth',
     'persistSidebarPosition', 'persistSidebarCollapsed', 'enableTabReorder',
-    'enableConnectionReorder', 'showQuickConnectIcon', 'showCollectionSwitcherIcon',
+    'enableConnectionReorder', 'middleClickCloseTab', 'showQuickConnectIcon', 'showCollectionSwitcherIcon',
     'showImportExportIcon', 'showSettingsIcon', 'showProxyMenuIcon',
     'showShortcutManagerIcon', 'showPerformanceMonitorIcon', 'showActionLogIcon',
     'showDevtoolsIcon', 'showSecurityIcon', 'showLanguageSelectorIcon', 'showWolIcon',
@@ -147,6 +147,7 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
   enableZoom: true,
   enableTabReorder: true,
   enableConnectionReorder: true,
+  middleClickCloseTab: true,
   enableStatusChecking: true,
   statusCheckInterval: 30,
   statusCheckMethod: 'socket',
