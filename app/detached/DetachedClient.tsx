@@ -240,19 +240,26 @@ const DetachedSessionContent: React.FC<{
       let terminalBuffer = "";
       try {
         const bufferPromise = new Promise<string>((resolve) => {
-          const timeout = setTimeout(() => resolve(""), 500);
+          const timeout = setTimeout(() => {
+            console.log("Buffer request timed out");
+            resolve("");
+          }, 1000); // Increased timeout
+          
           listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
             if (event.payload.sessionId === activeSession.id) {
               clearTimeout(timeout);
+              console.log("Received buffer response:", event.payload.buffer?.length || 0, "chars");
               resolve(event.payload.buffer);
             }
           }).then(unlisten => {
-            setTimeout(() => unlisten(), 600);
+            setTimeout(() => unlisten(), 1200);
           });
         });
         
+        console.log("Requesting terminal buffer for session:", activeSession.id);
         await emit("request-terminal-buffer", { sessionId: activeSession.id });
         terminalBuffer = await bufferPromise;
+        console.log("Got terminal buffer:", terminalBuffer?.length || 0, "chars");
       } catch (error) {
         console.warn("Failed to get terminal buffer:", error);
       }

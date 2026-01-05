@@ -409,19 +409,26 @@ const AppContent: React.FC = () => {
       let terminalBuffer = "";
       try {
         const bufferPromise = new Promise<string>((resolve) => {
-          const timeout = setTimeout(() => resolve(""), 500);
+          const timeout = setTimeout(() => {
+            console.log("Buffer request timed out for detach");
+            resolve("");
+          }, 1000); // Increased timeout
+          
           listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
             if (event.payload.sessionId === sessionId) {
               clearTimeout(timeout);
+              console.log("Received buffer for detach:", event.payload.buffer?.length || 0, "chars");
               resolve(event.payload.buffer);
             }
           }).then(unlisten => {
-            setTimeout(() => unlisten(), 600);
+            setTimeout(() => unlisten(), 1200);
           });
         });
         
+        console.log("Requesting terminal buffer for detach:", sessionId);
         await emit("request-terminal-buffer", { sessionId });
         terminalBuffer = await bufferPromise;
+        console.log("Got terminal buffer for detach:", terminalBuffer?.length || 0, "chars");
       } catch (error) {
         console.warn("Failed to get terminal buffer:", error);
       }

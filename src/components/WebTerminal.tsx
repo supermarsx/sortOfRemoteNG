@@ -65,27 +65,51 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
   // Serialize terminal buffer content for detach/reattach
   const serializeBuffer = useCallback(() => {
-    if (!termRef.current) return "";
+    if (!termRef.current) {
+      console.log("serializeBuffer: no terminal ref");
+      return "";
+    }
     const buffer = termRef.current.buffer.active;
     const lines: string[] = [];
+    
+    // Get all non-empty lines from buffer
+    let lastNonEmptyLine = -1;
     for (let i = 0; i < buffer.length; i++) {
       const line = buffer.getLine(i);
       if (line) {
-        lines.push(line.translateToString(true));
+        const text = line.translateToString(true);
+        lines.push(text);
+        if (text.trim()) {
+          lastNonEmptyLine = i;
+        }
       }
     }
-    return lines.join("\n");
+    
+    // Trim trailing empty lines but keep internal ones
+    const trimmedLines = lastNonEmptyLine >= 0 ? lines.slice(0, lastNonEmptyLine + 1) : [];
+    console.log("serializeBuffer: captured", trimmedLines.length, "lines");
+    return trimmedLines.join("\n");
   }, []);
 
   // Restore terminal buffer from serialized content
   const restoreBuffer = useCallback((content: string) => {
     if (!termRef.current || !content || isDisposed.current) return;
     try {
+      // Check if terminal is ready for writing
+      const core = (termRef.current as any)?._core;
+      const renderService = core?.renderService ?? core?._renderService;
+      if (!renderService?.dimensions) {
+        // Terminal not ready, retry later
+        setTimeout(() => restoreBuffer(content), 100);
+        return;
+      }
+      
       termRef.current.clear();
       const lines = content.split("\n");
       for (const line of lines) {
         termRef.current.writeln(line);
       }
+      console.log("Terminal buffer restored:", lines.length, "lines");
     } catch (err) {
       console.error("Failed to restore terminal buffer:", err);
     }
@@ -111,15 +135,40 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     };
   }, [session.id, serializeBuffer]);
 
-  // Restore buffer from session data on mount
+  // Track if we've already restored buffer for this session
+  const bufferRestoredRef = useRef(false);
+  
+  // Restore buffer from session data on mount - with retry logic
   useEffect(() => {
-    if (session.terminalBuffer && termRef.current) {
-      // Delay to ensure terminal is initialized
-      const timer = setTimeout(() => {
-        restoreBuffer(session.terminalBuffer!);
-      }, 200);
-      return () => clearTimeout(timer);
-    }
+    if (!session.terminalBuffer || bufferRestoredRef.current) return;
+    
+    const tryRestore = (attempts = 0) => {
+      if (attempts > 30) {
+        console.warn("Failed to restore terminal buffer after max attempts");
+        return;
+      }
+      
+      if (!termRef.current) {
+        // Terminal not created yet, retry
+        setTimeout(() => tryRestore(attempts + 1), 100);
+        return;
+      }
+      
+      const core = (termRef.current as any)?._core;
+      const renderService = core?.renderService ?? core?._renderService;
+      if (!renderService?.dimensions) {
+        // Terminal not ready, retry
+        setTimeout(() => tryRestore(attempts + 1), 100);
+        return;
+      }
+      
+      bufferRestoredRef.current = true;
+      restoreBuffer(session.terminalBuffer!);
+    };
+    
+    // Start restore attempt after a small delay
+    const timer = setTimeout(() => tryRestore(0), 300);
+    return () => clearTimeout(timer);
   }, [session.terminalBuffer, restoreBuffer]);
 
   const canRender = useCallback(() => {
