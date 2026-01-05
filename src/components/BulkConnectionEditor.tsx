@@ -182,7 +182,7 @@ export const BulkConnectionEditor: React.FC<BulkConnectionEditorProps> = ({
   const deleteConnection = (id: string) => {
     const connection = connections.find(c => c.id === id);
     if (connection) {
-      dispatch({ type: 'DELETE_CONNECTION', payload: connection });
+      dispatch({ type: 'DELETE_CONNECTION', payload: id });
     }
   };
 

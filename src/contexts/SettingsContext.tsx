@@ -23,6 +23,7 @@ const defaultSettings: GlobalSettings = {
   quickConnectHistoryEnabled: true,
   quickConnectHistory: [],
   detectUnexpectedClose: true,
+  confirmMainAppClose: false,
   hideQuickStartMessage: false,
   startMinimized: false,
   startMaximized: false,

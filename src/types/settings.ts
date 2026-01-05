@@ -68,6 +68,7 @@ export interface GlobalSettings {
   quickConnectHistoryEnabled: boolean;
   quickConnectHistory: QuickConnectHistoryEntry[];
   detectUnexpectedClose: boolean;
+  confirmMainAppClose: boolean;
   hideQuickStartMessage: boolean;
 
   // Startup Settings

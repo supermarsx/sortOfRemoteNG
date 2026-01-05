@@ -10,6 +10,8 @@ import {
   AlertCircle,
   Bug,
   Info,
+  ShieldAlert,
+  MessageSquareWarning,
 } from 'lucide-react';
 
 interface AdvancedSettingsProps {
@@ -120,6 +122,48 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
               <span className="text-gray-300 group-hover:text-white">Override tab names with hostname</span>
               <p className="text-xs text-gray-500 mt-0.5">
                 Display the server hostname instead of the connection name in tabs
+              </p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Diagnostics Section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-yellow-400" />
+          Diagnostics
+        </h4>
+
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.detectUnexpectedClose ?? true}
+              onChange={(e) => updateSettings({ detectUnexpectedClose: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <ShieldAlert className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
+            <div>
+              <span className="text-gray-300 group-hover:text-white">Detect unexpected app close</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Show recovery options if the app was closed unexpectedly
+              </p>
+            </div>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.confirmMainAppClose ?? false}
+              onChange={(e) => updateSettings({ confirmMainAppClose: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <MessageSquareWarning className="w-4 h-4 text-gray-500 group-hover:text-orange-400" />
+            <div>
+              <span className="text-gray-300 group-hover:text-white">Confirm main app close</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Show a confirmation dialog before closing the main window
               </p>
             </div>
           </label>
