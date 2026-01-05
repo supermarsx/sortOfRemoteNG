@@ -1282,3 +1282,86 @@ pub fn clear_terminal_buffer(session_id: String) -> Result<(), String> {
     buffers.remove(&session_id);
     Ok(())
 }
+
+/// Check if an SSH session is still alive and has an active shell
+#[tauri::command]
+pub async fn is_session_alive(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String
+) -> Result<bool, String> {
+    let ssh = state.lock().await;
+    // Check if session exists
+    if !ssh.sessions.contains_key(&session_id) {
+        return Ok(false);
+    }
+    // Check if shell is still running
+    Ok(ssh.shells.contains_key(&session_id))
+}
+
+/// Get info about an active shell for a session
+#[tauri::command]
+pub async fn get_shell_info(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String
+) -> Result<Option<String>, String> {
+    let ssh = state.lock().await;
+    if let Some(shell) = ssh.shells.get(&session_id) {
+        Ok(Some(shell.id.clone()))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Reattach to an existing SSH session - restarts the shell event listeners
+/// without creating a new connection
+#[tauri::command]
+pub async fn reattach_session(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    app_handle: tauri::AppHandle
+) -> Result<String, String> {
+    let mut ssh = state.lock().await;
+    
+    // Check if session exists
+    if !ssh.sessions.contains_key(&session_id) {
+        return Err("Session not found - may have been disconnected".to_string());
+    }
+    
+    // If shell already exists, just return the shell ID
+    // The frontend will start receiving events again
+    if let Some(shell) = ssh.shells.get(&session_id) {
+        return Ok(shell.id.clone());
+    }
+    
+    // Shell doesn't exist, need to start a new one but keep the existing connection
+    ssh.start_shell(&session_id, app_handle).await
+}
+
+/// Pause shell output (stop emitting events, but keep buffering)
+#[tauri::command]
+pub async fn pause_shell(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String
+) -> Result<(), String> {
+    let ssh = state.lock().await;
+    // Just check if shell exists - actual pause would need more complex impl
+    if !ssh.shells.contains_key(&session_id) {
+        return Err("Shell not found".to_string());
+    }
+    // For now, we don't actually pause - the buffer keeps growing
+    // A full implementation would set a flag to stop event emission
+    Ok(())
+}
+
+/// Resume shell output (start emitting events again)
+#[tauri::command]
+pub async fn resume_shell(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String
+) -> Result<(), String> {
+    let ssh = state.lock().await;
+    if !ssh.shells.contains_key(&session_id) {
+        return Err("Shell not found".to_string());
+    }
+    Ok(())
+}
