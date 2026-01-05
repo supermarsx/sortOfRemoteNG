@@ -39,13 +39,26 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
     "semilight",
   ];
   const builtinSchemes = [
-    "blue",
-    "green",
-    "purple",
     "red",
+    "rose",
+    "pink",
     "orange",
+    "amber",
+    "yellow",
+    "lime",
+    "green",
+    "emerald",
     "teal",
+    "cyan",
+    "sky",
+    "blue",
+    "indigo",
+    "violet",
+    "purple",
+    "fuchsia",
+    "slate",
     "grey",
+    "custom",
   ];
 
   const themeOptions = themes.map((tName) => {

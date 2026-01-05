@@ -172,8 +172,6 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   };
 
   const renderTabsLayout = () => {
-    const active = sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
-
     return (
       <div className="flex flex-col h-full">
         {showTabBar && (
@@ -212,7 +210,20 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
             ))}
           </div>
         )}
-        <div className="flex-1 overflow-hidden">{active ? renderSession(active) : null}</div>
+        <div className="flex-1 overflow-hidden relative">
+          {sessions.map((session) => (
+            <div
+              key={session.id}
+              className="absolute inset-0"
+              style={{
+                visibility: session.id === activeSessionId ? "visible" : "hidden",
+                zIndex: session.id === activeSessionId ? 1 : 0,
+              }}
+            >
+              {renderSession(session)}
+            </div>
+          ))}
+        </div>
       </div>
     );
   };

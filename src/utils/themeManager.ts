@@ -102,40 +102,113 @@ export class ThemeManager {
   };
 
   private colorSchemes: Record<string, Record<string, string>> = {
-    blue: {
-      primary: "#3b82f6",
-      secondary: "#1d4ed8",
-      accent: "#1e40af",
-    },
-    green: {
-      primary: "#10b981",
-      secondary: "#059669",
-      accent: "#047857",
-    },
-    purple: {
-      primary: "#8b5cf6",
-      secondary: "#7c3aed",
-      accent: "#6d28d9",
-    },
+    // Reds - warm, passionate colors
     red: {
       primary: "#ef4444",
       secondary: "#dc2626",
       accent: "#b91c1c",
     },
+    rose: {
+      primary: "#f43f5e",
+      secondary: "#e11d48",
+      accent: "#be123c",
+    },
+    pink: {
+      primary: "#ec4899",
+      secondary: "#db2777",
+      accent: "#be185d",
+    },
+    // Oranges - energetic, warm colors
     orange: {
       primary: "#f97316",
       secondary: "#ea580c",
       accent: "#c2410c",
+    },
+    amber: {
+      primary: "#f59e0b",
+      secondary: "#d97706",
+      accent: "#b45309",
+    },
+    // Yellows - bright, optimistic colors
+    yellow: {
+      primary: "#eab308",
+      secondary: "#ca8a04",
+      accent: "#a16207",
+    },
+    lime: {
+      primary: "#84cc16",
+      secondary: "#65a30d",
+      accent: "#4d7c0f",
+    },
+    // Greens - natural, calming colors
+    green: {
+      primary: "#22c55e",
+      secondary: "#16a34a",
+      accent: "#15803d",
+    },
+    emerald: {
+      primary: "#10b981",
+      secondary: "#059669",
+      accent: "#047857",
     },
     teal: {
       primary: "#14b8a6",
       secondary: "#0d9488",
       accent: "#0f766e",
     },
+    // Blues - professional, trustworthy colors
+    cyan: {
+      primary: "#06b6d4",
+      secondary: "#0891b2",
+      accent: "#0e7490",
+    },
+    sky: {
+      primary: "#0ea5e9",
+      secondary: "#0284c7",
+      accent: "#0369a1",
+    },
+    blue: {
+      primary: "#3b82f6",
+      secondary: "#2563eb",
+      accent: "#1d4ed8",
+    },
+    indigo: {
+      primary: "#6366f1",
+      secondary: "#4f46e5",
+      accent: "#4338ca",
+    },
+    // Purples - creative, luxurious colors
+    violet: {
+      primary: "#8b5cf6",
+      secondary: "#7c3aed",
+      accent: "#6d28d9",
+    },
+    purple: {
+      primary: "#a855f7",
+      secondary: "#9333ea",
+      accent: "#7e22ce",
+    },
+    fuchsia: {
+      primary: "#d946ef",
+      secondary: "#c026d3",
+      accent: "#a21caf",
+    },
+    // Neutrals - subtle, professional colors
+    slate: {
+      primary: "#64748b",
+      secondary: "#475569",
+      accent: "#334155",
+    },
     grey: {
       primary: "#9ca3af",
       secondary: "#6b7280",
       accent: "#4b5563",
+    },
+    // Custom placeholder (will be overridden by customAccent)
+    custom: {
+      primary: "#3b82f6",
+      secondary: "#2563eb",
+      accent: "#1d4ed8",
     },
   };
 
@@ -168,7 +241,8 @@ export class ThemeManager {
     customAccent?: string,
   ): void {
     const theme = this.getAllThemes()[themeName];
-    const schemeKey = colorScheme === "other" ? "blue" : colorScheme;
+    // For custom scheme, use blue as base but override with customAccent
+    const schemeKey = colorScheme === "custom" ? "blue" : colorScheme;
     const colors = this.getAllColorSchemes()[schemeKey];
 
     if (!theme || !colors) {
@@ -182,16 +256,16 @@ export class ThemeManager {
       root.style.setProperty(`--color-${key}`, value);
     });
 
-    if (colorScheme === "other") {
-      const accent = customAccent || colors.primary;
-      root.style.setProperty("--color-primary", accent);
+    if (colorScheme === "custom" && customAccent) {
+      // Custom scheme: derive full color scheme from the custom accent color
+      root.style.setProperty("--color-primary", customAccent);
       root.style.setProperty(
         "--color-secondary",
-        ThemeManager.shadeColor(accent, -12),
+        ThemeManager.shadeColor(customAccent, -12),
       );
       root.style.setProperty(
         "--color-accent",
-        ThemeManager.shadeColor(accent, -24),
+        ThemeManager.shadeColor(customAccent, -24),
       );
     } else {
       root.style.setProperty("--color-primary", colors.primary);

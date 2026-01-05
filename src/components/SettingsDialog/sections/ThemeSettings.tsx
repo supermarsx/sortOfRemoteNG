@@ -36,7 +36,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
       value: scheme,
       label: formatLabel(scheme),
       color:
-        scheme === "other"
+        scheme === "custom"
           ? accent
           : themeManager.getColorSchemeConfig(scheme)?.primary ?? "#3b82f6",
     }));
@@ -45,7 +45,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
   const handleAccentChange = (value: string) => {
     updateSettings({
       primaryAccentColor: value,
-      colorScheme: "other",
+      colorScheme: "custom",
     });
   };
 
@@ -188,9 +188,21 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
             <span className="text-sm text-gray-300">Enable background glow effect</span>
           </label>
 
+          <label className={`flex items-center space-x-3 cursor-pointer ${!settings.backgroundGlowEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+            <input
+              type="checkbox"
+              checked={settings.backgroundGlowFollowsColorScheme}
+              onChange={(e) =>
+                updateSettings({ backgroundGlowFollowsColorScheme: e.target.checked })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <span className="text-sm text-gray-300">Glow follows color scheme</span>
+          </label>
+
           <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 ${!settings.backgroundGlowEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            <div className="space-y-1">
-              <label className="text-xs text-gray-400">Color</label>
+            <div className={`space-y-1 ${settings.backgroundGlowFollowsColorScheme ? 'opacity-50 pointer-events-none' : ''}`}>
+              <label className="text-xs text-gray-400">Color {settings.backgroundGlowFollowsColorScheme && '(auto)'}</label>
               <input
                 type="color"
                 value={settings.backgroundGlowColor || "#2563eb"}

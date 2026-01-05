@@ -46,6 +46,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   reduceMotion: false,
 
   backgroundGlowEnabled: true,
+  backgroundGlowFollowsColorScheme: true,
   backgroundGlowColor: "#2563eb",
   backgroundGlowOpacity: 0.25,
   backgroundGlowRadius: 520,
@@ -109,6 +110,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   enableZoom: true,
   enableTabReorder: true,
   enableConnectionReorder: true,
+  middleClickCloseTab: true,
   colorTags: {},
 
   enableStatusChecking: true,

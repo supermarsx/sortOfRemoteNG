@@ -34,6 +34,11 @@ describe('ConnectionProvider auto-save', () => {
   it('writes empty list after deleting all connections', async () => {
     const { result } = renderHook(() => useConnections(), { wrapper });
 
+    // Must call loadData first to enable auto-save
+    await act(async () => {
+      await result.current.loadData();
+    });
+
     const conn: Connection = {
       id: 'c1',
       name: 'c1',

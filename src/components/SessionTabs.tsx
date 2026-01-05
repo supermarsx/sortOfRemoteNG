@@ -64,6 +64,7 @@ interface SessionTabsProps {
   onSessionClose: (sessionId: string) => void;
   onSessionDetach: (sessionId: string) => void;
   enableReorder?: boolean;
+  middleClickCloseTab?: boolean;
 }
 
 export const SessionTabs: React.FC<SessionTabsProps> = ({
@@ -72,6 +73,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   onSessionClose,
   onSessionDetach,
   enableReorder = true,
+  middleClickCloseTab = true,
 }) => {
   const { state, dispatch } = useConnections();
   const sessions = state.sessions.filter((session) => !session.layout?.isDetached);
@@ -81,6 +83,15 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   const handleCloseSession = (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     onSessionClose(sessionId);
+  };
+
+  const handleMiddleClick = (sessionId: string, e: React.MouseEvent) => {
+    // Middle mouse button is button 1
+    if (e.button === 1 && middleClickCloseTab) {
+      e.preventDefault();
+      e.stopPropagation();
+      onSessionClose(sessionId);
+    }
   };
 
   const handleDetachSession = (sessionId: string, e: React.MouseEvent) => {

@@ -238,30 +238,16 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
               </button>
             </div>
           </div>
-                value={macAddress}
-                onChange={handleMacChange}
-                placeholder="00:11:22:33:44:55"
-                className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
-              <button
-                onClick={() => handleWake()}
-                disabled={!macAddress}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-md transition-colors flex items-center space-x-2"
-              >
-                <Send size={16} />
-                <span>{t('wake.send', 'Wake')}</span>
-              </button>
-            </div>
-          </div>
 
           {/* Advanced Options */}
           <details className="group">
-            <summary className="text-sm text-gray-400 cursor-pointer hover:text-white">
+            <summary className="text-sm text-gray-400 cursor-pointer hover:text-white flex items-center gap-2 transition-colors">
+              <Cpu size={14} />
               {t('wake.advancedOptions', 'Advanced Options')}
             </summary>
-            <div className="mt-3 space-y-3 pl-2 border-l-2 border-gray-700">
+            <div className="mt-4 grid grid-cols-2 gap-4 p-4 bg-gray-700/30 rounded-lg border border-gray-700 animate-fade-in">
               <div>
-                <label className="block text-xs text-gray-400 mb-1">
+                <label className="block text-xs text-gray-400 mb-2">
                   {t('wake.broadcastAddress', 'Broadcast Address')}
                 </label>
                 <input
@@ -269,27 +255,27 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
                   value={broadcastAddress}
                   onChange={(e) => setBroadcastAddress(e.target.value)}
                   placeholder="255.255.255.255"
-                  className="w-full px-2 py-1 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                  className="w-full px-3 py-2 text-sm bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-all font-mono"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-400 mb-1">
+                <label className="block text-xs text-gray-400 mb-2">
                   {t('wake.port', 'UDP Port')}
                 </label>
                 <input
                   type="number"
                   value={port}
                   onChange={(e) => setPort(parseInt(e.target.value) || 9)}
-                  className="w-full px-2 py-1 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                  className="w-full px-3 py-2 text-sm bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
                 />
               </div>
-              <div>
-                <label className="flex items-center space-x-2 text-sm text-gray-300">
+              <div className="col-span-2">
+                <label className="flex items-center space-x-2 text-sm text-gray-300 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={useSecureOn}
                     onChange={(e) => setUseSecureOn(e.target.checked)}
-                    className="rounded"
+                    className="rounded bg-gray-700 border-gray-600 text-green-500 focus:ring-green-500"
                   />
                   <span>{t('wake.secureOn', 'SecureOn Password')}</span>
                 </label>
@@ -299,7 +285,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
                     value={password}
                     onChange={(e) => setPassword(formatMac(e.target.value))}
                     placeholder="00:00:00:00:00:00"
-                    className="mt-2 w-full px-2 py-1 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                    className="mt-2 w-full px-3 py-2 text-sm bg-gray-700 border border-gray-600 rounded-lg text-white font-mono focus:outline-none focus:ring-2 focus:ring-green-500 transition-all animate-fade-in"
                   />
                 )}
               </div>
@@ -308,20 +294,22 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
 
           {/* Status Message */}
           {status.type && (
-            <div className={`flex items-center space-x-2 p-3 rounded-md ${
-              status.type === 'success' ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'
+            <div className={`flex items-center space-x-3 p-4 rounded-lg animate-fade-in-up ${
+              status.type === 'success' 
+                ? 'bg-green-900/30 text-green-400 border border-green-700/50' 
+                : 'bg-red-900/30 text-red-400 border border-red-700/50'
             }`}>
-              {status.type === 'success' ? <CheckCircle size={16} /> : <AlertCircle size={16} />}
-              <span className="text-sm">{status.message}</span>
+              {status.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
+              <span className="text-sm font-medium">{status.message}</span>
             </div>
           )}
 
           {/* Recent MACs */}
           {recentMacs.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-medium text-gray-400">
-                  <Clock size={14} className="inline mr-1" />
+            <div className="animate-fade-in">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                  <Clock size={14} className="text-gray-400" />
                   {t('wake.recent', 'Recent')}
                 </label>
               </div>
@@ -330,7 +318,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
                   <button
                     key={idx}
                     onClick={() => setMacAddress(mac)}
-                    className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                    className="px-3 py-1.5 text-xs bg-gray-700/50 hover:bg-gray-600 text-gray-300 rounded-lg transition-all font-mono border border-gray-600 hover:border-gray-500 btn-animate"
                   >
                     {mac}
                   </button>
@@ -340,16 +328,22 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
           )}
 
           {/* Network Scan */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-400">
-                <Search size={14} className="inline mr-1" />
+          <div className="animate-fade-in">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                <Search size={14} className="text-gray-400" />
                 {t('wake.networkDevices', 'Network Devices')}
+                {isLookingUp && (
+                  <span className="flex items-center gap-1 text-xs text-gray-500">
+                    <Loader2 size={10} className="animate-spin" />
+                    Looking up vendors...
+                  </span>
+                )}
               </label>
               <button
                 onClick={handleScan}
                 disabled={isScanning}
-                className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors flex items-center space-x-1"
+                className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-all flex items-center space-x-2 border border-gray-600 btn-animate"
               >
                 <RefreshCw size={12} className={isScanning ? 'animate-spin' : ''} />
                 <span>{isScanning ? t('wake.scanning', 'Scanning...') : t('wake.scan', 'Scan ARP')}</span>
@@ -357,17 +351,33 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
             </div>
             
             {devices.length > 0 && (
-              <div className="max-h-40 overflow-y-auto space-y-1">
+              <div className="max-h-64 overflow-y-auto space-y-2 stagger-animate">
                 {devices.map((device, idx) => (
                   <div
                     key={idx}
                     onClick={() => handleSelectDevice(device)}
-                    className="flex items-center justify-between p-2 bg-gray-700/50 hover:bg-gray-700 rounded cursor-pointer transition-colors"
+                    className="flex items-center justify-between p-3 bg-gray-700/30 hover:bg-gray-700/50 rounded-lg cursor-pointer transition-all border border-gray-700 hover:border-gray-600 group animate-fade-in-up card-hover-effect"
+                    style={{ animationDelay: `${idx * 50}ms` }}
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-white font-mono truncate">{device.mac}</div>
-                      <div className="text-xs text-gray-400">
-                        {device.ip} {device.hostname && `(${device.hostname})`}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-white font-mono">{device.mac}</span>
+                        {device.vendor && (
+                          <span className="flex items-center gap-1 px-2 py-0.5 bg-gray-600/50 rounded text-xs text-gray-300">
+                            {getVendorSourceIcon(device.vendorSource)}
+                            <Building2 size={10} />
+                            {device.vendor}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 flex items-center gap-2">
+                        <span>{device.ip}</span>
+                        {device.hostname && (
+                          <>
+                            <span className="text-gray-600">•</span>
+                            <span className="text-gray-500">{device.hostname}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <button
@@ -375,13 +385,20 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
                         e.stopPropagation();
                         handleWake(device.mac);
                       }}
-                      className="ml-2 p-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                      className="ml-3 p-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all opacity-0 group-hover:opacity-100 btn-animate shadow-lg shadow-green-500/20"
                       title="Wake this device"
                     >
-                      <Power size={14} />
+                      <Power size={16} />
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+            
+            {devices.length === 0 && !isScanning && (
+              <div className="text-center py-8 text-gray-500">
+                <Search size={32} className="mx-auto mb-3 opacity-50" />
+                <p className="text-sm">Click "Scan ARP" to discover devices on your network</p>
               </div>
             )}
           </div>

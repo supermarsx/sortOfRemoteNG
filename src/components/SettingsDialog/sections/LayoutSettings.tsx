@@ -18,7 +18,8 @@ import {
   Activity,
   Code,
   ShieldCheck,
-  Languages
+  Languages,
+  Mouse
 } from "lucide-react";
 
 interface LayoutSettingsProps {
@@ -111,7 +112,7 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
       <div className="space-y-4">
         <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
           <GripVertical className="w-4 h-4 text-purple-400" />
-          Drag & Drop Reordering
+          Tab Interaction
         </h4>
         <div className="space-y-3 ml-1">
           <label className="flex items-center space-x-3 cursor-pointer group">
@@ -133,6 +134,16 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             />
             <Network className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
             <span className="text-gray-300 group-hover:text-white">Allow connection reordering</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.middleClickCloseTab}
+              onChange={(e) => updateSettings({ middleClickCloseTab: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Mouse className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Middle-click to close tabs</span>
           </label>
         </div>
       </div>

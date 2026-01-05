@@ -64,11 +64,17 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   }, []);
 
   const canRender = useCallback(() => {
+    if (!termRef.current) return false;
     const core = (termRef.current as any)?._core;
-    if (!core) return true;
+    if (!core) return false;
     const renderService = core?.renderService ?? core?._renderService;
     if (!renderService) return false;
-    return Boolean(renderService?.dimensions);
+    // Check dimensions exists and has valid values
+    const dims = renderService?.dimensions;
+    if (!dims) return false;
+    // Ensure dimensions are actually computed (not zero/undefined)
+    if (typeof dims.css?.cell?.width !== 'number' || dims.css?.cell?.width <= 0) return false;
+    return true;
   }, []);
 
   const safeWrite = useCallback((text: string) => {
@@ -400,17 +406,31 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     fitRef.current = fit;
 
     let rafId = 0;
+    let initRetryCount = 0;
+    const maxInitRetries = 20;
+
     const canFit = () => {
+      if (!termRef.current) return false;
       const core = (termRef.current as any)?._core;
       const renderService = core?.renderService ?? core?._renderService;
       if (!renderService?.dimensions) return false;
+      // Check dimensions are actually computed
+      const dims = renderService.dimensions;
+      if (typeof dims.css?.cell?.width !== 'number' || dims.css?.cell?.width <= 0) return false;
       return true;
     };
 
     const doFit = () => {
       if (isDisposed.current || !fitRef.current || !termRef.current) return;
       if (!container.isConnected || !termRef.current.element?.isConnected) return;
-      if (!canFit()) return;
+      if (!canFit()) {
+        // If dimensions not ready yet, retry a few times during initial setup
+        if (initRetryCount < maxInitRetries) {
+          initRetryCount++;
+          setTimeout(doFit, 50);
+        }
+        return;
+      }
       try {
         fitRef.current.fit();
         onResize?.(termRef.current.cols, termRef.current.rows);

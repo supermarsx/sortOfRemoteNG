@@ -697,10 +697,18 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (!appSettings) return;
     const root = document.documentElement;
-    root.style.setProperty(
-      "--app-glow-color",
-      appSettings.backgroundGlowColor || "#2563eb",
-    );
+    
+    // Determine glow color: either from color scheme or custom setting
+    let glowColor = appSettings.backgroundGlowColor || "#2563eb";
+    if (appSettings.backgroundGlowFollowsColorScheme) {
+      // Get the primary color from CSS variable set by theme manager
+      const computedPrimary = getComputedStyle(root).getPropertyValue("--color-primary").trim();
+      if (computedPrimary) {
+        glowColor = computedPrimary;
+      }
+    }
+    
+    root.style.setProperty("--app-glow-color", glowColor);
     root.style.setProperty(
       "--app-glow-opacity",
       `${appSettings.backgroundGlowOpacity ?? 0}`,
@@ -717,8 +725,10 @@ const AppContent: React.FC = () => {
     appSettings,
     appSettings.backgroundGlowBlur,
     appSettings.backgroundGlowColor,
+    appSettings.backgroundGlowFollowsColorScheme,
     appSettings.backgroundGlowOpacity,
     appSettings.backgroundGlowRadius,
+    appSettings.colorScheme,
   ]);
 
   useEffect(() => {

@@ -10,14 +10,34 @@ export const Themes = [
 export type Theme = (typeof Themes)[number] | string;
 
 export const ColorSchemes = [
-  "blue",
-  "green",
-  "purple",
+  // Reds
   "red",
+  "rose",
+  "pink",
+  // Oranges
   "orange",
+  "amber",
+  // Yellows
+  "yellow",
+  "lime",
+  // Greens
+  "green",
+  "emerald",
   "teal",
+  // Blues
+  "cyan",
+  "sky",
+  "blue",
+  "indigo",
+  // Purples
+  "violet",
+  "purple",
+  "fuchsia",
+  // Neutrals
+  "slate",
   "grey",
-  "other",
+  // Custom
+  "custom",
 ] as const;
 // Allow custom color scheme names beyond the predefined list
 export type ColorScheme = (typeof ColorSchemes)[number] | string;
@@ -73,6 +93,7 @@ export interface GlobalSettings {
 
   // Theme Effects
   backgroundGlowEnabled: boolean;
+  backgroundGlowFollowsColorScheme: boolean;
   backgroundGlowColor: string;
   backgroundGlowOpacity: number;
   backgroundGlowRadius: number;
@@ -136,6 +157,7 @@ export interface GlobalSettings {
   enableZoom: boolean;
   enableTabReorder: boolean;
   enableConnectionReorder: boolean;
+  middleClickCloseTab: boolean;
 
   // Color Tags
   colorTags: {

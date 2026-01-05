@@ -42,7 +42,21 @@ const mockTerminal = {
   clear: vi.fn(),
   getSelection: vi.fn(),
   cols: 80,
-  rows: 24
+  rows: 24,
+  element: { isConnected: true },
+  // Mock the internal core structure for canRender checks
+  _core: {
+    renderService: {
+      dimensions: {
+        css: {
+          cell: {
+            width: 9,
+            height: 17
+          }
+        }
+      }
+    }
+  }
 };
 
 vi.mock('@xterm/xterm', () => ({

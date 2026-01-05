@@ -46,26 +46,72 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const [isSecure, setIsSecure] = useState(session.protocol === 'https');
   const [htmlContent, setHtmlContent] = useState<string>('');
   const [useProxy, setUseProxy] = useState(false);
+  const [history, setHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const iconCount = 2 + (connection?.authType === 'basic' ? 1 : 0);
   const iconPadding = 12 + iconCount * 18;
 
+  // Check if basic auth is required
+  const requiresBasicAuth = connection?.authType === 'basic' && 
+                            connection.basicAuthUsername && 
+                            connection.basicAuthPassword;
+
+  // Inject a script to intercept link clicks and form submissions in proxy mode
+  const injectNavigationInterceptor = useCallback((html: string, baseUrl: string): string => {
+    const interceptorScript = `
+      <script>
+        (function() {
+          // Intercept link clicks
+          document.addEventListener('click', function(e) {
+            var target = e.target;
+            while (target && target.tagName !== 'A') {
+              target = target.parentElement;
+            }
+            if (target && target.href && !target.href.startsWith('javascript:') && !target.href.startsWith('#')) {
+              e.preventDefault();
+              window.parent.postMessage({ type: 'navigate', url: target.href }, '*');
+            }
+          }, true);
+
+          // Intercept form submissions
+          document.addEventListener('submit', function(e) {
+            var form = e.target;
+            if (form.method && form.method.toLowerCase() === 'get') {
+              e.preventDefault();
+              var formData = new FormData(form);
+              var params = new URLSearchParams(formData);
+              var url = form.action || window.location.href;
+              var separator = url.includes('?') ? '&' : '?';
+              window.parent.postMessage({ type: 'navigate', url: url + separator + params.toString() }, '*');
+            }
+          }, true);
+        })();
+      </script>
+    `;
+    
+    // Insert the script before </body> or at the end
+    if (html.includes('</body>')) {
+      return html.replace('</body>', interceptorScript + '</body>');
+    } else if (html.includes('</html>')) {
+      return html.replace('</html>', interceptorScript + '</html>');
+    } else {
+      return html + interceptorScript;
+    }
+  }, []);
+
   // Fetch content via Tauri backend with credentials
-  const fetchWithCredentials = useCallback(async (url: string) => {
+  const fetchWithCredentials = useCallback(async (url: string, addToHistory = true) => {
     setIsLoading(true);
     setLoadError('');
     setHtmlContent('');
 
     try {
-      const hasAuth = connection?.authType === 'basic' && 
-                      connection.basicAuthUsername && 
-                      connection.basicAuthPassword;
-
       const response: HttpResponse = await invoke('http_get', {
         url,
-        username: hasAuth ? connection.basicAuthUsername : null,
-        password: hasAuth ? connection.basicAuthPassword : null,
+        username: requiresBasicAuth ? connection?.basicAuthUsername : null,
+        password: requiresBasicAuth ? connection?.basicAuthPassword : null,
         headers: null,
       });
 
@@ -84,27 +130,57 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           }
         );
 
+        // Inject navigation interceptor for proxy mode
+        content = injectNavigationInterceptor(content, finalUrl);
+
         setHtmlContent(content);
         setCurrentUrl(finalUrl);
         setInputUrl(finalUrl);
         setUseProxy(true);
+        
+        // Update history
+        if (addToHistory) {
+          setHistory(prev => {
+            const newHistory = prev.slice(0, historyIndex + 1);
+            newHistory.push(finalUrl);
+            return newHistory;
+          });
+          setHistoryIndex(prev => prev + 1);
+        }
+        
         debugLog('Content loaded via proxy with credentials:', finalUrl);
       } else {
         throw new Error(`HTTP ${response.status}`);
       }
     } catch (error) {
       console.error('Proxy fetch failed:', error);
-      // Fall back to iframe
-      setUseProxy(false);
-      setHtmlContent('');
+      setLoadError(`Failed to load page: ${error instanceof Error ? error.message : String(error)}`);
+      // Fall back to iframe only if basic auth is not required
+      if (!requiresBasicAuth) {
+        setUseProxy(false);
+        setHtmlContent('');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [connection]);
+  }, [connection, requiresBasicAuth, injectNavigationInterceptor, historyIndex]);
+
+  // Listen for navigation messages from the iframe
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'navigate' && event.data.url) {
+        // Navigate to the clicked URL through the proxy
+        fetchWithCredentials(event.data.url);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [fetchWithCredentials]);
 
   // Initial load with credentials if configured
   useEffect(() => {
-    if (connection?.authType === 'basic' && connection.basicAuthUsername) {
+    if (requiresBasicAuth) {
       fetchWithCredentials(currentUrl);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -123,7 +199,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     setLoadError('');
     
     // Use proxy if auth is configured
-    if (connection?.authType === 'basic' && connection.basicAuthUsername) {
+    if (requiresBasicAuth) {
       fetchWithCredentials(url);
     } else {
       setUseProxy(false);
@@ -143,8 +219,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   };
 
   const handleRefresh = () => {
-    if (useProxy && connection?.authType === 'basic') {
-      fetchWithCredentials(currentUrl);
+    if (useProxy && requiresBasicAuth) {
+      fetchWithCredentials(currentUrl, false);
     } else if (iframeRef.current) {
       setIsLoading(true);
       setLoadError('');
@@ -152,8 +228,17 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     }
   };
 
+  const canGoBack = useProxy ? historyIndex > 0 : true;
+  const canGoForward = useProxy ? historyIndex < history.length - 1 : true;
+
   const handleBack = () => {
-    if (iframeRef.current && iframeRef.current.contentWindow) {
+    if (useProxy && requiresBasicAuth) {
+      if (historyIndex > 0) {
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        fetchWithCredentials(history[newIndex], false);
+      }
+    } else if (iframeRef.current && iframeRef.current.contentWindow) {
       try {
         iframeRef.current.contentWindow.history.back();
       } catch (error) {
@@ -163,7 +248,13 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   };
 
   const handleForward = () => {
-    if (iframeRef.current && iframeRef.current.contentWindow) {
+    if (useProxy && requiresBasicAuth) {
+      if (historyIndex < history.length - 1) {
+        const newIndex = historyIndex + 1;
+        setHistoryIndex(newIndex);
+        fetchWithCredentials(history[newIndex], false);
+      }
+    } else if (iframeRef.current && iframeRef.current.contentWindow) {
       try {
         iframeRef.current.contentWindow.history.forward();
       } catch (error) {
@@ -200,14 +291,24 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           <div className="flex space-x-1">
             <button
               onClick={handleBack}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+              disabled={!canGoBack}
+              className={`p-2 rounded transition-colors ${
+                canGoBack 
+                  ? 'hover:bg-gray-700 text-gray-400 hover:text-white' 
+                  : 'text-gray-600 cursor-not-allowed'
+              }`}
               title="Back"
             >
               <ArrowLeft size={16} />
             </button>
             <button
               onClick={handleForward}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+              disabled={!canGoForward}
+              className={`p-2 rounded transition-colors ${
+                canGoForward 
+                  ? 'hover:bg-gray-700 text-gray-400 hover:text-white' 
+                  : 'text-gray-600 cursor-not-allowed'
+              }`}
               title="Forward"
             >
               <ArrowRight size={16} />
