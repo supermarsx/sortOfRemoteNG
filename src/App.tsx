@@ -145,22 +145,24 @@ const AppContent: React.FC = () => {
     setPasswordDialogMode,
   });
 
-  // Show window only after fully loaded
+  // Show window immediately so splash screen is visible
+  useEffect(() => {
+    const showWindow = async () => {
+      try {
+        const currentWindow = getCurrentWindow();
+        await currentWindow.show();
+        await currentWindow.setFocus();
+      } catch {
+        // Not in Tauri environment, ignore
+      }
+    };
+    showWindow();
+  }, []);
+
+  // Track when app is fully initialized
   useEffect(() => {
     if (isInitialized && !appReady) {
-      // Small delay to ensure all UI is rendered
-      const timeout = setTimeout(async () => {
-        setAppReady(true);
-        // Show the Tauri window if it was initially hidden
-        try {
-          const currentWindow = getCurrentWindow();
-          await currentWindow.show();
-          await currentWindow.setFocus();
-        } catch {
-          // Not in Tauri environment, ignore
-        }
-      }, 300);
-      return () => clearTimeout(timeout);
+      setAppReady(true);
     }
   }, [isInitialized, appReady]);
 
@@ -1409,10 +1411,12 @@ const AppContent: React.FC = () => {
       }
     >
       {/* Splash Screen */}
-      <SplashScreen
-        isLoading={showSplash}
-        onLoadComplete={() => setShowSplash(false)}
-      />
+      {showSplash && (
+        <SplashScreen
+          isLoading={!isInitialized}
+          onLoadComplete={() => setShowSplash(false)}
+        />
+      )}
       {/* Top bar */}
       <div
         className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
