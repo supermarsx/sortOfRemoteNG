@@ -3,11 +3,12 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { Clipboard, Copy, Maximize2, Minimize2, RotateCcw, Trash2 } from "lucide-react";
+import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, Trash2, X, Play, Search } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
+import { ManagedScript, getDefaultScripts } from "./ScriptManager";
 
 interface WebTerminalProps {
   session: ConnectionSession;
@@ -40,6 +41,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [error, setError] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showScriptSelector, setShowScriptSelector] = useState(false);
+  const [scripts, setScripts] = useState<ManagedScript[]>([]);
+  const [scriptSearchQuery, setScriptSearchQuery] = useState("");
 
   const sessionRef = useRef(session);
   const connection = useMemo(
@@ -56,6 +60,82 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   useEffect(() => {
     connectionRef.current = connection;
   }, [connection]);
+
+  // Load scripts from storage
+  useEffect(() => {
+    const loadScripts = () => {
+      try {
+        const defaults = getDefaultScripts();
+        const stored = localStorage.getItem('managedScripts');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          // Handle new format with customScripts, modifiedDefaults, deletedDefaultIds
+          if (parsed && typeof parsed === 'object' && 'customScripts' in parsed) {
+            const { customScripts = [], modifiedDefaults = [], deletedDefaultIds = [] } = parsed;
+            // Start with modified defaults (or original defaults if not modified)
+            const activeDefaults = defaults
+              .filter((d: ManagedScript) => !deletedDefaultIds.includes(d.id))
+              .map((d: ManagedScript) => modifiedDefaults.find((m: ManagedScript) => m.id === d.id) || d);
+            setScripts([...activeDefaults, ...customScripts]);
+          } else if (Array.isArray(parsed)) {
+            // Handle old format (just an array of custom scripts)
+            setScripts([...defaults, ...parsed]);
+          } else {
+            setScripts(defaults);
+          }
+        } else {
+          setScripts(defaults);
+        }
+      } catch (e) {
+        console.error('Failed to load scripts:', e);
+        setScripts(getDefaultScripts());
+      }
+    };
+    loadScripts();
+    // Listen for storage changes
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'managedScripts') {
+        loadScripts();
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  // Filter scripts by search query
+  const filteredScripts = useMemo(() => {
+    if (!scriptSearchQuery.trim()) return scripts;
+    const query = scriptSearchQuery.toLowerCase();
+    return scripts.filter(s => 
+      s.name.toLowerCase().includes(query) ||
+      s.description.toLowerCase().includes(query) ||
+      s.category.toLowerCase().includes(query)
+    );
+  }, [scripts, scriptSearchQuery]);
+
+  // Group scripts by category
+  const scriptsByCategory = useMemo(() => {
+    const groups: Record<string, ManagedScript[]> = {};
+    filteredScripts.forEach(script => {
+      const cat = script.category || 'Uncategorized';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(script);
+    });
+    return groups;
+  }, [filteredScripts]);
+
+  // Handle ESC key to close script selector
+  useEffect(() => {
+    if (!showScriptSelector) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowScriptSelector(false);
+        setScriptSearchQuery("");
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showScriptSelector]);
 
   const setStatusState = useCallback((next: ConnectionStatus) => {
     setStatus(next);
@@ -534,6 +614,25 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     [isSsh, safeWrite],
   );
 
+  // Run a script in the terminal
+  const runScript = useCallback(async (script: ManagedScript) => {
+    if (!isSsh || !sshSessionId.current || !isSshReady.current || isConnecting.current) {
+      return;
+    }
+    try {
+      // Send script content line by line, or as a single command
+      const scriptContent = script.script;
+      // Remove shebang and send the rest
+      const lines = scriptContent.split('\n').filter(line => !line.startsWith('#!'));
+      const command = lines.join('\n');
+      await invoke("send_ssh_input", { sessionId: sshSessionId.current, data: command + '\n' });
+      setShowScriptSelector(false);
+      setScriptSearchQuery("");
+    } catch (err) {
+      console.error("Failed to run script:", err);
+    }
+  }, [isSsh]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -845,14 +944,24 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
               <Clipboard size={14} />
             </button>
             {isSsh && (
-              <button
-                onClick={handleReconnect}
-                className="app-bar-button p-2"
-                data-tooltip="Reconnect"
-                aria-label="Reconnect"
-              >
-                <RotateCcw size={14} />
-              </button>
+              <>
+                <button
+                  onClick={() => setShowScriptSelector(true)}
+                  className="app-bar-button p-2"
+                  data-tooltip="Run Script"
+                  aria-label="Run Script"
+                >
+                  <FileCode size={14} />
+                </button>
+                <button
+                  onClick={handleReconnect}
+                  className="app-bar-button p-2"
+                  data-tooltip="Reconnect"
+                  aria-label="Reconnect"
+                >
+                  <RotateCcw size={14} />
+                </button>
+              </>
             )}
             <button
               onClick={clearTerminal}
@@ -905,6 +1014,101 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
           }}
         />
       </div>
+
+      {/* Script Selector Modal */}
+      {showScriptSelector && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowScriptSelector(false);
+              setScriptSearchQuery("");
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setShowScriptSelector(false);
+              setScriptSearchQuery("");
+            }
+          }}
+        >
+          <div className="bg-[var(--color-surface)] rounded-xl shadow-2xl w-[500px] max-h-[70vh] flex flex-col border border-[var(--color-border)]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+              <div className="flex items-center gap-2">
+                <FileCode size={18} className="text-green-500" />
+                <h3 className="text-base font-semibold text-[var(--color-text)]">Run Script</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowScriptSelector(false);
+                  setScriptSearchQuery("");
+                }}
+                className="p-1.5 rounded-lg hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="px-4 py-2 border-b border-[var(--color-border)]">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textMuted)]" />
+                <input
+                  type="text"
+                  value={scriptSearchQuery}
+                  onChange={(e) => setScriptSearchQuery(e.target.value)}
+                  placeholder="Search scripts..."
+                  className="w-full pl-9 pr-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-green-500/50"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* Script List */}
+            <div className="flex-1 overflow-auto p-2">
+              {Object.keys(scriptsByCategory).length === 0 ? (
+                <div className="text-center py-8 text-[var(--color-textMuted)]">
+                  <FileCode size={32} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No scripts found</p>
+                  <p className="text-xs mt-1">Add scripts in the Script Manager</p>
+                </div>
+              ) : (
+                Object.entries(scriptsByCategory).map(([category, categoryScripts]) => (
+                  <div key={category} className="mb-3">
+                    <div className="text-xs font-semibold text-[var(--color-textMuted)] uppercase tracking-wider px-2 py-1">
+                      {category}
+                    </div>
+                    <div className="space-y-1">
+                      {categoryScripts.map((script) => (
+                        <button
+                          key={script.id}
+                          onClick={() => runScript(script)}
+                          className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--color-surfaceHover)] transition-colors group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium text-[var(--color-text)] truncate">
+                                {script.name}
+                              </div>
+                              {script.description && (
+                                <div className="text-xs text-[var(--color-textMuted)] truncate">
+                                  {script.description}
+                                </div>
+                              )}
+                            </div>
+                            <Play size={14} className="text-green-500 opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0" />
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

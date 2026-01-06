@@ -239,6 +239,74 @@ describe("BulkSSHCommander", () => {
       fireEvent.click(closeButton);
       expect(mockOnClose).toHaveBeenCalledTimes(1);
     });
+
+    it("should close when ESC key is pressed", async () => {
+      renderComponent();
+      
+      // Press Escape key
+      fireEvent.keyDown(window, { key: 'Escape' });
+      
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("should close when clicking outside the modal", async () => {
+      renderComponent();
+      
+      // Find the backdrop (the fixed inset-0 div)
+      const backdrop = document.querySelector('.fixed.inset-0.bg-black\\/50');
+      expect(backdrop).toBeInTheDocument();
+      
+      // Click on the backdrop
+      fireEvent.click(backdrop!);
+      
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("should NOT close when clicking inside the modal content", async () => {
+      renderComponent();
+      
+      // Click on command textarea (inside the modal)
+      const textarea = screen.getByPlaceholderText(/Enter command/i);
+      fireEvent.click(textarea);
+      
+      expect(mockOnClose).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Resizable Command Input", () => {
+    it("should have command textarea with resize-y class", () => {
+      renderComponent();
+      const textarea = screen.getByPlaceholderText(/Enter command/i);
+      expect(textarea).toHaveClass('resize-y');
+    });
+
+    it("should have min and max height constraints", () => {
+      renderComponent();
+      const textarea = screen.getByPlaceholderText(/Enter command/i);
+      expect(textarea).toHaveClass('min-h-[80px]');
+      expect(textarea).toHaveClass('max-h-[300px]');
+    });
+  });
+
+  describe("View Toggle Location", () => {
+    it("should have view toggle buttons in secondary toolbar", () => {
+      renderComponent();
+      
+      // View toggle should be in the secondary toolbar (below header)
+      const tabButton = screen.getByTitle("Tab View");
+      const mosaicButton = screen.getByTitle("Mosaic View");
+      
+      // Both buttons should be visible and in the same parent toolbar
+      expect(tabButton).toBeInTheDocument();
+      expect(mosaicButton).toBeInTheDocument();
+      
+      // They should be siblings (in same button group)
+      expect(tabButton.parentElement).toBe(mosaicButton.parentElement);
+    });
   });
 });
 

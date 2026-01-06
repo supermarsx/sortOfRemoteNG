@@ -24,7 +24,7 @@ export interface ManagedScript {
 
 export type ScriptLanguage = 'bash' | 'sh' | 'powershell' | 'batch' | 'auto';
 
-const SCRIPTS_STORAGE_KEY = 'managedScripts';
+export const SCRIPTS_STORAGE_KEY = 'managedScripts';
 
 // Default script templates
 const defaultScripts: ManagedScript[] = [
@@ -109,6 +109,9 @@ const defaultScripts: ManagedScript[] = [
     updatedAt: new Date().toISOString(),
   },
 ];
+
+// Export function to get default scripts (for use in other components)
+export const getDefaultScripts = (): ManagedScript[] => [...defaultScripts];
 
 // Language detection based on script content
 const detectLanguage = (script: string): ScriptLanguage => {
@@ -365,7 +368,20 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
       const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        setScripts([...defaultScripts, ...parsed]);
+        // Handle new format with customScripts, modifiedDefaults, deletedDefaultIds
+        if (parsed && typeof parsed === 'object' && 'customScripts' in parsed) {
+          const { customScripts = [], modifiedDefaults = [], deletedDefaultIds = [] } = parsed;
+          // Start with modified defaults (or original defaults if not modified)
+          const activeDefaults = defaultScripts
+            .filter(d => !deletedDefaultIds.includes(d.id))
+            .map(d => modifiedDefaults.find((m: ManagedScript) => m.id === d.id) || d);
+          setScripts([...activeDefaults, ...customScripts]);
+        } else if (Array.isArray(parsed)) {
+          // Handle old format (just an array of custom scripts)
+          setScripts([...defaultScripts, ...parsed]);
+        } else {
+          setScripts(defaultScripts);
+        }
       } else {
         setScripts(defaultScripts);
       }
@@ -375,10 +391,26 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
   }, []);
   
   // Save scripts to localStorage
+  // We store: custom scripts + modified default scripts + list of deleted default script IDs
   const saveScripts = useCallback((newScripts: ManagedScript[]) => {
+    // Find which default scripts have been deleted
+    const defaultIds = defaultScripts.map(s => s.id);
+    const remainingDefaultIds = newScripts.filter(s => s.id.startsWith('default-')).map(s => s.id);
+    const deletedDefaultIds = defaultIds.filter(id => !remainingDefaultIds.includes(id));
+    
+    // Get custom scripts (non-default)
     const customScripts = newScripts.filter(s => !s.id.startsWith('default-'));
-    localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify(customScripts));
-    setScripts([...defaultScripts, ...customScripts]);
+    
+    // Get modified default scripts (defaults that exist but may have been edited)
+    const modifiedDefaults = newScripts.filter(s => s.id.startsWith('default-'));
+    
+    // Store everything
+    localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({
+      customScripts,
+      modifiedDefaults,
+      deletedDefaultIds
+    }));
+    setScripts(newScripts);
   }, []);
   
   // Get unique categories
@@ -428,7 +460,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
     
     const finalLanguage = editLanguage === 'auto' ? detectLanguage(editScript) : editLanguage;
     
-    if (selectedScript && !selectedScript.id.startsWith('default-')) {
+    if (selectedScript) {
       // Update existing
       const updated = scripts.map(s => 
         s.id === selectedScript.id
@@ -465,7 +497,6 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
   
   // Delete script
   const handleDeleteScript = useCallback((scriptId: string) => {
-    if (scriptId.startsWith('default-')) return;
     saveScripts(scripts.filter(s => s.id !== scriptId));
     if (selectedScript?.id === scriptId) {
       setSelectedScript(null);
@@ -501,10 +532,30 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
     setIsEditing(true);
   }, []);
   
+  // Handle ESC key to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
   
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={(e) => {
+        // Close when clicking on backdrop (not on modal content)
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       {/* Background glow effects - only show in dark mode */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0">
         <div className="absolute top-[20%] left-[15%] w-80 h-80 bg-purple-500/8 rounded-full blur-3xl" />
@@ -802,24 +853,20 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
                       >
                         <CopyPlus size={16} />
                       </button>
-                      {!selectedScript.id.startsWith('default-') && (
-                        <>
-                          <button
-                            onClick={() => handleEditScript(selectedScript)}
-                            className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                            title={t('common.edit', 'Edit')}
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteScript(selectedScript.id)}
-                            className="p-2 hover:bg-red-500/20 rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-red-500"
-                            title={t('common.delete', 'Delete')}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </>
-                      )}
+                      <button
+                        onClick={() => handleEditScript(selectedScript)}
+                        className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                        title={t('common.edit', 'Edit')}
+                      >
+                        <Edit2 size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteScript(selectedScript.id)}
+                        className="p-2 hover:bg-red-500/20 rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-red-500"
+                        title={t('common.delete', 'Delete')}
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   </div>
                   

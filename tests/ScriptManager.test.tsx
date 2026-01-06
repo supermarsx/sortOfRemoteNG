@@ -209,7 +209,7 @@ describe("ScriptManager", () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
       
       renderComponent();
       const scriptItem = screen.getByText("My Custom Script");
@@ -221,13 +221,27 @@ describe("ScriptManager", () => {
   });
 
   describe("Script Actions - Delete", () => {
-    it("should NOT have delete button for default scripts", () => {
+    it("should have delete button for default scripts", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
       
-      // Delete button should not exist for default scripts (title="Delete")
-      expect(screen.queryByTitle("Delete")).not.toBeInTheDocument();
+      // Delete button should exist for default scripts
+      const deleteButton = screen.getByTitle("Delete");
+      expect(deleteButton).toBeInTheDocument();
+    });
+
+    it("should delete default script when delete button clicked", async () => {
+      renderComponent();
+      const scriptItem = screen.getByText("System Info (Linux)");
+      fireEvent.click(scriptItem);
+      
+      const deleteButton = screen.getByTitle("Delete");
+      fireEvent.click(deleteButton);
+      
+      await waitFor(() => {
+        expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+      });
     });
 
     it("should have delete button for custom scripts", async () => {
@@ -241,7 +255,7 @@ describe("ScriptManager", () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
       
       renderComponent();
       const scriptItem = screen.getByText("My Custom Script");
@@ -262,7 +276,7 @@ describe("ScriptManager", () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
       
       renderComponent();
       const scriptItem = screen.getByText("Script To Delete");
@@ -334,6 +348,28 @@ describe("ScriptManager", () => {
   });
 
   describe("Edit Script", () => {
+    it("should have edit button for default scripts", () => {
+      renderComponent();
+      const scriptItem = screen.getByText("System Info (Linux)");
+      fireEvent.click(scriptItem);
+      
+      const editButton = screen.getByTitle("Edit");
+      expect(editButton).toBeInTheDocument();
+    });
+
+    it("should allow editing default scripts", async () => {
+      renderComponent();
+      const scriptItem = screen.getByText("System Info (Linux)");
+      fireEvent.click(scriptItem);
+      
+      const editButton = screen.getByTitle("Edit");
+      fireEvent.click(editButton);
+      
+      // Should open edit mode
+      const nameInput = screen.getByDisplayValue("System Info (Linux)");
+      expect(nameInput).toBeInTheDocument();
+    });
+
     it("should have edit button for custom scripts", async () => {
       const customScript = {
         id: 'custom-1',
@@ -345,7 +381,7 @@ describe("ScriptManager", () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
       
       renderComponent();
       const scriptItem = screen.getByText("Editable Script");
@@ -353,14 +389,6 @@ describe("ScriptManager", () => {
       
       const editButton = screen.getByTitle("Edit");
       expect(editButton).toBeInTheDocument();
-    });
-
-    it("should NOT have edit button for default scripts", () => {
-      renderComponent();
-      const scriptItem = screen.getByText("System Info (Linux)");
-      fireEvent.click(scriptItem);
-      
-      expect(screen.queryByTitle("Edit")).not.toBeInTheDocument();
     });
 
     it("should update script when edited and saved", async () => {
@@ -374,7 +402,7 @@ describe("ScriptManager", () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
       
       renderComponent();
       const scriptItem = screen.getByText("Original Name");
@@ -439,8 +467,9 @@ describe("ScriptManager", () => {
       await waitFor(() => {
         const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
         expect(stored).toBeTruthy();
-        const scripts = JSON.parse(stored!);
-        expect(scripts).toContainEqual(
+        const parsed = JSON.parse(stored!);
+        // New storage format: { customScripts, modifiedDefaults, deletedDefaultIds }
+        expect(parsed.customScripts).toContainEqual(
           expect.objectContaining({ name: 'Persisted Script' })
         );
       });
@@ -517,6 +546,148 @@ describe("ScriptManager", () => {
       // Category input should exist in the form
       const categoryInput = screen.getByPlaceholderText("Custom");
       expect(categoryInput).toBeInTheDocument();
+    });
+  });
+
+  describe("Modal Close Behavior", () => {
+    it("should close when ESC key is pressed", async () => {
+      renderComponent();
+      
+      // Press Escape key
+      fireEvent.keyDown(window, { key: 'Escape' });
+      
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("should close when clicking outside the modal", async () => {
+      renderComponent();
+      
+      // Find the backdrop (the fixed inset-0 div)
+      const backdrop = document.querySelector('.fixed.inset-0.bg-black\\/50');
+      expect(backdrop).toBeInTheDocument();
+      
+      // Click on the backdrop
+      fireEvent.click(backdrop!);
+      
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("should NOT close when clicking inside the modal content", async () => {
+      renderComponent();
+      
+      // Click on a script item (inside the modal)
+      const scriptItem = screen.getByText("System Info (Linux)");
+      fireEvent.click(scriptItem);
+      
+      expect(mockOnClose).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("New Storage Format", () => {
+    it("should load scripts from new storage format with modifiedDefaults", () => {
+      const modifiedDefault = {
+        id: 'default-1',
+        name: 'Modified System Info (Linux)',
+        description: 'Modified description',
+        script: 'echo "modified"',
+        category: 'System',
+        language: 'bash',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({
+        customScripts: [],
+        modifiedDefaults: [modifiedDefault],
+        deletedDefaultIds: []
+      }));
+      
+      renderComponent();
+      
+      // Should show modified name instead of original
+      expect(screen.getByText("Modified System Info (Linux)")).toBeInTheDocument();
+      expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+    });
+
+    it("should not show deleted default scripts", () => {
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({
+        customScripts: [],
+        modifiedDefaults: [],
+        deletedDefaultIds: ['default-1']
+      }));
+      
+      renderComponent();
+      
+      // default-1 is System Info (Linux) - should not be shown
+      expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+      // Other default scripts should still be there
+      expect(screen.getByText("Disk Usage (Linux)")).toBeInTheDocument();
+    });
+
+    it("should persist deleted default script IDs to localStorage", async () => {
+      renderComponent();
+      
+      // Delete a default script
+      const scriptItem = screen.getByText("System Info (Linux)");
+      fireEvent.click(scriptItem);
+      
+      const deleteButton = screen.getByTitle("Delete");
+      fireEvent.click(deleteButton);
+      
+      await waitFor(() => {
+        const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
+        const parsed = JSON.parse(stored!);
+        expect(parsed.deletedDefaultIds).toContain('default-1');
+      });
+    });
+
+    it("should persist modified default scripts to localStorage", async () => {
+      renderComponent();
+      
+      // Edit a default script
+      const scriptItem = screen.getByText("System Info (Linux)");
+      fireEvent.click(scriptItem);
+      
+      const editButton = screen.getByTitle("Edit");
+      fireEvent.click(editButton);
+      
+      const nameInput = screen.getByDisplayValue("System Info (Linux)");
+      fireEvent.change(nameInput, { target: { value: 'Custom System Info' } });
+      
+      const saveButton = screen.getByRole("button", { name: /^Save$/i });
+      fireEvent.click(saveButton);
+      
+      await waitFor(() => {
+        const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
+        const parsed = JSON.parse(stored!);
+        const modifiedScript = parsed.modifiedDefaults.find((s: { id: string }) => s.id === 'default-1');
+        expect(modifiedScript).toBeTruthy();
+        expect(modifiedScript.name).toBe('Custom System Info');
+      });
+    });
+
+    it("should still load old storage format (array of custom scripts)", () => {
+      const oldFormatScript = {
+        id: 'old-custom-1',
+        name: 'Old Format Script',
+        description: 'From old format',
+        script: 'echo "old"',
+        category: 'Custom',
+        language: 'bash',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      // Old format: just an array
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([oldFormatScript]));
+      
+      renderComponent();
+      
+      // Should show both old custom script and all defaults
+      expect(screen.getByText("Old Format Script")).toBeInTheDocument();
+      expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
     });
   });
 });

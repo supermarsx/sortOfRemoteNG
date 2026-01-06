@@ -431,13 +431,33 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
     saveScriptsToStorage(updated);
   }, [savedScripts, saveScriptsToStorage]);
 
+  // Handle ESC key to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const selectedCount = selectedSessionIds.size;
   const totalCount = sshSessions.length;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={(e) => {
+        // Close when clicking on backdrop (not on modal content)
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       {/* Background glow effects - only show in dark mode */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0">
         <div className="absolute top-[15%] left-[10%] w-96 h-96 bg-green-500/8 rounded-full blur-3xl" />
@@ -459,6 +479,19 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
               {selectedCount}/{totalCount} {t('bulkSsh.sessions', 'sessions')}
             </span>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              aria-label={t('common.close', 'Close')}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Secondary toolbar */}
+        <div className="border-b border-[var(--color-border)] px-5 py-2 flex items-center justify-between bg-[var(--color-surfaceHover)]/30">
           <div className="flex items-center gap-2">
             {/* View mode toggle */}
             <div className="flex items-center bg-[var(--color-surfaceHover)] rounded-lg p-0.5">
@@ -485,19 +518,7 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                 <Grid3x3 size={14} />
               </button>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              aria-label={t('common.close', 'Close')}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Secondary toolbar */}
-        <div className="border-b border-[var(--color-border)] px-5 py-2 flex items-center justify-between bg-[var(--color-surfaceHover)]/30">
-          <div className="flex items-center gap-2">
+            <div className="w-px h-5 bg-[var(--color-border)] mx-1" />
             <button
               onClick={() => { setShowScriptLibrary(!showScriptLibrary); setShowHistory(false); }}
               className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md transition-colors ${
@@ -766,7 +787,7 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                     onChange={(e) => setCommand(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder={t('bulkSsh.commandPlaceholder', 'Enter command to send to all selected sessions...')}
-                    className="w-full px-4 py-3 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500 font-mono text-sm resize-none"
+                    className="w-full px-4 py-3 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-2 focus:ring-green-500/50 focus:border-green-500 font-mono text-sm resize-y min-h-[80px] max-h-[300px]"
                     rows={3}
                     disabled={isExecuting || selectedCount === 0}
                   />
@@ -796,13 +817,6 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                     title={t('bulkSsh.sendCancel', 'Send Ctrl+C')}
                   >
                     <StopCircle size={14} />
-                  </button>
-                  <button
-                    onClick={() => setShowScriptLibrary(!showScriptLibrary)}
-                    className="px-4 py-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
-                    title={t('bulkSsh.loadScript', 'Load Script')}
-                  >
-                    <FolderOpen size={14} />
                   </button>
                 </div>
               </div>
