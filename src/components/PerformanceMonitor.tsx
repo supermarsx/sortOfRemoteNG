@@ -440,7 +440,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
                     {recentMetrics.map((metric, index) => (
                       <tr key={index} className="hover:bg-gray-600">
                         <td className="px-4 py-3 text-sm text-gray-300">
-                          {new Date(metric.timestamp).toLocaleTimeString()}
+                          {new Date(metric.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </td>
                         <td className="px-4 py-3 text-sm text-white">
                           {metric.latency.toFixed(1)}ms

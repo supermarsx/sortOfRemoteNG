@@ -25,12 +25,23 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Allow resizing/adjusting layout matrices
 - [x] Desktop shortcut manager with tracking, editing, and folder presets
 - [x] Connection diagnostics (ping, traceroute, port checks, gateway/internet tests)
-- [ ] Remove outer glow from diagnostics window
-- [ ] Add hop count to traceroute results
+- [x] Remove outer glow from diagnostics window
+- [x] Add hop count to traceroute results
 - [ ] Add tiny ping graph visualization (10 pings)
 - [ ] Add service fingerprint with truncated port reply
 - [ ] Fix default gateway always failing tests
 - [ ] Add DNS test and resolution display
+- [ ] Classify target host IP (private/public/loopback/CGNAT, IP class)
+- [ ] Add MTU sanity check
+- [ ] Add limited asymmetric routing detection
+- [ ] Add jitter stat to ping results
+- [ ] Add TCP connection time, detect slow SYN-ACK
+- [ ] Add more extensive banner grab
+- [ ] Add UDP reachability probe when applicable
+- [ ] Add ICMP blockade detection
+- [ ] Add target IP ASN/geo detection
+- [ ] Add TLS handshake check if applicable
+- [ ] Add proxy/VPN and chaining leakage detection when applicable
 - [x] mRemoteNG XML file import support
 - [x] Template downloads with toast notifications
 - [x] WebBrowser proxy auth fix for image loading
@@ -41,6 +52,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add filters for action log (action, connection, date range filters)
 - [x] Match popup title icons with their secondary bar icons
 - [x] In performance metrics move update cadence and export button to secondary bar, add filters
+- [x] Add date time to performance metrics entries (not just time)
 - [x] Remove language selector from secondary bar settings (no longer exists)
 - [ ] Add syncing capabilities with extensive settings in a new settings tab
 - [ ] Add config to settings welcome screen for custom title and custom message

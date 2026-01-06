@@ -165,3 +165,26 @@ body {
 .border-orange-700 {
   border-color: var(--color-warning) !important;
 }
+
+/* Hover background color mappings for light theme compatibility */
+.hover\:bg-gray-600:hover,
+.hover\:bg-gray-700:hover,
+.hover\:bg-gray-700\/50:hover,
+.hover\:bg-gray-800:hover {
+  background-color: var(--color-surfaceHover) !important;
+}
+
+.hover\:bg-gray-500:hover {
+  background-color: var(--color-border) !important;
+}
+
+/* Hover text color mappings for light theme compatibility */
+.hover\:text-white:hover {
+  color: var(--color-text) !important;
+}
+
+.hover\:text-gray-100:hover,
+.hover\:text-gray-200:hover,
+.hover\:text-gray-300:hover {
+  color: var(--color-textSecondary) !important;
+}

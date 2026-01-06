@@ -262,7 +262,7 @@ export class ThemeManager {
     
     // surfaceHover - slightly different shade for hover states
     const surfaceHover = isLightTheme 
-      ? ThemeManager.shadeColor(theme.colors.surface, -8)
+      ? ThemeManager.shadeColor(theme.colors.surface, -15)
       : ThemeManager.shadeColor(theme.colors.surface, 15);
     root.style.setProperty('--color-surfaceHover', surfaceHover);
     
@@ -274,7 +274,7 @@ export class ThemeManager {
     
     // textMuted - more subtle text color
     const textMuted = isLightTheme
-      ? ThemeManager.shadeColor(theme.colors.textSecondary, 30)
+      ? ThemeManager.shadeColor(theme.colors.textSecondary, 20)
       : ThemeManager.shadeColor(theme.colors.textSecondary, -25);
     root.style.setProperty('--color-textMuted', textMuted);
 

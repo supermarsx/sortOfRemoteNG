@@ -6,6 +6,7 @@ import {
   Trash2,
   Search,
   ScrollText,
+  Clock,
   AlertCircle,
   Info,
   AlertTriangle,

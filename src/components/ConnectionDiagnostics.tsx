@@ -245,12 +245,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* Glow effect */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-        <div className="w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[100px]" />
-      </div>
-      
-      <div className="relative bg-[var(--color-surface)] rounded-xl shadow-2xl shadow-blue-500/10 w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
+      <div className="relative bg-[var(--color-surface)] rounded-xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
         {/* Header */}
         <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">
@@ -440,6 +435,11 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
             <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-textSecondary)] mb-3 flex items-center gap-2">
               <Router size={12} />
               {t('diagnostics.traceroute', 'Traceroute')}
+              {results.traceroute.length > 0 && (
+                <span className="ml-auto text-[var(--color-textMuted)] font-normal normal-case">
+                  {results.traceroute.length} {results.traceroute.length === 1 ? t('diagnostics.hop', 'hop') : t('diagnostics.hops', 'hops')}
+                </span>
+              )}
             </h3>
             
             {results.traceroute.length > 0 ? (
