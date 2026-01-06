@@ -182,22 +182,21 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
 
   return (
     <div 
-      className="fixed inset-0 bg-black/50 backdrop-animate flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      {/* Scattered glow effect behind the modal */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-        <div className="absolute w-[350px] h-[250px] bg-green-500/15 rounded-full blur-[80px] -top-10 -right-10" />
-        <div className="absolute w-[300px] h-[300px] bg-emerald-500/10 rounded-full blur-[90px] bottom-20 -left-20" />
-        <div className="absolute w-[250px] h-[200px] bg-teal-500/10 rounded-full blur-[70px] bottom-0 right-1/4" />
-      </div>
-      
       <div 
-        className="relative bg-[var(--color-surface)]/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-green-500/10 w-full max-w-2xl overflow-hidden modal-content-animate border border-[var(--color-border)] resize-y"
+        className="relative bg-[var(--color-surface)] rounded-xl shadow-2xl shadow-green-500/10 w-full max-w-2xl overflow-hidden modal-content-animate border border-[var(--color-border)] resize-y"
         style={{ minHeight: '400px', maxHeight: '90vh', height: '85vh' }}
       >
+        {/* Scattered glow effect across the background */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute w-[250px] h-[180px] bg-green-500/8 rounded-full blur-[100px] top-[20%] left-[15%]" />
+          <div className="absolute w-[200px] h-[200px] bg-emerald-500/6 rounded-full blur-[120px] top-[45%] left-[40%]" />
+          <div className="absolute w-[220px] h-[150px] bg-teal-500/6 rounded-full blur-[90px] top-[65%] right-[20%]" />
+        </div>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+        <div className="relative z-10 flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-green-500/20 rounded-lg">
               <Power size={20} className="text-green-500" />
@@ -216,7 +215,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-5 overflow-y-auto flex flex-col" style={{ height: 'calc(100% - 80px)' }}>
+        <div className="relative z-10 p-5 space-y-5 overflow-y-auto flex flex-col bg-[var(--color-surface)]" style={{ height: 'calc(100% - 80px)' }}>
           {/* Quick Wake Section */}
           <div className="space-y-3 flex-shrink-0">
             <label className="block text-sm font-medium text-[var(--color-textSecondary)]">

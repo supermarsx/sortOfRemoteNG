@@ -274,16 +274,16 @@ export const BulkConnectionEditor: React.FC<BulkConnectionEditorProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* Scattered glow effect behind the modal */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-        <div className="absolute w-[400px] h-[300px] bg-blue-500/15 rounded-full blur-[80px] -top-20 -left-20" />
-        <div className="absolute w-[350px] h-[350px] bg-cyan-500/10 rounded-full blur-[100px] top-1/4 right-0" />
-        <div className="absolute w-[300px] h-[250px] bg-indigo-500/10 rounded-full blur-[90px] bottom-0 left-1/4" />
-      </div>
-      
-      <div className="relative bg-[var(--color-surface)]/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-blue-500/10 w-full max-w-6xl mx-4 h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
+      <div className="relative bg-[var(--color-surface)] rounded-xl shadow-2xl shadow-blue-500/10 w-full max-w-6xl mx-4 h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
+        {/* Scattered glow effect across the background */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute w-[300px] h-[200px] bg-blue-500/8 rounded-full blur-[100px] top-[15%] left-[10%]" />
+          <div className="absolute w-[250px] h-[250px] bg-cyan-500/6 rounded-full blur-[120px] top-[40%] left-[35%]" />
+          <div className="absolute w-[280px] h-[180px] bg-indigo-500/6 rounded-full blur-[100px] top-[60%] right-[15%]" />
+          <div className="absolute w-[200px] h-[200px] bg-blue-400/5 rounded-full blur-[80px] top-[25%] right-[25%]" />
+        </div>
         {/* Header */}
-        <div className="border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
+        <div className="relative z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-500/20 rounded-lg">
               <RefreshCw size={18} className="text-blue-500" />
@@ -306,7 +306,7 @@ export const BulkConnectionEditor: React.FC<BulkConnectionEditorProps> = ({
         </div>
 
         {/* Toolbar */}
-        <div className="border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between gap-4 bg-[var(--color-surfaceHover)]/50">
+        <div className="relative z-10 border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between gap-4 bg-[var(--color-surfaceHover)]/50">
           <div className="relative flex-1 max-w-md">
             <Search size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textMuted)]" />
             <input
@@ -362,9 +362,9 @@ export const BulkConnectionEditor: React.FC<BulkConnectionEditorProps> = ({
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-auto">
+        <div className="relative z-10 flex-1 overflow-auto bg-[var(--color-surface)]">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-[var(--color-surface)]/95 backdrop-blur-sm text-[var(--color-textSecondary)] text-xs uppercase z-10">
+            <thead className="sticky top-0 bg-[var(--color-surface)] text-[var(--color-textSecondary)] text-xs uppercase z-10">
               <tr className="border-b border-[var(--color-border)]">
                 <th className="w-10 px-3 py-3 text-left">
                   <button
