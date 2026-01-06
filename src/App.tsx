@@ -25,6 +25,7 @@ import {
   Bug,
   Plus,
   FileCode,
+  ScreenShare,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -67,6 +68,11 @@ import { ErrorLogBar } from "./components/ErrorLogBar";
 import { ConnectionDiagnostics } from "./components/ConnectionDiagnostics";
 import { BulkSSHCommander } from "./components/BulkSSHCommander";
 import { ScriptManager } from "./components/ScriptManager";
+import {
+  repatriateWindow,
+  checkWindowNeedsRepatriation,
+  validateSavedPosition,
+} from "./utils/windowRepatriation";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -1263,6 +1269,9 @@ const AppContent: React.FC = () => {
     const MIN_WIDTH = 800;
     const MIN_HEIGHT = 600;
 
+    const savedWidth = appSettings.windowSize?.width || MIN_WIDTH;
+    const savedHeight = appSettings.windowSize?.height || MIN_HEIGHT;
+
     if (appSettings.persistWindowSize && appSettings.windowSize) {
       const { width, height } = appSettings.windowSize;
       // Validate and enforce minimum size
@@ -1277,18 +1286,47 @@ const AppContent: React.FC = () => {
 
     if (appSettings.persistWindowPosition && appSettings.windowPosition) {
       const { x, y } = appSettings.windowPosition;
-      // Allow negative coordinates for multi-monitor setups
-      const validX = x ?? 0;
-      const validY = y ?? 0;
-      window.setPosition(new LogicalPosition(validX, validY)).catch((error) => {
-        if (!isWindowPermissionError(error)) {
-          console.error(error);
-        }
-      });
+      // Validate position is on a visible screen if auto-repatriate is enabled
+      if (appSettings.autoRepatriateWindow) {
+        validateSavedPosition(
+          { x: x ?? 0, y: y ?? 0 },
+          { width: savedWidth, height: savedHeight }
+        )
+          .then((result) => {
+            if (result) {
+              window.setPosition(new LogicalPosition(result.position.x, result.position.y)).catch((error) => {
+                if (!isWindowPermissionError(error)) {
+                  console.error(error);
+                }
+              });
+              if (result.adjusted) {
+                console.log("Window position adjusted: saved position was off-screen");
+              }
+            } else {
+              // Fallback: center the window
+              window.center().catch(console.error);
+            }
+          })
+          .catch((error) => {
+            console.error("Failed to validate window position:", error);
+            // Fallback to saved position
+            window.setPosition(new LogicalPosition(x ?? 0, y ?? 0)).catch(console.error);
+          });
+      } else {
+        // Allow negative coordinates for multi-monitor setups without validation
+        const validX = x ?? 0;
+        const validY = y ?? 0;
+        window.setPosition(new LogicalPosition(validX, validY)).catch((error) => {
+          if (!isWindowPermissionError(error)) {
+            console.error(error);
+          }
+        });
+      }
     }
   }, [
     appSettings.persistWindowSize,
     appSettings.persistWindowPosition,
+    appSettings.autoRepatriateWindow,
     appSettings.windowSize,
     appSettings.windowPosition,
     isInitialized,
@@ -1451,6 +1489,32 @@ const AppContent: React.FC = () => {
     setIsAlwaysOnTop(nextValue);
   };
 
+  const handleRepatriateWindow = async () => {
+    try {
+      const result = await repatriateWindow(true);
+      if (result.wasOffScreen) {
+        console.log(
+          `Window repatriated from (${result.previousPosition.x}, ${result.previousPosition.y}) ` +
+            `to (${result.newPosition.x}, ${result.newPosition.y})` +
+            (result.targetMonitor ? ` on ${result.targetMonitor}` : "")
+        );
+      } else {
+        // Window is already on screen, just center it
+        const window = getCurrentWindow();
+        await window.center();
+      }
+    } catch (error) {
+      console.error("Failed to repatriate window:", error);
+      // Fallback: center the window
+      try {
+        const window = getCurrentWindow();
+        await window.center();
+      } catch {
+        // Ignore
+      }
+    }
+  };
+
   const handleMaximize = async () => {
     const window = getCurrentWindow();
     const isMaximized = await window.isMaximized();
@@ -1584,6 +1648,13 @@ const AppContent: React.FC = () => {
               size={14}
               className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""}
             />
+          </button>
+          <button
+            onClick={handleRepatriateWindow}
+            className="app-bar-button p-2"
+            title="Center window on screen"
+          >
+            <ScreenShare size={14} />
           </button>
           <button
             onClick={handleMinimize}

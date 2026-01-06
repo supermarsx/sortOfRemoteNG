@@ -22,7 +22,8 @@ import {
   EyeOff,
   Terminal,
   FileCode,
-  Power
+  Power,
+  ScreenShare
 } from "lucide-react";
 
 interface LayoutSettingsProps {
@@ -68,6 +69,19 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             <Move className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
             <span className="text-gray-300 group-hover:text-white">Remember window position</span>
           </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.autoRepatriateWindow}
+              onChange={(e) => updateSettings({ autoRepatriateWindow: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <ScreenShare className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Auto-repatriate window if off-screen</span>
+          </label>
+          <p className="text-xs text-gray-500 ml-7">
+            When enabled, automatically brings window back to a visible monitor if the saved position is off-screen (e.g., after disconnecting an external monitor).
+          </p>
         </div>
       </div>
 

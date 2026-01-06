@@ -192,6 +192,9 @@ export interface GlobalSettings {
   sidebarPosition?: "left" | "right";
   sidebarCollapsed?: boolean;
 
+  // Window Repatriation (bring window back to visible screen area)
+  autoRepatriateWindow: boolean;
+
   // Network Discovery
   networkDiscovery: NetworkDiscoveryConfig;
 

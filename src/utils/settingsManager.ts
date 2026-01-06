@@ -133,6 +133,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   sidebarPosition: 'left',
   sidebarCollapsed: false,
 
+  autoRepatriateWindow: true,
+
   networkDiscovery: {
     enabled: false,
     ipRange: '192.168.1.0/24',
