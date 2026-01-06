@@ -180,6 +180,8 @@ const DetachedSessionContent: React.FC<{
         event.payload.colorScheme as any,
         event.payload.primaryAccentColor,
       );
+      // Dispatch settings-updated event so WebTerminal can sync xterm theme
+      window.dispatchEvent(new CustomEvent("settings-updated"));
     });
 
     return () => {
