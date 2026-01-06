@@ -17,6 +17,8 @@ import {
   FileKey,
   Download,
   CheckCircle,
+  Database,
+  Copy,
 } from 'lucide-react';
 
 interface SecuritySettingsProps {
@@ -57,6 +59,12 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
   const [keyGenSuccess, setKeyGenSuccess] = useState<string | null>(null);
   const [keyGenError, setKeyGenError] = useState<string | null>(null);
   const [keyType, setKeyType] = useState<'ed25519' | 'rsa'>('ed25519');
+  
+  // Collection key file generation state
+  const [isGeneratingCollectionKey, setIsGeneratingCollectionKey] = useState(false);
+  const [collectionKeySuccess, setCollectionKeySuccess] = useState<string | null>(null);
+  const [collectionKeyError, setCollectionKeyError] = useState<string | null>(null);
+  const [collectionKeyLength, setCollectionKeyLength] = useState<32 | 64>(32);
 
   // Get valid modes for current algorithm
   const validModes = useMemo(() => {
@@ -399,6 +407,130 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
             <div className="flex items-center gap-2 px-3 py-2 bg-red-900/30 border border-red-700/50 rounded-md text-red-400 text-sm">
               <Lock className="w-4 h-4" />
               {keyGenError}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Generate Collection Encryption Key File Section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Database className="w-4 h-4 text-blue-400" />
+          Generate Collection Encryption Key File
+        </h4>
+
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+          <p className="text-sm text-gray-400">
+            Generate a secure encryption key file that can be used to encrypt your connection collections. 
+            This key file can be used instead of a password when creating or opening encrypted collections.
+            <span className="text-yellow-400 block mt-2">
+              ⚠️ Keep this file secure! Anyone with access to it can decrypt your collections.
+            </span>
+          </p>
+
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-gray-400">
+              <Key className="w-4 h-4" />
+              Key Strength
+            </label>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setCollectionKeyLength(32)}
+                className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
+                  collectionKeyLength === 32
+                    ? 'bg-blue-600/30 border border-blue-500 text-blue-300'
+                    : 'bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                256-bit (Standard)
+              </button>
+              <button
+                onClick={() => setCollectionKeyLength(64)}
+                className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
+                  collectionKeyLength === 64
+                    ? 'bg-blue-600/30 border border-blue-500 text-blue-300'
+                    : 'bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                512-bit (High Security)
+              </button>
+            </div>
+          </div>
+
+          <button
+            onClick={async () => {
+              setIsGeneratingCollectionKey(true);
+              setCollectionKeyError(null);
+              setCollectionKeySuccess(null);
+              try {
+                const selectedPath = await save({
+                  title: 'Save Collection Encryption Key',
+                  defaultPath: 'collection.key',
+                  filters: [
+                    { name: 'Key File', extensions: ['key'] },
+                    { name: 'All Files', extensions: ['*'] }
+                  ],
+                });
+                if (!selectedPath) {
+                  setIsGeneratingCollectionKey(false);
+                  return;
+                }
+                
+                // Generate cryptographically secure random bytes
+                const keyBytes = new Uint8Array(collectionKeyLength);
+                crypto.getRandomValues(keyBytes);
+                
+                // Convert to base64 for storage
+                const keyBase64 = btoa(String.fromCharCode(...keyBytes));
+                
+                // Create key file content with header
+                const keyFileContent = [
+                  '-----BEGIN SORTOFREMOTENG COLLECTION KEY-----',
+                  `Version: 1`,
+                  `Algorithm: AES-256`,
+                  `Bits: ${collectionKeyLength * 8}`,
+                  `Generated: ${new Date().toISOString()}`,
+                  '',
+                  keyBase64,
+                  '-----END SORTOFREMOTENG COLLECTION KEY-----',
+                ].join('\n');
+                
+                await writeTextFile(selectedPath, keyFileContent);
+                setCollectionKeySuccess(`Key file saved to: ${selectedPath}`);
+                setTimeout(() => setCollectionKeySuccess(null), 5000);
+              } catch (err) {
+                setCollectionKeyError(`Failed to generate key file: ${err}`);
+              } finally {
+                setIsGeneratingCollectionKey(false);
+              }
+            }}
+            disabled={isGeneratingCollectionKey}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-md transition-colors"
+          >
+            {isGeneratingCollectionKey ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating...</span>
+              </>
+            ) : (
+              <>
+                <FileKey className="w-4 h-4" />
+                <span>Generate & Save Collection Key File</span>
+              </>
+            )}
+          </button>
+
+          {collectionKeySuccess && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-900/30 border border-blue-700/50 rounded-md text-blue-400 text-sm">
+              <CheckCircle className="w-4 h-4" />
+              {collectionKeySuccess}
+            </div>
+          )}
+
+          {collectionKeyError && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-red-900/30 border border-red-700/50 rounded-md text-red-400 text-sm">
+              <Lock className="w-4 h-4" />
+              {collectionKeyError}
             </div>
           )}
         </div>
