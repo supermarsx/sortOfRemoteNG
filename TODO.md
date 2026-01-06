@@ -30,8 +30,8 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add tiny ping graph visualization (10 pings)
 - [ ] Add service fingerprint with truncated port reply
 - [x] Fix default gateway always failing tests
-- [ ] Add DNS test and resolution display
-- [ ] Classify target host IP (private/public/loopback/CGNAT, IP class)
+- [x] Add DNS test and resolution display
+- [x] Classify target host IP (private/public/loopback/CGNAT, IP class)
 - [ ] Add MTU sanity check
 - [ ] Add limited asymmetric routing detection
 - [x] Add jitter stat to ping results

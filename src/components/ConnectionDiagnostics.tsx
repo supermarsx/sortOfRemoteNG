@@ -116,89 +116,89 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
     }
 
     try {
-      // Step 1: Internet connectivity check
-      setCurrentStep(t('diagnostics.checkingInternet', 'Checking internet connectivity...'));
-      try {
-        const internetResult = await invoke<PingResult>('ping_host_detailed', { 
-          host: '8.8.8.8', 
-          count: 1,
-          timeoutSecs: 5 
-        });
-        setResults(prev => ({ 
-          ...prev, 
-          internetCheck: internetResult.success ? 'success' : 'failed' 
-        }));
-      } catch {
-        setResults(prev => ({ ...prev, internetCheck: 'failed' }));
-      }
+      // Run all diagnostic groups in parallel
+      setCurrentStep(t('diagnostics.runningAll', 'Running diagnostics...'));
 
-      // Step 2: Gateway check
-      setCurrentStep(t('diagnostics.checkingGateway', 'Checking gateway...'));
-      try {
-        const gatewayResult = await invoke<PingResult>('ping_gateway', { 
-          timeoutSecs: 5 
-        });
-        setResults(prev => ({ 
-          ...prev, 
-          gatewayCheck: gatewayResult.success ? 'success' : 'failed' 
-        }));
-      } catch {
-        setResults(prev => ({ ...prev, gatewayCheck: 'failed' }));
-      }
+      const port = connection.port || getDefaultPort(connection.protocol);
 
-      // Step 3: DNS Resolution
-      setCurrentStep(t('diagnostics.resolvingDns', 'Resolving DNS...'));
-      try {
-        const dnsResult = await invoke<DnsResult>('dns_lookup', { 
-          host: connection.hostname, 
-          timeoutSecs: 5 
-        });
-        setResults(prev => ({ ...prev, dnsResult }));
-        
-        // Step 3b: Classify the resolved IP
-        if (dnsResult.success && dnsResult.resolved_ips.length > 0) {
+      // Group 1: Internet & Gateway checks (parallel)
+      const networkChecksPromise = Promise.allSettled([
+        invoke<PingResult>('ping_host_detailed', { host: '8.8.8.8', count: 1, timeoutSecs: 5 }),
+        invoke<PingResult>('ping_gateway', { timeout_secs: 5 }),
+      ]).then(([internetRes, gatewayRes]) => {
+        setResults(prev => ({
+          ...prev,
+          internetCheck: internetRes.status === 'fulfilled' && internetRes.value.success ? 'success' : 'failed',
+          gatewayCheck: gatewayRes.status === 'fulfilled' && gatewayRes.value.success ? 'success' : 'failed',
+        }));
+      });
+
+      // Group 2: DNS, target ping, port check (parallel)
+      const targetChecksPromise = Promise.allSettled([
+        invoke<DnsResult>('dns_lookup', { host: connection.hostname, timeoutSecs: 5 }),
+        invoke<PingResult>('ping_host_detailed', { host: connection.hostname, count: 1, timeoutSecs: 5 }),
+        invoke<PortCheckResult>('check_port', { host: connection.hostname, port, timeoutSecs: 5 }),
+      ]).then(async ([dnsRes, subnetRes, portRes]) => {
+        // Handle DNS result
+        if (dnsRes.status === 'fulfilled') {
+          const dnsResult = dnsRes.value;
+          setResults(prev => ({ ...prev, dnsResult }));
+          
+          // Classify the resolved IP if DNS succeeded
+          if (dnsResult.success && dnsResult.resolved_ips.length > 0) {
+            try {
+              const classification = await invoke<IpClassification>('classify_ip', { 
+                ip: dnsResult.resolved_ips[0]
+              });
+              setResults(prev => ({ ...prev, ipClassification: classification }));
+            } catch {
+              // IP classification is optional
+            }
+          }
+        } else {
+          // DNS failed - might be an IP address, try to classify directly
           try {
             const classification = await invoke<IpClassification>('classify_ip', { 
-              ip: dnsResult.resolved_ips[0]
+              ip: connection.hostname
             });
             setResults(prev => ({ ...prev, ipClassification: classification }));
           } catch {
-            // IP classification is optional
+            // Not a valid IP either
           }
         }
-      } catch {
-        // DNS resolution failed - might be an IP address already
-        // Try to classify it directly
-        try {
-          const classification = await invoke<IpClassification>('classify_ip', { 
-            ip: connection.hostname
-          });
-          setResults(prev => ({ ...prev, ipClassification: classification }));
-        } catch {
-          // Not a valid IP either
-        }
-      }
 
-      // Step 4: Subnet/Local network check (ping target host)
-      setCurrentStep(t('diagnostics.checkingSubnet', 'Checking subnet access...'));
-      try {
-        const subnetResult = await invoke<PingResult>('ping_host_detailed', { 
-          host: connection.hostname, 
-          count: 1,
-          timeoutSecs: 5 
-        });
-        setResults(prev => ({ 
-          ...prev, 
-          subnetCheck: subnetResult.success ? 'success' : 'failed' 
+        // Handle subnet/target check
+        setResults(prev => ({
+          ...prev,
+          subnetCheck: subnetRes.status === 'fulfilled' && subnetRes.value.success ? 'success' : 'failed',
         }));
-      } catch {
-        setResults(prev => ({ ...prev, subnetCheck: 'failed' }));
-      }
 
-      // Step 4: Run 5 pings to the target
+        // Handle port check
+        if (portRes.status === 'fulfilled') {
+          setResults(prev => ({ ...prev, portCheck: portRes.value }));
+        } else {
+          setResults(prev => ({ ...prev, portCheck: { port, open: false, time_ms: undefined } }));
+        }
+      });
+
+      // Group 3: Traceroute (runs in parallel with others)
+      const traceroutePromise = invoke<TracerouteHop[]>('traceroute', { 
+        host: connection.hostname,
+        maxHops: 30,
+        timeoutSecs: 3
+      }).then(tracerouteResult => {
+        setResults(prev => ({ ...prev, traceroute: tracerouteResult }));
+      }).catch(error => {
+        console.warn('Traceroute failed:', error);
+      });
+
+      // Wait for initial checks to complete
+      await Promise.all([networkChecksPromise, targetChecksPromise, traceroutePromise]);
+
+      // Group 4: Run 10 pings sequentially (needs to be sequential for timing accuracy)
       setCurrentStep(t('diagnostics.runningPings', 'Running ping tests...'));
       const pings: PingResult[] = [];
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 10; i++) {
         try {
           const pingResult = await invoke<PingResult>('ping_host_detailed', { 
             host: connection.hostname, 
@@ -213,37 +213,6 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
         }
         // Small delay between pings
         await new Promise(resolve => setTimeout(resolve, 500));
-      }
-
-      // Step 5: Port check
-      setCurrentStep(t('diagnostics.checkingPort', 'Checking port...'));
-      const port = connection.port || getDefaultPort(connection.protocol);
-      try {
-        const portResult = await invoke<PortCheckResult>('check_port', { 
-          host: connection.hostname, 
-          port,
-          timeoutSecs: 5 
-        });
-        setResults(prev => ({ ...prev, portCheck: portResult }));
-      } catch (error) {
-        setResults(prev => ({ 
-          ...prev, 
-          portCheck: { port, open: false, time_ms: undefined } 
-        }));
-      }
-
-      // Step 6: Traceroute
-      setCurrentStep(t('diagnostics.runningTraceroute', 'Running traceroute...'));
-      try {
-        const tracerouteResult = await invoke<TracerouteHop[]>('traceroute', { 
-          host: connection.hostname,
-          maxHops: 30,
-          timeoutSecs: 3
-        });
-        setResults(prev => ({ ...prev, traceroute: tracerouteResult }));
-      } catch (error) {
-        console.warn('Traceroute failed:', error);
-        // Traceroute might not be available on all systems
       }
 
     } catch (error) {
@@ -497,47 +466,116 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
           <div className="bg-[var(--color-surfaceHover)]/50 border border-[var(--color-border)] rounded-lg p-4">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-textSecondary)] mb-3 flex items-center gap-2">
               <Activity size={12} />
-              {t('diagnostics.pingResults', 'Ping Results')} ({results.pings.length}/5)
+              {t('diagnostics.pingResults', 'Ping Results')} ({results.pings.length}/10)
             </h3>
             
             {results.pings.length > 0 && (
               <>
-                {/* Ping Graph */}
+                {/* Ping Line Graph */}
                 <div className="mb-3 p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
-                  <div className="flex items-end gap-1 h-12">
-                    {results.pings.map((ping, i) => {
-                      const height = ping.success && ping.time_ms && maxPing > 0
-                        ? Math.max(15, ((ping.time_ms / maxPing) * 100))
-                        : 0;
-                      return (
-                        <div
-                          key={i}
-                          className="flex-1 flex flex-col items-center justify-end"
-                          title={ping.success ? `${ping.time_ms}ms` : 'Timeout'}
+                  {(() => {
+                    // Calculate graph bounds with padding
+                    const graphMin = Math.max(0, minPing - 10);
+                    const graphMax = maxPing + 10;
+                    const range = graphMax - graphMin || 1;
+                    const graphHeight = 64;
+                    const graphWidth = 300;
+                    const pointSpacing = graphWidth / 9; // 10 points = 9 gaps
+                    
+                    // Build SVG path for the line
+                    const points: { x: number; y: number; ping: PingResult }[] = results.pings.map((ping, i) => {
+                      const x = i * pointSpacing;
+                      const y = ping.success && ping.time_ms
+                        ? graphHeight - ((ping.time_ms - graphMin) / range) * graphHeight
+                        : graphHeight; // Failed pings at bottom
+                      return { x, y, ping };
+                    });
+                    
+                    const linePath = points
+                      .filter(p => p.ping.success)
+                      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
+                      .join(' ');
+                    
+                    // Calculate avg line position
+                    const avgY = avgPingTime > 0 
+                      ? graphHeight - ((avgPingTime - graphMin) / range) * graphHeight 
+                      : graphHeight / 2;
+
+                    return (
+                      <div className="relative">
+                        <svg 
+                          viewBox={`-10 -5 ${graphWidth + 20} ${graphHeight + 10}`} 
+                          className="w-full h-16"
+                          preserveAspectRatio="none"
                         >
-                          <div
-                            className={`w-full rounded-t transition-all ${
-                              ping.success 
-                                ? ping.time_ms && ping.time_ms > avgPingTime * 1.5
-                                  ? 'bg-yellow-500'
-                                  : 'bg-green-500'
-                                : 'bg-red-500'
-                            }`}
-                            style={{ height: ping.success ? `${height}%` : '15%' }}
-                          />
+                          {/* Grid lines */}
+                          <line x1="0" y1="0" x2={graphWidth} y2="0" stroke="var(--color-border)" strokeWidth="0.5" strokeDasharray="2,2" />
+                          <line x1="0" y1={graphHeight/2} x2={graphWidth} y2={graphHeight/2} stroke="var(--color-border)" strokeWidth="0.5" strokeDasharray="2,2" />
+                          <line x1="0" y1={graphHeight} x2={graphWidth} y2={graphHeight} stroke="var(--color-border)" strokeWidth="0.5" strokeDasharray="2,2" />
+                          
+                          {/* Average line */}
+                          {avgPingTime > 0 && (
+                            <line 
+                              x1="0" 
+                              y1={avgY} 
+                              x2={graphWidth} 
+                              y2={avgY} 
+                              stroke="#3b82f6" 
+                              strokeWidth="1" 
+                              strokeDasharray="4,2" 
+                              opacity="0.6"
+                            />
+                          )}
+                          
+                          {/* Line path */}
+                          {linePath && (
+                            <path 
+                              d={linePath} 
+                              fill="none" 
+                              stroke="#22c55e" 
+                              strokeWidth="2" 
+                              strokeLinecap="round" 
+                              strokeLinejoin="round"
+                            />
+                          )}
+                          
+                          {/* Points */}
+                          {points.map((p, i) => (
+                            <circle
+                              key={i}
+                              cx={p.x}
+                              cy={p.y}
+                              r="4"
+                              fill={!p.ping.success ? '#ef4444' : p.ping.time_ms && p.ping.time_ms > avgPingTime * 1.5 ? '#eab308' : '#22c55e'}
+                              stroke="var(--color-surface)"
+                              strokeWidth="1.5"
+                            >
+                              <title>{p.ping.success ? `${p.ping.time_ms}ms` : 'Timeout'}</title>
+                            </circle>
+                          ))}
+                          
+                          {/* Placeholder points for pending pings */}
+                          {Array(Math.max(0, 10 - results.pings.length)).fill(0).map((_, i) => (
+                            <circle
+                              key={`empty-${i}`}
+                              cx={(results.pings.length + i) * pointSpacing}
+                              cy={graphHeight / 2}
+                              r="3"
+                              fill="var(--color-border)"
+                              opacity="0.3"
+                            />
+                          ))}
+                        </svg>
+                        
+                        {/* Y-axis labels */}
+                        <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-between text-[8px] text-[var(--color-textMuted)] -ml-1 pointer-events-none">
+                          <span>{graphMax}ms</span>
+                          <span>{Math.round((graphMax + graphMin) / 2)}ms</span>
+                          <span>{graphMin}ms</span>
                         </div>
-                      );
-                    })}
-                    {Array(5 - results.pings.length).fill(0).map((_, i) => (
-                      <div key={`empty-${i}`} className="flex-1 flex flex-col items-center justify-end">
-                        <div className="w-full h-[15%] bg-[var(--color-border)] rounded-t opacity-30" />
                       </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-between text-[9px] text-[var(--color-textMuted)] mt-1">
-                    <span>{minPing > 0 ? `${minPing}ms` : '-'}</span>
-                    <span>{maxPing > 0 ? `${maxPing}ms` : '-'}</span>
-                  </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
@@ -588,7 +626,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
                   {ping.success && ping.time_ms ? `${ping.time_ms}ms` : 'Timeout'}
                 </div>
               ))}
-              {Array(5 - results.pings.length).fill(0).map((_, i) => (
+              {Array(Math.max(0, 10 - results.pings.length)).fill(0).map((_, i) => (
                 <div key={`empty-${i}`} className="flex-1 p-2 rounded text-center text-xs bg-[var(--color-surface)] text-[var(--color-textMuted)] border border-[var(--color-border)]">
                   -
                 </div>
