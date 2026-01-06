@@ -157,36 +157,31 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
       }}
     >
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden relative">
-        <div className="relative h-16 border-b border-gray-700">
-          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
-            {t("logs.title")}
-          </h2>
-          <div className="absolute right-4 top-3 flex items-center space-x-2">
-            <button
-              onClick={exportLogs}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
-            >
-              <Download size={14} />
-              <span>{t("logs.export")}</span>
-            </button>
-            <button
-              onClick={clearLogs}
-              className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors flex items-center space-x-2"
-            >
-              <Trash2 size={14} />
-              <span>{t("logs.clear")}</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
-            >
-              <X size={20} />
-            </button>
+        {/* Header */}
+        <div className="border-b border-gray-700 px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-amber-500/20 rounded-lg">
+              <Clock size={20} className="text-amber-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">
+                {t("logs.title")}
+              </h2>
+              <p className="text-xs text-gray-400">
+                {logs.length} total entries
+              </p>
+            </div>
           </div>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-400 hover:text-white"
+          >
+            <X size={18} />
+          </button>
         </div>
 
-        {/* Filters */}
-        <div className="p-4 border-b border-gray-700 bg-gray-750">
+        {/* Secondary Toolbar */}
+        <div className="border-b border-gray-700 px-4 py-2 flex items-center justify-between bg-gray-750">
           <div className="flex items-center space-x-4">
             <div className="flex-1 relative">
               <Search
@@ -220,6 +215,23 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
             <div className="text-sm text-gray-400">
               {filteredLogs.length} of {logs.length} entries
             </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={exportLogs}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white rounded-md transition-colors flex items-center space-x-2 text-sm"
+            >
+              <Download size={14} />
+              <span>{t("logs.export")}</span>
+            </button>
+            <button
+              onClick={clearLogs}
+              className="px-3 py-1.5 bg-gray-700 hover:bg-red-600 text-gray-300 hover:text-white rounded-md transition-colors flex items-center space-x-2 text-sm"
+            >
+              <Trash2 size={14} />
+              <span>{t("logs.clear")}</span>
+            </button>
           </div>
         </div>
 

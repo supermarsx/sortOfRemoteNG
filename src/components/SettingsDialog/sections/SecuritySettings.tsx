@@ -2,6 +2,9 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings } from '../../../types/settings';
 import { SecureStorage } from '../../../utils/storage';
+import { invoke } from '@tauri-apps/api/core';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
 import {
   Shield,
   Lock,
@@ -11,6 +14,9 @@ import {
   Clock,
   ShieldCheck,
   Loader2,
+  FileKey,
+  Download,
+  CheckCircle,
 } from 'lucide-react';
 
 interface SecuritySettingsProps {
@@ -47,6 +53,10 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 }) => {
   const { t } = useTranslation();
   const [hasPassword, setHasPassword] = useState(false);
+  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
+  const [keyGenSuccess, setKeyGenSuccess] = useState<string | null>(null);
+  const [keyGenError, setKeyGenError] = useState<string | null>(null);
+  const [keyType, setKeyType] = useState<'ed25519' | 'rsa'>('ed25519');
 
   // Get valid modes for current algorithm
   const validModes = useMemo(() => {
@@ -288,6 +298,109 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
               disabled={!hasPassword}
             />
           </div>
+        </div>
+      </div>
+
+      {/* Generate Key File Section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <FileKey className="w-4 h-4 text-emerald-400" />
+          Generate SSH Key File
+        </h4>
+
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+          <p className="text-sm text-gray-400">
+            Generate a new SSH key pair and save it to a file. The private key will be saved to your chosen location, and the public key will be saved with a .pub extension.
+          </p>
+
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-gray-400">
+              <Key className="w-4 h-4" />
+              Key Type
+            </label>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setKeyType('ed25519')}
+                className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
+                  keyType === 'ed25519'
+                    ? 'bg-emerald-600/30 border border-emerald-500 text-emerald-300'
+                    : 'bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                Ed25519 (Recommended)
+              </button>
+              <button
+                onClick={() => setKeyType('rsa')}
+                className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
+                  keyType === 'rsa'
+                    ? 'bg-emerald-600/30 border border-emerald-500 text-emerald-300'
+                    : 'bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                RSA (4096-bit)
+              </button>
+            </div>
+          </div>
+
+          <button
+            onClick={async () => {
+              setIsGeneratingKey(true);
+              setKeyGenError(null);
+              setKeyGenSuccess(null);
+              try {
+                const selectedPath = await save({
+                  title: 'Save SSH Private Key',
+                  defaultPath: keyType === 'ed25519' ? 'id_ed25519' : 'id_rsa',
+                  filters: [{ name: 'SSH Key', extensions: [''] }, { name: 'All Files', extensions: ['*'] }],
+                });
+                if (!selectedPath) {
+                  setIsGeneratingKey(false);
+                  return;
+                }
+                const [privateKey, publicKey] = await invoke<[string, string]>('generate_ssh_key', {
+                  keyType,
+                  bits: keyType === 'rsa' ? 4096 : undefined,
+                  passphrase: undefined,
+                });
+                await writeTextFile(selectedPath, privateKey);
+                await writeTextFile(`${selectedPath}.pub`, publicKey);
+                setKeyGenSuccess(`Key saved to: ${selectedPath}`);
+                setTimeout(() => setKeyGenSuccess(null), 5000);
+              } catch (err) {
+                setKeyGenError(`Failed to generate key: ${err}`);
+              } finally {
+                setIsGeneratingKey(false);
+              }
+            }}
+            disabled={isGeneratingKey}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white rounded-md transition-colors"
+          >
+            {isGeneratingKey ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Generating...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                <span>Generate & Save Key File</span>
+              </>
+            )}
+          </button>
+
+          {keyGenSuccess && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-900/30 border border-emerald-700/50 rounded-md text-emerald-400 text-sm">
+              <CheckCircle className="w-4 h-4" />
+              {keyGenSuccess}
+            </div>
+          )}
+
+          {keyGenError && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-red-900/30 border border-red-700/50 rounded-md text-red-400 text-sm">
+              <Lock className="w-4 h-4" />
+              {keyGenError}
+            </div>
+          )}
         </div>
       </div>
     </div>

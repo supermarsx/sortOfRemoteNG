@@ -317,10 +317,15 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     >
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
         <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white flex items-center space-x-2">
-            <Database size={20} className="text-blue-400" />
-            <span>Collection Center</span>
-          </h2>
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-500/20 rounded-lg">
+              <Database size={20} className="text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">Collection Center</h2>
+              <p className="text-xs text-gray-400">Manage your connection collections</p>
+            </div>
+          </div>
           <div className="flex items-center space-x-2">
             {activeTab === 'collections' && (
               <>
