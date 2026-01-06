@@ -121,6 +121,8 @@ export interface GlobalSettings {
   showProxyMenuIcon: boolean;
   showShortcutManagerIcon: boolean;
   showWolIcon: boolean;
+  showBulkSSHIcon: boolean;
+  showScriptManagerIcon: boolean;
   showErrorLogBar: boolean;
 
   // Auto Lock

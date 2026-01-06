@@ -2,7 +2,8 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { 
   X, Terminal, Send, Square, CheckSquare, 
   Grid3x3, Rows, History, Trash2, Copy, Clock,
-  AlertCircle, Check, Save, FileCode, FolderOpen, ExternalLink
+  AlertCircle, Check, Save, FileCode, FolderOpen, ExternalLink,
+  StopCircle
 } from 'lucide-react';
 import { useConnections } from '../contexts/useConnections';
 import { invoke } from '@tauri-apps/api/core';
@@ -337,6 +338,44 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
       executeCommand();
     }
   }, [executeCommand]);
+
+  // Send Ctrl+C (SIGINT) to selected sessions
+  const sendCancel = useCallback(async () => {
+    const isTauri = typeof window !== 'undefined' && 
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    
+    if (!isTauri) return;
+
+    const selectedSessions = sshSessions.filter(s => selectedSessionIds.has(s.id));
+    
+    // Send Ctrl+C character (ASCII 0x03) to each selected session
+    const cancelPromises = selectedSessions.map(async (session) => {
+      try {
+        const backendSessionId = session.backendSessionId;
+        if (!backendSessionId) return;
+
+        // Send ETX (End of Text) character - Ctrl+C
+        await invoke('send_ssh_input', { 
+          sessionId: backendSessionId, 
+          data: '\x03' 
+        });
+
+        setSessionOutputs(prev => ({
+          ...prev,
+          [session.id]: {
+            ...prev[session.id],
+            output: prev[session.id]?.output + '\n^C\n',
+            status: 'idle',
+          },
+        }));
+      } catch (error) {
+        console.error('Failed to send cancel to session:', session.id, error);
+      }
+    });
+
+    await Promise.all(cancelPromises);
+    setIsExecuting(false);
+  }, [sshSessions, selectedSessionIds]);
 
   const clearOutputs = useCallback(() => {
     const clearedOutputs: Record<string, SessionOutput> = {};
@@ -788,6 +827,14 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                         {t('bulkSsh.send', 'Send')}
                       </>
                     )}
+                  </button>
+                  <button
+                    onClick={sendCancel}
+                    disabled={selectedCount === 0}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-[var(--color-surfaceHover)] disabled:text-[var(--color-textMuted)] text-white rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
+                    title={t('bulkSsh.sendCancel', 'Send Ctrl+C')}
+                  >
+                    <StopCircle size={14} />
                   </button>
                   <button
                     onClick={() => setShowScriptLibrary(!showScriptLibrary)}

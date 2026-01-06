@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight, Star, TableProperties, Terminal } from 'lucide-react';
+import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight, Star, TableProperties } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionTree } from './ConnectionTree';
 import { BulkConnectionEditor } from './BulkConnectionEditor';
-import { BulkSSHCommander } from './BulkSSHCommander';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
 import { SecureStorage } from '../utils/storage';
@@ -42,7 +41,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { state, dispatch } = useConnections();
   const [showFilters, setShowFilters] = useState(false);
   const [showBulkEditor, setShowBulkEditor] = useState(false);
-  const [showBulkSSH, setShowBulkSSH] = useState(false);
 
   // Get all available tags
   const allTags = Array.from(
@@ -333,13 +331,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <TableProperties size={14} />
               </button>
-              <button
-                onClick={() => setShowBulkSSH(true)}
-                className="p-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
-                title={t('bulkSsh.title', 'Bulk SSH Commander')}
-              >
-                <Terminal size={14} />
-              </button>
             </div>
 
             {/* Connection Tree */}
@@ -362,11 +353,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <BulkConnectionEditor
         isOpen={showBulkEditor}
         onClose={() => setShowBulkEditor(false)}
-      />
-
-      <BulkSSHCommander
-        isOpen={showBulkSSH}
-        onClose={() => setShowBulkSSH(false)}
       />
     </>
   );

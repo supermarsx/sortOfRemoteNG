@@ -24,6 +24,7 @@ import {
   Power,
   Bug,
   Plus,
+  FileCode,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -64,6 +65,8 @@ import { WOLQuickTool } from "./components/WOLQuickTool";
 import { SplashScreen } from "./components/SplashScreen";
 import { ErrorLogBar } from "./components/ErrorLogBar";
 import { ConnectionDiagnostics } from "./components/ConnectionDiagnostics";
+import { BulkSSHCommander } from "./components/BulkSSHCommander";
+import { ScriptManager } from "./components/ScriptManager";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -90,6 +93,8 @@ const AppContent: React.FC = () => {
   const [showWol, setShowWol] = useState(false);
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [showBulkSSH, setShowBulkSSH] = useState(false);
+  const [showScriptManager, setShowScriptManager] = useState(false);
   const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
@@ -1625,6 +1630,24 @@ const AppContent: React.FC = () => {
               <Power size={14} />
             </button>
           )}
+          {appSettings.showBulkSSHIcon && (
+            <button
+              onClick={() => setShowBulkSSH(true)}
+              className="app-bar-button p-2"
+              title={t('bulkSsh.title', 'Bulk SSH Commander')}
+            >
+              <Terminal size={14} />
+            </button>
+          )}
+          {appSettings.showScriptManagerIcon && (
+            <button
+              onClick={() => setShowScriptManager(true)}
+              className="app-bar-button p-2"
+              title={t('scriptManager.title', 'Script Manager')}
+            >
+              <FileCode size={14} />
+            </button>
+          )}
           {appSettings.showPerformanceMonitorIcon && (
             <button
               onClick={() => setShowPerformanceMonitor(true)}
@@ -1841,6 +1864,16 @@ const AppContent: React.FC = () => {
       />
 
       <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
+
+      <BulkSSHCommander
+        isOpen={showBulkSSH}
+        onClose={() => setShowBulkSSH(false)}
+      />
+
+      <ScriptManager
+        isOpen={showScriptManager}
+        onClose={() => setShowScriptManager(false)}
+      />
 
       {showDiagnostics && diagnosticsConnection && (
         <ConnectionDiagnostics

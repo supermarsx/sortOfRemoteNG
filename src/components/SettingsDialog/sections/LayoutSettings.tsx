@@ -20,7 +20,10 @@ import {
   ShieldCheck,
   Languages,
   Mouse,
-  EyeOff
+  EyeOff,
+  Terminal,
+  FileCode,
+  Power
 } from "lucide-react";
 
 interface LayoutSettingsProps {
@@ -285,6 +288,36 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             />
             <ShieldCheck className="w-4 h-4 text-emerald-500 group-hover:text-emerald-400" />
             <span className="text-gray-300 group-hover:text-white">Security</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showWolIcon}
+              onChange={(e) => updateSettings({ showWolIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Power className="w-4 h-4 text-orange-500 group-hover:text-orange-400" />
+            <span className="text-gray-300 group-hover:text-white">Wake-on-LAN</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showBulkSSHIcon}
+              onChange={(e) => updateSettings({ showBulkSSHIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Terminal className="w-4 h-4 text-green-500 group-hover:text-green-400" />
+            <span className="text-gray-300 group-hover:text-white">Bulk SSH Commander</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showScriptManagerIcon}
+              onChange={(e) => updateSettings({ showScriptManagerIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <FileCode className="w-4 h-4 text-purple-500 group-hover:text-purple-400" />
+            <span className="text-gray-300 group-hover:text-white">Script Manager</span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input

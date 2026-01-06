@@ -70,6 +70,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showProxyMenuIcon: true,
   showShortcutManagerIcon: true,
   showWolIcon: true,
+  showBulkSSHIcon: true,
+  showScriptManagerIcon: true,
   showErrorLogBar: false,
 
   autoLock: {
