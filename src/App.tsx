@@ -1160,21 +1160,23 @@ const AppContent: React.FC = () => {
 
     currentWindow
       .onCloseRequested(async (event) => {
-        // Always prevent the default close behavior first
-        event.preventDefault();
-        
-        // If we're already closing or awaiting confirmation, don't re-trigger
+        // If we're already in the process of closing, allow it
         if (closingMainRef.current) return;
-        if (awaitingCloseConfirmRef.current) return;
+        
+        // If we're awaiting confirmation, don't re-trigger
+        if (awaitingCloseConfirmRef.current) {
+          event.preventDefault();
+          return;
+        }
         
         // Check if we should warn the user
         const settings = settingsManager.getSettings();
         const hasActiveSessions = state.sessions.length > 0;
         
         if (settings.warnOnClose && hasActiveSessions) {
-          // Mark that we're waiting for confirmation
+          // Prevent close and show confirmation dialog
+          event.preventDefault();
           awaitingCloseConfirmRef.current = true;
-          // Store the close function and show confirmation dialog
           pendingCloseRef.current = performClose;
           setDialogState({
             isOpen: true,
@@ -1190,6 +1192,7 @@ const AppContent: React.FC = () => {
             },
           });
         } else {
+          // No warning needed - close detached windows first, then allow close
           await performClose();
         }
       })

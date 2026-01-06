@@ -238,6 +238,20 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
     ? (results.pings.filter(p => p.success).length / results.pings.length) * 100
     : 0;
 
+  // Calculate jitter (standard deviation of ping times)
+  const successfulPings = results.pings.filter(p => p.success && p.time_ms);
+  const jitter = successfulPings.length > 1
+    ? Math.sqrt(
+        successfulPings.reduce((sum, p) => sum + Math.pow((p.time_ms || 0) - avgPingTime, 2), 0) / 
+        (successfulPings.length - 1)
+      )
+    : 0;
+
+  // Get min/max for graph scaling
+  const pingTimes = successfulPings.map(p => p.time_ms || 0);
+  const maxPing = pingTimes.length > 0 ? Math.max(...pingTimes) : 0;
+  const minPing = pingTimes.length > 0 ? Math.min(...pingTimes) : 0;
+
   return (
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
@@ -339,32 +353,78 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
             </h3>
             
             {results.pings.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                <div className="text-center p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
-                  <div className="text-xl font-bold text-[var(--color-text)]">
-                    {pingSuccessRate.toFixed(0)}%
+              <>
+                {/* Ping Graph */}
+                <div className="mb-3 p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                  <div className="flex items-end gap-1 h-12">
+                    {results.pings.map((ping, i) => {
+                      const height = ping.success && ping.time_ms && maxPing > 0
+                        ? Math.max(15, ((ping.time_ms / maxPing) * 100))
+                        : 0;
+                      return (
+                        <div
+                          key={i}
+                          className="flex-1 flex flex-col items-center justify-end"
+                          title={ping.success ? `${ping.time_ms}ms` : 'Timeout'}
+                        >
+                          <div
+                            className={`w-full rounded-t transition-all ${
+                              ping.success 
+                                ? ping.time_ms && ping.time_ms > avgPingTime * 1.5
+                                  ? 'bg-yellow-500'
+                                  : 'bg-green-500'
+                                : 'bg-red-500'
+                            }`}
+                            style={{ height: ping.success ? `${height}%` : '15%' }}
+                          />
+                        </div>
+                      );
+                    })}
+                    {Array(5 - results.pings.length).fill(0).map((_, i) => (
+                      <div key={`empty-${i}`} className="flex-1 flex flex-col items-center justify-end">
+                        <div className="w-full h-[15%] bg-[var(--color-border)] rounded-t opacity-30" />
+                      </div>
+                    ))}
                   </div>
-                  <div className="text-[10px] text-[var(--color-textMuted)] uppercase">{t('diagnostics.successRate', 'Success Rate')}</div>
-                </div>
-                <div className="text-center p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
-                  <div className="text-xl font-bold text-[var(--color-text)]">
-                    {avgPingTime > 0 ? `${avgPingTime.toFixed(0)}ms` : '-'}
+                  <div className="flex justify-between text-[9px] text-[var(--color-textMuted)] mt-1">
+                    <span>{minPing > 0 ? `${minPing}ms` : '-'}</span>
+                    <span>{maxPing > 0 ? `${maxPing}ms` : '-'}</span>
                   </div>
-                  <div className="text-[10px] text-[var(--color-textMuted)] uppercase">{t('diagnostics.avgLatency', 'Avg Latency')}</div>
                 </div>
-                <div className="text-center p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
-                  <div className="text-xl font-bold text-green-500">
-                    {results.pings.filter(p => p.success).length}
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-3">
+                  <div className="text-center p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                    <div className="text-xl font-bold text-[var(--color-text)]">
+                      {pingSuccessRate.toFixed(0)}%
+                    </div>
+                    <div className="text-[10px] text-[var(--color-textMuted)] uppercase">{t('diagnostics.successRate', 'Success Rate')}</div>
                   </div>
-                  <div className="text-[10px] text-[var(--color-textMuted)] uppercase">{t('diagnostics.successful', 'Successful')}</div>
-                </div>
-                <div className="text-center p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
-                  <div className="text-xl font-bold text-red-500">
-                    {results.pings.filter(p => !p.success).length}
+                  <div className="text-center p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                    <div className="text-xl font-bold text-[var(--color-text)]">
+                      {avgPingTime > 0 ? `${avgPingTime.toFixed(0)}ms` : '-'}
+                    </div>
+                    <div className="text-[10px] text-[var(--color-textMuted)] uppercase">{t('diagnostics.avgLatency', 'Avg Latency')}</div>
                   </div>
-                  <div className="text-[10px] text-[var(--color-textMuted)] uppercase">{t('diagnostics.failed', 'Failed')}</div>
+                  <div className="text-center p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                    <div className="text-xl font-bold text-[var(--color-text)]">
+                      {jitter > 0 ? `±${jitter.toFixed(0)}ms` : '-'}
+                    </div>
+                    <div className="text-[10px] text-[var(--color-textMuted)] uppercase">{t('diagnostics.jitter', 'Jitter')}</div>
+                  </div>
+                  <div className="text-center p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                    <div className="text-xl font-bold text-green-500">
+                      {results.pings.filter(p => p.success).length}
+                    </div>
+                    <div className="text-[10px] text-[var(--color-textMuted)] uppercase">{t('diagnostics.successful', 'Successful')}</div>
+                  </div>
+                  <div className="text-center p-2.5 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                    <div className="text-xl font-bold text-red-500">
+                      {results.pings.filter(p => !p.success).length}
+                    </div>
+                    <div className="text-[10px] text-[var(--color-textMuted)] uppercase">{t('diagnostics.failed', 'Failed')}</div>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
             
             <div className="flex gap-1.5">

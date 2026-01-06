@@ -27,14 +27,14 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Connection diagnostics (ping, traceroute, port checks, gateway/internet tests)
 - [x] Remove outer glow from diagnostics window
 - [x] Add hop count to traceroute results
-- [ ] Add tiny ping graph visualization (10 pings)
+- [x] Add tiny ping graph visualization (10 pings)
 - [ ] Add service fingerprint with truncated port reply
-- [ ] Fix default gateway always failing tests
+- [x] Fix default gateway always failing tests
 - [ ] Add DNS test and resolution display
 - [ ] Classify target host IP (private/public/loopback/CGNAT, IP class)
 - [ ] Add MTU sanity check
 - [ ] Add limited asymmetric routing detection
-- [ ] Add jitter stat to ping results
+- [x] Add jitter stat to ping results
 - [ ] Add TCP connection time, detect slow SYN-ACK
 - [ ] Add more extensive banner grab
 - [ ] Add UDP reachability probe when applicable

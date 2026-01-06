@@ -312,47 +312,62 @@ pub async fn ping_gateway(timeout_secs: Option<u64>) -> Result<PingResult, Strin
     let gateway = get_default_gateway()?;
     
     let start = std::time::Instant::now();
-    let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(5));
+    let timeout_ms = (timeout_secs.unwrap_or(5) * 1000) as u32;
     
-    // Try to connect to the gateway
-    let addr = format!("{}:80", gateway);
-    match timeout(timeout_duration, TcpStream::connect(&addr)).await {
-        Ok(Ok(_)) => {
-            let elapsed = start.elapsed().as_millis() as u64;
+    // Use ICMP ping directly - gateways typically don't have TCP services open
+    let mut cmd = Command::new("ping");
+    #[cfg(target_os = "windows")]
+    cmd.arg("-n").arg("1").arg("-w").arg(timeout_ms.to_string());
+    #[cfg(not(target_os = "windows"))]
+    cmd.arg("-c").arg("1").arg("-W").arg((timeout_secs.unwrap_or(5)).to_string());
+    cmd.arg(&gateway)
+       .stdout(Stdio::piped())
+       .stderr(Stdio::null());
+
+    match cmd.output().await {
+        Ok(output) if output.status.success() => {
+            // Try to parse ping time from output
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let time_ms = parse_ping_time(&stdout).unwrap_or(start.elapsed().as_millis() as u64);
             Ok(PingResult {
                 success: true,
-                time_ms: Some(elapsed),
+                time_ms: Some(time_ms),
                 error: None,
             })
         }
-        _ => {
-            // TCP failed, try ICMP ping via system command
-            let mut cmd = Command::new("ping");
-            #[cfg(target_os = "windows")]
-            cmd.arg("-n").arg("1").arg("-w").arg("1000");
-            #[cfg(not(target_os = "windows"))]
-            cmd.arg("-c").arg("1").arg("-W").arg("1");
-            cmd.arg(&gateway)
-               .stdout(Stdio::null())
-               .stderr(Stdio::null());
+        Ok(_) => Ok(PingResult {
+            success: false,
+            time_ms: None,
+            error: Some(format!("Gateway {} not reachable via ICMP", gateway)),
+        }),
+        Err(e) => Ok(PingResult {
+            success: false,
+            time_ms: None,
+            error: Some(format!("Ping command failed: {}", e)),
+        })
+    }
+}
 
-            match cmd.status().await {
-                Ok(status) if status.success() => {
-                    let elapsed = start.elapsed().as_millis() as u64;
-                    Ok(PingResult {
-                        success: true,
-                        time_ms: Some(elapsed),
-                        error: None,
-                    })
-                }
-                _ => Ok(PingResult {
-                    success: false,
-                    time_ms: None,
-                    error: Some("Gateway not reachable".to_string()),
-                })
+/// Parse ping time from ping command output
+fn parse_ping_time(output: &str) -> Option<u64> {
+    // Windows: "time=XXms" or "time<1ms"
+    // Unix: "time=XX.X ms"
+    for line in output.lines() {
+        let line_lower = line.to_lowercase();
+        if let Some(pos) = line_lower.find("time=") {
+            let after_time = &line[pos + 5..];
+            let num_str: String = after_time.chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if let Ok(ms) = num_str.parse::<f64>() {
+                return Some(ms.round() as u64);
             }
         }
+        if line_lower.contains("time<1ms") || line_lower.contains("time<1 ms") {
+            return Some(1);
+        }
     }
+    None
 }
 
 fn get_default_gateway() -> Result<String, String> {
