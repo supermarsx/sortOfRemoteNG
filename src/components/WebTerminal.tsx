@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, Trash2, X, Play, Search } from "lucide-react";
+import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
@@ -895,6 +895,17 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     }
   };
 
+  // Send Ctrl+C (cancel) to the SSH session
+  const sendCancel = useCallback(async () => {
+    if (!isSsh || !sshSessionId.current || !isSshReady.current) return;
+    try {
+      // Ctrl+C is ASCII code 3
+      await invoke("send_ssh_input", { sessionId: sshSessionId.current, data: "\x03" });
+    } catch (err) {
+      console.error("Failed to send Ctrl+C:", err);
+    }
+  }, [isSsh]);
+
   const statusToneClass = useMemo(() => {
     switch (status) {
       case "connected":
@@ -952,6 +963,14 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                   aria-label="Run Script"
                 >
                   <FileCode size={14} />
+                </button>
+                <button
+                  onClick={sendCancel}
+                  className="app-bar-button p-2 hover:text-red-500"
+                  data-tooltip="Send Ctrl+C"
+                  aria-label="Send Ctrl+C"
+                >
+                  <StopCircle size={14} />
                 </button>
                 <button
                   onClick={handleReconnect}
