@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { ConnectionDiagnostics } from '../src/components/ConnectionDiagnostics';
 import { Connection } from '../src/types/connection';
+import { ToastProvider } from '../src/contexts/ToastContext';
+import React from 'react';
 
 // Mock Tauri invoke
 vi.mock('@tauri-apps/api/core', () => ({
@@ -16,6 +18,11 @@ vi.mock('react-i18next', () => ({
 }));
 
 import { invoke } from '@tauri-apps/api/core';
+
+// Helper to wrap component with required providers
+const renderWithProviders = (ui: React.ReactElement) => {
+  return render(<ToastProvider>{ui}</ToastProvider>);
+};
 
 const mockConnection: Connection = {
   id: 'test-conn-1',
@@ -55,27 +62,27 @@ describe('ConnectionDiagnostics', () => {
   });
 
   it('renders the diagnostics dialog', () => {
-    render(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
+    renderWithProviders(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
     expect(screen.getByText(/Connection Diagnostics/i)).toBeInTheDocument();
     expect(screen.getByText(/Test Server/i)).toBeInTheDocument();
   });
 
   it('displays connection hostname', () => {
-    render(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
+    renderWithProviders(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
     expect(screen.getByText('192.168.1.100')).toBeInTheDocument();
   });
 
   it('displays network checks section', () => {
-    render(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
+    renderWithProviders(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
     expect(screen.getByText(/Network Checks/i)).toBeInTheDocument();
   });
 
   it('calls onClose when close button is clicked', () => {
     const onClose = vi.fn();
-    render(<ConnectionDiagnostics connection={mockConnection} onClose={onClose} />);
+    renderWithProviders(<ConnectionDiagnostics connection={mockConnection} onClose={onClose} />);
     
-    // Find close button by data-tooltip attribute
-    const closeButton = document.querySelector('[data-tooltip="Close"]') as HTMLButtonElement;
+    // Find close button by title attribute
+    const closeButton = document.querySelector('[title="Close"]') as HTMLButtonElement;
     if (closeButton) {
       fireEvent.click(closeButton);
       expect(onClose).toHaveBeenCalled();
@@ -84,22 +91,22 @@ describe('ConnectionDiagnostics', () => {
 
   it('calls onClose when Escape key is pressed', () => {
     const onClose = vi.fn();
-    render(<ConnectionDiagnostics connection={mockConnection} onClose={onClose} />);
+    renderWithProviders(<ConnectionDiagnostics connection={mockConnection} onClose={onClose} />);
     
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
   });
 
   it('has refresh button for re-running diagnostics', () => {
-    render(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
+    renderWithProviders(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
     
-    // Find refresh button by data-tooltip attribute
-    const refreshButton = document.querySelector('[data-tooltip="Run Again"]');
+    // Find refresh button by title attribute
+    const refreshButton = document.querySelector('[title="Run Again"]');
     expect(refreshButton).toBeInTheDocument();
   });
 
   it('shows loading spinners initially', () => {
-    render(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
+    renderWithProviders(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
     
     // Should show loading indicators
     const spinners = document.querySelectorAll('.animate-spin');
@@ -114,7 +121,7 @@ describe('ConnectionDiagnostics', () => {
     
     // Should not throw
     expect(() => {
-      render(<ConnectionDiagnostics connection={noPortConnection} onClose={() => {}} />);
+      renderWithProviders(<ConnectionDiagnostics connection={noPortConnection} onClose={() => {}} />);
     }).not.toThrow();
   });
 
@@ -126,12 +133,12 @@ describe('ConnectionDiagnostics', () => {
     
     // Should not throw with RDP protocol
     expect(() => {
-      render(<ConnectionDiagnostics connection={rdpConnection} onClose={() => {}} />);
+      renderWithProviders(<ConnectionDiagnostics connection={rdpConnection} onClose={() => {}} />);
     }).not.toThrow();
   });
 
   it('has visual sections for diagnostics', () => {
-    render(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
+    renderWithProviders(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
     
     // Should have multiple diagnostic sections (cards) - use heading text instead of class
     const networkSection = screen.getByText(/Network Checks/i);

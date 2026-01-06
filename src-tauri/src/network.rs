@@ -3,7 +3,7 @@ use tokio::sync::Mutex;
 use tokio::process::Command;
 use std::process::Stdio;
 use tokio::net::TcpStream;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{timeout, Duration};
 use dns_lookup::lookup_addr;
 use mac_address::get_mac_address;
@@ -814,4 +814,549 @@ pub async fn scan_network(state: tauri::State<'_, NetworkServiceState>, subnet: 
 pub async fn scan_network_comprehensive(state: tauri::State<'_, NetworkServiceState>, subnet: String, scan_ports: bool) -> Result<Vec<DiscoveredHost>, String> {
     let network = state.lock().await;
     network.scan_network_comprehensive(subnet, scan_ports).await
+}
+
+// ============================================================================
+// Advanced Diagnostics
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TcpTimingResult {
+    pub connect_time_ms: u64,
+    pub syn_ack_time_ms: Option<u64>,
+    pub total_time_ms: u64,
+    pub success: bool,
+    pub slow_connection: bool,
+    pub error: Option<String>,
+}
+
+/// Measure TCP connection timing in detail
+#[tauri::command]
+pub async fn tcp_connection_timing(
+    host: String,
+    port: u16,
+    timeout_secs: Option<u64>,
+) -> Result<TcpTimingResult, String> {
+    let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(10));
+    let addr = format!("{}:{}", host, port);
+    
+    let start = std::time::Instant::now();
+    
+    match timeout(timeout_duration, TcpStream::connect(&addr)).await {
+        Ok(Ok(_stream)) => {
+            let connect_time = start.elapsed().as_millis() as u64;
+            
+            // Connection time > 200ms is considered slow
+            let slow = connect_time > 200;
+            
+            Ok(TcpTimingResult {
+                connect_time_ms: connect_time,
+                syn_ack_time_ms: Some(connect_time), // In async, these are effectively the same
+                total_time_ms: connect_time,
+                success: true,
+                slow_connection: slow,
+                error: None,
+            })
+        }
+        Ok(Err(e)) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            Ok(TcpTimingResult {
+                connect_time_ms: elapsed,
+                syn_ack_time_ms: None,
+                total_time_ms: elapsed,
+                success: false,
+                slow_connection: false,
+                error: Some(format!("Connection failed: {}", e)),
+            })
+        }
+        Err(_) => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            Ok(TcpTimingResult {
+                connect_time_ms: elapsed,
+                syn_ack_time_ms: None,
+                total_time_ms: elapsed,
+                success: false,
+                slow_connection: true,
+                error: Some("Connection timed out".to_string()),
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MtuCheckResult {
+    pub path_mtu: Option<u32>,
+    pub fragmentation_needed: bool,
+    pub recommended_mtu: u32,
+    pub test_results: Vec<MtuTestPoint>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MtuTestPoint {
+    pub size: u32,
+    pub success: bool,
+}
+
+/// Check MTU to host using ping with don't fragment flag
+#[tauri::command]
+pub async fn check_mtu(
+    host: String,
+) -> Result<MtuCheckResult, String> {
+    let test_sizes = vec![1472, 1400, 1300, 1200, 1000, 576];
+    let mut test_results = Vec::new();
+    let mut largest_working = 576u32;
+    let mut fragmentation_needed = false;
+    
+    for size in &test_sizes {
+        let mut cmd = Command::new("ping");
+        
+        #[cfg(target_os = "windows")]
+        {
+            cmd.arg("-n").arg("1")
+               .arg("-f")  // Don't fragment
+               .arg("-l").arg(size.to_string())
+               .arg("-w").arg("2000")
+               .arg(&host);
+        }
+        
+        #[cfg(not(target_os = "windows"))]
+        {
+            cmd.arg("-c").arg("1")
+               .arg("-M").arg("do")  // Don't fragment (Linux)
+               .arg("-s").arg(size.to_string())
+               .arg("-W").arg("2")
+               .arg(&host);
+        }
+        
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        
+        match cmd.output().await {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let combined = format!("{}{}", stdout, stderr).to_lowercase();
+                
+                // Check for fragmentation needed messages
+                let needs_frag = combined.contains("fragmentation needed") 
+                    || combined.contains("frag needed")
+                    || combined.contains("message too long")
+                    || combined.contains("packet needs to be fragmented");
+                
+                let success = output.status.success() && !needs_frag;
+                
+                if needs_frag {
+                    fragmentation_needed = true;
+                }
+                
+                if success && *size as u32 > largest_working {
+                    largest_working = *size as u32;
+                }
+                
+                test_results.push(MtuTestPoint {
+                    size: *size as u32,
+                    success,
+                });
+            }
+            Err(_) => {
+                test_results.push(MtuTestPoint {
+                    size: *size as u32,
+                    success: false,
+                });
+            }
+        }
+    }
+    
+    // Path MTU = largest working payload + 28 (IP header + ICMP header)
+    let path_mtu = if largest_working > 576 {
+        Some(largest_working + 28)
+    } else {
+        None
+    };
+    
+    // Standard ethernet MTU is 1500, recommend 1400 for safe internet traversal
+    let recommended = if largest_working >= 1472 {
+        1500
+    } else if largest_working >= 1400 {
+        1428
+    } else {
+        largest_working + 28
+    };
+    
+    Ok(MtuCheckResult {
+        path_mtu,
+        fragmentation_needed,
+        recommended_mtu: recommended,
+        test_results,
+        error: None,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IcmpBlockadeResult {
+    pub icmp_allowed: bool,
+    pub tcp_reachable: bool,
+    pub likely_blocked: bool,
+    pub diagnosis: String,
+}
+
+/// Detect if ICMP is being blocked to a host
+#[tauri::command]
+pub async fn detect_icmp_blockade(
+    host: String,
+    port: Option<u16>,
+) -> Result<IcmpBlockadeResult, String> {
+    // First try ICMP ping
+    let mut ping_cmd = Command::new("ping");
+    
+    #[cfg(target_os = "windows")]
+    ping_cmd.arg("-n").arg("2").arg("-w").arg("2000").arg(&host);
+    
+    #[cfg(not(target_os = "windows"))]
+    ping_cmd.arg("-c").arg("2").arg("-W").arg("2").arg(&host);
+    
+    ping_cmd.stdout(Stdio::null()).stderr(Stdio::null());
+    
+    let icmp_result = ping_cmd.status().await;
+    let icmp_allowed = icmp_result.map(|s| s.success()).unwrap_or(false);
+    
+    // Try TCP connection to common ports or specified port
+    let ports_to_try = if let Some(p) = port {
+        vec![p]
+    } else {
+        vec![80, 443, 22]
+    };
+    
+    let mut tcp_reachable = false;
+    for p in ports_to_try {
+        let addr = format!("{}:{}", host, p);
+        if let Ok(Ok(_)) = timeout(Duration::from_secs(3), TcpStream::connect(&addr)).await {
+            tcp_reachable = true;
+            break;
+        }
+    }
+    
+    let (likely_blocked, diagnosis) = match (icmp_allowed, tcp_reachable) {
+        (true, true) => (false, "Host fully reachable via ICMP and TCP".to_string()),
+        (true, false) => (false, "ICMP allowed but TCP ports closed/filtered".to_string()),
+        (false, true) => (true, "ICMP appears blocked - host reachable via TCP but not ping".to_string()),
+        (false, false) => (false, "Host unreachable via both ICMP and TCP".to_string()),
+    };
+    
+    Ok(IcmpBlockadeResult {
+        icmp_allowed,
+        tcp_reachable,
+        likely_blocked,
+        diagnosis,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsCheckResult {
+    pub tls_supported: bool,
+    pub tls_version: Option<String>,
+    pub certificate_valid: bool,
+    pub certificate_subject: Option<String>,
+    pub certificate_issuer: Option<String>,
+    pub certificate_expiry: Option<String>,
+    pub handshake_time_ms: u64,
+    pub error: Option<String>,
+}
+
+/// Check TLS/SSL handshake for a host
+#[tauri::command]
+pub async fn check_tls(
+    host: String,
+    port: Option<u16>,
+) -> Result<TlsCheckResult, String> {
+    let port = port.unwrap_or(443);
+    let start = std::time::Instant::now();
+    
+    // Use openssl s_client or similar for TLS check
+    #[cfg(target_os = "windows")]
+    {
+        // Try PowerShell TLS check
+        let script = format!(
+            r#"
+            try {{
+                $tcp = New-Object System.Net.Sockets.TcpClient
+                $tcp.Connect('{}', {})
+                $ssl = New-Object System.Net.Security.SslStream($tcp.GetStream(), $false, ({{$true}}))
+                $ssl.AuthenticateAsClient('{}')
+                $cert = $ssl.RemoteCertificate
+                $cert2 = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($cert)
+                @{{
+                    TlsVersion = $ssl.SslProtocol.ToString()
+                    Subject = $cert2.Subject
+                    Issuer = $cert2.Issuer
+                    Expiry = $cert2.NotAfter.ToString('o')
+                    Valid = ($cert2.NotAfter -gt (Get-Date))
+                }} | ConvertTo-Json
+                $ssl.Close()
+                $tcp.Close()
+            }} catch {{
+                @{{ Error = $_.Exception.Message }} | ConvertTo-Json
+            }}
+            "#,
+            host, port, host
+        );
+        
+        let mut cmd = Command::new("powershell");
+        cmd.arg("-NoProfile")
+           .arg("-Command")
+           .arg(&script)
+           .stdout(Stdio::piped())
+           .stderr(Stdio::piped());
+        
+        match timeout(Duration::from_secs(10), cmd.output()).await {
+            Ok(Ok(output)) => {
+                let elapsed = start.elapsed().as_millis() as u64;
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                
+                // Try to parse JSON response
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                    if let Some(err) = json.get("Error").and_then(|e| e.as_str()) {
+                        return Ok(TlsCheckResult {
+                            tls_supported: false,
+                            tls_version: None,
+                            certificate_valid: false,
+                            certificate_subject: None,
+                            certificate_issuer: None,
+                            certificate_expiry: None,
+                            handshake_time_ms: elapsed,
+                            error: Some(err.to_string()),
+                        });
+                    }
+                    
+                    return Ok(TlsCheckResult {
+                        tls_supported: true,
+                        tls_version: json.get("TlsVersion").and_then(|v| v.as_str()).map(String::from),
+                        certificate_valid: json.get("Valid").and_then(|v| v.as_bool()).unwrap_or(false),
+                        certificate_subject: json.get("Subject").and_then(|v| v.as_str()).map(String::from),
+                        certificate_issuer: json.get("Issuer").and_then(|v| v.as_str()).map(String::from),
+                        certificate_expiry: json.get("Expiry").and_then(|v| v.as_str()).map(String::from),
+                        handshake_time_ms: elapsed,
+                        error: None,
+                    });
+                }
+                
+                Ok(TlsCheckResult {
+                    tls_supported: false,
+                    tls_version: None,
+                    certificate_valid: false,
+                    certificate_subject: None,
+                    certificate_issuer: None,
+                    certificate_expiry: None,
+                    handshake_time_ms: elapsed,
+                    error: Some("Failed to parse TLS response".to_string()),
+                })
+            }
+            Ok(Err(e)) => Ok(TlsCheckResult {
+                tls_supported: false,
+                tls_version: None,
+                certificate_valid: false,
+                certificate_subject: None,
+                certificate_issuer: None,
+                certificate_expiry: None,
+                handshake_time_ms: start.elapsed().as_millis() as u64,
+                error: Some(format!("TLS check failed: {}", e)),
+            }),
+            Err(_) => Ok(TlsCheckResult {
+                tls_supported: false,
+                tls_version: None,
+                certificate_valid: false,
+                certificate_subject: None,
+                certificate_issuer: None,
+                certificate_expiry: None,
+                handshake_time_ms: start.elapsed().as_millis() as u64,
+                error: Some("TLS check timed out".to_string()),
+            }),
+        }
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Use openssl s_client on Unix
+        let mut cmd = Command::new("timeout");
+        cmd.arg("10")
+           .arg("openssl")
+           .arg("s_client")
+           .arg("-connect").arg(format!("{}:{}", host, port))
+           .arg("-servername").arg(&host)
+           .arg("-brief")
+           .stdin(Stdio::null())
+           .stdout(Stdio::piped())
+           .stderr(Stdio::piped());
+        
+        match cmd.output().await {
+            Ok(output) => {
+                let elapsed = start.elapsed().as_millis() as u64;
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let combined = format!("{}\n{}", stdout, stderr);
+                
+                let tls_supported = combined.contains("CONNECTION ESTABLISHED") 
+                    || combined.contains("Verification:") 
+                    || output.status.success();
+                
+                // Extract TLS version
+                let tls_version = if combined.contains("TLSv1.3") {
+                    Some("TLS 1.3".to_string())
+                } else if combined.contains("TLSv1.2") {
+                    Some("TLS 1.2".to_string())
+                } else if combined.contains("TLSv1.1") {
+                    Some("TLS 1.1".to_string())
+                } else if combined.contains("TLSv1") {
+                    Some("TLS 1.0".to_string())
+                } else {
+                    None
+                };
+                
+                Ok(TlsCheckResult {
+                    tls_supported,
+                    tls_version,
+                    certificate_valid: combined.contains("Verification: OK"),
+                    certificate_subject: None,
+                    certificate_issuer: None,
+                    certificate_expiry: None,
+                    handshake_time_ms: elapsed,
+                    error: if !tls_supported { Some("TLS connection failed".to_string()) } else { None },
+                })
+            }
+            Err(e) => Ok(TlsCheckResult {
+                tls_supported: false,
+                tls_version: None,
+                certificate_valid: false,
+                certificate_subject: None,
+                certificate_issuer: None,
+                certificate_expiry: None,
+                handshake_time_ms: start.elapsed().as_millis() as u64,
+                error: Some(format!("TLS check failed: {}", e)),
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServiceFingerprint {
+    pub port: u16,
+    pub service: String,
+    pub version: Option<String>,
+    pub banner: Option<String>,
+    pub protocol_detected: Option<String>,
+    pub response_preview: Option<String>,
+}
+
+/// Enhanced service fingerprinting with protocol detection
+#[tauri::command]
+pub async fn fingerprint_service(
+    host: String,
+    port: u16,
+) -> Result<ServiceFingerprint, String> {
+    let addr = format!("{}:{}", host, port);
+    let timeout_duration = Duration::from_secs(5);
+    
+    // Known service name
+    let service_name = NetworkService::get_common_ports()
+        .iter()
+        .find(|(p, _)| *p == port)
+        .map(|(_, s)| s.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+    
+    // Try to connect and probe
+    match timeout(timeout_duration, TcpStream::connect(&addr)).await {
+        Ok(Ok(mut stream)) => {
+            let mut banner = None;
+            let mut protocol_detected = None;
+            let mut version = None;
+            let mut response_preview = None;
+            
+            // Send protocol-specific probes based on port
+            let probe_data: Option<&[u8]> = match port {
+                80 | 8080 | 8000 | 8888 => Some(b"HEAD / HTTP/1.0\r\nHost: test\r\n\r\n"),
+                443 | 8443 => None, // TLS ports - just connect
+                21 => Some(b""), // FTP sends banner automatically
+                22 => Some(b""), // SSH sends banner automatically  
+                25 | 587 => Some(b"EHLO test\r\n"),
+                110 => Some(b""), // POP3 sends banner automatically
+                143 => Some(b""), // IMAP sends banner automatically
+                3306 => Some(b""), // MySQL sends greeting
+                5432 => Some(b"\x00\x00\x00\x08\x04\xd2\x16\x2f"), // PostgreSQL startup
+                6379 => Some(b"PING\r\n"), // Redis
+                _ => Some(b""),
+            };
+            
+            // Send probe if any
+            if let Some(probe) = probe_data {
+                if !probe.is_empty() {
+                    let _ = stream.write_all(probe).await;
+                }
+            }
+            
+            // Read response
+            let mut buf = vec![0u8; 512];
+            let read_timeout = Duration::from_secs(3);
+            
+            if let Ok(Ok(n)) = timeout(read_timeout, stream.read(&mut buf)).await {
+                if n > 0 {
+                    let raw = String::from_utf8_lossy(&buf[..n]);
+                    
+                    // Clean banner (printable chars only)
+                    let cleaned: String = raw
+                        .chars()
+                        .filter(|c| c.is_ascii_graphic() || c.is_ascii_whitespace())
+                        .take(128)
+                        .collect();
+                    
+                    if !cleaned.trim().is_empty() {
+                        banner = Some(cleaned.trim().to_string());
+                    }
+                    
+                    // Detect protocol from response
+                    let response_lower = raw.to_lowercase();
+                    
+                    if response_lower.contains("http/") {
+                        protocol_detected = Some("HTTP".to_string());
+                        // Try to extract server version
+                        for line in raw.lines() {
+                            if line.to_lowercase().starts_with("server:") {
+                                version = Some(line[7..].trim().to_string());
+                                break;
+                            }
+                        }
+                    } else if response_lower.starts_with("ssh-") {
+                        protocol_detected = Some("SSH".to_string());
+                        version = raw.lines().next().map(|s| s.to_string());
+                    } else if response_lower.contains("220") && (response_lower.contains("ftp") || response_lower.contains("smtp")) {
+                        protocol_detected = Some(if response_lower.contains("ftp") { "FTP" } else { "SMTP" }.to_string());
+                        version = raw.lines().next().map(|s| s.trim().to_string());
+                    } else if response_lower.starts_with("+ok") || response_lower.starts_with("-err") {
+                        protocol_detected = Some("POP3".to_string());
+                    } else if response_lower.starts_with("* ok") {
+                        protocol_detected = Some("IMAP".to_string());
+                    } else if response_lower.contains("mysql") {
+                        protocol_detected = Some("MySQL".to_string());
+                    } else if response_lower.contains("postgresql") || buf[0] == b'R' {
+                        protocol_detected = Some("PostgreSQL".to_string());
+                    } else if response_lower.starts_with("+pong") || response_lower.starts_with("-") {
+                        protocol_detected = Some("Redis".to_string());
+                    }
+                    
+                    // Truncated preview
+                    response_preview = Some(cleaned.chars().take(64).collect());
+                }
+            }
+            
+            Ok(ServiceFingerprint {
+                port,
+                service: service_name,
+                version,
+                banner,
+                protocol_detected,
+                response_preview,
+            })
+        }
+        Ok(Err(e)) => Err(format!("Connection failed: {}", e)),
+        Err(_) => Err("Connection timed out".to_string()),
+    }
 }
