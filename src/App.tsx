@@ -970,7 +970,7 @@ const AppContent: React.FC = () => {
       .then((stop) => {
         if (typeof stop === 'function') {
           if (isCancelled) {
-            stop();
+            try { stop(); } catch { /* ignore */ }
           } else {
             unlistenFn = stop;
           }
@@ -980,9 +980,7 @@ const AppContent: React.FC = () => {
 
     return () => {
       isCancelled = true;
-      if (typeof unlistenFn === 'function') {
-        unlistenFn();
-      }
+      try { unlistenFn?.(); } catch { /* ignore */ }
     };
   }, [handleSessionClose]);
 
@@ -1021,7 +1019,7 @@ const AppContent: React.FC = () => {
       .then((stop) => {
         if (typeof stop === 'function') {
           if (isCancelled) {
-            stop();
+            try { stop(); } catch { /* ignore */ }
           } else {
             unlistenFn = stop;
           }
@@ -1031,9 +1029,7 @@ const AppContent: React.FC = () => {
 
     return () => {
       isCancelled = true;
-      if (typeof unlistenFn === 'function') {
-        unlistenFn();
-      }
+      try { unlistenFn?.(); } catch { /* ignore */ }
     };
   }, [dispatch, setActiveSessionId, state.sessions]);
 
@@ -1136,6 +1132,7 @@ const AppContent: React.FC = () => {
     );
     if (!isTauri) return;
     const currentWindow = getCurrentWindow();
+    let isCancelled = false;
     let unlisten: (() => void) | null = null;
 
     currentWindow
@@ -1156,12 +1153,17 @@ const AppContent: React.FC = () => {
         currentWindow.close().catch(() => undefined);
       })
       .then((stop) => {
-        unlisten = stop;
+        if (isCancelled) {
+          try { stop(); } catch { /* ignore */ }
+        } else {
+          unlisten = stop;
+        }
       })
       .catch(console.error);
 
     return () => {
-      unlisten?.();
+      isCancelled = true;
+      try { unlisten?.(); } catch { /* ignore */ }
     };
   }, []);
 
@@ -1714,22 +1716,24 @@ const AppContent: React.FC = () => {
                     </p>
                   </>
                 )}
-                <div className="flex space-x-4">
-                  <button
-                    onClick={handleNewConnection}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
-                  >
-                    <Plus size={16} />
-                    <span>{t("connections.new")} Connection</span>
-                  </button>
-                  <button
-                    onClick={() => setShowQuickConnect(true)}
-                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
-                  >
-                    <Zap size={16} />
-                    <span>{t("connections.quickConnect")}</span>
-                  </button>
-                </div>
+                {!appSettings.hideQuickStartButtons && (
+                  <div className="flex space-x-4">
+                    <button
+                      onClick={handleNewConnection}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                    >
+                      <Plus size={16} />
+                      <span>{t("connections.new")} Connection</span>
+                    </button>
+                    <button
+                      onClick={() => setShowQuickConnect(true)}
+                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                    >
+                      <Zap size={16} />
+                      <span>{t("connections.quickConnect")}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

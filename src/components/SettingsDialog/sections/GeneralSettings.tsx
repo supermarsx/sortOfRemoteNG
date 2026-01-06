@@ -14,6 +14,7 @@ import {
   History,
   LogOut,
   Trash2,
+  MessageSquareWarning,
 } from "lucide-react";
 
 interface GeneralSettingsProps {
@@ -214,6 +215,22 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             />
             <LogOut className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
             <span className="text-gray-300 group-hover:text-white">{t("connections.warnOnExit")}</span>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.confirmMainAppClose ?? false}
+              onChange={(e) => updateSettings({ confirmMainAppClose: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <MessageSquareWarning className="w-4 h-4 text-gray-500 group-hover:text-orange-400" />
+            <div>
+              <span className="text-gray-300 group-hover:text-white">Confirm main app close</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Show a confirmation dialog before closing the main window
+              </p>
+            </div>
           </label>
 
         </div>

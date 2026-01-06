@@ -320,16 +320,27 @@ export class ThemeManager {
     customAccent?: string,
   ): Promise<void> {
     try {
-      const tauri = (globalThis as any).__TAURI__;
-      if (tauri?.event?.emit) {
-        await tauri.event.emit("theme-changed", {
-          theme,
-          colorScheme,
-          primaryAccentColor: customAccent,
-        });
-      }
+      // Try using @tauri-apps/api/event for proper cross-window communication
+      const { emit } = await import("@tauri-apps/api/event");
+      await emit("theme-changed", {
+        theme,
+        colorScheme,
+        primaryAccentColor: customAccent,
+      });
     } catch {
-      // Ignore - might not be in Tauri context
+      // Fallback to direct tauri access if import fails
+      try {
+        const tauri = (globalThis as any).__TAURI__;
+        if (tauri?.event?.emit) {
+          await tauri.event.emit("theme-changed", {
+            theme,
+            colorScheme,
+            primaryAccentColor: customAccent,
+          });
+        }
+      } catch {
+        // Ignore - might not be in Tauri context
+      }
     }
   }
 

@@ -166,6 +166,16 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             <EyeOff className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
             <span className="text-gray-300 group-hover:text-white">Hide quick start message</span>
           </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.hideQuickStartButtons ?? false}
+              onChange={(e) => updateSettings({ hideQuickStartButtons: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <EyeOff className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
+            <span className="text-gray-300 group-hover:text-white">Hide quick start buttons</span>
+          </label>
         </div>
       </div>
 

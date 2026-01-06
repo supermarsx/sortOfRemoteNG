@@ -121,6 +121,48 @@ export const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
+  const handleGenerateToFile = async () => {
+    // Generate key and save directly to user-selected location
+    setGenerating(true);
+    setError(null);
+
+    try {
+      // Ask user where to save the key
+      const selectedPath = await save({
+        title: 'Save SSH Private Key',
+        defaultPath: 'id_ed25519',
+        filters: [{ name: 'SSH Key', extensions: [''] }, { name: 'All Files', extensions: ['*'] }],
+      });
+
+      if (!selectedPath) {
+        setGenerating(false);
+        return;
+      }
+
+      // Generate key using Tauri backend (default to ed25519)
+      const [privateKey, publicKey] = await invoke<[string, string]>('generate_ssh_key', {
+        keyType: 'ed25519',
+        bits: undefined,
+        passphrase: undefined,
+      });
+
+      // Save private key to selected location
+      await writeTextFile(selectedPath, privateKey);
+      
+      // Save public key with .pub extension
+      await writeTextFile(`${selectedPath}.pub`, publicKey);
+
+      setError(null);
+      // Show success message briefly
+      setError(`Key saved to: ${selectedPath}`);
+      setTimeout(() => setError(null), 3000);
+    } catch (err) {
+      setError(`Failed to generate key: ${err}`);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const handleGenerateKey = async () => {
     if (!newKeyName.trim()) {
       setError('Key name is required');

@@ -70,6 +70,7 @@ export interface GlobalSettings {
   detectUnexpectedClose: boolean;
   confirmMainAppClose: boolean;
   hideQuickStartMessage: boolean;
+  hideQuickStartButtons: boolean;
 
   // Startup Settings
   startMinimized: boolean;

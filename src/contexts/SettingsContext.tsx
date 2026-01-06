@@ -25,6 +25,7 @@ const defaultSettings: GlobalSettings = {
   detectUnexpectedClose: true,
   confirmMainAppClose: false,
   hideQuickStartMessage: false,
+  hideQuickStartButtons: false,
   startMinimized: false,
   startMaximized: false,
   startWithSystem: false,

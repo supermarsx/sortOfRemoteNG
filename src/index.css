@@ -103,6 +103,7 @@ body {
   background-color: var(--color-warning) !important;
 }
 
+.text-gray-200,
 .text-gray-300,
 .text-gray-400,
 .text-gray-500 {
