@@ -68,6 +68,18 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
     }
   }, [macAddress]);
 
+  // Handle ESC key to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const saveRecentMac = useCallback((mac: string) => {
     const updated = [mac, ...recentMacs.filter(m => m !== mac)].slice(0, 10);
     setRecentMacs(updated);
