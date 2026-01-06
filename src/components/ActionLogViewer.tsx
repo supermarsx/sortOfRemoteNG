@@ -242,9 +242,10 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
         </div>
 
         {/* Secondary Toolbar */}
-        <div className="border-b border-gray-700 px-4 py-2 flex items-center justify-between bg-gray-750">
-          <div className="flex items-center space-x-4">
-            <div className="flex-1 relative">
+        <div className="border-b border-gray-700 px-4 py-3 bg-gray-750 space-y-3">
+          {/* Row 1: Search and Actions */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="relative flex-1 max-w-md">
               <Search
                 size={16}
                 className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
@@ -254,51 +255,74 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
                 placeholder="Search logs..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 text-sm transition-all"
               />
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Filter size={16} className="text-gray-400" />
-              <select
-                value={levelFilter}
-                onChange={(e) => setLevelFilter(e.target.value)}
-                className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                title="Filter by level"
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-400 px-2 py-1 bg-gray-700/50 rounded-lg">
+                {filteredLogs.length} of {logs.length}
+              </span>
+              <button
+                onClick={exportLogs}
+                className="px-3 py-2 bg-gray-700 hover:bg-blue-600 text-gray-300 hover:text-white rounded-lg transition-all flex items-center gap-2 text-sm border border-gray-600 hover:border-blue-500"
               >
-                <option value="all">All Levels</option>
-                <option value="debug">Debug</option>
-                <option value="info">Info</option>
-                <option value="warn">Warning</option>
-                <option value="error">Error</option>
-              </select>
+                <Download size={14} />
+                <span>{t("logs.export")}</span>
+              </button>
+              <button
+                onClick={clearLogs}
+                className="px-3 py-2 bg-gray-700 hover:bg-red-600 text-gray-300 hover:text-white rounded-lg transition-all flex items-center gap-2 text-sm border border-gray-600 hover:border-red-500"
+              >
+                <Trash2 size={14} />
+                <span>{t("logs.clear")}</span>
+              </button>
             </div>
+          </div>
+
+          {/* Row 2: Filters */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wider">
+              <Filter size={14} />
+              <span>Filters</span>
+            </div>
+            
+            <select
+              value={levelFilter}
+              onChange={(e) => setLevelFilter(e.target.value)}
+              className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all cursor-pointer hover:border-gray-500"
+              title="Filter by level"
+            >
+              <option value="all">All Levels</option>
+              <option value="debug">Debug</option>
+              <option value="info">Info</option>
+              <option value="warn">Warning</option>
+              <option value="error">Error</option>
+            </select>
 
             {uniqueActions.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <select
-                  value={actionFilter}
-                  onChange={(e) => setActionFilter(e.target.value)}
-                  className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[200px]"
-                  title="Filter by action"
-                >
-                  <option value="all">All Actions</option>
-                  {uniqueActions.map((action) => (
-                    <option key={action} value={action}>
-                      {action}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={actionFilter}
+                onChange={(e) => setActionFilter(e.target.value)}
+                className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all cursor-pointer hover:border-gray-500 max-w-[180px]"
+                title="Filter by action"
+              >
+                <option value="all">All Actions</option>
+                {uniqueActions.map((action) => (
+                  <option key={action} value={action}>
+                    {action}
+                  </option>
+                ))}
+              </select>
             )}
 
             {uniqueConnections.length > 0 && (
-              <div className="flex items-center space-x-2">
-                <Server size={16} className="text-gray-400" />
+              <div className="flex items-center gap-1.5">
+                <Server size={14} className="text-gray-500" />
                 <select
                   value={connectionFilter}
                   onChange={(e) => setConnectionFilter(e.target.value)}
-                  className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[180px]"
+                  className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all cursor-pointer hover:border-gray-500 max-w-[160px]"
                   title="Filter by connection"
                 >
                   <option value="all">All Connections</option>
@@ -311,12 +335,12 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
               </div>
             )}
 
-            <div className="flex items-center space-x-2">
-              <Calendar size={16} className="text-gray-400" />
+            <div className="flex items-center gap-1.5">
+              <Calendar size={14} className="text-gray-500" />
               <select
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500/50 transition-all cursor-pointer hover:border-gray-500"
                 title="Filter by date"
               >
                 <option value="all">All Time</option>
@@ -327,26 +351,21 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
               </select>
             </div>
 
-            <div className="text-sm text-gray-400">
-              {filteredLogs.length} of {logs.length} entries
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={exportLogs}
-              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white rounded-md transition-colors flex items-center space-x-2 text-sm"
-            >
-              <Download size={14} />
-              <span>{t("logs.export")}</span>
-            </button>
-            <button
-              onClick={clearLogs}
-              className="px-3 py-1.5 bg-gray-700 hover:bg-red-600 text-gray-300 hover:text-white rounded-md transition-colors flex items-center space-x-2 text-sm"
-            >
-              <Trash2 size={14} />
-              <span>{t("logs.clear")}</span>
-            </button>
+            {(levelFilter !== "all" || actionFilter !== "all" || connectionFilter !== "all" || dateFilter !== "all" || searchTerm) && (
+              <button
+                onClick={() => {
+                  setLevelFilter("all");
+                  setActionFilter("all");
+                  setConnectionFilter("all");
+                  setDateFilter("all");
+                  setSearchTerm("");
+                }}
+                className="px-2.5 py-1.5 text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-lg transition-all flex items-center gap-1"
+              >
+                <X size={12} />
+                Clear filters
+              </button>
+            )}
           </div>
         </div>
 
