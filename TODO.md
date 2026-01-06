@@ -25,6 +25,12 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Allow resizing/adjusting layout matrices
 - [x] Desktop shortcut manager with tracking, editing, and folder presets
 - [x] Connection diagnostics (ping, traceroute, port checks, gateway/internet tests)
+- [ ] Remove outer glow from diagnostics window
+- [ ] Add hop count to traceroute results
+- [ ] Add tiny ping graph visualization (10 pings)
+- [ ] Add service fingerprint with truncated port reply
+- [ ] Fix default gateway always failing tests
+- [ ] Add DNS test and resolution display
 - [x] mRemoteNG XML file import support
 - [x] Template downloads with toast notifications
 - [x] WebBrowser proxy auth fix for image loading
@@ -33,9 +39,9 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add edit button to bulk connection editor to open full editing popup for connection
 - [ ] Revamp performance metrics UI with user-friendly graphs (lightweight)
 - [x] Add filters for action log (action, connection, date range filters)
-- [ ] Match popup title icons with their secondary bar icons
-- [ ] In performance metrics move update cadence and export button to secondary bar, add filters
-- [ ] Remove language selector from secondary bar settings (no longer exists)
+- [x] Match popup title icons with their secondary bar icons
+- [x] In performance metrics move update cadence and export button to secondary bar, add filters
+- [x] Remove language selector from secondary bar settings (no longer exists)
 - [ ] Add syncing capabilities with extensive settings in a new settings tab
 - [ ] Add config to settings welcome screen for custom title and custom message
 - [x] Add disconnect button to SSH container

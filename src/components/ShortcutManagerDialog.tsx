@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { X, Link, Plus, Trash2, RefreshCw, Edit, FolderOpen, Check, AlertTriangle, ExternalLink, Folder, Search } from "lucide-react";
+import { X, Keyboard, Plus, Trash2, RefreshCw, Edit, FolderOpen, Check, AlertTriangle, ExternalLink, Folder, Search } from "lucide-react";
 import { useConnections } from "../contexts/useConnections";
 import { CollectionManager } from "../utils/collectionManager";
 import { invoke } from "@tauri-apps/api/core";
@@ -457,7 +457,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
         <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-500/20 rounded-lg">
-              <Link size={16} className="text-blue-500" />
+              <Keyboard size={16} className="text-blue-500" />
             </div>
             <h2 className="text-lg font-semibold text-[var(--color-text)]">
               {t('shortcuts.title', 'Shortcut Manager')}
@@ -674,7 +674,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
             
             {shortcuts.length === 0 ? (
               <div className="text-center text-gray-400 py-8">
-                <Link size={32} className="mx-auto mb-3 opacity-50" />
+                <Keyboard size={32} className="mx-auto mb-3 opacity-50" />
                 <p>{t('shortcuts.noShortcuts', 'No shortcuts created yet')}</p>
                 <p className="text-sm mt-1">{t('shortcuts.createHint', 'Create a shortcut above to get started')}</p>
               </div>

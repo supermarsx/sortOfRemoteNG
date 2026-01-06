@@ -66,7 +66,6 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showActionLogIcon: true,
   showDevtoolsIcon: true,
   showSecurityIcon: true,
-  showLanguageSelectorIcon: true,
   showProxyMenuIcon: true,
   showShortcutManagerIcon: true,
   showWolIcon: true,

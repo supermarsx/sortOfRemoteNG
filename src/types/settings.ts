@@ -117,7 +117,6 @@ export interface GlobalSettings {
   showActionLogIcon: boolean;
   showDevtoolsIcon: boolean;
   showSecurityIcon: boolean;
-  showLanguageSelectorIcon: boolean;
   showProxyMenuIcon: boolean;
   showShortcutManagerIcon: boolean;
   showWolIcon: boolean;

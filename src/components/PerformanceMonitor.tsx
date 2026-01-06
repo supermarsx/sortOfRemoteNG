@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { X, Download, BarChart3, Activity, Cpu, HardDrive, Wifi, Clock } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { X, Download, BarChart3, Activity, Cpu, HardDrive, Wifi, Clock, RefreshCw, Filter, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PerformanceMetrics } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
 import { invoke } from '@tauri-apps/api/core';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface PerformanceMonitorProps {
   isOpen: boolean;
@@ -41,6 +42,9 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
   const [latencyTarget, setLatencyTarget] = useState<string>(
     settingsManager.getSettings().performanceLatencyTarget || "1.1.1.1",
   );
+  const [metricFilter, setMetricFilter] = useState<string>("all");
+  const [timeRangeFilter, setTimeRangeFilter] = useState<string>("all");
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const loadMetrics = useCallback(() => {
     const storedMetrics = settingsManager.getPerformanceMetrics();
@@ -164,13 +168,38 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
     return `${(ms / 1000).toFixed(1)}s`;
   };
 
+  const clearMetrics = () => {
+    settingsManager.clearPerformanceMetrics?.();
+    setMetrics([]);
+    setShowClearConfirm(false);
+  };
+
+  const filteredMetrics = useMemo(() => {
+    let filtered = [...metrics];
+    
+    // Time range filter
+    if (timeRangeFilter !== "all") {
+      const now = Date.now();
+      const ranges: Record<string, number> = {
+        "1h": 60 * 60 * 1000,
+        "6h": 6 * 60 * 60 * 1000,
+        "24h": 24 * 60 * 60 * 1000,
+        "7d": 7 * 24 * 60 * 60 * 1000,
+      };
+      const cutoff = now - (ranges[timeRangeFilter] || 0);
+      filtered = filtered.filter(m => m.timestamp >= cutoff);
+    }
+    
+    return filtered;
+  }, [metrics, timeRangeFilter]);
+
   if (!isOpen) return null;
 
-  const recentMetrics = metrics.slice(0, 10);
-  const avgLatency = metrics.length > 0 ? metrics.reduce((sum, m) => sum + m.latency, 0) / metrics.length : 0;
-  const avgThroughput = metrics.length > 0 ? metrics.reduce((sum, m) => sum + m.throughput, 0) / metrics.length : 0;
-  const avgCpuUsage = metrics.length > 0 ? metrics.reduce((sum, m) => sum + m.cpuUsage, 0) / metrics.length : 0;
-  const avgMemoryUsage = metrics.length > 0 ? metrics.reduce((sum, m) => sum + m.memoryUsage, 0) / metrics.length : 0;
+  const recentMetrics = filteredMetrics.slice(0, 10);
+  const avgLatency = filteredMetrics.length > 0 ? filteredMetrics.reduce((sum, m) => sum + m.latency, 0) / filteredMetrics.length : 0;
+  const avgThroughput = filteredMetrics.length > 0 ? filteredMetrics.reduce((sum, m) => sum + m.throughput, 0) / filteredMetrics.length : 0;
+  const avgCpuUsage = filteredMetrics.length > 0 ? filteredMetrics.reduce((sum, m) => sum + m.cpuUsage, 0) / filteredMetrics.length : 0;
+  const avgMemoryUsage = filteredMetrics.length > 0 ? filteredMetrics.reduce((sum, m) => sum + m.memoryUsage, 0) / filteredMetrics.length : 0;
 
   return (
     <div
@@ -179,19 +208,66 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden border border-[var(--color-border)]">
-        <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
+      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-6xl mx-4 h-[90vh] overflow-hidden border border-[var(--color-border)] flex flex-col">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-green-500/20 rounded-lg">
-              <Activity size={18} className="text-green-500" />
+              <BarChart3 size={18} className="text-green-500" />
             </div>
-            <h2 className="text-lg font-semibold text-[var(--color-text)]">
-              {t('performance.title')}
-            </h2>
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">
+                {t('performance.title')}
+              </h2>
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                {filteredMetrics.length} entries
+              </p>
+            </div>
           </div>
-          <div className="flex items-center space-x-3">
-            <div className="flex items-center space-x-2 text-xs text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-lg px-2 py-1">
-              <span>Update every</span>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Secondary Bar */}
+        <div className="px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 shrink-0">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Time Range Filter */}
+            <div className="flex items-center gap-2">
+              <Clock size={14} className="text-[var(--color-textSecondary)]" />
+              <select
+                value={timeRangeFilter}
+                onChange={(e) => setTimeRangeFilter(e.target.value)}
+                className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="all">All Time</option>
+                <option value="1h">Last Hour</option>
+                <option value="6h">Last 6 Hours</option>
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+              </select>
+            </div>
+
+            {/* Metric Type Filter */}
+            <div className="flex items-center gap-2">
+              <Filter size={14} className="text-[var(--color-textSecondary)]" />
+              <select
+                value={metricFilter}
+                onChange={(e) => setMetricFilter(e.target.value)}
+                className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="all">All Metrics</option>
+                <option value="latency">Latency</option>
+                <option value="throughput">Throughput</option>
+                <option value="cpu">CPU Usage</option>
+                <option value="memory">Memory Usage</option>
+              </select>
+            </div>
+
+            {/* Update Interval */}
+            <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+              <RefreshCw size={14} />
+              <span>Update:</span>
               <input
                 type="number"
                 min={1}
@@ -202,20 +278,30 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
               />
               <span>s</span>
             </div>
+
+            <div className="flex-1" />
+
+            {/* Action Buttons */}
             <button
               onClick={exportMetrics}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center space-x-2 text-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-xs font-medium"
+              title={t('common.export', 'Export')}
             >
               <Download size={14} />
               <span>Export</span>
             </button>
-            <button onClick={onClose} className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
-              <X size={18} />
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors text-xs font-medium"
+              title={t('common.clear', 'Clear')}
+            >
+              <Trash2 size={14} />
+              <span>Clear</span>
             </button>
           </div>
         </div>
 
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+        <div className="p-6 overflow-y-auto flex-1">
           {/* Current Metrics */}
           {currentMetrics && (
             <div className="mb-8">
@@ -377,6 +463,17 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={showClearConfirm}
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={clearMetrics}
+        title={t('performance.clearTitle', 'Clear Metrics')}
+        message={t('performance.clearConfirm', 'Are you sure you want to clear all performance metrics? This action cannot be undone.')}
+        confirmText={t('common.clear', 'Clear')}
+        cancelText={t('common.cancel', 'Cancel')}
+        variant="danger"
+      />
     </div>
   );
 };

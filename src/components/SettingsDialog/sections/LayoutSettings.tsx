@@ -18,7 +18,6 @@ import {
   Activity,
   Code,
   ShieldCheck,
-  Languages,
   Mouse,
   EyeOff,
   Terminal,
@@ -288,16 +287,6 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             />
             <FileCode className="w-4 h-4 text-purple-500 group-hover:text-purple-400" />
             <span className="text-gray-300 group-hover:text-white">Script Manager</span>
-          </label>
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.showLanguageSelectorIcon}
-              onChange={(e) => updateSettings({ showLanguageSelectorIcon: e.target.checked })}
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
-            />
-            <Languages className="w-4 h-4 text-teal-500 group-hover:text-teal-400" />
-            <span className="text-gray-300 group-hover:text-white">Language Selector</span>
           </label>
         </div>
       </div>

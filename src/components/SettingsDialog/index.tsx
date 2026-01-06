@@ -60,7 +60,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'enableConnectionReorder', 'middleClickCloseTab', 'showQuickConnectIcon', 'showCollectionSwitcherIcon',
     'showImportExportIcon', 'showSettingsIcon', 'showProxyMenuIcon',
     'showShortcutManagerIcon', 'showPerformanceMonitorIcon', 'showActionLogIcon',
-    'showDevtoolsIcon', 'showSecurityIcon', 'showLanguageSelectorIcon', 'showWolIcon',
+    'showDevtoolsIcon', 'showSecurityIcon', 'showWolIcon',
   ],
   security: [
     'encryptionAlgorithm', 'blockCipherMode', 'keyDerivationIterations',
@@ -127,7 +127,6 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
   showActionLogIcon: true,
   showDevtoolsIcon: true,
   showSecurityIcon: true,
-  showLanguageSelectorIcon: true,
   showProxyMenuIcon: true,
   showShortcutManagerIcon: true,
   showWolIcon: true,

@@ -5,7 +5,7 @@ import {
   Filter,
   Trash2,
   Search,
-  Clock,
+  ScrollText,
   AlertCircle,
   Info,
   AlertTriangle,
@@ -239,7 +239,7 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
         <div className="border-b border-gray-700 px-5 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-amber-500/20 rounded-lg">
-              <Clock size={20} className="text-amber-400" />
+              <ScrollText size={20} className="text-amber-400" />
             </div>
             <div>
               <h2 className="text-lg font-semibold text-white">

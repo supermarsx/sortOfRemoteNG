@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { X, RefreshCw, Link2, ShieldCheck, PlugZap } from "lucide-react";
+import { X, RefreshCw, Link2, Network, PlugZap } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../contexts/useConnections";
 import { ProxyOpenVPNManager } from "../utils/proxyOpenVPNManager";
@@ -149,7 +149,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
         <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-500/20 rounded-lg">
-              <ShieldCheck size={18} className="text-blue-500" />
+              <Network size={18} className="text-blue-500" />
             </div>
             <h2 className="text-lg font-semibold text-[var(--color-text)]">Proxy & VPN Chains</h2>
           </div>
