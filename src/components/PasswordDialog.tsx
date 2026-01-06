@@ -172,20 +172,22 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative animate-in fade-in zoom-in-95 duration-200">
-        <div className="relative h-16 border-b border-gray-600">
-          <div className="absolute left-6 top-4 flex items-center space-x-3">
-            <Shield className="text-blue-400" size={24} />
-            <h2 className="text-xl font-semibold text-white">
+      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-md mx-4 relative animate-in fade-in zoom-in-95 duration-200 border border-[var(--color-border)]">
+        <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-500/20 rounded-lg">
+              <Shield className="text-blue-500" size={18} />
+            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
               {mode === 'setup' ? 'Secure Your Connections' : 'Unlock Connections'}
             </h2>
           </div>
           <button
             onClick={handleCancel}
-            className="absolute right-4 top-3 text-gray-400 hover:text-white transition-colors"
+            className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             aria-label="Close"
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
 

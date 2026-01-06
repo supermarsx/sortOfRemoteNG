@@ -135,25 +135,27 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white flex items-center space-x-2">
-            <Shield size={20} className="text-blue-400" />
-            <span>TOTP Authenticator</span>
-          </h2>
+      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden border border-[var(--color-border)]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-500/20 rounded-lg">
+              <Shield size={18} className="text-blue-500" />
+            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">TOTP Authenticator</h2>
+          </div>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowAddForm(true)}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center space-x-2 text-sm"
             >
               <Plus size={14} />
               <span>Add TOTP</span>
             </button>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
           </div>
         </div>

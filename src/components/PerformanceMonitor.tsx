@@ -179,13 +179,18 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden">
-        <div className="relative h-16 border-b border-gray-700">
-          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
-            {t('performance.title')}
-          </h2>
-          <div className="absolute right-4 top-3 flex items-center space-x-3">
-            <div className="flex items-center space-x-2 text-xs text-gray-300 bg-gray-700/60 border border-gray-600 rounded px-2 py-1">
+      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden border border-[var(--color-border)]">
+        <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-green-500/20 rounded-lg">
+              <Activity size={18} className="text-green-500" />
+            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+              {t('performance.title')}
+            </h2>
+          </div>
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 text-xs text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-lg px-2 py-1">
               <span>Update every</span>
               <input
                 type="number"
@@ -193,19 +198,19 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
                 max={120}
                 value={Math.round(pollIntervalMs / 1000)}
                 onChange={(e) => handlePollIntervalChange(parseInt(e.target.value || '0'))}
-                className="w-12 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-12 bg-[var(--color-input)] border border-[var(--color-border)] rounded px-2 py-1 text-[var(--color-text)] text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <span>s</span>
             </div>
             <button
               onClick={exportMetrics}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center space-x-2 text-sm"
             >
               <Download size={14} />
               <span>Export</span>
             </button>
-            <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-              <X size={20} />
+            <button onClick={onClose} className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+              <X size={18} />
             </button>
           </div>
         </div>

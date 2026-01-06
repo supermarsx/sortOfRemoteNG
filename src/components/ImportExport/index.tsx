@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Download, Upload, X } from 'lucide-react';
+import { Download, Upload, X, ArrowLeftRight } from 'lucide-react';
 import { Connection } from '../../types/connection';
 import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -328,17 +328,22 @@ export const ImportExport: React.FC<ImportExportProps> = ({
   }, [embedded, isOpen, onClose]);
 
   const content = (
-    <div className={embedded ? "" : "bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative"}>
+    <div className={embedded ? "" : "bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto relative border border-[var(--color-border)]"}>
       {!embedded && (
-        <div className="relative h-16 border-b border-gray-700">
-          <h2 className="absolute left-6 top-4 text-xl font-semibold text-white">
-            Import / Export Connections
-          </h2>
+        <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-indigo-500/20 rounded-lg">
+              <ArrowLeftRight size={18} className="text-indigo-500" />
+            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+              Import / Export Connections
+            </h2>
+          </div>
           <button
             onClick={onClose}
-            className="absolute right-4 top-3 text-gray-400 hover:text-white transition-colors"
+            className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
           >
-            <X size={20} />
+            <X size={18} />
           </button>
         </div>
       )}

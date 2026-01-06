@@ -256,6 +256,28 @@ export class ThemeManager {
       root.style.setProperty(`--color-${key}`, value);
     });
 
+    // Derive additional colors from the base theme
+    const isLightTheme = ['light', 'semilight'].includes(themeName) || 
+      (themeName === 'auto' && this.detectSystemTheme() === 'light');
+    
+    // surfaceHover - slightly different shade for hover states
+    const surfaceHover = isLightTheme 
+      ? ThemeManager.shadeColor(theme.colors.surface, -8)
+      : ThemeManager.shadeColor(theme.colors.surface, 15);
+    root.style.setProperty('--color-surfaceHover', surfaceHover);
+    
+    // input - input field background
+    const input = isLightTheme
+      ? '#ffffff'
+      : ThemeManager.shadeColor(theme.colors.surface, -15);
+    root.style.setProperty('--color-input', input);
+    
+    // textMuted - more subtle text color
+    const textMuted = isLightTheme
+      ? ThemeManager.shadeColor(theme.colors.textSecondary, 30)
+      : ThemeManager.shadeColor(theme.colors.textSecondary, -25);
+    root.style.setProperty('--color-textMuted', textMuted);
+
     if (customAccent) {
       // Custom accent: derive full color scheme from the custom accent color
       root.style.setProperty("--color-primary", customAccent);

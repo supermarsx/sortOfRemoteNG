@@ -9,8 +9,11 @@
   --color-accent: #10b981;
   --color-background: #111827;
   --color-surface: #1f2937;
+  --color-surfaceHover: #374151;
+  --color-input: #111827;
   --color-text: #f9fafb;
   --color-textSecondary: #d1d5db;
+  --color-textMuted: #9ca3af;
   --color-border: #374151;
   --color-success: #10b981;
   --color-warning: #f59e0b;

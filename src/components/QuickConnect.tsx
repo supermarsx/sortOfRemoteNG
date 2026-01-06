@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, Play, Trash2, X } from 'lucide-react';
+import { Clock, Play, Trash2, X, Zap } from 'lucide-react';
 import { QuickConnectHistoryEntry } from '../types/settings';
 
 interface QuickConnectProps {
@@ -109,16 +109,21 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden flex flex-col">
+      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden flex flex-col border border-[var(--color-border)]">
         <form onSubmit={handleSubmit} className="flex flex-col flex-1" role="form">
-          <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">Quick Connect</h2>
+          <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between bg-[var(--color-surface)]">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-green-500/20 rounded-lg">
+                <Zap size={16} className="text-green-500" />
+              </div>
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">Quick Connect</h2>
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="submit"
                 data-tooltip="Connect"
                 aria-label="Connect"
-                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
                 <Play size={16} />
               </button>
@@ -127,7 +132,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                 onClick={onClose}
                 data-tooltip="Close"
                 aria-label="Close"
-                className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+                className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               >
                 <X size={16} />
               </button>

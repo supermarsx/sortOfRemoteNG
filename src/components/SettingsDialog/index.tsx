@@ -14,6 +14,7 @@ import {
   Loader2,
   Gauge,
   Server,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig } from '../../types/settings';
@@ -389,17 +390,22 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl mx-4 h-[90vh] overflow-hidden flex flex-col ${contextSettings.backgroundGlowEnabled ? 'settings-glow' : ''} relative`}>
-        <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">
-            {t("settings.title")}
-          </h2>
+      <div className={`bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-4xl mx-4 h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)] ${contextSettings.backgroundGlowEnabled ? 'settings-glow' : ''} relative`}>
+        <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-500/20 rounded-lg">
+              <SettingsIcon size={18} className="text-blue-500" />
+            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+              {t("settings.title")}
+            </h2>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleReset}
               data-tooltip={t("settings.reset")}
               aria-label={t("settings.reset")}
-              className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+              className="p-2 text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
             >
               <RotateCcw size={16} />
             </button>
@@ -407,7 +413,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               onClick={handleSave}
               data-tooltip={t("settings.save")}
               aria-label={t("settings.save")}
-              className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
               <Save size={16} />
             </button>
@@ -415,7 +421,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               onClick={onClose}
               data-tooltip={t("settings.cancel")}
               aria-label={t("settings.cancel")}
-              className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             >
               <X size={16} />
             </button>

@@ -338,17 +338,21 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-3xl mx-4 h-[85vh] overflow-hidden flex flex-col">
-        <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <Link size={18} className="text-blue-400" />
-            {t('shortcuts.title', 'Shortcut Manager')}
-          </h2>
+      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-3xl mx-4 h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
+        <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-500/20 rounded-lg">
+              <Link size={16} className="text-blue-500" />
+            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+              {t('shortcuts.title', 'Shortcut Manager')}
+            </h2>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={refreshShortcuts}
               disabled={isLoading}
-              className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors disabled:opacity-50"
+              className="p-2 text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors disabled:opacity-50"
               data-tooltip={t('shortcuts.refresh', 'Refresh')}
               aria-label={t('shortcuts.refresh', 'Refresh')}
             >
@@ -356,7 +360,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               data-tooltip={t('common.close', 'Close')}
               aria-label={t('common.close', 'Close')}
             >

@@ -133,8 +133,10 @@ describe('ConnectionDiagnostics', () => {
   it('has visual sections for diagnostics', () => {
     render(<ConnectionDiagnostics connection={mockConnection} onClose={() => {}} />);
     
-    // Should have multiple diagnostic sections (cards)
-    const sections = document.querySelectorAll('.bg-gray-700\\/60');
-    expect(sections.length).toBeGreaterThan(0);
+    // Should have multiple diagnostic sections (cards) - use heading text instead of class
+    const networkSection = screen.getByText(/Network Checks/i);
+    const pingSection = screen.getByText(/Ping Results/i);
+    expect(networkSection).toBeInTheDocument();
+    expect(pingSection).toBeInTheDocument();
   });
 });

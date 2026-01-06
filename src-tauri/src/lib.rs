@@ -547,6 +547,7 @@ pub fn run() {
         security::generate_totp_secret,
         security::verify_totp,
         wol::wake_on_lan,
+        wol::wake_multiple_hosts,
         wol::discover_wol_devices,
         wol::add_wol_schedule,
         wol::remove_wol_schedule,

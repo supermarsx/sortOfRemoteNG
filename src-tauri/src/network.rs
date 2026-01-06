@@ -3,6 +3,7 @@ use tokio::sync::Mutex;
 use tokio::process::Command;
 use std::process::Stdio;
 use tokio::net::TcpStream;
+use tokio::io::AsyncReadExt;
 use tokio::time::{timeout, Duration};
 use dns_lookup::lookup_addr;
 use mac_address::get_mac_address;
@@ -425,6 +426,7 @@ pub struct PortCheckResult {
     pub open: bool,
     pub service: Option<String>,
     pub time_ms: Option<u64>,
+    pub banner: Option<String>,
 }
 
 #[tauri::command]
@@ -443,13 +445,38 @@ pub async fn check_port(
         .map(|(_, s)| s.clone());
     
     match timeout(timeout_duration, TcpStream::connect(&addr)).await {
-        Ok(Ok(_)) => {
+        Ok(Ok(mut stream)) => {
             let elapsed = start.elapsed().as_millis() as u64;
+            
+            // Try to grab a banner (first ~128 bytes within 2 seconds)
+            let banner = {
+                let mut buf = vec![0u8; 128];
+                let banner_timeout = Duration::from_secs(2);
+                match timeout(banner_timeout, stream.read(&mut buf)).await {
+                    Ok(Ok(n)) if n > 0 => {
+                        // Convert to string, filter non-printable chars, take first 64 chars
+                        let raw = String::from_utf8_lossy(&buf[..n]);
+                        let cleaned: String = raw
+                            .chars()
+                            .filter(|c| c.is_ascii_graphic() || *c == ' ')
+                            .take(64)
+                            .collect();
+                        if !cleaned.is_empty() {
+                            Some(cleaned)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            };
+            
             Ok(PortCheckResult {
                 port,
                 open: true,
                 service,
                 time_ms: Some(elapsed),
+                banner,
             })
         }
         _ => Ok(PortCheckResult {
@@ -457,6 +484,7 @@ pub async fn check_port(
             open: false,
             service,
             time_ms: None,
+            banner: None,
         })
     }
 }

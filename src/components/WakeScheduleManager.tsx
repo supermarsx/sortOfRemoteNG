@@ -4,7 +4,7 @@ import {
   type WakeSchedule,
   type WakeRecurrence,
 } from "../utils/wakeOnLan";
-import { Trash2, Pencil, Save, X } from "lucide-react";
+import { Trash2, Pencil, Save, X, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const wolService = new WakeOnLanService();
@@ -74,11 +74,16 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-gray-800 rounded-lg p-4 w-full max-w-xl">
+      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl p-5 w-full max-w-xl border border-[var(--color-border)]">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold">{t("wake.scheduleManager")}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X size={20} />
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-orange-500/20 rounded-lg">
+              <Clock size={16} className="text-orange-500" />
+            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">{t("wake.scheduleManager")}</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+            <X size={18} />
           </button>
         </div>
         <div className="space-y-2 max-h-60 overflow-y-auto mb-4">

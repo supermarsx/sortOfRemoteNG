@@ -10,6 +10,7 @@ import {
   Plus,
   Settings,
   Download,
+  Radar,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { DiscoveredHost, DiscoveredService } from "../types/connection";
@@ -179,24 +180,29 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">
-            {t("networkDiscovery.title")}
-          </h2>
+      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden border border-[var(--color-border)]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-purple-500/20 rounded-lg">
+              <Radar size={18} className="text-purple-500" />
+            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+              {t("networkDiscovery.title")}
+            </h2>
+          </div>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+              className="px-3 py-1.5 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 text-sm"
             >
               <Settings size={14} />
               <span>{t("networkDiscovery.advanced")}</span>
             </button>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
           </div>
         </div>

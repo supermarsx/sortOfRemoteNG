@@ -274,9 +274,11 @@ export const BulkConnectionEditor: React.FC<BulkConnectionEditorProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* Glow effect behind the modal */}
+      {/* Scattered glow effect behind the modal */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-        <div className="w-[800px] h-[600px] bg-blue-500/20 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute w-[400px] h-[300px] bg-blue-500/15 rounded-full blur-[80px] -top-20 -left-20" />
+        <div className="absolute w-[350px] h-[350px] bg-cyan-500/10 rounded-full blur-[100px] top-1/4 right-0" />
+        <div className="absolute w-[300px] h-[250px] bg-indigo-500/10 rounded-full blur-[90px] bottom-0 left-1/4" />
       </div>
       
       <div className="relative bg-[var(--color-surface)]/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-blue-500/10 w-full max-w-6xl mx-4 h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)]">

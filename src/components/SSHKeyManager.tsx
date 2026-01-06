@@ -386,13 +386,22 @@ export const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({
           )}
 
           {/* Actions */}
-          <div className="flex gap-2 mb-6">
+          <div className="flex gap-2 mb-6 flex-wrap">
             <button
               onClick={() => setShowGenerateForm(true)}
               className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
             >
               <Plus className="w-4 h-4" />
               {t('sshKeyManager.generate', 'Generate Key')}
+            </button>
+            <button
+              onClick={handleGenerateToFile}
+              disabled={generating}
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition-colors disabled:opacity-50"
+              title="Generate a key and save directly to a custom location"
+            >
+              <FileKey className="w-4 h-4" />
+              {t('sshKeyManager.generateToFile', 'Generate to File')}
             </button>
             <button
               onClick={handleImportKey}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Upload, Download, Folder, File, Trash2, RefreshCw, ArrowLeft, Home } from 'lucide-react';
+import { X, Upload, Download, Folder, File, Trash2, RefreshCw, ArrowLeft, Home, FolderUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FileTransferSession } from '../types/connection';
 import { FileTransferService } from '../utils/fileTransferService';
@@ -153,13 +153,18 @@ export const FileTransferManager: React.FC<FileTransferManagerProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-semibold text-white">
-            File Transfer - {protocol.toUpperCase()}
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-            <X size={20} />
+      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden border border-[var(--color-border)]">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-cyan-500/20 rounded-lg">
+              <FolderUp size={18} className="text-cyan-500" />
+            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+              File Transfer - {protocol.toUpperCase()}
+            </h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+            <X size={18} />
           </button>
         </div>
 
