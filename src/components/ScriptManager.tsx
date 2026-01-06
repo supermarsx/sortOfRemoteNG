@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   X, Plus, Edit2, Trash2, Save, Copy, Search,
-  FileCode, FolderOpen, Play, Check, AlertCircle,
-  ChevronDown, ExternalLink
+  FileCode, FolderOpen, Check,
+  ChevronDown, CopyPlus
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -489,37 +489,17 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
     setIsEditing(false);
     setSelectedScript(null);
   }, []);
-  
-  // Detach to window
-  const handleDetach = useCallback(async () => {
-    const isTauri = typeof window !== 'undefined' && 
-      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
-    
-    if (isTauri) {
-      try {
-        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-        const webview = new WebviewWindow('script-manager', {
-          url: '/script-manager',
-          title: 'Script Manager',
-          width: 1000,
-          height: 700,
-          center: true,
-          resizable: true,
-          decorations: true,
-        });
-        
-        webview.once('tauri://created', () => {
-          onClose();
-        });
-        
-        webview.once('tauri://error', (e) => {
-          console.error('Failed to create detached window:', e);
-        });
-      } catch (error) {
-        console.error('Failed to detach window:', error);
-      }
-    }
-  }, [onClose]);
+
+  // Duplicate script
+  const handleDuplicateScript = useCallback((script: ManagedScript) => {
+    setSelectedScript(null);
+    setEditName(script.name + ' (Copy)');
+    setEditDescription(script.description);
+    setEditScript(script.script);
+    setEditLanguage(script.language);
+    setEditCategory(script.category);
+    setIsEditing(true);
+  }, []);
   
   if (!isOpen) return null;
   
@@ -547,13 +527,6 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleDetach}
-              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              title={t('common.detach', 'Detach to Window')}
-            >
-              <ExternalLink size={16} />
-            </button>
             <button
               onClick={onClose}
               className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
@@ -809,16 +782,25 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      {/* Copy to clipboard */}
                       <button
                         onClick={() => handleCopyScript(selectedScript)}
                         className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title={t('common.copy', 'Copy')}
+                        title={t('scriptManager.copyToClipboard', 'Copy to Clipboard')}
                       >
                         {copiedId === selectedScript.id ? (
                           <Check size={16} className="text-green-500" />
                         ) : (
                           <Copy size={16} />
                         )}
+                      </button>
+                      {/* Duplicate script (create copy) */}
+                      <button
+                        onClick={() => handleDuplicateScript(selectedScript)}
+                        className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                        title={t('scriptManager.duplicate', 'Duplicate Script')}
+                      >
+                        <CopyPlus size={16} />
                       </button>
                       {!selectedScript.id.startsWith('default-') && (
                         <>
@@ -837,24 +819,6 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
                             <Trash2 size={16} />
                           </button>
                         </>
-                      )}
-                      {selectedScript.id.startsWith('default-') && (
-                        <button
-                          onClick={() => {
-                            // Clone default script for editing
-                            setSelectedScript(null);
-                            setEditName(selectedScript.name + ' (Copy)');
-                            setEditDescription(selectedScript.description);
-                            setEditScript(selectedScript.script);
-                            setEditLanguage(selectedScript.language);
-                            setEditCategory(selectedScript.category);
-                            setIsEditing(true);
-                          }}
-                          className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                          title={t('scriptManager.duplicate', 'Duplicate')}
-                        >
-                          <Copy size={16} />
-                        </button>
                       )}
                     </div>
                   </div>

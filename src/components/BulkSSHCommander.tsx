@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { 
   X, Terminal, Send, Square, CheckSquare, 
   Grid3x3, Rows, History, Trash2, Copy, Clock,
-  AlertCircle, Check, Save, FileCode, FolderOpen, ExternalLink,
+  AlertCircle, Check, Save, FileCode, FolderOpen,
   StopCircle
 } from 'lucide-react';
 import { useConnections } from '../contexts/useConnections';
@@ -431,37 +431,6 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
     saveScriptsToStorage(updated);
   }, [savedScripts, saveScriptsToStorage]);
 
-  // Detach window
-  const handleDetach = useCallback(async () => {
-    const isTauri = typeof window !== 'undefined' && 
-      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
-    
-    if (isTauri) {
-      try {
-        const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-        const webview = new WebviewWindow('bulk-ssh-commander', {
-          url: '/bulk-ssh-commander',
-          title: 'Bulk SSH Commander',
-          width: 1200,
-          height: 800,
-          center: true,
-          resizable: true,
-          decorations: true,
-        });
-        
-        webview.once('tauri://created', () => {
-          onClose();
-        });
-        
-        webview.once('tauri://error', (e) => {
-          console.error('Failed to create detached window:', e);
-        });
-      } catch (error) {
-        console.error('Failed to detach window:', error);
-      }
-    }
-  }, [onClose]);
-
   if (!isOpen) return null;
 
   const selectedCount = selectedSessionIds.size;
@@ -516,14 +485,6 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                 <Grid3x3 size={14} />
               </button>
             </div>
-            {/* Detach button */}
-            <button
-              onClick={handleDetach}
-              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              title={t('bulkSsh.detach', 'Detach to Window')}
-            >
-              <ExternalLink size={16} />
-            </button>
             <button
               onClick={onClose}
               className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
