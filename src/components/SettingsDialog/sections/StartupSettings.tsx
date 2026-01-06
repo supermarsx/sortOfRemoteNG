@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { GlobalSettings } from "../../../types/settings";
-import { Power, Monitor, Play, RefreshCw, Minimize2, X as XIcon, MousePointer, MousePointerClick, AppWindow, FolderOpen } from "lucide-react";
+import { Power, Monitor, Play, RefreshCw, Minimize2, X as XIcon, MousePointer, MousePointerClick, AppWindow, FolderOpen, EyeOff } from "lucide-react";
 
 interface StartupSettingsProps {
   settings: GlobalSettings;
@@ -225,6 +225,47 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
         <p className="text-xs text-gray-500 pl-7">
           {t("settings.startup.clickActionsNote", "When enabled, clicking a connection in the tree will immediately connect or disconnect instead of selecting it.")}
+        </p>
+      </div>
+
+      {/* Welcome Screen */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2">
+          {t("settings.startup.welcomeScreen", "Welcome Screen")}
+        </h4>
+
+        <label className="flex items-center space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.hideQuickStartMessage ?? false}
+            onChange={(e) => updateSettings({ hideQuickStartMessage: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+          />
+          <div className="flex items-center gap-2">
+            <EyeOff className="w-4 h-4 text-gray-400" />
+            <span className="text-gray-300">
+              {t("settings.startup.hideQuickStartMessage", "Hide welcome message")}
+            </span>
+          </div>
+        </label>
+
+        <label className="flex items-center space-x-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings.hideQuickStartButtons ?? false}
+            onChange={(e) => updateSettings({ hideQuickStartButtons: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+          />
+          <div className="flex items-center gap-2">
+            <EyeOff className="w-4 h-4 text-gray-400" />
+            <span className="text-gray-300">
+              {t("settings.startup.hideQuickStartButtons", "Hide quick action buttons")}
+            </span>
+          </div>
+        </label>
+
+        <p className="text-xs text-gray-500 pl-7">
+          {t("settings.startup.welcomeScreenNote", "Controls what is shown when no connection is active.")}
         </p>
       </div>
 

@@ -353,6 +353,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <BulkConnectionEditor
         isOpen={showBulkEditor}
         onClose={() => setShowBulkEditor(false)}
+        onEditConnection={onEditConnection}
       />
     </>
   );

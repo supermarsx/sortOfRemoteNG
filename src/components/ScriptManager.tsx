@@ -11,6 +11,8 @@ interface ScriptManagerProps {
   onClose: () => void;
 }
 
+export type OSTag = 'windows' | 'linux' | 'macos' | 'agnostic' | 'multiplatform' | 'cisco-ios';
+
 export interface ManagedScript {
   id: string;
   name: string;
@@ -18,11 +20,30 @@ export interface ManagedScript {
   script: string;
   language: ScriptLanguage;
   category: string;
+  osTags: OSTag[];
   createdAt: string;
   updatedAt: string;
 }
 
 export type ScriptLanguage = 'bash' | 'sh' | 'powershell' | 'batch' | 'auto';
+
+export const OS_TAG_LABELS: Record<OSTag, string> = {
+  'windows': 'Windows',
+  'linux': 'Linux',
+  'macos': 'macOS',
+  'agnostic': 'Agnostic',
+  'multiplatform': 'Multi-Platform',
+  'cisco-ios': 'Cisco IOS',
+};
+
+export const OS_TAG_ICONS: Record<OSTag, string> = {
+  'windows': '🪟',
+  'linux': '🐧',
+  'macos': '🍎',
+  'agnostic': '🌐',
+  'multiplatform': '🔀',
+  'cisco-ios': '🔌',
+};
 
 export const SCRIPTS_STORAGE_KEY = 'managedScripts';
 
@@ -35,6 +56,7 @@ const defaultScripts: ManagedScript[] = [
     script: '#!/bin/bash\nuname -a\ncat /etc/os-release 2>/dev/null || cat /etc/redhat-release 2>/dev/null\nhostname',
     language: 'bash',
     category: 'System',
+    osTags: ['linux'],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -45,6 +67,7 @@ const defaultScripts: ManagedScript[] = [
     script: '#!/bin/bash\ndf -h\necho ""\necho "Largest directories:"\ndu -sh /* 2>/dev/null | sort -rh | head -10',
     language: 'bash',
     category: 'System',
+    osTags: ['linux'],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -55,6 +78,7 @@ const defaultScripts: ManagedScript[] = [
     script: '#!/bin/bash\nfree -h\necho ""\necho "Top memory consumers:"\nps aux --sort=-%mem | head -10',
     language: 'bash',
     category: 'System',
+    osTags: ['linux'],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -65,6 +89,7 @@ const defaultScripts: ManagedScript[] = [
     script: '#!/bin/bash\nnetstat -tuln 2>/dev/null || ss -tuln\necho ""\necho "IP addresses:"\nip addr show | grep -E "inet |inet6 "',
     language: 'bash',
     category: 'Network',
+    osTags: ['linux'],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -75,6 +100,7 @@ const defaultScripts: ManagedScript[] = [
     script: 'systeminfo | findstr /B /C:"OS Name" /C:"OS Version" /C:"System Type" /C:"Total Physical Memory"\nhostname\nipconfig /all | findstr /C:"IPv4"',
     language: 'powershell',
     category: 'System',
+    osTags: ['windows'],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -85,6 +111,7 @@ const defaultScripts: ManagedScript[] = [
     script: 'Get-PSDrive -PSProvider FileSystem | Format-Table Name, @{N="Used(GB)";E={[math]::Round($_.Used/1GB,2)}}, @{N="Free(GB)";E={[math]::Round($_.Free/1GB,2)}}, @{N="Total(GB)";E={[math]::Round(($_.Used+$_.Free)/1GB,2)}} -AutoSize',
     language: 'powershell',
     category: 'System',
+    osTags: ['windows'],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -95,6 +122,7 @@ const defaultScripts: ManagedScript[] = [
     script: '#!/bin/bash\nfor service in nginx apache2 httpd mysql mariadb postgresql docker; do\n  if systemctl is-active --quiet $service 2>/dev/null; then\n    echo "$service: RUNNING"\n  elif systemctl is-enabled --quiet $service 2>/dev/null; then\n    echo "$service: STOPPED (enabled)"\n  fi\ndone',
     language: 'bash',
     category: 'Services',
+    osTags: ['linux'],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -105,6 +133,7 @@ const defaultScripts: ManagedScript[] = [
     script: 'Get-Service | Where-Object {$_.Status -eq "Running"} | Sort-Object DisplayName | Format-Table DisplayName, Status -AutoSize | Select-Object -First 20',
     language: 'powershell',
     category: 'Services',
+    osTags: ['windows'],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
@@ -353,6 +382,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
   const [searchFilter, setSearchFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [languageFilter, setLanguageFilter] = useState<ScriptLanguage | ''>('');
+  const [osTagFilter, setOsTagFilter] = useState<OSTag | ''>('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
   // Edit form state
@@ -361,6 +391,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
   const [editScript, setEditScript] = useState('');
   const [editLanguage, setEditLanguage] = useState<ScriptLanguage>('auto');
   const [editCategory, setEditCategory] = useState('Custom');
+  const [editOsTags, setEditOsTags] = useState<OSTag[]>(['agnostic']);
   
   // Load scripts from localStorage
   useEffect(() => {
@@ -428,9 +459,10 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
         script.script.toLowerCase().includes(searchFilter.toLowerCase());
       const matchesCategory = !categoryFilter || script.category === categoryFilter;
       const matchesLanguage = !languageFilter || script.language === languageFilter;
-      return matchesSearch && matchesCategory && matchesLanguage;
+      const matchesOsTag = !osTagFilter || (script.osTags && script.osTags.includes(osTagFilter));
+      return matchesSearch && matchesCategory && matchesLanguage && matchesOsTag;
     });
-  }, [scripts, searchFilter, categoryFilter, languageFilter]);
+  }, [scripts, searchFilter, categoryFilter, languageFilter, osTagFilter]);
   
   // Start creating new script
   const handleNewScript = useCallback(() => {
@@ -440,6 +472,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
     setEditScript('');
     setEditLanguage('auto');
     setEditCategory('Custom');
+    setEditOsTags(['agnostic']);
     setIsEditing(true);
   }, []);
   
@@ -451,6 +484,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
     setEditScript(script.script);
     setEditLanguage(script.language);
     setEditCategory(script.category);
+    setEditOsTags(script.osTags || ['agnostic']);
     setIsEditing(true);
   }, []);
   
@@ -471,6 +505,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
               script: editScript,
               language: finalLanguage,
               category: editCategory,
+              osTags: editOsTags,
               updatedAt: new Date().toISOString(),
             }
           : s
@@ -485,6 +520,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
         script: editScript,
         language: finalLanguage,
         category: editCategory,
+        osTags: editOsTags,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -493,7 +529,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
     
     setIsEditing(false);
     setSelectedScript(null);
-  }, [editName, editDescription, editScript, editLanguage, editCategory, selectedScript, scripts, saveScripts]);
+  }, [editName, editDescription, editScript, editLanguage, editCategory, editOsTags, selectedScript, scripts, saveScripts]);
   
   // Delete script
   const handleDeleteScript = useCallback((scriptId: string) => {
@@ -529,6 +565,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
     setEditScript(script.script);
     setEditLanguage(script.language);
     setEditCategory(script.category);
+    setEditOsTags(script.osTags || ['agnostic']);
     setIsEditing(true);
   }, []);
   
@@ -633,6 +670,24 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
             <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
           </div>
           
+          {/* OS Tag filter */}
+          <div className="relative">
+            <select
+              value={osTagFilter}
+              onChange={(e) => setOsTagFilter(e.target.value as OSTag | '')}
+              className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
+            >
+              <option value="">{t('scriptManager.allPlatforms', 'All Platforms')}</option>
+              <option value="windows">🪟 Windows</option>
+              <option value="linux">🐧 Linux</option>
+              <option value="macos">🍎 macOS</option>
+              <option value="agnostic">🌐 Agnostic</option>
+              <option value="multiplatform">🔀 Multi-Platform</option>
+              <option value="cisco-ios">🔌 Cisco IOS</option>
+            </select>
+            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
+          </div>
+          
           {/* New script button */}
           <button
             onClick={handleNewScript}
@@ -682,13 +737,25 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
                               {script.description}
                             </p>
                           )}
-                          <div className="flex items-center gap-2 mt-1">
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)] rounded">
                               {script.category}
                             </span>
                             <span className="text-[10px] text-[var(--color-textMuted)]">
                               {languageLabels[script.language]}
                             </span>
+                            {script.osTags && script.osTags.length > 0 && (
+                              <div className="flex items-center gap-0.5">
+                                {script.osTags.slice(0, 3).map(tag => (
+                                  <span key={tag} className="text-[10px]" title={OS_TAG_LABELS[tag]}>
+                                    {OS_TAG_ICONS[tag]}
+                                  </span>
+                                ))}
+                                {script.osTags.length > 3 && (
+                                  <span className="text-[10px] text-[var(--color-textMuted)]">+{script.osTags.length - 3}</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -755,6 +822,39 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
                     </div>
                   </div>
                   
+                  {/* OS Tags */}
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+                      {t('scriptManager.osTags', 'Platform Tags')}
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {(Object.keys(OS_TAG_LABELS) as OSTag[]).map(tag => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            if (editOsTags.includes(tag)) {
+                              setEditOsTags(editOsTags.filter(t => t !== tag));
+                            } else {
+                              setEditOsTags([...editOsTags, tag]);
+                            }
+                          }}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                            editOsTags.includes(tag)
+                              ? 'bg-purple-500/20 border-purple-500/50 text-purple-600 dark:text-purple-400'
+                              : 'bg-[var(--color-surfaceHover)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]'
+                          }`}
+                        >
+                          <span>{OS_TAG_ICONS[tag]}</span>
+                          <span>{OS_TAG_LABELS[tag]}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+                      {t('scriptManager.osTagsHint', 'Select the platforms this script is compatible with')}
+                    </p>
+                  </div>
+                  
                   <div>
                     <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
                       {t('scriptManager.description', 'Description')}
@@ -818,7 +918,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
                           {selectedScript.description}
                         </p>
                       )}
-                      <div className="flex items-center gap-2 mt-2">
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
                         <span className="text-xs px-2 py-1 bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)] rounded">
                           {selectedScript.category}
                         </span>
@@ -831,6 +931,19 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
                           </span>
                         )}
                       </div>
+                      {selectedScript.osTags && selectedScript.osTags.length > 0 && (
+                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                          {selectedScript.osTags.map(tag => (
+                            <span
+                              key={tag}
+                              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full"
+                            >
+                              <span>{OS_TAG_ICONS[tag]}</span>
+                              <span>{OS_TAG_LABELS[tag]}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       {/* Copy to clipboard */}

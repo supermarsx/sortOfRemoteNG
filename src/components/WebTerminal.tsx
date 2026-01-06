@@ -3,12 +3,12 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search } from "lucide-react";
+import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search, Filter, Unplug } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
-import { ManagedScript, getDefaultScripts } from "./ScriptManager";
+import { ManagedScript, getDefaultScripts, OSTag, OS_TAG_LABELS, OS_TAG_ICONS } from "./ScriptManager";
 
 interface WebTerminalProps {
   session: ConnectionSession;
@@ -44,6 +44,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const [showScriptSelector, setShowScriptSelector] = useState(false);
   const [scripts, setScripts] = useState<ManagedScript[]>([]);
   const [scriptSearchQuery, setScriptSearchQuery] = useState("");
+  const [scriptCategoryFilter, setScriptCategoryFilter] = useState<string>("all");
+  const [scriptLanguageFilter, setScriptLanguageFilter] = useState<string>("all");
+  const [scriptOsTagFilter, setScriptOsTagFilter] = useState<string>("all");
 
   const sessionRef = useRef(session);
   const connection = useMemo(
@@ -102,16 +105,60 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  // Filter scripts by search query
+  // Get unique categories, languages, and OS tags from scripts
+  const uniqueCategories = useMemo(() => {
+    const categories = new Set<string>();
+    scripts.forEach(s => categories.add(s.category || 'Uncategorized'));
+    return Array.from(categories).sort();
+  }, [scripts]);
+
+  const uniqueLanguages = useMemo(() => {
+    const languages = new Set<string>();
+    scripts.forEach(s => languages.add(s.language));
+    return Array.from(languages).sort();
+  }, [scripts]);
+
+  const uniqueOsTags = useMemo(() => {
+    const tags = new Set<string>();
+    scripts.forEach(s => {
+      if (s.osTags) {
+        s.osTags.forEach(tag => tags.add(tag));
+      }
+    });
+    return Array.from(tags).sort();
+  }, [scripts]);
+
+  // Filter scripts by search query, category, language, and OS tag
   const filteredScripts = useMemo(() => {
-    if (!scriptSearchQuery.trim()) return scripts;
-    const query = scriptSearchQuery.toLowerCase();
-    return scripts.filter(s => 
-      s.name.toLowerCase().includes(query) ||
-      s.description.toLowerCase().includes(query) ||
-      s.category.toLowerCase().includes(query)
-    );
-  }, [scripts, scriptSearchQuery]);
+    let result = scripts;
+    
+    // Apply category filter
+    if (scriptCategoryFilter !== 'all') {
+      result = result.filter(s => (s.category || 'Uncategorized') === scriptCategoryFilter);
+    }
+    
+    // Apply language filter
+    if (scriptLanguageFilter !== 'all') {
+      result = result.filter(s => s.language === scriptLanguageFilter);
+    }
+    
+    // Apply OS tag filter
+    if (scriptOsTagFilter !== 'all') {
+      result = result.filter(s => s.osTags && s.osTags.includes(scriptOsTagFilter as OSTag));
+    }
+    
+    // Apply search query
+    if (scriptSearchQuery.trim()) {
+      const query = scriptSearchQuery.toLowerCase();
+      result = result.filter(s => 
+        s.name.toLowerCase().includes(query) ||
+        s.description.toLowerCase().includes(query) ||
+        s.category.toLowerCase().includes(query)
+      );
+    }
+    
+    return result;
+  }, [scripts, scriptSearchQuery, scriptCategoryFilter, scriptLanguageFilter, scriptOsTagFilter]);
 
   // Group scripts by category
   const scriptsByCategory = useMemo(() => {
@@ -973,6 +1020,15 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                   <StopCircle size={14} />
                 </button>
                 <button
+                  onClick={disconnectSsh}
+                  className="app-bar-button p-2 hover:text-red-500"
+                  data-tooltip="Disconnect"
+                  aria-label="Disconnect"
+                  disabled={status !== "connected"}
+                >
+                  <Unplug size={14} />
+                </button>
+                <button
                   onClick={handleReconnect}
                   className="app-bar-button p-2"
                   data-tooltip="Reconnect"
@@ -1042,12 +1098,18 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
             if (e.target === e.currentTarget) {
               setShowScriptSelector(false);
               setScriptSearchQuery("");
+              setScriptCategoryFilter("all");
+              setScriptLanguageFilter("all");
+              setScriptOsTagFilter("all");
             }
           }}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               setShowScriptSelector(false);
               setScriptSearchQuery("");
+              setScriptCategoryFilter("all");
+              setScriptLanguageFilter("all");
+              setScriptOsTagFilter("all");
             }
           }}
         >
@@ -1062,6 +1124,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                 onClick={() => {
                   setShowScriptSelector(false);
                   setScriptSearchQuery("");
+                  setScriptCategoryFilter("all");
+                  setScriptLanguageFilter("all");
+                  setScriptOsTagFilter("all");
                 }}
                 className="p-1.5 rounded-lg hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
               >
@@ -1082,6 +1147,64 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                   autoFocus
                 />
               </div>
+            </div>
+
+            {/* Compact Filters Bar */}
+            <div className="px-4 py-2 border-b border-[var(--color-border)] flex items-center gap-3">
+              <div className="flex items-center gap-1.5 text-[var(--color-textMuted)]">
+                <Filter size={12} />
+                <span className="text-xs font-medium">Filters:</span>
+              </div>
+              
+              {/* Category Filter */}
+              <select
+                value={scriptCategoryFilter}
+                onChange={(e) => setScriptCategoryFilter(e.target.value)}
+                className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer"
+              >
+                <option value="all">All Categories</option>
+                {uniqueCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+
+              {/* Language Filter */}
+              <select
+                value={scriptLanguageFilter}
+                onChange={(e) => setScriptLanguageFilter(e.target.value)}
+                className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer"
+              >
+                <option value="all">All Languages</option>
+                {uniqueLanguages.map(lang => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
+
+              {/* OS Tag Filter */}
+              <select
+                value={scriptOsTagFilter}
+                onChange={(e) => setScriptOsTagFilter(e.target.value)}
+                className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer"
+              >
+                <option value="all">All Platforms</option>
+                {uniqueOsTags.map(tag => (
+                  <option key={tag} value={tag}>{OS_TAG_ICONS[tag as OSTag]} {OS_TAG_LABELS[tag as OSTag]}</option>
+                ))}
+              </select>
+
+              {/* Clear Filters */}
+              {(scriptCategoryFilter !== 'all' || scriptLanguageFilter !== 'all' || scriptOsTagFilter !== 'all') && (
+                <button
+                  onClick={() => {
+                    setScriptCategoryFilter("all");
+                    setScriptLanguageFilter("all");
+                    setScriptOsTagFilter("all");
+                  }}
+                  className="text-xs text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors ml-auto"
+                >
+                  Clear
+                </button>
+              )}
             </div>
 
             {/* Script List */}
@@ -1107,8 +1230,22 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium text-[var(--color-text)] truncate">
-                                {script.name}
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-[var(--color-text)] truncate">
+                                  {script.name}
+                                </span>
+                                {script.osTags && script.osTags.length > 0 && (
+                                  <div className="flex items-center gap-0.5 flex-shrink-0">
+                                    {script.osTags.slice(0, 2).map(tag => (
+                                      <span key={tag} className="text-[10px]" title={OS_TAG_LABELS[tag]}>
+                                        {OS_TAG_ICONS[tag]}
+                                      </span>
+                                    ))}
+                                    {script.osTags.length > 2 && (
+                                      <span className="text-[10px] text-[var(--color-textMuted)]">+{script.osTags.length - 2}</span>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                               {script.description && (
                                 <div className="text-xs text-[var(--color-textMuted)] truncate">

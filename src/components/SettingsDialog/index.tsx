@@ -46,7 +46,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'startMinimized', 'startMaximized', 'startWithSystem', 'reconnectPreviousSessions',
     'autoOpenLastCollection', 'lastOpenedCollectionId',
     'minimizeToTray', 'closeToTray', 'showTrayIcon', 'singleClickConnect',
-    'singleClickDisconnect', 'doubleClickRename',
+    'singleClickDisconnect', 'doubleClickRename', 'hideQuickStartMessage', 'hideQuickStartButtons',
   ],
   theme: [
     'theme', 'colorScheme', 'primaryAccentColor', 'backgroundGlowEnabled',

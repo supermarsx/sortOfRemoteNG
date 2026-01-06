@@ -152,36 +152,6 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
         </div>
       </div>
 
-      {/* Welcome Screen Section */}
-      <div className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
-          <EyeOff className="w-4 h-4 text-orange-400" />
-          Welcome Screen
-        </h4>
-        <div className="space-y-3 ml-1">
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.hideQuickStartMessage ?? false}
-              onChange={(e) => updateSettings({ hideQuickStartMessage: e.target.checked })}
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
-            />
-            <EyeOff className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
-            <span className="text-gray-300 group-hover:text-white">Hide quick start message</span>
-          </label>
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.hideQuickStartButtons ?? false}
-              onChange={(e) => updateSettings({ hideQuickStartButtons: e.target.checked })}
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
-            />
-            <EyeOff className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
-            <span className="text-gray-300 group-hover:text-white">Hide quick start buttons</span>
-          </label>
-        </div>
-      </div>
-
       {/* Secondary Bar Icons Section */}
       <div className="space-y-4">
         <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">

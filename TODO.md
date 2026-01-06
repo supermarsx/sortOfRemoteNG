@@ -28,23 +28,23 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] mRemoteNG XML file import support
 - [x] Template downloads with toast notifications
 - [x] WebBrowser proxy auth fix for image loading
-- [ ] Remove outer glow from Wake on LAN window
-- [ ] Fix warn on closing main app (currently closes directly without warning)
-- [ ] Add edit button to bulk connection editor to open full editing popup for connection
+- [x] Remove outer glow from Wake on LAN window
+- [x] Fix warn on closing main app (shows confirmation with active sessions)
+- [x] Add edit button to bulk connection editor to open full editing popup for connection
 - [ ] Revamp performance metrics UI with user-friendly graphs (lightweight)
-- [ ] Add filters for action log
+- [x] Add filters for action log (action, connection, date range filters)
 - [ ] Match popup title icons with their secondary bar icons
 - [ ] In performance metrics move update cadence and export button to secondary bar, add filters
 - [ ] Remove language selector from secondary bar settings (no longer exists)
 - [ ] Add syncing capabilities with extensive settings in a new settings tab
 - [ ] Add config to settings welcome screen for custom title and custom message
-- [ ] Add disconnect button to SSH container
+- [x] Add disconnect button to SSH container
 - [ ] Add proxy collection management (adding, saving, editing, chaining) to Proxies and VPNs popup
 - [ ] Add chaining management to create, delete and edit chains
 - [ ] Fix light theme hover effects (non-existent on many elements)
 - [ ] Fix light theme hover effects on Wake on LAN buttons
 - [ ] Fix settings popup light theme compatibility (button hovers, group input boxes too dark)
-- [ ] Move quick start message in layout to a new more adequate group
+- [x] Move quick start message in layout to Startup settings tab
 - [ ] Make HTTP basic auth fully handled by backend (never frontend), avoid browser auth windows
 - [ ] Add proxy and VPN profiles management to Collections Center (with chaining, import/export)
 - [ ] Add bulk Wake on LAN request functionality

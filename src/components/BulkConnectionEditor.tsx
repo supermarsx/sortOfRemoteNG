@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { 
   X, Search, Trash2, Copy, Check, ChevronDown, ChevronUp, 
   FolderOpen, Server, Globe, Database, Terminal, Monitor, 
-  CheckSquare, Square, Minus, Star, RefreshCw
+  CheckSquare, Square, Minus, Star, RefreshCw, Edit3
 } from 'lucide-react';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
@@ -11,6 +11,7 @@ import { generateId } from '../utils/id';
 interface BulkConnectionEditorProps {
   isOpen: boolean;
   onClose: () => void;
+  onEditConnection?: (connection: Connection) => void;
 }
 
 type EditableField = 'name' | 'hostname' | 'port' | 'username';
@@ -29,6 +30,7 @@ const protocolIcons: Record<string, React.ReactNode> = {
 export const BulkConnectionEditor: React.FC<BulkConnectionEditorProps> = ({
   isOpen,
   onClose,
+  onEditConnection,
 }) => {
   const { state, dispatch } = useConnections();
   const [searchTerm, setSearchTerm] = useState('');
@@ -479,6 +481,18 @@ export const BulkConnectionEditor: React.FC<BulkConnectionEditorProps> = ({
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {onEditConnection && (
+                          <button
+                            onClick={() => {
+                              onEditConnection(connection);
+                              onClose();
+                            }}
+                            className="p-1.5 hover:bg-blue-500/20 rounded-lg text-[var(--color-textMuted)] hover:text-blue-500 transition-colors"
+                            title="Edit in full editor"
+                          >
+                            <Edit3 size={14} />
+                          </button>
+                        )}
                         <button
                           onClick={() => duplicateConnection(connection)}
                           className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded-lg text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors"

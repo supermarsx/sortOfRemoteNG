@@ -690,4 +690,189 @@ describe("ScriptManager", () => {
       expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
     });
   });
+
+  describe("OS Tags / Platform Tags", () => {
+    it("should have OS tag filter dropdown", () => {
+      renderComponent();
+      const comboboxes = screen.getAllByRole("combobox");
+      // Should have at least 3 dropdowns: category, language, and OS tag
+      expect(comboboxes.length).toBeGreaterThanOrEqual(3);
+      expect(screen.getByText("All Platforms")).toBeInTheDocument();
+    });
+
+    it("should filter scripts by OS tag", () => {
+      renderComponent();
+      // Find the OS tag filter (third combobox)
+      const osTagSelect = screen.getAllByRole("combobox")[2];
+      
+      fireEvent.change(osTagSelect, { target: { value: "windows" } });
+      
+      // Should show Windows scripts
+      expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
+      // Should not show Linux scripts
+      expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+    });
+
+    it("should display OS tag icons in script list items", () => {
+      renderComponent();
+      // Linux scripts should show penguin emoji
+      const linuxEmojis = screen.getAllByText("🐧");
+      expect(linuxEmojis.length).toBeGreaterThan(0);
+      
+      // Windows scripts should show windows emoji
+      const windowsEmojis = screen.getAllByText("🪟");
+      expect(windowsEmojis.length).toBeGreaterThan(0);
+    });
+
+    it("should display OS tags in script detail view", () => {
+      renderComponent();
+      const scriptItem = screen.getByText("System Info (Linux)");
+      fireEvent.click(scriptItem);
+      
+      // Should show "Linux" badge in detail view
+      expect(screen.getByText("Linux")).toBeInTheDocument();
+    });
+
+    it("should have OS tag toggle buttons in editor form", () => {
+      renderComponent();
+      const newButton = screen.getByText("New Script");
+      fireEvent.click(newButton);
+      
+      // Should see all platform tag buttons
+      expect(screen.getByText("Windows")).toBeInTheDocument();
+      expect(screen.getByText("Linux")).toBeInTheDocument();
+      expect(screen.getByText("macOS")).toBeInTheDocument();
+      expect(screen.getByText("Agnostic")).toBeInTheDocument();
+      expect(screen.getByText("Multi-Platform")).toBeInTheDocument();
+      expect(screen.getByText("Cisco IOS")).toBeInTheDocument();
+    });
+
+    it("should default to 'agnostic' tag when creating new script", () => {
+      renderComponent();
+      const newButton = screen.getByText("New Script");
+      fireEvent.click(newButton);
+      
+      // Find the Agnostic button - it should be selected (have purple styling)
+      const agnosticButton = screen.getByRole("button", { name: /🌐 Agnostic/i });
+      expect(agnosticButton).toHaveClass("bg-purple-500/20");
+    });
+
+    it("should toggle OS tags when clicked in editor", () => {
+      renderComponent();
+      const newButton = screen.getByText("New Script");
+      fireEvent.click(newButton);
+      
+      // Find and click the Linux button
+      const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
+      expect(linuxButton).not.toHaveClass("bg-purple-500/20");
+      
+      fireEvent.click(linuxButton);
+      expect(linuxButton).toHaveClass("bg-purple-500/20");
+      
+      // Click again to deselect
+      fireEvent.click(linuxButton);
+      expect(linuxButton).not.toHaveClass("bg-purple-500/20");
+    });
+
+    it("should save OS tags with custom script", async () => {
+      renderComponent();
+      const newButton = screen.getByText("New Script");
+      fireEvent.click(newButton);
+      
+      // Fill in form
+      const nameInput = screen.getByPlaceholderText(/Enter script name/i);
+      fireEvent.change(nameInput, { target: { value: 'Multi-Platform Script' } });
+      
+      const scriptTextarea = screen.getByPlaceholderText(/Enter your script here/i);
+      fireEvent.change(scriptTextarea, { target: { value: 'echo "hello"' } });
+      
+      // Select Linux tag
+      const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
+      fireEvent.click(linuxButton);
+      
+      // Select Windows tag
+      const windowsButton = screen.getByRole("button", { name: /🪟 Windows/i });
+      fireEvent.click(windowsButton);
+      
+      // Save
+      const saveButton = screen.getByRole("button", { name: /^Save$/i });
+      fireEvent.click(saveButton);
+      
+      await waitFor(() => {
+        const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
+        const parsed = JSON.parse(stored!);
+        const savedScript = parsed.customScripts.find((s: { name: string }) => s.name === 'Multi-Platform Script');
+        expect(savedScript.osTags).toContain('linux');
+        expect(savedScript.osTags).toContain('windows');
+        expect(savedScript.osTags).toContain('agnostic'); // default selected
+      });
+    });
+
+    it("should preserve OS tags when duplicating script", async () => {
+      renderComponent();
+      const scriptItem = screen.getByText("System Info (Linux)");
+      fireEvent.click(scriptItem);
+      
+      const duplicateButton = screen.getByTitle("Duplicate Script");
+      fireEvent.click(duplicateButton);
+      
+      // Editor should open with Linux tag already selected
+      await waitFor(() => {
+        const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
+        expect(linuxButton).toHaveClass("bg-purple-500/20");
+      });
+    });
+
+    it("should load OS tags when editing existing script", async () => {
+      renderComponent();
+      const scriptItem = screen.getByText("System Info (Linux)");
+      fireEvent.click(scriptItem);
+      
+      const editButton = screen.getByTitle("Edit");
+      fireEvent.click(editButton);
+      
+      // Linux tag should be selected
+      await waitFor(() => {
+        const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
+        expect(linuxButton).toHaveClass("bg-purple-500/20");
+      });
+    });
+
+    it("should filter showing only scripts with matching OS tag", () => {
+      const customScript = {
+        id: 'custom-cisco',
+        name: 'Cisco Config Script',
+        description: 'For Cisco devices',
+        script: 'show version',
+        category: 'Network',
+        language: 'bash',
+        osTags: ['cisco-ios'],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ 
+        customScripts: [customScript], 
+        modifiedDefaults: [], 
+        deletedDefaultIds: [] 
+      }));
+      
+      renderComponent();
+      
+      // Filter by cisco-ios
+      const osTagSelect = screen.getAllByRole("combobox")[2];
+      fireEvent.change(osTagSelect, { target: { value: "cisco-ios" } });
+      
+      expect(screen.getByText("Cisco Config Script")).toBeInTheDocument();
+      expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+      expect(screen.queryByText("System Info (Windows)")).not.toBeInTheDocument();
+    });
+
+    it("should show hint text below OS tags in editor", () => {
+      renderComponent();
+      const newButton = screen.getByText("New Script");
+      fireEvent.click(newButton);
+      
+      expect(screen.getByText(/Select the platforms this script is compatible with/i)).toBeInTheDocument();
+    });
+  });
 });

@@ -136,6 +136,7 @@ const AppContent: React.FC = () => {
   const [appReady, setAppReady] = useState(false);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const closingMainRef = useRef(false);
+  const pendingCloseRef = useRef<(() => void) | null>(null);
 
   const statusChecker = StatusChecker.getInstance();
   const collectionManager = CollectionManager.getInstance();
@@ -1140,22 +1141,48 @@ const AppContent: React.FC = () => {
     let isCancelled = false;
     let unlisten: (() => void) | null = null;
 
+    const performClose = async () => {
+      if (closingMainRef.current) return;
+      closingMainRef.current = true;
+      try {
+        const windows = await getAllWindows();
+        await Promise.all(
+          windows
+            .filter((win) => win.label !== currentWindow.label)
+            .map((win) => win.close().catch(() => undefined)),
+        );
+      } catch (error) {
+        console.error("Failed to close detached windows:", error);
+      }
+      currentWindow.close().catch(() => undefined);
+    };
+
     currentWindow
       .onCloseRequested(async (event) => {
         if (closingMainRef.current) return;
-        closingMainRef.current = true;
         event.preventDefault();
-        try {
-          const windows = await getAllWindows();
-          await Promise.all(
-            windows
-              .filter((win) => win.label !== currentWindow.label)
-              .map((win) => win.close().catch(() => undefined)),
-          );
-        } catch (error) {
-          console.error("Failed to close detached windows:", error);
+        
+        // Check if we should warn the user
+        const settings = settingsManager.getSettings();
+        const hasActiveSessions = state.sessions.length > 0;
+        
+        if (settings.warnOnClose && hasActiveSessions) {
+          // Store the close function and show confirmation dialog
+          pendingCloseRef.current = performClose;
+          setDialogState({
+            isOpen: true,
+            message: t("dialogs.confirmExit", "You have active sessions. Are you sure you want to close?"),
+            onConfirm: () => {
+              pendingCloseRef.current?.();
+              pendingCloseRef.current = null;
+            },
+            onCancel: () => {
+              pendingCloseRef.current = null;
+            },
+          });
+        } else {
+          await performClose();
         }
-        currentWindow.close().catch(() => undefined);
       })
       .then((stop) => {
         if (isCancelled) {
@@ -1170,7 +1197,7 @@ const AppContent: React.FC = () => {
       isCancelled = true;
       try { unlisten?.(); } catch { /* ignore */ }
     };
-  }, []);
+  }, [settingsManager, state.sessions.length, t]);
 
   useEffect(() => {
     const elements = document.querySelectorAll<HTMLElement>("[title]");

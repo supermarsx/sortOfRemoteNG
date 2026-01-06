@@ -68,7 +68,8 @@ describe('SettingsManager.benchmarkKeyDerivation', () => {
     const manager = SettingsManager.getInstance();
     await manager.loadSettings();
 
-    const iterations = await manager.benchmarkKeyDerivation(0.01);
+    // Use a short target time (10ms) and short max time (100ms) to ensure test completes quickly
+    const iterations = await manager.benchmarkKeyDerivation(0.01, 0.1);
 
     expect(iterations).toBeGreaterThan(0);
     const [last] = manager.getActionLog();

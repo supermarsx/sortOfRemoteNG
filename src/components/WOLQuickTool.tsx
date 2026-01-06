@@ -186,7 +186,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div 
-        className="relative bg-[var(--color-surface)] rounded-xl shadow-2xl shadow-green-500/10 w-full max-w-2xl overflow-hidden modal-content-animate border border-[var(--color-border)] resize-y"
+        className="relative bg-[var(--color-surface)] rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden modal-content-animate border border-[var(--color-border)] resize-y"
         style={{ minHeight: '400px', maxHeight: '90vh', height: '85vh' }}
       >
         {/* Scattered glow effect across the background */}

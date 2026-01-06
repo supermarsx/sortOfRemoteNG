@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   X,
   Download,
@@ -10,6 +10,8 @@ import {
   Info,
   AlertTriangle,
   Bug,
+  Calendar,
+  Server,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ActionLogEntry } from "../types/settings";
@@ -54,8 +56,25 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
   const [filteredLogs, setFilteredLogs] = useState<ActionLogEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [actionFilter, setActionFilter] = useState<string>("all");
+  const [connectionFilter, setConnectionFilter] = useState<string>("all");
+  const [dateFilter, setDateFilter] = useState<string>("all");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const settingsManager = SettingsManager.getInstance();
+
+  // Get unique actions for the filter dropdown
+  const uniqueActions = useMemo(() => {
+    const actions = new Set(logs.map(log => log.action));
+    return Array.from(actions).sort();
+  }, [logs]);
+
+  // Get unique connections for the filter dropdown
+  const uniqueConnections = useMemo(() => {
+    const connections = new Set(
+      logs.filter(log => log.connectionName).map(log => log.connectionName!)
+    );
+    return Array.from(connections).sort();
+  }, [logs]);
 
   const loadLogs = useCallback(() => {
     const actionLogs = settingsManager.getActionLog();
@@ -71,6 +90,48 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
       filtered = filtered.filter((log) => log.level === levelFilter);
     }
 
+    // Apply action filter
+    if (actionFilter !== "all") {
+      filtered = filtered.filter((log) => log.action === actionFilter);
+    }
+
+    // Apply connection filter
+    if (connectionFilter !== "all") {
+      filtered = filtered.filter((log) => log.connectionName === connectionFilter);
+    }
+
+    // Apply date filter
+    if (dateFilter !== "all") {
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      switch (dateFilter) {
+        case "today":
+          filtered = filtered.filter((log) => log.timestamp >= startOfToday);
+          break;
+        case "yesterday": {
+          const startOfYesterday = new Date(startOfToday);
+          startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+          filtered = filtered.filter(
+            (log) => log.timestamp >= startOfYesterday && log.timestamp < startOfToday
+          );
+          break;
+        }
+        case "week": {
+          const startOfWeek = new Date(startOfToday);
+          startOfWeek.setDate(startOfWeek.getDate() - 7);
+          filtered = filtered.filter((log) => log.timestamp >= startOfWeek);
+          break;
+        }
+        case "month": {
+          const startOfMonth = new Date(startOfToday);
+          startOfMonth.setMonth(startOfMonth.getMonth() - 1);
+          filtered = filtered.filter((log) => log.timestamp >= startOfMonth);
+          break;
+        }
+      }
+    }
+
     // Apply text search across relevant fields
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -83,7 +144,7 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
     }
 
     setFilteredLogs(filtered);
-  }, [logs, searchTerm, levelFilter]);
+  }, [logs, searchTerm, levelFilter, actionFilter, connectionFilter, dateFilter]);
 
   useEffect(() => {
     if (isOpen) {
@@ -203,12 +264,66 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
                 value={levelFilter}
                 onChange={(e) => setLevelFilter(e.target.value)}
                 className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Filter by level"
               >
                 <option value="all">All Levels</option>
                 <option value="debug">Debug</option>
                 <option value="info">Info</option>
                 <option value="warn">Warning</option>
                 <option value="error">Error</option>
+              </select>
+            </div>
+
+            {uniqueActions.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <select
+                  value={actionFilter}
+                  onChange={(e) => setActionFilter(e.target.value)}
+                  className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[200px]"
+                  title="Filter by action"
+                >
+                  <option value="all">All Actions</option>
+                  {uniqueActions.map((action) => (
+                    <option key={action} value={action}>
+                      {action}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {uniqueConnections.length > 0 && (
+              <div className="flex items-center space-x-2">
+                <Server size={16} className="text-gray-400" />
+                <select
+                  value={connectionFilter}
+                  onChange={(e) => setConnectionFilter(e.target.value)}
+                  className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-w-[180px]"
+                  title="Filter by connection"
+                >
+                  <option value="all">All Connections</option>
+                  {uniqueConnections.map((conn) => (
+                    <option key={conn} value={conn}>
+                      {conn}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <Calendar size={16} className="text-gray-400" />
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Filter by date"
+              >
+                <option value="all">All Time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="week">Last 7 Days</option>
+                <option value="month">Last 30 Days</option>
               </select>
             </div>
 

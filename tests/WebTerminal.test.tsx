@@ -308,4 +308,253 @@ describe("WebTerminal", () => {
       });
     });
   });
+
+  describe("Script Selector Modal", () => {
+    const SCRIPTS_STORAGE_KEY = 'managedScripts';
+    
+    beforeEach(() => {
+      localStorage.clear();
+    });
+
+    it("should show Run Script button for SSH sessions", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      expect(runScriptButton).toBeInTheDocument();
+    });
+
+    it("should open script selector modal when Run Script clicked", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      fireEvent.click(runScriptButton);
+
+      await waitFor(() => {
+        // Modal should show default scripts
+        expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
+        expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
+      });
+    });
+
+    it("should have search input in script selector", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      fireEvent.click(runScriptButton);
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/Search scripts/i)).toBeInTheDocument();
+      });
+    });
+
+    it("should have filter dropdowns in script selector", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      fireEvent.click(runScriptButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("All Categories")).toBeInTheDocument();
+        expect(screen.getByText("All Languages")).toBeInTheDocument();
+        expect(screen.getByText("All Platforms")).toBeInTheDocument();
+      });
+    });
+
+    it("should filter scripts by OS tag in selector", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      fireEvent.click(runScriptButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
+      });
+
+      // Find OS tag filter (third select)
+      const selects = screen.getAllByRole('combobox');
+      const osTagSelect = selects[2];
+      fireEvent.change(osTagSelect, { target: { value: 'windows' } });
+
+      await waitFor(() => {
+        expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
+        expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+      });
+    });
+
+    it("should display OS tag icons next to script names", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      fireEvent.click(runScriptButton);
+
+      await waitFor(() => {
+        // Linux scripts should show penguin emoji
+        const penguins = screen.getAllByText("🐧");
+        expect(penguins.length).toBeGreaterThan(0);
+        
+        // Windows scripts should show windows emoji
+        const windows = screen.getAllByText("🪟");
+        expect(windows.length).toBeGreaterThan(0);
+      });
+    });
+
+    it("should close script selector when X clicked", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      fireEvent.click(runScriptButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
+      });
+
+      // Find close button in modal header
+      const closeButtons = screen.getAllByRole('button');
+      const closeButton = closeButtons.find(btn => btn.querySelector('svg[class*="lucide-x"]'));
+      
+      if (closeButton) {
+        fireEvent.click(closeButton);
+      }
+
+      await waitFor(() => {
+        expect(screen.queryByText("All Platforms")).not.toBeInTheDocument();
+      });
+    });
+
+    it("should have Clear button when filters are active", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      fireEvent.click(runScriptButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
+      });
+
+      // Apply a filter
+      const selects = screen.getAllByRole('combobox');
+      fireEvent.change(selects[0], { target: { value: 'System' } });
+
+      await waitFor(() => {
+        expect(screen.getByText("Clear")).toBeInTheDocument();
+      });
+    });
+
+    it("should reset filters when Clear clicked", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      fireEvent.click(runScriptButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
+      });
+
+      // Apply OS tag filter
+      const selects = screen.getAllByRole('combobox');
+      fireEvent.change(selects[2], { target: { value: 'windows' } });
+
+      await waitFor(() => {
+        expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+      });
+
+      // Click Clear
+      const clearButton = screen.getByText("Clear");
+      fireEvent.click(clearButton);
+
+      await waitFor(() => {
+        expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
+        expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("Send Ctrl+C Button", () => {
+    it("should have Send Ctrl+C button for SSH sessions", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const ctrlCButton = screen.getByRole('button', { name: /send ctrl\+c/i });
+      expect(ctrlCButton).toBeInTheDocument();
+    });
+
+    it("should call send_ssh_input with Ctrl+C when button clicked", async () => {
+      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const ctrlCButton = screen.getByRole('button', { name: /send ctrl\+c/i });
+      fireEvent.click(ctrlCButton);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith('send_ssh_input', {
+          sessionId: 'ssh-session-123',
+          data: '\x03'
+        });
+      });
+    });
+  });
 });
