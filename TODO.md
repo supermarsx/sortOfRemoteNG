@@ -44,6 +44,13 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] Fix light theme hover effects (non-existent on many elements)
 - [ ] Fix light theme hover effects on Wake on LAN buttons
 - [ ] Fix settings popup light theme compatibility (button hovers, group input boxes too dark)
+- [ ] Move quick start message in layout to a new more adequate group
+- [ ] Make HTTP basic auth fully handled by backend (never frontend), avoid browser auth windows
+- [ ] Add proxy and VPN profiles management to Collections Center (with chaining, import/export)
+- [ ] Add bulk Wake on LAN request functionality
+- [ ] Add wake everything on LAN function
+- [ ] Add Wake on LAN scripting and scheduled wake functionality
+- [ ] Add connection list filters/sorting (user preference, creation, modification, recently used, alphabetical, by protocol)
 
 ## Project Setup and Initialization
 
