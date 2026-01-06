@@ -250,7 +250,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
         <div className="w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[100px]" />
       </div>
       
-      <div className="relative bg-[var(--color-surface)]/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-blue-500/10 w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
+      <div className="relative bg-[var(--color-surface)] rounded-xl shadow-2xl shadow-blue-500/10 w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
         {/* Header */}
         <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">

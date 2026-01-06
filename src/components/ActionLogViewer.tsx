@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { ActionLogEntry } from "../types/settings";
 import { SettingsManager } from "../utils/settingsManager";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { useToastContext } from "../contexts/ToastContext";
 
 const LEVEL_ICONS: Record<string, JSX.Element> = {
   debug: <Bug className="text-gray-400" size={14} />,
@@ -52,6 +53,7 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
   onClose,
 }) => {
   const { t } = useTranslation();
+  const { toast } = useToastContext();
   const [logs, setLogs] = useState<ActionLogEntry[]>([]);
   const [filteredLogs, setFilteredLogs] = useState<ActionLogEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -181,25 +183,40 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
   };
 
   const exportLogs = () => {
-    // Build CSV rows including a header
-    const csvContent = [
-      "Timestamp,Level,Action,Connection,Details,Duration",
-      ...filteredLogs.map(
-        (log) =>
-          `"${log.timestamp.toISOString()}","${log.level}","${log.action}","${log.connectionName || ""}","${log.details.replace(/"/g, '""')}","${log.duration || ""}"`,
-      ),
-    ].join("\n");
+    try {
+      // Build CSV rows including a header
+      const csvContent = [
+        "Timestamp,Level,Action,Connection,Details,Duration",
+        ...filteredLogs.map(
+          (log) =>
+            `"${log.timestamp.toISOString()}","${log.level}","${log.action}","${log.connectionName || ""}","${log.details.replace(/"/g, '""')}","${log.duration || ""}"`,
+        ),
+      ].join("\n");
 
-    // Create a downloadable Blob and trigger browser download
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `action-log-${new Date().toISOString().split("T")[0]}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      // Create a downloadable Blob and trigger browser download
+      const filename = `action-log-${new Date().toISOString().split("T")[0]}.csv`;
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: t("logs.exportSuccess", "Export successful"),
+        description: `${filteredLogs.length} entries exported to ${filename}`,
+        variant: "success",
+      });
+    } catch (error) {
+      toast({
+        title: t("logs.exportError", "Export failed"),
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "error",
+      });
+    }
   };
 
   const getLevelIcon = (level: string) => LEVEL_ICONS[level] ?? DEFAULT_ICON;
@@ -217,7 +234,7 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden relative">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 h-[90vh] overflow-hidden relative flex flex-col">
         {/* Header */}
         <div className="border-b border-gray-700 px-5 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -370,7 +387,7 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
         </div>
 
         {/* Log Table */}
-        <div className="overflow-y-auto max-h-[calc(90vh-200px)]">
+        <div className="flex-1 overflow-y-auto min-h-0">
           <table className="w-full">
             <thead className="bg-gray-700 sticky top-0">
               <tr>

@@ -453,8 +453,13 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     if (sshSessionId.current) {
       invoke("disconnect_ssh", { sessionId: sshSessionId.current }).catch(() => undefined);
       sshSessionId.current = null;
+      isSshReady.current = false;
+      isConnecting.current = false;
+      setStatusState("idle");
+      setError("");
+      writeLine("\x1b[33mDisconnected from SSH session\x1b[0m");
     }
-  }, []);
+  }, [setStatusState, writeLine]);
 
   const initSsh = useCallback(async (force = false) => {
     const currentSession = sessionRef.current;

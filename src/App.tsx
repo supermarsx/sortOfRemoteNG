@@ -137,6 +137,7 @@ const AppContent: React.FC = () => {
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const closingMainRef = useRef(false);
   const pendingCloseRef = useRef<(() => void) | null>(null);
+  const awaitingCloseConfirmRef = useRef(false);
 
   const statusChecker = StatusChecker.getInstance();
   const collectionManager = CollectionManager.getInstance();
@@ -1159,24 +1160,32 @@ const AppContent: React.FC = () => {
 
     currentWindow
       .onCloseRequested(async (event) => {
-        if (closingMainRef.current) return;
+        // Always prevent the default close behavior first
         event.preventDefault();
+        
+        // If we're already closing or awaiting confirmation, don't re-trigger
+        if (closingMainRef.current) return;
+        if (awaitingCloseConfirmRef.current) return;
         
         // Check if we should warn the user
         const settings = settingsManager.getSettings();
         const hasActiveSessions = state.sessions.length > 0;
         
         if (settings.warnOnClose && hasActiveSessions) {
+          // Mark that we're waiting for confirmation
+          awaitingCloseConfirmRef.current = true;
           // Store the close function and show confirmation dialog
           pendingCloseRef.current = performClose;
           setDialogState({
             isOpen: true,
             message: t("dialogs.confirmExit", "You have active sessions. Are you sure you want to close?"),
             onConfirm: () => {
+              awaitingCloseConfirmRef.current = false;
               pendingCloseRef.current?.();
               pendingCloseRef.current = null;
             },
             onCancel: () => {
+              awaitingCloseConfirmRef.current = false;
               pendingCloseRef.current = null;
             },
           });
