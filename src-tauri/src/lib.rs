@@ -801,6 +801,7 @@ pub fn run() {
         // ovh::get_ovh_session,
         // ovh::list_ovh_sessions
         create_desktop_shortcut,
+        scan_shortcuts,
         set_autostart,
         get_desktop_path,
         get_documents_path,
@@ -1373,4 +1374,160 @@ fn open_folder(path: String) -> Result<(), String> {
   }
   
   Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct ScannedShortcut {
+  name: String,
+  path: String,
+  target: Option<String>,
+  arguments: Option<String>,
+  is_sortofremoteng: bool,
+}
+
+#[tauri::command]
+/// Scan folders for shortcuts (non-recursive).
+/// Returns a list of shortcuts found in the specified folders.
+async fn scan_shortcuts(folders: Vec<String>) -> Result<Vec<ScannedShortcut>, String> {
+  let mut shortcuts = Vec::new();
+  
+  for folder in folders {
+    let folder_path = std::path::Path::new(&folder);
+    if !folder_path.exists() || !folder_path.is_dir() {
+      continue;
+    }
+    
+    // Read directory entries (non-recursive)
+    let entries = match std::fs::read_dir(folder_path) {
+      Ok(entries) => entries,
+      Err(_) => continue,
+    };
+    
+    for entry in entries.flatten() {
+      let path = entry.path();
+      
+      // Skip directories (non-recursive)
+      if path.is_dir() {
+        continue;
+      }
+      
+      #[cfg(target_os = "windows")]
+      {
+        // Check for .lnk files on Windows
+        if let Some(ext) = path.extension() {
+          if ext.to_string_lossy().to_lowercase() == "lnk" {
+            let name = path.file_stem()
+              .map(|s| s.to_string_lossy().to_string())
+              .unwrap_or_default();
+            
+            // Try to read shortcut target using PowerShell
+            let (target, arguments, is_sortofremoteng) = get_shortcut_info(&path);
+            
+            shortcuts.push(ScannedShortcut {
+              name,
+              path: path.to_string_lossy().to_string(),
+              target,
+              arguments,
+              is_sortofremoteng,
+            });
+          }
+        }
+      }
+      
+      #[cfg(target_os = "linux")]
+      {
+        // Check for .desktop files on Linux
+        if let Some(ext) = path.extension() {
+          if ext.to_string_lossy().to_lowercase() == "desktop" {
+            let name = path.file_stem()
+              .map(|s| s.to_string_lossy().to_string())
+              .unwrap_or_default();
+            
+            // Read .desktop file to check if it's a sortOfRemoteNG shortcut
+            let (target, arguments, is_sortofremoteng) = if let Ok(content) = std::fs::read_to_string(&path) {
+              let exec_line = content.lines()
+                .find(|line| line.starts_with("Exec="))
+                .map(|line| line.trim_start_matches("Exec=").to_string());
+              let is_ours = content.to_lowercase().contains("sortofremoteng");
+              (exec_line.clone(), None, is_ours)
+            } else {
+              (None, None, false)
+            };
+            
+            shortcuts.push(ScannedShortcut {
+              name,
+              path: path.to_string_lossy().to_string(),
+              target,
+              arguments,
+              is_sortofremoteng,
+            });
+          }
+        }
+      }
+      
+      #[cfg(target_os = "macos")]
+      {
+        // Check for .app bundles or aliases on macOS
+        if let Some(ext) = path.extension() {
+          if ext.to_string_lossy().to_lowercase() == "app" {
+            let name = path.file_stem()
+              .map(|s| s.to_string_lossy().to_string())
+              .unwrap_or_default();
+            
+            let is_sortofremoteng = name.to_lowercase().contains("sortofremoteng");
+            
+            shortcuts.push(ScannedShortcut {
+              name,
+              path: path.to_string_lossy().to_string(),
+              target: None,
+              arguments: None,
+              is_sortofremoteng,
+            });
+          }
+        }
+      }
+    }
+  }
+  
+  Ok(shortcuts)
+}
+
+#[cfg(target_os = "windows")]
+fn get_shortcut_info(path: &std::path::Path) -> (Option<String>, Option<String>, bool) {
+  use std::process::Command;
+  
+  let powershell_script = format!(
+    r#"
+    $WshShell = New-Object -comObject WScript.Shell
+    $Shortcut = $WshShell.CreateShortcut("{}")
+    Write-Output $Shortcut.TargetPath
+    Write-Output "---SEPARATOR---"
+    Write-Output $Shortcut.Arguments
+    "#,
+    path.display()
+  );
+  
+  match Command::new("powershell")
+    .arg("-Command")
+    .arg(&powershell_script)
+    .output()
+  {
+    Ok(output) if output.status.success() => {
+      let stdout = String::from_utf8_lossy(&output.stdout);
+      let parts: Vec<&str> = stdout.split("---SEPARATOR---").collect();
+      let target = parts.get(0).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+      let arguments = parts.get(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+      
+      // Check if it's a sortOfRemoteNG shortcut
+      let is_sortofremoteng = target.as_ref()
+        .map(|t| t.to_lowercase().contains("sortofremoteng"))
+        .unwrap_or(false)
+        || arguments.as_ref()
+          .map(|a| a.contains("--collection") || a.contains("--connection"))
+          .unwrap_or(false);
+      
+      (target, arguments, is_sortofremoteng)
+    }
+    _ => (None, None, false),
+  }
 }

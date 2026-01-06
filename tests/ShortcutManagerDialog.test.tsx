@@ -86,9 +86,9 @@ describe('ShortcutManagerDialog', () => {
   it('displays folder location options', () => {
     renderWithProvider({ isOpen: true, onClose: () => {} });
     
-    // Should have folder preset options
-    expect(screen.getByText(/Desktop/i)).toBeInTheDocument();
-    expect(screen.getByText(/Documents/i)).toBeInTheDocument();
+    // Should have folder preset options (select dropdown options have exact text)
+    expect(screen.getByRole('option', { name: /Desktop/i })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /Documents/i })).toBeInTheDocument();
   });
 
   it('calls onClose when close button is clicked', () => {

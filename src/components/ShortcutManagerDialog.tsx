@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { X, Link, Plus, Trash2, RefreshCw, Edit, FolderOpen, Check, AlertTriangle, ExternalLink } from "lucide-react";
+import { X, Link, Plus, Trash2, RefreshCw, Edit, FolderOpen, Check, AlertTriangle, ExternalLink, Folder, Search } from "lucide-react";
 import { useConnections } from "../contexts/useConnections";
 import { CollectionManager } from "../utils/collectionManager";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 
 interface ShortcutInfo {
@@ -13,6 +14,14 @@ interface ShortcutInfo {
   connectionId?: string;
   createdAt: string;
   exists: boolean;
+}
+
+interface ScannedShortcut {
+  name: string;
+  path: string;
+  target: string | null;
+  arguments: string | null;
+  is_sortofremoteng: boolean;
 }
 
 interface ShortcutManagerDialogProps {
@@ -46,6 +55,9 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [editingShortcut, setEditingShortcut] = useState<ShortcutInfo | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scannedShortcuts, setScannedShortcuts] = useState<ScannedShortcut[]>([]);
+  const [showScanResults, setShowScanResults] = useState(false);
 
   // Load shortcuts from storage
   const loadShortcuts = useCallback(async () => {
@@ -94,6 +106,109 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
       setStatusMessage(t('shortcuts.cleanedUp', { count: shortcuts.length - existing.length, defaultValue: `Cleaned up ${shortcuts.length - existing.length} missing shortcut(s)` }));
       setTimeout(() => setStatusMessage(""), 3000);
     }
+  }, [shortcuts, saveShortcuts, t]);
+
+  // Scan for shortcuts in common folders
+  const handleScanShortcuts = useCallback(async () => {
+    const isTauri = typeof window !== "undefined" &&
+      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
+    
+    if (!isTauri) {
+      setErrorMessage(t('shortcuts.notAvailable', 'This feature is only available in the Tauri app.'));
+      return;
+    }
+    
+    setIsScanning(true);
+    setErrorMessage("");
+    setStatusMessage(t('shortcuts.scanning', 'Scanning for shortcuts...'));
+    
+    try {
+      // Get all folder paths to scan
+      const foldersToScan: string[] = [];
+      
+      try {
+        const desktop = await invoke<string>('get_desktop_path');
+        if (desktop) foldersToScan.push(desktop);
+      } catch { /* ignore */ }
+      
+      try {
+        const documents = await invoke<string>('get_documents_path');
+        if (documents) foldersToScan.push(documents);
+      } catch { /* ignore */ }
+      
+      try {
+        const appdata = await invoke<string>('get_appdata_path');
+        if (appdata) foldersToScan.push(appdata);
+      } catch { /* ignore */ }
+      
+      // Add custom folder if set
+      if (customFolderPath) {
+        foldersToScan.push(customFolderPath);
+      }
+      
+      if (foldersToScan.length === 0) {
+        setErrorMessage(t('shortcuts.noFoldersToScan', 'No folders available to scan.'));
+        return;
+      }
+      
+      const results = await invoke<ScannedShortcut[]>('scan_shortcuts', { folders: foldersToScan });
+      
+      // Filter to only show sortOfRemoteNG shortcuts
+      const sortofremotengShortcuts = results.filter(s => s.is_sortofremoteng);
+      
+      setScannedShortcuts(sortofremotengShortcuts);
+      setShowScanResults(true);
+      setStatusMessage(t('shortcuts.scanComplete', { 
+        found: sortofremotengShortcuts.length, 
+        total: results.length,
+        defaultValue: `Found ${sortofremotengShortcuts.length} sortOfRemoteNG shortcut(s) out of ${results.length} total` 
+      }));
+      setTimeout(() => setStatusMessage(""), 5000);
+    } catch (error) {
+      console.error('Failed to scan shortcuts:', error);
+      setErrorMessage(t('shortcuts.scanFailed', 'Failed to scan for shortcuts.'));
+    } finally {
+      setIsScanning(false);
+    }
+  }, [customFolderPath, t]);
+
+  // Import a scanned shortcut to tracked list
+  const handleImportScannedShortcut = useCallback((scanned: ScannedShortcut) => {
+    // Check if already tracked
+    const alreadyTracked = shortcuts.some(s => s.path === scanned.path);
+    if (alreadyTracked) {
+      setErrorMessage(t('shortcuts.alreadyTracked', 'This shortcut is already tracked.'));
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
+    
+    // Parse arguments to extract collection/connection IDs
+    let collectionId: string | undefined;
+    let connectionId: string | undefined;
+    
+    if (scanned.arguments) {
+      const collectionMatch = scanned.arguments.match(/--collection\s+(\S+)/);
+      const connectionMatch = scanned.arguments.match(/--connection\s+(\S+)/);
+      if (collectionMatch) collectionId = collectionMatch[1];
+      if (connectionMatch) connectionId = connectionMatch[1];
+    }
+    
+    const newShortcut: ShortcutInfo = {
+      id: Date.now().toString(),
+      name: scanned.name,
+      path: scanned.path,
+      collectionId,
+      connectionId,
+      createdAt: new Date().toISOString(),
+      exists: true,
+    };
+    
+    saveShortcuts([...shortcuts, newShortcut]);
+    setStatusMessage(t('shortcuts.imported', { name: scanned.name, defaultValue: `Imported "${scanned.name}" to tracked shortcuts` }));
+    setTimeout(() => setStatusMessage(""), 3000);
+    
+    // Remove from scanned list
+    setScannedShortcuts(prev => prev.filter(s => s.path !== scanned.path));
   }, [shortcuts, saveShortcuts, t]);
 
   useEffect(() => {
@@ -422,13 +537,38 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                   <label className="block text-sm font-medium text-gray-300 mb-2">
                     {t('shortcuts.customPath', 'Custom Folder Path')}
                   </label>
-                  <input
-                    type="text"
-                    value={customFolderPath}
-                    onChange={(e) => setCustomFolderPath(e.target.value)}
-                    placeholder="C:\Users\Me\Shortcuts"
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customFolderPath}
+                      onChange={(e) => setCustomFolderPath(e.target.value)}
+                      placeholder="C:\\Users\\Me\\Shortcuts"
+                      className="flex-1 px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const selected = await openDialog({
+                            title: t('shortcuts.selectFolder', 'Select Folder'),
+                            directory: true,
+                            multiple: false,
+                            defaultPath: customFolderPath || undefined,
+                          });
+                          if (selected && typeof selected === 'string') {
+                            setCustomFolderPath(selected);
+                          }
+                        } catch (error) {
+                          console.error('Failed to open folder dialog:', error);
+                        }
+                      }}
+                      className="px-3 py-2 bg-gray-600 hover:bg-gray-500 border border-gray-500 rounded-md text-white transition-colors flex items-center gap-2"
+                      title={t('shortcuts.browseFolder', 'Browse...')}
+                    >
+                      <Folder size={16} />
+                      <span className="hidden sm:inline">{t('shortcuts.browse', 'Browse')}</span>
+                    </button>
+                  </div>
                 </div>
               )}
               
@@ -599,6 +739,84 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                         <Trash2 size={14} />
                       </button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Scan for Shortcuts */}
+          <div className="bg-gray-700/60 border border-gray-600 rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-200 flex items-center gap-2">
+                <Search size={14} />
+                {t('shortcuts.scanForShortcuts', 'Scan for Shortcuts')}
+              </h3>
+              <button
+                onClick={handleScanShortcuts}
+                disabled={isScanning}
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-md transition-colors disabled:opacity-50"
+              >
+                {isScanning ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    {t('shortcuts.scanning', 'Scanning...')}
+                  </>
+                ) : (
+                  <>
+                    <Search size={14} />
+                    {t('shortcuts.scan', 'Scan')}
+                  </>
+                )}
+              </button>
+            </div>
+            
+            <p className="text-sm text-gray-400 mb-4">
+              {t('shortcuts.scanDescription', 'Scan desktop, documents, and custom folders for existing sortOfRemoteNG shortcuts to import into the tracked list.')}
+            </p>
+            
+            {showScanResults && scannedShortcuts.length === 0 && (
+              <div className="text-center text-gray-400 py-4 bg-gray-800/50 rounded-lg border border-gray-600">
+                <Search size={24} className="mx-auto mb-2 opacity-50" />
+                <p>{t('shortcuts.noShortcutsFound', 'No sortOfRemoteNG shortcuts found')}</p>
+                <p className="text-xs mt-1">{t('shortcuts.allTracked', 'All shortcuts may already be tracked')}</p>
+              </div>
+            )}
+            
+            {scannedShortcuts.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs text-gray-500 mb-2">
+                  {t('shortcuts.foundShortcuts', { count: scannedShortcuts.length, defaultValue: `Found ${scannedShortcuts.length} shortcut(s)` })}
+                </div>
+                {scannedShortcuts.map((scanned, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-3 rounded-lg bg-purple-900/20 border border-purple-600/40"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Link size={14} className="text-purple-400" />
+                        <span className="font-medium text-white truncate">{scanned.name}</span>
+                        <span className="text-xs text-purple-400 px-2 py-0.5 bg-purple-900/30 rounded">
+                          {t('shortcuts.discovered', 'Discovered')}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1 truncate">
+                        {scanned.path}
+                      </div>
+                      {scanned.target && (
+                        <div className="text-xs text-gray-500 mt-1 truncate">
+                          → {scanned.target}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleImportScannedShortcut(scanned)}
+                      className="ml-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-md transition-colors flex items-center gap-1"
+                    >
+                      <Plus size={14} />
+                      {t('shortcuts.import', 'Import')}
+                    </button>
                   </div>
                 ))}
               </div>
