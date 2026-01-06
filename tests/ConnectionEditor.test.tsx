@@ -14,34 +14,12 @@ vi.mock('../src/components/TagManager', () => ({
   )
 }));
 
-vi.mock('../src/components/connectionEditor/GeneralSection', () => ({
-  default: ({ formData, setFormData }: any) => (
-    <div data-testid="general-section">
-      <input
-        data-testid="name-input"
-        value={formData.name || ''}
-        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-        placeholder="Connection name"
-      />
-      <select
-        data-testid="protocol-select"
-        value={formData.protocol || 'rdp'}
-        onChange={(e) => setFormData({ ...formData, protocol: e.target.value })}
-      >
-        <option value="rdp">RDP</option>
-        <option value="ssh">SSH</option>
-        <option value="vnc">VNC</option>
-      </select>
-    </div>
-  )
-}));
-
 vi.mock('../src/components/connectionEditor/SSHOptions', () => ({
-  default: () => <div data-testid="ssh-options">SSH Options</div>
+  default: ({ formData }: any) => formData.protocol === 'ssh' ? <div data-testid="ssh-options">SSH Options</div> : null
 }));
 
 vi.mock('../src/components/connectionEditor/HTTPOptions', () => ({
-  default: () => <div data-testid="http-options">HTTP Options</div>
+  default: ({ formData }: any) => ['http', 'https'].includes(formData.protocol) ? <div data-testid="http-options">HTTP Options</div> : null
 }));
 
 vi.mock('../src/components/connectionEditor/CloudProviderOptions', () => ({
@@ -125,10 +103,12 @@ describe("ConnectionEditor", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
       const nameInput = screen.getByTestId('name-input');
-      const protocolSelect = screen.getByTestId('protocol-select');
+      // RDP should be selected by default (has active styling)
+      const rdpButton = screen.getByRole('button', { name: /RDP Remote Desktop/i });
 
       expect(nameInput).toHaveValue('');
-      expect(protocolSelect).toHaveValue('rdp');
+      // Check RDP is the active/selected protocol
+      expect(rdpButton.className).toContain('bg-blue-500');
     });
 
     it("should update form data when inputs change", () => {
@@ -143,10 +123,12 @@ describe("ConnectionEditor", () => {
     it("should update protocol and set default port", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      const protocolSelect = screen.getByTestId('protocol-select');
-      fireEvent.change(protocolSelect, { target: { value: 'ssh' } });
+      // Click SSH button to change protocol
+      const sshButton = screen.getByRole('button', { name: /SSH Secure Shell/i });
+      fireEvent.click(sshButton);
 
-      expect(protocolSelect).toHaveValue('ssh');
+      // SSH button should now be active
+      expect(sshButton.className).toContain('bg-green-500');
     });
   });
 
@@ -177,8 +159,9 @@ describe("ConnectionEditor", () => {
     it("should show SSH options for SSH protocol", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      const protocolSelect = screen.getByTestId('protocol-select');
-      fireEvent.change(protocolSelect, { target: { value: 'ssh' } });
+      // Click SSH protocol button
+      const sshButton = screen.getByRole('button', { name: /SSH Secure Shell/i });
+      fireEvent.click(sshButton);
 
       expect(screen.getByTestId('ssh-options')).toBeInTheDocument();
     });
@@ -186,8 +169,9 @@ describe("ConnectionEditor", () => {
     it("should show HTTP options for HTTP protocol", () => {
       renderWithProviders({ isOpen: true, onClose: vi.fn() });
 
-      const protocolSelect = screen.getByTestId('protocol-select');
-      fireEvent.change(protocolSelect, { target: { value: 'http' } });
+      // Click HTTP protocol button
+      const httpButton = screen.getByRole('button', { name: /HTTP Web Service/i });
+      fireEvent.click(httpButton);
 
       expect(screen.getByTestId('http-options')).toBeInTheDocument();
     });
@@ -211,14 +195,23 @@ describe("ConnectionEditor", () => {
   });
 
   describe("Save Functionality", () => {
-    it("should call onClose when save button is clicked", () => {
+    it("should call onClose when save button is clicked", async () => {
       const mockOnClose = vi.fn();
       renderWithProviders({ isOpen: true, onClose: mockOnClose });
+
+      // Fill required fields first
+      const nameInput = screen.getByTestId('name-input');
+      fireEvent.change(nameInput, { target: { value: 'Test Connection' } });
+
+      const hostnameInput = screen.getByPlaceholderText(/192\.168\.1\.100/i);
+      fireEvent.change(hostnameInput, { target: { value: 'test.example.com' } });
 
       const saveButton = screen.getByRole('button', { name: /Create/i });
       fireEvent.click(saveButton);
 
-      expect(mockOnClose).toHaveBeenCalled();
+      await waitFor(() => {
+        expect(mockOnClose).toHaveBeenCalled();
+      });
     });
 
     it("should dispatch ADD_CONNECTION for new connection", () => {
@@ -237,7 +230,7 @@ describe("ConnectionEditor", () => {
       const mockOnClose = vi.fn();
       renderWithProviders({ isOpen: true, onClose: mockOnClose });
 
-      const closeButton = screen.getByRole('button', { name: /close/i });
+      const closeButton = screen.getByRole('button', { name: /Close/i });
       fireEvent.click(closeButton);
 
       expect(mockOnClose).toHaveBeenCalled();

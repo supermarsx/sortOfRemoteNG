@@ -65,7 +65,7 @@ export const useAppLifecycle = ({
   setPasswordDialogMode,
 }: Options) => {
   const { t, i18n } = useTranslation();
-  const { state } = useConnections();
+  const { state, loadData } = useConnections();
 
   const settingsManager = SettingsManager.getInstance();
   const statusChecker = StatusChecker.getInstance();
@@ -151,6 +151,8 @@ export const useAppLifecycle = ({
             } else {
               // For unencrypted collections, auto-open directly
               await collectionManager.selectCollection(lastCollection.id);
+              // Load the collection data into React state
+              await loadData();
               console.log(`Auto-opened last collection: ${lastCollection.name}`);
               settingsManager.logAction(
                 "info",
@@ -188,7 +190,7 @@ export const useAppLifecycle = ({
         error instanceof Error ? error.message : "Unknown error",
       );
     }
-  }, [settingsManager, themeManager, i18n]);
+  }, [settingsManager, themeManager, i18n, loadData, setShowCollectionSelector, collectionManager]);
 
   const handleBeforeUnload = useCallback(
     (e: BeforeUnloadEvent) => {

@@ -173,7 +173,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
       }}
     >
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative animate-in fade-in zoom-in-95 duration-200">
-        <div className="relative h-16 border-b border-gray-700">
+        <div className="relative h-16 border-b border-gray-600">
           <div className="absolute left-6 top-4 flex items-center space-x-3">
             <Shield className="text-blue-400" size={24} />
             <h2 className="text-xl font-semibold text-white">
@@ -191,10 +191,10 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
 
         <div className="p-6 space-y-4">
           {noCollectionSelected && (
-            <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
+            <div className="border rounded-lg p-4" style={{ backgroundColor: 'rgba(var(--color-warning-rgb, 245, 158, 11), 0.15)', borderColor: 'var(--color-warning)' }}>
               <div className="flex items-center space-x-2">
                 <AlertCircle className="text-yellow-400" size={16} />
-                <span className="text-yellow-300 text-sm">
+                <span className="text-yellow-400 text-sm">
                   Please select a collection before setting up security.
                 </span>
               </div>
@@ -202,12 +202,12 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
           )}
 
           {mode === 'setup' && !noCollectionSelected && (
-            <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
+            <div className="border rounded-lg p-4" style={{ backgroundColor: 'rgba(var(--color-primary-rgb, 59, 130, 246), 0.15)', borderColor: 'var(--color-primary)' }}>
               <div className="flex items-start space-x-3">
                 <Lock className="text-blue-400 mt-0.5" size={16} />
-                <div className="text-sm text-blue-300">
+                <div className="text-sm text-blue-400">
                   <p className="font-medium mb-1">Secure Your Data</p>
-                  <p className="text-blue-400">
+                  <p className="text-blue-300">
                     Choose how to protect your connections. You can use a password,
                     system passkey (Windows Hello/Touch ID), or a key file.
                   </p>
@@ -217,10 +217,10 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
           )}
 
           {(error || passwordError) && (
-            <div className="bg-red-900/20 border border-red-700 rounded-lg p-4">
+            <div className="border rounded-lg p-4" style={{ backgroundColor: 'rgba(var(--color-error-rgb, 239, 68, 68), 0.15)', borderColor: 'var(--color-error)' }}>
               <div className="flex items-center space-x-2">
                 <AlertCircle className="text-red-400" size={16} />
-                <span className="text-red-300 text-sm">{error || passwordError}</span>
+                <span className="text-red-400 text-sm">{error || passwordError}</span>
               </div>
             </div>
           )}
@@ -233,9 +233,10 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
               disabled={noCollectionSelected}
               className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg border transition-all ${
                 authMethod === 'password'
-                  ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                  : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:border-gray-500'
+                  ? 'border-blue-500 text-blue-400'
+                  : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
               } ${noCollectionSelected ? 'opacity-50 cursor-not-allowed' : ''}`}
+              style={authMethod === 'password' ? { backgroundColor: 'rgba(var(--color-primary-rgb, 59, 130, 246), 0.2)' } : {}}
             >
               <Key size={16} />
               <span className="text-sm">Password</span>
@@ -247,9 +248,10 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                 disabled={noCollectionSelected}
                 className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg border transition-all ${
                   authMethod === 'passkey'
-                    ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                    : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:border-gray-500'
+                    ? 'border-blue-500 text-blue-400'
+                    : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
                 } ${noCollectionSelected ? 'opacity-50 cursor-not-allowed' : ''}`}
+                style={authMethod === 'passkey' ? { backgroundColor: 'rgba(var(--color-primary-rgb, 59, 130, 246), 0.2)' } : {}}
               >
                 <Fingerprint size={16} />
                 <span className="text-sm">Passkey</span>
@@ -261,9 +263,10 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
               disabled={noCollectionSelected}
               className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg border transition-all ${
                 authMethod === 'keyfile'
-                  ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                  : 'bg-gray-700/50 border-gray-600 text-gray-400 hover:border-gray-500'
+                  ? 'border-blue-500 text-blue-400'
+                  : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
               } ${noCollectionSelected ? 'opacity-50 cursor-not-allowed' : ''}`}
+              style={authMethod === 'keyfile' ? { backgroundColor: 'rgba(var(--color-primary-rgb, 59, 130, 246), 0.2)' } : {}}
             >
               <FileKey size={16} />
               <span className="text-sm">Key File</span>
@@ -352,14 +355,14 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
           {/* Passkey Form */}
           {authMethod === 'passkey' && (
             <div className="space-y-4">
-              <div className="bg-gray-700/50 rounded-lg p-6 text-center">
+              <div className="bg-gray-700 rounded-lg p-6 text-center">
                 <Fingerprint size={48} className="mx-auto mb-4 text-blue-400" />
                 <p className="text-gray-300 mb-2">
                   {mode === 'setup'
                     ? 'Use Windows Hello or your device biometrics to secure your data'
                     : 'Authenticate with Windows Hello or device biometrics'}
                 </p>
-                <p className="text-gray-500 text-sm">
+                <p className="text-gray-400 text-sm">
                   Your passkey is stored securely on your device
                 </p>
               </div>
@@ -417,7 +420,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                   )}
                 </div>
                 {mode === 'setup' && (
-                  <p className="text-gray-500 text-xs mt-2">
+                  <p className="text-gray-400 text-xs mt-2">
                     Keep your key file safe! You will need it to unlock your connections.
                   </p>
                 )}

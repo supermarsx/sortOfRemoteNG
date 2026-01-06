@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Save, Check } from 'lucide-react';
+import { X, Save, Check, Plus, Sparkles, ChevronDown, ChevronUp, Monitor, Terminal, Globe, Database, Server, Shield, Cloud, Folder as FolderIcon, Star, HardDrive, Zap, Settings2, FileText, Tag } from 'lucide-react';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
 import { TagManager } from './TagManager';
 import { getDefaultPort } from '../utils/defaultPorts';
 import { generateId } from '../utils/id';
-import GeneralSection from './connectionEditor/GeneralSection';
 import SSHOptions from './connectionEditor/SSHOptions';
 import HTTPOptions from './connectionEditor/HTTPOptions';
 import CloudProviderOptions from './connectionEditor/CloudProviderOptions';
@@ -48,6 +47,12 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     basicAuthPassword: '',
     basicAuthRealm: '',
     httpHeaders: {},
+  });
+  
+  // Collapsible sections state
+  const [expandedSections, setExpandedSections] = useState({
+    advanced: false,
+    description: false,
   });
   
   // Auto-save state
@@ -227,94 +232,416 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     setFormData({ ...formData, tags });
   };
 
-  const handleCreateTag = (tag: string) => {
+  const handleCreateTag = (_tag: string) => {
     // Tags are automatically available once created
   };
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const handleProtocolChange = (protocol: string) => {
+    setFormData(prev => ({
+      ...prev,
+      protocol: protocol as Connection['protocol'],
+      port: getDefaultPort(protocol),
+      authType: ['http', 'https'].includes(protocol) ? 'basic' : 'password',
+    }));
+  };
+
+  // Protocol options with icons and descriptions
+  const protocolOptions = [
+    { value: 'rdp', label: 'RDP', desc: 'Remote Desktop', icon: Monitor, color: 'blue' },
+    { value: 'ssh', label: 'SSH', desc: 'Secure Shell', icon: Terminal, color: 'green' },
+    { value: 'vnc', label: 'VNC', desc: 'Virtual Network', icon: Server, color: 'purple' },
+    { value: 'http', label: 'HTTP', desc: 'Web Service', icon: Globe, color: 'orange' },
+    { value: 'https', label: 'HTTPS', desc: 'Secure Web', icon: Shield, color: 'emerald' },
+    { value: 'anydesk', label: 'AnyDesk', desc: 'Remote Access', icon: Monitor, color: 'red' },
+  ];
+
+  const cloudOptions = [
+    { value: 'gcp', label: 'GCP', desc: 'Google Cloud' },
+    { value: 'azure', label: 'Azure', desc: 'Microsoft' },
+    { value: 'digital-ocean', label: 'DO', desc: 'Digital Ocean' },
+  ];
+
+  const iconOptions = [
+    { value: '', label: 'Default', icon: Monitor },
+    { value: 'terminal', label: 'Terminal', icon: Terminal },
+    { value: 'globe', label: 'Web', icon: Globe },
+    { value: 'database', label: 'Database', icon: Database },
+    { value: 'server', label: 'Server', icon: Server },
+    { value: 'shield', label: 'Shield', icon: Shield },
+    { value: 'cloud', label: 'Cloud', icon: Cloud },
+    { value: 'folder', label: 'Folder', icon: FolderIcon },
+    { value: 'star', label: 'Star', icon: Star },
+    { value: 'drive', label: 'Drive', icon: HardDrive },
+  ];
 
 
   if (!isOpen) return null;
 
+  const isNewConnection = !connection;
+
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
       data-testid="connection-editor-modal"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+      {/* Subtle glow effect */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+        <div className={`w-[500px] h-[400px] rounded-full blur-[100px] animate-pulse ${
+          isNewConnection ? 'bg-emerald-500/15' : 'bg-blue-500/15'
+        }`} />
+      </div>
+
+      <div className="relative bg-gray-800/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-gray-700/50">
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-white">
-              {connection ? 'Edit Connection' : 'New Connection'}
-            </h2>
-            <div className="flex items-center gap-2">
-              {/* Auto-save indicator */}
-              {connection && settings.autoSaveEnabled && (
-                <div className="flex items-center gap-1.5 text-xs">
-                  {autoSaveStatus === 'pending' && (
-                    <span className="text-yellow-400 flex items-center gap-1">
-                      <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
-                      Saving...
-                    </span>
-                  )}
-                  {autoSaveStatus === 'saved' && (
-                    <span className="text-green-400 flex items-center gap-1">
-                      <Check size={14} />
-                      Saved
-                    </span>
+          {/* Header */}
+          <div className={`relative border-b border-gray-700/80 px-6 py-5 bg-gradient-to-r ${
+            isNewConnection 
+              ? 'from-emerald-900/30 via-gray-800 to-gray-800' 
+              : 'from-blue-900/30 via-gray-800 to-gray-800'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className={`p-3 rounded-xl ${
+                  isNewConnection ? 'bg-emerald-500/20' : 'bg-blue-500/20'
+                }`}>
+                  {isNewConnection ? (
+                    <Plus size={22} className="text-emerald-400" />
+                  ) : (
+                    <Settings2 size={22} className="text-blue-400" />
                   )}
                 </div>
-              )}
-              <button
-                type="submit"
-                data-tooltip={connection ? 'Update' : 'Create'}
-                aria-label={connection ? 'Update' : 'Create'}
-                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
-              >
-                <Save size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                data-tooltip="Close"
-                aria-label="Close"
-                className="p-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
-              >
-                <X size={16} />
-              </button>
+                <div>
+                  <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                    {isNewConnection ? 'New Connection' : 'Edit Connection'}
+                    {isNewConnection && <Sparkles size={16} className="text-emerald-400" />}
+                  </h2>
+                  <p className="text-sm text-gray-400 mt-0.5">
+                    {isNewConnection 
+                      ? 'Add a new server or service to your collection' 
+                      : `Editing "${formData.name || 'connection'}"`}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Auto-save indicator */}
+                {connection && settings.autoSaveEnabled && (
+                  <div className="flex items-center gap-1.5 text-xs mr-2">
+                    {autoSaveStatus === 'pending' && (
+                      <span className="text-yellow-400 flex items-center gap-1 bg-yellow-400/10 px-2 py-1 rounded-full">
+                        <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-pulse" />
+                        Saving...
+                      </span>
+                    )}
+                    {autoSaveStatus === 'saved' && (
+                      <span className="text-green-400 flex items-center gap-1 bg-green-400/10 px-2 py-1 rounded-full">
+                        <Check size={12} />
+                        Saved
+                      </span>
+                    )}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
+                    isNewConnection
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+                      : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'
+                  }`}
+                >
+                  <Save size={16} />
+                  {isNewConnection ? 'Create' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close"
+                  className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-5">
-            <GeneralSection formData={formData} setFormData={setFormData} availableGroups={availableGroups} />
-            <SSHOptions formData={formData} setFormData={setFormData} />
-            <HTTPOptions formData={formData} setFormData={setFormData} />
-            <CloudProviderOptions formData={formData} setFormData={setFormData} />
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Quick toggles */}
+            <div className="flex flex-wrap gap-3">
+              <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border cursor-pointer transition-all ${
+                formData.isGroup 
+                  ? 'bg-purple-500/20 border-purple-500/50 text-purple-300' 
+                  : 'bg-gray-700/30 border-gray-600/50 text-gray-400 hover:border-gray-500'
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={!!formData.isGroup}
+                  onChange={(e) => setFormData({ ...formData, isGroup: e.target.checked })}
+                  className="sr-only"
+                />
+                <FolderIcon size={16} />
+                <span className="text-sm font-medium">Folder/Group</span>
+              </label>
+              {!formData.isGroup && (
+                <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border cursor-pointer transition-all ${
+                  formData.favorite 
+                    ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-300' 
+                    : 'bg-gray-700/30 border-gray-600/50 text-gray-400 hover:border-gray-500'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={!!formData.favorite}
+                    onChange={(e) => setFormData({ ...formData, favorite: e.target.checked })}
+                    className="sr-only"
+                  />
+                  <Star size={16} className={formData.favorite ? 'fill-yellow-400' : ''} />
+                  <span className="text-sm font-medium">Favorite</span>
+                </label>
+              )}
+            </div>
 
+            {/* Name input - prominent */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Description
+                {formData.isGroup ? 'Folder Name' : 'Connection Name'} <span className="text-red-400">*</span>
               </label>
-              <textarea
-                value={formData.description || ''}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={3}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                placeholder="Optional description"
+              <input
+                type="text"
+                required
+                data-testid="name-input"
+                value={formData.name || ''}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white text-lg placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                placeholder={formData.isGroup ? 'My Servers' : 'Production Server'}
+                autoFocus
               />
             </div>
 
+            {/* Parent folder selector */}
+            {availableGroups.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Parent Folder
+                </label>
+                <select
+                  value={formData.parentId || ''}
+                  onChange={(e) => setFormData({ ...formData, parentId: e.target.value || undefined })}
+                  className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                >
+                  <option value="">Root (No parent)</option>
+                  {availableGroups.map(group => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Protocol selection - only for non-groups */}
+            {!formData.isGroup && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-3">
+                    Protocol
+                  </label>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                    {protocolOptions.map(({ value, label, desc, icon: Icon, color }) => {
+                      const isActive = formData.protocol === value;
+                      const colorClasses: Record<string, string> = {
+                        blue: isActive ? 'bg-blue-500/20 border-blue-500/60 text-blue-300' : '',
+                        green: isActive ? 'bg-green-500/20 border-green-500/60 text-green-300' : '',
+                        purple: isActive ? 'bg-purple-500/20 border-purple-500/60 text-purple-300' : '',
+                        orange: isActive ? 'bg-orange-500/20 border-orange-500/60 text-orange-300' : '',
+                        emerald: isActive ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300' : '',
+                        red: isActive ? 'bg-red-500/20 border-red-500/60 text-red-300' : '',
+                      };
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => handleProtocolChange(value)}
+                          className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
+                            isActive 
+                              ? colorClasses[color]
+                              : 'bg-gray-700/30 border-gray-600/50 text-gray-400 hover:border-gray-500 hover:text-gray-300'
+                          }`}
+                        >
+                          <Icon size={20} />
+                          <span className="text-xs font-semibold">{label}</span>
+                          <span className="text-[10px] opacity-70">{desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Cloud providers row */}
+                  <div className="mt-2 flex gap-2">
+                    {cloudOptions.map(({ value, label, desc }) => {
+                      const isActive = formData.protocol === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => handleProtocolChange(value)}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-all ${
+                            isActive 
+                              ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-300'
+                              : 'bg-gray-700/30 border-gray-600/50 text-gray-400 hover:border-gray-500'
+                          }`}
+                        >
+                          <Cloud size={14} />
+                          <span className="font-medium">{label}</span>
+                          <span className="opacity-60">{desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Connection details */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Hostname / IP Address <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.hostname || ''}
+                      onChange={(e) => setFormData({ ...formData, hostname: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono"
+                      placeholder="192.168.1.100 or server.example.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Port
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.port || 0}
+                      onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 0 })}
+                      className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono"
+                      min={1}
+                      max={65535}
+                    />
+                  </div>
+                  {formData.protocol === 'rdp' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Domain
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.domain || ''}
+                        onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                        placeholder="WORKGROUP"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Protocol-specific options */}
+                <SSHOptions formData={formData} setFormData={setFormData} />
+                <HTTPOptions formData={formData} setFormData={setFormData} />
+                <CloudProviderOptions formData={formData} setFormData={setFormData} />
+              </>
+            )}
+
+            {/* Icon selection */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Tags
+                Custom Icon
               </label>
+              <div className="flex flex-wrap gap-2">
+                {iconOptions.map(({ value, label, icon: Icon }) => {
+                  const isActive = (formData.icon || '') === value;
+                  return (
+                    <button
+                      key={value || 'default'}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, icon: value || undefined })}
+                      className={`p-2.5 rounded-lg border transition-all ${
+                        isActive
+                          ? 'border-blue-500/60 bg-blue-500/20 text-blue-300'
+                          : 'border-gray-600/50 bg-gray-700/30 text-gray-400 hover:border-gray-500'
+                      }`}
+                      title={label}
+                    >
+                      <Icon size={18} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Tags section */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Tag size={14} className="text-gray-400" />
+                <label className="text-sm font-medium text-gray-300">Tags</label>
+              </div>
               <TagManager
                 tags={formData.tags || []}
                 availableTags={allTags}
                 onChange={handleTagsChange}
                 onCreateTag={handleCreateTag}
               />
+            </div>
+
+            {/* Description - collapsible */}
+            <div className="border border-gray-700/50 rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleSection('description')}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-700/20 hover:bg-gray-700/30 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-gray-300">
+                  <FileText size={16} />
+                  <span className="text-sm font-medium">Description & Notes</span>
+                  {formData.description && (
+                    <span className="text-xs text-gray-500 ml-2">
+                      ({formData.description.length} chars)
+                    </span>
+                  )}
+                </div>
+                {expandedSections.description ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+              </button>
+              {expandedSections.description && (
+                <div className="p-4 border-t border-gray-700/50">
+                  <textarea
+                    value={formData.description || ''}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    rows={4}
+                    className="w-full px-4 py-3 bg-gray-700/30 border border-gray-600/50 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all resize-none"
+                    placeholder="Add notes about this connection..."
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Footer hint */}
+          <div className="border-t border-gray-700/50 px-6 py-3 bg-gray-800/50">
+            <div className="flex items-center justify-between text-xs text-gray-500">
+              <div className="flex items-center gap-4">
+                <span className="flex items-center gap-1">
+                  <Zap size={12} />
+                  Press <kbd className="px-1.5 py-0.5 bg-gray-700 rounded text-gray-400">Enter</kbd> to save
+                </span>
+                <span className="flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 bg-gray-700 rounded text-gray-400">Esc</kbd> to cancel
+                </span>
+              </div>
+              {connection && settings.autoSaveEnabled && (
+                <span className="text-gray-500">Auto-save enabled</span>
+              )}
             </div>
           </div>
         </form>
