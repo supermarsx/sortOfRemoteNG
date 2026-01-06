@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, RefreshCw, Globe, Router, Network, Activity, CheckCircle, XCircle, Clock, Loader2, Stethoscope } from 'lucide-react';
+import { X, RefreshCw, Globe, Router, Network, Activity, CheckCircle, XCircle, Clock, Loader2, Stethoscope, Server, Tags } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Connection } from '../types/connection';
@@ -31,6 +31,23 @@ interface PortCheckResult {
   banner?: string;
 }
 
+interface DnsResult {
+  success: boolean;
+  resolved_ips: string[];
+  reverse_dns?: string;
+  resolution_time_ms: number;
+  dns_server?: string;
+  error?: string;
+}
+
+interface IpClassification {
+  ip: string;
+  ip_type: string;
+  ip_class?: string;
+  is_ipv6: boolean;
+  network_info?: string;
+}
+
 interface DiagnosticResults {
   internetCheck: 'pending' | 'success' | 'failed';
   gatewayCheck: 'pending' | 'success' | 'failed';
@@ -38,6 +55,8 @@ interface DiagnosticResults {
   pings: PingResult[];
   traceroute: TracerouteHop[];
   portCheck: PortCheckResult | null;
+  dnsResult: DnsResult | null;
+  ipClassification: IpClassification | null;
 }
 
 const initialResults: DiagnosticResults = {
@@ -47,6 +66,8 @@ const initialResults: DiagnosticResults = {
   pings: [],
   traceroute: [],
   portCheck: null,
+  dnsResult: null,
+  ipClassification: null,
 };
 
 export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
@@ -125,7 +146,40 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
         setResults(prev => ({ ...prev, gatewayCheck: 'failed' }));
       }
 
-      // Step 3: Subnet/Local network check (ping target host)
+      // Step 3: DNS Resolution
+      setCurrentStep(t('diagnostics.resolvingDns', 'Resolving DNS...'));
+      try {
+        const dnsResult = await invoke<DnsResult>('dns_lookup', { 
+          host: connection.hostname, 
+          timeoutSecs: 5 
+        });
+        setResults(prev => ({ ...prev, dnsResult }));
+        
+        // Step 3b: Classify the resolved IP
+        if (dnsResult.success && dnsResult.resolved_ips.length > 0) {
+          try {
+            const classification = await invoke<IpClassification>('classify_ip', { 
+              ip: dnsResult.resolved_ips[0]
+            });
+            setResults(prev => ({ ...prev, ipClassification: classification }));
+          } catch {
+            // IP classification is optional
+          }
+        }
+      } catch {
+        // DNS resolution failed - might be an IP address already
+        // Try to classify it directly
+        try {
+          const classification = await invoke<IpClassification>('classify_ip', { 
+            ip: connection.hostname
+          });
+          setResults(prev => ({ ...prev, ipClassification: classification }));
+        } catch {
+          // Not a valid IP either
+        }
+      }
+
+      // Step 4: Subnet/Local network check (ping target host)
       setCurrentStep(t('diagnostics.checkingSubnet', 'Checking subnet access...'));
       try {
         const subnetResult = await invoke<PingResult>('ping_host_detailed', { 
@@ -341,6 +395,100 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
                   <div className="text-xs text-[var(--color-textMuted)] truncate">{connection.hostname}</div>
                 </div>
                 <StatusIcon status={results.subnetCheck} />
+              </div>
+            </div>
+          </div>
+
+          {/* DNS Resolution & IP Classification */}
+          <div className="bg-[var(--color-surfaceHover)]/50 border border-[var(--color-border)] rounded-lg p-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-textSecondary)] mb-3 flex items-center gap-2">
+              <Server size={12} />
+              {t('diagnostics.dnsResolution', 'DNS & IP Info')}
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* DNS Result */}
+              <div className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                <div className="flex items-center gap-2 mb-2">
+                  <Globe size={14} className="text-[var(--color-textMuted)]" />
+                  <span className="text-xs font-medium text-[var(--color-textSecondary)] uppercase">
+                    {t('diagnostics.dnsLookup', 'DNS Lookup')}
+                  </span>
+                </div>
+                {results.dnsResult ? (
+                  results.dnsResult.success ? (
+                    <div className="space-y-1">
+                      <div className="text-sm text-[var(--color-text)] font-mono">
+                        {results.dnsResult.resolved_ips.slice(0, 3).join(', ')}
+                        {results.dnsResult.resolved_ips.length > 3 && (
+                          <span className="text-[var(--color-textMuted)]"> +{results.dnsResult.resolved_ips.length - 3}</span>
+                        )}
+                      </div>
+                      {results.dnsResult.reverse_dns && (
+                        <div className="text-xs text-[var(--color-textMuted)] truncate">
+                          PTR: {results.dnsResult.reverse_dns}
+                        </div>
+                      )}
+                      <div className="text-[10px] text-[var(--color-textMuted)]">
+                        {results.dnsResult.resolution_time_ms}ms
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-red-500">
+                      {results.dnsResult.error || t('diagnostics.dnsFailedShort', 'Resolution failed')}
+                    </div>
+                  )
+                ) : isRunning ? (
+                  <Loader2 size={16} className="text-[var(--color-textMuted)] animate-spin" />
+                ) : (
+                  <div className="text-xs text-[var(--color-textMuted)]">
+                    {t('diagnostics.directIp', 'Direct IP address')}
+                  </div>
+                )}
+              </div>
+              
+              {/* IP Classification */}
+              <div className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                <div className="flex items-center gap-2 mb-2">
+                  <Tags size={14} className="text-[var(--color-textMuted)]" />
+                  <span className="text-xs font-medium text-[var(--color-textSecondary)] uppercase">
+                    {t('diagnostics.ipClassification', 'IP Classification')}
+                  </span>
+                </div>
+                {results.ipClassification ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded ${
+                        results.ipClassification.ip_type === 'public' 
+                          ? 'bg-blue-500/20 text-blue-400' 
+                          : results.ipClassification.ip_type === 'private'
+                          ? 'bg-green-500/20 text-green-400'
+                          : results.ipClassification.ip_type === 'loopback'
+                          ? 'bg-yellow-500/20 text-yellow-400'
+                          : 'bg-purple-500/20 text-purple-400'
+                      }`}>
+                        {results.ipClassification.ip_type.toUpperCase()}
+                      </span>
+                      {results.ipClassification.ip_class && (
+                        <span className="text-xs text-[var(--color-textMuted)]">
+                          Class {results.ipClassification.ip_class}
+                        </span>
+                      )}
+                      {results.ipClassification.is_ipv6 && (
+                        <span className="text-xs text-[var(--color-textMuted)]">IPv6</span>
+                      )}
+                    </div>
+                    {results.ipClassification.network_info && (
+                      <div className="text-[10px] text-[var(--color-textMuted)]">
+                        {results.ipClassification.network_info}
+                      </div>
+                    )}
+                  </div>
+                ) : isRunning ? (
+                  <Loader2 size={16} className="text-[var(--color-textMuted)] animate-spin" />
+                ) : (
+                  <div className="text-xs text-[var(--color-textMuted)]">-</div>
+                )}
               </div>
             </div>
           </div>

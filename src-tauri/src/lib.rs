@@ -541,6 +541,8 @@ pub fn run() {
         network::ping_host_detailed,
         network::ping_gateway,
         network::check_port,
+        network::dns_lookup,
+        network::classify_ip,
         network::traceroute,
         network::scan_network,
         network::scan_network_comprehensive,

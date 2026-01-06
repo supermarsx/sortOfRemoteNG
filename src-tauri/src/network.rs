@@ -505,6 +505,191 @@ pub async fn check_port(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DnsResult {
+    pub success: bool,
+    pub resolved_ips: Vec<String>,
+    pub reverse_dns: Option<String>,
+    pub resolution_time_ms: u64,
+    pub dns_server: Option<String>,
+    pub error: Option<String>,
+}
+
+#[tauri::command]
+pub async fn dns_lookup(
+    host: String,
+    timeout_secs: Option<u64>,
+) -> Result<DnsResult, String> {
+    use std::net::ToSocketAddrs;
+    
+    let start = std::time::Instant::now();
+    let timeout_duration = Duration::from_secs(timeout_secs.unwrap_or(5));
+    
+    // Try to resolve hostname to IP addresses
+    let resolve_result = tokio::task::spawn_blocking(move || {
+        let addr_with_port = format!("{}:80", host);
+        addr_with_port.to_socket_addrs()
+            .map(|addrs| addrs.map(|a| a.ip().to_string()).collect::<Vec<_>>())
+    });
+    
+    match timeout(timeout_duration, resolve_result).await {
+        Ok(Ok(Ok(ips))) if !ips.is_empty() => {
+            let elapsed = start.elapsed().as_millis() as u64;
+            
+            // Try reverse DNS on first IP
+            let first_ip = ips.first().cloned();
+            let reverse = if let Some(ref ip) = first_ip {
+                if let Ok(addr) = ip.parse::<std::net::IpAddr>() {
+                    lookup_addr(&addr).ok()
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            
+            Ok(DnsResult {
+                success: true,
+                resolved_ips: ips,
+                reverse_dns: reverse,
+                resolution_time_ms: elapsed,
+                dns_server: None,
+                error: None,
+            })
+        }
+        Ok(Ok(Ok(_))) => Ok(DnsResult {
+            success: false,
+            resolved_ips: vec![],
+            reverse_dns: None,
+            resolution_time_ms: start.elapsed().as_millis() as u64,
+            dns_server: None,
+            error: Some("No addresses found".to_string()),
+        }),
+        Ok(Ok(Err(e))) => Ok(DnsResult {
+            success: false,
+            resolved_ips: vec![],
+            reverse_dns: None,
+            resolution_time_ms: start.elapsed().as_millis() as u64,
+            dns_server: None,
+            error: Some(format!("DNS resolution failed: {}", e)),
+        }),
+        Ok(Err(_)) => Ok(DnsResult {
+            success: false,
+            resolved_ips: vec![],
+            reverse_dns: None,
+            resolution_time_ms: start.elapsed().as_millis() as u64,
+            dns_server: None,
+            error: Some("DNS lookup task failed".to_string()),
+        }),
+        Err(_) => Ok(DnsResult {
+            success: false,
+            resolved_ips: vec![],
+            reverse_dns: None,
+            resolution_time_ms: start.elapsed().as_millis() as u64,
+            dns_server: None,
+            error: Some("DNS lookup timed out".to_string()),
+        }),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpClassification {
+    pub ip: String,
+    pub ip_type: String,         // "private", "public", "loopback", "link_local", "cgnat", "multicast"
+    pub ip_class: Option<String>, // "A", "B", "C", "D", "E" for IPv4
+    pub is_ipv6: bool,
+    pub network_info: Option<String>,
+}
+
+#[tauri::command]
+pub fn classify_ip(ip: String) -> Result<IpClassification, String> {
+    use std::net::IpAddr;
+    
+    let addr: IpAddr = ip.parse()
+        .map_err(|e| format!("Invalid IP address: {}", e))?;
+    
+    match addr {
+        IpAddr::V4(v4) => {
+            let octets = v4.octets();
+            let first = octets[0];
+            
+            // Determine IP type
+            let (ip_type, network_info) = if v4.is_loopback() {
+                ("loopback", Some("127.0.0.0/8 - Loopback"))
+            } else if v4.is_private() {
+                let info = if first == 10 {
+                    "10.0.0.0/8 - Class A Private"
+                } else if first == 172 && (16..=31).contains(&octets[1]) {
+                    "172.16.0.0/12 - Class B Private"
+                } else {
+                    "192.168.0.0/16 - Class C Private"
+                };
+                ("private", Some(info))
+            } else if v4.is_link_local() {
+                ("link_local", Some("169.254.0.0/16 - Link-Local (APIPA)"))
+            } else if v4.is_multicast() {
+                ("multicast", Some("224.0.0.0/4 - Multicast"))
+            } else if v4.is_broadcast() {
+                ("broadcast", Some("255.255.255.255 - Broadcast"))
+            } else if first == 100 && (64..=127).contains(&octets[1]) {
+                ("cgnat", Some("100.64.0.0/10 - Carrier-Grade NAT"))
+            } else if first == 0 {
+                ("reserved", Some("0.0.0.0/8 - Current Network"))
+            } else {
+                ("public", None)
+            };
+            
+            // Determine IP class (legacy classful networking)
+            let ip_class = if first < 128 {
+                Some("A")
+            } else if first < 192 {
+                Some("B")
+            } else if first < 224 {
+                Some("C")
+            } else if first < 240 {
+                Some("D")
+            } else {
+                Some("E")
+            };
+            
+            Ok(IpClassification {
+                ip,
+                ip_type: ip_type.to_string(),
+                ip_class: ip_class.map(String::from),
+                is_ipv6: false,
+                network_info: network_info.map(String::from),
+            })
+        }
+        IpAddr::V6(v6) => {
+            let ip_type = if v6.is_loopback() {
+                "loopback"
+            } else if v6.is_multicast() {
+                "multicast"
+            } else if v6.is_unspecified() {
+                "unspecified"
+            } else {
+                // Check for common IPv6 prefixes
+                let segments = v6.segments();
+                if segments[0] & 0xfe00 == 0xfc00 {
+                    "private" // Unique local address (fc00::/7)
+                } else if segments[0] & 0xffc0 == 0xfe80 {
+                    "link_local" // Link-local (fe80::/10)
+                } else {
+                    "public"
+                }
+            };
+            
+            Ok(IpClassification {
+                ip,
+                ip_type: ip_type.to_string(),
+                ip_class: None, // IPv6 doesn't use classful addressing
+                is_ipv6: true,
+                network_info: None,
+            })
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TracerouteHop {
     pub hop: u32,
     pub ip: Option<String>,
