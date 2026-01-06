@@ -8,6 +8,7 @@ use tokio::time::{timeout, Duration};
 use dns_lookup::lookup_addr;
 use mac_address::get_mac_address;
 use serde::{Deserialize, Serialize};
+use futures::future::join_all;
 
 pub type NetworkServiceState = Arc<Mutex<NetworkService>>;
 
@@ -801,6 +802,28 @@ pub async fn traceroute(
         }
     }
     
+    // Perform reverse DNS lookups for all discovered IPs in parallel
+    let dns_futures: Vec<_> = hops.iter()
+        .enumerate()
+        .filter_map(|(idx, hop)| {
+            hop.ip.as_ref().map(|ip| {
+                let ip_clone = ip.clone();
+                async move {
+                    (idx, reverse_dns_lookup(&ip_clone).await)
+                }
+            })
+        })
+        .collect();
+    
+    let dns_results = join_all(dns_futures).await;
+    
+    // Apply reverse DNS results to hops
+    for (idx, hostname) in dns_results {
+        if let Some(hop) = hops.get_mut(idx) {
+            hop.hostname = hostname;
+        }
+    }
+    
     Ok(hops)
 }
 
@@ -1358,5 +1381,763 @@ pub async fn fingerprint_service(
         }
         Ok(Err(e)) => Err(format!("Connection failed: {}", e)),
         Err(_) => Err("Connection timed out".to_string()),
+    }
+}
+
+// ============================================================================
+// Asymmetric Routing Detection
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AsymmetricRoutingResult {
+    pub asymmetry_detected: bool,
+    pub confidence: String, // "high", "medium", "low", "none"
+    pub outbound_hops: Vec<String>,
+    pub ttl_analysis: TtlAnalysis,
+    pub latency_variance: Option<f64>,
+    pub path_stability: String, // "stable", "unstable", "unknown"
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtlAnalysis {
+    pub expected_ttl: Option<u8>,
+    pub received_ttl: Option<u8>,
+    pub estimated_hops: Option<u8>,
+    pub ttl_consistent: bool,
+}
+
+/// Attempt to detect asymmetric routing by analyzing TTL values and path variance
+#[tauri::command]
+pub async fn detect_asymmetric_routing(
+    host: String,
+    sample_count: Option<u32>,
+) -> Result<AsymmetricRoutingResult, String> {
+    let samples = sample_count.unwrap_or(5);
+    let mut notes = Vec::new();
+    let mut latencies: Vec<f64> = Vec::new();
+    let mut ttl_values: Vec<u8> = Vec::new();
+    let mut outbound_hops: Vec<String> = Vec::new();
+    
+    // Run multiple pings to gather TTL data
+    #[cfg(target_os = "windows")]
+    let ping_cmd = "ping";
+    #[cfg(not(target_os = "windows"))]
+    let ping_cmd = "ping";
+    
+    for _ in 0..samples {
+        let output = Command::new(ping_cmd)
+            .args(if cfg!(target_os = "windows") {
+                vec!["-n", "1", "-w", "2000", &host]
+            } else {
+                vec!["-c", "1", "-W", "2", &host]
+            })
+            .output()
+            .await
+            .map_err(|e| format!("Ping failed: {}", e))?;
+        
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        
+        // Parse TTL from ping output
+        if let Some(ttl) = parse_ttl_from_ping(&stdout) {
+            ttl_values.push(ttl);
+        }
+        
+        // Parse latency
+        if let Some(latency) = parse_latency_from_ping(&stdout) {
+            latencies.push(latency);
+        }
+        
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    
+    // Run a quick traceroute to get outbound path (limited hops)
+    let traceroute_output = Command::new(if cfg!(target_os = "windows") { "tracert" } else { "traceroute" })
+        .args(if cfg!(target_os = "windows") {
+            vec!["-d", "-h", "5", "-w", "1000", &host]
+        } else {
+            vec!["-n", "-m", "5", "-w", "1", &host]
+        })
+        .output()
+        .await;
+    
+    if let Ok(output) = traceroute_output {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines().skip(1) {
+            // Extract IP addresses from traceroute output
+            if let Some(ip) = extract_ip_from_traceroute_line(line) {
+                if !ip.is_empty() && ip != "*" {
+                    outbound_hops.push(ip);
+                }
+            }
+        }
+    }
+    
+    // Analyze TTL values
+    let ttl_analysis = analyze_ttl(&ttl_values);
+    
+    // Calculate latency variance
+    let latency_variance = if latencies.len() >= 2 {
+        let mean: f64 = latencies.iter().sum::<f64>() / latencies.len() as f64;
+        let variance: f64 = latencies.iter()
+            .map(|x| (x - mean).powi(2))
+            .sum::<f64>() / latencies.len() as f64;
+        Some(variance.sqrt())
+    } else {
+        None
+    };
+    
+    // Determine path stability
+    let path_stability = match latency_variance {
+        Some(v) if v < 5.0 => "stable",
+        Some(v) if v < 20.0 => "moderate",
+        Some(_) => "unstable",
+        None => "unknown",
+    }.to_string();
+    
+    // High variance could indicate asymmetric routing
+    if let Some(variance) = latency_variance {
+        if variance > 30.0 {
+            notes.push("High latency variance detected, may indicate path changes".to_string());
+        }
+    }
+    
+    // TTL inconsistency could indicate asymmetric routing
+    if !ttl_analysis.ttl_consistent && ttl_values.len() >= 3 {
+        notes.push("TTL values vary between responses, suggesting different return paths".to_string());
+    }
+    
+    // Determine confidence level
+    let asymmetry_detected = !ttl_analysis.ttl_consistent || 
+        latency_variance.map_or(false, |v| v > 30.0);
+    
+    let confidence = if !ttl_analysis.ttl_consistent && latency_variance.map_or(false, |v| v > 30.0) {
+        "high"
+    } else if !ttl_analysis.ttl_consistent || latency_variance.map_or(false, |v| v > 30.0) {
+        "medium"
+    } else if latency_variance.map_or(false, |v| v > 15.0) {
+        "low"
+    } else {
+        "none"
+    }.to_string();
+    
+    if confidence == "none" {
+        notes.push("No clear signs of asymmetric routing detected".to_string());
+    }
+    
+    Ok(AsymmetricRoutingResult {
+        asymmetry_detected,
+        confidence,
+        outbound_hops,
+        ttl_analysis,
+        latency_variance,
+        path_stability,
+        notes,
+    })
+}
+
+fn parse_ttl_from_ping(output: &str) -> Option<u8> {
+    let lower = output.to_lowercase();
+    // Windows: TTL=64, Unix: ttl=64
+    if let Some(idx) = lower.find("ttl=") {
+        let start = idx + 4;
+        let end = lower[start..].find(|c: char| !c.is_ascii_digit()).unwrap_or(lower.len() - start);
+        lower[start..start + end].parse().ok()
+    } else {
+        None
+    }
+}
+
+fn parse_latency_from_ping(output: &str) -> Option<f64> {
+    let lower = output.to_lowercase();
+    // Windows: time=23ms or time<1ms, Unix: time=23.4 ms
+    if let Some(idx) = lower.find("time=") {
+        let start = idx + 5;
+        let end = lower[start..].find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(lower.len() - start);
+        lower[start..start + end].parse().ok()
+    } else if lower.contains("time<1") {
+        Some(0.5)
+    } else {
+        None
+    }
+}
+
+fn extract_ip_from_traceroute_line(line: &str) -> Option<String> {
+    // Look for IP address pattern in the line
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    for part in parts {
+        let trimmed = part.trim_matches(|c| c == '[' || c == ']' || c == '(' || c == ')');
+        if is_valid_ip(trimmed) {
+            return Some(trimmed.to_string());
+        }
+    }
+    None
+}
+
+fn is_valid_ip(s: &str) -> bool {
+    s.parse::<std::net::Ipv4Addr>().is_ok() || s.parse::<std::net::Ipv6Addr>().is_ok()
+}
+
+fn analyze_ttl(ttl_values: &[u8]) -> TtlAnalysis {
+    if ttl_values.is_empty() {
+        return TtlAnalysis {
+            expected_ttl: None,
+            received_ttl: None,
+            estimated_hops: None,
+            ttl_consistent: true,
+        };
+    }
+    
+    let first_ttl = ttl_values[0];
+    let ttl_consistent = ttl_values.iter().all(|&t| t == first_ttl);
+    
+    // Common initial TTL values: 64 (Linux), 128 (Windows), 255 (Cisco/network devices)
+    let expected_ttl = if first_ttl <= 64 {
+        Some(64)
+    } else if first_ttl <= 128 {
+        Some(128)
+    } else {
+        Some(255)
+    };
+    
+    let estimated_hops = expected_ttl.map(|e| e - first_ttl);
+    
+    TtlAnalysis {
+        expected_ttl,
+        received_ttl: Some(first_ttl),
+        estimated_hops,
+        ttl_consistent,
+    }
+}
+
+// ============================================================================
+// UDP Reachability Probe
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UdpProbeResult {
+    pub port: u16,
+    pub reachable: Option<bool>, // None = unknown (no response)
+    pub response_received: bool,
+    pub response_type: Option<String>, // "response", "icmp_unreachable", "timeout"
+    pub response_data: Option<String>,
+    pub latency_ms: Option<u64>,
+    pub error: Option<String>,
+}
+
+/// Probe UDP port reachability
+/// Note: UDP is connectionless, so we can only detect if port is definitely closed
+/// (ICMP port unreachable) or possibly open (no response or actual response)
+#[tauri::command]
+pub async fn probe_udp_port(
+    host: String,
+    port: u16,
+    timeout_ms: Option<u64>,
+    probe_data: Option<String>,
+) -> Result<UdpProbeResult, String> {
+    use tokio::net::UdpSocket;
+    
+    let timeout_duration = Duration::from_millis(timeout_ms.unwrap_or(3000));
+    let start = std::time::Instant::now();
+    
+    // Bind to any available local port
+    let socket = match UdpSocket::bind("0.0.0.0:0").await {
+        Ok(s) => s,
+        Err(e) => return Err(format!("Failed to create UDP socket: {}", e)),
+    };
+    
+    let target = format!("{}:{}", host, port);
+    if let Err(e) = socket.connect(&target).await {
+        return Ok(UdpProbeResult {
+            port,
+            reachable: None,
+            response_received: false,
+            response_type: Some("connect_failed".to_string()),
+            response_data: None,
+            latency_ms: None,
+            error: Some(format!("Connect failed: {}", e)),
+        });
+    }
+    
+    // Prepare probe data based on common protocols
+    let data = if let Some(custom) = probe_data {
+        custom.into_bytes()
+    } else {
+        // Default probe based on port
+        match port {
+            53 => {
+                // DNS query for "." (root)
+                vec![
+                    0x00, 0x01, // Transaction ID
+                    0x01, 0x00, // Flags: Standard query
+                    0x00, 0x01, // Questions: 1
+                    0x00, 0x00, // Answer RRs: 0
+                    0x00, 0x00, // Authority RRs: 0
+                    0x00, 0x00, // Additional RRs: 0
+                    0x00,       // Root domain
+                    0x00, 0x01, // Type: A
+                    0x00, 0x01, // Class: IN
+                ]
+            }
+            123 => {
+                // NTP request
+                vec![0x1b; 48]
+            }
+            161 | 162 => {
+                // SNMP GetRequest (simple probe)
+                vec![
+                    0x30, 0x26, 0x02, 0x01, 0x00, 0x04, 0x06, 0x70,
+                    0x75, 0x62, 0x6c, 0x69, 0x63, 0xa0, 0x19, 0x02,
+                    0x01, 0x01, 0x02, 0x01, 0x00, 0x02, 0x01, 0x00,
+                    0x30, 0x0e, 0x30, 0x0c, 0x06, 0x08, 0x2b, 0x06,
+                    0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x05, 0x00,
+                ]
+            }
+            _ => {
+                // Generic probe
+                b"PROBE\r\n".to_vec()
+            }
+        }
+    };
+    
+    // Send probe
+    if let Err(e) = socket.send(&data).await {
+        return Ok(UdpProbeResult {
+            port,
+            reachable: None,
+            response_received: false,
+            response_type: Some("send_failed".to_string()),
+            response_data: None,
+            latency_ms: None,
+            error: Some(format!("Send failed: {}", e)),
+        });
+    }
+    
+    // Wait for response
+    let mut buf = [0u8; 1024];
+    match timeout(timeout_duration, socket.recv(&mut buf)).await {
+        Ok(Ok(len)) => {
+            let latency = start.elapsed().as_millis() as u64;
+            let response_data = if len > 0 {
+                // Show first 64 bytes as hex
+                let preview_len = std::cmp::min(len, 64);
+                Some(buf[..preview_len].iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<Vec<_>>()
+                    .join(" "))
+            } else {
+                None
+            };
+            
+            Ok(UdpProbeResult {
+                port,
+                reachable: Some(true),
+                response_received: true,
+                response_type: Some("response".to_string()),
+                response_data,
+                latency_ms: Some(latency),
+                error: None,
+            })
+        }
+        Ok(Err(e)) => {
+            // Check if ICMP unreachable
+            let error_str = e.to_string().to_lowercase();
+            let (response_type, reachable) = if error_str.contains("refused") || error_str.contains("unreachable") {
+                ("icmp_unreachable".to_string(), Some(false))
+            } else {
+                ("error".to_string(), None)
+            };
+            
+            Ok(UdpProbeResult {
+                port,
+                reachable,
+                response_received: false,
+                response_type: Some(response_type),
+                response_data: None,
+                latency_ms: None,
+                error: Some(e.to_string()),
+            })
+        }
+        Err(_) => {
+            // Timeout - port could be open (filtered) or closed (no ICMP)
+            Ok(UdpProbeResult {
+                port,
+                reachable: None, // Unknown - no response doesn't mean closed
+                response_received: false,
+                response_type: Some("timeout".to_string()),
+                response_data: None,
+                latency_ms: None,
+                error: None,
+            })
+        }
+    }
+}
+
+// ============================================================================
+// ASN/Geo Detection
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IpGeoInfo {
+    pub ip: String,
+    pub asn: Option<u32>,
+    pub asn_org: Option<String>,
+    pub country: Option<String>,
+    pub country_code: Option<String>,
+    pub region: Option<String>,
+    pub city: Option<String>,
+    pub isp: Option<String>,
+    pub is_proxy: Option<bool>,
+    pub is_vpn: Option<bool>,
+    pub is_tor: Option<bool>,
+    pub is_datacenter: Option<bool>,
+    pub source: String, // API used
+    pub error: Option<String>,
+}
+
+/// Lookup ASN and geolocation information for an IP address
+/// Uses free public APIs with fallbacks
+#[tauri::command]
+pub async fn lookup_ip_geo(
+    ip: String,
+) -> Result<IpGeoInfo, String> {
+    // Try ip-api.com first (free, no key required, 45 requests/minute)
+    if let Ok(info) = lookup_ip_api(&ip).await {
+        return Ok(info);
+    }
+    
+    // Fallback to ipinfo.io (free tier, limited)
+    if let Ok(info) = lookup_ipinfo(&ip).await {
+        return Ok(info);
+    }
+    
+    // Return minimal info if all APIs fail
+    Ok(IpGeoInfo {
+        ip: ip.clone(),
+        asn: None,
+        asn_org: None,
+        country: None,
+        country_code: None,
+        region: None,
+        city: None,
+        isp: None,
+        is_proxy: None,
+        is_vpn: None,
+        is_tor: None,
+        is_datacenter: None,
+        source: "none".to_string(),
+        error: Some("All geolocation APIs failed".to_string()),
+    })
+}
+
+async fn lookup_ip_api(ip: &str) -> Result<IpGeoInfo, String> {
+    let url = format!("http://ip-api.com/json/{}?fields=status,message,country,countryCode,region,city,isp,org,as,asname,proxy,hosting,query", ip);
+    
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    let response = client.get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("API returned status: {}", response.status()));
+    }
+    
+    let json: serde_json::Value = response.json().await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    
+    if json.get("status").and_then(|s| s.as_str()) != Some("success") {
+        return Err(json.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown error").to_string());
+    }
+    
+    // Parse ASN number from "as" field (format: "AS12345 Organization Name")
+    let as_field = json.get("as").and_then(|a| a.as_str()).unwrap_or("");
+    let asn = if as_field.starts_with("AS") {
+        as_field[2..].split_whitespace().next().and_then(|n| n.parse().ok())
+    } else {
+        None
+    };
+    
+    Ok(IpGeoInfo {
+        ip: json.get("query").and_then(|q| q.as_str()).unwrap_or(ip).to_string(),
+        asn,
+        asn_org: json.get("asname").and_then(|a| a.as_str()).map(|s| s.to_string())
+            .or_else(|| json.get("org").and_then(|o| o.as_str()).map(|s| s.to_string())),
+        country: json.get("country").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        country_code: json.get("countryCode").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        region: json.get("region").and_then(|r| r.as_str()).map(|s| s.to_string()),
+        city: json.get("city").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        isp: json.get("isp").and_then(|i| i.as_str()).map(|s| s.to_string()),
+        is_proxy: json.get("proxy").and_then(|p| p.as_bool()),
+        is_vpn: None, // ip-api doesn't differentiate VPN
+        is_tor: None,
+        is_datacenter: json.get("hosting").and_then(|h| h.as_bool()),
+        source: "ip-api.com".to_string(),
+        error: None,
+    })
+}
+
+async fn lookup_ipinfo(ip: &str) -> Result<IpGeoInfo, String> {
+    let url = format!("https://ipinfo.io/{}/json", ip);
+    
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    
+    let response = client.get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("API returned status: {}", response.status()));
+    }
+    
+    let json: serde_json::Value = response.json().await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    
+    // Parse ASN from org field (format: "AS12345 Organization Name")
+    let org = json.get("org").and_then(|o| o.as_str()).unwrap_or("");
+    let asn = if org.starts_with("AS") {
+        org[2..].split_whitespace().next().and_then(|n| n.parse().ok())
+    } else {
+        None
+    };
+    let asn_org = if org.contains(' ') {
+        Some(org.splitn(2, ' ').nth(1).unwrap_or("").to_string())
+    } else {
+        None
+    };
+    
+    Ok(IpGeoInfo {
+        ip: json.get("ip").and_then(|i| i.as_str()).unwrap_or(ip).to_string(),
+        asn,
+        asn_org,
+        country: json.get("country").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        country_code: json.get("country").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        region: json.get("region").and_then(|r| r.as_str()).map(|s| s.to_string()),
+        city: json.get("city").and_then(|c| c.as_str()).map(|s| s.to_string()),
+        isp: None,
+        is_proxy: None,
+        is_vpn: None,
+        is_tor: None,
+        is_datacenter: None,
+        source: "ipinfo.io".to_string(),
+        error: None,
+    })
+}
+
+// ============================================================================
+// Proxy/VPN Leakage Detection
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LeakageDetectionResult {
+    pub dns_leak_detected: bool,
+    pub webrtc_leak_possible: bool,
+    pub ip_mismatch_detected: bool,
+    pub detected_public_ip: Option<String>,
+    pub expected_proxy_ip: Option<String>,
+    pub dns_servers_detected: Vec<String>,
+    pub notes: Vec<String>,
+    pub overall_status: String, // "secure", "potential_leak", "leak_detected"
+}
+
+/// Detect potential proxy/VPN leaks by checking DNS servers and public IP
+#[tauri::command]
+pub async fn detect_proxy_leakage(
+    expected_exit_ip: Option<String>,
+) -> Result<LeakageDetectionResult, String> {
+    let mut notes = Vec::new();
+    let mut dns_servers: Vec<String> = Vec::new();
+    let mut dns_leak = false;
+    let mut ip_mismatch = false;
+    
+    // Get our public IP using multiple services
+    let public_ip = get_public_ip().await;
+    
+    // Check if public IP matches expected proxy exit
+    if let (Some(ref detected), Some(ref expected)) = (&public_ip, &expected_exit_ip) {
+        if detected != expected {
+            ip_mismatch = true;
+            notes.push(format!("IP mismatch: detected {} but expected {}", detected, expected));
+        }
+    }
+    
+    // Try to detect DNS servers by resolving known test domains
+    // This is a simplified check - real DNS leak tests use specialized servers
+    let dns_test_domains = [
+        "whoami.akamai.net",
+        "o-o.myaddr.l.google.com",
+    ];
+    
+    for domain in &dns_test_domains {
+        if let Ok(result) = resolve_dns_with_server_detection(domain).await {
+            for server in result {
+                if !dns_servers.contains(&server) {
+                    dns_servers.push(server);
+                }
+            }
+        }
+    }
+    
+    // Check DNS servers against known public DNS (potential leak indicators)
+    let public_dns = ["8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "9.9.9.9", "208.67.222.222"];
+    for server in &dns_servers {
+        if public_dns.contains(&server.as_str()) {
+            // Using public DNS while on VPN might indicate DNS leak
+            // (though this isn't always the case)
+            notes.push(format!("Using public DNS server: {}", server));
+        }
+    }
+    
+    // If expected proxy IP provided and we detect different DNS servers, could be leak
+    if expected_exit_ip.is_some() && !dns_servers.is_empty() {
+        // This is a heuristic - proper DNS leak detection requires specialized infrastructure
+        dns_leak = dns_servers.iter().any(|s| {
+            public_dns.contains(&s.as_str())
+        });
+        
+        if dns_leak {
+            notes.push("DNS queries may not be going through VPN/proxy".to_string());
+        }
+    }
+    
+    // WebRTC leak is browser-side and can't be detected from Rust backend
+    // Just note that it's a potential concern
+    let webrtc_note = "WebRTC leaks can only be detected in browser context".to_string();
+    notes.push(webrtc_note);
+    
+    // Determine overall status
+    let overall_status = if ip_mismatch || dns_leak {
+        "leak_detected"
+    } else if expected_exit_ip.is_some() && !dns_servers.is_empty() {
+        "potential_leak"
+    } else {
+        "secure"
+    }.to_string();
+    
+    Ok(LeakageDetectionResult {
+        dns_leak_detected: dns_leak,
+        webrtc_leak_possible: true, // Always possible from browser
+        ip_mismatch_detected: ip_mismatch,
+        detected_public_ip: public_ip,
+        expected_proxy_ip: expected_exit_ip,
+        dns_servers_detected: dns_servers,
+        notes,
+        overall_status,
+    })
+}
+
+async fn get_public_ip() -> Option<String> {
+    let services = [
+        "https://api.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://icanhazip.com",
+    ];
+    
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()?;
+    
+    for service in &services {
+        if let Ok(response) = client.get(*service).send().await {
+            if let Ok(ip) = response.text().await {
+                let ip = ip.trim().to_string();
+                if is_valid_ip(&ip) {
+                    return Some(ip);
+                }
+            }
+        }
+    }
+    
+    None
+}
+
+async fn resolve_dns_with_server_detection(_domain: &str) -> Result<Vec<String>, String> {
+    // This is a simplified implementation
+    // Real DNS leak detection requires specialized test infrastructure
+    // that returns the resolver's IP in the DNS response
+    
+    // For now, just return system DNS servers from config
+    let mut servers = Vec::new();
+    
+    #[cfg(target_os = "windows")]
+    {
+        // Try to get DNS servers from ipconfig
+        if let Ok(output) = Command::new("ipconfig")
+            .arg("/all")
+            .output()
+            .await
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.to_lowercase().contains("dns servers") || 
+                   (line.starts_with("   ") && line.trim().parse::<std::net::Ipv4Addr>().is_ok()) {
+                    let parts: Vec<&str> = line.split(':').collect();
+                    if parts.len() > 1 {
+                        let ip = parts[1].trim();
+                        if is_valid_ip(ip) {
+                            servers.push(ip.to_string());
+                        }
+                    } else {
+                        let ip = line.trim();
+                        if is_valid_ip(ip) {
+                            servers.push(ip.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Try to read from /etc/resolv.conf
+        if let Ok(content) = tokio::fs::read_to_string("/etc/resolv.conf").await {
+            for line in content.lines() {
+                if line.starts_with("nameserver") {
+                    if let Some(ip) = line.split_whitespace().nth(1) {
+                        if is_valid_ip(ip) {
+                            servers.push(ip.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(servers)
+}
+
+/// Perform reverse DNS lookup for an IP address
+async fn reverse_dns_lookup(ip: &str) -> Option<String> {
+    // Parse the IP address
+    let addr: std::net::IpAddr = match ip.parse() {
+        Ok(a) => a,
+        Err(_) => return None,
+    };
+    
+    // Use tokio's spawn_blocking since dns_lookup is synchronous
+    let result = tokio::task::spawn_blocking(move || {
+        lookup_addr(&addr).ok()
+    }).await;
+    
+    match result {
+        Ok(Some(hostname)) => {
+            // Don't return if hostname is just the IP address
+            if hostname != ip {
+                Some(hostname)
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }

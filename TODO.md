@@ -33,15 +33,15 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add DNS test and resolution display
 - [x] Classify target host IP (private/public/loopback/CGNAT, IP class)
 - [x] Add MTU sanity check
-- [ ] Add limited asymmetric routing detection
+- [x] Add limited asymmetric routing detection
 - [x] Add jitter stat to ping results
 - [x] Add TCP connection time, detect slow SYN-ACK
 - [x] Add more extensive banner grab
-- [ ] Add UDP reachability probe when applicable
+- [x] Add UDP reachability probe when applicable
 - [x] Add ICMP blockade detection
-- [ ] Add target IP ASN/geo detection
+- [x] Add target IP ASN/geo detection
 - [x] Add TLS handshake check if applicable
-- [ ] Add proxy/VPN and chaining leakage detection when applicable
+- [x] Add proxy/VPN and chaining leakage detection when applicable
 - [x] mRemoteNG XML file import support
 - [x] Template downloads with toast notifications
 - [x] WebBrowser proxy auth fix for image loading

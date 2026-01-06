@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, RefreshCw, Globe, Router, Network, Activity, CheckCircle, XCircle, Clock, Loader2, Stethoscope, Server, Tags, Copy } from 'lucide-react';
+import { X, RefreshCw, Globe, Router, Network, Activity, CheckCircle, XCircle, Clock, Loader2, Stethoscope, Server, Tags, Copy, MapPin, GitBranch, Radio, Shield } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Connection } from '../types/connection';
@@ -98,6 +98,61 @@ interface ServiceFingerprint {
   response_preview?: string;
 }
 
+interface TtlAnalysis {
+  expected_ttl?: number;
+  received_ttl?: number;
+  estimated_hops?: number;
+  ttl_consistent: boolean;
+}
+
+interface AsymmetricRoutingResult {
+  asymmetry_detected: boolean;
+  confidence: string;
+  outbound_hops: string[];
+  ttl_analysis: TtlAnalysis;
+  latency_variance?: number;
+  path_stability: string;
+  notes: string[];
+}
+
+interface UdpProbeResult {
+  port: number;
+  reachable?: boolean;
+  response_received: boolean;
+  response_type?: string;
+  response_data?: string;
+  latency_ms?: number;
+  error?: string;
+}
+
+interface IpGeoInfo {
+  ip: string;
+  asn?: number;
+  asn_org?: string;
+  country?: string;
+  country_code?: string;
+  region?: string;
+  city?: string;
+  isp?: string;
+  is_proxy?: boolean;
+  is_vpn?: boolean;
+  is_tor?: boolean;
+  is_datacenter?: boolean;
+  source: string;
+  error?: string;
+}
+
+interface LeakageDetectionResult {
+  dns_leak_detected: boolean;
+  webrtc_leak_possible: boolean;
+  ip_mismatch_detected: boolean;
+  detected_public_ip?: string;
+  expected_proxy_ip?: string;
+  dns_servers_detected: string[];
+  notes: string[];
+  overall_status: string;
+}
+
 interface DiagnosticResults {
   internetCheck: 'pending' | 'success' | 'failed';
   gatewayCheck: 'pending' | 'success' | 'failed';
@@ -112,6 +167,10 @@ interface DiagnosticResults {
   icmpBlockade: IcmpBlockadeResult | null;
   tlsCheck: TlsCheckResult | null;
   serviceFingerprint: ServiceFingerprint | null;
+  asymmetricRouting: AsymmetricRoutingResult | null;
+  udpProbe: UdpProbeResult | null;
+  ipGeoInfo: IpGeoInfo | null;
+  leakageDetection: LeakageDetectionResult | null;
 }
 
 const initialResults: DiagnosticResults = {
@@ -128,6 +187,10 @@ const initialResults: DiagnosticResults = {
   icmpBlockade: null,
   tlsCheck: null,
   serviceFingerprint: null,
+  asymmetricRouting: null,
+  udpProbe: null,
+  ipGeoInfo: null,
+  leakageDetection: null,
 };
 
 export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
@@ -287,6 +350,78 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
       lines.push(`Handshake Time: ${results.tlsCheck.handshake_time_ms}ms`);
       if (results.tlsCheck.error) {
         lines.push(`Error: ${results.tlsCheck.error}`);
+      }
+      lines.push(``);
+    }
+
+    if (results.asymmetricRouting) {
+      lines.push(`--- Asymmetric Routing Detection ---`);
+      lines.push(`Asymmetry Detected: ${results.asymmetricRouting.asymmetry_detected ? 'Yes' : 'No'}`);
+      lines.push(`Confidence: ${results.asymmetricRouting.confidence}`);
+      lines.push(`Path Stability: ${results.asymmetricRouting.path_stability}`);
+      if (results.asymmetricRouting.latency_variance !== undefined) {
+        lines.push(`Latency Variance: ${results.asymmetricRouting.latency_variance.toFixed(2)}ms`);
+      }
+      if (results.asymmetricRouting.ttl_analysis.received_ttl) {
+        lines.push(`TTL: ${results.asymmetricRouting.ttl_analysis.received_ttl} (${results.asymmetricRouting.ttl_analysis.ttl_consistent ? 'consistent' : 'varies'})`);
+      }
+      if (results.asymmetricRouting.notes.length > 0) {
+        lines.push(`Notes: ${results.asymmetricRouting.notes.join('; ')}`);
+      }
+      lines.push(``);
+    }
+
+    if (results.udpProbe) {
+      lines.push(`--- UDP Probe ---`);
+      lines.push(`Port: ${results.udpProbe.port}`);
+      lines.push(`Response Received: ${results.udpProbe.response_received ? 'Yes' : 'No'}`);
+      if (results.udpProbe.response_type) {
+        lines.push(`Response Type: ${results.udpProbe.response_type}`);
+      }
+      if (results.udpProbe.latency_ms) {
+        lines.push(`Latency: ${results.udpProbe.latency_ms}ms`);
+      }
+      if (results.udpProbe.error) {
+        lines.push(`Error: ${results.udpProbe.error}`);
+      }
+      lines.push(``);
+    }
+
+    if (results.ipGeoInfo) {
+      lines.push(`--- IP Geolocation ---`);
+      lines.push(`IP: ${results.ipGeoInfo.ip}`);
+      if (results.ipGeoInfo.asn) {
+        lines.push(`ASN: AS${results.ipGeoInfo.asn}${results.ipGeoInfo.asn_org ? ` (${results.ipGeoInfo.asn_org})` : ''}`);
+      }
+      if (results.ipGeoInfo.country) {
+        lines.push(`Country: ${results.ipGeoInfo.country}${results.ipGeoInfo.country_code ? ` (${results.ipGeoInfo.country_code})` : ''}`);
+      }
+      if (results.ipGeoInfo.city) {
+        lines.push(`City: ${results.ipGeoInfo.city}${results.ipGeoInfo.region ? `, ${results.ipGeoInfo.region}` : ''}`);
+      }
+      if (results.ipGeoInfo.isp) {
+        lines.push(`ISP: ${results.ipGeoInfo.isp}`);
+      }
+      if (results.ipGeoInfo.is_datacenter) {
+        lines.push(`Datacenter IP: Yes`);
+      }
+      lines.push(`Source: ${results.ipGeoInfo.source}`);
+      lines.push(``);
+    }
+
+    if (results.leakageDetection) {
+      lines.push(`--- Proxy/VPN Leakage Detection ---`);
+      lines.push(`Overall Status: ${results.leakageDetection.overall_status}`);
+      lines.push(`DNS Leak Detected: ${results.leakageDetection.dns_leak_detected ? 'Yes' : 'No'}`);
+      lines.push(`IP Mismatch: ${results.leakageDetection.ip_mismatch_detected ? 'Yes' : 'No'}`);
+      if (results.leakageDetection.detected_public_ip) {
+        lines.push(`Public IP: ${results.leakageDetection.detected_public_ip}`);
+      }
+      if (results.leakageDetection.dns_servers_detected.length > 0) {
+        lines.push(`DNS Servers: ${results.leakageDetection.dns_servers_detected.join(', ')}`);
+      }
+      if (results.leakageDetection.notes.length > 0) {
+        lines.push(`Notes: ${results.leakageDetection.notes.join('; ')}`);
       }
       lines.push(``);
     }
@@ -455,7 +590,58 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
 
       await advancedChecksPromise;
 
-      // Group 5: Run 10 pings sequentially (needs to be sequential for timing accuracy)
+      // Group 5: Extended diagnostics (parallel) - ASN/Geo, Asymmetric routing, UDP probe, Leakage
+      setCurrentStep(t('diagnostics.runningExtended', 'Running extended diagnostics...'));
+      
+      // Get target IP for geo lookup
+      const targetIp = results.dnsResult?.resolved_ips?.[0] || connection.hostname;
+      
+      // Determine if UDP probe is applicable based on protocol
+      const udpPorts: Record<string, number> = {
+        dns: 53,
+        ntp: 123,
+        snmp: 161,
+        tftp: 69,
+        dhcp: 67,
+      };
+      const udpPort = udpPorts[connection.protocol.toLowerCase()] || 
+        ([53, 123, 161, 162, 69, 67, 68, 500].includes(port) ? port : null);
+      
+      const extendedChecksPromise = Promise.allSettled([
+        // Asymmetric routing detection
+        invoke<AsymmetricRoutingResult>('detect_asymmetric_routing', { 
+          host: connection.hostname,
+          sampleCount: 5 
+        }),
+        // IP Geolocation lookup
+        invoke<IpGeoInfo>('lookup_ip_geo', { ip: targetIp }),
+        // UDP probe (only for applicable ports)
+        udpPort 
+          ? invoke<UdpProbeResult>('probe_udp_port', { 
+              host: connection.hostname, 
+              port: udpPort,
+              timeoutMs: 3000 
+            })
+          : Promise.resolve(null),
+        // Leakage detection (only if connection uses proxy)
+        connection.proxyId || connection.proxyHost
+          ? invoke<LeakageDetectionResult>('detect_proxy_leakage', { 
+              expectedExitIp: connection.proxyHost 
+            })
+          : Promise.resolve(null),
+      ]).then(([asymmetricRes, geoRes, udpRes, leakageRes]) => {
+        setResults(prev => ({
+          ...prev,
+          asymmetricRouting: asymmetricRes.status === 'fulfilled' ? asymmetricRes.value : null,
+          ipGeoInfo: geoRes.status === 'fulfilled' ? geoRes.value : null,
+          udpProbe: udpRes.status === 'fulfilled' ? udpRes.value : null,
+          leakageDetection: leakageRes.status === 'fulfilled' ? leakageRes.value : null,
+        }));
+      });
+
+      await extendedChecksPromise;
+
+      // Group 6: Run 10 pings sequentially (needs to be sequential for timing accuracy)
       setCurrentStep(t('diagnostics.runningPings', 'Running ping tests...'));
       const pings: PingResult[] = [];
       for (let i = 0; i < 10; i++) {
@@ -1198,6 +1384,173 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
                 )}
               </div>
             )}
+
+            {/* Extended Diagnostics Section */}
+            <div className="mt-4">
+              <div className="flex items-center gap-2 mb-3 text-xs text-[var(--color-textSecondary)] uppercase font-medium">
+                <Stethoscope size={14} />
+                {t('diagnostics.extendedDiagnostics', 'Extended Diagnostics')}
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                {/* IP Geolocation */}
+                <div className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                  <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-1.5">
+                    {t('diagnostics.ipGeo', 'IP Geolocation')}
+                  </div>
+                  {results.ipGeoInfo ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <MapPin size={12} className="text-[var(--color-accent)]" />
+                        <span className="text-xs font-medium text-[var(--color-text)]">
+                          {results.ipGeoInfo.city || results.ipGeoInfo.country || 'Unknown'}
+                          {results.ipGeoInfo.country_code && ` (${results.ipGeoInfo.country_code})`}
+                        </span>
+                      </div>
+                      {results.ipGeoInfo.asn && (
+                        <div className="text-[10px] text-[var(--color-textSecondary)]">
+                          AS{results.ipGeoInfo.asn} {results.ipGeoInfo.asn_org && `- ${results.ipGeoInfo.asn_org}`}
+                        </div>
+                      )}
+                      {results.ipGeoInfo.isp && (
+                        <div className="text-[10px] text-[var(--color-textMuted)] truncate" title={results.ipGeoInfo.isp}>
+                          ISP: {results.ipGeoInfo.isp}
+                        </div>
+                      )}
+                      {results.ipGeoInfo.is_datacenter && (
+                        <div className="text-[10px] text-yellow-500">
+                          ⚠ {t('diagnostics.datacenterIp', 'Datacenter IP')}
+                        </div>
+                      )}
+                    </div>
+                  ) : isRunning ? (
+                    <Loader2 size={14} className="text-[var(--color-textMuted)] animate-spin" />
+                  ) : (
+                    <span className="text-xs text-[var(--color-textMuted)]">-</span>
+                  )}
+                </div>
+
+                {/* Asymmetric Routing */}
+                <div className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                  <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-1.5">
+                    {t('diagnostics.asymmetricRouting', 'Routing Analysis')}
+                  </div>
+                  {results.asymmetricRouting ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <GitBranch size={12} className={results.asymmetricRouting.asymmetry_detected ? 'text-yellow-500' : 'text-green-500'} />
+                        <span className={`text-xs font-medium ${
+                          results.asymmetricRouting.asymmetry_detected ? 'text-yellow-500' : 'text-green-500'
+                        }`}>
+                          {results.asymmetricRouting.asymmetry_detected 
+                            ? t('diagnostics.asymmetryDetected', 'Asymmetry Detected')
+                            : t('diagnostics.symmetricPath', 'Symmetric Path')}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[var(--color-textSecondary)]">
+                        {t('diagnostics.confidence', 'Confidence')}: {results.asymmetricRouting.confidence}
+                      </div>
+                      <div className="text-[10px] text-[var(--color-textMuted)]">
+                        {t('diagnostics.pathStability', 'Stability')}: {results.asymmetricRouting.path_stability}
+                        {results.asymmetricRouting.latency_variance !== undefined && 
+                          ` (±${results.asymmetricRouting.latency_variance.toFixed(1)}ms)`}
+                      </div>
+                      {results.asymmetricRouting.ttl_analysis.received_ttl && (
+                        <div className="text-[10px] text-[var(--color-textMuted)]">
+                          TTL: {results.asymmetricRouting.ttl_analysis.received_ttl}
+                          {results.asymmetricRouting.ttl_analysis.estimated_hops && 
+                            ` (~${results.asymmetricRouting.ttl_analysis.estimated_hops} hops)`}
+                        </div>
+                      )}
+                    </div>
+                  ) : isRunning ? (
+                    <Loader2 size={14} className="text-[var(--color-textMuted)] animate-spin" />
+                  ) : (
+                    <span className="text-xs text-[var(--color-textMuted)]">-</span>
+                  )}
+                </div>
+
+                {/* UDP Probe */}
+                {results.udpProbe && (
+                  <div className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                    <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-1.5">
+                      {t('diagnostics.udpProbe', 'UDP Probe')}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Radio size={12} className={results.udpProbe.response_received ? 'text-green-500' : 'text-yellow-500'} />
+                        <span className={`text-xs font-medium ${
+                          results.udpProbe.response_received ? 'text-green-500' : 'text-yellow-500'
+                        }`}>
+                          {results.udpProbe.response_received 
+                            ? t('diagnostics.responseReceived', 'Response Received')
+                            : results.udpProbe.response_type === 'icmp_unreachable'
+                              ? t('diagnostics.portClosed', 'Port Closed')
+                              : t('diagnostics.noResponse', 'No Response (Filtered?)')}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[var(--color-textSecondary)]">
+                        Port: {results.udpProbe.port}
+                      </div>
+                      {results.udpProbe.latency_ms && (
+                        <div className="text-[10px] text-[var(--color-textMuted)]">
+                          Latency: {results.udpProbe.latency_ms}ms
+                        </div>
+                      )}
+                      {results.udpProbe.response_data && (
+                        <code className="text-[9px] font-mono text-[var(--color-textMuted)] block truncate bg-[var(--color-surfaceHover)] px-1 py-0.5 rounded">
+                          {results.udpProbe.response_data.substring(0, 32)}...
+                        </code>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Leakage Detection */}
+                {results.leakageDetection && (
+                  <div className="p-3 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+                    <div className="text-[10px] uppercase text-[var(--color-textMuted)] mb-1.5">
+                      {t('diagnostics.leakageDetection', 'Proxy/VPN Leak Check')}
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Shield size={12} className={
+                          results.leakageDetection.overall_status === 'secure' ? 'text-green-500' :
+                          results.leakageDetection.overall_status === 'leak_detected' ? 'text-red-500' :
+                          'text-yellow-500'
+                        } />
+                        <span className={`text-xs font-medium ${
+                          results.leakageDetection.overall_status === 'secure' ? 'text-green-500' :
+                          results.leakageDetection.overall_status === 'leak_detected' ? 'text-red-500' :
+                          'text-yellow-500'
+                        }`}>
+                          {results.leakageDetection.overall_status === 'secure' 
+                            ? t('diagnostics.noLeaks', 'No Leaks Detected')
+                            : results.leakageDetection.overall_status === 'leak_detected'
+                              ? t('diagnostics.leakDetected', 'Leak Detected!')
+                              : t('diagnostics.potentialLeak', 'Potential Leak')}
+                        </span>
+                      </div>
+                      {results.leakageDetection.detected_public_ip && (
+                        <div className="text-[10px] text-[var(--color-textSecondary)]">
+                          Public IP: {results.leakageDetection.detected_public_ip}
+                        </div>
+                      )}
+                      {results.leakageDetection.dns_leak_detected && (
+                        <div className="text-[10px] text-red-500">
+                          ⚠ {t('diagnostics.dnsLeak', 'DNS Leak Detected')}
+                        </div>
+                      )}
+                      {results.leakageDetection.ip_mismatch_detected && (
+                        <div className="text-[10px] text-red-500">
+                          ⚠ {t('diagnostics.ipMismatch', 'IP Mismatch')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
