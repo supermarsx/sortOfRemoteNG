@@ -105,6 +105,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     e.dataTransfer.effectAllowed = "all";
     e.dataTransfer.dropEffect = "move";
     e.dataTransfer.setData("text/plain", sessionId);
+    e.dataTransfer.setData("application/x-session-tab", sessionId);
   };
 
   const handleDragOver = (e: React.DragEvent, sessionId: string) => {
@@ -114,7 +115,23 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
     setDragOverSessionId(sessionId);
   };
 
-  const handleDragEnd = () => {
+  const handleDragEnd = (e: React.DragEvent, sessionId: string) => {
+    // Check if the drop happened outside the window
+    const { clientX, clientY } = e;
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    
+    // If dropped outside the viewport bounds, detach the tab
+    const outsideWindow = 
+      clientX <= 0 || 
+      clientY <= 0 || 
+      clientX >= windowWidth || 
+      clientY >= windowHeight;
+    
+    if (outsideWindow && draggedSessionId) {
+      onSessionDetach(sessionId);
+    }
+    
     setDraggedSessionId(null);
     setDragOverSessionId(null);
   };
@@ -170,7 +187,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             onAuxClick={(e) => handleMiddleClick(session.id, e)}
             onDragStart={(e) => handleDragStart(e, session.id)}
             onDragOver={(e) => handleDragOver(e, session.id)}
-            onDragEnd={handleDragEnd}
+            onDragEnd={(e) => handleDragEnd(e, session.id)}
             onDrop={(e) => handleDrop(e, session.id)}
           >
             <ProtocolIcon size={14} className="mr-2 flex-shrink-0" />
