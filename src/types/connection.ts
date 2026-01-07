@@ -123,6 +123,7 @@ export interface Connection {
       enabled: boolean;
       connectionId: string;
       localPort: number;
+      remoteHost: string; // Host to forward to (from SSH server's perspective)
       remotePort: number;
     };
   };
