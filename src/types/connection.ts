@@ -113,19 +113,24 @@ export interface Connection {
     encryptionAlgorithm?: string;
     blockCipherMode?: string;
     keyDerivationIterations?: number;
+    // Legacy single proxy (deprecated, use tunnelChain instead)
     proxy?: ProxyConfig;
+    // Legacy single OpenVPN (deprecated, use tunnelChain instead)
     openvpn?: {
       enabled: boolean;
-      configId?: string; // Reference to OpenVPN configuration
-      chainPosition?: number; // Order in VPN chain (0 = first, higher = chained after)
+      configId?: string;
+      chainPosition?: number;
     };
+    // Legacy single SSH tunnel (deprecated, use tunnelChain instead)
     sshTunnel?: {
       enabled: boolean;
       connectionId: string;
       localPort: number;
-      remoteHost: string; // Host to forward to (from SSH server's perspective)
+      remoteHost: string;
       remotePort: number;
     };
+    // Chained tunnels/proxies - executed in order (first = outermost)
+    tunnelChain?: TunnelChainLayer[];
   };
   
   // Custom Scripts
@@ -143,6 +148,182 @@ export interface Connection {
   
   // SSH Connection Config Override (protocol-level settings)
   sshConnectionConfigOverride?: Partial<SSHConnectionConfig>;
+}
+
+/**
+ * Types of tunnel/proxy layers that can be chained
+ */
+export type TunnelType = 
+  | 'proxy'           // HTTP/HTTPS/SOCKS proxy
+  | 'ssh-tunnel'      // SSH port forwarding
+  | 'ssh-jump'        // SSH jump host (ProxyJump)
+  | 'openvpn'         // OpenVPN tunnel
+  | 'wireguard'       // WireGuard tunnel
+  | 'shadowsocks'     // Shadowsocks proxy
+  | 'tor'             // Tor network
+  | 'i2p'             // I2P network
+  | 'stunnel'         // SSL/TLS tunnel
+  | 'chisel'          // Chisel HTTP tunnel
+  | 'ngrok'           // ngrok tunnel
+  | 'cloudflared'     // Cloudflare tunnel
+  | 'tailscale'       // Tailscale mesh
+  | 'zerotier';       // ZeroTier network
+
+/**
+ * A single layer in a tunnel chain.
+ * Layers are processed in order - first layer is the outermost (connects first).
+ */
+export interface TunnelChainLayer {
+  id: string;
+  type: TunnelType;
+  enabled: boolean;
+  name?: string;          // Descriptive name for this layer
+  
+  // Common settings
+  localBindHost?: string; // Local address to bind (default: 127.0.0.1)
+  localBindPort?: number; // Local port to bind (0 = auto-assign)
+  
+  // Proxy settings (type: 'proxy' | 'shadowsocks')
+  proxy?: {
+    proxyType: 'http' | 'https' | 'socks4' | 'socks5' | 'http-connect';
+    host: string;
+    port: number;
+    username?: string;
+    password?: string;
+    // Shadowsocks-specific
+    method?: string;      // Encryption method
+    plugin?: string;      // Plugin name
+    pluginOpts?: string;  // Plugin options
+  };
+  
+  // SSH tunnel settings (type: 'ssh-tunnel' | 'ssh-jump')
+  sshTunnel?: {
+    // Reference to an existing SSH connection, or inline config
+    connectionId?: string;
+    // Inline SSH config (used if connectionId not set)
+    host?: string;
+    port?: number;
+    username?: string;
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+    // Forwarding config
+    forwardType: 'local' | 'remote' | 'dynamic';
+    remoteHost?: string;  // Target host (from SSH server's perspective)
+    remotePort?: number;  // Target port
+    // Jump host specific
+    jumpTargetHost?: string;
+    jumpTargetPort?: number;
+  };
+  
+  // VPN settings (type: 'openvpn' | 'wireguard')
+  vpn?: {
+    configId?: string;    // Reference to saved VPN config
+    configFile?: string;  // Path to config file
+    // Inline config options
+    serverHost?: string;
+    serverPort?: number;
+    protocol?: 'udp' | 'tcp';
+    // WireGuard-specific
+    privateKey?: string;
+    publicKey?: string;
+    presharedKey?: string;
+    allowedIPs?: string[];
+    endpoint?: string;
+    persistentKeepalive?: number;
+  };
+  
+  // Generic tunnel settings (tor, i2p, stunnel, chisel, ngrok, cloudflared)
+  tunnel?: {
+    configPath?: string;
+    serverUrl?: string;
+    authToken?: string;
+    subdomain?: string;
+    region?: string;
+    extraArgs?: string[];
+  };
+  
+  // Mesh network settings (type: 'tailscale' | 'zerotier')
+  mesh?: {
+    networkId?: string;
+    authKey?: string;
+    targetNodeId?: string;
+    targetIP?: string;
+    targetPort?: number;
+  };
+  
+  // Runtime state (not persisted)
+  status?: 'disconnected' | 'connecting' | 'connected' | 'error';
+  actualLocalPort?: number; // Actual bound port if auto-assigned
+  error?: string;
+}
+
+/**
+ * Helper to create a simple SSH tunnel chain layer
+ */
+export function createSSHTunnelLayer(
+  connectionId: string,
+  remoteHost: string,
+  remotePort: number,
+  localPort?: number
+): TunnelChainLayer {
+  return {
+    id: crypto.randomUUID(),
+    type: 'ssh-tunnel',
+    enabled: true,
+    localBindPort: localPort,
+    sshTunnel: {
+      connectionId,
+      forwardType: 'local',
+      remoteHost,
+      remotePort,
+    },
+  };
+}
+
+/**
+ * Helper to create a proxy chain layer
+ */
+export function createProxyLayer(
+  proxyType: 'http' | 'https' | 'socks4' | 'socks5',
+  host: string,
+  port: number,
+  username?: string,
+  password?: string
+): TunnelChainLayer {
+  return {
+    id: crypto.randomUUID(),
+    type: 'proxy',
+    enabled: true,
+    proxy: {
+      proxyType,
+      host,
+      port,
+      username,
+      password,
+    },
+  };
+}
+
+/**
+ * Helper to create an SSH jump host layer
+ */
+export function createSSHJumpLayer(
+  connectionId: string,
+  targetHost: string,
+  targetPort: number
+): TunnelChainLayer {
+  return {
+    id: crypto.randomUUID(),
+    type: 'ssh-jump',
+    enabled: true,
+    sshTunnel: {
+      connectionId,
+      forwardType: 'local',
+      jumpTargetHost: targetHost,
+      jumpTargetPort: targetPort,
+    },
+  };
 }
 
 export interface ConnectionSession {
