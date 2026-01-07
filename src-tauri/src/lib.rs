@@ -820,6 +820,7 @@ pub fn run() {
         check_file_exists,
         delete_file,
         open_folder,
+        flash_window,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
@@ -1384,6 +1385,17 @@ fn open_folder(path: String) -> Result<(), String> {
       .map_err(|e| format!("Failed to open folder: {}", e))?;
   }
   
+  Ok(())
+}
+
+#[tauri::command]
+/// Request window attention by flashing the taskbar/dock icon.
+/// Used for terminal bell notifications.
+fn flash_window(app: tauri::AppHandle) -> Result<(), String> {
+  if let Some(window) = app.get_webview_window("main") {
+    window.request_user_attention(Some(tauri::UserAttentionType::Informational))
+      .map_err(|e| format!("Failed to flash window: {}", e))?;
+  }
   Ok(())
 }
 

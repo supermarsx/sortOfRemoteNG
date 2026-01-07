@@ -38,6 +38,7 @@ const mockTerminal = {
   write: vi.fn(),
   writeln: vi.fn(),
   onData: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+  onBell: vi.fn().mockReturnValue({ dispose: vi.fn() }),
   dispose: vi.fn(),
   clear: vi.fn(),
   getSelection: vi.fn(),

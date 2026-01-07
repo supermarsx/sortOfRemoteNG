@@ -655,6 +655,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       writeLine(`\x1b[90mFailure reason: ${classification.kind}\x1b[0m`);
       writeLine(`\x1b[90mRaw error: ${details.message}\x1b[0m`);
     }
+  // sshTerminalConfig settings are intentionally read once at connection time to avoid
+  // reconnecting when settings change mid-session
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     classifySshError,
     disconnectSsh,
@@ -1015,6 +1018,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       termRef.current = null;
       fitRef.current = null;
     };
+  // sshTerminalConfig settings are intentionally read once at terminal creation to avoid
+  // recreating terminal when settings change mid-session
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     getTerminalTheme,
     handleInput,
