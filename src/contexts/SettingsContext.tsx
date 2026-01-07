@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { GlobalSettings } from '../types/settings';
+import { GlobalSettings, defaultSSHTerminalConfig } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
 
 interface SettingsContextType {
@@ -150,6 +150,11 @@ const defaultSettings: GlobalSettings = {
   maxLogEntries: 1000,
   // Export Settings
   exportEncryption: true,
+  // SSH Terminal Settings
+  sshTerminal: defaultSSHTerminalConfig,
+  showBulkSSHIcon: true,
+  showScriptManagerIcon: true,
+  autoRepatriateWindow: true,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

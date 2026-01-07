@@ -511,13 +511,17 @@ const AppContent: React.FC = () => {
           if (existingWindow) {
             existingWindow.setFocus().catch(() => undefined);
           } else {
-            new WebviewWindow(windowLabel, {
+            const newWindow = new WebviewWindow(windowLabel, {
               url,
               title: windowTitle,
               width: 1200,
               height: 800,
               resizable: true,
               decorations: false,
+            });
+            // Focus the new window once it's created
+            newWindow.once("tauri://created", () => {
+              newWindow.setFocus().catch(() => undefined);
             });
           }
         } catch (error) {

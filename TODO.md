@@ -70,6 +70,31 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add Wake on LAN scripting and scheduled wake functionality
 - [x] Add connection list filters/sorting (user preference, creation, modification, recently used, alphabetical, by protocol)
 
+## Advanced SSH Terminal Settings Backlog
+- [ ] Implicit CR in every LF (disabled by default)
+- [ ] Implicit LF in every CR (disabled by default)
+- [ ] Auto wrap mode (enabled by default)
+- [ ] Line discipline - local echo: auto, local on, local off (keep default)
+- [ ] Line discipline - local line editing: auto, local on, local off (keep default)
+- [ ] Bell style: none, system default, visual bell, flash window, beep using PC speaker
+- [ ] Bell overuse protection: disable bell if overused (configurable threshold, e.g., >5 bells per 2 seconds with 5 second silence)
+- [ ] Taskbar flashing: disabled, flashing, or lighten up
+- [ ] Disable keypad application mode
+- [ ] Custom terminal columns count (use default or custom with input)
+- [ ] Custom terminal rows count (use default or custom with input)
+- [ ] Remote character set selection (UTF-8 default, with extensive charset list)
+- [ ] Custom terminal font configuration (family, size, weight, style)
+- [ ] Allow terminal to specify ANSI colors
+- [ ] Allow terminal to use xterm 256-color mode
+- [ ] Allow terminal to use 24-bit true colors
+- [ ] Low-level TCP options: disable Nagle algorithm (TCP_NODELAY)
+- [ ] Low-level TCP options: TCP keepalive enable/disable
+- [ ] Low-level TCP options: SO_KEEPALIVE option
+- [ ] Low-level TCP options: IP protocol selection (IPv4, IPv6, or auto)
+- [ ] Low-level TCP options: keepalive interval (if enabled)
+- [ ] SSH version selection: SSH-1, SSH-2, SSH-3 (or auto)
+- [ ] Enable SSH compression
+
 ## Project Setup and Initialization
 
 ### 1. Install Tauri CLI and Prerequisites
