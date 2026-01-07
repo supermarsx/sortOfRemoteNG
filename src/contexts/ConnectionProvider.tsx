@@ -19,6 +19,8 @@ const initialState: ConnectionState = {
     colorTags: [],
     showRecent: false,
     showFavorites: false,
+    sortBy: 'custom',
+    sortDirection: 'asc',
   },
   isLoading: false,
   sidebarCollapsed: false,
