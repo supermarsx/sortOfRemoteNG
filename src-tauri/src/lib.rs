@@ -89,6 +89,7 @@ pub mod linode;
 pub mod ovh;
 pub mod http;
 pub mod passkey;
+pub mod ssh3;
 
 #[cfg(test)]
 mod tests {
@@ -138,6 +139,7 @@ use linode::LinodeService;
 use ovh::OvhService;
 use http::HttpService;
 use passkey::PasskeyService;
+use ssh3::Ssh3Service;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -432,6 +434,10 @@ pub fn run() {
       let passkey_service = PasskeyService::new();
       app.manage(passkey_service.clone());
 
+      // Initialize SSH3 service (SSH over HTTP/3 QUIC)
+      let ssh3_service: ssh3::Ssh3ServiceState = std::sync::Arc::new(tokio::sync::Mutex::new(Ssh3Service::new()));
+      app.manage(ssh3_service.clone());
+
       // Initialize API service
       let api_service = ApiService::new(
         auth_service.clone(),
@@ -708,6 +714,19 @@ pub fn run() {
         ssh::is_session_alive,
         ssh::get_shell_info,
         ssh::reattach_session,
+        // SSH3 (SSH over HTTP/3 QUIC) commands
+        ssh3::connect_ssh3,
+        ssh3::disconnect_ssh3,
+        ssh3::start_ssh3_shell,
+        ssh3::send_ssh3_input,
+        ssh3::resize_ssh3_shell,
+        ssh3::execute_ssh3_command,
+        ssh3::setup_ssh3_port_forward,
+        ssh3::stop_ssh3_port_forward,
+        ssh3::close_ssh3_channel,
+        ssh3::get_ssh3_session_info,
+        ssh3::list_ssh3_sessions,
+        ssh3::test_ssh3_connection,
         // NOTE: pause_shell and resume_shell removed - buffer always captures full session
         http::http_fetch,
         http::http_get,

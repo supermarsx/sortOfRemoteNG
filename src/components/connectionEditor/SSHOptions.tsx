@@ -3,6 +3,7 @@ import { Key } from 'lucide-react';
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import { Connection } from '../../types/connection';
 import { SSHKeyManager } from '../SSHKeyManager';
+import { SSHTerminalOverrides } from './SSHTerminalOverrides';
 
 interface SSHOptionsProps {
   formData: Partial<Connection>;
@@ -183,6 +184,11 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
         onClose={() => setShowKeyManager(false)}
         onSelectKey={handleSelectKey}
       />
+
+      {/* SSH Terminal Settings Override */}
+      {formData.protocol === 'ssh' && (
+        <SSHTerminalOverrides formData={formData} setFormData={setFormData} />
+      )}
     </>
   );
 };

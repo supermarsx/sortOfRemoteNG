@@ -1,4 +1,4 @@
-import { ProxyConfig } from "./settings";
+import { ProxyConfig, SSHTerminalConfig } from "./settings";
 export interface Connection {
   id: string;
   name: string;
@@ -136,6 +136,9 @@ export interface Connection {
   // Proxy/VPN chaining
   proxyChainId?: string;
   connectionChainId?: string;
+
+  // SSH Terminal Config Override (inherits from global settings)
+  sshTerminalConfigOverride?: Partial<SSHTerminalConfig>;
 }
 
 export interface ConnectionSession {

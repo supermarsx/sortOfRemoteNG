@@ -9,6 +9,7 @@ import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
 import { useSettings } from "../contexts/SettingsContext";
+import { mergeSSHTerminalConfig } from "../types/settings";
 import { ManagedScript, getDefaultScripts, OSTag, OS_TAG_LABELS, OS_TAG_ICONS } from "./ScriptManager";
 
 interface WebTerminalProps {
@@ -27,7 +28,18 @@ type SshClosedEvent = { session_id: string };
 export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
-  const sshTerminalConfig = settings.sshTerminal;
+  
+  // Find the connection to get per-connection overrides
+  const connection = useMemo(
+    () => state.connections.find((c) => c.id === session.connectionId),
+    [state.connections, session.connectionId],
+  );
+  
+  // Merge global SSH terminal config with per-connection overrides
+  const sshTerminalConfig = useMemo(
+    () => mergeSSHTerminalConfig(settings.sshTerminal, connection?.sshTerminalConfigOverride),
+    [settings.sshTerminal, connection?.sshTerminalConfigOverride],
+  );
 
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -52,10 +64,6 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const [scriptOsTagFilter, setScriptOsTagFilter] = useState<string>("all");
 
   const sessionRef = useRef(session);
-  const connection = useMemo(
-    () => state.connections.find((c) => c.id === session.connectionId),
-    [state.connections, session.connectionId],
-  );
   const connectionRef = useRef(connection);
   const isSsh = session.protocol === "ssh";
 

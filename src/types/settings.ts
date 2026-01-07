@@ -870,3 +870,33 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
   localPrinting: false,
   remoteControlledPrinting: false,
 };
+
+/**
+ * Merges global SSH terminal config with per-connection overrides.
+ * Connection overrides take precedence over global settings.
+ * Nested objects (font, tcpOptions, bellOveruseProtection) are deep-merged.
+ */
+export function mergeSSHTerminalConfig(
+  globalConfig: SSHTerminalConfig,
+  override?: Partial<SSHTerminalConfig>
+): SSHTerminalConfig {
+  if (!override) return globalConfig;
+
+  return {
+    ...globalConfig,
+    ...override,
+    // Deep merge nested objects
+    font: {
+      ...globalConfig.font,
+      ...(override.font || {}),
+    },
+    tcpOptions: {
+      ...globalConfig.tcpOptions,
+      ...(override.tcpOptions || {}),
+    },
+    bellOveruseProtection: {
+      ...globalConfig.bellOveruseProtection,
+      ...(override.bellOveruseProtection || {}),
+    },
+  };
+}

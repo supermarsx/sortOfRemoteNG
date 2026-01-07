@@ -105,6 +105,17 @@ impl ScriptService {
                                                                     keep_alive_interval: Some(60),
                                                                     strict_host_key_checking: false,
                                                                     known_hosts_path: None,
+                                                                    tcp_no_delay: true,
+                                                                    tcp_keepalive: true,
+                                                                    keepalive_probes: 3,
+                                                                    ip_protocol: "auto".to_string(),
+                                                                    compression: false,
+                                                                    compression_level: 6,
+                                                                    ssh_version: "auto".to_string(),
+                                                                    preferred_ciphers: vec![],
+                                                                    preferred_macs: vec![],
+                                                                    preferred_kex: vec![],
+                                                                    preferred_host_key_algorithms: vec![],
                                                                 };
                                                                 
                                                                 let mut service = ssh_service.lock().await;
