@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../contexts/useConnections";
 import { ProxyOpenVPNManager } from "../utils/proxyOpenVPNManager";
 import { sshTunnelService, SSHTunnelConfig, SSHTunnelCreateParams } from "../utils/sshTunnelService";
+import { SSHTunnelDialog } from "./SSHTunnelDialog";
 
 interface ProxyChainMenuProps {
   isOpen: boolean;
@@ -33,18 +34,9 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
   const [sshTunnels, setSshTunnels] = useState<SSHTunnelConfig[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   
-  // SSH Tunnel form state
-  const [showTunnelForm, setShowTunnelForm] = useState(false);
-  const [editingTunnelId, setEditingTunnelId] = useState<string | null>(null);
-  const [tunnelForm, setTunnelForm] = useState<SSHTunnelCreateParams>({
-    name: "",
-    sshConnectionId: "",
-    localPort: 0,
-    remoteHost: "localhost",
-    remotePort: 22,
-    type: "local",
-    autoConnect: false,
-  });
+  // SSH Tunnel dialog state
+  const [showTunnelDialog, setShowTunnelDialog] = useState(false);
+  const [editingTunnel, setEditingTunnel] = useState<SSHTunnelConfig | null>(null);
 
   const sshConnections = useMemo(
     () => state.connections.filter((conn) => conn.protocol === "ssh" && !conn.isGroup),
@@ -100,9 +92,9 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
     if (!isOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        if (showTunnelForm) {
-          setShowTunnelForm(false);
-          setEditingTunnelId(null);
+        if (showTunnelDialog) {
+          setShowTunnelDialog(false);
+          setEditingTunnel(null);
         } else {
           onClose();
         }
@@ -110,7 +102,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, showTunnelForm]);
+  }, [isOpen, onClose, showTunnelDialog]);
 
   const handleConnectChain = async (chainId: string) => {
     await proxyManager.connectConnectionChain(chainId);
@@ -142,47 +134,28 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
   };
 
   // SSH Tunnel handlers
-  const resetTunnelForm = () => {
-    setTunnelForm({
-      name: "",
-      sshConnectionId: "",
-      localPort: 0,
-      remoteHost: "localhost",
-      remotePort: 22,
-      type: "local",
-      autoConnect: false,
-    });
-    setEditingTunnelId(null);
-    setShowTunnelForm(false);
-  };
-
-  const handleCreateTunnel = async () => {
-    if (!tunnelForm.name || !tunnelForm.sshConnectionId) return;
-    
+  const handleSaveTunnel = async (params: SSHTunnelCreateParams) => {
     try {
-      if (editingTunnelId) {
-        await sshTunnelService.updateTunnel(editingTunnelId, tunnelForm);
+      if (editingTunnel) {
+        await sshTunnelService.updateTunnel(editingTunnel.id, params);
       } else {
-        await sshTunnelService.createTunnel(tunnelForm);
+        await sshTunnelService.createTunnel(params);
       }
-      resetTunnelForm();
+      setShowTunnelDialog(false);
+      setEditingTunnel(null);
     } catch (error) {
       console.error("Failed to create/update SSH tunnel:", error);
     }
   };
 
   const handleEditTunnel = (tunnel: SSHTunnelConfig) => {
-    setTunnelForm({
-      name: tunnel.name,
-      sshConnectionId: tunnel.sshConnectionId,
-      localPort: tunnel.localPort,
-      remoteHost: tunnel.remoteHost,
-      remotePort: tunnel.remotePort,
-      type: tunnel.type,
-      autoConnect: tunnel.autoConnect,
-    });
-    setEditingTunnelId(tunnel.id);
-    setShowTunnelForm(true);
+    setEditingTunnel(tunnel);
+    setShowTunnelDialog(true);
+  };
+
+  const handleNewTunnel = () => {
+    setEditingTunnel(null);
+    setShowTunnelDialog(true);
   };
 
   const handleDeleteTunnel = async (tunnelId: string) => {
@@ -404,7 +377,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-medium text-white">SSH Tunnels</h3>
                   <button
-                    onClick={() => setShowTunnelForm(true)}
+                    onClick={handleNewTunnel}
                     className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
                   >
                     <Plus size={14} />
@@ -415,125 +388,6 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                 <div className="text-sm text-gray-400">
                   Create SSH tunnels using existing SSH connections to forward ports securely.
                 </div>
-
-                {showTunnelForm && (
-                  <div className="rounded-lg border border-blue-500/50 bg-blue-900/20 p-4 space-y-4">
-                    <div className="text-sm font-semibold text-blue-300">
-                      {editingTunnelId ? "Edit SSH Tunnel" : "Create SSH Tunnel"}
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">Tunnel Name</label>
-                        <input
-                          type="text"
-                          value={tunnelForm.name}
-                          onChange={(e) => setTunnelForm({ ...tunnelForm, name: e.target.value })}
-                          placeholder="My SSH Tunnel"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">SSH Connection</label>
-                        <select
-                          value={tunnelForm.sshConnectionId}
-                          onChange={(e) => setTunnelForm({ ...tunnelForm, sshConnectionId: e.target.value })}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                        >
-                          <option value="">Select SSH connection...</option>
-                          {sshConnections.map((conn) => (
-                            <option key={conn.id} value={conn.id}>
-                              {conn.name} ({conn.hostname}:{conn.port})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">Local Port (0 = auto)</label>
-                        <input
-                          type="number"
-                          value={tunnelForm.localPort}
-                          onChange={(e) => setTunnelForm({ ...tunnelForm, localPort: parseInt(e.target.value) || 0 })}
-                          min={0}
-                          max={65535}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">Tunnel Type</label>
-                        <select
-                          value={tunnelForm.type}
-                          onChange={(e) => setTunnelForm({ ...tunnelForm, type: e.target.value as 'local' | 'remote' | 'dynamic' })}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                        >
-                          <option value="local">Local (forward local port to remote)</option>
-                          <option value="remote">Remote (forward remote port to local)</option>
-                          <option value="dynamic">Dynamic (SOCKS proxy)</option>
-                        </select>
-                      </div>
-
-                      {/* Remote Host/Port only shown for local and remote tunnels, not dynamic */}
-                      {tunnelForm.type !== 'dynamic' && (
-                        <>
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">Remote Host</label>
-                            <input
-                              type="text"
-                              value={tunnelForm.remoteHost}
-                              onChange={(e) => setTunnelForm({ ...tunnelForm, remoteHost: e.target.value })}
-                              placeholder="localhost"
-                              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">Remote Port</label>
-                            <input
-                              type="number"
-                              value={tunnelForm.remotePort}
-                              onChange={(e) => setTunnelForm({ ...tunnelForm, remotePort: parseInt(e.target.value) || 22 })}
-                              min={1}
-                              max={65535}
-                              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                            />
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="autoConnect"
-                        checked={tunnelForm.autoConnect}
-                        onChange={(e) => setTunnelForm({ ...tunnelForm, autoConnect: e.target.checked })}
-                        className="rounded border-gray-600 bg-gray-700 text-blue-500"
-                      />
-                      <label htmlFor="autoConnect" className="text-sm text-gray-300">
-                        Auto-connect when associated connection starts
-                      </label>
-                    </div>
-
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={resetTunnelForm}
-                        className="px-4 py-2 text-sm rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleCreateTunnel}
-                        disabled={!tunnelForm.name || !tunnelForm.sshConnectionId}
-                        className="px-4 py-2 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {editingTunnelId ? "Save Changes" : "Create Tunnel"}
-                      </button>
-                    </div>
-                  </div>
-                )}
 
                 <div className="space-y-2">
                   {sshTunnels.length === 0 ? (
@@ -700,6 +554,18 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
           </div>
         </div>
       </div>
+
+      {/* SSH Tunnel Dialog */}
+      <SSHTunnelDialog
+        isOpen={showTunnelDialog}
+        onClose={() => {
+          setShowTunnelDialog(false);
+          setEditingTunnel(null);
+        }}
+        onSave={handleSaveTunnel}
+        sshConnections={sshConnections}
+        editingTunnel={editingTunnel}
+      />
     </div>
   );
 };
