@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
+import { useSettings } from "../contexts/SettingsContext";
 import { ManagedScript, getDefaultScripts, OSTag, OS_TAG_LABELS, OS_TAG_ICONS } from "./ScriptManager";
 
 interface WebTerminalProps {
@@ -25,6 +26,8 @@ type SshClosedEvent = { session_id: string };
  */
 export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
   const { state, dispatch } = useConnections();
+  const { settings } = useSettings();
+  const sshTerminalConfig = settings.sshTerminal;
 
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -560,6 +563,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
       disconnectSsh();
 
+      // Build TCP options from settings
+      const tcpOptions = sshTerminalConfig?.tcpOptions;
+      
       const sshConfig: Record<string, unknown> = {
         host: currentSession.hostname,
         port: currentConnection.port || 22,
@@ -567,10 +573,24 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         jump_hosts: [],
         proxy_config: null,
         openvpn_config: null,
-        connect_timeout: currentConnection.sshConnectTimeout ?? 30,
-        keep_alive_interval: currentConnection.sshKeepAliveInterval ?? 60,
+        connect_timeout: tcpOptions?.connectionTimeout ?? currentConnection.sshConnectTimeout ?? 30,
+        keep_alive_interval: tcpOptions?.tcpKeepAlive ? (tcpOptions?.keepAliveInterval ?? currentConnection.sshKeepAliveInterval ?? 60) : null,
         strict_host_key_checking: !ignoreHostKey,
         known_hosts_path: currentConnection.sshKnownHostsPath || null,
+        // TCP options from settings
+        tcp_no_delay: tcpOptions?.tcpNoDelay ?? true,
+        tcp_keepalive: tcpOptions?.tcpKeepAlive ?? true,
+        keepalive_probes: tcpOptions?.keepAliveProbes ?? 3,
+        ip_protocol: tcpOptions?.ipProtocol ?? 'auto',
+        // SSH options from settings
+        compression: sshTerminalConfig?.enableCompression ?? false,
+        compression_level: sshTerminalConfig?.compressionLevel ?? 6,
+        ssh_version: sshTerminalConfig?.sshVersion ?? 'auto',
+        // Cipher preferences
+        preferred_ciphers: sshTerminalConfig?.preferredCiphers ?? [],
+        preferred_macs: sshTerminalConfig?.preferredMACs ?? [],
+        preferred_kex: sshTerminalConfig?.preferredKeyExchanges ?? [],
+        preferred_host_key_algorithms: sshTerminalConfig?.preferredHostKeyAlgorithms ?? [],
       };
 
       switch (authMethod) {
@@ -690,24 +710,154 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     if (!container) return;
 
     isDisposed.current = false;
+    
+    // Build terminal options from settings
+    const fontFamily = sshTerminalConfig?.useCustomFont && sshTerminalConfig?.font?.family
+      ? sshTerminalConfig.font.family
+      : '"Cascadia Code", "Fira Code", Menlo, Monaco, "Ubuntu Mono", "Courier New", monospace';
+    const fontSize = sshTerminalConfig?.useCustomFont && sshTerminalConfig?.font?.size
+      ? sshTerminalConfig.font.size
+      : 13;
+    const lineHeight = sshTerminalConfig?.useCustomFont && sshTerminalConfig?.font?.lineHeight
+      ? sshTerminalConfig.font.lineHeight
+      : 1.25;
+    const letterSpacing = sshTerminalConfig?.useCustomFont && sshTerminalConfig?.font?.letterSpacing
+      ? sshTerminalConfig.font.letterSpacing
+      : 0;
+    const scrollbackLines = sshTerminalConfig?.scrollbackLines ?? 10000;
+    const cursorBlink = true;
+    const wordSeparator = sshTerminalConfig?.wordSeparators ?? ' \t';
+    
+    // Terminal dimensions from settings (if custom)
+    const cols = sshTerminalConfig?.useCustomDimensions ? sshTerminalConfig.columns : undefined;
+    const rows = sshTerminalConfig?.useCustomDimensions ? sshTerminalConfig.rows : undefined;
+    
     const term = new Terminal({
       theme: getTerminalTheme(),
-      fontFamily:
-        '"Cascadia Code", "Fira Code", Menlo, Monaco, "Ubuntu Mono", "Courier New", monospace',
-      fontSize: 13,
-      lineHeight: 1.25,
-      cursorBlink: true,
+      fontFamily,
+      fontSize,
+      lineHeight,
+      letterSpacing,
+      cursorBlink,
       cursorStyle: "block",
-      scrollback: 10000,
-      convertEol: true,
+      scrollback: scrollbackLines,
+      convertEol: sshTerminalConfig?.implicitCrInLf ?? false,
       rightClickSelectsWord: true,
       macOptionIsMeta: true,
       disableStdin: false,
+      wordSeparator,
+      scrollOnUserInput: sshTerminalConfig?.scrollOnKeystroke ?? true,
+      cols,
+      rows,
+      allowProposedApi: true,
     });
 
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.loadAddon(new WebLinksAddon());
+    
+    // Bell handling with overuse protection
+    let bellCount = 0;
+    let bellSilenced = false;
+    let bellResetTimer: ReturnType<typeof setTimeout> | null = null;
+    let bellSilenceTimer: ReturnType<typeof setTimeout> | null = null;
+    
+    const handleBell = () => {
+      const bellStyle = sshTerminalConfig?.bellStyle ?? 'system';
+      const overuseProtection = sshTerminalConfig?.bellOveruseProtection;
+      
+      // Check overuse protection
+      if (overuseProtection?.enabled) {
+        bellCount++;
+        
+        // Reset counter after time window
+        if (bellResetTimer) clearTimeout(bellResetTimer);
+        bellResetTimer = setTimeout(() => {
+          bellCount = 0;
+        }, (overuseProtection.timeWindowSeconds ?? 2) * 1000);
+        
+        // Check if we exceeded max bells
+        if (bellCount > (overuseProtection.maxBells ?? 5)) {
+          if (!bellSilenced) {
+            bellSilenced = true;
+            console.log('Bell silenced due to overuse');
+            // Clear silence after duration
+            bellSilenceTimer = setTimeout(() => {
+              bellSilenced = false;
+              bellCount = 0;
+            }, (overuseProtection.silenceDurationSeconds ?? 5) * 1000);
+          }
+          return; // Don't play bell
+        }
+      }
+      
+      if (bellSilenced) return;
+      
+      // Play bell based on style
+      switch (bellStyle) {
+        case 'none':
+          // Do nothing
+          break;
+        case 'system':
+          // Use system beep via audio context
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.frequency.value = 800;
+            oscillator.type = 'sine';
+            gainNode.gain.value = 0.1;
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.1);
+          } catch {
+            // Fallback: do nothing if audio not available
+          }
+          break;
+        case 'visual':
+          // Flash the terminal background
+          if (containerRef.current) {
+            containerRef.current.style.backgroundColor = '#ff0';
+            setTimeout(() => {
+              if (containerRef.current) {
+                containerRef.current.style.backgroundColor = '';
+              }
+            }, 100);
+          }
+          break;
+        case 'flash-window':
+          // Request window attention via Tauri
+          invoke('flash_window').catch(() => {});
+          break;
+        case 'pc-speaker':
+          // Try system beep (same as system for web)
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.frequency.value = 1000;
+            oscillator.type = 'square';
+            gainNode.gain.value = 0.05;
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.05);
+          } catch {
+            // Fallback
+          }
+          break;
+      }
+      
+      // Handle taskbar flash if configured
+      const taskbarFlash = sshTerminalConfig?.taskbarFlash ?? 'disabled';
+      if (taskbarFlash !== 'disabled') {
+        invoke('flash_window').catch(() => {});
+      }
+    };
+    
+    // Subscribe to bell events
+    term.onBell(handleBell);
     
     // Defer terminal open to next frame to ensure DOM is ready
     const openTimer = requestAnimationFrame(() => {
