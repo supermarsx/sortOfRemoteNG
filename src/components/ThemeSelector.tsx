@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Palette, Sun, Moon, Monitor } from "lucide-react";
+import React, { useEffect, useState, useRef } from "react";
+import { Palette, Sun, Moon, Monitor, Download, Upload, FileJson } from "lucide-react";
 import { Theme, ColorScheme, ThemeConfig } from "../types/settings";
 import { ThemeManager } from "../utils/themeManager";
 
@@ -178,6 +178,74 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
     if (colorScheme === name) onColorSchemeChange("blue");
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+
+  const handleExportAll = () => {
+    const data = themeManager.exportThemeData();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sortofremoteng-themes-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      // Validate the data structure
+      if (!data.themes && !data.colorSchemes) {
+        throw new Error('Invalid theme file format');
+      }
+
+      const result = await themeManager.importThemeData(data, { overwrite: false });
+      
+      const messages: string[] = [];
+      if (result.importedThemes.length > 0) {
+        messages.push(`Imported ${result.importedThemes.length} theme(s)`);
+      }
+      if (result.importedSchemes.length > 0) {
+        messages.push(`Imported ${result.importedSchemes.length} color scheme(s)`);
+      }
+      if (result.skippedThemes.length > 0) {
+        messages.push(`Skipped ${result.skippedThemes.length} existing theme(s)`);
+      }
+      if (result.skippedSchemes.length > 0) {
+        messages.push(`Skipped ${result.skippedSchemes.length} existing scheme(s)`);
+      }
+      
+      if (messages.length === 0) {
+        setImportStatus('No new themes or color schemes to import');
+      } else {
+        setImportStatus(messages.join(', '));
+      }
+      
+      refresh();
+      setTimeout(() => setImportStatus(null), 5000);
+    } catch (err) {
+      setImportStatus(`Import failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setTimeout(() => setImportStatus(null), 5000);
+    }
+    
+    // Reset the file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const selectedScheme = themeManager.getColorSchemeConfig(colorScheme);
 
   return (
@@ -344,6 +412,50 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
         >
           Add Color Scheme
         </button>
+      </div>
+
+      {/* Import/Export Section */}
+      <div className="border-t border-gray-600 pt-4">
+        <label className="block text-sm font-medium text-gray-300 mb-3">
+          Import / Export
+        </label>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={handleExportAll}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+          >
+            <Download size={16} />
+            Export All Custom
+          </button>
+          <button
+            onClick={handleImportClick}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+          >
+            <Upload size={16} />
+            Import from File
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+        </div>
+        {importStatus && (
+          <div className={`mt-3 p-3 rounded-lg text-sm ${
+            importStatus.includes('failed') 
+              ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
+              : 'bg-green-500/20 text-green-400 border border-green-500/30'
+          }`}>
+            <FileJson size={14} className="inline mr-2" />
+            {importStatus}
+          </div>
+        )}
+        <p className="mt-3 text-xs text-gray-400">
+          Export your custom themes and color schemes to share or backup. 
+          Import will skip existing items unless you delete them first.
+        </p>
       </div>
     </div>
   );

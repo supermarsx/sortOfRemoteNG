@@ -496,6 +496,103 @@ export class ThemeManager {
     await this.saveCustomColorSchemes();
   }
 
+  // Export all custom themes and color schemes
+  exportThemeData(): {
+    themes: Record<string, ThemeConfig>;
+    colorSchemes: Record<string, Record<string, string>>;
+    version: number;
+    exportDate: string;
+  } {
+    return {
+      themes: { ...this.customThemes },
+      colorSchemes: { ...this.customColorSchemes },
+      version: 1,
+      exportDate: new Date().toISOString(),
+    };
+  }
+
+  // Export a single theme
+  exportTheme(name: string): ThemeConfig | null {
+    return this.customThemes[name] || null;
+  }
+
+  // Export a single color scheme
+  exportColorScheme(name: string): Record<string, string> | null {
+    return this.customColorSchemes[name] || null;
+  }
+
+  // Import themes and color schemes
+  async importThemeData(data: {
+    themes?: Record<string, ThemeConfig>;
+    colorSchemes?: Record<string, Record<string, string>>;
+  }, options?: { overwrite?: boolean }): Promise<{ 
+    importedThemes: string[]; 
+    importedSchemes: string[]; 
+    skippedThemes: string[];
+    skippedSchemes: string[];
+  }> {
+    const result = {
+      importedThemes: [] as string[],
+      importedSchemes: [] as string[],
+      skippedThemes: [] as string[],
+      skippedSchemes: [] as string[],
+    };
+
+    // Import themes
+    if (data.themes) {
+      for (const [name, config] of Object.entries(data.themes)) {
+        // Skip built-in themes
+        if (this.themes[name]) {
+          result.skippedThemes.push(name);
+          continue;
+        }
+        // Skip existing custom themes unless overwrite is true
+        if (this.customThemes[name] && !options?.overwrite) {
+          result.skippedThemes.push(name);
+          continue;
+        }
+        this.customThemes[name] = config;
+        result.importedThemes.push(name);
+      }
+      if (result.importedThemes.length > 0) {
+        await this.saveCustomThemes();
+      }
+    }
+
+    // Import color schemes
+    if (data.colorSchemes) {
+      for (const [name, colors] of Object.entries(data.colorSchemes)) {
+        // Skip built-in color schemes
+        if (this.colorSchemes[name]) {
+          result.skippedSchemes.push(name);
+          continue;
+        }
+        // Skip existing custom schemes unless overwrite is true
+        if (this.customColorSchemes[name] && !options?.overwrite) {
+          result.skippedSchemes.push(name);
+          continue;
+        }
+        this.customColorSchemes[name] = colors;
+        result.importedSchemes.push(name);
+      }
+      if (result.importedSchemes.length > 0) {
+        await this.saveCustomColorSchemes();
+      }
+    }
+
+    return result;
+  }
+
+  // Get custom themes count for display
+  getCustomThemesCount(): number {
+    return Object.keys(this.customThemes).length;
+  }
+
+  // Get custom color schemes count for display
+  getCustomColorSchemesCount(): number {
+    return Object.keys(this.customColorSchemes).length;
+  }
+
   // Auto theme detection
   detectSystemTheme(): string {
     if (

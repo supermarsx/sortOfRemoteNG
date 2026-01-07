@@ -15,11 +15,13 @@ import {
   Loader2,
   CheckSquare,
   Square,
-  Zap
+  Zap,
+  Calendar
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { lookupVendor, lookupVendorLocal } from '../utils/macVendorLookup';
+import { WakeScheduleManager } from './WakeScheduleManager';
 
 interface WolDevice {
   ip: string;
@@ -50,6 +52,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const [recentMacs, setRecentMacs] = useState<string[]>([]);
   const [currentVendor, setCurrentVendor] = useState<string | null>(null);
+  const [showScheduleManager, setShowScheduleManager] = useState(false);
 
   useEffect(() => {
     // Load recent MACs from localStorage
@@ -336,12 +339,22 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
               <p className="text-xs text-[var(--color-textSecondary)]">Send magic packets to wake network devices</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] btn-animate"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowScheduleManager(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] border border-[var(--color-border)] btn-animate"
+              title={t('wake.scheduleWake', 'Schedule Wake')}
+            >
+              <Calendar size={16} />
+              <span className="text-sm">{t('wake.schedules', 'Schedules')}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] btn-animate"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -598,6 +611,12 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
           </div>
         </div>
       </div>
+
+      {/* Wake Schedule Manager */}
+      <WakeScheduleManager 
+        isOpen={showScheduleManager} 
+        onClose={() => setShowScheduleManager(false)} 
+      />
     </div>
   );
 };

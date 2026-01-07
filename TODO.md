@@ -19,7 +19,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Auto-open last collection on startup (with toggle setting)
 - [ ] Add cloud sync targets for Google Drive, Nextcloud, and OneDrive
 - [ ] Add differential backup scheduling (daily and on-demand runs)
-- [ ] Add custom CSS tips plus theme import/export and custom theme manager
+- [x] Add custom CSS tips plus theme import/export and custom theme manager
 - [ ] Add Serpent and Twofish encryption schemes
 - [x] Add global animation toggle with smooth motion defaults
 - [x] Allow resizing/adjusting layout matrices
@@ -67,8 +67,8 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] Add proxy and VPN profiles management to Collections Center (with chaining, import/export)
 - [x] Add bulk Wake on LAN request functionality
 - [x] Add wake everything on LAN function
-- [ ] Add Wake on LAN scripting and scheduled wake functionality
-- [ ] Add connection list filters/sorting (user preference, creation, modification, recently used, alphabetical, by protocol)
+- [x] Add Wake on LAN scripting and scheduled wake functionality
+- [x] Add connection list filters/sorting (user preference, creation, modification, recently used, alphabetical, by protocol)
 
 ## Project Setup and Initialization
 
