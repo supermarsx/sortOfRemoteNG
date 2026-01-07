@@ -475,28 +475,33 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                         </select>
                       </div>
 
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">Remote Host</label>
-                        <input
-                          type="text"
-                          value={tunnelForm.remoteHost}
-                          onChange={(e) => setTunnelForm({ ...tunnelForm, remoteHost: e.target.value })}
-                          placeholder="localhost"
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                        />
-                      </div>
+                      {/* Remote Host/Port only shown for local and remote tunnels, not dynamic */}
+                      {tunnelForm.type !== 'dynamic' && (
+                        <>
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">Remote Host</label>
+                            <input
+                              type="text"
+                              value={tunnelForm.remoteHost}
+                              onChange={(e) => setTunnelForm({ ...tunnelForm, remoteHost: e.target.value })}
+                              placeholder="localhost"
+                              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                            />
+                          </div>
 
-                      <div>
-                        <label className="block text-xs text-gray-400 mb-1">Remote Port</label>
-                        <input
-                          type="number"
-                          value={tunnelForm.remotePort}
-                          onChange={(e) => setTunnelForm({ ...tunnelForm, remotePort: parseInt(e.target.value) || 22 })}
-                          min={1}
-                          max={65535}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
-                        />
-                      </div>
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">Remote Port</label>
+                            <input
+                              type="number"
+                              value={tunnelForm.remotePort}
+                              onChange={(e) => setTunnelForm({ ...tunnelForm, remotePort: parseInt(e.target.value) || 22 })}
+                              min={1}
+                              max={65535}
+                              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                            />
+                          </div>
+                        </>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -538,6 +543,30 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                   ) : (
                     sshTunnels.map((tunnel) => {
                       const sshConn = state.connections.find(c => c.id === tunnel.sshConnectionId);
+                      const localPort = tunnel.actualLocalPort || tunnel.localPort || '?';
+                      
+                      // Format tunnel info based on type
+                      const getTunnelInfo = () => {
+                        switch (tunnel.type) {
+                          case 'dynamic':
+                            return `SOCKS5 proxy on localhost:${localPort}`;
+                          case 'remote':
+                            return `${tunnel.remoteHost}:${tunnel.remotePort} → localhost:${localPort}`;
+                          case 'local':
+                          default:
+                            return `localhost:${localPort} → ${tunnel.remoteHost}:${tunnel.remotePort}`;
+                        }
+                      };
+                      
+                      const getTypeLabel = () => {
+                        switch (tunnel.type) {
+                          case 'dynamic': return 'Dynamic';
+                          case 'remote': return 'Remote';
+                          case 'local':
+                          default: return 'Local';
+                        }
+                      };
+                      
                       return (
                         <div
                           key={tunnel.id}
@@ -546,6 +575,9 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <div className="text-sm font-medium text-white">{tunnel.name}</div>
+                              <span className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-400">
+                                {getTypeLabel()}
+                              </span>
                               <span className={`px-2 py-0.5 text-xs rounded-full ${
                                 tunnel.status === 'connected' ? 'bg-green-500/20 text-green-400' :
                                 tunnel.status === 'connecting' ? 'bg-yellow-500/20 text-yellow-400' :
@@ -556,8 +588,10 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                               </span>
                             </div>
                             <div className="text-xs text-gray-400 mt-1">
-                              via {sshConn?.name || 'Unknown'} → {tunnel.remoteHost}:{tunnel.remotePort}
-                              {tunnel.actualLocalPort && ` (local: ${tunnel.actualLocalPort})`}
+                              <span className="text-gray-500">via</span> {sshConn?.name || 'Unknown SSH'}
+                            </div>
+                            <div className="text-xs text-gray-300 mt-0.5 font-mono">
+                              {getTunnelInfo()}
                             </div>
                             {tunnel.error && (
                               <div className="text-xs text-red-400 mt-1">{tunnel.error}</div>

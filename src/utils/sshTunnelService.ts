@@ -9,9 +9,11 @@ export interface SSHTunnelConfig {
   // Local port to bind (0 = auto-assign)
   localPort: number;
   // Remote host to forward to (from the SSH server's perspective)
-  remoteHost: string;
+  // Not used for dynamic tunnels
+  remoteHost?: string;
   // Remote port to forward to
-  remotePort: number;
+  // Not used for dynamic tunnels
+  remotePort?: number;
   // Tunnel type
   type: 'local' | 'remote' | 'dynamic';
   // Status
@@ -34,8 +36,9 @@ export interface SSHTunnelCreateParams {
   name: string;
   sshConnectionId: string;
   localPort?: number;
-  remoteHost: string;
-  remotePort: number;
+  // Remote host/port - required for local/remote, not used for dynamic
+  remoteHost?: string;
+  remotePort?: number;
   type?: 'local' | 'remote' | 'dynamic';
   autoConnect?: boolean;
 }
