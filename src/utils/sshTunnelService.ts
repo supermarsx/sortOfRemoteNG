@@ -201,14 +201,37 @@ class SSHTunnelService {
     this.notifyListeners();
 
     try {
+      // Get SSH connection overrides from the connection
+      const override = sshConnection.sshConnectionConfigOverride;
+      
       // First, connect to the SSH server
       const sessionId = await invoke<string>('connect_ssh', {
-        host: sshConnection.hostname,
-        port: sshConnection.port,
-        username: sshConnection.username || '',
-        password: sshConnection.password,
-        privateKey: sshConnection.privateKey,
-        passphrase: sshConnection.passphrase,
+        config: {
+          host: sshConnection.hostname,
+          port: sshConnection.port || 22,
+          username: sshConnection.username || '',
+          password: sshConnection.password || null,
+          private_key_path: sshConnection.privateKey || null,
+          private_key_passphrase: sshConnection.passphrase || null,
+          jump_hosts: [],
+          proxy_config: null,
+          openvpn_config: null,
+          connect_timeout: override?.connectTimeout ?? sshConnection.sshConnectTimeout ?? 30,
+          keep_alive_interval: override?.keepAliveInterval ?? sshConnection.sshKeepAliveInterval ?? 60,
+          strict_host_key_checking: override?.strictHostKeyChecking ?? !sshConnection.ignoreSshSecurityErrors ?? false,
+          known_hosts_path: override?.knownHostsPath ?? sshConnection.sshKnownHostsPath ?? null,
+          tcp_no_delay: override?.tcpNoDelay ?? true,
+          tcp_keepalive: override?.tcpKeepalive ?? true,
+          keepalive_probes: override?.keepaliveProbes ?? 3,
+          ip_protocol: override?.ipProtocol ?? 'any',
+          compression: override?.compression ?? false,
+          compression_level: override?.compressionLevel ?? 6,
+          ssh_version: override?.sshVersion ?? '2',
+          preferred_ciphers: override?.preferredCiphers ?? [],
+          preferred_macs: override?.preferredMacs ?? [],
+          preferred_kex: override?.preferredKex ?? [],
+          preferred_host_keys: override?.preferredHostKeys ?? [],
+        },
       });
 
       // Determine the local port (use requested or find available)
