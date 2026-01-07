@@ -15,9 +15,10 @@ import {
   Gauge,
   Server,
   Settings as SettingsIcon,
+  Terminal,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { GlobalSettings, ProxyConfig } from '../../types/settings';
+import { GlobalSettings, ProxyConfig, defaultSSHTerminalConfig } from '../../types/settings';
 import GeneralSettings from './sections/GeneralSettings';
 import ThemeSettings from './sections/ThemeSettings';
 import LayoutSettings from './sections/LayoutSettings';
@@ -28,6 +29,7 @@ import AdvancedSettings from './sections/AdvancedSettings';
 import StartupSettings from './sections/StartupSettings';
 import ApiSettings from './sections/ApiSettings';
 import RecoverySettings from './sections/RecoverySettings';
+import SSHTerminalSettings from './sections/SSHTerminalSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
@@ -80,6 +82,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'wolBroadcastAddress', 'enableActionLog', 'logLevel', 'maxLogEntries',
     'exportEncryption',
   ],
+  sshTerminal: ['sshTerminal'],
 };
 
 // Default values for settings (mirrors settingsManager.ts)
@@ -177,6 +180,7 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
     port: 8080,
     enabled: false,
   },
+  sshTerminal: defaultSSHTerminalConfig,
 };
 
 interface SettingsDialogProps {
@@ -378,6 +382,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     { id: 'security', label: t('settings.security'), icon: Shield },
     { id: 'performance', label: t('settings.performance'), icon: Zap },
     { id: 'proxy', label: 'Proxy', icon: Wifi },
+    { id: 'sshTerminal', label: t('settings.sshTerminal.tab', 'SSH Terminal'), icon: Terminal },
     { id: 'api', label: 'API Server', icon: Server },
     { id: 'advanced', label: t('settings.advanced'), icon: Code },
     { id: 'recovery', label: 'Recovery', icon: RotateCcw },
@@ -486,6 +491,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
               {activeTab === 'proxy' && (
                 <ProxySettings settings={settings} updateProxy={updateProxy} />
+              )}
+
+              {activeTab === 'sshTerminal' && (
+                <SSHTerminalSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'api' && (

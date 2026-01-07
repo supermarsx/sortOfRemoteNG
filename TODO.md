@@ -71,29 +71,29 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add connection list filters/sorting (user preference, creation, modification, recently used, alphabetical, by protocol)
 
 ## Advanced SSH Terminal Settings Backlog
-- [ ] Implicit CR in every LF (disabled by default)
-- [ ] Implicit LF in every CR (disabled by default)
-- [ ] Auto wrap mode (enabled by default)
-- [ ] Line discipline - local echo: auto, local on, local off (keep default)
-- [ ] Line discipline - local line editing: auto, local on, local off (keep default)
-- [ ] Bell style: none, system default, visual bell, flash window, beep using PC speaker
-- [ ] Bell overuse protection: disable bell if overused (configurable threshold, e.g., >5 bells per 2 seconds with 5 second silence)
-- [ ] Taskbar flashing: disabled, flashing, or lighten up
-- [ ] Disable keypad application mode
-- [ ] Custom terminal columns count (use default or custom with input)
-- [ ] Custom terminal rows count (use default or custom with input)
-- [ ] Remote character set selection (UTF-8 default, with extensive charset list)
-- [ ] Custom terminal font configuration (family, size, weight, style)
-- [ ] Allow terminal to specify ANSI colors
-- [ ] Allow terminal to use xterm 256-color mode
-- [ ] Allow terminal to use 24-bit true colors
-- [ ] Low-level TCP options: disable Nagle algorithm (TCP_NODELAY)
-- [ ] Low-level TCP options: TCP keepalive enable/disable
-- [ ] Low-level TCP options: SO_KEEPALIVE option
-- [ ] Low-level TCP options: IP protocol selection (IPv4, IPv6, or auto)
-- [ ] Low-level TCP options: keepalive interval (if enabled)
-- [ ] SSH version selection: SSH-1, SSH-2, SSH-3 (or auto)
-- [ ] Enable SSH compression
+- [x] Implicit CR in every LF (disabled by default)
+- [x] Implicit LF in every CR (disabled by default)
+- [x] Auto wrap mode (enabled by default)
+- [x] Line discipline - local echo: auto, local on, local off (keep default)
+- [x] Line discipline - local line editing: auto, local on, local off (keep default)
+- [x] Bell style: none, system default, visual bell, flash window, beep using PC speaker
+- [x] Bell overuse protection: disable bell if overused (configurable threshold, e.g., >5 bells per 2 seconds with 5 second silence)
+- [x] Taskbar flashing: disabled, flashing, or lighten up
+- [x] Disable keypad application mode
+- [x] Custom terminal columns count (use default or custom with input)
+- [x] Custom terminal rows count (use default or custom with input)
+- [x] Remote character set selection (UTF-8 default, with extensive charset list)
+- [x] Custom terminal font configuration (family, size, weight, style)
+- [x] Allow terminal to specify ANSI colors
+- [x] Allow terminal to use xterm 256-color mode
+- [x] Allow terminal to use 24-bit true colors
+- [x] Low-level TCP options: disable Nagle algorithm (TCP_NODELAY)
+- [x] Low-level TCP options: TCP keepalive enable/disable
+- [x] Low-level TCP options: SO_KEEPALIVE option
+- [x] Low-level TCP options: IP protocol selection (IPv4, IPv6, or auto)
+- [x] Low-level TCP options: keepalive interval (if enabled)
+- [x] SSH version selection: SSH-1, SSH-2, SSH-3 (or auto)
+- [x] Enable SSH compression
 
 ## Project Setup and Initialization
 

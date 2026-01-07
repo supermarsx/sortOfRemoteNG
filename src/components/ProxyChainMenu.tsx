@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { X, RefreshCw, Link2, Network, PlugZap, Tunnel, Plus, Trash2, Play, Square, Edit2 } from "lucide-react";
+import { X, RefreshCw, Link2, Network, PlugZap, Route, Plus, Trash2, Play, Square, Edit2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../contexts/useConnections";
 import { ProxyOpenVPNManager } from "../utils/proxyOpenVPNManager";
@@ -295,7 +295,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                 activeTab === "tunnels" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"
               }`}
             >
-              <Tunnel size={16} />
+              <Route size={16} />
               SSH Tunnels
             </button>
             <button
