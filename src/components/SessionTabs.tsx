@@ -102,7 +102,8 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   const handleDragStart = (e: React.DragEvent, sessionId: string) => {
     if (!enableReorder) return;
     setDraggedSessionId(sessionId);
-    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.effectAllowed = "all";
+    e.dataTransfer.dropEffect = "move";
     e.dataTransfer.setData("text/plain", sessionId);
   };
 
@@ -143,7 +144,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
   }
 
   return (
-    <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center overflow-x-auto">
+    <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center overflow-x-auto" data-tauri-disable-drag="true">
       {sessions.map((session) => {
         const ProtocolIcon = getProtocolIcon(session.protocol);
         const StatusIcon = getStatusIcon(session.status);
@@ -153,6 +154,7 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
           <div
             key={session.id}
             draggable={enableReorder}
+            data-tauri-disable-drag="true"
             className={`flex items-center h-full px-3 cursor-pointer border-r border-gray-700 min-w-0 ${
               isActive
                 ? "bg-gray-700 text-white"
