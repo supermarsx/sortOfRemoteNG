@@ -12,7 +12,10 @@ import {
   Globe,
   Building2,
   Database,
-  Loader2
+  Loader2,
+  CheckSquare,
+  Square,
+  Zap
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
@@ -40,7 +43,9 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
   const [password, setPassword] = useState('');
   const [useSecureOn, setUseSecureOn] = useState(false);
   const [devices, setDevices] = useState<WolDevice[]>([]);
+  const [selectedDevices, setSelectedDevices] = useState<Set<string>>(new Set());
   const [isScanning, setIsScanning] = useState(false);
+  const [isBulkWaking, setIsBulkWaking] = useState(false);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const [recentMacs, setRecentMacs] = useState<string[]>([]);
@@ -159,6 +164,119 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
       saveRecentMac(mac);
     } catch (error) {
       setStatus({ type: 'error', message: `Failed to send wake packet: ${error}` });
+    }
+  };
+
+  const toggleDeviceSelection = (mac: string) => {
+    setSelectedDevices(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(mac)) {
+        newSet.delete(mac);
+      } else {
+        newSet.add(mac);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedDevices.size === devices.length) {
+      setSelectedDevices(new Set());
+    } else {
+      setSelectedDevices(new Set(devices.map(d => d.mac)));
+    }
+  };
+
+  const handleBulkWake = async () => {
+    if (selectedDevices.size === 0) {
+      setStatus({ type: 'error', message: 'No devices selected' });
+      return;
+    }
+
+    setIsBulkWaking(true);
+    setStatus({ type: null, message: '' });
+    
+    let successCount = 0;
+    let failCount = 0;
+    const errors: string[] = [];
+
+    for (const mac of selectedDevices) {
+      try {
+        await invoke('wake_on_lan', {
+          macAddress: mac,
+          broadcastAddress: broadcastAddress || undefined,
+          port: port || undefined,
+          password: useSecureOn && password ? password : undefined,
+        });
+        successCount++;
+        saveRecentMac(mac);
+      } catch (error) {
+        failCount++;
+        errors.push(`${mac}: ${error}`);
+      }
+    }
+
+    setIsBulkWaking(false);
+    
+    if (failCount === 0) {
+      setStatus({ 
+        type: 'success', 
+        message: `Successfully sent wake packets to ${successCount} device${successCount !== 1 ? 's' : ''}` 
+      });
+    } else if (successCount === 0) {
+      setStatus({ 
+        type: 'error', 
+        message: `Failed to wake all ${failCount} devices` 
+      });
+    } else {
+      setStatus({ 
+        type: 'success', 
+        message: `Sent ${successCount} wake packet${successCount !== 1 ? 's' : ''}, ${failCount} failed` 
+      });
+    }
+    
+    setSelectedDevices(new Set());
+  };
+
+  const handleWakeAll = async () => {
+    if (devices.length === 0) {
+      setStatus({ type: 'error', message: 'No devices to wake' });
+      return;
+    }
+
+    setIsBulkWaking(true);
+    setStatus({ type: null, message: '' });
+    
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const device of devices) {
+      try {
+        await invoke('wake_on_lan', {
+          macAddress: device.mac,
+          broadcastAddress: broadcastAddress || undefined,
+          port: port || undefined,
+          password: useSecureOn && password ? password : undefined,
+        });
+        successCount++;
+        saveRecentMac(device.mac);
+      } catch {
+        failCount++;
+      }
+    }
+
+    setIsBulkWaking(false);
+    
+    if (failCount === 0) {
+      setStatus({ 
+        type: 'success', 
+        message: `Successfully sent wake packets to all ${successCount} devices` 
+      });
+    } else {
+      setStatus({ 
+        type: 'success', 
+        message: `Sent ${successCount} wake packet${successCount !== 1 ? 's' : ''}, ${failCount} failed` 
+      });
     }
   };
 
@@ -354,6 +472,9 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
               <label className="text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-2">
                 <Search size={14} className="text-[var(--color-textMuted)]" />
                 {t('wake.networkDevices', 'Network Devices')}
+                {devices.length > 0 && (
+                  <span className="text-xs text-[var(--color-textMuted)]">({devices.length})</span>
+                )}
                 {isLookingUp && (
                   <span className="flex items-center gap-1 text-xs text-[var(--color-textMuted)]">
                     <Loader2 size={10} className="animate-spin" />
@@ -361,14 +482,47 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
                   </span>
                 )}
               </label>
-              <button
-                onClick={handleScan}
-                disabled={isScanning}
-                className="px-3 py-1.5 text-xs bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-lg transition-all flex items-center space-x-2 border border-[var(--color-border)] btn-animate"
-              >
-                <RefreshCw size={12} className={isScanning ? 'animate-spin' : ''} />
-                <span>{isScanning ? t('wake.scanning', 'Scanning...') : t('wake.scan', 'Scan ARP')}</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {devices.length > 0 && (
+                  <>
+                    <button
+                      onClick={toggleSelectAll}
+                      className="px-3 py-1.5 text-xs bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-lg transition-all flex items-center space-x-2 border border-[var(--color-border)] btn-animate"
+                      title={selectedDevices.size === devices.length ? 'Deselect all' : 'Select all'}
+                    >
+                      {selectedDevices.size === devices.length ? <CheckSquare size={12} /> : <Square size={12} />}
+                      <span>{selectedDevices.size === devices.length ? t('wake.deselectAll', 'Deselect All') : t('wake.selectAll', 'Select All')}</span>
+                    </button>
+                    {selectedDevices.size > 0 && (
+                      <button
+                        onClick={handleBulkWake}
+                        disabled={isBulkWaking}
+                        className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-green-500/20 disabled:shadow-none"
+                      >
+                        {isBulkWaking ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                        <span>{t('wake.wakeSelected', 'Wake Selected')} ({selectedDevices.size})</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={handleWakeAll}
+                      disabled={isBulkWaking}
+                      className="px-3 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-amber-500/20 disabled:shadow-none"
+                      title="Wake all discovered devices"
+                    >
+                      {isBulkWaking ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                      <span>{t('wake.wakeAll', 'Wake All')}</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={handleScan}
+                  disabled={isScanning}
+                  className="px-3 py-1.5 text-xs bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-lg transition-all flex items-center space-x-2 border border-[var(--color-border)] btn-animate"
+                >
+                  <RefreshCw size={12} className={isScanning ? 'animate-spin' : ''} />
+                  <span>{isScanning ? t('wake.scanning', 'Scanning...') : t('wake.scan', 'Scan ARP')}</span>
+                </button>
+              </div>
             </div>
             
             {devices.length > 0 && (
@@ -377,28 +531,47 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
                   <div
                     key={idx}
                     onClick={() => handleSelectDevice(device)}
-                    className="flex items-center justify-between p-3 bg-[var(--color-surfaceHover)]/30 hover:bg-[var(--color-surfaceHover)]/50 rounded-lg cursor-pointer transition-all border border-[var(--color-border)] hover:border-[var(--color-textMuted)] group animate-fade-in-up card-hover-effect"
+                    className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all border group animate-fade-in-up card-hover-effect ${
+                      selectedDevices.has(device.mac)
+                        ? 'bg-green-500/10 border-green-500/40 hover:bg-green-500/15'
+                        : 'bg-[var(--color-surfaceHover)]/30 border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)]/50 hover:border-[var(--color-textMuted)]'
+                    }`}
                     style={{ animationDelay: `${idx * 50}ms` }}
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-[var(--color-text)] font-mono">{device.mac}</span>
-                        {device.vendor && (
-                          <span className="flex items-center gap-1 px-2 py-0.5 bg-[var(--color-surfaceHover)] rounded text-xs text-[var(--color-textSecondary)]">
-                            {getVendorSourceIcon(device.vendorSource)}
-                            <Building2 size={10} />
-                            {device.vendor}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-[var(--color-textMuted)] mt-1 flex items-center gap-2">
-                        <span>{device.ip}</span>
-                        {device.hostname && (
-                          <>
-                            <span className="text-[var(--color-border)]">•</span>
-                            <span className="text-[var(--color-textMuted)]">{device.hostname}</span>
-                          </>
-                        )}
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleDeviceSelection(device.mac);
+                        }}
+                        className={`p-1 rounded transition-colors ${
+                          selectedDevices.has(device.mac)
+                            ? 'text-green-500 hover:text-green-400'
+                            : 'text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)]'
+                        }`}
+                      >
+                        {selectedDevices.has(device.mac) ? <CheckSquare size={18} /> : <Square size={18} />}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-[var(--color-text)] font-mono">{device.mac}</span>
+                          {device.vendor && (
+                            <span className="flex items-center gap-1 px-2 py-0.5 bg-[var(--color-surfaceHover)] rounded text-xs text-[var(--color-textSecondary)]">
+                              {getVendorSourceIcon(device.vendorSource)}
+                              <Building2 size={10} />
+                              {device.vendor}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-[var(--color-textMuted)] mt-1 flex items-center gap-2">
+                          <span>{device.ip}</span>
+                          {device.hostname && (
+                            <>
+                              <span className="text-[var(--color-border)]">•</span>
+                              <span className="text-[var(--color-textMuted)]">{device.hostname}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <button

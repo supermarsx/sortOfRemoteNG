@@ -48,25 +48,25 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Remove outer glow from Wake on LAN window
 - [x] Fix warn on closing main app (shows confirmation with active sessions)
 - [x] Add edit button to bulk connection editor to open full editing popup for connection
-- [ ] Revamp performance metrics UI with user-friendly graphs (lightweight)
+- [x] Revamp performance metrics UI with user-friendly graphs (lightweight)
 - [x] Add filters for action log (action, connection, date range filters)
 - [x] Match popup title icons with their secondary bar icons
 - [x] In performance metrics move update cadence and export button to secondary bar, add filters
 - [x] Add date time to performance metrics entries (not just time)
 - [x] Remove language selector from secondary bar settings (no longer exists)
 - [ ] Add syncing capabilities with extensive settings in a new settings tab
-- [ ] Add config to settings welcome screen for custom title and custom message
+- [x] Add config to settings welcome screen for custom title and custom message
 - [x] Add disconnect button to SSH container
 - [ ] Add proxy collection management (adding, saving, editing, chaining) to Proxies and VPNs popup
 - [ ] Add chaining management to create, delete and edit chains
-- [ ] Fix light theme hover effects (non-existent on many elements)
-- [ ] Fix light theme hover effects on Wake on LAN buttons
-- [ ] Fix settings popup light theme compatibility (button hovers, group input boxes too dark)
+- [x] Fix light theme hover effects (non-existent on many elements)
+- [x] Fix light theme hover effects on Wake on LAN buttons
+- [x] Fix settings popup light theme compatibility (button hovers, group input boxes too dark)
 - [x] Move quick start message in layout to Startup settings tab
 - [ ] Make HTTP basic auth fully handled by backend (never frontend), avoid browser auth windows
 - [ ] Add proxy and VPN profiles management to Collections Center (with chaining, import/export)
-- [ ] Add bulk Wake on LAN request functionality
-- [ ] Add wake everything on LAN function
+- [x] Add bulk Wake on LAN request functionality
+- [x] Add wake everything on LAN function
 - [ ] Add Wake on LAN scripting and scheduled wake functionality
 - [ ] Add connection list filters/sorting (user preference, creation, modification, recently used, alphabetical, by protocol)
 

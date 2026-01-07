@@ -1,10 +1,116 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, Download, BarChart3, Activity, Cpu, HardDrive, Wifi, Clock, RefreshCw, Filter, Trash2 } from 'lucide-react';
+import { X, Download, BarChart3, Activity, Cpu, HardDrive, Wifi, Clock, RefreshCw, Filter, Trash2, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PerformanceMetrics } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
 import { invoke } from '@tauri-apps/api/core';
 import { ConfirmDialog } from './ConfirmDialog';
+
+interface PerformanceMonitorProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+// Lightweight sparkline component using SVG
+const Sparkline: React.FC<{
+  data: number[];
+  color: string;
+  height?: number;
+  width?: number;
+  filled?: boolean;
+}> = ({ data, color, height = 40, width = 120, filled = true }) => {
+  if (data.length < 2) return <div style={{ width, height }} className="bg-[var(--color-surfaceHover)] rounded" />;
+  
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  
+  const points = data.map((value, index) => {
+    const x = (index / (data.length - 1)) * width;
+    const y = height - ((value - min) / range) * (height - 4) - 2;
+    return `${x},${y}`;
+  }).join(' ');
+  
+  const fillPoints = `0,${height} ${points} ${width},${height}`;
+  
+  return (
+    <svg width={width} height={height} className="overflow-visible">
+      {filled && (
+        <polygon
+          points={fillPoints}
+          fill={`${color}20`}
+          stroke="none"
+        />
+      )}
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+};
+
+// Mini bar chart component
+const MiniBarChart: React.FC<{
+  data: number[];
+  color: string;
+  height?: number;
+  width?: number;
+  maxValue?: number;
+}> = ({ data, color, height = 40, width = 120, maxValue }) => {
+  if (data.length === 0) return <div style={{ width, height }} className="bg-[var(--color-surfaceHover)] rounded" />;
+  
+  const max = maxValue ?? Math.max(...data);
+  const barWidth = Math.max(2, (width / data.length) - 1);
+  
+  return (
+    <svg width={width} height={height} className="overflow-visible">
+      {data.map((value, index) => {
+        const barHeight = (value / (max || 1)) * (height - 2);
+        const x = index * (width / data.length);
+        return (
+          <rect
+            key={index}
+            x={x}
+            y={height - barHeight - 1}
+            width={barWidth}
+            height={barHeight}
+            fill={color}
+            opacity={0.8}
+            rx={1}
+          />
+        );
+      })}
+    </svg>
+  );
+};
+
+// Trend indicator component
+const TrendIndicator: React.FC<{ current: number; previous: number; suffix?: string }> = ({ current, previous, suffix = '' }) => {
+  const diff = current - previous;
+  const percentChange = previous !== 0 ? ((diff / previous) * 100) : 0;
+  
+  if (Math.abs(percentChange) < 1) {
+    return (
+      <span className="flex items-center gap-0.5 text-[10px] text-[var(--color-textMuted)]">
+        <Minus size={10} />
+        <span>stable</span>
+      </span>
+    );
+  }
+  
+  const isUp = diff > 0;
+  return (
+    <span className={`flex items-center gap-0.5 text-[10px] ${isUp ? 'text-red-400' : 'text-green-400'}`}>
+      {isUp ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+      <span>{Math.abs(percentChange).toFixed(1)}%</span>
+    </span>
+  );
+};
 
 interface PerformanceMonitorProps {
   isOpen: boolean;
@@ -302,95 +408,182 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
         </div>
 
         <div className="p-6 overflow-y-auto flex-1">
-          {/* Current Metrics */}
+          {/* Current Metrics with Sparklines */}
           {currentMetrics && (
-            <div className="mb-8">
-              <h3 className="text-lg font-medium text-white mb-4">Current Performance</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-gray-700 rounded-lg p-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <Wifi className="text-blue-400" size={16} />
-                    <span className="text-gray-300 text-sm">{t('performance.latency')}</span>
+            <div className="mb-6">
+              <h3 className="text-sm font-medium text-[var(--color-textSecondary)] uppercase tracking-wide mb-3">
+                {t('performance.currentPerformance', 'Current Performance')}
+              </h3>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Latency Card */}
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hover:border-blue-500/30 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-blue-500/20 rounded-lg">
+                        <Wifi className="text-blue-400" size={14} />
+                      </div>
+                      <span className="text-[var(--color-textSecondary)] text-xs font-medium">{t('performance.latency')}</span>
+                    </div>
+                    {filteredMetrics.length > 1 && (
+                      <TrendIndicator 
+                        current={currentMetrics.latency} 
+                        previous={filteredMetrics[1]?.latency || currentMetrics.latency} 
+                      />
+                    )}
                   </div>
-                  <div className="text-white text-xl font-semibold">
-                    {currentMetrics.latency.toFixed(1)}ms
+                  <div className="text-[var(--color-text)] text-2xl font-bold mb-2">
+                    {currentMetrics.latency.toFixed(1)}<span className="text-sm font-normal text-[var(--color-textMuted)]">ms</span>
                   </div>
+                  <Sparkline 
+                    data={filteredMetrics.slice(0, 20).reverse().map(m => m.latency)} 
+                    color="#3b82f6" 
+                    height={32}
+                    width={140}
+                  />
                 </div>
 
-                <div className="bg-gray-700 rounded-lg p-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <Activity className="text-green-400" size={16} />
-                    <span className="text-gray-300 text-sm">{t('performance.throughput')}</span>
+                {/* Throughput Card */}
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hover:border-green-500/30 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-green-500/20 rounded-lg">
+                        <Activity className="text-green-400" size={14} />
+                      </div>
+                      <span className="text-[var(--color-textSecondary)] text-xs font-medium">{t('performance.throughput')}</span>
+                    </div>
+                    {filteredMetrics.length > 1 && (
+                      <TrendIndicator 
+                        current={currentMetrics.throughput} 
+                        previous={filteredMetrics[1]?.throughput || currentMetrics.throughput} 
+                      />
+                    )}
                   </div>
-                  <div className="text-white text-xl font-semibold">
-                    {formatBytes(currentMetrics.throughput * 1024)}/s
+                  <div className="text-[var(--color-text)] text-2xl font-bold mb-2">
+                    {formatBytes(currentMetrics.throughput * 1024)}<span className="text-sm font-normal text-[var(--color-textMuted)]">/s</span>
                   </div>
+                  <MiniBarChart 
+                    data={filteredMetrics.slice(0, 20).reverse().map(m => m.throughput)} 
+                    color="#22c55e" 
+                    height={32}
+                    width={140}
+                  />
                 </div>
 
-                <div className="bg-gray-700 rounded-lg p-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <Cpu className="text-yellow-400" size={16} />
-                    <span className="text-gray-300 text-sm">{t('performance.cpuUsage')}</span>
+                {/* CPU Usage Card */}
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hover:border-yellow-500/30 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-yellow-500/20 rounded-lg">
+                        <Cpu className="text-yellow-400" size={14} />
+                      </div>
+                      <span className="text-[var(--color-textSecondary)] text-xs font-medium">{t('performance.cpuUsage')}</span>
+                    </div>
+                    {filteredMetrics.length > 1 && (
+                      <TrendIndicator 
+                        current={currentMetrics.cpuUsage} 
+                        previous={filteredMetrics[1]?.cpuUsage || currentMetrics.cpuUsage} 
+                      />
+                    )}
                   </div>
-                  <div className="text-white text-xl font-semibold">
-                    {currentMetrics.cpuUsage.toFixed(1)}%
+                  <div className="flex items-end gap-3 mb-2">
+                    <div className="text-[var(--color-text)] text-2xl font-bold">
+                      {currentMetrics.cpuUsage.toFixed(1)}<span className="text-sm font-normal text-[var(--color-textMuted)]">%</span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="flex-1 h-2 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden mb-1.5">
+                      <div 
+                        className="h-full bg-yellow-500 rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(currentMetrics.cpuUsage, 100)}%` }}
+                      />
+                    </div>
                   </div>
+                  <Sparkline 
+                    data={filteredMetrics.slice(0, 20).reverse().map(m => m.cpuUsage)} 
+                    color="#eab308" 
+                    height={32}
+                    width={140}
+                  />
                 </div>
 
-                <div className="bg-gray-700 rounded-lg p-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <HardDrive className="text-purple-400" size={16} />
-                    <span className="text-gray-300 text-sm">{t('performance.memoryUsage')}</span>
+                {/* Memory Usage Card */}
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hover:border-purple-500/30 transition-colors">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-purple-500/20 rounded-lg">
+                        <HardDrive className="text-purple-400" size={14} />
+                      </div>
+                      <span className="text-[var(--color-textSecondary)] text-xs font-medium">{t('performance.memoryUsage')}</span>
+                    </div>
+                    {filteredMetrics.length > 1 && (
+                      <TrendIndicator 
+                        current={currentMetrics.memoryUsage} 
+                        previous={filteredMetrics[1]?.memoryUsage || currentMetrics.memoryUsage} 
+                      />
+                    )}
                   </div>
-                  <div className="text-white text-xl font-semibold">
-                    {currentMetrics.memoryUsage.toFixed(1)}%
+                  <div className="flex items-end gap-3 mb-2">
+                    <div className="text-[var(--color-text)] text-2xl font-bold">
+                      {currentMetrics.memoryUsage.toFixed(1)}<span className="text-sm font-normal text-[var(--color-textMuted)]">%</span>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="flex-1 h-2 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden mb-1.5">
+                      <div 
+                        className="h-full bg-purple-500 rounded-full transition-all duration-300"
+                        style={{ width: `${Math.min(currentMetrics.memoryUsage, 100)}%` }}
+                      />
+                    </div>
                   </div>
+                  <Sparkline 
+                    data={filteredMetrics.slice(0, 20).reverse().map(m => m.memoryUsage)} 
+                    color="#a855f7" 
+                    height={32}
+                    width={140}
+                  />
                 </div>
               </div>
             </div>
           )}
 
-          {/* Average Metrics */}
-          <div className="mb-8">
-            <h3 className="text-lg font-medium text-white mb-4">Average Performance</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-gray-700 rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-2">
+          {/* Summary Stats */}
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-[var(--color-textSecondary)] uppercase tracking-wide mb-3">
+              {t('performance.summary', 'Summary Statistics')}
+            </h3>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="bg-[var(--color-surfaceHover)]/50 rounded-lg p-3 flex items-center gap-3">
+                <div className="p-2 bg-blue-500/10 rounded-lg">
                   <Wifi className="text-blue-400" size={16} />
-                  <span className="text-gray-300 text-sm">Avg {t('performance.latency')}</span>
                 </div>
-                <div className="text-white text-xl font-semibold">
-                  {avgLatency.toFixed(1)}ms
+                <div>
+                  <div className="text-[10px] text-[var(--color-textMuted)] uppercase">Avg Latency</div>
+                  <div className="text-sm font-semibold text-[var(--color-text)]">{avgLatency.toFixed(1)}ms</div>
                 </div>
               </div>
-
-              <div className="bg-gray-700 rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-2">
+              <div className="bg-[var(--color-surfaceHover)]/50 rounded-lg p-3 flex items-center gap-3">
+                <div className="p-2 bg-green-500/10 rounded-lg">
                   <Activity className="text-green-400" size={16} />
-                  <span className="text-gray-300 text-sm">Avg {t('performance.throughput')}</span>
                 </div>
-                <div className="text-white text-xl font-semibold">
-                  {formatBytes(avgThroughput * 1024)}/s
+                <div>
+                  <div className="text-[10px] text-[var(--color-textMuted)] uppercase">Avg Throughput</div>
+                  <div className="text-sm font-semibold text-[var(--color-text)]">{formatBytes(avgThroughput * 1024)}/s</div>
                 </div>
               </div>
-
-              <div className="bg-gray-700 rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-2">
+              <div className="bg-[var(--color-surfaceHover)]/50 rounded-lg p-3 flex items-center gap-3">
+                <div className="p-2 bg-yellow-500/10 rounded-lg">
                   <Cpu className="text-yellow-400" size={16} />
-                  <span className="text-gray-300 text-sm">Avg {t('performance.cpuUsage')}</span>
                 </div>
-                <div className="text-white text-xl font-semibold">
-                  {avgCpuUsage.toFixed(1)}%
+                <div>
+                  <div className="text-[10px] text-[var(--color-textMuted)] uppercase">Avg CPU</div>
+                  <div className="text-sm font-semibold text-[var(--color-text)]">{avgCpuUsage.toFixed(1)}%</div>
                 </div>
               </div>
-
-              <div className="bg-gray-700 rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-2">
+              <div className="bg-[var(--color-surfaceHover)]/50 rounded-lg p-3 flex items-center gap-3">
+                <div className="p-2 bg-purple-500/10 rounded-lg">
                   <HardDrive className="text-purple-400" size={16} />
-                  <span className="text-gray-300 text-sm">Avg {t('performance.memoryUsage')}</span>
                 </div>
-                <div className="text-white text-xl font-semibold">
-                  {avgMemoryUsage.toFixed(1)}%
+                <div>
+                  <div className="text-[10px] text-[var(--color-textMuted)] uppercase">Avg Memory</div>
+                  <div className="text-sm font-semibold text-[var(--color-text)]">{avgMemoryUsage.toFixed(1)}%</div>
                 </div>
               </div>
             </div>
@@ -398,64 +591,92 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
 
           {/* Recent Metrics Table */}
           <div>
-            <h3 className="text-lg font-medium text-white mb-4">Recent Metrics</h3>
-            <div className="bg-gray-700 rounded-lg overflow-hidden">
+            <h3 className="text-sm font-medium text-[var(--color-textSecondary)] uppercase tracking-wide mb-3">
+              {t('performance.recentMetrics', 'Recent Metrics')}
+            </h3>
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-600">
+                  <thead className="bg-[var(--color-surfaceHover)]">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                        <div className="flex items-center space-x-1">
-                          <Clock size={12} />
+                      <th className="px-4 py-3 text-left text-[10px] font-medium text-[var(--color-textMuted)] uppercase tracking-wider">
+                        <div className="flex items-center space-x-1.5">
+                          <Clock size={11} />
                           <span>Time</span>
                         </div>
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                        <div className="flex items-center space-x-1">
-                          <Wifi size={12} />
+                      <th className="px-4 py-3 text-left text-[10px] font-medium text-[var(--color-textMuted)] uppercase tracking-wider">
+                        <div className="flex items-center space-x-1.5">
+                          <Wifi size={11} className="text-blue-400" />
                           <span>Latency</span>
                         </div>
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                        <div className="flex items-center space-x-1">
-                          <Activity size={12} />
+                      <th className="px-4 py-3 text-left text-[10px] font-medium text-[var(--color-textMuted)] uppercase tracking-wider">
+                        <div className="flex items-center space-x-1.5">
+                          <Activity size={11} className="text-green-400" />
                           <span>Throughput</span>
                         </div>
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                        <div className="flex items-center space-x-1">
-                          <Cpu size={12} />
+                      <th className="px-4 py-3 text-left text-[10px] font-medium text-[var(--color-textMuted)] uppercase tracking-wider">
+                        <div className="flex items-center space-x-1.5">
+                          <Cpu size={11} className="text-yellow-400" />
                           <span>CPU</span>
                         </div>
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                        <div className="flex items-center space-x-1">
-                          <HardDrive size={12} />
+                      <th className="px-4 py-3 text-left text-[10px] font-medium text-[var(--color-textMuted)] uppercase tracking-wider">
+                        <div className="flex items-center space-x-1.5">
+                          <HardDrive size={11} className="text-purple-400" />
                           <span>Memory</span>
                         </div>
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-600">
-                    {recentMetrics.map((metric, index) => (
-                      <tr key={index} className="hover:bg-gray-600">
-                        <td className="px-4 py-3 text-sm text-gray-300">
-                          {new Date(metric.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-white">
-                          {metric.latency.toFixed(1)}ms
-                        </td>
-                        <td className="px-4 py-3 text-sm text-white">
-                          {formatBytes(metric.throughput * 1024)}/s
-                        </td>
-                        <td className="px-4 py-3 text-sm text-white">
-                          {metric.cpuUsage.toFixed(1)}%
-                        </td>
-                        <td className="px-4 py-3 text-sm text-white">
-                          {metric.memoryUsage.toFixed(1)}%
+                  <tbody className="divide-y divide-[var(--color-border)]">
+                    {recentMetrics.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-sm text-[var(--color-textMuted)]">
+                          {t('performance.noMetrics', 'No metrics recorded yet')}
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      recentMetrics.map((metric, index) => (
+                        <tr key={index} className="hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
+                          <td className="px-4 py-2.5 text-xs text-[var(--color-textSecondary)]">
+                            {new Date(metric.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-[var(--color-text)] font-medium">
+                            <span className={metric.latency > avgLatency * 1.5 ? 'text-red-400' : metric.latency < avgLatency * 0.5 ? 'text-green-400' : ''}>
+                              {metric.latency.toFixed(1)}ms
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs text-[var(--color-text)] font-medium">
+                            {formatBytes(metric.throughput * 1024)}/s
+                          </td>
+                          <td className="px-4 py-2.5 text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="w-12 h-1.5 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full ${metric.cpuUsage > 80 ? 'bg-red-500' : metric.cpuUsage > 50 ? 'bg-yellow-500' : 'bg-green-500'}`}
+                                  style={{ width: `${Math.min(metric.cpuUsage, 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-[var(--color-text)] font-medium">{metric.cpuUsage.toFixed(1)}%</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="w-12 h-1.5 bg-[var(--color-surfaceHover)] rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full ${metric.memoryUsage > 80 ? 'bg-red-500' : metric.memoryUsage > 50 ? 'bg-yellow-500' : 'bg-purple-500'}`}
+                                  style={{ width: `${Math.min(metric.memoryUsage, 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-[var(--color-text)] font-medium">{metric.memoryUsage.toFixed(1)}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>

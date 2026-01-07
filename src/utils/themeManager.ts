@@ -260,11 +260,17 @@ export class ThemeManager {
     const isLightTheme = ['light', 'semilight'].includes(themeName) || 
       (themeName === 'auto' && this.detectSystemTheme() === 'light');
     
-    // surfaceHover - slightly different shade for hover states
+    // surfaceHover - more contrast for hover states on light themes
     const surfaceHover = isLightTheme 
-      ? ThemeManager.shadeColor(theme.colors.surface, -15)
+      ? ThemeManager.shadeColor(theme.colors.surface, -20)  // Darker hover for light themes
       : ThemeManager.shadeColor(theme.colors.surface, 15);
     root.style.setProperty('--color-surfaceHover', surfaceHover);
+    
+    // surfaceActive - even more contrast for active/pressed states
+    const surfaceActive = isLightTheme
+      ? ThemeManager.shadeColor(theme.colors.surface, -30)
+      : ThemeManager.shadeColor(theme.colors.surface, 25);
+    root.style.setProperty('--color-surfaceActive', surfaceActive);
     
     // input - input field background
     const input = isLightTheme
@@ -272,11 +278,23 @@ export class ThemeManager {
       : ThemeManager.shadeColor(theme.colors.surface, -15);
     root.style.setProperty('--color-input', input);
     
+    // inputHover - input field hover state
+    const inputHover = isLightTheme
+      ? ThemeManager.shadeColor('#ffffff', -8)
+      : ThemeManager.shadeColor(theme.colors.surface, -10);
+    root.style.setProperty('--color-inputHover', inputHover);
+    
     // textMuted - more subtle text color
     const textMuted = isLightTheme
       ? ThemeManager.shadeColor(theme.colors.textSecondary, 20)
       : ThemeManager.shadeColor(theme.colors.textSecondary, -25);
     root.style.setProperty('--color-textMuted', textMuted);
+    
+    // buttonHover - explicit button hover color with better contrast
+    const buttonHover = isLightTheme
+      ? 'rgba(0, 0, 0, 0.08)'
+      : 'rgba(255, 255, 255, 0.08)';
+    root.style.setProperty('--color-buttonHover', buttonHover);
 
     if (customAccent) {
       // Custom accent: derive full color scheme from the custom accent color

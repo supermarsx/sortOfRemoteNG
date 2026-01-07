@@ -718,20 +718,57 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   }, [connectOptionsData, connectOptionsTarget, dispatch, onConnect]);
 
   const buildTree = useCallback(
-    (connections: Connection[], parentId?: string): Connection[] =>
-      connections
+    (connections: Connection[], parentId?: string): Connection[] => {
+      const sortBy = state.filter.sortBy || 'name';
+      const sortDirection = state.filter.sortDirection || 'asc';
+      const multiplier = sortDirection === 'desc' ? -1 : 1;
+      
+      return connections
         .filter((conn) => conn.parentId === parentId)
         .sort((a, b) => {
+          // Groups always come first
           if (a.isGroup && !b.isGroup) return -1;
           if (!a.isGroup && b.isGroup) return 1;
-          if (enableReorder) {
+          
+          // Custom order takes precedence when enabled and sortBy is custom
+          if (enableReorder && sortBy === 'custom') {
             const orderA = a.order ?? 0;
             const orderB = b.order ?? 0;
-            if (orderA !== orderB) return orderA - orderB;
+            if (orderA !== orderB) return (orderA - orderB) * multiplier;
           }
-          return a.name.localeCompare(b.name);
-        }),
-    [enableReorder],
+          
+          // Sort based on selected criteria
+          switch (sortBy) {
+            case 'protocol':
+              return a.protocol.localeCompare(b.protocol) * multiplier;
+            case 'hostname':
+              return (a.hostname || '').localeCompare(b.hostname || '') * multiplier;
+            case 'createdAt': {
+              const dateA = new Date(a.createdAt).getTime();
+              const dateB = new Date(b.createdAt).getTime();
+              return (dateA - dateB) * multiplier;
+            }
+            case 'updatedAt': {
+              const dateA = new Date(a.updatedAt).getTime();
+              const dateB = new Date(b.updatedAt).getTime();
+              return (dateA - dateB) * multiplier;
+            }
+            case 'recentlyUsed': {
+              const dateA = a.lastConnected ? new Date(a.lastConnected).getTime() : 0;
+              const dateB = b.lastConnected ? new Date(b.lastConnected).getTime() : 0;
+              // Recently used should default to descending (most recent first)
+              return (dateB - dateA) * (sortDirection === 'asc' ? -1 : 1);
+            }
+            case 'custom':
+              // Already handled above with enableReorder
+              return a.name.localeCompare(b.name) * multiplier;
+            case 'name':
+            default:
+              return a.name.localeCompare(b.name) * multiplier;
+          }
+        });
+    },
+    [enableReorder, state.filter.sortBy, state.filter.sortDirection],
   );
 
   const renderTree = (

@@ -178,6 +178,21 @@ body {
   background-color: var(--color-border) !important;
 }
 
+/* Additional hover mappings for buttons and interactive elements */
+.hover\:bg-\[var\(--color-surfaceHover\)\]:hover {
+  background-color: var(--color-surfaceHover) !important;
+}
+
+.hover\:bg-\[var\(--color-surface\)\]:hover {
+  background-color: var(--color-surface) !important;
+}
+
+/* Active/pressed state mappings */
+.active\:bg-gray-700:active,
+.active\:bg-gray-800:active {
+  background-color: var(--color-surfaceActive, var(--color-surfaceHover)) !important;
+}
+
 /* Hover text color mappings for light theme compatibility */
 .hover\:text-white:hover {
   color: var(--color-text) !important;
@@ -187,4 +202,115 @@ body {
 .hover\:text-gray-200:hover,
 .hover\:text-gray-300:hover {
   color: var(--color-textSecondary) !important;
+}
+
+/* Light theme specific overrides for better hover visibility */
+[data-theme="light"] .hover\:bg-gray-600:hover,
+[data-theme="light"] .hover\:bg-gray-700:hover,
+[data-theme="light"] .hover\:bg-gray-700\/50:hover,
+[data-theme="light"] .hover\:bg-gray-800:hover,
+[data-theme="semilight"] .hover\:bg-gray-600:hover,
+[data-theme="semilight"] .hover\:bg-gray-700:hover,
+[data-theme="semilight"] .hover\:bg-gray-700\/50:hover,
+[data-theme="semilight"] .hover\:bg-gray-800:hover {
+  background-color: var(--color-surfaceHover) !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+
+/* Light theme button enhancements */
+[data-theme="light"] button:hover,
+[data-theme="semilight"] button:hover {
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+/* Light theme input and form element overrides */
+[data-theme="light"] .bg-gray-700,
+[data-theme="semilight"] .bg-gray-700 {
+  background-color: var(--color-input, #ffffff) !important;
+  color: var(--color-text) !important;
+}
+
+[data-theme="light"] .bg-gray-800,
+[data-theme="semilight"] .bg-gray-800 {
+  background-color: var(--color-surface) !important;
+  color: var(--color-text) !important;
+}
+
+[data-theme="light"] .bg-gray-800\/40,
+[data-theme="semilight"] .bg-gray-800\/40 {
+  background-color: color-mix(in srgb, var(--color-surface) 60%, transparent) !important;
+}
+
+[data-theme="light"] .bg-gray-700\/50,
+[data-theme="semilight"] .bg-gray-700\/50 {
+  background-color: color-mix(in srgb, var(--color-input, #ffffff) 50%, transparent) !important;
+}
+
+[data-theme="light"] .bg-gray-900,
+[data-theme="semilight"] .bg-gray-900 {
+  background-color: var(--color-background) !important;
+  color: var(--color-text) !important;
+}
+
+/* Light theme border overrides */
+[data-theme="light"] .border-gray-600,
+[data-theme="semilight"] .border-gray-600 {
+  border-color: var(--color-border) !important;
+}
+
+[data-theme="light"] .border-gray-700,
+[data-theme="semilight"] .border-gray-700 {
+  border-color: var(--color-border) !important;
+}
+
+/* Light theme text color overrides */
+[data-theme="light"] .text-gray-300,
+[data-theme="semilight"] .text-gray-300 {
+  color: var(--color-textSecondary) !important;
+}
+
+[data-theme="light"] .text-gray-400,
+[data-theme="semilight"] .text-gray-400 {
+  color: var(--color-textSecondary) !important;
+}
+
+[data-theme="light"] .text-gray-500,
+[data-theme="semilight"] .text-gray-500 {
+  color: var(--color-textMuted, var(--color-textSecondary)) !important;
+}
+
+[data-theme="light"] .text-white,
+[data-theme="semilight"] .text-white {
+  color: var(--color-text) !important;
+}
+
+/* Light theme input elements styling */
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] input[type="email"],
+[data-theme="light"] select,
+[data-theme="light"] textarea,
+[data-theme="semilight"] input[type="text"],
+[data-theme="semilight"] input[type="number"],
+[data-theme="semilight"] input[type="password"],
+[data-theme="semilight"] input[type="email"],
+[data-theme="semilight"] select,
+[data-theme="semilight"] textarea {
+  background-color: var(--color-input, #ffffff) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-border) !important;
+}
+
+[data-theme="light"] input[type="text"]:focus,
+[data-theme="light"] input[type="number"]:focus,
+[data-theme="light"] input[type="password"]:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus,
+[data-theme="semilight"] input[type="text"]:focus,
+[data-theme="semilight"] input[type="number"]:focus,
+[data-theme="semilight"] input[type="password"]:focus,
+[data-theme="semilight"] select:focus,
+[data-theme="semilight"] textarea:focus {
+  border-color: var(--color-accent) !important;
+  outline-color: var(--color-accent) !important;
 }

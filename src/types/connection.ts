@@ -219,6 +219,8 @@ export interface ConnectionFilter {
   showFavorites: boolean;
   status?: 'online' | 'offline' | 'unknown';
   groupBy?: 'none' | 'protocol' | 'status' | 'hostname' | 'colorTag';
+  sortBy?: 'name' | 'protocol' | 'hostname' | 'createdAt' | 'updatedAt' | 'recentlyUsed' | 'custom';
+  sortDirection?: 'asc' | 'desc';
 }
 
 export interface StorageSettings {

@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { GlobalSettings } from "../../../types/settings";
-import { Power, Monitor, Play, RefreshCw, Minimize2, X as XIcon, MousePointer, MousePointerClick, AppWindow, FolderOpen, EyeOff } from "lucide-react";
+import { Power, Monitor, Play, RefreshCw, Minimize2, X as XIcon, MousePointer, MousePointerClick, AppWindow, FolderOpen, EyeOff, Type, MessageSquare, RotateCcw } from "lucide-react";
 
 interface StartupSettingsProps {
   settings: GlobalSettings;
@@ -230,7 +230,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Welcome Screen */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2">
           {t("settings.startup.welcomeScreen", "Welcome Screen")}
         </h4>
 
@@ -243,7 +243,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           />
           <div className="flex items-center gap-2">
             <EyeOff className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-300">
+            <span className="text-[var(--color-textSecondary)]">
               {t("settings.startup.hideQuickStartMessage", "Hide welcome message")}
             </span>
           </div>
@@ -258,13 +258,61 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           />
           <div className="flex items-center gap-2">
             <EyeOff className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-300">
+            <span className="text-[var(--color-textSecondary)]">
               {t("settings.startup.hideQuickStartButtons", "Hide quick action buttons")}
             </span>
           </div>
         </label>
 
-        <p className="text-xs text-gray-500 pl-7">
+        {/* Custom Welcome Screen Content */}
+        <div className="space-y-3 pt-2 border-t border-[var(--color-border)]/50 mt-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-[var(--color-textMuted)]">
+              {t("settings.startup.customWelcomeContent", "Custom Welcome Content")}
+            </span>
+            {(settings.welcomeScreenTitle || settings.welcomeScreenMessage) && (
+              <button
+                type="button"
+                onClick={() => updateSettings({ welcomeScreenTitle: undefined, welcomeScreenMessage: undefined })}
+                className="text-xs text-[var(--color-textMuted)] hover:text-[var(--color-text)] flex items-center gap-1 transition-colors"
+                title={t("settings.startup.resetToDefault", "Reset to default")}
+              >
+                <RotateCcw className="w-3 h-3" />
+                {t("settings.startup.reset", "Reset")}
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <Type className="w-4 h-4 text-gray-400" />
+              {t("settings.startup.customTitle", "Custom Title")}
+            </label>
+            <input
+              type="text"
+              value={settings.welcomeScreenTitle ?? ""}
+              onChange={(e) => updateSettings({ welcomeScreenTitle: e.target.value || undefined })}
+              placeholder={t("settings.startup.customTitlePlaceholder", "Leave empty for default")}
+              className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm placeholder:text-[var(--color-textMuted)] focus:border-[var(--color-accent)] focus:outline-none transition-colors"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <MessageSquare className="w-4 h-4 text-gray-400" />
+              {t("settings.startup.customMessage", "Custom Message")}
+            </label>
+            <textarea
+              value={settings.welcomeScreenMessage ?? ""}
+              onChange={(e) => updateSettings({ welcomeScreenMessage: e.target.value || undefined })}
+              placeholder={t("settings.startup.customMessagePlaceholder", "Leave empty for default")}
+              rows={3}
+              className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm placeholder:text-[var(--color-textMuted)] focus:border-[var(--color-accent)] focus:outline-none resize-none transition-colors"
+            />
+          </div>
+        </div>
+
+        <p className="text-xs text-[var(--color-textMuted)] pl-7">
           {t("settings.startup.welcomeScreenNote", "Controls what is shown when no connection is active.")}
         </p>
       </div>

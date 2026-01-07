@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight, Star, TableProperties } from 'lucide-react';
+import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight, Star, TableProperties, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ConnectionTree } from './ConnectionTree';
 import { BulkConnectionEditor } from './BulkConnectionEditor';
@@ -40,6 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const { t } = useTranslation();
   const { state, dispatch } = useConnections();
   const [showFilters, setShowFilters] = useState(false);
+  const [showSortMenu, setShowSortMenu] = useState(false);
   const [showBulkEditor, setShowBulkEditor] = useState(false);
 
   // Get all available tags
@@ -302,6 +303,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       />
                       Favorites only
                     </label>
+                  </div>
+
+                  {/* Sort Options */}
+                  <div className="pt-2 border-t border-gray-600">
+                    <label className="block text-xs font-medium text-gray-300 mb-2">
+                      Sort By
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={state.filter.sortBy || 'name'}
+                        onChange={(e) => dispatch({
+                          type: 'SET_FILTER',
+                          payload: { sortBy: e.target.value as 'name' | 'protocol' | 'hostname' | 'createdAt' | 'updatedAt' | 'recentlyUsed' | 'custom' }
+                        })}
+                        className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-600 rounded text-gray-300 focus:border-blue-500 focus:outline-none"
+                      >
+                        <option value="name">Name</option>
+                        <option value="protocol">Protocol</option>
+                        <option value="hostname">Hostname</option>
+                        <option value="createdAt">Date Created</option>
+                        <option value="updatedAt">Date Modified</option>
+                        <option value="recentlyUsed">Recently Used</option>
+                        <option value="custom">Custom Order</option>
+                      </select>
+                      <button
+                        onClick={() => dispatch({
+                          type: 'SET_FILTER',
+                          payload: { 
+                            sortDirection: state.filter.sortDirection === 'asc' ? 'desc' : 'asc' 
+                          }
+                        })}
+                        className={`p-1.5 rounded transition-colors ${
+                          state.filter.sortDirection === 'desc' 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                        }`}
+                        title={state.filter.sortDirection === 'asc' ? 'Ascending' : 'Descending'}
+                      >
+                        {state.filter.sortDirection === 'desc' ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

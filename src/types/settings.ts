@@ -71,6 +71,8 @@ export interface GlobalSettings {
   confirmMainAppClose: boolean;
   hideQuickStartMessage: boolean;
   hideQuickStartButtons: boolean;
+  welcomeScreenTitle?: string;
+  welcomeScreenMessage?: string;
 
   // Startup Settings
   startMinimized: boolean;

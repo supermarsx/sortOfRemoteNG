@@ -1840,12 +1840,11 @@ const AppContent: React.FC = () => {
                   <>
                     <Monitor size={64} className="mb-4" />
                     <h2 className="text-xl font-medium mb-2">
-                      Welcome to {t("app.title")}
+                      {appSettings.welcomeScreenTitle || `Welcome to ${t("app.title")}`}
                     </h2>
-                    <p className="text-center max-w-md mb-6">
-                      Manage your remote connections efficiently. Create new
-                      connections or select an existing one from the sidebar to get
-                      started.
+                    <p className="text-center max-w-md mb-6 whitespace-pre-wrap">
+                      {appSettings.welcomeScreenMessage || 
+                        `Manage your remote connections efficiently. Create new connections or select an existing one from the sidebar to get started.`}
                     </p>
                   </>
                 )}
