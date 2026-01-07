@@ -1,15 +1,100 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Cloud, Database, Folder, Globe, HardDrive, Monitor, Server, Shield, Star, Terminal } from 'lucide-react';
 import { Connection } from '../../types/connection';
 import { getDefaultPort } from '../../utils/defaultPorts';
+import { getConnectionDepth, getMaxDescendantDepth, MAX_NESTING_DEPTH } from '../../utils/dragDropManager';
 
 interface GeneralSectionProps {
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
   availableGroups: Connection[];
+  allConnections?: Connection[];
 }
 
-export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFormData, availableGroups }) => {
+/** Helper to build a path string showing folder hierarchy */
+function getFolderPath(groupId: string, connections: Connection[]): string {
+  const parts: string[] = [];
+  let currentId: string | undefined = groupId;
+  
+  while (currentId) {
+    const group = connections.find(c => c.id === currentId);
+    if (!group) break;
+    parts.unshift(group.name);
+    currentId = group.parentId;
+  }
+  
+  return parts.join(' / ');
+}
+
+/** Dropdown for selecting parent folder with depth indication */
+const ParentFolderSelect: React.FC<{
+  formData: Partial<Connection>;
+  setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
+  availableGroups: Connection[];
+  allConnections: Connection[];
+}> = ({ formData, setFormData, availableGroups, allConnections }) => {
+  // Calculate which groups can be selected based on depth limits
+  const selectableGroups = useMemo(() => {
+    // If editing an existing group, we need to check descendant depth
+    const currentId = formData.id;
+    const isGroup = formData.isGroup;
+    const descendantDepth = currentId && isGroup 
+      ? getMaxDescendantDepth(currentId, allConnections) 
+      : 0;
+    
+    return availableGroups.map(group => {
+      // Don't allow selecting self or descendants as parent
+      if (currentId && group.id === currentId) {
+        return { group, depth: 0, disabled: true, reason: 'Cannot be its own parent' };
+      }
+      
+      // Check if this group is a descendant of the current item
+      if (currentId) {
+        let checkId: string | undefined = group.id;
+        while (checkId) {
+          const parent = allConnections.find(c => c.id === checkId);
+          if (parent?.parentId === currentId) {
+            return { group, depth: 0, disabled: true, reason: 'Cannot move into own descendant' };
+          }
+          checkId = parent?.parentId;
+        }
+      }
+      
+      const groupDepth = getConnectionDepth(group.id, allConnections) + 1; // +1 because we'd be placing inside this group
+      const wouldExceedDepth = (groupDepth + descendantDepth) >= MAX_NESTING_DEPTH;
+      
+      return {
+        group,
+        depth: groupDepth,
+        disabled: wouldExceedDepth,
+        reason: wouldExceedDepth ? `Max depth (${MAX_NESTING_DEPTH}) exceeded` : undefined,
+      };
+    });
+  }, [availableGroups, allConnections, formData.id, formData.isGroup]);
+
+  return (
+    <select
+      value={formData.parentId || ''}
+      onChange={(e) => setFormData({ ...formData, parentId: e.target.value || undefined })}
+      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+    >
+      <option value="">Root (No parent)</option>
+      {selectableGroups.map(({ group, depth, disabled, reason }) => (
+        <option 
+          key={group.id} 
+          value={group.id}
+          disabled={disabled}
+          title={reason}
+        >
+          {'─'.repeat(depth)} {getFolderPath(group.id, allConnections)}
+          {disabled ? ` (${reason})` : ''}
+        </option>
+      ))}
+    </select>
+  );
+};
+
+export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFormData, availableGroups, allConnections = [] }) => {
   const iconOptions = [
     { value: '', label: 'Default', icon: Monitor },
     { value: 'terminal', label: 'Terminal', icon: Terminal },
@@ -97,16 +182,12 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
 
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">Parent Folder</label>
-          <select
-            value={formData.parentId || ''}
-            onChange={(e) => setFormData({ ...formData, parentId: e.target.value || undefined })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="">Root (No parent)</option>
-            {availableGroups.map(group => (
-              <option key={group.id} value={group.id}>{group.name}</option>
-            ))}
-          </select>
+          <ParentFolderSelect
+            formData={formData}
+            setFormData={setFormData}
+            availableGroups={availableGroups}
+            allConnections={allConnections}
+          />
         </div>
 
         {!formData.isGroup && (

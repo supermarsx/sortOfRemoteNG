@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { X, Save, Check, Plus, Sparkles, ChevronDown, ChevronUp, Monitor, Terminal, Globe, Database, Server, Shield, Cloud, Folder as FolderIcon, Star, HardDrive, Zap, Settings2, FileText, Tag } from 'lucide-react';
 import { Connection } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
@@ -9,6 +9,7 @@ import SSHOptions from './connectionEditor/SSHOptions';
 import HTTPOptions from './connectionEditor/HTTPOptions';
 import CloudProviderOptions from './connectionEditor/CloudProviderOptions';
 import { useSettings } from '../contexts/SettingsContext';
+import { getConnectionDepth, getMaxDescendantDepth, MAX_NESTING_DEPTH } from '../utils/dragDropManager';
 
 interface ConnectionEditorProps {
   connection?: Connection;
@@ -71,6 +72,43 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
 
   // Get all groups for parent selection
   const availableGroups = state.connections.filter(conn => conn.isGroup);
+
+  // Calculate selectable groups based on depth limits
+  const selectableGroups = useMemo(() => {
+    const currentId = formData.id;
+    const isGroup = formData.isGroup;
+    const descendantDepth = currentId && isGroup 
+      ? getMaxDescendantDepth(currentId, state.connections) 
+      : 0;
+    
+    return availableGroups.map(group => {
+      // Don't allow selecting self as parent
+      if (currentId && group.id === currentId) {
+        return { group, disabled: true, reason: 'Cannot be its own parent' };
+      }
+      
+      // Check if this group is a descendant of the current item
+      if (currentId) {
+        let checkId: string | undefined = group.id;
+        while (checkId) {
+          const parent = state.connections.find(c => c.id === checkId);
+          if (parent?.parentId === currentId) {
+            return { group, disabled: true, reason: 'Cannot move into own descendant' };
+          }
+          checkId = parent?.parentId;
+        }
+      }
+      
+      const groupDepth = getConnectionDepth(group.id, state.connections) + 1;
+      const wouldExceedDepth = (groupDepth + descendantDepth) >= MAX_NESTING_DEPTH;
+      
+      return {
+        group,
+        disabled: wouldExceedDepth,
+        reason: wouldExceedDepth ? `Max depth (${MAX_NESTING_DEPTH}) exceeded` : undefined,
+      };
+    });
+  }, [availableGroups, state.connections, formData.id, formData.isGroup]);
 
   useEffect(() => {
     if (connection) {
@@ -431,8 +469,15 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                   className="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                 >
                   <option value="">Root (No parent)</option>
-                  {availableGroups.map(group => (
-                    <option key={group.id} value={group.id}>{group.name}</option>
+                  {selectableGroups.map(({ group, disabled, reason }) => (
+                    <option 
+                      key={group.id} 
+                      value={group.id}
+                      disabled={disabled}
+                      title={reason}
+                    >
+                      {group.name}{disabled ? ` (${reason})` : ''}
+                    </option>
                   ))}
                 </select>
               </div>

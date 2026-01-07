@@ -6,6 +6,78 @@ export interface DragDropResult {
   position: 'before' | 'after' | 'inside';
 }
 
+/** Maximum allowed nesting depth for folders/groups */
+export const MAX_NESTING_DEPTH = 8;
+
+/**
+ * Calculate the depth of a connection in the tree hierarchy.
+ * Root level items have depth 0.
+ * @param connectionId The ID of the connection to check.
+ * @param connections All connections in the tree.
+ * @returns The nesting depth (0 for root level).
+ */
+export function getConnectionDepth(connectionId: string | undefined, connections: Connection[]): number {
+  if (!connectionId) return 0;
+  
+  let depth = 0;
+  let currentId: string | undefined = connectionId;
+  
+  while (currentId) {
+    const connection = connections.find(c => c.id === currentId);
+    if (!connection || !connection.parentId) break;
+    currentId = connection.parentId;
+    depth++;
+  }
+  
+  return depth;
+}
+
+/**
+ * Calculate the maximum depth of descendants under a connection.
+ * @param connectionId The ID of the connection to check.
+ * @param connections All connections in the tree.
+ * @returns The maximum depth of any descendant (0 if no children).
+ */
+export function getMaxDescendantDepth(connectionId: string, connections: Connection[]): number {
+  const children = connections.filter(c => c.parentId === connectionId);
+  if (children.length === 0) return 0;
+  
+  let maxDepth = 0;
+  for (const child of children) {
+    const childDepth = 1 + getMaxDescendantDepth(child.id, connections);
+    maxDepth = Math.max(maxDepth, childDepth);
+  }
+  return maxDepth;
+}
+
+/**
+ * Check if moving a connection to a new parent would exceed the max nesting depth.
+ * @param connectionId The connection being moved.
+ * @param newParentId The potential new parent (undefined for root).
+ * @param connections All connections.
+ * @returns true if the move is allowed, false if it would exceed max depth.
+ */
+export function canMoveToParent(
+  connectionId: string,
+  newParentId: string | undefined,
+  connections: Connection[]
+): boolean {
+  const connection = connections.find(c => c.id === connectionId);
+  if (!connection) return false;
+  
+  // Calculate the depth of the new parent
+  const newParentDepth = newParentId ? getConnectionDepth(newParentId, connections) + 1 : 0;
+  
+  // If moving a group, check if its descendants would exceed max depth
+  if (connection.isGroup) {
+    const descendantDepth = getMaxDescendantDepth(connectionId, connections);
+    return (newParentDepth + descendantDepth) < MAX_NESTING_DEPTH;
+  }
+  
+  // For non-groups, just check if the new position is within limits
+  return newParentDepth < MAX_NESTING_DEPTH;
+}
+
 /**
  * Manages drag-and-drop interactions for connection items.
  * The manager toggles DOM classes to display visual drop indicators
@@ -169,7 +241,7 @@ export class DragDropManager {
    * ordered array with updated parent relationships.
    * @param result Description of the completed drag operation.
    * @param connections Existing connections before reordering.
-   * @returns A new array reflecting the moved connection.
+   * @returns A new array reflecting the moved connection, or the original array if the move is invalid.
    */
   processDropResult(
     result: DragDropResult,
@@ -181,20 +253,13 @@ export class DragDropManager {
       return connections;
     }
 
-    // Remove the dragged item from its original position
-    const updatedConnections = connections.filter(c => c.id !== result.draggedId);
-
-    // Determine the new parent and insertion index
+    // Determine the new parent
     let newParentId: string | undefined;
-    let insertIndex = 0;
 
     if (result.targetId === null) {
-      // Dropping on the root level places it at the end
       newParentId = undefined;
-      insertIndex = updatedConnections.length;
     } else {
       const targetConnection = connections.find(c => c.id === result.targetId);
-
       if (!targetConnection) {
         return connections;
       }
@@ -204,6 +269,29 @@ export class DragDropManager {
         newParentId = targetConnection.id;
       } else {
         newParentId = targetConnection.parentId;
+      }
+    }
+
+    // Check if the move would exceed maximum nesting depth
+    if (!canMoveToParent(result.draggedId, newParentId, connections)) {
+      console.warn(`Cannot move connection: would exceed maximum nesting depth of ${MAX_NESTING_DEPTH}`);
+      return connections;
+    }
+
+    // Remove the dragged item from its original position
+    const updatedConnections = connections.filter(c => c.id !== result.draggedId);
+
+    // Determine insertion index
+    let insertIndex = 0;
+
+    if (result.targetId === null) {
+      // Dropping on the root level places it at the end
+      insertIndex = updatedConnections.length;
+    } else {
+      const targetConnection = connections.find(c => c.id === result.targetId);
+
+      if (!targetConnection) {
+        return connections;
       }
 
       if (result.position === 'inside') {
