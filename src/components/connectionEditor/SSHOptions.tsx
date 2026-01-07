@@ -4,6 +4,7 @@ import { readTextFile } from '@tauri-apps/plugin-fs';
 import { Connection } from '../../types/connection';
 import { SSHKeyManager } from '../SSHKeyManager';
 import { SSHTerminalOverrides } from './SSHTerminalOverrides';
+import { SSHConnectionOverrides } from './SSHConnectionOverrides';
 
 interface SSHOptionsProps {
   formData: Partial<Connection>;
@@ -188,6 +189,11 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
       {/* SSH Terminal Settings Override */}
       {formData.protocol === 'ssh' && (
         <SSHTerminalOverrides formData={formData} setFormData={setFormData} />
+      )}
+
+      {/* SSH Connection Settings Override */}
+      {formData.protocol === 'ssh' && (
+        <SSHConnectionOverrides formData={formData} setFormData={setFormData} />
       )}
     </>
   );

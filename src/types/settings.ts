@@ -872,6 +872,159 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
 };
 
 /**
+ * SSH Connection Configuration - protocol-level settings for SSH connections.
+ * These settings control the SSH transport layer, authentication, and tunneling.
+ */
+export interface SSHConnectionConfig {
+  // Connection behavior
+  connectTimeout: number; // seconds
+  keepAliveInterval: number; // seconds, 0 to disable
+  strictHostKeyChecking: boolean;
+  knownHostsPath?: string;
+  
+  // Authentication preferences
+  preferredAuthMethods: SSHAuthMethod[];
+  tryPublicKeyFirst: boolean;
+  tryAgentFirst: boolean;
+  agentForwarding: boolean;
+  
+  // SSH protocol options
+  sshVersion: SSHVersion;
+  enableCompression: boolean;
+  compressionLevel: number; // 1-9
+  
+  // Cipher and algorithm preferences
+  preferredCiphers: string[];
+  preferredMACs: string[];
+  preferredKeyExchanges: string[];
+  preferredHostKeyAlgorithms: string[];
+  
+  // TCP/IP settings
+  tcpNoDelay: boolean;
+  tcpKeepAlive: boolean;
+  keepAliveProbes: number;
+  ipProtocol: IPProtocol;
+  
+  // Port forwarding defaults
+  enableX11Forwarding: boolean;
+  x11DisplayOffset: number;
+  enableTcpForwarding: boolean;
+  
+  // Jump host / ProxyCommand
+  enableJumpHost: boolean;
+  jumpHostConnectionId?: string;
+  proxyCommand?: string;
+  
+  // Session settings
+  requestPty: boolean;
+  ptyType: string; // 'xterm', 'xterm-256color', 'vt100', etc.
+  environment?: Record<string, string>;
+  
+  // SFTP/SCP settings
+  sftpEnabled: boolean;
+  scpEnabled: boolean;
+  sftpStartPath?: string;
+  
+  // Security
+  preferSSH2: boolean;
+  revokedHostKeys: string[];
+  
+  // Banner handling
+  showBanner: boolean;
+  bannerTimeout: number; // seconds to wait for banner
+}
+
+export const SSHAuthMethods = ['password', 'publickey', 'keyboard-interactive', 'gssapi-with-mic', 'hostbased', 'none'] as const;
+export type SSHAuthMethod = (typeof SSHAuthMethods)[number];
+
+export const defaultSSHConnectionConfig: SSHConnectionConfig = {
+  // Connection behavior
+  connectTimeout: 30,
+  keepAliveInterval: 60,
+  strictHostKeyChecking: true,
+  knownHostsPath: undefined,
+  
+  // Authentication preferences
+  preferredAuthMethods: ['publickey', 'keyboard-interactive', 'password'],
+  tryPublicKeyFirst: true,
+  tryAgentFirst: true,
+  agentForwarding: false,
+  
+  // SSH protocol options
+  sshVersion: 'auto',
+  enableCompression: false,
+  compressionLevel: 6,
+  
+  // Cipher and algorithm preferences
+  preferredCiphers: [],
+  preferredMACs: [],
+  preferredKeyExchanges: [],
+  preferredHostKeyAlgorithms: [],
+  
+  // TCP/IP settings
+  tcpNoDelay: true,
+  tcpKeepAlive: true,
+  keepAliveProbes: 3,
+  ipProtocol: 'auto',
+  
+  // Port forwarding defaults
+  enableX11Forwarding: false,
+  x11DisplayOffset: 10,
+  enableTcpForwarding: true,
+  
+  // Jump host / ProxyCommand
+  enableJumpHost: false,
+  jumpHostConnectionId: undefined,
+  proxyCommand: undefined,
+  
+  // Session settings
+  requestPty: true,
+  ptyType: 'xterm-256color',
+  environment: undefined,
+  
+  // SFTP/SCP settings
+  sftpEnabled: true,
+  scpEnabled: true,
+  sftpStartPath: undefined,
+  
+  // Security
+  preferSSH2: true,
+  revokedHostKeys: [],
+  
+  // Banner handling
+  showBanner: true,
+  bannerTimeout: 10,
+};
+
+/**
+ * Merges global SSH connection config with per-connection overrides.
+ * Connection overrides take precedence over global settings.
+ */
+export function mergeSSHConnectionConfig(
+  globalConfig: SSHConnectionConfig,
+  override?: Partial<SSHConnectionConfig>
+): SSHConnectionConfig {
+  if (!override) return globalConfig;
+
+  return {
+    ...globalConfig,
+    ...override,
+    // Merge arrays by taking override if provided
+    preferredAuthMethods: override.preferredAuthMethods ?? globalConfig.preferredAuthMethods,
+    preferredCiphers: override.preferredCiphers ?? globalConfig.preferredCiphers,
+    preferredMACs: override.preferredMACs ?? globalConfig.preferredMACs,
+    preferredKeyExchanges: override.preferredKeyExchanges ?? globalConfig.preferredKeyExchanges,
+    preferredHostKeyAlgorithms: override.preferredHostKeyAlgorithms ?? globalConfig.preferredHostKeyAlgorithms,
+    revokedHostKeys: override.revokedHostKeys ?? globalConfig.revokedHostKeys,
+    // Merge environment variables
+    environment: {
+      ...(globalConfig.environment || {}),
+      ...(override.environment || {}),
+    },
+  };
+}
+
+/**
  * Merges global SSH terminal config with per-connection overrides.
  * Connection overrides take precedence over global settings.
  * Nested objects (font, tcpOptions, bellOveruseProtection) are deep-merged.
