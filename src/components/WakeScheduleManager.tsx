@@ -4,7 +4,7 @@ import {
   type WakeSchedule,
   type WakeRecurrence,
 } from "../utils/wakeOnLan";
-import { Trash2, Pencil, Save, X, Clock } from "lucide-react";
+import { Trash2, Pencil, Save, X, Clock, Plus, Power, Calendar, Repeat } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 const wolService = new WakeOnLanService();
@@ -13,6 +13,12 @@ const toLocalInput = (date: Date) =>
   new Date(date.getTime() - date.getTimezoneOffset() * 60000)
     .toISOString()
     .slice(0, 16);
+
+const formatMac = (value: string): string => {
+  const clean = value.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  const pairs = clean.match(/.{1,2}/g) || [];
+  return pairs.slice(0, 6).join(':');
+};
 
 interface Props {
   isOpen: boolean;
@@ -23,6 +29,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
   const [schedules, setSchedules] = useState<WakeSchedule[]>([]);
   const [editing, setEditing] = useState<WakeSchedule | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<WakeSchedule>({
     macAddress: "",
     wakeTime: toLocalInput(new Date()),
@@ -35,11 +42,27 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showForm) {
+          resetForm();
+        } else {
+          onClose();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, showForm, onClose]);
+
   if (!isOpen) return null;
 
   const resetForm = () => {
     setForm({ macAddress: "", wakeTime: toLocalInput(new Date()), port: 9 });
     setEditing(null);
+    setShowForm(false);
   };
 
   const handleSubmit = () => {
@@ -62,6 +85,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
   const handleEdit = (s: WakeSchedule) => {
     setEditing(s);
     setForm({ ...s, wakeTime: toLocalInput(new Date(s.wakeTime)) });
+    setShowForm(true);
   };
 
   const handleDelete = (s: WakeSchedule) => {
@@ -69,107 +93,203 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
     setSchedules(wolService.listSchedules());
   };
 
+  const getRecurrenceLabel = (recurrence?: string) => {
+    switch (recurrence) {
+      case 'daily': return t("wake.daily", "Daily");
+      case 'weekly': return t("wake.weekly", "Weekly");
+      default: return t("wake.once", "Once");
+    }
+  };
+
+  const isSchedulePast = (wakeTime: string | Date) => {
+    return new Date(wakeTime) < new Date();
+  };
+
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl p-5 w-full max-w-xl border border-[var(--color-border)]">
-        <div className="flex justify-between items-center mb-4">
+      <div className="relative bg-[var(--color-surface)] rounded-xl shadow-2xl w-full max-w-xl overflow-hidden border border-[var(--color-border)]">
+        {/* Subtle glow effect */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute w-[200px] h-[150px] bg-orange-500/8 rounded-full blur-[80px] top-[20%] left-[15%]" />
+          <div className="absolute w-[180px] h-[180px] bg-amber-500/6 rounded-full blur-[100px] bottom-[20%] right-[20%]" />
+        </div>
+
+        {/* Header */}
+        <div className="relative z-10 flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-orange-500/20 rounded-lg">
-              <Clock size={16} className="text-orange-500" />
+              <Clock size={20} className="text-orange-500" />
             </div>
-            <h2 className="text-lg font-semibold text-[var(--color-text)]">{t("wake.scheduleManager")}</h2>
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">
+                {t("wake.scheduleManager", "Wake Schedule Manager")}
+              </h2>
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                Schedule automatic wake-up for devices
+              </p>
+            </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+          <button 
+            onClick={onClose} 
+            className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          >
             <X size={18} />
           </button>
         </div>
-        <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
-          {schedules.map((s) => (
-            <div
-              key={`${s.macAddress}-${s.wakeTime}-${s.broadcastAddress ?? ""}-${s.port}-${s.recurrence ?? ""}`}
-              className="flex justify-between items-center bg-gray-700 px-2 py-1 rounded"
-            >
-              <div className="text-sm">
-                <div>{s.macAddress}</div>
-                <div className="text-gray-300">
-                  {new Date(s.wakeTime).toLocaleString()}{" "}
-                  {s.recurrence && `(${s.recurrence})`}
+
+        {/* Content */}
+        <div className="relative z-10 p-5">
+          {/* Schedule List */}
+          <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
+            {schedules.map((s) => {
+              const isPast = isSchedulePast(s.wakeTime) && !s.recurrence;
+              return (
+                <div
+                  key={`${s.macAddress}-${s.wakeTime}-${s.broadcastAddress ?? ""}-${s.port}-${s.recurrence ?? ""}`}
+                  className={`flex justify-between items-center p-3 rounded-lg border transition-all ${
+                    isPast 
+                      ? 'bg-[var(--color-surfaceHover)]/30 border-[var(--color-border)]/50 opacity-60' 
+                      : 'bg-[var(--color-surfaceHover)]/50 border-[var(--color-border)] hover:border-[var(--color-textMuted)]'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${isPast ? 'bg-gray-500/20' : 'bg-green-500/20'}`}>
+                      <Power size={16} className={isPast ? 'text-gray-400' : 'text-green-500'} />
+                    </div>
+                    <div>
+                      <div className="text-sm font-mono text-[var(--color-text)]">{s.macAddress}</div>
+                      <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
+                        <Calendar size={10} />
+                        <span>{new Date(s.wakeTime).toLocaleString()}</span>
+                        {s.recurrence && (
+                          <>
+                            <Repeat size={10} className="ml-1" />
+                            <span className="text-orange-400">{getRecurrenceLabel(s.recurrence)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleEdit(s)}
+                      className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors"
+                      title="Edit schedule"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(s)}
+                      className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                      title="Delete schedule"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {schedules.length === 0 && !showForm && (
+              <div className="text-center py-8 text-[var(--color-textMuted)]">
+                <Clock size={32} className="mx-auto mb-3 opacity-50" />
+                <p className="text-sm">{t("wake.noSchedules", "No schedules configured")}</p>
+                <p className="text-xs mt-1">Click "New Schedule" to create one</p>
+              </div>
+            )}
+          </div>
+
+          {/* Add/Edit Form */}
+          {showForm ? (
+            <div className="space-y-3 p-4 bg-[var(--color-surfaceHover)]/30 rounded-lg border border-[var(--color-border)]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-[var(--color-text)]">
+                  {editing ? 'Edit Schedule' : 'New Schedule'}
+                </span>
+                <button
+                  onClick={resetForm}
+                  className="text-xs text-[var(--color-textMuted)] hover:text-[var(--color-text)]"
+                >
+                  Cancel
+                </button>
+              </div>
+              
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">MAC Address</label>
+                <input
+                  type="text"
+                  placeholder="00:11:22:33:44:55"
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  value={form.macAddress}
+                  onChange={(e) => setForm({ ...form, macAddress: formatMac(e.target.value) })}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Wake Time</label>
+                <input
+                  type="datetime-local"
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  value={form.wakeTime}
+                  onChange={(e) => setForm({ ...form, wakeTime: e.target.value })}
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Broadcast Address</label>
+                  <input
+                    type="text"
+                    placeholder="255.255.255.255"
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    value={form.broadcastAddress ?? ""}
+                    onChange={(e) => setForm({ ...form, broadcastAddress: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">UDP Port</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    value={form.port}
+                    onChange={(e) => setForm({ ...form, port: parseInt(e.target.value, 10) || 9 })}
+                  />
                 </div>
               </div>
-              <div className="space-x-2">
-                <button
-                  onClick={() => handleEdit(s)}
-                  className="text-blue-400 hover:text-blue-200"
+              
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Recurrence</label>
+                <select
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  value={form.recurrence ?? ""}
+                  onChange={(e) => setForm({ ...form, recurrence: e.target.value as WakeRecurrence })}
                 >
-                  <Pencil size={16} />
-                </button>
-                <button
-                  onClick={() => handleDelete(s)}
-                  className="text-red-400 hover:text-red-200"
-                >
-                  <Trash2 size={16} />
-                </button>
+                  <option value="">{t("wake.once", "Once")}</option>
+                  <option value="daily">{t("wake.daily", "Daily")}</option>
+                  <option value="weekly">{t("wake.weekly", "Weekly")}</option>
+                </select>
               </div>
+              
+              <button
+                onClick={handleSubmit}
+                disabled={!form.macAddress || form.macAddress.length < 17}
+                className="w-full flex items-center justify-center space-x-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-orange-500/20 disabled:shadow-none"
+              >
+                <Save size={16} />
+                <span>{editing ? t("common.save", "Save") : t("common.add", "Add Schedule")}</span>
+              </button>
             </div>
-          ))}
-          {schedules.length === 0 && (
-            <div className="text-center text-gray-400">
-              {t("wake.noSchedules")}
-            </div>
+          ) : (
+            <button
+              onClick={() => setShowForm(true)}
+              className="w-full flex items-center justify-center space-x-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] py-2.5 rounded-lg font-medium transition-colors border border-[var(--color-border)]"
+            >
+              <Plus size={16} />
+              <span>New Schedule</span>
+            </button>
           )}
-        </div>
-        <div className="space-y-2">
-          <input
-            type="text"
-            placeholder="MAC Address"
-            className="w-full px-2 py-1 rounded bg-gray-700 text-white"
-            value={form.macAddress}
-            onChange={(e) => setForm({ ...form, macAddress: e.target.value })}
-          />
-          <input
-            type="datetime-local"
-            className="w-full px-2 py-1 rounded bg-gray-700 text-white"
-            value={form.wakeTime}
-            onChange={(e) => setForm({ ...form, wakeTime: e.target.value })}
-          />
-          <input
-            type="text"
-            placeholder="Broadcast Address"
-            className="w-full px-2 py-1 rounded bg-gray-700 text-white"
-            value={form.broadcastAddress ?? ""}
-            onChange={(e) =>
-              setForm({ ...form, broadcastAddress: e.target.value })
-            }
-          />
-          <input
-            type="number"
-            className="w-full px-2 py-1 rounded bg-gray-700 text-white"
-            value={form.port}
-            onChange={(e) =>
-              setForm({ ...form, port: parseInt(e.target.value, 10) })
-            }
-          />
-          <select
-            className="w-full px-2 py-1 rounded bg-gray-700 text-white"
-            value={form.recurrence ?? ""}
-            onChange={(e) =>
-              setForm({ ...form, recurrence: e.target.value as WakeRecurrence })
-            }
-          >
-            <option value="">{t("wake.once")}</option>
-            <option value="daily">{t("wake.daily")}</option>
-            <option value="weekly">{t("wake.weekly")}</option>
-          </select>
-          <button
-            onClick={handleSubmit}
-            className="w-full flex items-center justify-center space-x-1 bg-blue-600 hover:bg-blue-500 text-white py-1 rounded"
-          >
-            <Save size={16} />
-            <span>{editing ? t("common.save") : t("common.add")}</span>
-          </button>
         </div>
       </div>
     </div>
