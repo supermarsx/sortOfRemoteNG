@@ -35,7 +35,7 @@ import {
   BackupLocationPreset,
 } from "../../../types/settings";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { appDataDir, documentDir } from "@tauri-apps/api/path";
+import { appDataDir, documentDir, join } from "@tauri-apps/api/path";
 import { homeDir } from "@tauri-apps/api/path";
 
 interface BackupSettingsProps {
@@ -68,14 +68,31 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
         const appData = await appDataDir();
         const docs = await documentDir();
         
+        // Use join() for cross-platform path construction
+        const [
+          appDataPath,
+          documentsPath,
+          googleDrivePath,
+          oneDrivePath,
+          nextcloudPath,
+          dropboxPath,
+        ] = await Promise.all([
+          join(appData, 'backups'),
+          join(docs, 'sortOfRemoteNG Backups'),
+          join(home, 'Google Drive', 'sortOfRemoteNG Backups'),
+          join(home, 'OneDrive', 'sortOfRemoteNG Backups'),
+          join(home, 'Nextcloud', 'sortOfRemoteNG Backups'),
+          join(home, 'Dropbox', 'sortOfRemoteNG Backups'),
+        ]);
+        
         setPresetPaths({
           custom: backup.destinationPath || '',
-          appData: `${appData}backups`,
-          documents: `${docs}sortOfRemoteNG Backups`,
-          googleDrive: `${home}Google Drive/sortOfRemoteNG Backups`,
-          oneDrive: `${home}OneDrive/sortOfRemoteNG Backups`,
-          nextcloud: `${home}Nextcloud/sortOfRemoteNG Backups`,
-          dropbox: `${home}Dropbox/sortOfRemoteNG Backups`,
+          appData: appDataPath,
+          documents: documentsPath,
+          googleDrive: googleDrivePath,
+          oneDrive: oneDrivePath,
+          nextcloud: nextcloudPath,
+          dropbox: dropboxPath,
         });
       } catch (error) {
         console.error('Failed to load preset paths:', error);
@@ -162,12 +179,15 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
     dropbox: <Cloud className="w-4 h-4 text-blue-300" />,
   };
 
-  const handleLocationPresetChange = (preset: BackupLocationPreset) => {
-    const path = preset === 'custom' 
-      ? backup.destinationPath 
-      : (backup.cloudCustomPath 
-          ? `${presetPaths[preset]}/${backup.cloudCustomPath}`.replace(/\/+/g, '/') 
-          : presetPaths[preset]);
+  const handleLocationPresetChange = async (preset: BackupLocationPreset) => {
+    let path: string;
+    if (preset === 'custom') {
+      path = backup.destinationPath;
+    } else if (backup.cloudCustomPath) {
+      path = await join(presetPaths[preset], backup.cloudCustomPath);
+    } else {
+      path = presetPaths[preset];
+    }
     
     updateBackup({ 
       locationPreset: preset,
@@ -253,14 +273,15 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
             <input
               type="text"
               value={backup.cloudCustomPath || ""}
-              onChange={(e) => {
+              onChange={async (e) => {
                 const customPath = e.target.value;
                 const basePath = presetPaths[backup.locationPreset];
+                const destinationPath = customPath 
+                  ? await join(basePath, customPath)
+                  : basePath;
                 updateBackup({ 
                   cloudCustomPath: customPath,
-                  destinationPath: customPath 
-                    ? `${basePath}/${customPath}`.replace(/\/+/g, '/') 
-                    : basePath,
+                  destinationPath,
                 });
               }}
               placeholder="e.g., Work/Projects"
