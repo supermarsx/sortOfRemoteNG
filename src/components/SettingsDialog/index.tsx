@@ -16,6 +16,7 @@ import {
   Server,
   Settings as SettingsIcon,
   Terminal,
+  MousePointerClick,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig, defaultSSHTerminalConfig } from '../../types/settings';
@@ -29,6 +30,7 @@ import AdvancedSettings from './sections/AdvancedSettings';
 import StartupSettings from './sections/StartupSettings';
 import ApiSettings from './sections/ApiSettings';
 import RecoverySettings from './sections/RecoverySettings';
+import BehaviorSettings from './sections/BehaviorSettings';
 import SSHTerminalSettings from './sections/SSHTerminalSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
@@ -40,15 +42,17 @@ import { useToastContext } from '../../contexts/ToastContext';
 // Default settings for each tab section
 const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   general: [
-    'language', 'autoSaveEnabled', 'autoSaveIntervalMinutes', 'singleWindowMode',
-    'singleConnectionMode', 'reconnectOnReload', 'warnOnClose', 'warnOnExit',
+    'language', 'autoSaveEnabled', 'autoSaveIntervalMinutes', 'warnOnClose', 'warnOnExit',
     'warnOnDetachClose', 'quickConnectHistoryEnabled',
+  ],
+  behavior: [
+    'singleClickConnect', 'singleClickDisconnect', 'doubleClickRename',
+    'singleWindowMode', 'singleConnectionMode', 'reconnectOnReload',
   ],
   startup: [
     'startMinimized', 'startMaximized', 'startWithSystem', 'reconnectPreviousSessions',
     'autoOpenLastCollection', 'lastOpenedCollectionId',
-    'minimizeToTray', 'closeToTray', 'showTrayIcon', 'singleClickConnect',
-    'singleClickDisconnect', 'doubleClickRename', 'hideQuickStartMessage', 'hideQuickStartButtons',
+    'minimizeToTray', 'closeToTray', 'showTrayIcon', 'hideQuickStartMessage', 'hideQuickStartButtons',
     'welcomeScreenTitle', 'welcomeScreenMessage',
   ],
   theme: [
@@ -376,6 +380,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
   const tabs = [
     { id: 'general', label: t('settings.general'), icon: Monitor },
+    { id: 'behavior', label: 'Behavior', icon: MousePointerClick },
     { id: 'startup', label: t('settings.startup.title', 'Startup & Tray'), icon: Power },
     { id: 'theme', label: t('settings.theme'), icon: Palette },
     { id: 'layout', label: 'Layout', icon: LayoutGrid },
@@ -462,6 +467,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
             <div className="p-6">
               {activeTab === 'general' && (
                 <GeneralSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'behavior' && (
+                <BehaviorSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'startup' && (

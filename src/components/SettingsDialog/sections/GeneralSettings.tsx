@@ -119,59 +119,6 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
         </div>
       </div>
 
-      {/* Window & Connection Behavior */}
-      <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
-          <AppWindow className="w-4 h-4 text-purple-400" />
-          Window & Connection Behavior
-        </h4>
-
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.singleWindowMode}
-              onChange={(e) =>
-                updateSettings({ singleWindowMode: e.target.checked })
-              }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
-            />
-            <AppWindow className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
-            <span className="text-gray-300 group-hover:text-white">Disallow multiple instances</span>
-          </label>
-
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.singleConnectionMode}
-              onChange={(e) =>
-                updateSettings({ singleConnectionMode: e.target.checked })
-              }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
-            />
-            <Link className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
-            <span className="text-gray-300 group-hover:text-white">
-              {t("connections.singleConnection")}
-            </span>
-          </label>
-
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.reconnectOnReload}
-              onChange={(e) =>
-                updateSettings({ reconnectOnReload: e.target.checked })
-              }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
-            />
-            <RefreshCw className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
-            <span className="text-gray-300 group-hover:text-white">
-              {t("connections.reconnectOnReload")}
-            </span>
-          </label>
-        </div>
-      </div>
-
       {/* Warning Settings */}
       <div className="space-y-4">
         <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
