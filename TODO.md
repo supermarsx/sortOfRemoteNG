@@ -69,6 +69,105 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add wake everything on LAN function
 - [x] Add Wake on LAN scripting and scheduled wake functionality
 - [x] Add connection list filters/sorting (user preference, creation, modification, recently used, alphabetical, by protocol)
+- [ ] Add backup test and sync test functionality
+- [ ] Separate cloud sync and backup icons in secondary bar (fully autonomous popups)
+
+### Password Manager Integrations
+- [ ] Add 1Password integration
+- [ ] Add Bitwarden/Vaultwarden integration
+- [ ] Add KeePass integration
+- [ ] Add KeePassXC integration
+- [ ] Add Passbolt integration
+- [ ] Add ClickStudios PasswordState integration
+- [ ] Add Delinea Secret Server integration
+- [ ] Add OpenBao (HashiCorp Vault fork) integration
+- [ ] Add CyberArk Dashboard integration
+- [ ] Consolidate password vault providers with unified interface and full compatibility
+
+### Remote Desktop & Control Integrations
+- [ ] Add Apple Remote Desktop integration
+- [ ] Add Apple Remote Management integration
+- [ ] Add TeamViewer integration
+- [ ] Add LogMeIn integration
+- [ ] Add ConnectWise Control integration
+- [ ] Add Radmin integration
+- [ ] Add Supremo integration
+- [ ] Add full VNC support (complete RFB protocol implementation)
+- [ ] Add X Window (X11) forwarding integration
+- [ ] Add VMware remote console integration
+
+### Connection Protocol Additions
+- [ ] Add WSL (Windows Subsystem for Linux) connection integration
+- [ ] Add raw socket connection support
+- [ ] Add PowerShell Remoting (WinRM/PSSession) support
+- [ ] Add WMI Remoting support
+- [ ] Add SCP (Secure Copy Protocol) integration
+- [ ] Add WinSCP integration
+
+### Infrastructure & Server Management
+- [ ] Add HP iLO (Integrated Lights-Out) integration
+- [ ] Add Dell iDRAC integration
+- [ ] Add Azure PIM (Privileged Identity Management) integration
+- [ ] Add Amazon S3 Explorer integration
+- [ ] Add Hyper-V Dashboard integration
+- [ ] Add AWS Dashboard integration
+- [ ] Add Active Directory Dashboard integration
+
+### Authentication & 2FA Enhancements
+- [ ] Add full TOTP support with connection-level 2FA
+- [ ] Add root token embedding for login when applicable
+- [ ] Support multiple 2FA methods per connection (TOTP, push, hardware key)
+- [ ] Add 2FA auto-fill from integrated password managers
+
+### Security & Auditing Features
+- [ ] Add certificate generator tool with full backend support
+- [ ] Add password analyzer with auditing capabilities
+  - [ ] Per-connection password strength checking
+  - [ ] Password requirements validation
+  - [ ] Full password audit tool functionality
+  - [ ] Weak/duplicate/breached password detection
+- [ ] Add fully fledged session recorder capabilities
+  - [ ] SSH session recording (terminal replay)
+  - [ ] RDP session recording (video)
+  - [ ] VNC session recording
+  - [ ] Playback functionality with timeline scrubbing
+  - [ ] Session recording export (various formats)
+
+### Action Log & Monitoring Enhancements
+- [ ] Extend action log with more filters and actions logging
+- [ ] Make action logging configurable in settings
+  - [ ] Granular per-action-type logging toggles
+  - [ ] Retention settings
+  - [ ] Export capabilities
+  - [ ] Real-time filtering options
+
+### Extension Manager System
+- [ ] Create fully fledged extension manager
+  - [ ] Add extension manager secondary bar icon
+  - [ ] Extension discovery and installation UI
+  - [ ] Extension enable/disable management
+  - [ ] Extension auto-update support
+  - [ ] Extension dependency management
+- [ ] Expose core app APIs for extensions
+  - [ ] Connection management APIs
+  - [ ] Settings APIs
+  - [ ] UI component APIs
+  - [ ] Event subscription system
+  - [ ] Storage APIs for extensions
+- [ ] Create extension SDK
+  - [ ] TypeScript type definitions for extension APIs
+  - [ ] Extension manifest schema
+  - [ ] Extension lifecycle hooks
+  - [ ] Sandboxed execution environment
+- [ ] Extension developer documentation
+  - [ ] API reference documentation
+  - [ ] Extension development guide
+  - [ ] Sample extension templates
+  - [ ] Best practices guide
+- [ ] Extension marketplace/repository integration
+  - [ ] Browse available extensions
+  - [ ] Extension ratings and reviews
+  - [ ] Verified/trusted extensions badge system
 
 ## Advanced SSH Terminal Settings Backlog
 - [x] Implicit CR in every LF (disabled by default)
