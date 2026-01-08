@@ -349,8 +349,9 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                 className="w-32 px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
               >
                 <option value="auto">Auto</option>
-                <option value="2">SSH-2 Only</option>
                 <option value="1">SSH-1 Only</option>
+                <option value="2">SSH-2 Only</option>
+                <option value="3">SSH-3 Only</option>
               </select>
             </OverrideToggle>
           </div>
