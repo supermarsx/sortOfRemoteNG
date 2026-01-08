@@ -68,6 +68,7 @@ import { ErrorLogBar } from "./components/ErrorLogBar";
 import { ConnectionDiagnostics } from "./components/ConnectionDiagnostics";
 import { BulkSSHCommander } from "./components/BulkSSHCommander";
 import { ScriptManager } from "./components/ScriptManager";
+import { SyncBackupStatusBar } from "./components/SyncBackupStatusBar";
 import {
   repatriateWindow,
   checkWindowNeedsRepatriation,
@@ -1806,6 +1807,33 @@ const AppContent: React.FC = () => {
             >
               <Shield size={14} />
             </button>
+          )}
+          {appSettings.showSyncBackupStatusIcon && (
+            <SyncBackupStatusBar
+              cloudSyncConfig={appSettings.cloudSync}
+              onSyncNow={() => {
+                // TODO: Implement sync
+                console.log('Sync requested');
+              }}
+              onBackupNow={async () => {
+                // Trigger backup via Rust backend
+                try {
+                  const connections = state.connections;
+                  const data = {
+                    connections,
+                    settings: appSettings,
+                    timestamp: Date.now(),
+                  };
+                  await invoke('backup_run_now', { 
+                    backupType: 'manual',
+                    data
+                  });
+                } catch (error) {
+                  console.error('Backup failed:', error);
+                }
+              }}
+              onOpenSettings={() => setShowSettings(true)}
+            />
           )}
         </div>
       </div>

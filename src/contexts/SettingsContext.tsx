@@ -158,6 +158,7 @@ const defaultSettings: GlobalSettings = {
   cloudSync: defaultCloudSyncConfig,
   showBulkSSHIcon: true,
   showScriptManagerIcon: true,
+  showSyncBackupStatusIcon: true,
   autoRepatriateWindow: true,
 };
 

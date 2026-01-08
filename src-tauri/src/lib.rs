@@ -78,6 +78,7 @@ pub mod login_detection;
 pub mod telnet;
 pub mod serial;
 pub mod rlogin;
+pub mod backup;
 pub mod raw_socket;
 pub mod gcp;
 pub mod azure;
@@ -437,6 +438,11 @@ pub fn run() {
       // Initialize SSH3 service (SSH over HTTP/3 QUIC)
       let ssh3_service: ssh3::Ssh3ServiceState = std::sync::Arc::new(tokio::sync::Mutex::new(Ssh3Service::new()));
       app.manage(ssh3_service.clone());
+
+      // Initialize Backup service
+      let backup_path = app_dir.join("backups");
+      let backup_service = backup::BackupService::new(backup_path.to_string_lossy().to_string());
+      app.manage(backup_service.clone());
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -840,6 +846,14 @@ pub fn run() {
         delete_file,
         open_folder,
         flash_window,
+        // Backup commands
+        backup::backup_update_config,
+        backup::backup_get_config,
+        backup::backup_get_status,
+        backup::backup_run_now,
+        backup::backup_list,
+        backup::backup_restore,
+        backup::backup_delete,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

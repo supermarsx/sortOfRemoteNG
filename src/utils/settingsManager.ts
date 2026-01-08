@@ -71,6 +71,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showWolIcon: true,
   showBulkSSHIcon: true,
   showScriptManagerIcon: true,
+  showSyncBackupStatusIcon: true,
   showErrorLogBar: false,
 
   autoLock: {

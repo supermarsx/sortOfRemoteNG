@@ -156,7 +156,9 @@ export interface Connection {
 export type TunnelType = 
   | 'proxy'           // HTTP/HTTPS/SOCKS proxy
   | 'ssh-tunnel'      // SSH port forwarding
-  | 'ssh-jump'        // SSH jump host (ProxyJump)
+  | 'ssh-jump'        // SSH jump host (ProxyJump - modern method)
+  | 'ssh-proxycmd'    // SSH ProxyCommand (nc/ncat/socat style)
+  | 'ssh-stdio'       // SSH ProxyUseFdpass/stdio forwarding
   | 'openvpn'         // OpenVPN tunnel
   | 'wireguard'       // WireGuard tunnel
   | 'shadowsocks'     // Shadowsocks proxy
@@ -168,6 +170,50 @@ export type TunnelType =
   | 'cloudflared'     // Cloudflare tunnel
   | 'tailscale'       // Tailscale mesh
   | 'zerotier';       // ZeroTier network
+
+/**
+ * SSH chaining method - how this node connects through the chain
+ */
+export type SSHChainingMethod = 
+  | 'proxyjump'       // Modern -J / ProxyJump (recommended)
+  | 'proxycommand'    // Classic ProxyCommand with nc/ncat/socat
+  | 'nested-ssh'      // Nested SSH commands (ssh -t host1 ssh host2)
+  | 'local-forward'   // Local port forwarding (-L)
+  | 'dynamic-socks'   // Dynamic SOCKS proxy (-D)
+  | 'stdio'           // stdio forwarding via ProxyUseFdpass
+  | 'agent-forward';  // SSH agent forwarding (-A)
+
+/**
+ * Dynamic chaining strategy for the entire chain
+ */
+export type DynamicChainingStrategy =
+  | 'strict'          // All hops must succeed in order
+  | 'dynamic'         // Try hops dynamically, skip failed ones
+  | 'random'          // Randomize hop order (for anonymity)
+  | 'round-robin'     // Rotate through available paths
+  | 'failover'        // Use backup path on failure
+  | 'load-balance';   // Distribute across multiple paths
+
+/**
+ * Configuration for dynamic/mixed chaining at the chain level
+ */
+export interface ChainDynamicsConfig {
+  strategy: DynamicChainingStrategy;
+  // For failover: alternative chains to try
+  fallbackChainIds?: string[];
+  // For random: seed or deterministic randomization
+  randomSeed?: number;
+  // For round-robin/load-balance: weights per path
+  pathWeights?: Record<string, number>;
+  // Timeout per hop before trying next (ms)
+  hopTimeoutMs?: number;
+  // Max retries per hop
+  maxRetriesPerHop?: number;
+  // Whether to reuse established connections
+  reuseConnections?: boolean;
+  // Keep-alive settings
+  keepAliveIntervalMs?: number;
+}
 
 /**
  * A single layer in a tunnel chain.
@@ -183,6 +229,25 @@ export interface TunnelChainLayer {
   localBindHost?: string; // Local address to bind (default: 127.0.0.1)
   localBindPort?: number; // Local port to bind (0 = auto-assign)
   
+  // Per-node chaining method selection (for SSH-based layers)
+  sshChainingMethod?: SSHChainingMethod;
+  
+  // Per-node chain dynamics override
+  nodeChainConfig?: {
+    // Skip this node if it fails (for dynamic chaining)
+    skipOnFailure?: boolean;
+    // Retry count for this specific node
+    retryCount?: number;
+    // Timeout override for this node (ms)
+    timeoutMs?: number;
+    // Weight for load-balancing
+    weight?: number;
+    // Whether this is a backup node (only used in failover)
+    isBackup?: boolean;
+    // Priority (lower = higher priority)
+    priority?: number;
+  };
+  
   // Proxy settings (type: 'proxy' | 'shadowsocks')
   proxy?: {
     proxyType: 'http' | 'https' | 'socks4' | 'socks5' | 'http-connect';
@@ -196,7 +261,7 @@ export interface TunnelChainLayer {
     pluginOpts?: string;  // Plugin options
   };
   
-  // SSH tunnel settings (type: 'ssh-tunnel' | 'ssh-jump')
+  // SSH tunnel settings (type: 'ssh-tunnel' | 'ssh-jump' | 'ssh-proxycmd' | 'ssh-stdio')
   sshTunnel?: {
     // Reference to an existing SSH connection, or inline config
     connectionId?: string;
@@ -211,9 +276,49 @@ export interface TunnelChainLayer {
     forwardType: 'local' | 'remote' | 'dynamic';
     remoteHost?: string;  // Target host (from SSH server's perspective)
     remotePort?: number;  // Target port
-    // Jump host specific
+    // Jump host specific (ProxyJump -J)
     jumpTargetHost?: string;
     jumpTargetPort?: number;
+    // Multiple jump hosts in sequence (host1,host2,host3)
+    jumpHosts?: Array<{
+      host: string;
+      port?: number;
+      username?: string;
+      connectionId?: string;
+    }>;
+    // ProxyCommand configuration (old-school chaining)
+    proxyCommand?: {
+      // Full command template (%h = host, %p = port, %r = user)
+      command?: string;
+      // Or use built-in templates
+      template?: 'nc' | 'ncat' | 'socat' | 'connect' | 'corkscrew' | 'custom';
+      // Proxy host for templates
+      proxyHost?: string;
+      proxyPort?: number;
+      proxyUsername?: string;
+      proxyPassword?: string;
+      proxyType?: 'http' | 'socks4' | 'socks5';
+    };
+    // Nested SSH command (ssh -t host1 ssh host2)
+    nestedSsh?: {
+      intermediateHosts: Array<{
+        host: string;
+        port?: number;
+        username?: string;
+        connectionId?: string;
+        // Whether to allocate TTY (-t)
+        allocateTty?: boolean;
+      }>;
+    };
+    // Agent forwarding
+    agentForwarding?: boolean;
+    // Compression
+    compression?: boolean;
+    // Keep-alive
+    serverAliveInterval?: number;
+    serverAliveCountMax?: number;
+    // Strict host key checking
+    strictHostKeyChecking?: 'yes' | 'no' | 'ask' | 'accept-new';
   };
   
   // VPN settings (type: 'openvpn' | 'wireguard')

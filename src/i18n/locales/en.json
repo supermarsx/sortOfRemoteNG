@@ -174,5 +174,21 @@
     "macAddress": "MAC: {{mac}}",
     "port": "Port {{port}}",
     "noHosts": "No hosts discovered yet. Start a scan to find devices on your network."
+  },
+  "syncBackup": {
+    "title": "Sync & Backup",
+    "statusBarTitle": "Sync & Backup Status",
+    "cloudSync": "Cloud Sync",
+    "localBackup": "Local Backup",
+    "syncAll": "Sync All",
+    "backupNow": "Backup Now",
+    "lastSync": "Last sync",
+    "lastBackup": "Last backup",
+    "nextBackup": "Next backup",
+    "backups": "backups",
+    "noSyncConfigured": "No sync providers configured",
+    "noBackups": "No backups yet",
+    "syncProvider": "Sync {{provider}}",
+    "openSettings": "Open Sync & Backup Settings"
   }
 }

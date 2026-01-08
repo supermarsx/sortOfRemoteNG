@@ -124,6 +124,7 @@ export interface GlobalSettings {
   showWolIcon: boolean;
   showBulkSSHIcon: boolean;
   showScriptManagerIcon: boolean;
+  showSyncBackupStatusIcon: boolean;
   showErrorLogBar: boolean;
 
   // Auto Lock
@@ -601,6 +602,25 @@ export interface SavedProxyProfile {
   isDefault?: boolean;
 }
 
+// SSH Chaining Method types (re-exported from connection.ts for convenience)
+export type SSHChainingMethod = 
+  | 'proxyjump'       // Modern -J / ProxyJump (recommended)
+  | 'proxycommand'    // Classic ProxyCommand with nc/ncat/socat
+  | 'nested-ssh'      // Nested SSH commands (ssh -t host1 ssh host2)
+  | 'local-forward'   // Local port forwarding (-L)
+  | 'dynamic-socks'   // Dynamic SOCKS proxy (-D)
+  | 'stdio'           // stdio forwarding via ProxyUseFdpass
+  | 'agent-forward';  // SSH agent forwarding (-A)
+
+// Dynamic chaining strategy for the entire chain
+export type DynamicChainingStrategy =
+  | 'strict'          // All hops must succeed in order
+  | 'dynamic'         // Try hops dynamically, skip failed ones
+  | 'random'          // Randomize hop order (for anonymity)
+  | 'round-robin'     // Rotate through available paths
+  | 'failover'        // Use backup path on failure
+  | 'load-balance';   // Distribute across multiple paths
+
 // Proxy Chain Definition (for saved chains)
 export interface SavedProxyChain {
   id: string;
@@ -610,15 +630,79 @@ export interface SavedProxyChain {
   createdAt: string;
   updatedAt: string;
   tags?: string[];
+  
+  // Chain dynamics configuration
+  dynamics?: {
+    strategy: DynamicChainingStrategy;
+    // For failover: alternative chains to try
+    fallbackChainIds?: string[];
+    // For random: seed or deterministic randomization
+    randomSeed?: number;
+    // For round-robin/load-balance: weights per path
+    pathWeights?: Record<string, number>;
+    // Timeout per hop before trying next (ms)
+    hopTimeoutMs?: number;
+    // Max retries per hop
+    maxRetriesPerHop?: number;
+    // Whether to reuse established connections
+    reuseConnections?: boolean;
+    // Keep-alive settings
+    keepAliveIntervalMs?: number;
+  };
 }
 
 export interface SavedChainLayer {
   position: number;
   proxyProfileId?: string;  // Reference to SavedProxyProfile
   vpnProfileId?: string;    // Reference to saved VPN profile
-  type: 'proxy' | 'openvpn' | 'wireguard' | 'ssh-tunnel';
+  type: 'proxy' | 'openvpn' | 'wireguard' | 'ssh-tunnel' | 'ssh-jump' | 'ssh-proxycmd';
   // Inline config (alternative to profile reference)
-  inlineConfig?: ProxyConfig | OpenVPNConfig | WireGuardConfig;
+  inlineConfig?: ProxyConfig | OpenVPNConfig | WireGuardConfig | SSHJumpConfig;
+  
+  // Per-node SSH chaining method selection
+  sshChainingMethod?: SSHChainingMethod;
+  
+  // Per-node chain dynamics override
+  nodeConfig?: {
+    // Skip this node if it fails (for dynamic chaining)
+    skipOnFailure?: boolean;
+    // Retry count for this specific node
+    retryCount?: number;
+    // Timeout override for this node (ms)
+    timeoutMs?: number;
+    // Weight for load-balancing
+    weight?: number;
+    // Whether this is a backup node (only used in failover)
+    isBackup?: boolean;
+    // Priority (lower = higher priority)
+    priority?: number;
+  };
+}
+
+// SSH Jump host configuration for inline config in chains
+export interface SSHJumpConfig {
+  host: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
+  connectionId?: string;  // Or reference existing connection
+  
+  // For ProxyCommand style
+  proxyCommand?: string;
+  proxyCommandTemplate?: 'nc' | 'ncat' | 'socat' | 'connect' | 'corkscrew';
+  
+  // For nested SSH style
+  allocateTty?: boolean;
+  
+  // Jump through multiple hosts
+  jumpChain?: Array<{
+    host: string;
+    port?: number;
+    username?: string;
+    connectionId?: string;
+  }>;
 }
 
 // Proxy Collection Manager Storage

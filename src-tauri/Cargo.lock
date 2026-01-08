@@ -141,6 +141,7 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "dns-lookup",
+ "flate2",
  "futures 0.3.31",
  "futures-util",
  "hex",
