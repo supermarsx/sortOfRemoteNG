@@ -238,7 +238,118 @@ export interface GlobalSettings {
 
   // SSH Terminal Settings
   sshTerminal: SSHTerminalConfig;
+
+  // Backup Settings
+  backup: BackupConfig;
 }
+
+// Backup scheduling frequency
+export const BackupFrequencies = [
+  'manual',
+  'hourly',
+  'daily',
+  'weekly',
+  'monthly',
+] as const;
+export type BackupFrequency = (typeof BackupFrequencies)[number];
+
+// Day of week for weekly backups
+export const DaysOfWeek = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+] as const;
+export type DayOfWeek = (typeof DaysOfWeek)[number];
+
+// Backup format options
+export const BackupFormats = ['json', 'xml', 'encrypted-json'] as const;
+export type BackupFormat = (typeof BackupFormats)[number];
+
+export interface BackupConfig {
+  // Enable automatic backups
+  enabled: boolean;
+  
+  // Backup frequency
+  frequency: BackupFrequency;
+  
+  // Time of day for daily/weekly/monthly backups (HH:MM format)
+  scheduledTime: string;
+  
+  // Day of week for weekly backups
+  weeklyDay: DayOfWeek;
+  
+  // Day of month for monthly backups (1-28)
+  monthlyDay: number;
+  
+  // Backup destination folder path
+  destinationPath: string;
+  
+  // Use differential backups (only backup changes)
+  differentialEnabled: boolean;
+  
+  // Keep full backup every N differential backups
+  fullBackupInterval: number;
+  
+  // Maximum number of backups to keep (0 = unlimited)
+  maxBackupsToKeep: number;
+  
+  // Backup format
+  format: BackupFormat;
+  
+  // Include passwords in backup
+  includePasswords: boolean;
+  
+  // Encrypt backups
+  encryptBackups: boolean;
+  
+  // Backup encryption password (stored securely)
+  encryptionPassword?: string;
+  
+  // Include settings in backup
+  includeSettings: boolean;
+  
+  // Include SSH keys in backup
+  includeSSHKeys: boolean;
+  
+  // Last backup timestamp
+  lastBackupTime?: number;
+  
+  // Last full backup timestamp (for differential)
+  lastFullBackupTime?: number;
+  
+  // Backup on app close
+  backupOnClose: boolean;
+  
+  // Show notification after backup
+  notifyOnBackup: boolean;
+  
+  // Compress backups
+  compressBackups: boolean;
+}
+
+export const defaultBackupConfig: BackupConfig = {
+  enabled: false,
+  frequency: 'daily',
+  scheduledTime: '03:00',
+  weeklyDay: 'sunday',
+  monthlyDay: 1,
+  destinationPath: '',
+  differentialEnabled: true,
+  fullBackupInterval: 7,
+  maxBackupsToKeep: 30,
+  format: 'json',
+  includePasswords: false,
+  encryptBackups: true,
+  includeSettings: true,
+  includeSSHKeys: false,
+  backupOnClose: false,
+  notifyOnBackup: true,
+  compressBackups: true,
+};
 
 export interface ProxyConfig {
   type: "http" | "https" | "socks4" | "socks5" | "ssh" | "dns-tunnel" | "icmp-tunnel" | "websocket" | "quic" | "tcp-over-dns" | "http-connect" | "shadowsocks";

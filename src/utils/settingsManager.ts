@@ -1,4 +1,4 @@
-import { GlobalSettings, ActionLogEntry, PerformanceMetrics, CustomScript } from '../types/settings';
+import { GlobalSettings, ActionLogEntry, PerformanceMetrics, CustomScript, defaultBackupConfig } from '../types/settings';
 import { SecureStorage } from './storage';
 import { IndexedDbService } from './indexedDbService';
 import { generateId } from './id';
@@ -86,7 +86,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   retryAttempts: 3,
   retryDelay: 5000,
   enablePerformanceTracking: true,
-  performancePollIntervalMs: 20000,
+  performancePollIntervalMs: 5000,
   performanceLatencyTarget: "1.1.1.1",
 
   encryptionAlgorithm: 'AES-256-GCM',
@@ -197,6 +197,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   exportEncryption: false,
   exportPassword: undefined,
+
+  backup: defaultBackupConfig,
 };
 
 /**

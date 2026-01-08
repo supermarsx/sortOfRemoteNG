@@ -40,7 +40,7 @@ const mockSettings: GlobalSettings = {
   retryAttempts: 0,
   retryDelay: 5000,
   enablePerformanceTracking: false,
-  performancePollIntervalMs: 20000,
+  performancePollIntervalMs: 5000,
   performanceLatencyTarget: "1.1.1.1",
   encryptionAlgorithm: "AES-256-GCM",
   blockCipherMode: "GCM",

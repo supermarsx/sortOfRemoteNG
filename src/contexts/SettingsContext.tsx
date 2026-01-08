@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { GlobalSettings, defaultSSHTerminalConfig } from '../types/settings';
+import { GlobalSettings, defaultSSHTerminalConfig, defaultBackupConfig } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
 
 interface SettingsContextType {
@@ -74,7 +74,7 @@ const defaultSettings: GlobalSettings = {
   retryAttempts: 3,
   retryDelay: 5000,
   enablePerformanceTracking: true,
-  performancePollIntervalMs: 20000,
+  performancePollIntervalMs: 5000,
   performanceLatencyTarget: "1.1.1.1",
   encryptionAlgorithm: 'AES-256-GCM',
   blockCipherMode: 'GCM',
@@ -152,6 +152,8 @@ const defaultSettings: GlobalSettings = {
   exportEncryption: true,
   // SSH Terminal Settings
   sshTerminal: defaultSSHTerminalConfig,
+  // Backup Settings
+  backup: defaultBackupConfig,
   showBulkSSHIcon: true,
   showScriptManagerIcon: true,
   autoRepatriateWindow: true,

@@ -143,7 +143,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
   const [currentMetrics, setCurrentMetrics] = useState<PerformanceMetrics | null>(null);
   const settingsManager = SettingsManager.getInstance();
   const [pollIntervalMs, setPollIntervalMs] = useState<number>(
-    settingsManager.getSettings().performancePollIntervalMs ?? 20000
+    settingsManager.getSettings().performancePollIntervalMs ?? 5000
   );
   const [latencyTarget, setLatencyTarget] = useState<string>(
     settingsManager.getSettings().performanceLatencyTarget || "1.1.1.1",
@@ -202,7 +202,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
     loadMetrics();
     settingsManager.loadSettings().then((loaded) => {
       if (isMounted) {
-        const interval = loaded.performancePollIntervalMs ?? 20000;
+        const interval = loaded.performancePollIntervalMs ?? 5000;
         setPollIntervalMs(interval);
         setLatencyTarget(loaded.performanceLatencyTarget || "1.1.1.1");
       }
@@ -228,12 +228,12 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
     if (!isOpen) return;
 
     const intervalDuration = pollIntervalMs || 20000;
-    updateCurrentMetrics();
+    updateCurrentMetrics().then(() => loadMetrics()).catch(console.error);
     const interval = window.setInterval(() => {
-      updateCurrentMetrics().catch(console.error);
+      updateCurrentMetrics().then(() => loadMetrics()).catch(console.error);
     }, intervalDuration);
     return () => clearInterval(interval);
-  }, [isOpen, pollIntervalMs, updateCurrentMetrics]);
+  }, [isOpen, pollIntervalMs, updateCurrentMetrics, loadMetrics]);
 
   const handlePollIntervalChange = (seconds: number) => {
     const safeSeconds = Math.max(1, seconds || 0);
@@ -435,7 +435,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
                     {currentMetrics.latency.toFixed(1)}<span className="text-sm font-normal text-[var(--color-textMuted)]">ms</span>
                   </div>
                   <Sparkline 
-                    data={filteredMetrics.slice(0, 20).reverse().map(m => m.latency)} 
+                    data={filteredMetrics.slice(0, 100).reverse().map(m => m.latency)} 
                     color="#3b82f6" 
                     height={32}
                     width={140}
@@ -462,7 +462,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
                     {formatBytes(currentMetrics.throughput * 1024)}<span className="text-sm font-normal text-[var(--color-textMuted)]">/s</span>
                   </div>
                   <MiniBarChart 
-                    data={filteredMetrics.slice(0, 20).reverse().map(m => m.throughput)} 
+                    data={filteredMetrics.slice(0, 100).reverse().map(m => m.throughput)} 
                     color="#22c55e" 
                     height={32}
                     width={140}
@@ -498,7 +498,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
                     </div>
                   </div>
                   <Sparkline 
-                    data={filteredMetrics.slice(0, 20).reverse().map(m => m.cpuUsage)} 
+                    data={filteredMetrics.slice(0, 100).reverse().map(m => m.cpuUsage)} 
                     color="#eab308" 
                     height={32}
                     width={140}
@@ -534,7 +534,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
                     </div>
                   </div>
                   <Sparkline 
-                    data={filteredMetrics.slice(0, 20).reverse().map(m => m.memoryUsage)} 
+                    data={filteredMetrics.slice(0, 100).reverse().map(m => m.memoryUsage)} 
                     color="#a855f7" 
                     height={32}
                     width={140}

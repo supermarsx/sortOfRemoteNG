@@ -17,6 +17,7 @@ import {
   Settings as SettingsIcon,
   Terminal,
   MousePointerClick,
+  Archive,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig, defaultSSHTerminalConfig } from '../../types/settings';
@@ -32,6 +33,7 @@ import ApiSettings from './sections/ApiSettings';
 import RecoverySettings from './sections/RecoverySettings';
 import BehaviorSettings from './sections/BehaviorSettings';
 import SSHTerminalSettings from './sections/SSHTerminalSettings';
+import BackupSettings from './sections/BackupSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
@@ -78,6 +80,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'maxConcurrentConnections', 'connectionTimeout', 'retryAttempts', 'retryDelay',
     'enablePerformanceTracking', 'performancePollIntervalMs', 'performanceLatencyTarget',
   ],
+  backup: ['backup'],
   proxy: ['globalProxy'],
   advanced: [
     'tabGrouping', 'hostnameOverride', 'defaultTabLayout', 'enableTabDetachment',
@@ -143,7 +146,7 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
   retryAttempts: 3,
   retryDelay: 5000,
   enablePerformanceTracking: true,
-  performancePollIntervalMs: 20000,
+  performancePollIntervalMs: 5000,
   performanceLatencyTarget: '1.1.1.1',
   encryptionAlgorithm: 'AES-256-GCM',
   blockCipherMode: 'GCM',
@@ -386,6 +389,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     { id: 'layout', label: 'Layout', icon: LayoutGrid },
     { id: 'security', label: t('settings.security'), icon: Shield },
     { id: 'performance', label: t('settings.performance'), icon: Zap },
+    { id: 'backup', label: 'Backup', icon: Archive },
     { id: 'proxy', label: 'Proxy', icon: Wifi },
     { id: 'sshTerminal', label: t('settings.sshTerminal.tab', 'SSH Terminal'), icon: Terminal },
     { id: 'api', label: 'API Server', icon: Server },
@@ -496,6 +500,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
               {activeTab === 'performance' && (
                 <PerformanceSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'backup' && (
+                <BackupSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'proxy' && (

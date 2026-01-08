@@ -18,7 +18,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Auto-save connection edits without requiring manual save
 - [x] Auto-open last collection on startup (with toggle setting)
 - [ ] Add cloud sync targets for Google Drive, Nextcloud, and OneDrive
-- [ ] Add differential backup scheduling (daily and on-demand runs)
+- [x] Add differential backup scheduling (daily and on-demand runs)
 - [x] Add custom CSS tips plus theme import/export and custom theme manager
 - [ ] Add Serpent and Twofish encryption schemes
 - [x] Add global animation toggle with smooth motion defaults
