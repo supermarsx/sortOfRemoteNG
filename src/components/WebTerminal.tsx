@@ -739,9 +739,10 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     const cursorBlink = true;
     const wordSeparator = sshTerminalConfig?.wordSeparators ?? ' \t';
     
-    // Terminal dimensions from settings (if custom)
-    const cols = sshTerminalConfig?.useCustomDimensions ? sshTerminalConfig.columns : undefined;
-    const rows = sshTerminalConfig?.useCustomDimensions ? sshTerminalConfig.rows : undefined;
+    // Terminal dimensions from settings (if custom) - only include if defined
+    const dimensionOptions = sshTerminalConfig?.useCustomDimensions
+      ? { cols: sshTerminalConfig.columns, rows: sshTerminalConfig.rows }
+      : {};
     
     const term = new Terminal({
       theme: getTerminalTheme(),
@@ -758,8 +759,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
       disableStdin: false,
       wordSeparator,
       scrollOnUserInput: sshTerminalConfig?.scrollOnKeystroke ?? true,
-      cols,
-      rows,
+      ...dimensionOptions,
       allowProposedApi: true,
     });
 
