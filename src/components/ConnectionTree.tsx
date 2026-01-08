@@ -425,7 +425,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         {showMenu && (
           <div
             ref={menuRef}
-            className="fixed bg-gray-800 border border-gray-700 rounded-md shadow-lg z-[100] min-w-[140px]"
+            className="fixed bg-gray-800 border border-gray-700 rounded-md shadow-lg z-[9999] min-w-[140px]"
             style={menuPosition ? { left: menuPosition.x, top: menuPosition.y } : undefined}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1124,7 +1124,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
       {panelMenuPosition && onOpenImport && (
         <div
           ref={panelMenuRef}
-          className="fixed z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-[160px]"
+          className="fixed z-[9999] bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-[160px]"
           style={{ left: panelMenuPosition.x, top: panelMenuPosition.y }}
         >
           <button

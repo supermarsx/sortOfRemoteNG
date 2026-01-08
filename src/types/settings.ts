@@ -269,6 +269,27 @@ export type DayOfWeek = (typeof DaysOfWeek)[number];
 export const BackupFormats = ['json', 'xml', 'encrypted-json'] as const;
 export type BackupFormat = (typeof BackupFormats)[number];
 
+// Backup encryption algorithms
+export const BackupEncryptionAlgorithms = [
+  'AES-256-GCM',
+  'AES-256-CBC',
+  'AES-128-GCM',
+  'ChaCha20-Poly1305',
+] as const;
+export type BackupEncryptionAlgorithm = (typeof BackupEncryptionAlgorithms)[number];
+
+// Backup location presets
+export const BackupLocationPresets = [
+  'custom',
+  'appData',
+  'documents',
+  'googleDrive',
+  'oneDrive',
+  'nextcloud',
+  'dropbox',
+] as const;
+export type BackupLocationPreset = (typeof BackupLocationPresets)[number];
+
 export interface BackupConfig {
   // Enable automatic backups
   enabled: boolean;
@@ -306,8 +327,17 @@ export interface BackupConfig {
   // Encrypt backups
   encryptBackups: boolean;
   
+  // Backup encryption algorithm
+  encryptionAlgorithm: BackupEncryptionAlgorithm;
+  
   // Backup encryption password (stored securely)
   encryptionPassword?: string;
+  
+  // Backup location preset
+  locationPreset: BackupLocationPreset;
+  
+  // Custom path for cloud services (e.g., Nextcloud folder path)
+  cloudCustomPath?: string;
   
   // Include settings in backup
   includeSettings: boolean;
@@ -344,6 +374,8 @@ export const defaultBackupConfig: BackupConfig = {
   format: 'json',
   includePasswords: false,
   encryptBackups: true,
+  encryptionAlgorithm: 'AES-256-GCM',
+  locationPreset: 'custom',
   includeSettings: true,
   includeSSHKeys: false,
   backupOnClose: false,

@@ -143,7 +143,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
   const [currentMetrics, setCurrentMetrics] = useState<PerformanceMetrics | null>(null);
   const settingsManager = SettingsManager.getInstance();
   const [pollIntervalMs, setPollIntervalMs] = useState<number>(
-    settingsManager.getSettings().performancePollIntervalMs ?? 5000
+    settingsManager.getSettings().performancePollIntervalMs ?? 20000
   );
   const [latencyTarget, setLatencyTarget] = useState<string>(
     settingsManager.getSettings().performanceLatencyTarget || "1.1.1.1",
@@ -202,7 +202,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
     loadMetrics();
     settingsManager.loadSettings().then((loaded) => {
       if (isMounted) {
-        const interval = loaded.performancePollIntervalMs ?? 5000;
+        const interval = loaded.performancePollIntervalMs ?? 20000;
         setPollIntervalMs(interval);
         setLatencyTarget(loaded.performanceLatencyTarget || "1.1.1.1");
       }

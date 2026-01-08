@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Archive,
@@ -15,6 +15,10 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  Cloud,
+  Folder,
+  FileText,
+  Shield,
 } from "lucide-react";
 import {
   GlobalSettings,
@@ -25,8 +29,14 @@ import {
   BackupFrequency,
   BackupFormat,
   DayOfWeek,
+  BackupEncryptionAlgorithms,
+  BackupEncryptionAlgorithm,
+  BackupLocationPresets,
+  BackupLocationPreset,
 } from "../../../types/settings";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { appDataDir, documentDir } from "@tauri-apps/api/path";
+import { homeDir } from "@tauri-apps/api/path";
 
 interface BackupSettingsProps {
   settings: GlobalSettings;
@@ -39,7 +49,41 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 }) => {
   const { t } = useTranslation();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [presetPaths, setPresetPaths] = useState<Record<BackupLocationPreset, string>>({
+    custom: '',
+    appData: '',
+    documents: '',
+    googleDrive: '',
+    oneDrive: '',
+    nextcloud: '',
+    dropbox: '',
+  });
   const backup = settings.backup;
+
+  // Load preset paths on mount
+  useEffect(() => {
+    const loadPaths = async () => {
+      try {
+        const home = await homeDir();
+        const appData = await appDataDir();
+        const docs = await documentDir();
+        
+        setPresetPaths({
+          custom: backup.destinationPath || '',
+          appData: `${appData}backups`,
+          documents: `${docs}sortOfRemoteNG Backups`,
+          googleDrive: `${home}Google Drive/sortOfRemoteNG Backups`,
+          oneDrive: `${home}OneDrive/sortOfRemoteNG Backups`,
+          nextcloud: `${home}Nextcloud/sortOfRemoteNG Backups`,
+          dropbox: `${home}Dropbox/sortOfRemoteNG Backups`,
+        });
+      } catch (error) {
+        console.error('Failed to load preset paths:', error);
+      }
+    };
+    loadPaths();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateBackup = (updates: Partial<BackupConfig>) => {
     updateSettings({
@@ -91,6 +135,46 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
     "encrypted-json": "Encrypted JSON",
   };
 
+  const encryptionAlgorithmLabels: Record<BackupEncryptionAlgorithm, string> = {
+    "AES-256-GCM": "AES-256-GCM (Recommended)",
+    "AES-256-CBC": "AES-256-CBC",
+    "AES-128-GCM": "AES-128-GCM (Faster)",
+    "ChaCha20-Poly1305": "ChaCha20-Poly1305 (Modern)",
+  };
+
+  const locationPresetLabels: Record<BackupLocationPreset, string> = {
+    custom: "Custom Location",
+    appData: "App Data Folder",
+    documents: "Documents Folder",
+    googleDrive: "Google Drive",
+    oneDrive: "OneDrive",
+    nextcloud: "Nextcloud",
+    dropbox: "Dropbox",
+  };
+
+  const locationPresetIcons: Record<BackupLocationPreset, React.ReactNode> = {
+    custom: <FolderOpen className="w-4 h-4" />,
+    appData: <Folder className="w-4 h-4 text-blue-400" />,
+    documents: <FileText className="w-4 h-4 text-yellow-400" />,
+    googleDrive: <Cloud className="w-4 h-4 text-green-400" />,
+    oneDrive: <Cloud className="w-4 h-4 text-blue-500" />,
+    nextcloud: <Cloud className="w-4 h-4 text-cyan-400" />,
+    dropbox: <Cloud className="w-4 h-4 text-blue-300" />,
+  };
+
+  const handleLocationPresetChange = (preset: BackupLocationPreset) => {
+    const path = preset === 'custom' 
+      ? backup.destinationPath 
+      : (backup.cloudCustomPath 
+          ? `${presetPaths[preset]}/${backup.cloudCustomPath}`.replace(/\/+/g, '/') 
+          : presetPaths[preset]);
+    
+    updateBackup({ 
+      locationPreset: preset,
+      destinationPath: path,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -135,18 +219,67 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
       </div>
 
       {/* Destination Folder */}
-      <div className="space-y-2">
+      <div className="space-y-4">
         <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
           <FolderOpen className="w-4 h-4 inline mr-2" />
           Backup Destination
         </label>
+        
+        {/* Location Presets */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {BackupLocationPresets.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => handleLocationPresetChange(preset)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors text-sm ${
+                backup.locationPreset === preset
+                  ? "bg-blue-600/20 border-blue-500 text-blue-400"
+                  : "bg-[var(--color-surfaceHover)]/30 border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-textMuted)]"
+              }`}
+            >
+              {locationPresetIcons[preset]}
+              <span className="truncate">{locationPresetLabels[preset]}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Cloud Service Custom Subfolder */}
+        {backup.locationPreset !== 'custom' && backup.locationPreset !== 'appData' && backup.locationPreset !== 'documents' && (
+          <div className="space-y-2">
+            <label className="block text-xs text-[var(--color-textSecondary)]">
+              Custom Subfolder (optional)
+            </label>
+            <input
+              type="text"
+              value={backup.cloudCustomPath || ""}
+              onChange={(e) => {
+                const customPath = e.target.value;
+                const basePath = presetPaths[backup.locationPreset];
+                updateBackup({ 
+                  cloudCustomPath: customPath,
+                  destinationPath: customPath 
+                    ? `${basePath}/${customPath}`.replace(/\/+/g, '/') 
+                    : basePath,
+                });
+              }}
+              placeholder="e.g., Work/Projects"
+              className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-[var(--color-textMuted)]"
+            />
+          </div>
+        )}
+
+        {/* Path Display / Custom Path Input */}
         <div className="flex gap-2">
           <input
             type="text"
             value={backup.destinationPath}
-            onChange={(e) => updateBackup({ destinationPath: e.target.value })}
+            onChange={(e) => updateBackup({ destinationPath: e.target.value, locationPreset: 'custom' })}
             placeholder="Select a folder for backups..."
-            className="flex-1 px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-[var(--color-textMuted)]"
+            readOnly={backup.locationPreset !== 'custom'}
+            className={`flex-1 px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-[var(--color-textMuted)] ${
+              backup.locationPreset !== 'custom' ? 'opacity-70' : ''
+            }`}
           />
           <button
             onClick={handleSelectFolder}
@@ -155,6 +288,15 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
             Browse
           </button>
         </div>
+        
+        {backup.locationPreset !== 'custom' && (
+          <p className="text-xs text-[var(--color-textMuted)] flex items-center gap-1">
+            <Info className="w-3 h-3" />
+            {backup.locationPreset === 'appData' || backup.locationPreset === 'documents' 
+              ? 'Local folder - always available'
+              : 'Ensure the cloud sync app is installed and running for automatic sync'}
+          </p>
+        )}
       </div>
 
       {/* Schedule Settings */}
@@ -421,20 +563,50 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
           </label>
 
           {backup.encryptBackups && (
-            <div className="space-y-2 pl-4 border-l-2 border-yellow-500/30">
-              <label className="block text-sm text-[var(--color-textSecondary)]">
-                <Key className="w-4 h-4 inline mr-2" />
-                Encryption Password
-              </label>
-              <input
-                type="password"
-                value={backup.encryptionPassword || ""}
-                onChange={(e) =>
-                  updateBackup({ encryptionPassword: e.target.value })
-                }
-                placeholder="Enter encryption password..."
-                className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-[var(--color-textMuted)]"
-              />
+            <div className="space-y-4 pl-4 border-l-2 border-yellow-500/30">
+              {/* Encryption Algorithm */}
+              <div className="space-y-2">
+                <label className="block text-sm text-[var(--color-textSecondary)]">
+                  <Shield className="w-4 h-4 inline mr-2" />
+                  Encryption Algorithm
+                </label>
+                <select
+                  value={backup.encryptionAlgorithm}
+                  onChange={(e) =>
+                    updateBackup({ encryptionAlgorithm: e.target.value as BackupEncryptionAlgorithm })
+                  }
+                  className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm"
+                >
+                  {BackupEncryptionAlgorithms.map((alg) => (
+                    <option key={alg} value={alg}>
+                      {encryptionAlgorithmLabels[alg]}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-[var(--color-textMuted)]">
+                  {backup.encryptionAlgorithm === 'AES-256-GCM' && 'Industry standard with authenticated encryption'}
+                  {backup.encryptionAlgorithm === 'AES-256-CBC' && 'Classic encryption, widely compatible'}
+                  {backup.encryptionAlgorithm === 'AES-128-GCM' && 'Faster with slightly smaller key size'}
+                  {backup.encryptionAlgorithm === 'ChaCha20-Poly1305' && 'Modern algorithm, excellent on mobile devices'}
+                </p>
+              </div>
+
+              {/* Encryption Password */}
+              <div className="space-y-2">
+                <label className="block text-sm text-[var(--color-textSecondary)]">
+                  <Key className="w-4 h-4 inline mr-2" />
+                  Encryption Password
+                </label>
+                <input
+                  type="password"
+                  value={backup.encryptionPassword || ""}
+                  onChange={(e) =>
+                    updateBackup({ encryptionPassword: e.target.value })
+                  }
+                  placeholder="Enter encryption password..."
+                  className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-[var(--color-textMuted)]"
+                />
+              </div>
             </div>
           )}
         </div>

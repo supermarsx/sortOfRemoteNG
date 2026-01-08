@@ -1548,7 +1548,7 @@ const AppContent: React.FC = () => {
 
     return (
       <div
-        className="relative flex-shrink-0"
+        className="relative flex-shrink-0 z-10"
         style={{ width: state.sidebarCollapsed ? "48px" : `${sidebarWidth}px` }}
       >
         <Sidebar

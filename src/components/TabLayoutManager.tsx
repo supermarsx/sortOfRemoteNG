@@ -385,7 +385,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
             </button>
             
             {showCustomGrid && (
-              <div className="absolute top-full left-0 mt-2 bg-gray-800 border border-gray-600 rounded-lg p-4 z-50 shadow-lg min-w-[200px]">
+              <div className="absolute top-full left-0 mt-2 bg-gray-800 border border-gray-600 rounded-lg p-4 z-[9999] shadow-lg min-w-[200px]">
                 <div className="text-white text-sm font-medium mb-3">Custom Grid Layout</div>
                 
                 <div className="space-y-3">

@@ -146,7 +146,7 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
   retryAttempts: 3,
   retryDelay: 5000,
   enablePerformanceTracking: true,
-  performancePollIntervalMs: 5000,
+  performancePollIntervalMs: 20000,
   performanceLatencyTarget: '1.1.1.1',
   encryptionAlgorithm: 'AES-256-GCM',
   blockCipherMode: 'GCM',
