@@ -71,6 +71,15 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add connection list filters/sorting (user preference, creation, modification, recently used, alphabetical, by protocol)
 - [ ] Add backup test and sync test functionality
 - [ ] Separate cloud sync and backup icons in secondary bar (fully autonomous popups)
+- [ ] Add secondary bar icon to save current collection
+- [ ] Add full IPv6 support globally (configurable per connection and globally)
+- [ ] Add attachment support per connection (configurable storage location)
+- [ ] Add todo list per connection (tasks, notes, reminders)
+- [ ] Add multi-select connections with Ctrl/Shift and connect all at once (configurable)
+- [ ] Add connect to all connections in folder at once (configurable)
+- [ ] Add full keyboard navigation throughout app (settings, connection properties, all UI)
+- [ ] Add search capability inside connection editing menu and settings dialogs
+- [ ] Add iterations support to backup encryption and cloud sync encryption
 
 ### Password Manager Integrations
 - [ ] Add 1Password integration
@@ -96,6 +105,19 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] Add X Window (X11) forwarding integration
 - [ ] Add VMware remote console integration
 
+### RDP Protocol Enhancements
+- [ ] Add Network Level Authentication (NLA) support
+- [ ] Add RD Gateway support (Remote Desktop Gateway)
+- [ ] Add high DPI support for RDP (configurable scaling)
+- [ ] Add view-only mode for RDP (configurable/togglable)
+- [ ] Add RDP compression support (configurable levels)
+- [ ] Add RDP bitmap caching (configurable)
+- [ ] Add RDP bandwidth optimization settings
+- [ ] Add RDP audio redirection settings
+- [ ] Add RDP printer redirection settings
+- [ ] Add RDP clipboard redirection settings
+- [ ] Add RDP drive/folder redirection settings
+
 ### Connection Protocol Additions
 - [ ] Add WSL (Windows Subsystem for Linux) connection integration
 - [ ] Add raw socket connection support
@@ -103,21 +125,74 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] Add WMI Remoting support
 - [ ] Add SCP (Secure Copy Protocol) integration
 - [ ] Add WinSCP integration
+- [ ] Add RS232/Serial connection support (fully configurable)
+  - [ ] Baud rate configuration
+  - [ ] Data bits, stop bits, parity settings
+  - [ ] Flow control (hardware/software)
+  - [ ] Serial port auto-detection
+  - [ ] Terminal emulation for serial
+
+### Web Control Panel Integrations
+- [ ] Add Webmin integration
+- [ ] Add Virtualmin integration
+- [ ] Add Proxmox VE integration
+- [ ] Add ISPManager integration
+- [ ] Add cPanel/WHM integration
+- [ ] Add Vesta Control Panel integration
+- [ ] Add Froxlor integration
+- [ ] Add ISPConfig integration
+- [ ] Add Plesk integration
+
+### Network & Firewall Device Integrations
+- [ ] Add pfSense integration
+- [ ] Add OPNsense integration
+- [ ] Add VyOS integration
+- [ ] Add OpenWrt integration
+- [ ] Add DD-WRT integration
+- [ ] Add FreshTomato integration
+- [ ] Add DrayTek router integration
+- [ ] Add ASUS router integration (ASUSWRT)
+- [ ] Add TP-Link Deco integration (private API mimic)
+- [ ] Add Cisco IOS integration (SSH/Telnet CLI)
+- [ ] Add HP/Aruba switch integration
+- [ ] Add No-IP DDNS integration
 
 ### Infrastructure & Server Management
 - [ ] Add HP iLO (Integrated Lights-Out) integration
 - [ ] Add Dell iDRAC integration
+- [ ] Add Fujitsu iRMC (integrated Remote Management Controller) integration
+- [ ] Add IPMI/BMC Supermicro integration
+- [ ] Add Lenovo XClarity integration
+- [ ] Add Cisco CIMC (Integrated Management Controller) integration
 - [ ] Add Azure PIM (Privileged Identity Management) integration
 - [ ] Add Amazon S3 Explorer integration
 - [ ] Add Hyper-V Dashboard integration
 - [ ] Add AWS Dashboard integration
 - [ ] Add Active Directory Dashboard integration
 
+### Windows Remoting Tools
+- [ ] Add Remote Registry Editor (regedit remoting)
+- [ ] Add Remote Service Manager (services.msc remoting)
+- [ ] Add Remote Event Viewer (eventvwr remoting)
+- [ ] Add Remote Task Manager (taskmgr remoting)
+
 ### Authentication & 2FA Enhancements
 - [ ] Add full TOTP support with connection-level 2FA
 - [ ] Add root token embedding for login when applicable
 - [ ] Support multiple 2FA methods per connection (TOTP, push, hardware key)
 - [ ] Add 2FA auto-fill from integrated password managers
+- [ ] Add SSH keyboard-interactive authentication support (MFA prompts)
+- [ ] Add OpenSSH authentication agent support (ssh-agent forwarding)
+- [ ] Add Windows Credential Manager full support (configurable)
+  - [ ] Read credentials from Windows Credential Manager
+  - [ ] Write/update credentials to Windows Credential Manager
+  - [ ] Credential Manager as default storage option
+  - [ ] Per-connection credential manager toggle
+- [ ] Add Windows Hello authentication support (Rust backend)
+  - [ ] Windows Hello biometric unlock for app
+  - [ ] Windows Hello for collection decryption
+  - [ ] Windows Hello for individual connection auth
+  - [ ] Fallback options when Hello unavailable
 
 ### Security & Auditing Features
 - [ ] Add certificate generator tool with full backend support
@@ -168,6 +243,68 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
   - [ ] Browse available extensions
   - [ ] Extension ratings and reviews
   - [ ] Verified/trusted extensions badge system
+
+### Remote Input Automation System
+- [ ] Create fully fledged remote input automation framework
+  - [ ] Add secondary bar icon for automation manager
+  - [ ] Remote keypress sending (single keys, key combinations)
+  - [ ] Remote macro recording and playback
+  - [ ] Remote mouse click simulation (left, right, middle, coordinates)
+  - [ ] Remote mouse movement simulation
+  - [ ] Keystroke sequences with configurable delays
+  - [ ] Text typing simulation with variable speed
+  - [ ] Hotkey triggers for automation scripts
+- [ ] Macro builder UI
+  - [ ] Visual macro recorder
+  - [ ] Step-by-step macro editor
+  - [ ] Conditional logic support (if/else, loops)
+  - [ ] Variable and parameter support
+  - [ ] Import/export macros
+- [ ] Automation script storage
+  - [ ] Per-connection automation scripts
+  - [ ] Global automation library
+  - [ ] Categorization and tagging
+  - [ ] Search and filter capabilities
+- [ ] Protocol-specific automation
+  - [ ] SSH terminal automation (send commands, expect patterns)
+  - [ ] RDP automation (remote input injection)
+  - [ ] VNC automation (RFB input events)
+  - [ ] HTTP automation (form filling, navigation)
+
+### App Scripting & Automation Framework
+- [ ] Create comprehensive scripting framework for app automation
+  - [ ] Node.js scripting runtime integration
+    - [ ] Expose connection management APIs to scripts
+    - [ ] Expose settings APIs to scripts
+    - [ ] Expose UI automation APIs
+    - [ ] Event hooks (connection open/close, errors, etc.)
+    - [ ] Async/await support for all operations
+  - [ ] Rust scripting runtime (optional high-performance)
+    - [ ] Lua scripting support via mlua
+    - [ ] Rhai scripting support (Rust-native)
+    - [ ] Direct Tauri command invocation
+  - [ ] Script editor UI
+    - [ ] Syntax highlighting for supported languages
+    - [ ] Autocomplete for app APIs
+    - [ ] Inline documentation/tooltips
+    - [ ] Debug console output
+    - [ ] Script execution controls (run, stop, pause)
+  - [ ] Script management
+    - [ ] Script library with categories
+    - [ ] Import/export scripts
+    - [ ] Script scheduling (run on events, timers)
+    - [ ] Script parameters and configuration
+- [ ] Scripting API documentation
+  - [ ] Complete API reference (all exposed functions)
+  - [ ] Scripting quick-start guide
+  - [ ] Example scripts library
+  - [ ] Best practices and patterns
+  - [ ] Migration guide from other tools
+- [ ] Script marketplace integration
+  - [ ] Browse community scripts
+  - [ ] Script ratings and reviews
+  - [ ] Verified/safe script badges
+  - [ ] One-click script installation
 
 ## Advanced SSH Terminal Settings Backlog
 - [x] Implicit CR in every LF (disabled by default)

@@ -124,7 +124,9 @@ export interface GlobalSettings {
   showWolIcon: boolean;
   showBulkSSHIcon: boolean;
   showScriptManagerIcon: boolean;
-  showSyncBackupStatusIcon: boolean;
+  showSyncBackupStatusIcon: boolean;  // Legacy combined icon
+  showBackupStatusIcon: boolean;      // Separate backup icon
+  showCloudSyncStatusIcon: boolean;   // Separate cloud sync icon
   showErrorLogBar: boolean;
 
   // Auto Lock

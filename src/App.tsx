@@ -69,6 +69,8 @@ import { ConnectionDiagnostics } from "./components/ConnectionDiagnostics";
 import { BulkSSHCommander } from "./components/BulkSSHCommander";
 import { ScriptManager } from "./components/ScriptManager";
 import { SyncBackupStatusBar } from "./components/SyncBackupStatusBar";
+import { BackupStatusPopup } from "./components/BackupStatusPopup";
+import { CloudSyncStatusPopup } from "./components/CloudSyncStatusPopup";
 import {
   repatriateWindow,
   checkWindowNeedsRepatriation,
@@ -1808,6 +1810,36 @@ const AppContent: React.FC = () => {
               <Shield size={14} />
             </button>
           )}
+          {/* Separate Backup Status Icon */}
+          {appSettings.showBackupStatusIcon && (
+            <BackupStatusPopup
+              onBackupNow={async () => {
+                const connections = state.connections;
+                const data = {
+                  connections,
+                  settings: appSettings,
+                  timestamp: Date.now(),
+                };
+                await invoke('backup_run_now', { 
+                  backupType: 'manual',
+                  data
+                });
+              }}
+              onOpenSettings={() => setShowSettings(true)}
+            />
+          )}
+          {/* Separate Cloud Sync Status Icon */}
+          {appSettings.showCloudSyncStatusIcon && (
+            <CloudSyncStatusPopup
+              cloudSyncConfig={appSettings.cloudSync}
+              onSyncNow={async (provider) => {
+                // TODO: Implement actual sync per provider
+                console.log('Sync requested for:', provider || 'all');
+              }}
+              onOpenSettings={() => setShowSettings(true)}
+            />
+          )}
+          {/* Legacy combined Sync & Backup icon (hidden by default) */}
           {appSettings.showSyncBackupStatusIcon && (
             <SyncBackupStatusBar
               cloudSyncConfig={appSettings.cloudSync}

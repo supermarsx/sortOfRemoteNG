@@ -71,7 +71,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showWolIcon: true,
   showBulkSSHIcon: true,
   showScriptManagerIcon: true,
-  showSyncBackupStatusIcon: true,
+  showSyncBackupStatusIcon: false,    // Legacy combined - disabled by default
+  showBackupStatusIcon: true,         // Separate backup icon
+  showCloudSyncStatusIcon: true,      // Separate cloud sync icon
   showErrorLogBar: false,
 
   autoLock: {

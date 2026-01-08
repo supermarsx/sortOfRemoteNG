@@ -158,7 +158,9 @@ const defaultSettings: GlobalSettings = {
   cloudSync: defaultCloudSyncConfig,
   showBulkSSHIcon: true,
   showScriptManagerIcon: true,
-  showSyncBackupStatusIcon: true,
+  showSyncBackupStatusIcon: false,     // Legacy combined - disabled by default
+  showBackupStatusIcon: true,          // Separate backup icon
+  showCloudSyncStatusIcon: true,       // Separate cloud sync icon
   autoRepatriateWindow: true,
 };
 
