@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { GlobalSettings, defaultSSHTerminalConfig, defaultBackupConfig } from '../types/settings';
+import { GlobalSettings, defaultSSHTerminalConfig, defaultBackupConfig, defaultCloudSyncConfig } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
 
 interface SettingsContextType {
@@ -154,6 +154,8 @@ const defaultSettings: GlobalSettings = {
   sshTerminal: defaultSSHTerminalConfig,
   // Backup Settings
   backup: defaultBackupConfig,
+  // Cloud Sync Settings
+  cloudSync: defaultCloudSyncConfig,
   showBulkSSHIcon: true,
   showScriptManagerIcon: true,
   autoRepatriateWindow: true,

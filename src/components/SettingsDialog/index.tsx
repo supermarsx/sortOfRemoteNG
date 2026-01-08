@@ -18,6 +18,7 @@ import {
   Terminal,
   MousePointerClick,
   Archive,
+  CloudCog,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig, defaultSSHTerminalConfig } from '../../types/settings';
@@ -34,6 +35,7 @@ import RecoverySettings from './sections/RecoverySettings';
 import BehaviorSettings from './sections/BehaviorSettings';
 import SSHTerminalSettings from './sections/SSHTerminalSettings';
 import BackupSettings from './sections/BackupSettings';
+import CloudSyncSettings from './sections/CloudSyncSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
@@ -81,6 +83,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'enablePerformanceTracking', 'performancePollIntervalMs', 'performanceLatencyTarget',
   ],
   backup: ['backup'],
+  cloudSync: ['cloudSync'],
   proxy: ['globalProxy'],
   advanced: [
     'tabGrouping', 'hostnameOverride', 'defaultTabLayout', 'enableTabDetachment',
@@ -390,6 +393,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     { id: 'security', label: t('settings.security'), icon: Shield },
     { id: 'performance', label: t('settings.performance'), icon: Zap },
     { id: 'backup', label: 'Backup', icon: Archive },
+    { id: 'cloudSync', label: 'Cloud Sync', icon: CloudCog },
     { id: 'proxy', label: 'Proxy', icon: Wifi },
     { id: 'sshTerminal', label: t('settings.sshTerminal.tab', 'SSH Terminal'), icon: Terminal },
     { id: 'api', label: 'API Server', icon: Server },
@@ -504,6 +508,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
               {activeTab === 'backup' && (
                 <BackupSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'cloudSync' && (
+                <CloudSyncSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'proxy' && (

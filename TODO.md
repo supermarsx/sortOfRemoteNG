@@ -17,10 +17,10 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Add single-click actions: open connection on single click; disconnect on single click
 - [x] Auto-save connection edits without requiring manual save
 - [x] Auto-open last collection on startup (with toggle setting)
-- [ ] Add cloud sync targets for Google Drive, Nextcloud, and OneDrive
+- [x] Add cloud sync targets for Google Drive, Nextcloud, and OneDrive
 - [x] Add differential backup scheduling (daily and on-demand runs)
 - [x] Add custom CSS tips plus theme import/export and custom theme manager
-- [ ] Add Serpent and Twofish encryption schemes
+- [x] Add Serpent and Twofish encryption schemes
 - [x] Add global animation toggle with smooth motion defaults
 - [x] Allow resizing/adjusting layout matrices
 - [x] Desktop shortcut manager with tracking, editing, and folder presets
@@ -54,17 +54,17 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] In performance metrics move update cadence and export button to secondary bar, add filters
 - [x] Add date time to performance metrics entries (not just time)
 - [x] Remove language selector from secondary bar settings (no longer exists)
-- [ ] Add syncing capabilities with extensive settings in a new settings tab
+- [x] Add syncing capabilities with extensive settings in a new settings tab
 - [x] Add config to settings welcome screen for custom title and custom message
 - [x] Add disconnect button to SSH container
-- [ ] Add proxy collection management (adding, saving, editing, chaining) to Proxies and VPNs popup
-- [ ] Add chaining management to create, delete and edit chains
+- [x] Add proxy collection management (adding, saving, editing, chaining) to Proxies and VPNs popup
+- [x] Add chaining management to create, delete and edit chains
 - [x] Fix light theme hover effects (non-existent on many elements)
 - [x] Fix light theme hover effects on Wake on LAN buttons
 - [x] Fix settings popup light theme compatibility (button hovers, group input boxes too dark)
 - [x] Move quick start message in layout to Startup settings tab
-- [ ] Make HTTP basic auth fully handled by backend (never frontend), avoid browser auth windows
-- [ ] Add proxy and VPN profiles management to Collections Center (with chaining, import/export)
+- [x] Make HTTP basic auth fully handled by backend (never frontend), avoid browser auth windows
+- [x] Add proxy and VPN profiles management to Collections Center (with chaining, import/export)
 - [x] Add bulk Wake on LAN request functionality
 - [x] Add wake everything on LAN function
 - [x] Add Wake on LAN scripting and scheduled wake functionality

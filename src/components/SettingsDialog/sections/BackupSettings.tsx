@@ -157,6 +157,10 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
     "AES-256-CBC": "AES-256-CBC",
     "AES-128-GCM": "AES-128-GCM (Faster)",
     "ChaCha20-Poly1305": "ChaCha20-Poly1305 (Modern)",
+    "Serpent-256-GCM": "Serpent-256-GCM (High Security)",
+    "Serpent-256-CBC": "Serpent-256-CBC",
+    "Twofish-256-GCM": "Twofish-256-GCM (Fast & Secure)",
+    "Twofish-256-CBC": "Twofish-256-CBC",
   };
 
   const locationPresetLabels: Record<BackupLocationPreset, string> = {
@@ -609,6 +613,10 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
                   {backup.encryptionAlgorithm === 'AES-256-CBC' && 'Classic encryption, widely compatible'}
                   {backup.encryptionAlgorithm === 'AES-128-GCM' && 'Faster with slightly smaller key size'}
                   {backup.encryptionAlgorithm === 'ChaCha20-Poly1305' && 'Modern algorithm, excellent on mobile devices'}
+                  {backup.encryptionAlgorithm === 'Serpent-256-GCM' && 'AES finalist, extremely conservative security margin'}
+                  {backup.encryptionAlgorithm === 'Serpent-256-CBC' && 'Serpent cipher with classic CBC mode'}
+                  {backup.encryptionAlgorithm === 'Twofish-256-GCM' && 'AES finalist by Bruce Schneier, very fast'}
+                  {backup.encryptionAlgorithm === 'Twofish-256-CBC' && 'Twofish cipher with classic CBC mode'}
                 </p>
               </div>
 

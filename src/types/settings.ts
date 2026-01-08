@@ -139,7 +139,7 @@ export interface GlobalSettings {
   performanceLatencyTarget: string;
 
   // Security Settings
-  encryptionAlgorithm: "AES-256-GCM" | "AES-256-CBC" | "ChaCha20-Poly1305" | "AES-256-GCM-SIV" | "Salsa20" | "XSalsa20-Poly1305" | "Threefish-256" | "Threefish-512" | "Threefish-1024";
+  encryptionAlgorithm: "AES-256-GCM" | "AES-256-CBC" | "ChaCha20-Poly1305" | "AES-256-GCM-SIV" | "Salsa20" | "XSalsa20-Poly1305" | "Threefish-256" | "Threefish-512" | "Threefish-1024" | "Serpent-256-GCM" | "Serpent-256-CBC" | "Twofish-256-GCM" | "Twofish-256-CBC";
   blockCipherMode: "GCM" | "CBC" | "CTR" | "OFB" | "CFB" | "GCM-SIV" | "SIV";
   keyDerivationIterations: number;
   autoBenchmarkIterations: boolean;
@@ -241,6 +241,9 @@ export interface GlobalSettings {
 
   // Backup Settings
   backup: BackupConfig;
+
+  // Cloud Sync Settings
+  cloudSync: CloudSyncConfig;
 }
 
 // Backup scheduling frequency
@@ -275,6 +278,10 @@ export const BackupEncryptionAlgorithms = [
   'AES-256-CBC',
   'AES-128-GCM',
   'ChaCha20-Poly1305',
+  'Serpent-256-GCM',
+  'Serpent-256-CBC',
+  'Twofish-256-GCM',
+  'Twofish-256-CBC',
 ] as const;
 export type BackupEncryptionAlgorithm = (typeof BackupEncryptionAlgorithms)[number];
 
@@ -381,6 +388,234 @@ export const defaultBackupConfig: BackupConfig = {
   backupOnClose: false,
   notifyOnBackup: true,
   compressBackups: true,
+};
+
+// Cloud Sync Provider Types
+export const CloudSyncProviders = [
+  'none',
+  'googleDrive',
+  'oneDrive',
+  'nextcloud',
+  'webdav',
+  'sftp',
+] as const;
+export type CloudSyncProvider = (typeof CloudSyncProviders)[number];
+
+// Cloud Sync Frequency
+export const CloudSyncFrequencies = [
+  'manual',
+  'realtime',
+  'onSave',
+  'every5Minutes',
+  'every15Minutes',
+  'every30Minutes',
+  'hourly',
+  'daily',
+] as const;
+export type CloudSyncFrequency = (typeof CloudSyncFrequencies)[number];
+
+// Conflict Resolution Strategy
+export const ConflictResolutionStrategies = [
+  'askEveryTime',
+  'keepLocal',
+  'keepRemote',
+  'keepNewer',
+  'merge',
+] as const;
+export type ConflictResolutionStrategy = (typeof ConflictResolutionStrategies)[number];
+
+// Cloud Sync Configuration
+export interface CloudSyncConfig {
+  // Enable cloud sync
+  enabled: boolean;
+  
+  // Selected cloud provider
+  provider: CloudSyncProvider;
+  
+  // Sync frequency
+  frequency: CloudSyncFrequency;
+  
+  // Google Drive specific
+  googleDrive: {
+    accessToken?: string;
+    refreshToken?: string;
+    tokenExpiry?: number;
+    folderId?: string;
+    folderPath: string;
+    accountEmail?: string;
+  };
+  
+  // OneDrive specific
+  oneDrive: {
+    accessToken?: string;
+    refreshToken?: string;
+    tokenExpiry?: number;
+    driveId?: string;
+    folderPath: string;
+    accountEmail?: string;
+  };
+  
+  // Nextcloud specific
+  nextcloud: {
+    serverUrl: string;
+    username: string;
+    password?: string;
+    appPassword?: string;
+    folderPath: string;
+    useAppPassword: boolean;
+  };
+  
+  // WebDAV specific
+  webdav: {
+    serverUrl: string;
+    username: string;
+    password?: string;
+    folderPath: string;
+    authMethod: 'basic' | 'digest' | 'bearer';
+    bearerToken?: string;
+  };
+  
+  // SFTP specific
+  sftp: {
+    host: string;
+    port: number;
+    username: string;
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+    folderPath: string;
+    authMethod: 'password' | 'key';
+  };
+  
+  // Sync options
+  syncConnections: boolean;
+  syncSettings: boolean;
+  syncSSHKeys: boolean;
+  syncScripts: boolean;
+  syncColorTags: boolean;
+  syncShortcuts: boolean;
+  
+  // Encryption options
+  encryptBeforeSync: boolean;
+  syncEncryptionPassword?: string;
+  
+  // Conflict resolution
+  conflictResolution: ConflictResolutionStrategy;
+  
+  // Last sync timestamps
+  lastSyncTime?: number;
+  lastSyncStatus?: 'success' | 'failed' | 'partial' | 'conflict';
+  lastSyncError?: string;
+  
+  // Sync on startup/shutdown
+  syncOnStartup: boolean;
+  syncOnShutdown: boolean;
+  
+  // Notifications
+  notifyOnSync: boolean;
+  notifyOnConflict: boolean;
+  
+  // Advanced options
+  maxFileSizeMB: number;
+  excludePatterns: string[];
+  compressionEnabled: boolean;
+  
+  // Bandwidth limiting (KB/s, 0 = unlimited)
+  uploadLimitKBs: number;
+  downloadLimitKBs: number;
+}
+
+export const defaultCloudSyncConfig: CloudSyncConfig = {
+  enabled: false,
+  provider: 'none',
+  frequency: 'manual',
+  googleDrive: {
+    folderPath: '/sortOfRemoteNG',
+  },
+  oneDrive: {
+    folderPath: '/sortOfRemoteNG',
+  },
+  nextcloud: {
+    serverUrl: '',
+    username: '',
+    folderPath: '/sortOfRemoteNG',
+    useAppPassword: true,
+  },
+  webdav: {
+    serverUrl: '',
+    username: '',
+    folderPath: '/sortOfRemoteNG',
+    authMethod: 'basic',
+  },
+  sftp: {
+    host: '',
+    port: 22,
+    username: '',
+    folderPath: '/sortOfRemoteNG',
+    authMethod: 'password',
+  },
+  syncConnections: true,
+  syncSettings: true,
+  syncSSHKeys: false,
+  syncScripts: true,
+  syncColorTags: true,
+  syncShortcuts: true,
+  encryptBeforeSync: true,
+  conflictResolution: 'askEveryTime',
+  syncOnStartup: false,
+  syncOnShutdown: false,
+  notifyOnSync: true,
+  notifyOnConflict: true,
+  maxFileSizeMB: 50,
+  excludePatterns: [],
+  compressionEnabled: true,
+  uploadLimitKBs: 0,
+  downloadLimitKBs: 0,
+};
+
+// Saved Proxy Profile
+export interface SavedProxyProfile {
+  id: string;
+  name: string;
+  description?: string;
+  config: ProxyConfig;
+  createdAt: string;
+  updatedAt: string;
+  tags?: string[];
+  isDefault?: boolean;
+}
+
+// Proxy Chain Definition (for saved chains)
+export interface SavedProxyChain {
+  id: string;
+  name: string;
+  description?: string;
+  layers: SavedChainLayer[];
+  createdAt: string;
+  updatedAt: string;
+  tags?: string[];
+}
+
+export interface SavedChainLayer {
+  position: number;
+  proxyProfileId?: string;  // Reference to SavedProxyProfile
+  vpnProfileId?: string;    // Reference to saved VPN profile
+  type: 'proxy' | 'openvpn' | 'wireguard' | 'ssh-tunnel';
+  // Inline config (alternative to profile reference)
+  inlineConfig?: ProxyConfig | OpenVPNConfig | WireGuardConfig;
+}
+
+// Proxy Collection Manager Storage
+export interface ProxyCollectionData {
+  profiles: SavedProxyProfile[];
+  chains: SavedProxyChain[];
+  version: number;
+}
+
+export const defaultProxyCollectionData: ProxyCollectionData = {
+  profiles: [],
+  chains: [],
+  version: 1,
 };
 
 export interface ProxyConfig {

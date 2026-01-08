@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { X, RefreshCw, Link2, Network, PlugZap, Route, Plus, Trash2, Play, Square, Edit2 } from "lucide-react";
+import { X, RefreshCw, Link2, Network, PlugZap, Route, Plus, Trash2, Play, Square, Edit2, Wifi, Copy, Search, Download, Upload } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../contexts/useConnections";
 import { ProxyOpenVPNManager } from "../utils/proxyOpenVPNManager";
+import { proxyCollectionManager } from "../utils/proxyCollectionManager";
 import { sshTunnelService, SSHTunnelConfig, SSHTunnelCreateParams } from "../utils/sshTunnelService";
 import { SSHTunnelDialog } from "./SSHTunnelDialog";
+import { ProxyProfileEditor } from "./ProxyProfileEditor";
+import { ProxyChainEditor } from "./ProxyChainEditor";
+import { SavedProxyProfile, SavedProxyChain } from "../types/settings";
 
 interface ProxyChainMenuProps {
   isOpen: boolean;
@@ -28,15 +32,27 @@ interface ProxyChainSummary {
 export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose }) => {
   const { state, dispatch } = useConnections();
   const proxyManager = ProxyOpenVPNManager.getInstance();
-  const [activeTab, setActiveTab] = useState<"chains" | "tunnels" | "associations">("chains");
+  const [activeTab, setActiveTab] = useState<"profiles" | "chains" | "tunnels" | "associations">("profiles");
   const [connectionChains, setConnectionChains] = useState<ConnectionChainSummary[]>([]);
   const [proxyChains, setProxyChains] = useState<ProxyChainSummary[]>([]);
   const [sshTunnels, setSshTunnels] = useState<SSHTunnelConfig[]>([]);
+  const [savedProfiles, setSavedProfiles] = useState<SavedProxyProfile[]>([]);
+  const [savedChains, setSavedChains] = useState<SavedProxyChain[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [profileSearch, setProfileSearch] = useState('');
+  const [chainSearch, setChainSearch] = useState('');
   
   // SSH Tunnel dialog state
   const [showTunnelDialog, setShowTunnelDialog] = useState(false);
   const [editingTunnel, setEditingTunnel] = useState<SSHTunnelConfig | null>(null);
+  
+  // Profile editor dialog state
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<SavedProxyProfile | null>(null);
+  
+  // Chain editor dialog state
+  const [showChainEditor, setShowChainEditor] = useState(false);
+  const [editingChain, setEditingChain] = useState<SavedProxyChain | null>(null);
 
   const sshConnections = useMemo(
     () => state.connections.filter((conn) => conn.protocol === "ssh" && !conn.isGroup),
@@ -67,6 +83,8 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
         })),
       );
       setSshTunnels(sshTunnelService.getTunnels());
+      setSavedProfiles(proxyCollectionManager.getProfiles());
+      setSavedChains(proxyCollectionManager.getChains());
     } catch (error) {
       console.error("Failed to load proxy/vpn chains:", error);
     } finally {
@@ -95,6 +113,12 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
         if (showTunnelDialog) {
           setShowTunnelDialog(false);
           setEditingTunnel(null);
+        } else if (showProfileEditor) {
+          setShowProfileEditor(false);
+          setEditingProfile(null);
+        } else if (showChainEditor) {
+          setShowChainEditor(false);
+          setEditingChain(null);
         } else {
           onClose();
         }
@@ -102,7 +126,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, showTunnelDialog]);
+  }, [isOpen, onClose, showTunnelDialog, showProfileEditor, showChainEditor]);
 
   const handleConnectChain = async (chainId: string) => {
     await proxyManager.connectConnectionChain(chainId);
@@ -185,6 +209,150 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
     await sshTunnelService.disconnectTunnel(tunnelId);
   };
 
+  // Proxy Profile handlers
+  const handleNewProfile = () => {
+    setEditingProfile(null);
+    setShowProfileEditor(true);
+  };
+
+  const handleEditProfile = (profile: SavedProxyProfile) => {
+    setEditingProfile(profile);
+    setShowProfileEditor(true);
+  };
+
+  const handleSaveProfile = async (profileData: Omit<SavedProxyProfile, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      if (editingProfile) {
+        await proxyCollectionManager.updateProfile(editingProfile.id, profileData);
+      } else {
+        await proxyCollectionManager.createProfile(profileData.name, profileData.config, {
+          description: profileData.description,
+          tags: profileData.tags,
+          isDefault: profileData.isDefault,
+        });
+      }
+      setShowProfileEditor(false);
+      setEditingProfile(null);
+      setSavedProfiles(proxyCollectionManager.getProfiles());
+    } catch (error) {
+      console.error("Failed to save proxy profile:", error);
+    }
+  };
+
+  const handleDeleteProfile = async (profileId: string) => {
+    if (confirm("Are you sure you want to delete this proxy profile?")) {
+      try {
+        await proxyCollectionManager.deleteProfile(profileId);
+        setSavedProfiles(proxyCollectionManager.getProfiles());
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Failed to delete profile");
+      }
+    }
+  };
+
+  const handleDuplicateProfile = async (profileId: string) => {
+    try {
+      await proxyCollectionManager.duplicateProfile(profileId);
+      setSavedProfiles(proxyCollectionManager.getProfiles());
+    } catch (error) {
+      console.error("Failed to duplicate profile:", error);
+    }
+  };
+
+  const handleExportProfiles = async () => {
+    try {
+      const data = await proxyCollectionManager.exportData();
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'proxy-profiles.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to export profiles:", error);
+    }
+  };
+
+  const handleImportProfiles = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        try {
+          const text = await file.text();
+          await proxyCollectionManager.importData(text, true);
+          setSavedProfiles(proxyCollectionManager.getProfiles());
+          setSavedChains(proxyCollectionManager.getChains());
+        } catch (error) {
+          alert("Failed to import profiles: " + (error instanceof Error ? error.message : "Unknown error"));
+        }
+      }
+    };
+    input.click();
+  };
+
+  // Saved Chain handlers
+  const handleNewChain = () => {
+    setEditingChain(null);
+    setShowChainEditor(true);
+  };
+
+  const handleEditChain = (chain: SavedProxyChain) => {
+    setEditingChain(chain);
+    setShowChainEditor(true);
+  };
+
+  const handleSaveChain = async (chainData: Omit<SavedProxyChain, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      if (editingChain) {
+        await proxyCollectionManager.updateChain(editingChain.id, chainData);
+      } else {
+        await proxyCollectionManager.createChain(chainData.name, chainData.layers, {
+          description: chainData.description,
+          tags: chainData.tags,
+        });
+      }
+      setShowChainEditor(false);
+      setEditingChain(null);
+      setSavedChains(proxyCollectionManager.getChains());
+    } catch (error) {
+      console.error("Failed to save proxy chain:", error);
+    }
+  };
+
+  const handleDeleteChain = async (chainId: string) => {
+    if (confirm("Are you sure you want to delete this proxy chain?")) {
+      try {
+        await proxyCollectionManager.deleteChain(chainId);
+        setSavedChains(proxyCollectionManager.getChains());
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Failed to delete chain");
+      }
+    }
+  };
+
+  const handleDuplicateChain = async (chainId: string) => {
+    try {
+      await proxyCollectionManager.duplicateChain(chainId);
+      setSavedChains(proxyCollectionManager.getChains());
+    } catch (error) {
+      console.error("Failed to duplicate chain:", error);
+    }
+  };
+
+  const filteredProfiles = useMemo(() => {
+    if (!profileSearch.trim()) return savedProfiles;
+    return proxyCollectionManager.searchProfiles(profileSearch);
+  }, [savedProfiles, profileSearch]);
+
+  const filteredSavedChains = useMemo(() => {
+    if (!chainSearch.trim()) return savedChains;
+    return proxyCollectionManager.searchChains(chainSearch);
+  }, [savedChains, chainSearch]);
+
   const connectionOptions = useMemo(
     () => state.connections.filter((conn) => !conn.isGroup),
     [state.connections],
@@ -254,6 +422,15 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
         <div className="flex flex-1 min-h-0">
           <div className="w-56 bg-gray-900 border-r border-gray-700 p-4 space-y-2">
             <button
+              onClick={() => setActiveTab("profiles")}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
+                activeTab === "profiles" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"
+              }`}
+            >
+              <Wifi size={16} />
+              Profiles
+            </button>
+            <button
               onClick={() => setActiveTab("chains")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
                 activeTab === "chains" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"
@@ -285,14 +462,243 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {activeTab === "chains" && (
-              <>
+            {/* Profiles Tab */}
+            {activeTab === "profiles" && (
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-medium text-white">Active Chains</h3>
-                  {isLoading && <span className="text-xs text-gray-400">Refreshing...</span>}
+                  <h3 className="text-lg font-medium text-white">Saved Proxy Profiles</h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleImportProfiles}
+                      className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200"
+                      title="Import Profiles"
+                    >
+                      <Upload size={12} />
+                      Import
+                    </button>
+                    <button
+                      onClick={handleExportProfiles}
+                      className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200"
+                      title="Export Profiles"
+                    >
+                      <Download size={12} />
+                      Export
+                    </button>
+                    <button
+                      onClick={handleNewProfile}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <Plus size={14} />
+                      New Profile
+                    </button>
+                  </div>
                 </div>
 
+                <div className="text-sm text-gray-400">
+                  Create and manage reusable proxy configurations that can be used across connections and chains.
+                </div>
+
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={profileSearch}
+                    onChange={(e) => setProfileSearch(e.target.value)}
+                    placeholder="Search profiles..."
+                    className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Profile List */}
+                <div className="space-y-2">
+                  {filteredProfiles.length === 0 ? (
+                    <div className="text-sm text-gray-400 py-8 text-center">
+                      {profileSearch 
+                        ? "No profiles match your search."
+                        : "No proxy profiles saved. Click \"New Profile\" to create one."}
+                    </div>
+                  ) : (
+                    filteredProfiles.map((profile) => (
+                      <div
+                        key={profile.id}
+                        className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-4 py-3"
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-medium text-white">{profile.name}</div>
+                            <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400 uppercase">
+                              {profile.config.type}
+                            </span>
+                            {profile.isDefault && (
+                              <span className="px-2 py-0.5 text-xs rounded-full bg-yellow-500/20 text-yellow-400">
+                                Default
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1 font-mono">
+                            {profile.config.host}:{profile.config.port}
+                            {profile.config.username && ` (${profile.config.username})`}
+                          </div>
+                          {profile.description && (
+                            <div className="text-xs text-gray-500 mt-1">{profile.description}</div>
+                          )}
+                          {profile.tags && profile.tags.length > 0 && (
+                            <div className="flex gap-1 mt-2">
+                              {profile.tags.map(tag => (
+                                <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleDuplicateProfile(profile.id)}
+                            className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                            title="Duplicate"
+                          >
+                            <Copy size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleEditProfile(profile)}
+                            className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                            title="Edit"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteProfile(profile.id)}
+                            className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-md"
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "chains" && (
+              <div className="space-y-6">
+                {/* Saved Chains Section */}
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium text-white">Saved Chains</h3>
+                    <button
+                      onClick={handleNewChain}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <Plus size={14} />
+                      New Chain
+                    </button>
+                  </div>
+
+                  <div className="text-sm text-gray-400">
+                    Create reusable proxy chains that route traffic through multiple layers.
+                  </div>
+
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={chainSearch}
+                      onChange={(e) => setChainSearch(e.target.value)}
+                      placeholder="Search chains..."
+                      className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* Saved Chains List */}
+                  <div className="space-y-2">
+                    {filteredSavedChains.length === 0 ? (
+                      <div className="text-sm text-gray-400 py-6 text-center">
+                        {chainSearch 
+                          ? "No chains match your search."
+                          : "No proxy chains saved. Click \"New Chain\" to create one."}
+                      </div>
+                    ) : (
+                      filteredSavedChains.map((chain) => (
+                        <div
+                          key={chain.id}
+                          className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-4 py-3"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-medium text-white">{chain.name}</div>
+                              <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">
+                                {chain.layers.length} layer{chain.layers.length !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            {chain.description && (
+                              <div className="text-xs text-gray-500 mt-1">{chain.description}</div>
+                            )}
+                            <div className="text-xs text-gray-400 mt-1 font-mono">
+                              {chain.layers.map((layer, i) => {
+                                const profile = layer.proxyProfileId 
+                                  ? savedProfiles.find(p => p.id === layer.proxyProfileId)
+                                  : null;
+                                return (
+                                  <span key={i}>
+                                    {i > 0 && ' → '}
+                                    {layer.type === 'proxy' && profile 
+                                      ? `${profile.name}` 
+                                      : layer.type}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                            {chain.tags && chain.tags.length > 0 && (
+                              <div className="flex gap-1 mt-2">
+                                {chain.tags.map(tag => (
+                                  <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleDuplicateChain(chain.id)}
+                              className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                              title="Duplicate"
+                            >
+                              <Copy size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleEditChain(chain)}
+                              className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                              title="Edit"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteChain(chain.id)}
+                              className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-md"
+                              title="Delete"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Active Chains Section */}
+                <div className="border-t border-gray-700 pt-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium text-white">Active Chains</h3>
+                    {isLoading && <span className="text-xs text-gray-400">Refreshing...</span>}
+                  </div>
+
                   <div className="rounded-lg border border-gray-700/70 bg-gray-900/40 p-4">
                     <div className="text-sm font-semibold text-gray-200 mb-3">Connection Chains</div>
                     {connectionChains.length === 0 ? (
@@ -369,7 +775,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                     )}
                   </div>
                 </div>
-              </>
+              </div>
             )}
 
             {activeTab === "tunnels" && (
@@ -565,6 +971,28 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
         onSave={handleSaveTunnel}
         sshConnections={sshConnections}
         editingTunnel={editingTunnel}
+      />
+
+      {/* Proxy Profile Editor Dialog */}
+      <ProxyProfileEditor
+        isOpen={showProfileEditor}
+        onClose={() => {
+          setShowProfileEditor(false);
+          setEditingProfile(null);
+        }}
+        onSave={handleSaveProfile}
+        editingProfile={editingProfile}
+      />
+
+      {/* Proxy Chain Editor Dialog */}
+      <ProxyChainEditor
+        isOpen={showChainEditor}
+        onClose={() => {
+          setShowChainEditor(false);
+          setEditingChain(null);
+        }}
+        onSave={handleSaveChain}
+        editingChain={editingChain}
       />
     </div>
   );

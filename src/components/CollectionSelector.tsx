@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload, X, Layers } from 'lucide-react';
+import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload, X, Layers, Network, Link2, Copy, Search } from 'lucide-react';
 import { ConnectionCollection } from '../types/connection';
+import { SavedProxyProfile, SavedProxyChain } from '../types/settings';
 import { CollectionManager } from '../utils/collectionManager';
+import { proxyCollectionManager } from '../utils/proxyCollectionManager';
 import { ImportExport } from './ImportExport';
+import { ProxyProfileEditor } from './ProxyProfileEditor';
+import { ProxyChainEditor } from './ProxyChainEditor';
 
 interface CollectionSelectorProps {
   isOpen: boolean;
@@ -47,9 +51,19 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'collections' | 'connections'>('collections');
+  const [activeTab, setActiveTab] = useState<'collections' | 'connections' | 'proxies'>('collections');
 
   const collectionManager = CollectionManager.getInstance();
+
+  // Proxy/VPN profiles state
+  const [savedProfiles, setSavedProfiles] = useState<SavedProxyProfile[]>([]);
+  const [savedChains, setSavedChains] = useState<SavedProxyChain[]>([]);
+  const [profileSearch, setProfileSearch] = useState('');
+  const [chainSearch, setChainSearch] = useState('');
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [showChainEditor, setShowChainEditor] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<SavedProxyProfile | null>(null);
+  const [editingChain, setEditingChain] = useState<SavedProxyChain | null>(null);
 
   const loadCollections = useCallback(async () => {
     const allCollections = await collectionManager.getAllCollections();
@@ -59,6 +73,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   useEffect(() => {
     if (isOpen) {
       loadCollections();
+      // Load proxy profiles and chains
+      setSavedProfiles(proxyCollectionManager.getProfiles());
+      setSavedChains(proxyCollectionManager.getChains());
     }
   }, [isOpen, loadCollections]);
 
@@ -292,6 +309,148 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     }
   };
 
+  // Proxy Profile handlers
+  const handleNewProfile = () => {
+    setEditingProfile(null);
+    setShowProfileEditor(true);
+  };
+
+  const handleEditProfile = (profile: SavedProxyProfile) => {
+    setEditingProfile(profile);
+    setShowProfileEditor(true);
+  };
+
+  const handleSaveProfile = async (profileData: Omit<SavedProxyProfile, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      if (editingProfile) {
+        await proxyCollectionManager.updateProfile(editingProfile.id, profileData);
+      } else {
+        await proxyCollectionManager.createProfile(profileData.name, profileData.config, {
+          description: profileData.description,
+          tags: profileData.tags,
+          isDefault: profileData.isDefault,
+        });
+      }
+      setShowProfileEditor(false);
+      setEditingProfile(null);
+      setSavedProfiles(proxyCollectionManager.getProfiles());
+    } catch (error) {
+      console.error("Failed to save proxy profile:", error);
+    }
+  };
+
+  const handleDeleteProfile = async (profileId: string) => {
+    if (confirm("Are you sure you want to delete this proxy profile?")) {
+      try {
+        await proxyCollectionManager.deleteProfile(profileId);
+        setSavedProfiles(proxyCollectionManager.getProfiles());
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Failed to delete profile");
+      }
+    }
+  };
+
+  const handleDuplicateProfile = async (profileId: string) => {
+    try {
+      await proxyCollectionManager.duplicateProfile(profileId);
+      setSavedProfiles(proxyCollectionManager.getProfiles());
+    } catch (error) {
+      console.error("Failed to duplicate profile:", error);
+    }
+  };
+
+  // Proxy Chain handlers
+  const handleNewChain = () => {
+    setEditingChain(null);
+    setShowChainEditor(true);
+  };
+
+  const handleEditChain = (chain: SavedProxyChain) => {
+    setEditingChain(chain);
+    setShowChainEditor(true);
+  };
+
+  const handleSaveChain = async (chainData: Omit<SavedProxyChain, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      if (editingChain) {
+        await proxyCollectionManager.updateChain(editingChain.id, chainData);
+      } else {
+        await proxyCollectionManager.createChain(chainData.name, chainData.layers, {
+          description: chainData.description,
+          tags: chainData.tags,
+        });
+      }
+      setShowChainEditor(false);
+      setEditingChain(null);
+      setSavedChains(proxyCollectionManager.getChains());
+    } catch (error) {
+      console.error("Failed to save proxy chain:", error);
+    }
+  };
+
+  const handleDeleteChain = async (chainId: string) => {
+    if (confirm("Are you sure you want to delete this proxy chain?")) {
+      try {
+        await proxyCollectionManager.deleteChain(chainId);
+        setSavedChains(proxyCollectionManager.getChains());
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Failed to delete chain");
+      }
+    }
+  };
+
+  const handleDuplicateChain = async (chainId: string) => {
+    try {
+      await proxyCollectionManager.duplicateChain(chainId);
+      setSavedChains(proxyCollectionManager.getChains());
+    } catch (error) {
+      console.error("Failed to duplicate chain:", error);
+    }
+  };
+
+  const handleExportProxies = async () => {
+    try {
+      const data = await proxyCollectionManager.exportData();
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'proxy-profiles.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to export profiles:", error);
+    }
+  };
+
+  const handleImportProxies = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        try {
+          const text = await file.text();
+          await proxyCollectionManager.importData(text, true);
+          setSavedProfiles(proxyCollectionManager.getProfiles());
+          setSavedChains(proxyCollectionManager.getChains());
+        } catch (error) {
+          alert("Failed to import profiles: " + (error instanceof Error ? error.message : "Unknown error"));
+        }
+      }
+    };
+    input.click();
+  };
+
+  const filteredProfiles = profileSearch.trim() 
+    ? proxyCollectionManager.searchProfiles(profileSearch)
+    : savedProfiles;
+
+  const filteredChains = chainSearch.trim()
+    ? proxyCollectionManager.searchChains(chainSearch)
+    : savedChains;
+
   // Handle ESC key to close dialog
   useEffect(() => {
     if (!isOpen) return;
@@ -345,6 +504,24 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                 </button>
               </>
             )}
+            {activeTab === 'proxies' && (
+              <>
+                <button
+                  onClick={handleImportProxies}
+                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                >
+                  <Upload size={14} />
+                  <span>Import</span>
+                </button>
+                <button
+                  onClick={handleExportProxies}
+                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                >
+                  <Download size={14} />
+                  <span>Export</span>
+                </button>
+              </>
+            )}
             <button
               onClick={onClose}
               className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
@@ -378,6 +555,17 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
             >
               <Layers size={16} />
               <span>Connections</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('proxies')}
+              className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
+                activeTab === 'proxies'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              <Network size={16} />
+              <span>Proxy/VPN Profiles</span>
             </button>
           </div>
 
@@ -949,10 +1137,242 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                   </div>
                 </div>
               )}
+
+              {activeTab === 'proxies' && (
+                <div className="space-y-6">
+                  {/* Proxy Profiles Section */}
+                  <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-medium text-white">Proxy Profiles</h3>
+                      <button
+                        onClick={handleNewProfile}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        <Plus size={14} />
+                        New Profile
+                      </button>
+                    </div>
+                    <p className="text-sm text-gray-400 mb-4">
+                      Create and manage reusable proxy configurations that can be used across connections and chains.
+                    </p>
+
+                    {/* Search */}
+                    <div className="relative mb-4">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={profileSearch}
+                        onChange={(e) => setProfileSearch(e.target.value)}
+                        placeholder="Search profiles..."
+                        className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    {/* Profile List */}
+                    <div className="space-y-2">
+                      {filteredProfiles.length === 0 ? (
+                        <div className="text-sm text-gray-400 py-6 text-center">
+                          {profileSearch 
+                            ? "No profiles match your search."
+                            : "No proxy profiles saved. Click \"New Profile\" to create one."}
+                        </div>
+                      ) : (
+                        filteredProfiles.map((profile) => (
+                          <div
+                            key={profile.id}
+                            className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-4 py-3"
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-medium text-white">{profile.name}</div>
+                                <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400 uppercase">
+                                  {profile.config.type}
+                                </span>
+                                {profile.isDefault && (
+                                  <span className="px-2 py-0.5 text-xs rounded-full bg-yellow-500/20 text-yellow-400">
+                                    Default
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-400 mt-1 font-mono">
+                                {profile.config.host}:{profile.config.port}
+                                {profile.config.username && ` (${profile.config.username})`}
+                              </div>
+                              {profile.description && (
+                                <div className="text-xs text-gray-500 mt-1">{profile.description}</div>
+                              )}
+                              {profile.tags && profile.tags.length > 0 && (
+                                <div className="flex gap-1 mt-2">
+                                  {profile.tags.map(tag => (
+                                    <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300">
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleDuplicateProfile(profile.id)}
+                                className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                                title="Duplicate"
+                              >
+                                <Copy size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleEditProfile(profile)}
+                                className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                                title="Edit"
+                              >
+                                <Edit size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteProfile(profile.id)}
+                                className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-md"
+                                title="Delete"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Proxy Chains Section */}
+                  <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-medium text-white">Proxy Chains</h3>
+                      <button
+                        onClick={handleNewChain}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        <Plus size={14} />
+                        New Chain
+                      </button>
+                    </div>
+                    <p className="text-sm text-gray-400 mb-4">
+                      Create reusable proxy chains that route traffic through multiple layers.
+                    </p>
+
+                    {/* Search */}
+                    <div className="relative mb-4">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={chainSearch}
+                        onChange={(e) => setChainSearch(e.target.value)}
+                        placeholder="Search chains..."
+                        className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    {/* Chain List */}
+                    <div className="space-y-2">
+                      {filteredChains.length === 0 ? (
+                        <div className="text-sm text-gray-400 py-6 text-center">
+                          {chainSearch 
+                            ? "No chains match your search."
+                            : "No proxy chains saved. Click \"New Chain\" to create one."}
+                        </div>
+                      ) : (
+                        filteredChains.map((chain) => (
+                          <div
+                            key={chain.id}
+                            className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-4 py-3"
+                          >
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-medium text-white">{chain.name}</div>
+                                <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">
+                                  {chain.layers.length} layer{chain.layers.length !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                              {chain.description && (
+                                <div className="text-xs text-gray-500 mt-1">{chain.description}</div>
+                              )}
+                              <div className="text-xs text-gray-400 mt-1 font-mono">
+                                {chain.layers.map((layer, i) => {
+                                  const profile = layer.proxyProfileId 
+                                    ? savedProfiles.find(p => p.id === layer.proxyProfileId)
+                                    : null;
+                                  return (
+                                    <span key={i}>
+                                      {i > 0 && ' → '}
+                                      {layer.type === 'proxy' && profile 
+                                        ? profile.name 
+                                        : layer.type}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              {chain.tags && chain.tags.length > 0 && (
+                                <div className="flex gap-1 mt-2">
+                                  {chain.tags.map(tag => (
+                                    <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300">
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleDuplicateChain(chain.id)}
+                                className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                                title="Duplicate"
+                              >
+                                <Copy size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleEditChain(chain)}
+                                className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                                title="Edit"
+                              >
+                                <Edit size={14} />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteChain(chain.id)}
+                                className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-md"
+                                title="Delete"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Proxy Profile Editor Dialog */}
+      <ProxyProfileEditor
+        isOpen={showProfileEditor}
+        onClose={() => {
+          setShowProfileEditor(false);
+          setEditingProfile(null);
+        }}
+        onSave={handleSaveProfile}
+        editingProfile={editingProfile}
+      />
+
+      {/* Proxy Chain Editor Dialog */}
+      <ProxyChainEditor
+        isOpen={showChainEditor}
+        onClose={() => {
+          setShowChainEditor(false);
+          setEditingChain(null);
+        }}
+        onSave={handleSaveChain}
+        editingChain={editingChain}
+      />
     </div>
   );
 };

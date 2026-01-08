@@ -39,12 +39,28 @@ const VALID_CIPHER_MODES: Record<string, { value: string; label: string }[]> = {
   'ChaCha20-Poly1305': [
     // ChaCha20-Poly1305 is a stream cipher with built-in AEAD, no block cipher mode needed
   ],
+  'Serpent-256-GCM': [
+    { value: 'GCM', label: 'GCM (Galois/Counter Mode)' },
+  ],
+  'Serpent-256-CBC': [
+    { value: 'CBC', label: 'CBC (Cipher Block Chaining)' },
+  ],
+  'Twofish-256-GCM': [
+    { value: 'GCM', label: 'GCM (Galois/Counter Mode)' },
+  ],
+  'Twofish-256-CBC': [
+    { value: 'CBC', label: 'CBC (Cipher Block Chaining)' },
+  ],
 };
 
 const ENCRYPTION_ALGORITHMS = [
   { value: 'AES-256-GCM', label: 'AES-256-GCM', description: 'Industry standard, hardware accelerated', recommended: true },
   { value: 'AES-256-CBC', label: 'AES-256-CBC', description: 'Classic block cipher mode', recommended: false },
   { value: 'ChaCha20-Poly1305', label: 'ChaCha20-Poly1305', description: 'Modern stream cipher, mobile friendly', recommended: false },
+  { value: 'Serpent-256-GCM', label: 'Serpent-256-GCM', description: 'AES finalist, high security margin', recommended: false },
+  { value: 'Serpent-256-CBC', label: 'Serpent-256-CBC', description: 'Serpent with classic CBC mode', recommended: false },
+  { value: 'Twofish-256-GCM', label: 'Twofish-256-GCM', description: 'AES finalist by Schneier, very fast', recommended: false },
+  { value: 'Twofish-256-CBC', label: 'Twofish-256-CBC', description: 'Twofish with classic CBC mode', recommended: false },
 ];
 
 export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
