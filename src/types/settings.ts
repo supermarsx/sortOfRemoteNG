@@ -424,13 +424,27 @@ export const ConflictResolutionStrategies = [
 ] as const;
 export type ConflictResolutionStrategy = (typeof ConflictResolutionStrategies)[number];
 
+// Per-provider sync status
+export interface ProviderSyncStatus {
+  enabled: boolean;
+  lastSyncTime?: number;
+  lastSyncStatus?: 'success' | 'failed' | 'partial' | 'conflict';
+  lastSyncError?: string;
+}
+
 // Cloud Sync Configuration
 export interface CloudSyncConfig {
-  // Enable cloud sync
+  // Enable cloud sync (master switch)
   enabled: boolean;
   
-  // Selected cloud provider
+  // Legacy: Selected cloud provider (for backward compatibility)
   provider: CloudSyncProvider;
+  
+  // Multi-target: Enabled providers list
+  enabledProviders: CloudSyncProvider[];
+  
+  // Per-provider sync status
+  providerStatus: Partial<Record<CloudSyncProvider, ProviderSyncStatus>>;
   
   // Sync frequency
   frequency: CloudSyncFrequency;
@@ -528,6 +542,8 @@ export interface CloudSyncConfig {
 export const defaultCloudSyncConfig: CloudSyncConfig = {
   enabled: false,
   provider: 'none',
+  enabledProviders: [],
+  providerStatus: {},
   frequency: 'manual',
   googleDrive: {
     folderPath: '/sortOfRemoteNG',

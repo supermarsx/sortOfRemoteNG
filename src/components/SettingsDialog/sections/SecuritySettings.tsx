@@ -126,63 +126,66 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           {t('security.algorithm')}
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {ENCRYPTION_ALGORITHMS.map((algo) => (
-              <button
-                key={algo.value}
-                onClick={() => updateSettings({ encryptionAlgorithm: algo.value as any })}
-                className={`relative flex flex-col items-center p-4 rounded-lg border transition-all ${
-                  settings.encryptionAlgorithm === algo.value
-                    ? 'border-blue-500 bg-blue-600/20 text-white ring-1 ring-blue-500/50'
-                    : 'border-gray-600 bg-gray-700/50 text-gray-300 hover:bg-gray-600 hover:border-gray-500'
-                }`}
-              >
-                {algo.recommended && (
-                  <span className="absolute top-1 right-1 px-1.5 py-0.5 text-[10px] bg-green-600/30 text-green-400 rounded">
-                    Recommended
-                  </span>
-                )}
-                <Lock className={`w-6 h-6 mb-2 ${settings.encryptionAlgorithm === algo.value ? 'text-blue-400' : ''}`} />
-                <span className="text-sm font-medium">{algo.label}</span>
-                <span className="text-xs text-gray-400 mt-1 text-center">{algo.description}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Block Cipher Mode */}
-          {validModes.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-700">
-              <label className="flex items-center gap-2 text-sm text-gray-400 mb-2">
-                <ShieldCheck className="w-4 h-4" />
-                {t('security.blockCipher')}
-              </label>
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+          {/* Compact Algorithm Selection */}
+          <div className="flex items-center gap-3">
+            <Lock className="w-5 h-5 text-blue-400 flex-shrink-0" />
+            <div className="flex-1">
               <select
-                value={settings.blockCipherMode}
-                onChange={(e) => updateSettings({ blockCipherMode: e.target.value as any })}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
-                disabled={validModes.length === 1}
+                value={settings.encryptionAlgorithm}
+                onChange={(e) => updateSettings({ encryptionAlgorithm: e.target.value as any })}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
               >
-                {validModes.map((mode) => (
-                  <option key={mode.value} value={mode.value}>
-                    {mode.label}
+                {ENCRYPTION_ALGORITHMS.map((algo) => (
+                  <option key={algo.value} value={algo.value}>
+                    {algo.label}{algo.recommended ? ' ★' : ''}
                   </option>
                 ))}
               </select>
-              {validModes.length === 1 && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Mode is determined by the algorithm
-                </p>
-              )}
+            </div>
+          </div>
+          
+          {/* Selected Algorithm Info */}
+          {(() => {
+            const selectedAlgo = ENCRYPTION_ALGORITHMS.find(a => a.value === settings.encryptionAlgorithm);
+            return selectedAlgo && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-md text-sm">
+                {selectedAlgo.recommended && (
+                  <span className="px-1.5 py-0.5 text-[10px] bg-green-600/30 text-green-400 rounded">
+                    Recommended
+                  </span>
+                )}
+                <span className="text-gray-400">{selectedAlgo.description}</span>
+              </div>
+            );
+          })()}
+
+          {/* Block Cipher Mode - Inline */}
+          {validModes.length > 0 && (
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="w-5 h-5 text-purple-400 flex-shrink-0" />
+              <div className="flex-1 flex items-center gap-2">
+                <span className="text-sm text-gray-400 whitespace-nowrap">Mode:</span>
+                <select
+                  value={settings.blockCipherMode}
+                  onChange={(e) => updateSettings({ blockCipherMode: e.target.value as any })}
+                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                  disabled={validModes.length === 1}
+                >
+                  {validModes.map((mode) => (
+                    <option key={mode.value} value={mode.value}>
+                      {mode.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           )}
 
           {settings.encryptionAlgorithm === 'ChaCha20-Poly1305' && (
-            <div className="mt-4 pt-4 border-t border-gray-700">
-              <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 border border-gray-600 rounded-md text-gray-400 text-sm">
-                <ShieldCheck className="w-4 h-4" />
-                Stream cipher with built-in AEAD (no block mode needed)
-              </div>
+            <div className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-md text-gray-400 text-sm">
+              <ShieldCheck className="w-4 h-4 text-purple-400" />
+              Stream cipher with built-in AEAD (no block mode needed)
             </div>
           )}
         </div>

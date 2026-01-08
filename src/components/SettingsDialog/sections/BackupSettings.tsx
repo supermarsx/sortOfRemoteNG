@@ -493,20 +493,38 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 
           <div className="space-y-2">
             <label className="block text-sm text-[var(--color-textSecondary)]">
-              Max Backups to Keep
+              Keep Last X Backups
             </label>
-            <input
-              type="number"
-              min={0}
-              max={365}
-              value={backup.maxBackupsToKeep}
-              onChange={(e) =>
-                updateBackup({ maxBackupsToKeep: parseInt(e.target.value) || 0 })
-              }
-              className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm"
-            />
+            <div className="flex gap-2">
+              <div className="flex flex-wrap gap-1.5 flex-1">
+                {[5, 10, 30, 60, 0].map((count) => (
+                  <button
+                    key={count}
+                    type="button"
+                    onClick={() => updateBackup({ maxBackupsToKeep: count })}
+                    className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                      backup.maxBackupsToKeep === count
+                        ? "bg-blue-600 text-white"
+                        : "bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceActive)]"
+                    }`}
+                  >
+                    {count === 0 ? "∞" : count}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min={0}
+                max={365}
+                value={backup.maxBackupsToKeep}
+                onChange={(e) =>
+                  updateBackup({ maxBackupsToKeep: parseInt(e.target.value) || 0 })
+                }
+                className="w-20 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm text-center"
+              />
+            </div>
             <p className="text-xs text-[var(--color-textMuted)]">
-              0 = unlimited
+              Older backups are automatically deleted. 0 or ∞ = keep all.
             </p>
           </div>
         </div>

@@ -39,6 +39,8 @@ import {
   CloudSyncFrequency,
   ConflictResolutionStrategies,
   ConflictResolutionStrategy,
+  defaultCloudSyncConfig,
+  ProviderSyncStatus,
 } from "../../../types/settings";
 
 interface CloudSyncSettingsProps {
@@ -52,8 +54,13 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
 }) => {
   const { t } = useTranslation();
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showProviderConfig, setShowProviderConfig] = useState(false);
-  const cloudSync = settings.cloudSync;
+  const [expandedProvider, setExpandedProvider] = useState<CloudSyncProvider | null>(null);
+  // Ensure cloudSync is always defined, falling back to default config
+  const cloudSync = settings.cloudSync ?? defaultCloudSyncConfig;
+  
+  // Ensure enabledProviders array exists for backward compatibility
+  const enabledProviders = cloudSync.enabledProviders ?? [];
+  const providerStatus = cloudSync.providerStatus ?? {};
 
   const updateCloudSync = (updates: Partial<CloudSyncConfig>) => {
     updateSettings({
@@ -61,9 +68,49 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
     });
   };
 
-  const handleSyncNow = async () => {
+  const toggleProvider = (provider: CloudSyncProvider) => {
+    if (provider === 'none') return;
+    
+    const newEnabledProviders = enabledProviders.includes(provider)
+      ? enabledProviders.filter(p => p !== provider)
+      : [...enabledProviders, provider];
+    
+    // Update provider status
+    const newStatus = { ...providerStatus };
+    if (!enabledProviders.includes(provider)) {
+      // Enabling provider
+      newStatus[provider] = { enabled: true };
+      setExpandedProvider(provider);
+    } else {
+      // Disabling provider
+      if (newStatus[provider]) {
+        newStatus[provider] = { ...newStatus[provider], enabled: false };
+      }
+      if (expandedProvider === provider) {
+        setExpandedProvider(null);
+      }
+    }
+    
+    updateCloudSync({ 
+      enabledProviders: newEnabledProviders,
+      providerStatus: newStatus,
+      // Keep legacy provider field in sync (use first enabled provider)
+      provider: newEnabledProviders.length > 0 ? newEnabledProviders[0] : 'none',
+    });
+  };
+
+  const getProviderStatus = (provider: CloudSyncProvider): ProviderSyncStatus | undefined => {
+    return providerStatus[provider];
+  };
+
+  const handleSyncNow = async (provider?: CloudSyncProvider) => {
     // TODO: Implement manual sync trigger
-    console.log("Triggering manual sync...");
+    console.log("Triggering manual sync...", provider || "all providers");
+  };
+
+  const handleSyncProvider = async (provider: CloudSyncProvider) => {
+    console.log(`Syncing to ${provider}...`);
+    // TODO: Implement per-provider sync
   };
 
   const providerLabels: Record<CloudSyncProvider, string> = {
@@ -121,7 +168,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
   };
 
   const getSyncStatusIcon = () => {
-    if (!cloudSync.enabled || cloudSync.provider === 'none') {
+    if (!cloudSync.enabled || enabledProviders.length === 0) {
       return <CloudOff className="w-5 h-5 text-gray-400" />;
     }
     switch (cloudSync.lastSyncStatus) {
@@ -138,16 +185,12 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
     }
   };
 
-  const renderProviderConfig = () => {
-    switch (cloudSync.provider) {
+  const renderProviderConfig = (provider?: CloudSyncProvider) => {
+    const targetProvider = provider ?? cloudSync.provider;
+    switch (targetProvider) {
       case 'googleDrive':
         return (
-          <div className="space-y-4 p-4 bg-[var(--color-surface)]/50 rounded-lg border border-[var(--color-border)]">
-            <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-              <Cloud className="w-4 h-4 text-green-400" />
-              Google Drive Configuration
-            </div>
-            
+          <div className="space-y-4">
             {cloudSync.googleDrive.accountEmail ? (
               <div className="flex items-center justify-between p-3 bg-green-500/10 rounded-lg border border-green-500/30">
                 <div className="flex items-center gap-2">
@@ -202,12 +245,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
 
       case 'oneDrive':
         return (
-          <div className="space-y-4 p-4 bg-[var(--color-surface)]/50 rounded-lg border border-[var(--color-border)]">
-            <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-              <Cloud className="w-4 h-4 text-blue-500" />
-              OneDrive Configuration
-            </div>
-            
+          <div className="space-y-4">
             {cloudSync.oneDrive.accountEmail ? (
               <div className="flex items-center justify-between p-3 bg-blue-500/10 rounded-lg border border-blue-500/30">
                 <div className="flex items-center gap-2">
@@ -262,12 +300,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
 
       case 'nextcloud':
         return (
-          <div className="space-y-4 p-4 bg-[var(--color-surface)]/50 rounded-lg border border-[var(--color-border)]">
-            <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-              <Cloud className="w-4 h-4 text-cyan-400" />
-              Nextcloud Configuration
-            </div>
-            
+          <div className="space-y-4">
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Server URL
@@ -350,12 +383,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
 
       case 'webdav':
         return (
-          <div className="space-y-4 p-4 bg-[var(--color-surface)]/50 rounded-lg border border-[var(--color-border)]">
-            <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-              <Server className="w-4 h-4 text-orange-400" />
-              WebDAV Configuration
-            </div>
-            
+          <div className="space-y-4">
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 WebDAV URL
@@ -456,12 +484,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
 
       case 'sftp':
         return (
-          <div className="space-y-4 p-4 bg-[var(--color-surface)]/50 rounded-lg border border-[var(--color-border)]">
-            <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text)]">
-              <Terminal className="w-4 h-4 text-purple-400" />
-              SFTP Configuration
-            </div>
-            
+          <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
@@ -605,44 +628,45 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           Cloud Sync
         </h3>
         <button
-          onClick={handleSyncNow}
-          disabled={!cloudSync.enabled || cloudSync.provider === 'none'}
+          onClick={() => handleSyncNow()}
+          disabled={!cloudSync.enabled || enabledProviders.length === 0}
           className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
         >
           <RefreshCw className="w-4 h-4" />
-          Sync Now
+          Sync All
         </button>
       </div>
 
-      {/* Sync Status */}
-      {cloudSync.enabled && cloudSync.provider !== 'none' && (
-        <div className={`rounded-lg border p-4 ${
-          cloudSync.lastSyncStatus === 'success' ? 'bg-green-500/10 border-green-500/30' :
-          cloudSync.lastSyncStatus === 'failed' ? 'bg-red-500/10 border-red-500/30' :
-          cloudSync.lastSyncStatus === 'conflict' ? 'bg-orange-500/10 border-orange-500/30' :
-          'bg-[var(--color-surfaceHover)]/30 border-[var(--color-border)]'
-        }`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {getSyncStatusIcon()}
-              <div>
-                <span className="text-[var(--color-text)] font-medium">
-                  {cloudSync.lastSyncStatus === 'success' ? 'Sync Successful' :
-                   cloudSync.lastSyncStatus === 'failed' ? 'Sync Failed' :
-                   cloudSync.lastSyncStatus === 'partial' ? 'Partially Synced' :
-                   cloudSync.lastSyncStatus === 'conflict' ? 'Conflicts Detected' :
-                   'Ready to Sync'}
-                </span>
-                {cloudSync.lastSyncTime && (
-                  <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-                    Last sync: {new Date(cloudSync.lastSyncTime).toLocaleString()}
-                  </p>
-                )}
-              </div>
-            </div>
-            {cloudSync.lastSyncError && (
-              <span className="text-xs text-red-400">{cloudSync.lastSyncError}</span>
-            )}
+      {/* Multi-Target Sync Status Overview */}
+      {cloudSync.enabled && enabledProviders.length > 0 && (
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <FolderSync className="w-4 h-4 text-blue-400" />
+            <span className="text-sm font-medium text-[var(--color-text)]">
+              Syncing to {enabledProviders.length} target{enabledProviders.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {enabledProviders.map(provider => {
+              const status = getProviderStatus(provider);
+              return (
+                <div
+                  key={provider}
+                  className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
+                    status?.lastSyncStatus === 'success' ? 'bg-green-500/20 text-green-400' :
+                    status?.lastSyncStatus === 'failed' ? 'bg-red-500/20 text-red-400' :
+                    status?.lastSyncStatus === 'conflict' ? 'bg-orange-500/20 text-orange-400' :
+                    'bg-blue-500/20 text-blue-400'
+                  }`}
+                >
+                  {providerIcons[provider]}
+                  <span>{providerLabels[provider].split(' ')[0]}</span>
+                  {status?.lastSyncStatus === 'success' && <Check className="w-3 h-3" />}
+                  {status?.lastSyncStatus === 'failed' && <X className="w-3 h-3" />}
+                  {status?.lastSyncStatus === 'conflict' && <AlertTriangle className="w-3 h-3" />}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -672,60 +696,103 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
         </label>
       </div>
 
-      {/* Cloud Provider Selection */}
+      {/* Multi-Target Cloud Providers */}
       <div className="space-y-4">
-        <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
-          <Cloud className="w-4 h-4 inline mr-2" />
-          Cloud Provider
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
+            <Cloud className="w-4 h-4 inline mr-2" />
+            Sync Targets
+          </label>
+          <span className="text-xs text-[var(--color-textMuted)]">
+            Enable multiple targets for redundancy
+          </span>
+        </div>
         
-        <div className="grid grid-cols-2 gap-3">
-          {CloudSyncProviders.map((provider) => (
-            <button
-              key={provider}
-              onClick={() => {
-                updateCloudSync({ provider });
-                if (provider !== 'none') {
-                  setShowProviderConfig(true);
-                }
-              }}
-              className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
-                cloudSync.provider === provider
-                  ? 'border-blue-500 bg-blue-500/20'
-                  : 'border-[var(--color-border)] bg-[var(--color-surface)]/50 hover:bg-[var(--color-surfaceHover)]/50'
-              }`}
-            >
-              {providerIcons[provider]}
-              <div className="text-left">
-                <div className="text-sm font-medium text-[var(--color-text)]">
-                  {providerLabels[provider]}
+        <div className="space-y-2">
+          {CloudSyncProviders.filter(p => p !== 'none').map((provider) => {
+            const isEnabled = enabledProviders.includes(provider);
+            const isExpanded = expandedProvider === provider;
+            const status = getProviderStatus(provider);
+            
+            return (
+              <div 
+                key={provider}
+                className={`rounded-lg border transition-all ${
+                  isEnabled
+                    ? 'border-blue-500/50 bg-blue-500/10'
+                    : 'border-[var(--color-border)] bg-[var(--color-surface)]/50'
+                }`}
+              >
+                {/* Provider Header */}
+                <div className="flex items-center justify-between p-3">
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isEnabled}
+                        onChange={() => toggleProvider(provider)}
+                        className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
+                      />
+                    </label>
+                    <div className="flex items-center gap-2">
+                      {providerIcons[provider]}
+                      <div>
+                        <div className="text-sm font-medium text-[var(--color-text)]">
+                          {providerLabels[provider]}
+                        </div>
+                        <div className="text-xs text-[var(--color-textSecondary)]">
+                          {providerDescriptions[provider]}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    {/* Status indicator */}
+                    {isEnabled && status?.lastSyncTime && (
+                      <span className="text-xs text-[var(--color-textMuted)]">
+                        {new Date(status.lastSyncTime).toLocaleDateString()}
+                      </span>
+                    )}
+                    
+                    {/* Sync this provider button */}
+                    {isEnabled && (
+                      <button
+                        onClick={() => handleSyncProvider(provider)}
+                        className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded transition-colors"
+                        title={`Sync to ${providerLabels[provider]}`}
+                      >
+                        <RefreshCw className="w-4 h-4 text-[var(--color-textSecondary)]" />
+                      </button>
+                    )}
+                    
+                    {/* Expand/collapse config */}
+                    {isEnabled && (
+                      <button
+                        onClick={() => setExpandedProvider(isExpanded ? null : provider)}
+                        className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded transition-colors"
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-[var(--color-textSecondary)]" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-[var(--color-textSecondary)]" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="text-xs text-[var(--color-textSecondary)]">
-                  {providerDescriptions[provider]}
-                </div>
+                
+                {/* Provider Configuration (expanded) */}
+                {isEnabled && isExpanded && (
+                  <div className="border-t border-[var(--color-border)] p-3">
+                    {renderProviderConfig(provider)}
+                  </div>
+                )}
               </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
       </div>
-
-      {/* Provider Configuration */}
-      {cloudSync.provider !== 'none' && (
-        <div className="space-y-4">
-          <button
-            onClick={() => setShowProviderConfig(!showProviderConfig)}
-            className="flex items-center justify-between w-full p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] hover:bg-[var(--color-surfaceHover)]/50 transition-colors"
-          >
-            <span className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
-              <Settings className="w-4 h-4" />
-              Provider Configuration
-            </span>
-            {showProviderConfig ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
-          
-          {showProviderConfig && renderProviderConfig()}
-        </div>
-      )}
 
       {/* Sync Frequency */}
       <div className="space-y-4">
