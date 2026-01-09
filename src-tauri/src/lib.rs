@@ -97,6 +97,7 @@ mod tests {
     mod security_tests;
     mod network_tests;
     mod script_tests;
+    mod ssh_tunnel_tests;
 }
 
 use auth::{AuthService, AuthServiceState};
