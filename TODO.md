@@ -181,8 +181,8 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] Add root token embedding for login when applicable
 - [ ] Support multiple 2FA methods per connection (TOTP, push, hardware key)
 - [ ] Add 2FA auto-fill from integrated password managers
-- [ ] Add SSH keyboard-interactive authentication support (MFA prompts)
-- [ ] Add OpenSSH authentication agent support (ssh-agent forwarding)
+- [x] Add SSH keyboard-interactive authentication support (MFA prompts)
+- [x] Add OpenSSH authentication agent support (ssh-agent forwarding)
 - [ ] Add Windows Credential Manager full support (configurable)
   - [ ] Read credentials from Windows Credential Manager
   - [ ] Write/update credentials to Windows Credential Manager
@@ -202,7 +202,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
   - [ ] Full password audit tool functionality
   - [ ] Weak/duplicate/breached password detection
 - [ ] Add fully fledged session recorder capabilities
-  - [ ] SSH session recording (terminal replay)
+  - [x] SSH session recording (terminal replay)
   - [ ] RDP session recording (video)
   - [ ] VNC session recording
   - [ ] Playback functionality with timeline scrubbing
@@ -266,7 +266,7 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
   - [ ] Categorization and tagging
   - [ ] Search and filter capabilities
 - [ ] Protocol-specific automation
-  - [ ] SSH terminal automation (send commands, expect patterns)
+  - [x] SSH terminal automation (send commands, expect patterns)
   - [ ] RDP automation (remote input injection)
   - [ ] VNC automation (RFB input events)
   - [ ] HTTP automation (form filling, navigation)
@@ -403,10 +403,10 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [x] Create basic SSH service module in Rust with placeholder functions
 - [x] Add Tauri commands for SSH connect/execute/disconnect
 - [x] Implement actual SSH connection logic using ssh2 crate
-- [x] Migrate WebTerminal component to use Tauri IPC (pending)
+- [x] Migrate WebTerminal component to use Tauri IPC
 - [x] Implement SSH key management in Rust
 - [x] Add SSH Key Manager frontend component
-- [ ] Handle terminal resizing and interactions
+- [x] Handle terminal resizing and interactions
 
 ### 12. RDP and VNC Clients (Partially Implemented)
 - [x] Add Rust RDP crate (`rdp`)
@@ -421,33 +421,35 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] **Input Handling**: Forward keyboard/mouse events from frontend to backend protocol handlers
 
 ### 13. Database Connections ✅
-- ✅ Add Rust MySQL crate (`sqlx` with MySQL feature)
-- ✅ Create basic DB service module in Rust with MySQL connection pooling
-- ✅ Add Tauri commands for MySQL connect/execute/disconnect
-- ✅ Implement actual query execution logic
+- [x] Add Rust MySQL crate (`sqlx` with MySQL feature)
+- [x] Create basic DB service module in Rust with MySQL connection pooling
+- [x] Add Tauri commands for MySQL connect/execute/disconnect
+- [x] Implement actual query execution logic
 - [x] Migrate MySQLClient component to use IPC (service updated, tests pending backend)
 - [x] **Connection Tunneling**: Implemented SSH tunnel support for database connections
 - [x] Add phpMyAdmin-like management features (database/table CRUD, data editing, export)
 - [x] **Import functionality**: Added SQL and CSV import commands
 
 ### 14. File Transfer and FTP ✅
-- ✅ Add Rust FTP crate (`suppaftp`)
-- ✅ Create basic FTP service module in Rust with connection and listing
-- ✅ Add Tauri commands for FTP connect/list/disconnect
-- ✅ Implement file upload/download logic
+- [x] Add Rust FTP crate (`suppaftp`)
+- [x] Create basic FTP service module in Rust with connection and listing
+- [x] Add Tauri commands for FTP connect/list/disconnect
+- [x] Implement file upload/download logic
 - [x] **ADD SFTP SUPPORT**: Implemented SFTP using ssh2 crate with connect/list functionality
-- [ ] Update FileTransferManager to use Tauri commands
-- [ ] **FULL SFTP SUPPORT**: Complete file upload/download for SFTP
+- [x] Update FileTransferManager to use Tauri commands
+- [x] **FULL SFTP SUPPORT**: Complete file upload/download for SFTP
 - [ ] **SMB Client**: Implement SMB/CIFS protocol backend (currently missing)
-- [ ] **FTP OVER SSH TUNNELING**: SSH port forwarding for FTP connections
+- [x] **FTP OVER SSH TUNNELING**: SSH port forwarding for FTP connections
+- [x] **RDP OVER SSH TUNNELING**: SSH port forwarding for RDP connections (with RDP file generation)
+- [x] **VNC OVER SSH TUNNELING**: SSH port forwarding for VNC connections
 - [ ] **FTP OVER HTTP/HTTPS**: HTTP proxy support for FTP connections
 
 ### 15. Network Discovery and Scanning ✅
-- ✅ Add Rust ping crate (`tokio-ping`)
-- ✅ Create basic network service module in Rust with ping and scan placeholders
-- ✅ Add Tauri commands for ping and network scan
-- ✅ Implement actual ping functionality using system ping
-- ✅ Implement actual network scanning logic
+- [x] Add Rust ping crate (`tokio-ping`)
+- [x] Create basic network service module in Rust with ping and scan placeholders
+- [x] Add Tauri commands for ping and network scan
+- [x] Implement actual ping functionality using system ping
+- [x] Implement actual network scanning logic
 - [x] **FULLY IMPLEMENT NETWORK DISCOVERY**: Added port scanning, service detection, hostname resolution, MAC address lookup
 - [x] Update NetworkDiscovery component to use Tauri IPC (basic implementation done, needs enhancement)
 - [x] **ADD ADVANCED NETWORK FEATURES**: Traceroute, ping with detailed results, gateway detection, port checking for diagnostics
@@ -460,9 +462,9 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] **Log Parsing**: Parse stdout/stderr from VPN tools to report status/errors to UI.
 
 ### 15.6. Wake-on-LAN Functionality ✅
-- ✅ Create basic WOL service module in Rust with placeholder
-- ✅ Add Tauri command for wake_on_lan
-- ✅ Implement actual Wake-on-LAN logic using UDP packets
+- [x] Create basic WOL service module in Rust with placeholder
+- [x] Add Tauri command for wake_on_lan
+- [x] Implement actual Wake-on-LAN logic using UDP packets
 - [x] **SecureOn Password Support**: Added 108-byte packets with 6-byte password
 - [x] **WOL Discovery**: Added ARP table scanning to discover network devices
 - [x] **WOL Quick Tool**: Added toolbar button and popup for quick WOL access
@@ -494,14 +496,18 @@ This document outlines the comprehensive steps required to migrate the sortOfRem
 - [ ] **Binary Management**: Mechanism to download/locate the RustDesk binary on the user's system.
 
 ### 16. Security Features ✅
-- ✅ Add Rust TOTP crate (`totp-rs`)
-- ✅ Create basic security service module in Rust with TOTP and encryption placeholders
-- ✅ Add Tauri commands for TOTP generation/verification and data encryption/decryption
-- ✅ Implement actual encryption/decryption logic using AES-256-GCM
+- [x] Add Rust TOTP crate (`totp-rs`)
+- [x] Create basic security service module in Rust with TOTP and encryption placeholders
+- [x] Add Tauri commands for TOTP generation/verification and data encryption/decryption
+- [x] Implement actual encryption/decryption logic using AES-256-GCM
 - [ ] Update secure storage mechanisms to use Rust encryption
 
 ### 17. Connection Chaining & Proxying
-- [ ] **Implementation**: Implement the logic to route connections (SSH, DB, etc.) through the configured proxy/VPN chains.
+- [x] **Implementation**: Implement the logic to route connections (SSH, DB, etc.) through the configured proxy/VPN chains.
+  - [x] SOCKS4/SOCKS5 proxy support
+  - [x] HTTP/HTTPS CONNECT proxy support
+  - [x] Proxy chain modes (Strict, Dynamic, Random)
+  - [x] Authentication support for all proxy types
 - [ ] **UI Integration**: Ensure the frontend correctly passes chain configurations to the backend.
 
 ## Build and Configuration Updates

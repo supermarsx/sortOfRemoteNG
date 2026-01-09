@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use std::sync::Mutex as StdMutex;
 use std::collections::HashMap;
-use ssh2::Session;
+use ssh2::{Session, KeyboardInteractivePrompt, Prompt};
 use std::net::{TcpStream, TcpListener};
 use std::io::{ErrorKind, Read, Write};
 use std::path::Path;
@@ -13,6 +13,8 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use shell_escape;
 use tauri::Emitter;
+use totp_rs::{Algorithm, TOTP};
+use regex::Regex;
 
 // Maximum buffer size in bytes (1MB)
 const MAX_BUFFER_SIZE: usize = 1024 * 1024;
@@ -20,6 +22,28 @@ const MAX_BUFFER_SIZE: usize = 1024 * 1024;
 // Global terminal buffer storage
 lazy_static::lazy_static! {
     static ref TERMINAL_BUFFERS: StdMutex<HashMap<String, String>> = StdMutex::new(HashMap::new());
+}
+
+/// Generate a TOTP code from a secret
+fn generate_totp_code(secret: &str) -> Result<String, String> {
+    // Try to decode the secret (it might be base32 encoded)
+    let secret_bytes = if secret.chars().all(|c| c.is_ascii_alphanumeric()) {
+        // Likely base32 encoded
+        data_encoding::BASE32_NOPAD.decode(secret.to_uppercase().as_bytes())
+            .unwrap_or_else(|_| secret.as_bytes().to_vec())
+    } else {
+        secret.as_bytes().to_vec()
+    };
+    
+    let totp = TOTP::new(
+        Algorithm::SHA1,
+        6,  // 6 digits
+        1,  // 1 step
+        30, // 30 second period
+        secret_bytes,
+    ).map_err(|e| format!("Failed to create TOTP: {}", e))?;
+    
+    Ok(totp.generate_current().map_err(|e| format!("Failed to generate TOTP: {}", e))?)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -32,11 +56,23 @@ pub struct SshConnectionConfig {
     pub private_key_passphrase: Option<String>,
     pub jump_hosts: Vec<JumpHostConfig>,
     pub proxy_config: Option<ProxyConfig>,
+    /// Proxy chain for routing through multiple proxies
+    #[serde(default)]
+    pub proxy_chain: Option<ProxyChainConfig>,
     pub openvpn_config: Option<OpenVPNConfig>,
     pub connect_timeout: Option<u64>,
     pub keep_alive_interval: Option<u64>,
     pub strict_host_key_checking: bool,
     pub known_hosts_path: Option<String>,
+    // TOTP/MFA support for keyboard-interactive auth
+    #[serde(default)]
+    pub totp_secret: Option<String>,
+    // Keyboard-interactive responses (pre-configured answers for MFA prompts)
+    #[serde(default)]
+    pub keyboard_interactive_responses: Vec<String>,
+    // Agent forwarding
+    #[serde(default)]
+    pub agent_forwarding: bool,
     // TCP options
     #[serde(default = "default_true")]
     pub tcp_no_delay: bool,
@@ -72,12 +108,50 @@ fn default_ssh_version() -> String { "auto".to_string() }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProxyConfig {
-    pub proxy_type: String,
+    pub proxy_type: ProxyType,
     pub host: String,
     pub port: u16,
     pub username: Option<String>,
     pub password: Option<String>,
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum ProxyType {
+    #[serde(rename = "http")]
+    Http,
+    #[serde(rename = "https")]
+    Https,
+    #[serde(rename = "socks4")]
+    Socks4,
+    #[serde(rename = "socks5")]
+    Socks5,
+}
+
+/// Configuration for a proxy chain - route through multiple proxies
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProxyChainConfig {
+    /// List of proxies to chain through (in order)
+    pub proxies: Vec<ProxyConfig>,
+    /// Chain mode
+    #[serde(default)]
+    pub mode: ProxyChainMode,
+    /// Timeout for each proxy hop in milliseconds
+    #[serde(default = "default_proxy_timeout")]
+    pub hop_timeout_ms: u64,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub enum ProxyChainMode {
+    /// Connect through all proxies in order (default)
+    #[default]
+    Strict,
+    /// Try proxies in order, skip failures
+    Dynamic,
+    /// Randomly select one proxy
+    Random,
+}
+
+fn default_proxy_timeout() -> u64 { 10000 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OpenVPNConfig {
@@ -168,6 +242,135 @@ pub struct SshShellClosed {
     pub session_id: String,
 }
 
+// Session recording structures
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionRecordingEntry {
+    pub timestamp_ms: u64,  // Milliseconds since recording started
+    pub data: String,       // Terminal output data
+    pub entry_type: RecordingEntryType,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum RecordingEntryType {
+    Output,  // Server -> client output
+    Input,   // Client -> server input (optional, for auditing)
+    Resize { cols: u32, rows: u32 },
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionRecordingMetadata {
+    pub session_id: String,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub host: String,
+    pub username: String,
+    pub cols: u32,
+    pub rows: u32,
+    pub duration_ms: u64,
+    pub entry_count: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SessionRecording {
+    pub metadata: SessionRecordingMetadata,
+    pub entries: Vec<SessionRecordingEntry>,
+}
+
+// Global storage for active recordings
+lazy_static::lazy_static! {
+    static ref ACTIVE_RECORDINGS: StdMutex<HashMap<String, RecordingState>> = StdMutex::new(HashMap::new());
+}
+
+#[derive(Debug)]
+struct RecordingState {
+    start_time: std::time::Instant,
+    start_utc: DateTime<Utc>,
+    host: String,
+    username: String,
+    cols: u32,
+    rows: u32,
+    entries: Vec<SessionRecordingEntry>,
+    record_input: bool,
+}
+
+// ===============================
+// Terminal Automation Structures
+// ===============================
+
+/// Pattern to match in terminal output for automation
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ExpectPattern {
+    /// Regex pattern to match
+    pub pattern: String,
+    /// Response to send when pattern matches
+    pub response: String,
+    /// Whether to include newline after response
+    #[serde(default = "default_true")]
+    pub send_newline: bool,
+    /// Optional label for logging/debugging
+    pub label: Option<String>,
+}
+
+/// Automation script definition
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AutomationScript {
+    /// Unique script ID
+    pub id: String,
+    /// Human-readable name
+    pub name: String,
+    /// Patterns to match and respond to
+    pub patterns: Vec<ExpectPattern>,
+    /// Timeout in milliseconds (0 = no timeout)
+    #[serde(default = "default_automation_timeout")]
+    pub timeout_ms: u64,
+    /// Maximum number of pattern matches (0 = unlimited)
+    #[serde(default)]
+    pub max_matches: u32,
+    /// Whether to stop on first unmatched output after patterns start matching
+    #[serde(default)]
+    pub stop_on_no_match: bool,
+}
+
+fn default_automation_timeout() -> u64 { 30000 } // 30 seconds default
+
+/// Result of a single automation match
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AutomationMatch {
+    pub pattern_index: usize,
+    pub matched_text: String,
+    pub response_sent: String,
+    pub timestamp_ms: u64,
+}
+
+/// Automation execution status
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AutomationStatus {
+    pub session_id: String,
+    pub script_id: String,
+    pub script_name: String,
+    pub is_active: bool,
+    pub matches: Vec<AutomationMatch>,
+    pub started_at: DateTime<Utc>,
+    pub elapsed_ms: u64,
+}
+
+// State for active automation
+#[derive(Debug)]
+struct AutomationState {
+    script: AutomationScript,
+    compiled_patterns: Vec<regex::Regex>,
+    output_buffer: String,
+    matches: Vec<AutomationMatch>,
+    start_time: std::time::Instant,
+    start_utc: DateTime<Utc>,
+    tx: mpsc::UnboundedSender<SshShellCommand>,
+}
+
+// Global storage for active automations
+lazy_static::lazy_static! {
+    static ref ACTIVE_AUTOMATIONS: StdMutex<HashMap<String, AutomationState>> = StdMutex::new(HashMap::new());
+}
+
 #[derive(Debug)]
 pub struct PortForwardHandle {
     pub id: String,
@@ -228,11 +431,22 @@ impl SshService {
     pub async fn connect_ssh(&mut self, config: SshConnectionConfig) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
-        // Handle jump hosts if specified
-        let final_stream = if config.jump_hosts.is_empty() {
-            self.establish_direct_connection(&config).await?
-        } else {
+        // Determine connection method in priority order:
+        // 1. Proxy chain (if specified)
+        // 2. Single proxy (if specified)
+        // 3. OpenVPN (if specified)
+        // 4. Jump hosts (if specified)
+        // 5. Direct connection
+        let final_stream = if let Some(ref proxy_chain) = config.proxy_chain {
+            self.establish_proxy_chain_connection(&config, proxy_chain).await?
+        } else if let Some(ref proxy_config) = config.proxy_config {
+            self.establish_proxy_connection(&config, proxy_config).await?
+        } else if let Some(ref openvpn_config) = config.openvpn_config {
+            self.establish_openvpn_connection(&config, openvpn_config).await?
+        } else if !config.jump_hosts.is_empty() {
             self.establish_jump_connection(&config).await?
+        } else {
+            self.establish_direct_connection(&config).await?
         };
 
         // Apply TCP options to the stream for optimal performance
@@ -318,11 +532,428 @@ impl SshService {
         Ok(std_stream)
     }
 
-    async fn establish_proxy_connection(&self, _config: &SshConnectionConfig, _proxy_config: &ProxyConfig) -> Result<TcpStream, String> {
-        // Use the proxy service to establish connection
-        // This would need to be implemented with the proxy service
-        // For now, return an error indicating proxy is not implemented
-        Err("Proxy connections not yet implemented for SSH".to_string())
+    async fn establish_proxy_connection(&self, config: &SshConnectionConfig, proxy_config: &ProxyConfig) -> Result<TcpStream, String> {
+        let timeout = Duration::from_secs(config.connect_timeout.unwrap_or(15));
+        
+        // Connect to the proxy server
+        let proxy_addr = format!("{}:{}", proxy_config.host, proxy_config.port);
+        let proxy_stream = tokio::time::timeout(timeout, AsyncTcpStream::connect(&proxy_addr))
+            .await
+            .map_err(|_| format!("Proxy connection timeout to {}", proxy_addr))?
+            .map_err(|e| format!("Failed to connect to proxy {}: {}", proxy_addr, e))?;
+        
+        let target = format!("{}:{}", config.host, config.port);
+        
+        match &proxy_config.proxy_type {
+            ProxyType::Socks5 => {
+                self.connect_through_socks5(proxy_stream, &target, proxy_config).await
+            }
+            ProxyType::Socks4 => {
+                self.connect_through_socks4(proxy_stream, &target, proxy_config).await
+            }
+            ProxyType::Http | ProxyType::Https => {
+                self.connect_through_http_proxy(proxy_stream, &target, proxy_config).await
+            }
+        }
+    }
+    
+    async fn connect_through_socks5(
+        &self,
+        mut stream: AsyncTcpStream,
+        target: &str,
+        proxy_config: &ProxyConfig,
+    ) -> Result<TcpStream, String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        
+        // SOCKS5 greeting with auth method negotiation
+        let auth_required = proxy_config.username.is_some();
+        let greeting = if auth_required {
+            vec![0x05, 0x02, 0x00, 0x02]  // Version 5, 2 methods: no auth (0) and username/password (2)
+        } else {
+            vec![0x05, 0x01, 0x00]  // Version 5, 1 method: no auth
+        };
+        
+        stream.write_all(&greeting).await
+            .map_err(|e| format!("Failed to send SOCKS5 greeting: {}", e))?;
+        
+        // Read server response
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await
+            .map_err(|e| format!("Failed to read SOCKS5 greeting response: {}", e))?;
+        
+        if response[0] != 0x05 {
+            return Err("Invalid SOCKS5 response version".to_string());
+        }
+        
+        // Handle authentication if required
+        if response[1] == 0x02 {
+            // Username/password authentication
+            let username = proxy_config.username.as_deref().unwrap_or("");
+            let password = proxy_config.password.as_deref().unwrap_or("");
+            
+            let mut auth_request = vec![0x01]; // Auth version
+            auth_request.push(username.len() as u8);
+            auth_request.extend_from_slice(username.as_bytes());
+            auth_request.push(password.len() as u8);
+            auth_request.extend_from_slice(password.as_bytes());
+            
+            stream.write_all(&auth_request).await
+                .map_err(|e| format!("Failed to send SOCKS5 auth: {}", e))?;
+            
+            let mut auth_response = [0u8; 2];
+            stream.read_exact(&mut auth_response).await
+                .map_err(|e| format!("Failed to read SOCKS5 auth response: {}", e))?;
+            
+            if auth_response[1] != 0x00 {
+                return Err("SOCKS5 authentication failed".to_string());
+            }
+        } else if response[1] != 0x00 {
+            return Err(format!("SOCKS5 server requires unsupported auth method: {}", response[1]));
+        }
+        
+        // Parse target address
+        let parts: Vec<&str> = target.split(':').collect();
+        if parts.len() != 2 {
+            return Err("Invalid target address format".to_string());
+        }
+        let host = parts[0];
+        let port: u16 = parts[1].parse()
+            .map_err(|_| "Invalid port number".to_string())?;
+        
+        // Build SOCKS5 connect request
+        let mut request = vec![0x05, 0x01, 0x00]; // Version, Connect, Reserved
+        
+        // Try to parse as IP first, otherwise use domain name
+        if let Ok(ip) = host.parse::<std::net::Ipv4Addr>() {
+            request.push(0x01); // IPv4
+            request.extend_from_slice(&ip.octets());
+        } else if let Ok(ip) = host.parse::<std::net::Ipv6Addr>() {
+            request.push(0x04); // IPv6
+            request.extend_from_slice(&ip.octets());
+        } else {
+            request.push(0x03); // Domain name
+            request.push(host.len() as u8);
+            request.extend_from_slice(host.as_bytes());
+        }
+        
+        request.extend_from_slice(&port.to_be_bytes());
+        
+        stream.write_all(&request).await
+            .map_err(|e| format!("Failed to send SOCKS5 connect request: {}", e))?;
+        
+        // Read response (at least 10 bytes)
+        let mut connect_response = [0u8; 10];
+        stream.read_exact(&mut connect_response).await
+            .map_err(|e| format!("Failed to read SOCKS5 connect response: {}", e))?;
+        
+        if connect_response[1] != 0x00 {
+            let error_msg = match connect_response[1] {
+                0x01 => "General SOCKS server failure",
+                0x02 => "Connection not allowed by ruleset",
+                0x03 => "Network unreachable",
+                0x04 => "Host unreachable",
+                0x05 => "Connection refused",
+                0x06 => "TTL expired",
+                0x07 => "Command not supported",
+                0x08 => "Address type not supported",
+                _ => "Unknown SOCKS5 error",
+            };
+            return Err(format!("SOCKS5 connect failed: {}", error_msg));
+        }
+        
+        // Convert to std TcpStream
+        let std_stream = stream.into_std()
+            .map_err(|e| format!("Failed to convert stream: {}", e))?;
+        std_stream.set_nonblocking(false)
+            .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
+        
+        Ok(std_stream)
+    }
+    
+    async fn connect_through_socks4(
+        &self,
+        mut stream: AsyncTcpStream,
+        target: &str,
+        proxy_config: &ProxyConfig,
+    ) -> Result<TcpStream, String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        
+        let parts: Vec<&str> = target.split(':').collect();
+        if parts.len() != 2 {
+            return Err("Invalid target address format".to_string());
+        }
+        let host = parts[0];
+        let port: u16 = parts[1].parse()
+            .map_err(|_| "Invalid port number".to_string())?;
+        
+        // SOCKS4 only supports IPv4
+        let ip: std::net::Ipv4Addr = host.parse()
+            .map_err(|_| "SOCKS4 only supports IPv4 addresses, not domain names".to_string())?;
+        
+        // Build SOCKS4 request
+        let mut request = vec![0x04, 0x01]; // Version 4, Connect command
+        request.extend_from_slice(&port.to_be_bytes());
+        request.extend_from_slice(&ip.octets());
+        
+        // User ID (null-terminated)
+        if let Some(username) = &proxy_config.username {
+            request.extend_from_slice(username.as_bytes());
+        }
+        request.push(0x00); // Null terminator
+        
+        stream.write_all(&request).await
+            .map_err(|e| format!("Failed to send SOCKS4 request: {}", e))?;
+        
+        // Read response
+        let mut response = [0u8; 8];
+        stream.read_exact(&mut response).await
+            .map_err(|e| format!("Failed to read SOCKS4 response: {}", e))?;
+        
+        if response[1] != 0x5A {
+            let error_msg = match response[1] {
+                0x5B => "Request rejected or failed",
+                0x5C => "Request failed (no identd)",
+                0x5D => "Request failed (identd mismatch)",
+                _ => "Unknown SOCKS4 error",
+            };
+            return Err(format!("SOCKS4 connect failed: {}", error_msg));
+        }
+        
+        let std_stream = stream.into_std()
+            .map_err(|e| format!("Failed to convert stream: {}", e))?;
+        std_stream.set_nonblocking(false)
+            .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
+        
+        Ok(std_stream)
+    }
+    
+    async fn connect_through_http_proxy(
+        &self,
+        mut stream: AsyncTcpStream,
+        target: &str,
+        proxy_config: &ProxyConfig,
+    ) -> Result<TcpStream, String> {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        
+        // Build HTTP CONNECT request
+        let mut request = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
+        
+        // Add proxy authentication if provided
+        if let (Some(username), Some(password)) = (&proxy_config.username, &proxy_config.password) {
+            let credentials = format!("{}:{}", username, password);
+            let encoded = data_encoding::BASE64.encode(credentials.as_bytes());
+            request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
+        }
+        
+        request.push_str("\r\n");
+        
+        stream.write_all(request.as_bytes()).await
+            .map_err(|e| format!("Failed to send HTTP CONNECT: {}", e))?;
+        
+        // Read response
+        let mut reader = BufReader::new(&mut stream);
+        let mut response_line = String::new();
+        reader.read_line(&mut response_line).await
+            .map_err(|e| format!("Failed to read HTTP response: {}", e))?;
+        
+        // Parse response status
+        let parts: Vec<&str> = response_line.split_whitespace().collect();
+        if parts.len() < 2 {
+            return Err("Invalid HTTP proxy response".to_string());
+        }
+        
+        let status_code: u16 = parts[1].parse()
+            .map_err(|_| "Invalid HTTP status code".to_string())?;
+        
+        if status_code != 200 {
+            return Err(format!("HTTP proxy returned status {}", status_code));
+        }
+        
+        // Read and discard headers until empty line
+        loop {
+            let mut header_line = String::new();
+            reader.read_line(&mut header_line).await
+                .map_err(|e| format!("Failed to read HTTP headers: {}", e))?;
+            if header_line.trim().is_empty() {
+                break;
+            }
+        }
+        
+        // Reconstruct the stream from the reader's inner
+        drop(reader);
+        let std_stream = stream.into_std()
+            .map_err(|e| format!("Failed to convert stream: {}", e))?;
+        std_stream.set_nonblocking(false)
+            .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
+        
+        Ok(std_stream)
+    }
+    
+    /// Establish connection through a proxy chain
+    async fn establish_proxy_chain_connection(&self, config: &SshConnectionConfig, chain_config: &ProxyChainConfig) -> Result<TcpStream, String> {
+        if chain_config.proxies.is_empty() {
+            return Err("Proxy chain is empty".to_string());
+        }
+        
+        match chain_config.mode {
+            ProxyChainMode::Strict => {
+                self.establish_strict_proxy_chain(config, chain_config).await
+            }
+            ProxyChainMode::Dynamic => {
+                self.establish_dynamic_proxy_chain(config, chain_config).await
+            }
+            ProxyChainMode::Random => {
+                self.establish_random_proxy(config, chain_config).await
+            }
+        }
+    }
+    
+    async fn establish_strict_proxy_chain(&self, config: &SshConnectionConfig, chain_config: &ProxyChainConfig) -> Result<TcpStream, String> {
+        // In strict mode, we must connect through ALL proxies in order
+        // This is complex because each proxy tunnels through the previous one
+        // For simplicity, we'll connect through the first proxy and use SOCKS5's ability to chain
+        
+        if chain_config.proxies.len() == 1 {
+            return self.establish_proxy_connection(config, &chain_config.proxies[0]).await;
+        }
+        
+        // For true chaining, we need to connect to each proxy and have it forward to the next
+        // This implementation connects through the first proxy to reach subsequent proxies
+        let first_proxy = &chain_config.proxies[0];
+        let timeout = Duration::from_secs(config.connect_timeout.unwrap_or(15));
+        
+        // Connect to first proxy
+        let proxy_addr = format!("{}:{}", first_proxy.host, first_proxy.port);
+        let mut current_stream = tokio::time::timeout(timeout, AsyncTcpStream::connect(&proxy_addr))
+            .await
+            .map_err(|_| format!("Proxy chain timeout connecting to {}", proxy_addr))?
+            .map_err(|e| format!("Failed to connect to first proxy {}: {}", proxy_addr, e))?;
+        
+        // Chain through remaining proxies (except the last which connects to target)
+        for (i, proxy) in chain_config.proxies.iter().skip(1).enumerate() {
+            let target = if i == chain_config.proxies.len() - 2 {
+                // Last proxy in chain - connect to actual target
+                format!("{}:{}", config.host, config.port)
+            } else {
+                // Intermediate proxy - connect to next proxy
+                format!("{}:{}", proxy.host, proxy.port)
+            };
+            
+            // Use current stream to connect through previous proxy to this target
+            // For simplicity, assume SOCKS5 for chaining (most flexible)
+            current_stream = self.socks5_connect_internal(current_stream, &target, first_proxy).await
+                .map_err(|e| format!("Chain hop {} failed: {}", i + 1, e))?
+                .0;
+        }
+        
+        // Final connection to target through last proxy
+        let final_target = format!("{}:{}", config.host, config.port);
+        let last_proxy = chain_config.proxies.last().unwrap();
+        
+        let std_stream = self.connect_through_socks5(current_stream, &final_target, last_proxy).await?;
+        Ok(std_stream)
+    }
+    
+    async fn socks5_connect_internal(
+        &self,
+        mut stream: AsyncTcpStream,
+        target: &str,
+        proxy_config: &ProxyConfig,
+    ) -> Result<(AsyncTcpStream, ()), String> {
+        // Similar to connect_through_socks5 but returns AsyncTcpStream for chaining
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        
+        // SOCKS5 greeting
+        let auth_required = proxy_config.username.is_some();
+        let greeting = if auth_required {
+            vec![0x05, 0x02, 0x00, 0x02]
+        } else {
+            vec![0x05, 0x01, 0x00]
+        };
+        
+        stream.write_all(&greeting).await
+            .map_err(|e| format!("SOCKS5 greeting failed: {}", e))?;
+        
+        let mut response = [0u8; 2];
+        stream.read_exact(&mut response).await
+            .map_err(|e| format!("SOCKS5 response failed: {}", e))?;
+        
+        if response[0] != 0x05 {
+            return Err("Invalid SOCKS5 version".to_string());
+        }
+        
+        if response[1] == 0x02 {
+            let username = proxy_config.username.as_deref().unwrap_or("");
+            let password = proxy_config.password.as_deref().unwrap_or("");
+            
+            let mut auth = vec![0x01];
+            auth.push(username.len() as u8);
+            auth.extend_from_slice(username.as_bytes());
+            auth.push(password.len() as u8);
+            auth.extend_from_slice(password.as_bytes());
+            
+            stream.write_all(&auth).await.map_err(|e| format!("Auth failed: {}", e))?;
+            
+            let mut auth_resp = [0u8; 2];
+            stream.read_exact(&mut auth_resp).await.map_err(|e| format!("Auth response failed: {}", e))?;
+            
+            if auth_resp[1] != 0x00 {
+                return Err("SOCKS5 auth rejected".to_string());
+            }
+        } else if response[1] != 0x00 {
+            return Err("Unsupported auth method".to_string());
+        }
+        
+        // Connect request
+        let parts: Vec<&str> = target.split(':').collect();
+        let host = parts[0];
+        let port: u16 = parts[1].parse().unwrap_or(22);
+        
+        let mut request = vec![0x05, 0x01, 0x00, 0x03];
+        request.push(host.len() as u8);
+        request.extend_from_slice(host.as_bytes());
+        request.extend_from_slice(&port.to_be_bytes());
+        
+        stream.write_all(&request).await.map_err(|e| format!("Connect request failed: {}", e))?;
+        
+        let mut resp = [0u8; 10];
+        stream.read_exact(&mut resp).await.map_err(|e| format!("Connect response failed: {}", e))?;
+        
+        if resp[1] != 0x00 {
+            return Err(format!("SOCKS5 connect failed with code {}", resp[1]));
+        }
+        
+        Ok((stream, ()))
+    }
+    
+    async fn establish_dynamic_proxy_chain(&self, config: &SshConnectionConfig, chain_config: &ProxyChainConfig) -> Result<TcpStream, String> {
+        // In dynamic mode, try proxies in order and skip failures
+        let mut last_error = String::from("No proxies available");
+        
+        for proxy in &chain_config.proxies {
+            match self.establish_proxy_connection(config, proxy).await {
+                Ok(stream) => return Ok(stream),
+                Err(e) => {
+                    log::warn!("Proxy {}:{} failed: {}, trying next", proxy.host, proxy.port, e);
+                    last_error = e;
+                }
+            }
+        }
+        
+        Err(format!("All proxies in chain failed. Last error: {}", last_error))
+    }
+    
+    async fn establish_random_proxy(&self, config: &SshConnectionConfig, chain_config: &ProxyChainConfig) -> Result<TcpStream, String> {
+        use rand::Rng;
+        
+        // Use a simple random selection without thread_rng to avoid Send issues
+        let index = {
+            let mut rng = rand::rngs::OsRng;
+            rng.gen_range(0..chain_config.proxies.len())
+        };
+        
+        let proxy = &chain_config.proxies[index];
+        self.establish_proxy_connection(config, proxy).await
     }
 
     async fn establish_openvpn_connection(&self, _config: &SshConnectionConfig, _openvpn_config: &OpenVPNConfig) -> Result<TcpStream, String> {
@@ -378,6 +1009,66 @@ impl SshService {
         // Try password authentication if password is provided
         if let Some(password) = &config.password {
             if session.userauth_password(&config.username, password).is_ok() {
+                return Ok(());
+            }
+        }
+
+        // Try keyboard-interactive authentication (for MFA/2FA)
+        // This handles challenge-response prompts like TOTP, SMS codes, etc.
+        if config.password.is_some() || config.totp_secret.is_some() || !config.keyboard_interactive_responses.is_empty() {
+            struct KeyboardInteractiveHandler {
+                password: Option<String>,
+                totp_secret: Option<String>,
+                responses: Vec<String>,
+            }
+            
+            impl KeyboardInteractivePrompt for KeyboardInteractiveHandler {
+                fn prompt(&mut self, _username: &str, _instructions: &str, prompts: &[Prompt]) -> Vec<String> {
+                    prompts.iter().map(|prompt| {
+                        let prompt_lower = prompt.text.to_lowercase();
+                        
+                        // Check for TOTP/verification code prompts
+                        if prompt_lower.contains("verification") || prompt_lower.contains("code") 
+                            || prompt_lower.contains("token") || prompt_lower.contains("otp")
+                            || prompt_lower.contains("2fa") || prompt_lower.contains("mfa") {
+                            // Generate TOTP if secret is available
+                            if let Some(ref secret) = self.totp_secret {
+                                if let Ok(code) = generate_totp_code(secret) {
+                                    return code;
+                                }
+                            }
+                            // Check pre-configured responses
+                            for resp in &self.responses {
+                                if !resp.is_empty() {
+                                    return resp.clone();
+                                }
+                            }
+                        }
+                        
+                        // For password prompts, use the password
+                        if prompt_lower.contains("password") {
+                            if let Some(ref pwd) = self.password {
+                                return pwd.clone();
+                            }
+                        }
+                        
+                        // Fall back to any available response
+                        if let Some(ref pwd) = self.password {
+                            return pwd.clone();
+                        }
+                        
+                        String::new()
+                    }).collect()
+                }
+            }
+            
+            let mut handler = KeyboardInteractiveHandler {
+                password: config.password.clone(),
+                totp_secret: config.totp_secret.clone(),
+                responses: config.keyboard_interactive_responses.clone(),
+            };
+            
+            if session.userauth_keyboard_interactive(&config.username, &mut handler).is_ok() {
                 return Ok(());
             }
         }
@@ -634,6 +1325,13 @@ impl SshService {
         let mut channel = session.session.channel_session()
             .map_err(|e| format!("Failed to create channel: {}", e))?;
 
+        // Request agent forwarding if enabled
+        if session.config.agent_forwarding {
+            if let Err(e) = channel.request_auth_agent_forwarding() {
+                log::warn!("Failed to request agent forwarding: {} (continuing without)", e);
+            }
+        }
+
         // Request pseudo-terminal
         channel.request_pty("xterm", None, None)
             .map_err(|e| format!("Failed to request PTY: {}", e))?;
@@ -662,6 +1360,9 @@ impl SshService {
                 while let Ok(cmd) = rx.try_recv() {
                     match cmd {
                         SshShellCommand::Input(data) => {
+                            // Record input if recording is active
+                            record_input(&session_id_owned, &data);
+                            
                             if let Err(error) = channel.write_all(data.as_bytes()) {
                                 let _ = app_handle_clone.emit(
                                     "ssh-error",
@@ -677,6 +1378,8 @@ impl SshService {
                             idle_count = 0; // Reset idle counter on input
                         }
                         SshShellCommand::Resize(cols, rows) => {
+                            // Record resize event
+                            record_resize(&session_id_owned, cols, rows);
                             let _ = channel.request_pty_size(cols, rows, None, None);
                         }
                         SshShellCommand::Close => {
@@ -691,6 +1394,12 @@ impl SshService {
                     Ok(bytes) if bytes > 0 => {
                         let output = String::from_utf8_lossy(&buffer[..bytes]).to_string();
                         idle_count = 0; // Reset idle counter on output
+                        
+                        // Record output if recording is active
+                        record_output(&session_id_owned, &output);
+                        
+                        // Process automation patterns if automation is active
+                        process_automation_output(&session_id_owned, &output);
                         
                         // Store output in the global buffer
                         if let Ok(mut buffers) = TERMINAL_BUFFERS.lock() {
@@ -781,6 +1490,20 @@ impl SshService {
             let _ = shell.sender.send(SshShellCommand::Close);
         }
         Ok(())
+    }
+
+    pub async fn stop_port_forward(&mut self, session_id: &str, forward_id: &str) -> Result<(), String> {
+        let session = self.sessions.get_mut(session_id)
+            .ok_or("Session not found")?;
+        
+        if let Some(handle) = session.port_forwards.remove(forward_id) {
+            // Abort the port forwarding task
+            handle.handle.abort();
+            log::info!("Port forward {} stopped for session {}", forward_id, session_id);
+            Ok(())
+        } else {
+            Err(format!("Port forward {} not found", forward_id))
+        }
     }
 
     pub async fn setup_port_forward(&mut self, session_id: &str, config: PortForwardConfig) -> Result<String, String> {
@@ -1898,3 +2621,1208 @@ pub async fn reattach_session(
 // NOTE: pause_shell and resume_shell commands removed
 // The terminal buffer always captures the full session output (up to MAX_BUFFER_SIZE)
 // This ensures users never lose output when detaching and reattaching sessions
+
+// ===============================
+// Session Recording Commands
+// ===============================
+
+/// Start recording an SSH session's terminal output
+#[tauri::command]
+pub async fn start_session_recording(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    record_input: Option<bool>,
+    initial_cols: Option<u32>,
+    initial_rows: Option<u32>,
+) -> Result<(), String> {
+    let ssh = state.lock().await;
+    
+    // Verify session exists
+    let session = ssh.sessions.get(&session_id)
+        .ok_or("Session not found")?;
+    
+    let mut recordings = ACTIVE_RECORDINGS.lock()
+        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
+    
+    if recordings.contains_key(&session_id) {
+        return Err("Recording already active for this session".to_string());
+    }
+    
+    recordings.insert(session_id.clone(), RecordingState {
+        start_time: std::time::Instant::now(),
+        start_utc: Utc::now(),
+        host: session.config.host.clone(),
+        username: session.config.username.clone(),
+        cols: initial_cols.unwrap_or(80),
+        rows: initial_rows.unwrap_or(24),
+        entries: Vec::new(),
+        record_input: record_input.unwrap_or(false),
+    });
+    
+    log::info!("Started recording SSH session: {}", session_id);
+    Ok(())
+}
+
+/// Stop recording and return the recording data
+#[tauri::command]
+pub fn stop_session_recording(
+    session_id: String,
+) -> Result<SessionRecording, String> {
+    let mut recordings = ACTIVE_RECORDINGS.lock()
+        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
+    
+    let state = recordings.remove(&session_id)
+        .ok_or("No active recording for this session")?;
+    
+    let duration_ms = state.start_time.elapsed().as_millis() as u64;
+    
+    let recording = SessionRecording {
+        metadata: SessionRecordingMetadata {
+            session_id: session_id.clone(),
+            start_time: state.start_utc,
+            end_time: Some(Utc::now()),
+            host: state.host,
+            username: state.username,
+            cols: state.cols,
+            rows: state.rows,
+            duration_ms,
+            entry_count: state.entries.len(),
+        },
+        entries: state.entries,
+    };
+    
+    log::info!("Stopped recording SSH session: {} ({} entries, {}ms)", 
+               session_id, recording.metadata.entry_count, duration_ms);
+    
+    Ok(recording)
+}
+
+/// Check if a session is being recorded
+#[tauri::command]
+pub fn is_session_recording(session_id: String) -> Result<bool, String> {
+    let recordings = ACTIVE_RECORDINGS.lock()
+        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
+    Ok(recordings.contains_key(&session_id))
+}
+
+/// Get recording status for a session
+#[tauri::command]
+pub fn get_recording_status(session_id: String) -> Result<Option<SessionRecordingMetadata>, String> {
+    let recordings = ACTIVE_RECORDINGS.lock()
+        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
+    
+    if let Some(state) = recordings.get(&session_id) {
+        let duration_ms = state.start_time.elapsed().as_millis() as u64;
+        Ok(Some(SessionRecordingMetadata {
+            session_id: session_id.clone(),
+            start_time: state.start_utc,
+            end_time: None,
+            host: state.host.clone(),
+            username: state.username.clone(),
+            cols: state.cols,
+            rows: state.rows,
+            duration_ms,
+            entry_count: state.entries.len(),
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Add output data to an active recording (internal helper)
+fn record_output(session_id: &str, data: &str) {
+    if let Ok(mut recordings) = ACTIVE_RECORDINGS.lock() {
+        if let Some(state) = recordings.get_mut(session_id) {
+            let timestamp_ms = state.start_time.elapsed().as_millis() as u64;
+            state.entries.push(SessionRecordingEntry {
+                timestamp_ms,
+                data: data.to_string(),
+                entry_type: RecordingEntryType::Output,
+            });
+        }
+    }
+}
+
+/// Add input data to an active recording (internal helper)
+fn record_input(session_id: &str, data: &str) {
+    if let Ok(mut recordings) = ACTIVE_RECORDINGS.lock() {
+        if let Some(state) = recordings.get_mut(session_id) {
+            if state.record_input {
+                let timestamp_ms = state.start_time.elapsed().as_millis() as u64;
+                state.entries.push(SessionRecordingEntry {
+                    timestamp_ms,
+                    data: data.to_string(),
+                    entry_type: RecordingEntryType::Input,
+                });
+            }
+        }
+    }
+}
+
+/// Record a resize event
+fn record_resize(session_id: &str, cols: u32, rows: u32) {
+    if let Ok(mut recordings) = ACTIVE_RECORDINGS.lock() {
+        if let Some(state) = recordings.get_mut(session_id) {
+            let timestamp_ms = state.start_time.elapsed().as_millis() as u64;
+            state.entries.push(SessionRecordingEntry {
+                timestamp_ms,
+                data: String::new(),
+                entry_type: RecordingEntryType::Resize { cols, rows },
+            });
+            state.cols = cols;
+            state.rows = rows;
+        }
+    }
+}
+
+/// Export recording to asciicast v2 format (compatible with asciinema)
+#[tauri::command]
+pub fn export_recording_asciicast(recording: SessionRecording) -> Result<String, String> {
+    let mut output = Vec::new();
+    
+    // Header line (JSON object)
+    let header = serde_json::json!({
+        "version": 2,
+        "width": recording.metadata.cols,
+        "height": recording.metadata.rows,
+        "timestamp": recording.metadata.start_time.timestamp(),
+        "duration": recording.metadata.duration_ms as f64 / 1000.0,
+        "env": {
+            "SHELL": "/bin/bash",
+            "TERM": "xterm-256color"
+        },
+        "title": format!("SSH Session: {}@{}", recording.metadata.username, recording.metadata.host)
+    });
+    output.push(header.to_string());
+    
+    // Event lines [time, event_type, data]
+    for entry in &recording.entries {
+        let time_secs = entry.timestamp_ms as f64 / 1000.0;
+        match &entry.entry_type {
+            RecordingEntryType::Output => {
+                let event = serde_json::json!([time_secs, "o", entry.data]);
+                output.push(event.to_string());
+            }
+            RecordingEntryType::Input => {
+                let event = serde_json::json!([time_secs, "i", entry.data]);
+                output.push(event.to_string());
+            }
+            RecordingEntryType::Resize { cols, rows } => {
+                let resize_data = format!("\x1b[8;{};{}t", rows, cols);
+                let event = serde_json::json!([time_secs, "o", resize_data]);
+                output.push(event.to_string());
+            }
+        }
+    }
+    
+    Ok(output.join("\n"))
+}
+
+/// Export recording to script/typescript format (Unix script command format)
+#[tauri::command]
+pub fn export_recording_script(recording: SessionRecording) -> Result<String, String> {
+    let mut output = String::new();
+    
+    // Script header
+    output.push_str(&format!(
+        "Script started on {}\n",
+        recording.metadata.start_time.format("%Y-%m-%d %H:%M:%S UTC")
+    ));
+    
+    // Output data only (script format is simpler)
+    for entry in &recording.entries {
+        if let RecordingEntryType::Output = entry.entry_type {
+            output.push_str(&entry.data);
+        }
+    }
+    
+    // Script footer
+    if let Some(end_time) = recording.metadata.end_time {
+        output.push_str(&format!(
+            "\nScript done on {}\n",
+            end_time.format("%Y-%m-%d %H:%M:%S UTC")
+        ));
+    }
+    
+    Ok(output)
+}
+
+/// List all active recordings
+#[tauri::command]
+pub fn list_active_recordings() -> Result<Vec<String>, String> {
+    let recordings = ACTIVE_RECORDINGS.lock()
+        .map_err(|e| format!("Failed to lock recordings: {}", e))?;
+    Ok(recordings.keys().cloned().collect())
+}
+
+// ===============================
+// Terminal Automation Commands
+// ===============================
+
+/// Start automation on a session - patterns will be matched against terminal output
+#[tauri::command]
+pub async fn start_automation(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    script: AutomationScript,
+) -> Result<(), String> {
+    let ssh = state.lock().await;
+    
+    // Verify session and shell exist
+    let shell = ssh.shells.get(&session_id)
+        .ok_or("No active shell for this session")?;
+    
+    // Compile regex patterns
+    let compiled_patterns: Vec<Regex> = script.patterns.iter()
+        .map(|p| Regex::new(&p.pattern))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Invalid regex pattern: {}", e))?;
+    
+    let mut automations = ACTIVE_AUTOMATIONS.lock()
+        .map_err(|e| format!("Failed to lock automations: {}", e))?;
+    
+    if automations.contains_key(&session_id) {
+        return Err("Automation already active for this session".to_string());
+    }
+    
+    automations.insert(session_id.clone(), AutomationState {
+        script: script.clone(),
+        compiled_patterns,
+        output_buffer: String::new(),
+        matches: Vec::new(),
+        start_time: std::time::Instant::now(),
+        start_utc: Utc::now(),
+        tx: shell.sender.clone(),
+    });
+    
+    log::info!("Started automation '{}' on session {}", script.name, session_id);
+    Ok(())
+}
+
+/// Stop automation on a session and return results
+#[tauri::command]
+pub fn stop_automation(session_id: String) -> Result<AutomationStatus, String> {
+    let mut automations = ACTIVE_AUTOMATIONS.lock()
+        .map_err(|e| format!("Failed to lock automations: {}", e))?;
+    
+    let state = automations.remove(&session_id)
+        .ok_or("No active automation for this session")?;
+    
+    let elapsed_ms = state.start_time.elapsed().as_millis() as u64;
+    
+    log::info!("Stopped automation '{}' on session {} ({} matches)", 
+               state.script.name, session_id, state.matches.len());
+    
+    Ok(AutomationStatus {
+        session_id,
+        script_id: state.script.id,
+        script_name: state.script.name,
+        is_active: false,
+        matches: state.matches,
+        started_at: state.start_utc,
+        elapsed_ms,
+    })
+}
+
+/// Check if automation is active on a session
+#[tauri::command]
+pub fn is_automation_active(session_id: String) -> Result<bool, String> {
+    let automations = ACTIVE_AUTOMATIONS.lock()
+        .map_err(|e| format!("Failed to lock automations: {}", e))?;
+    Ok(automations.contains_key(&session_id))
+}
+
+/// Get automation status for a session
+#[tauri::command]
+pub fn get_automation_status(session_id: String) -> Result<Option<AutomationStatus>, String> {
+    let automations = ACTIVE_AUTOMATIONS.lock()
+        .map_err(|e| format!("Failed to lock automations: {}", e))?;
+    
+    if let Some(state) = automations.get(&session_id) {
+        let elapsed_ms = state.start_time.elapsed().as_millis() as u64;
+        Ok(Some(AutomationStatus {
+            session_id: session_id.clone(),
+            script_id: state.script.id.clone(),
+            script_name: state.script.name.clone(),
+            is_active: true,
+            matches: state.matches.clone(),
+            started_at: state.start_utc,
+            elapsed_ms,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+/// List all active automations
+#[tauri::command]
+pub fn list_active_automations() -> Result<Vec<String>, String> {
+    let automations = ACTIVE_AUTOMATIONS.lock()
+        .map_err(|e| format!("Failed to lock automations: {}", e))?;
+    Ok(automations.keys().cloned().collect())
+}
+
+/// Process automation patterns against new output (internal helper)
+fn process_automation_output(session_id: &str, output: &str) {
+    if let Ok(mut automations) = ACTIVE_AUTOMATIONS.lock() {
+        if let Some(state) = automations.get_mut(session_id) {
+            // Check for timeout
+            let elapsed_ms = state.start_time.elapsed().as_millis() as u64;
+            if state.script.timeout_ms > 0 && elapsed_ms > state.script.timeout_ms {
+                log::warn!("Automation timeout for session {}", session_id);
+                return;
+            }
+            
+            // Check max matches
+            if state.script.max_matches > 0 && state.matches.len() >= state.script.max_matches as usize {
+                return;
+            }
+            
+            // Add output to buffer
+            state.output_buffer.push_str(output);
+            
+            // Try to match patterns
+            let mut matched = false;
+            for (index, pattern) in state.compiled_patterns.iter().enumerate() {
+                if let Some(captures) = pattern.captures(&state.output_buffer) {
+                    matched = true;
+                    let matched_text = captures.get(0)
+                        .map(|m| m.as_str().to_string())
+                        .unwrap_or_default();
+                    
+                    let expect_pattern = &state.script.patterns[index];
+                    let mut response = expect_pattern.response.clone();
+                    if expect_pattern.send_newline {
+                        response.push('\n');
+                    }
+                    
+                    // Send response
+                    let _ = state.tx.send(SshShellCommand::Input(response.clone()));
+                    
+                    // Record match
+                    state.matches.push(AutomationMatch {
+                        pattern_index: index,
+                        matched_text,
+                        response_sent: response,
+                        timestamp_ms: elapsed_ms,
+                    });
+                    
+                    log::debug!("Automation pattern {} matched for session {}", 
+                               expect_pattern.label.as_deref().unwrap_or(&format!("#{}", index)), 
+                               session_id);
+                    
+                    // Clear buffer after match to avoid re-matching
+                    state.output_buffer.clear();
+                    break;
+                }
+            }
+            
+            // Limit buffer size to prevent memory issues
+            if state.output_buffer.len() > 64 * 1024 {
+                // Keep last 32KB
+                let excess = state.output_buffer.len() - 32 * 1024;
+                state.output_buffer = state.output_buffer[excess..].to_string();
+            }
+            
+            // Stop on no match if configured and we've had matches before
+            if state.script.stop_on_no_match && !matched && !state.matches.is_empty() {
+                // The caller should stop automation when this happens
+                // We could emit an event here if needed
+            }
+        }
+    }
+}
+
+/// Send a command and wait for expected output pattern
+#[tauri::command]
+pub async fn expect_and_send(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    command: String,
+    expect_pattern: String,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    let ssh = state.lock().await;
+    
+    let shell = ssh.shells.get(&session_id)
+        .ok_or("No active shell for this session")?;
+    
+    // Send the command
+    shell.sender.send(SshShellCommand::Input(format!("{}\n", command)))
+        .map_err(|e| format!("Failed to send command: {}", e))?;
+    
+    drop(ssh); // Release lock while waiting
+    
+    // Compile the pattern
+    let pattern = Regex::new(&expect_pattern)
+        .map_err(|e| format!("Invalid expect pattern: {}", e))?;
+    
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(10000));
+    let start = std::time::Instant::now();
+    
+    // Poll terminal buffer for pattern match
+    loop {
+        if start.elapsed() > timeout {
+            return Err("Timeout waiting for expected pattern".to_string());
+        }
+        
+        if let Ok(buffers) = TERMINAL_BUFFERS.lock() {
+            if let Some(buffer) = buffers.get(&session_id) {
+                if let Some(captures) = pattern.captures(buffer) {
+                    let matched_text = captures.get(0)
+                        .map(|m| m.as_str().to_string())
+                        .unwrap_or_default();
+                    return Ok(matched_text);
+                }
+            }
+        }
+        
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// Execute a sequence of commands with optional expect patterns between them
+#[tauri::command]
+pub async fn execute_command_sequence(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    commands: Vec<String>,
+    delay_between_ms: Option<u64>,
+) -> Result<Vec<String>, String> {
+    let delay = Duration::from_millis(delay_between_ms.unwrap_or(500));
+    let mut results = Vec::new();
+    
+    for (i, cmd) in commands.iter().enumerate() {
+        let ssh = state.lock().await;
+        
+        let shell = ssh.shells.get(&session_id)
+            .ok_or("No active shell for this session")?;
+        
+        // Send command
+        shell.sender.send(SshShellCommand::Input(format!("{}\n", cmd)))
+            .map_err(|e| format!("Failed to send command {}: {}", i, e))?;
+        
+        drop(ssh);
+        
+        // Wait for command to execute
+        tokio::time::sleep(delay).await;
+        
+        // Capture current buffer state
+        if let Ok(buffers) = TERMINAL_BUFFERS.lock() {
+            if let Some(buffer) = buffers.get(&session_id) {
+                results.push(buffer.clone());
+            } else {
+                results.push(String::new());
+            }
+        }
+    }
+    
+    Ok(results)
+}
+
+// ===============================
+// FTP over SSH Tunnel Commands
+// ===============================
+
+/// FTP tunnel configuration
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FtpTunnelConfig {
+    /// Local port for FTP control connection (default: dynamically assigned)
+    pub local_control_port: Option<u16>,
+    /// Remote FTP server host
+    pub remote_ftp_host: String,
+    /// Remote FTP server port (default: 21)
+    #[serde(default = "default_ftp_port")]
+    pub remote_ftp_port: u16,
+    /// Whether to set up passive mode data port forwarding
+    #[serde(default = "default_true")]
+    pub passive_mode: bool,
+    /// Local port range start for passive mode data connections
+    pub passive_port_range_start: Option<u16>,
+    /// Number of passive ports to forward (default: 10)
+    #[serde(default = "default_passive_port_count")]
+    pub passive_port_count: u16,
+}
+
+fn default_ftp_port() -> u16 { 21 }
+fn default_passive_port_count() -> u16 { 10 }
+
+/// FTP tunnel status
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FtpTunnelStatus {
+    pub tunnel_id: String,
+    pub session_id: String,
+    pub local_control_port: u16,
+    pub remote_ftp_host: String,
+    pub remote_ftp_port: u16,
+    pub passive_mode: bool,
+    pub passive_ports: Vec<u16>,
+    pub control_forward_id: String,
+    pub data_forward_ids: Vec<String>,
+}
+
+// Global storage for active FTP tunnels
+lazy_static::lazy_static! {
+    static ref FTP_TUNNELS: StdMutex<HashMap<String, FtpTunnelStatus>> = StdMutex::new(HashMap::new());
+}
+
+/// Setup an FTP tunnel over SSH
+/// This creates port forwards for both control (port 21) and optionally passive data ports
+#[tauri::command]
+pub async fn setup_ftp_tunnel(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    config: FtpTunnelConfig,
+) -> Result<FtpTunnelStatus, String> {
+    let mut ssh = state.lock().await;
+    
+    // Verify session exists
+    if !ssh.sessions.contains_key(&session_id) {
+        return Err("SSH session not found".to_string());
+    }
+    
+    let tunnel_id = Uuid::new_v4().to_string();
+    
+    // Setup control connection tunnel
+    let local_control_port = config.local_control_port.unwrap_or(0);
+    let control_config = PortForwardConfig {
+        local_host: "127.0.0.1".to_string(),
+        local_port: local_control_port,
+        remote_host: config.remote_ftp_host.clone(),
+        remote_port: config.remote_ftp_port,
+        direction: PortForwardDirection::Local,
+    };
+    
+    let control_forward_id = ssh.setup_port_forward(&session_id, control_config).await?;
+    
+    // Get the actual local port if it was dynamically assigned
+    let actual_control_port = ssh.sessions.get(&session_id)
+        .and_then(|s| s.port_forwards.get(&control_forward_id))
+        .map(|pf| pf.config.local_port)
+        .unwrap_or(local_control_port);
+    
+    let mut data_forward_ids = Vec::new();
+    let mut passive_ports = Vec::new();
+    
+    // Setup passive mode data port tunnels if enabled
+    if config.passive_mode {
+        // Use a common passive port range (typically 49152-65535 or a custom range)
+        let start_port = config.passive_port_range_start.unwrap_or(50000);
+        let port_count = config.passive_port_count;
+        
+        for i in 0..port_count {
+            let data_port = start_port + i;
+            let data_config = PortForwardConfig {
+                local_host: "127.0.0.1".to_string(),
+                local_port: data_port,
+                remote_host: config.remote_ftp_host.clone(),
+                remote_port: data_port,
+                direction: PortForwardDirection::Local,
+            };
+            
+            match ssh.setup_port_forward(&session_id, data_config).await {
+                Ok(forward_id) => {
+                    data_forward_ids.push(forward_id);
+                    passive_ports.push(data_port);
+                }
+                Err(e) => {
+                    log::warn!("Failed to setup passive port forward for port {}: {}", data_port, e);
+                }
+            }
+        }
+    }
+    
+    let status = FtpTunnelStatus {
+        tunnel_id: tunnel_id.clone(),
+        session_id: session_id.clone(),
+        local_control_port: actual_control_port,
+        remote_ftp_host: config.remote_ftp_host,
+        remote_ftp_port: config.remote_ftp_port,
+        passive_mode: config.passive_mode,
+        passive_ports,
+        control_forward_id,
+        data_forward_ids,
+    };
+    
+    // Store tunnel status
+    if let Ok(mut tunnels) = FTP_TUNNELS.lock() {
+        tunnels.insert(tunnel_id.clone(), status.clone());
+    }
+    
+    log::info!("FTP tunnel {} created: local port {} -> {}:{}", 
+               tunnel_id, actual_control_port, status.remote_ftp_host, status.remote_ftp_port);
+    
+    Ok(status)
+}
+
+/// Stop an FTP tunnel and clean up port forwards
+#[tauri::command]
+pub async fn stop_ftp_tunnel(
+    state: tauri::State<'_, SshServiceState>,
+    tunnel_id: String,
+) -> Result<(), String> {
+    // Get tunnel info
+    let tunnel_status = {
+        let mut tunnels = FTP_TUNNELS.lock()
+            .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+        tunnels.remove(&tunnel_id)
+            .ok_or("FTP tunnel not found")?
+    };
+    
+    let mut ssh = state.lock().await;
+    
+    // Stop control connection forward
+    if let Err(e) = ssh.stop_port_forward(&tunnel_status.session_id, &tunnel_status.control_forward_id).await {
+        log::warn!("Failed to stop control port forward: {}", e);
+    }
+    
+    // Stop data port forwards
+    for forward_id in &tunnel_status.data_forward_ids {
+        if let Err(e) = ssh.stop_port_forward(&tunnel_status.session_id, forward_id).await {
+            log::warn!("Failed to stop data port forward {}: {}", forward_id, e);
+        }
+    }
+    
+    log::info!("FTP tunnel {} stopped", tunnel_id);
+    Ok(())
+}
+
+/// Get status of an FTP tunnel
+#[tauri::command]
+pub fn get_ftp_tunnel_status(tunnel_id: String) -> Result<Option<FtpTunnelStatus>, String> {
+    let tunnels = FTP_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    Ok(tunnels.get(&tunnel_id).cloned())
+}
+
+/// List all active FTP tunnels
+#[tauri::command]
+pub fn list_ftp_tunnels() -> Result<Vec<FtpTunnelStatus>, String> {
+    let tunnels = FTP_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    Ok(tunnels.values().cloned().collect())
+}
+
+/// List FTP tunnels for a specific SSH session
+#[tauri::command]
+pub fn list_session_ftp_tunnels(session_id: String) -> Result<Vec<FtpTunnelStatus>, String> {
+    let tunnels = FTP_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    Ok(tunnels.values()
+        .filter(|t| t.session_id == session_id)
+        .cloned()
+        .collect())
+}
+
+// ===============================
+// RDP over SSH Tunnel Support
+// ===============================
+
+fn default_rdp_port() -> u16 { 3389 }
+
+/// Configuration for RDP over SSH tunnel
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RdpTunnelConfig {
+    /// Local port for RDP connection (default: dynamically assigned starting from 13389)
+    pub local_port: Option<u16>,
+    /// Remote RDP server host (relative to SSH server)
+    pub remote_rdp_host: String,
+    /// Remote RDP server port (default: 3389)
+    #[serde(default = "default_rdp_port")]
+    pub remote_rdp_port: u16,
+    /// Optional: Enable UDP tunnel for RDP UDP transport (requires additional setup)
+    #[serde(default)]
+    pub enable_udp: bool,
+    /// Optional: Restrict to specific network interface
+    pub bind_interface: Option<String>,
+    /// Whether to use NLA (Network Level Authentication) - informational only
+    #[serde(default = "default_true")]
+    pub nla_enabled: bool,
+    /// Optional description/label for this tunnel
+    pub label: Option<String>,
+}
+
+/// RDP tunnel status
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RdpTunnelStatus {
+    pub tunnel_id: String,
+    pub session_id: String,
+    pub local_port: u16,
+    pub remote_rdp_host: String,
+    pub remote_rdp_port: u16,
+    pub forward_id: String,
+    pub bind_address: String,
+    pub label: Option<String>,
+    pub nla_enabled: bool,
+    pub enable_udp: bool,
+    /// Connection string to use with RDP client (e.g., mstsc.exe)
+    pub connection_string: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// RDP tunnel statistics
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RdpTunnelStats {
+    pub tunnel_id: String,
+    pub bytes_sent: u64,
+    pub bytes_received: u64,
+    pub active_connections: u32,
+    pub uptime_seconds: u64,
+}
+
+// Global storage for active RDP tunnels
+lazy_static::lazy_static! {
+    static ref RDP_TUNNELS: StdMutex<HashMap<String, RdpTunnelStatus>> = StdMutex::new(HashMap::new());
+}
+
+/// Setup an RDP tunnel over SSH
+/// Creates a local port forward that tunnels RDP traffic through the SSH connection
+#[tauri::command]
+pub async fn setup_rdp_tunnel(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    config: RdpTunnelConfig,
+) -> Result<RdpTunnelStatus, String> {
+    let mut ssh = state.lock().await;
+    
+    // Determine local port - use specified or find available
+    let local_port = config.local_port.unwrap_or(13389);
+    let bind_interface = config.bind_interface.clone().unwrap_or_else(|| "127.0.0.1".to_string());
+    
+    // Setup port forward for RDP
+    let forward_config = PortForwardConfig {
+        local_host: bind_interface.clone(),
+        local_port,
+        remote_host: config.remote_rdp_host.clone(),
+        remote_port: config.remote_rdp_port,
+        direction: PortForwardDirection::Local,
+    };
+    
+    let forward_id = ssh.setup_port_forward(&session_id, forward_config).await?;
+    
+    // Get actual port (in case it was dynamically assigned)
+    let actual_port = ssh.sessions.get(&session_id)
+        .and_then(|s| s.port_forwards.get(&forward_id))
+        .map(|pf| pf.config.local_port)
+        .unwrap_or(local_port);
+    
+    let tunnel_id = format!("rdp_{}", Uuid::new_v4());
+    let connection_string = if bind_interface == "127.0.0.1" || bind_interface == "localhost" {
+        format!("localhost:{}", actual_port)
+    } else {
+        format!("{}:{}", bind_interface, actual_port)
+    };
+    
+    let status = RdpTunnelStatus {
+        tunnel_id: tunnel_id.clone(),
+        session_id: session_id.clone(),
+        local_port: actual_port,
+        remote_rdp_host: config.remote_rdp_host,
+        remote_rdp_port: config.remote_rdp_port,
+        forward_id,
+        bind_address: bind_interface,
+        label: config.label,
+        nla_enabled: config.nla_enabled,
+        enable_udp: config.enable_udp,
+        connection_string: connection_string.clone(),
+        created_at: Utc::now(),
+    };
+    
+    // Store tunnel status
+    if let Ok(mut tunnels) = RDP_TUNNELS.lock() {
+        tunnels.insert(tunnel_id.clone(), status.clone());
+    }
+    
+    log::info!("RDP tunnel {} created: {} -> {}:{}", 
+               tunnel_id, connection_string, status.remote_rdp_host, status.remote_rdp_port);
+    
+    Ok(status)
+}
+
+/// Stop an RDP tunnel and clean up port forward
+#[tauri::command]
+pub async fn stop_rdp_tunnel(
+    state: tauri::State<'_, SshServiceState>,
+    tunnel_id: String,
+) -> Result<(), String> {
+    // Get tunnel info
+    let tunnel_status = {
+        let mut tunnels = RDP_TUNNELS.lock()
+            .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+        tunnels.remove(&tunnel_id)
+            .ok_or("RDP tunnel not found")?
+    };
+    
+    let mut ssh = state.lock().await;
+    
+    // Stop the port forward
+    if let Err(e) = ssh.stop_port_forward(&tunnel_status.session_id, &tunnel_status.forward_id).await {
+        log::warn!("Failed to stop RDP port forward: {}", e);
+    }
+    
+    log::info!("RDP tunnel {} stopped", tunnel_id);
+    Ok(())
+}
+
+/// Get status of an RDP tunnel
+#[tauri::command]
+pub fn get_rdp_tunnel_status(tunnel_id: String) -> Result<Option<RdpTunnelStatus>, String> {
+    let tunnels = RDP_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    Ok(tunnels.get(&tunnel_id).cloned())
+}
+
+/// List all active RDP tunnels
+#[tauri::command]
+pub fn list_rdp_tunnels() -> Result<Vec<RdpTunnelStatus>, String> {
+    let tunnels = RDP_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    Ok(tunnels.values().cloned().collect())
+}
+
+/// List RDP tunnels for a specific SSH session
+#[tauri::command]
+pub fn list_session_rdp_tunnels(session_id: String) -> Result<Vec<RdpTunnelStatus>, String> {
+    let tunnels = RDP_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    Ok(tunnels.values()
+        .filter(|t| t.session_id == session_id)
+        .cloned()
+        .collect())
+}
+
+/// Setup multiple RDP tunnels for bulk remote desktop access
+#[tauri::command]
+pub async fn setup_bulk_rdp_tunnels(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    targets: Vec<RdpTunnelConfig>,
+) -> Result<Vec<RdpTunnelStatus>, String> {
+    let mut results = Vec::new();
+    let mut base_port = 13390u16; // Start from 13390 to avoid conflict with first tunnel at 13389
+    
+    for mut config in targets {
+        // Auto-assign port if not specified
+        if config.local_port.is_none() {
+            config.local_port = Some(base_port);
+            base_port += 1;
+        }
+        
+        match setup_rdp_tunnel(state.clone(), session_id.clone(), config).await {
+            Ok(status) => results.push(status),
+            Err(e) => {
+                log::warn!("Failed to setup RDP tunnel: {}", e);
+                // Continue with other tunnels
+            }
+        }
+    }
+    
+    Ok(results)
+}
+
+/// Stop all RDP tunnels for a session
+#[tauri::command]
+pub async fn stop_session_rdp_tunnels(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+) -> Result<u32, String> {
+    // Get all tunnel IDs for this session
+    let tunnel_ids: Vec<String> = {
+        let tunnels = RDP_TUNNELS.lock()
+            .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+        tunnels.values()
+            .filter(|t| t.session_id == session_id)
+            .map(|t| t.tunnel_id.clone())
+            .collect()
+    };
+    
+    let mut stopped = 0u32;
+    for tunnel_id in tunnel_ids {
+        if stop_rdp_tunnel(state.clone(), tunnel_id).await.is_ok() {
+            stopped += 1;
+        }
+    }
+    
+    Ok(stopped)
+}
+
+/// Generate an RDP file for a tunnel (can be opened directly by Windows Remote Desktop)
+#[tauri::command]
+pub fn generate_rdp_file(tunnel_id: String, options: Option<RdpFileOptions>) -> Result<String, String> {
+    let tunnels = RDP_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    
+    let tunnel = tunnels.get(&tunnel_id)
+        .ok_or("RDP tunnel not found")?;
+    
+    let opts = options.unwrap_or_default();
+    
+    let mut rdp_content = String::new();
+    
+    // Basic connection settings
+    rdp_content.push_str(&format!("full address:s:{}\n", tunnel.connection_string));
+    rdp_content.push_str(&format!("server port:i:{}\n", tunnel.local_port));
+    
+    // Screen settings
+    if let Some(width) = opts.screen_width {
+        rdp_content.push_str(&format!("desktopwidth:i:{}\n", width));
+    }
+    if let Some(height) = opts.screen_height {
+        rdp_content.push_str(&format!("desktopheight:i:{}\n", height));
+    }
+    if opts.fullscreen.unwrap_or(false) {
+        rdp_content.push_str("screen mode id:i:2\n");
+    } else {
+        rdp_content.push_str("screen mode id:i:1\n");
+    }
+    
+    // Color depth
+    let color_depth = opts.color_depth.unwrap_or(32);
+    rdp_content.push_str(&format!("session bpp:i:{}\n", color_depth));
+    
+    // Authentication
+    if tunnel.nla_enabled {
+        rdp_content.push_str("enablecredsspsupport:i:1\n");
+        rdp_content.push_str("authentication level:i:2\n");
+    } else {
+        rdp_content.push_str("enablecredsspsupport:i:0\n");
+        rdp_content.push_str("authentication level:i:0\n");
+    }
+    
+    // Username if provided
+    if let Some(username) = &opts.username {
+        rdp_content.push_str(&format!("username:s:{}\n", username));
+    }
+    
+    // Domain if provided
+    if let Some(domain) = &opts.domain {
+        rdp_content.push_str(&format!("domain:s:{}\n", domain));
+    }
+    
+    // Resource redirection
+    if opts.redirect_clipboard.unwrap_or(true) {
+        rdp_content.push_str("redirectclipboard:i:1\n");
+    }
+    if opts.redirect_printers.unwrap_or(false) {
+        rdp_content.push_str("redirectprinters:i:1\n");
+    }
+    if opts.redirect_drives.unwrap_or(false) {
+        rdp_content.push_str("drivestoredirect:s:*\n");
+    }
+    if opts.redirect_smartcards.unwrap_or(false) {
+        rdp_content.push_str("redirectsmartcards:i:1\n");
+    }
+    if opts.redirect_audio.unwrap_or(true) {
+        rdp_content.push_str("audiomode:i:0\n"); // Play on local computer
+    } else {
+        rdp_content.push_str("audiomode:i:2\n"); // Do not play
+    }
+    
+    // Performance settings
+    if opts.disable_wallpaper.unwrap_or(false) {
+        rdp_content.push_str("disable wallpaper:i:1\n");
+    }
+    if opts.disable_themes.unwrap_or(false) {
+        rdp_content.push_str("disable themes:i:1\n");
+    }
+    if opts.disable_font_smoothing.unwrap_or(false) {
+        rdp_content.push_str("disable font smoothing:i:1\n");
+    }
+    
+    // Gateway settings (not needed for SSH tunnel, but can be disabled)
+    rdp_content.push_str("gatewayusagemethod:i:0\n");
+    rdp_content.push_str("gatewaycredentialssource:i:0\n");
+    
+    // Connection bar
+    rdp_content.push_str("displayconnectionbar:i:1\n");
+    
+    // Prompt for credentials
+    rdp_content.push_str("prompt for credentials:i:0\n");
+    
+    // Negotiate security
+    rdp_content.push_str("negotiate security layer:i:1\n");
+    
+    Ok(rdp_content)
+}
+
+/// Options for generating RDP file
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct RdpFileOptions {
+    pub username: Option<String>,
+    pub domain: Option<String>,
+    pub screen_width: Option<u32>,
+    pub screen_height: Option<u32>,
+    pub fullscreen: Option<bool>,
+    pub color_depth: Option<u32>,
+    pub redirect_clipboard: Option<bool>,
+    pub redirect_printers: Option<bool>,
+    pub redirect_drives: Option<bool>,
+    pub redirect_smartcards: Option<bool>,
+    pub redirect_audio: Option<bool>,
+    pub disable_wallpaper: Option<bool>,
+    pub disable_themes: Option<bool>,
+    pub disable_font_smoothing: Option<bool>,
+}
+
+// ===============================
+// VNC over SSH Tunnel Support  
+// ===============================
+
+fn default_vnc_port() -> u16 { 5900 }
+
+/// Configuration for VNC over SSH tunnel
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VncTunnelConfig {
+    /// Local port for VNC connection (default: dynamically assigned starting from 15900)
+    pub local_port: Option<u16>,
+    /// Remote VNC server host (relative to SSH server)
+    pub remote_vnc_host: String,
+    /// Remote VNC server port (default: 5900, or 5900 + display number)
+    #[serde(default = "default_vnc_port")]
+    pub remote_vnc_port: u16,
+    /// VNC display number (alternative to specifying port directly)
+    pub display_number: Option<u16>,
+    /// Optional: Restrict to specific network interface
+    pub bind_interface: Option<String>,
+    /// Optional description/label for this tunnel
+    pub label: Option<String>,
+}
+
+/// VNC tunnel status
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VncTunnelStatus {
+    pub tunnel_id: String,
+    pub session_id: String,
+    pub local_port: u16,
+    pub remote_vnc_host: String,
+    pub remote_vnc_port: u16,
+    pub forward_id: String,
+    pub bind_address: String,
+    pub label: Option<String>,
+    /// Connection string to use with VNC client
+    pub connection_string: String,
+    pub created_at: DateTime<Utc>,
+}
+
+// Global storage for active VNC tunnels
+lazy_static::lazy_static! {
+    static ref VNC_TUNNELS: StdMutex<HashMap<String, VncTunnelStatus>> = StdMutex::new(HashMap::new());
+}
+
+/// Setup a VNC tunnel over SSH
+#[tauri::command]
+pub async fn setup_vnc_tunnel(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    config: VncTunnelConfig,
+) -> Result<VncTunnelStatus, String> {
+    let mut ssh = state.lock().await;
+    
+    // Determine remote port - use display number if provided
+    let remote_port = if let Some(display) = config.display_number {
+        5900 + display
+    } else {
+        config.remote_vnc_port
+    };
+    
+    // Determine local port - use specified or find available
+    let local_port = config.local_port.unwrap_or(15900);
+    let bind_interface = config.bind_interface.clone().unwrap_or_else(|| "127.0.0.1".to_string());
+    
+    // Setup port forward for VNC
+    let forward_config = PortForwardConfig {
+        local_host: bind_interface.clone(),
+        local_port,
+        remote_host: config.remote_vnc_host.clone(),
+        remote_port,
+        direction: PortForwardDirection::Local,
+    };
+    
+    let forward_id = ssh.setup_port_forward(&session_id, forward_config).await?;
+    
+    // Get actual port
+    let actual_port = ssh.sessions.get(&session_id)
+        .and_then(|s| s.port_forwards.get(&forward_id))
+        .map(|pf| pf.config.local_port)
+        .unwrap_or(local_port);
+    
+    let tunnel_id = format!("vnc_{}", Uuid::new_v4());
+    let connection_string = if bind_interface == "127.0.0.1" || bind_interface == "localhost" {
+        format!("localhost:{}", actual_port)
+    } else {
+        format!("{}:{}", bind_interface, actual_port)
+    };
+    
+    let status = VncTunnelStatus {
+        tunnel_id: tunnel_id.clone(),
+        session_id: session_id.clone(),
+        local_port: actual_port,
+        remote_vnc_host: config.remote_vnc_host,
+        remote_vnc_port: remote_port,
+        forward_id,
+        bind_address: bind_interface,
+        label: config.label,
+        connection_string: connection_string.clone(),
+        created_at: Utc::now(),
+    };
+    
+    // Store tunnel status
+    if let Ok(mut tunnels) = VNC_TUNNELS.lock() {
+        tunnels.insert(tunnel_id.clone(), status.clone());
+    }
+    
+    log::info!("VNC tunnel {} created: {} -> {}:{}", 
+               tunnel_id, connection_string, status.remote_vnc_host, status.remote_vnc_port);
+    
+    Ok(status)
+}
+
+/// Stop a VNC tunnel
+#[tauri::command]
+pub async fn stop_vnc_tunnel(
+    state: tauri::State<'_, SshServiceState>,
+    tunnel_id: String,
+) -> Result<(), String> {
+    let tunnel_status = {
+        let mut tunnels = VNC_TUNNELS.lock()
+            .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+        tunnels.remove(&tunnel_id)
+            .ok_or("VNC tunnel not found")?
+    };
+    
+    let mut ssh = state.lock().await;
+    
+    if let Err(e) = ssh.stop_port_forward(&tunnel_status.session_id, &tunnel_status.forward_id).await {
+        log::warn!("Failed to stop VNC port forward: {}", e);
+    }
+    
+    log::info!("VNC tunnel {} stopped", tunnel_id);
+    Ok(())
+}
+
+/// Get status of a VNC tunnel
+#[tauri::command]
+pub fn get_vnc_tunnel_status(tunnel_id: String) -> Result<Option<VncTunnelStatus>, String> {
+    let tunnels = VNC_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    Ok(tunnels.get(&tunnel_id).cloned())
+}
+
+/// List all active VNC tunnels
+#[tauri::command]
+pub fn list_vnc_tunnels() -> Result<Vec<VncTunnelStatus>, String> {
+    let tunnels = VNC_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    Ok(tunnels.values().cloned().collect())
+}
+
+/// List VNC tunnels for a specific SSH session
+#[tauri::command]
+pub fn list_session_vnc_tunnels(session_id: String) -> Result<Vec<VncTunnelStatus>, String> {
+    let tunnels = VNC_TUNNELS.lock()
+        .map_err(|e| format!("Failed to lock tunnels: {}", e))?;
+    Ok(tunnels.values()
+        .filter(|t| t.session_id == session_id)
+        .cloned()
+        .collect())
+}
