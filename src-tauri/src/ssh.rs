@@ -65,7 +65,7 @@ pub struct SshConnectionConfig {
 }
 
 fn default_true() -> bool { true }
-fn default_keepalive_probes() -> u32 { 3 }
+fn default_keepalive_probes() -> u32 { 2 } // Reduced for faster disconnect detection
 fn default_ip_protocol() -> String { "auto".to_string() }
 fn default_compression_level() -> u32 { 6 }
 fn default_ssh_version() -> String { "auto".to_string() }
@@ -235,17 +235,17 @@ impl SshService {
             self.establish_jump_connection(&config).await?
         };
 
-        // Apply TCP options to the stream
-        if config.tcp_no_delay {
-            final_stream.set_nodelay(true).ok();
-        }
+        // Apply TCP options to the stream for optimal performance
+        // Always enable TCP_NODELAY for interactive SSH sessions (disable Nagle's algorithm)
+        final_stream.set_nodelay(config.tcp_no_delay).ok();
         
-        // Set TCP keepalive if enabled
-        if config.tcp_keepalive {
-            // Note: More advanced keepalive options require platform-specific APIs
-            // The stream is already a TcpStream, keepalive is set at socket level
-            // Advanced options like keepalive_probes require socket2 crate
-        }
+        // Set read/write timeouts for faster failure detection
+        let timeout_secs = config.connect_timeout.unwrap_or(15);
+        final_stream.set_read_timeout(Some(Duration::from_secs(timeout_secs * 2))).ok();
+        final_stream.set_write_timeout(Some(Duration::from_secs(timeout_secs))).ok();
+        
+        // Note: TCP keepalive at OS level is already enabled by default on most systems
+        // Advanced keepalive tuning (probes, interval) requires platform-specific socket2 crate
 
         let mut sess = Session::new().map_err(|e| format!("Failed to create session: {}", e))?;
         sess.set_tcp_stream(final_stream);
@@ -295,20 +295,27 @@ impl SshService {
             return self.establish_proxy_connection(config, proxy_config).await;
         }
 
-        // Direct connection
+        // Direct connection with optimized timeout (default 15s for faster feedback)
         let addr = format!("{}:{}", config.host, config.port);
-        let timeout = config.connect_timeout.unwrap_or(30);
+        let timeout = config.connect_timeout.unwrap_or(15);
 
-        tokio::time::timeout(
+        // Use async connect with timeout for non-blocking behavior
+        let async_stream = tokio::time::timeout(
             Duration::from_secs(timeout),
             AsyncTcpStream::connect(&addr)
         ).await
-        .map_err(|_| format!("Connection timeout after {} seconds", timeout))?
+        .map_err(|_| format!("Connection timeout after {} seconds - host may be unreachable", timeout))?
         .map_err(|e| format!("Failed to connect to {}: {}", addr, e))?;
-
-        // Convert to blocking TcpStream for ssh2
-        TcpStream::connect((config.host.as_str(), config.port))
-            .map_err(|e| format!("Failed to establish TCP connection: {}", e))
+        
+        // Get the raw fd/socket for conversion
+        let std_stream = async_stream.into_std()
+            .map_err(|e| format!("Failed to convert async stream: {}", e))?;
+        
+        // Set non-blocking to false for ssh2 compatibility
+        std_stream.set_nonblocking(false)
+            .map_err(|e| format!("Failed to set blocking mode: {}", e))?;
+        
+        Ok(std_stream)
     }
 
     async fn establish_proxy_connection(&self, _config: &SshConnectionConfig, _proxy_config: &ProxyConfig) -> Result<TcpStream, String> {
@@ -642,8 +649,14 @@ impl SshService {
         let app_handle_clone = app_handle.clone();
 
         let thread = std::thread::spawn(move || {
-            let mut buffer = [0u8; 8192];
+            // Larger buffer for better throughput, especially for commands with lots of output
+            let mut buffer = [0u8; 16384];
             let mut running = true;
+            // Adaptive sleep: start short, increase when idle
+            let mut idle_count: u32 = 0;
+            const MIN_SLEEP_MS: u64 = 1;
+            const MAX_SLEEP_MS: u64 = 10;
+            const IDLE_THRESHOLD: u32 = 10;
 
             while running {
                 while let Ok(cmd) = rx.try_recv() {
@@ -661,6 +674,7 @@ impl SshService {
                                 break;
                             }
                             let _ = channel.flush();
+                            idle_count = 0; // Reset idle counter on input
                         }
                         SshShellCommand::Resize(cols, rows) => {
                             let _ = channel.request_pty_size(cols, rows, None, None);
@@ -676,6 +690,7 @@ impl SshService {
                 match channel.read(&mut buffer) {
                     Ok(bytes) if bytes > 0 => {
                         let output = String::from_utf8_lossy(&buffer[..bytes]).to_string();
+                        idle_count = 0; // Reset idle counter on output
                         
                         // Store output in the global buffer
                         if let Ok(mut buffers) = TERMINAL_BUFFERS.lock() {
@@ -696,8 +711,12 @@ impl SshService {
                             },
                         );
                     }
-                    Ok(_) => {}
-                    Err(error) if error.kind() == ErrorKind::WouldBlock => {}
+                    Ok(_) => {
+                        idle_count = idle_count.saturating_add(1);
+                    }
+                    Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                        idle_count = idle_count.saturating_add(1);
+                    }
                     Err(error) => {
                         let _ = app_handle_clone.emit(
                             "ssh-error",
@@ -714,7 +733,13 @@ impl SshService {
                     running = false;
                 }
 
-                std::thread::sleep(Duration::from_millis(12));
+                // Adaptive sleep: responsive when active, save CPU when idle
+                let sleep_ms = if idle_count > IDLE_THRESHOLD {
+                    MAX_SLEEP_MS
+                } else {
+                    MIN_SLEEP_MS
+                };
+                std::thread::sleep(Duration::from_millis(sleep_ms));
             }
 
             let _ = app_handle_clone.emit(

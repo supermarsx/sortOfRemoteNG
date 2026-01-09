@@ -946,13 +946,38 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     const dataDisposable = term.onData(handleInput);
 
     let cancelled = false;
+    
+    // Output batching for better rendering performance
+    let outputBuffer: string[] = [];
+    let flushScheduled = false;
+    const BATCH_INTERVAL_MS = 8; // ~120fps, smooth but responsive
+    
+    const flushOutputBuffer = () => {
+      if (outputBuffer.length === 0 || isDisposed.current || !termRef.current) {
+        flushScheduled = false;
+        return;
+      }
+      const data = outputBuffer.join('');
+      outputBuffer = [];
+      flushScheduled = false;
+      safeWrite(data);
+    };
+    
+    const scheduleFlush = () => {
+      if (!flushScheduled) {
+        flushScheduled = true;
+        setTimeout(flushOutputBuffer, BATCH_INTERVAL_MS);
+      }
+    };
 
     const attachListeners = async () => {
       if (!isSsh) return;
       try {
         const unlistenOutput = await listen<SshOutputEvent>("ssh-output", (event) => {
           if (event.payload.session_id !== sshSessionId.current) return;
-          safeWrite(event.payload.data);
+          // Batch output for smoother rendering
+          outputBuffer.push(event.payload.data);
+          scheduleFlush();
         });
         if (!cancelled) {
           outputUnlistenRef.current = unlistenOutput;

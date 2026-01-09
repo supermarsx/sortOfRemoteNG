@@ -1283,15 +1283,15 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
   allowXterm256Colors: true,
   allow24BitColors: true,
 
-  // Low-level TCP options
+  // Low-level TCP options (optimized for faster connections)
   tcpOptions: {
-    tcpNoDelay: true,
+    tcpNoDelay: true, // Disable Nagle's algorithm for lower latency
     tcpKeepAlive: true,
     soKeepAlive: true,
     ipProtocol: 'auto',
-    keepAliveInterval: 60,
-    keepAliveProbes: 3,
-    connectionTimeout: 30,
+    keepAliveInterval: 30, // Faster keepalive detection (was 60)
+    keepAliveProbes: 2, // Fewer probes before disconnect (was 3)
+    connectionTimeout: 15, // Faster timeout for unresponsive hosts (was 30)
   },
 
   // SSH protocol settings
@@ -1299,31 +1299,31 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
   enableCompression: false,
   compressionLevel: 6,
 
-  // Additional SSH options
+  // Additional SSH options (ordered by performance - fastest first)
   preferredCiphers: [
-    'chacha20-poly1305@openssh.com',
+    'aes128-gcm@openssh.com', // Fastest with AES-NI hardware
     'aes256-gcm@openssh.com',
-    'aes128-gcm@openssh.com',
+    'chacha20-poly1305@openssh.com', // Fast on systems without AES-NI
+    'aes128-ctr', // Good balance of speed and security
     'aes256-ctr',
     'aes192-ctr',
-    'aes128-ctr',
   ],
   preferredMACs: [
-    'hmac-sha2-512-etm@openssh.com',
+    'umac-128-etm@openssh.com', // Fastest MAC
+    'umac-64-etm@openssh.com',
     'hmac-sha2-256-etm@openssh.com',
-    'umac-128-etm@openssh.com',
-    'hmac-sha2-512',
+    'hmac-sha2-512-etm@openssh.com',
     'hmac-sha2-256',
   ],
   preferredKeyExchanges: [
-    'curve25519-sha256',
+    'curve25519-sha256', // Fastest modern key exchange
     'curve25519-sha256@libssh.org',
-    'ecdh-sha2-nistp521',
+    'ecdh-sha2-nistp256', // Faster than larger curves
     'ecdh-sha2-nistp384',
-    'ecdh-sha2-nistp256',
-    'diffie-hellman-group18-sha512',
+    'ecdh-sha2-nistp521',
+    'diffie-hellman-group14-sha256', // Fastest DH group
     'diffie-hellman-group16-sha512',
-    'diffie-hellman-group14-sha256',
+    'diffie-hellman-group18-sha512',
   ],
   preferredHostKeyAlgorithms: [
     'ssh-ed25519',

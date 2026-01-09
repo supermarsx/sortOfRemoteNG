@@ -146,10 +146,13 @@ describe("WebTerminal", () => {
             jump_hosts: [],
             proxy_config: null,
             openvpn_config: null,
-            connect_timeout: 30,
-            keep_alive_interval: 60,
+            // Optimized values for faster connections
+            connect_timeout: 15,
+            keep_alive_interval: 30,
             strict_host_key_checking: false,
-            known_hosts_path: null
+            known_hosts_path: null,
+            tcp_no_delay: true,
+            tcp_keepalive: true
           })
         });
       });
