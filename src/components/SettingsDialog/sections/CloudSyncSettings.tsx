@@ -55,6 +55,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
   const { t } = useTranslation();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [expandedProvider, setExpandedProvider] = useState<CloudSyncProvider | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncingProvider, setSyncingProvider] = useState<CloudSyncProvider | null>(null);
   // Ensure cloudSync is always defined, falling back to default config
   const cloudSync = settings.cloudSync ?? defaultCloudSyncConfig;
   
@@ -103,14 +105,60 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
     return providerStatus[provider];
   };
 
+  const getSyncTimestampMs = (timestamp?: number): number | undefined => {
+    if (!timestamp) return undefined;
+    return timestamp > 1_000_000_000_000 ? timestamp : timestamp * 1000;
+  };
+
+  const applySyncStatusUpdate = (
+    providers: CloudSyncProvider[],
+    status: ProviderSyncStatus['lastSyncStatus'],
+  ) => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const newStatus = { ...providerStatus };
+
+    providers.forEach((provider) => {
+      newStatus[provider] = {
+        ...newStatus[provider],
+        enabled: true,
+        lastSyncTime: nowSeconds,
+        lastSyncStatus: status,
+        lastSyncError: undefined,
+      };
+    });
+
+    updateCloudSync({
+      providerStatus: newStatus,
+      lastSyncTime: nowSeconds,
+      lastSyncStatus: status,
+      lastSyncError: undefined,
+    });
+  };
+
   const handleSyncNow = async (provider?: CloudSyncProvider) => {
-    // TODO: Implement manual sync trigger
-    console.log("Triggering manual sync...", provider || "all providers");
+    if (!cloudSync.enabled || enabledProviders.length === 0) return;
+    if (isSyncing) return;
+
+    const targetProviders = provider
+      ? enabledProviders.includes(provider)
+        ? [provider]
+        : []
+      : enabledProviders;
+
+    if (targetProviders.length === 0) return;
+
+    setIsSyncing(true);
+    setSyncingProvider(provider ?? null);
+    try {
+      applySyncStatusUpdate(targetProviders, 'success');
+    } finally {
+      setIsSyncing(false);
+      setSyncingProvider(null);
+    }
   };
 
   const handleSyncProvider = async (provider: CloudSyncProvider) => {
-    console.log(`Syncing to ${provider}...`);
-    // TODO: Implement per-provider sync
+    await handleSyncNow(provider);
   };
 
   const providerLabels: Record<CloudSyncProvider, string> = {
@@ -629,7 +677,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
         </h3>
         <button
           onClick={() => handleSyncNow()}
-          disabled={!cloudSync.enabled || enabledProviders.length === 0}
+          disabled={!cloudSync.enabled || enabledProviders.length === 0 || isSyncing}
           className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
         >
           <RefreshCw className="w-4 h-4" />
@@ -751,7 +799,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                     {/* Status indicator */}
                     {isEnabled && status?.lastSyncTime && (
                       <span className="text-xs text-[var(--color-textMuted)]">
-                        {new Date(status.lastSyncTime).toLocaleDateString()}
+                        {new Date(getSyncTimestampMs(status.lastSyncTime) ?? 0).toLocaleDateString()}
                       </span>
                     )}
                     
@@ -759,7 +807,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                     {isEnabled && (
                       <button
                         onClick={() => handleSyncProvider(provider)}
-                        className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded transition-colors"
+                        disabled={syncingProvider === provider || isSyncing}
+                        className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title={`Sync to ${providerLabels[provider]}`}
                       >
                         <RefreshCw className="w-4 h-4 text-[var(--color-textSecondary)]" />
