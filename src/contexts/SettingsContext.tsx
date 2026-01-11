@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { GlobalSettings, defaultSSHTerminalConfig, defaultBackupConfig, defaultCloudSyncConfig } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';

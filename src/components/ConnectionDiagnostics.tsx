@@ -456,6 +456,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   const runDiagnostics = useCallback(async () => {
     setIsRunning(true);
     setResults(initialResults);
+    let resolvedDnsIp: string | undefined;
 
     const isTauri = typeof window !== "undefined" &&
       Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
@@ -499,6 +500,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
         if (dnsRes.status === 'fulfilled') {
           const dnsResult = dnsRes.value;
           setResults(prev => ({ ...prev, dnsResult }));
+          resolvedDnsIp = dnsResult.resolved_ips[0];
           
           // Classify the resolved IP if DNS succeeded
           if (dnsResult.success && dnsResult.resolved_ips.length > 0) {
@@ -594,7 +596,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
       setCurrentStep(t('diagnostics.runningExtended', 'Running extended diagnostics...'));
       
       // Get target IP for geo lookup
-      const targetIp = results.dnsResult?.resolved_ips?.[0] || connection.hostname;
+      const targetIp = resolvedDnsIp || connection.hostname;
       
       // Determine if UDP probe is applicable based on protocol
       const udpPorts: Record<string, number> = {

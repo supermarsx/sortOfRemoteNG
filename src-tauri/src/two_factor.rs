@@ -26,6 +26,7 @@ use totp_rs::{Algorithm, TOTP};
 use image::Rgb;
 use qrcode::QrCode;
 use base64::{Engine as _, engine::general_purpose};
+use rand::RngCore;
 
 /// Supported 2FA methods
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -86,7 +87,9 @@ impl TwoFactorService {
     /// Enables TOTP for a user and returns setup information
     pub async fn enable_totp(&mut self, username: String) -> Result<String, String> {
         // Generate a new secret
-        let secret = "JBSWY3DPEHPK3PXP".to_string(); // TODO: Generate proper random secret
+        let mut secret_bytes = [0u8; 20];
+        rand::rngs::OsRng.fill_bytes(&mut secret_bytes);
+        let secret = data_encoding::BASE32_NOPAD.encode(&secret_bytes);
 
         // Create TOTP instance
         let totp = TOTP::new(

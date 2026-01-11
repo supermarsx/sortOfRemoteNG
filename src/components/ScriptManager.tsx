@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   X, Plus, Edit2, Trash2, Save, Copy, Search,
