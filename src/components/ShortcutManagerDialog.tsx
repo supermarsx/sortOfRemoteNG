@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { X, Keyboard, Plus, Trash2, RefreshCw, Edit, FolderOpen, Check, AlertTriangle, ExternalLink, Folder, Search } from "lucide-react";
+import { X, Keyboard, Plus, Trash2, RefreshCw, Edit, FolderOpen, Check, AlertTriangle, ExternalLink, Folder, Search, Link } from "lucide-react";
 import { useConnections } from "../contexts/useConnections";
 import { CollectionManager } from "../utils/collectionManager";
 import { invoke } from "@tauri-apps/api/core";
