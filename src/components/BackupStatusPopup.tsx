@@ -20,6 +20,10 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
+import { useConnections } from '../contexts/useConnections';
+import { SettingsManager } from '../utils/settingsManager';
+import { Connection } from '../types/connection';
+import { GlobalSettings } from '../types/settings';
 
 interface BackupStatus {
   isRunning: boolean;
@@ -45,6 +49,12 @@ interface BackupListItem {
 interface BackupStatusPopupProps {
   onBackupNow?: (data: unknown) => Promise<void>;
   onOpenSettings?: () => void;
+}
+
+interface BackupRestorePayload {
+  connections?: Connection[];
+  settings?: Partial<GlobalSettings>;
+  timestamp?: number;
 }
 
 const formatBytes = (bytes: number): string => {
@@ -84,6 +94,8 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
   onOpenSettings,
 }) => {
   const { t } = useTranslation();
+  const { dispatch } = useConnections();
+  const settingsManager = SettingsManager.getInstance();
   const [isOpen, setIsOpen] = useState(false);
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
   const [backupList, setBackupList] = useState<BackupListItem[]>([]);
@@ -233,10 +245,24 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
       return;
     }
     try {
-      const data = await invoke('backup_restore', { backupId });
-      console.log('Restored data:', data);
-      // TODO: Actually apply the restored data to the app state
-      alert(t('backup.restoreSuccess', 'Backup restored successfully. Please restart the application.'));
+      const data = await invoke<BackupRestorePayload>('backup_restore', { backupId });
+      const restoredConnections = Array.isArray(data?.connections)
+        ? data.connections.map((conn: any) => ({
+            ...conn,
+            createdAt: conn.createdAt ? new Date(conn.createdAt) : new Date(),
+            updatedAt: conn.updatedAt ? new Date(conn.updatedAt) : new Date(),
+          }))
+        : [];
+
+      if (restoredConnections.length > 0) {
+        dispatch({ type: "SET_CONNECTIONS", payload: restoredConnections });
+      }
+
+      if (data?.settings && Object.keys(data.settings).length > 0) {
+        await settingsManager.saveSettings(data.settings);
+      }
+
+      alert(t('backup.restoreSuccess', 'Backup restored successfully.'));
     } catch (error) {
       console.error('Restore failed:', error);
       alert(t('backup.restoreFailed', 'Failed to restore backup: {{error}}', { error: String(error) }));

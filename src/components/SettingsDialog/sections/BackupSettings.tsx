@@ -34,9 +34,11 @@ import {
   BackupLocationPresets,
   BackupLocationPreset,
 } from "../../../types/settings";
+import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { appDataDir, documentDir, join } from "@tauri-apps/api/path";
 import { homeDir } from "@tauri-apps/api/path";
+import { useConnections } from "../../../contexts/useConnections";
 
 interface BackupSettingsProps {
   settings: GlobalSettings;
@@ -48,7 +50,9 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
   updateSettings,
 }) => {
   const { t } = useTranslation();
+  const { state } = useConnections();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isRunningBackup, setIsRunningBackup] = useState(false);
   const [presetPaths, setPresetPaths] = useState<Record<BackupLocationPreset, string>>({
     custom: '',
     appData: '',
@@ -124,8 +128,41 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
   };
 
   const handleRunBackupNow = async () => {
-    // TODO: Implement immediate backup trigger
-    console.log("Running backup now...");
+    if (!backup.destinationPath || isRunningBackup) {
+      return;
+    }
+
+    setIsRunningBackup(true);
+    try {
+      await invoke("backup_update_config", { config: backup });
+
+      const connections = backup.includePasswords
+        ? state.connections
+        : state.connections.map((conn) => ({
+            ...conn,
+            password: conn.password ? "***ENCRYPTED***" : undefined,
+            basicAuthPassword: conn.basicAuthPassword
+              ? "***ENCRYPTED***"
+              : undefined,
+          }));
+
+      const data = {
+        connections,
+        settings: backup.includeSettings ? settings : {},
+        timestamp: Date.now(),
+      };
+
+      await invoke("backup_run_now", {
+        backupType: "manual",
+        data,
+      });
+
+      updateBackup({ lastBackupTime: Date.now() });
+    } catch (error) {
+      console.error("Failed to run backup now:", error);
+    } finally {
+      setIsRunningBackup(false);
+    }
   };
 
   const frequencyLabels: Record<BackupFrequency, string> = {
@@ -209,7 +246,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
         </h3>
         <button
           onClick={handleRunBackupNow}
-          disabled={!backup.destinationPath}
+          disabled={!backup.destinationPath || isRunningBackup}
           className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
         >
           <Play className="w-4 h-4" />
