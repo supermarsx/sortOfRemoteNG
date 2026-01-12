@@ -8,6 +8,33 @@ use reqwest::Client;
 
 pub type ScalewayServiceState = Arc<Mutex<ScalewayService>>;
 
+#[derive(Debug, Clone, Deserialize)]
+struct ScalewayListResponse {
+    servers: Vec<ScalewayInstanceApi>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ScalewayInstanceApi {
+    id: String,
+    name: String,
+    state: String,
+    commercial_type: String,
+    zone: String,
+    created_at: DateTime<Utc>,
+    public_ip: Option<ScalewayPublicIp>,
+    private_ips: Option<Vec<ScalewayPrivateIp>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ScalewayPublicIp {
+    address: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ScalewayPrivateIp {
+    address: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScalewayConnectionConfig {
     pub api_key: String,
@@ -40,7 +67,6 @@ pub struct ScalewayInstance {
 
 pub struct ScalewayService {
     sessions: HashMap<String, ScalewaySession>,
-    #[allow(dead_code)]
     client: Client,
 }
 
@@ -91,20 +117,46 @@ impl ScalewayService {
             return Err("Scaleway session is not connected".to_string());
         }
 
-        // TODO: Implement actual Scaleway API call to list instances
-        // For now, return mock data
-        let instances = vec![
-            ScalewayInstance {
-                id: "instance-1".to_string(),
-                name: "scaleway-instance-1".to_string(),
-                state: "running".to_string(),
-                instance_type: "DEV1-S".to_string(),
-                zone: session.config.region.clone().unwrap_or("fr-par-1".to_string()),
-                public_ip: Some("51.158.123.456".to_string()),
-                private_ip: Some("10.0.0.1".to_string()),
-                created_at: Utc::now(),
-            }
-        ];
+        let zone = session
+            .config
+            .region
+            .as_deref()
+            .ok_or("Scaleway region (zone) is required")?;
+
+        let response = self.client
+            .get(format!("https://api.scaleway.com/instance/v1/zones/{}/servers", zone))
+            .header("X-Auth-Token", &session.config.api_key)
+            .send()
+            .await
+            .map_err(|err| format!("Scaleway API request failed: {}", err))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Scaleway API error {}: {}", status, body));
+        }
+
+        let response_body: ScalewayListResponse = response
+            .json()
+            .await
+            .map_err(|err| format!("Failed to parse Scaleway API response: {}", err))?;
+
+        let instances: Vec<ScalewayInstance> = response_body
+            .servers
+            .into_iter()
+            .map(|server| ScalewayInstance {
+                id: server.id,
+                name: server.name,
+                state: server.state,
+                instance_type: server.commercial_type,
+                zone: server.zone,
+                public_ip: server.public_ip.map(|ip| ip.address),
+                private_ip: server
+                    .private_ips
+                    .and_then(|ips| ips.into_iter().next().map(|ip| ip.address)),
+                created_at: server.created_at,
+            })
+            .collect();
 
         // Update session with instances
         if let Some(session) = self.sessions.get_mut(session_id) {

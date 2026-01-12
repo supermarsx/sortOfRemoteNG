@@ -8,6 +8,17 @@ use reqwest::Client;
 
 pub type HerokuServiceState = Arc<Mutex<HerokuService>>;
 
+#[derive(Debug, Clone, Deserialize)]
+struct HerokuDynoApi {
+    id: String,
+    name: String,
+    state: String,
+    command: String,
+    size: String,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HerokuConnectionConfig {
     pub api_key: String,
@@ -38,7 +49,6 @@ pub struct HerokuDyno {
 
 pub struct HerokuService {
     sessions: HashMap<String, HerokuSession>,
-    #[allow(dead_code)]
     client: Client,
 }
 
@@ -89,19 +99,43 @@ impl HerokuService {
             return Err("Heroku session is not connected".to_string());
         }
 
-        // TODO: Implement actual Heroku API call to list dynos
-        // For now, return mock data
-        let dynos = vec![
-            HerokuDyno {
-                id: "dyno-1".to_string(),
-                name: "web.1".to_string(),
-                state: "up".to_string(),
-                command: "npm start".to_string(),
-                size: "Standard-1X".to_string(),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            }
-        ];
+        let app_name = session
+            .config
+            .app_name
+            .as_deref()
+            .ok_or("Heroku app name is required")?;
+
+        let response = self.client
+            .get(format!("https://api.heroku.com/apps/{}/dynos", app_name))
+            .bearer_auth(&session.config.api_key)
+            .header("Accept", "application/vnd.heroku+json; version=3")
+            .send()
+            .await
+            .map_err(|err| format!("Heroku API request failed: {}", err))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Heroku API error {}: {}", status, body));
+        }
+
+        let response_body: Vec<HerokuDynoApi> = response
+            .json()
+            .await
+            .map_err(|err| format!("Failed to parse Heroku API response: {}", err))?;
+
+        let dynos: Vec<HerokuDyno> = response_body
+            .into_iter()
+            .map(|dyno| HerokuDyno {
+                id: dyno.id,
+                name: dyno.name,
+                state: dyno.state,
+                command: dyno.command,
+                size: dyno.size,
+                created_at: dyno.created_at,
+                updated_at: dyno.updated_at,
+            })
+            .collect();
 
         // Update session with dynos
         if let Some(session) = self.sessions.get_mut(session_id) {
