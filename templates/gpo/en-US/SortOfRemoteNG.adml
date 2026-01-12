@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources revision="1.0" schemaVersion="1.0"
+  xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitionResources">
+  <displayName>SortOfRemoteNG</displayName>
+  <description>SortOfRemoteNG Group Policy templates</description>
+  <resources>
+    <stringTable>
+      <string id="CategorySortOfRemoteNG">SortOfRemoteNG</string>
+      <string id="CategorySecurity">Security</string>
+      <string id="CategoryLimits">Limits</string>
+      <string id="CategoryAccess">Access</string>
+
+      <string id="AutoLockEnabled">Enable automatic lock</string>
+      <string id="AutoLockEnabled_Explain">Enable or disable automatic application locking.</string>
+      <string id="AutoLockEnabled_Check">Enabled</string>
+
+      <string id="AutoLockTimeout">Automatic lock timeout (minutes)</string>
+      <string id="AutoLockTimeout_Explain">Set the automatic lock timeout in minutes.</string>
+      <string id="AutoLockTimeout_Label">Minutes</string>
+
+      <string id="RequirePassword">Require password to unlock</string>
+      <string id="RequirePassword_Explain">Require a password when unlocking the application.</string>
+      <string id="RequirePassword_Check">Enabled</string>
+
+      <string id="MaxConnections">Maximum concurrent connections</string>
+      <string id="MaxConnections_Explain">Set the maximum number of concurrent connections.</string>
+      <string id="MaxConnections_Label">Connections</string>
+
+      <string id="AllowedProtocols">Allowed protocols</string>
+      <string id="AllowedProtocols_Explain">Comma-separated list of allowed protocols.</string>
+      <string id="AllowedProtocols_Label">Protocols</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="AutoLockEnabled">
+        <checkBox refId="AutoLockEnabledValue">$(string.AutoLockEnabled_Check)</checkBox>
+      </presentation>
+      <presentation id="AutoLockTimeout">
+        <decimalTextBox refId="AutoLockTimeoutValue">$(string.AutoLockTimeout_Label)</decimalTextBox>
+      </presentation>
+      <presentation id="RequirePassword">
+        <checkBox refId="RequirePasswordValue">$(string.RequirePassword_Check)</checkBox>
+      </presentation>
+      <presentation id="MaxConnections">
+        <decimalTextBox refId="MaxConnectionsValue">$(string.MaxConnections_Label)</decimalTextBox>
+      </presentation>
+      <presentation id="AllowedProtocols">
+        <textBox refId="AllowedProtocolsValue">$(string.AllowedProtocols_Label)</textBox>
+      </presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>
