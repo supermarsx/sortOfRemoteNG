@@ -57,6 +57,13 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
   const [expandedProvider, setExpandedProvider] = useState<CloudSyncProvider | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncingProvider, setSyncingProvider] = useState<CloudSyncProvider | null>(null);
+  const [authProvider, setAuthProvider] = useState<CloudSyncProvider | null>(null);
+  const [authForm, setAuthForm] = useState({
+    accessToken: "",
+    refreshToken: "",
+    accountEmail: "",
+    tokenExpiry: "",
+  });
   // Ensure cloudSync is always defined, falling back to default config
   const cloudSync = settings.cloudSync ?? defaultCloudSyncConfig;
   
@@ -68,6 +75,66 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
     updateSettings({
       cloudSync: { ...cloudSync, ...updates },
     });
+  };
+
+  const openTokenDialog = (provider: CloudSyncProvider) => {
+    if (provider === "googleDrive") {
+      setAuthForm({
+        accessToken: cloudSync.googleDrive.accessToken ?? "",
+        refreshToken: cloudSync.googleDrive.refreshToken ?? "",
+        accountEmail: cloudSync.googleDrive.accountEmail ?? "",
+        tokenExpiry: cloudSync.googleDrive.tokenExpiry
+          ? String(cloudSync.googleDrive.tokenExpiry)
+          : "",
+      });
+    } else if (provider === "oneDrive") {
+      setAuthForm({
+        accessToken: cloudSync.oneDrive.accessToken ?? "",
+        refreshToken: cloudSync.oneDrive.refreshToken ?? "",
+        accountEmail: cloudSync.oneDrive.accountEmail ?? "",
+        tokenExpiry: cloudSync.oneDrive.tokenExpiry
+          ? String(cloudSync.oneDrive.tokenExpiry)
+          : "",
+      });
+    }
+    setAuthProvider(provider);
+  };
+
+  const saveTokenDialog = () => {
+    if (!authProvider) return;
+    const tokenExpiry = authForm.tokenExpiry.trim();
+    const parsedExpiry = tokenExpiry ? Number(tokenExpiry) : undefined;
+    const expiryValue = Number.isFinite(parsedExpiry) ? parsedExpiry : undefined;
+
+    if (authProvider === "googleDrive") {
+      updateCloudSync({
+        googleDrive: {
+          ...cloudSync.googleDrive,
+          accessToken: authForm.accessToken || undefined,
+          refreshToken: authForm.refreshToken || undefined,
+          accountEmail: authForm.accountEmail || undefined,
+          tokenExpiry: expiryValue,
+        },
+      });
+    }
+
+    if (authProvider === "oneDrive") {
+      updateCloudSync({
+        oneDrive: {
+          ...cloudSync.oneDrive,
+          accessToken: authForm.accessToken || undefined,
+          refreshToken: authForm.refreshToken || undefined,
+          accountEmail: authForm.accountEmail || undefined,
+          tokenExpiry: expiryValue,
+        },
+      });
+    }
+
+    setAuthProvider(null);
+  };
+
+  const closeTokenDialog = () => {
+    setAuthProvider(null);
   };
 
   const toggleProvider = (provider: CloudSyncProvider) => {
@@ -264,8 +331,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
             ) : (
               <button
                 onClick={() => {
-                  // TODO: Implement Google OAuth flow
-                  console.log("Starting Google OAuth...");
+                  openTokenDialog("googleDrive");
                 }}
                 className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
               >
@@ -319,8 +385,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
             ) : (
               <button
                 onClick={() => {
-                  // TODO: Implement Microsoft OAuth flow
-                  console.log("Starting Microsoft OAuth...");
+                  openTokenDialog("oneDrive");
                 }}
                 className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
               >
@@ -1142,6 +1207,103 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           </div>
         )}
       </div>
+
+      {authProvider && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeTokenDialog();
+          }}
+        >
+          <div className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-[var(--color-text)]">
+                {authProvider === "googleDrive"
+                  ? "Connect Google Drive"
+                  : "Connect OneDrive"}
+              </h3>
+              <button
+                onClick={closeTokenDialog}
+                className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-[var(--color-textSecondary)] mt-2">
+              Paste access tokens if you already completed OAuth in a browser.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  Access Token
+                </label>
+                <input
+                  type="password"
+                  value={authForm.accessToken}
+                  onChange={(e) => setAuthForm({ ...authForm, accessToken: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  Refresh Token (optional)
+                </label>
+                <input
+                  type="password"
+                  value={authForm.refreshToken}
+                  onChange={(e) => setAuthForm({ ...authForm, refreshToken: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  Account Email
+                </label>
+                <input
+                  type="email"
+                  value={authForm.accountEmail}
+                  onChange={(e) => setAuthForm({ ...authForm, accountEmail: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  Token Expiry (epoch seconds, optional)
+                </label>
+                <input
+                  type="number"
+                  value={authForm.tokenExpiry}
+                  onChange={(e) => setAuthForm({ ...authForm, tokenExpiry: e.target.value })}
+                  min={0}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeTokenDialog}
+                className="px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveTokenDialog}
+                className="px-3 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+              >
+                Save Tokens
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
