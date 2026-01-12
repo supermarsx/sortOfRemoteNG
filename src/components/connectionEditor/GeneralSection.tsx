@@ -114,6 +114,8 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
       protocol: protocol as Connection['protocol'],
       port: getDefaultPort(protocol),
       authType: ['http', 'https'].includes(protocol) ? 'basic' : 'password',
+      httpVerifySsl:
+        ['http', 'https'].includes(protocol) ? (prev.httpVerifySsl ?? true) : prev.httpVerifySsl,
     }));
   };
 

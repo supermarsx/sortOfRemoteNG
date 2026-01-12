@@ -9,6 +9,7 @@ interface HTTPOptionsProps {
 export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData }) => {
   const isHttpProtocol = ['http', 'https'].includes(formData.protocol || '');
   if (formData.isGroup || !isHttpProtocol) return null;
+  const isHttps = formData.protocol === 'https';
 
   const addHttpHeader = () => {
     const key = prompt('Header name:');
@@ -81,6 +82,25 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
             />
           </div>
         </>
+      )}
+
+      {isHttps && (
+        <div className="md:col-span-2">
+          <label className="flex items-center space-x-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={formData.httpVerifySsl ?? true}
+              onChange={(e) =>
+                setFormData({ ...formData, httpVerifySsl: e.target.checked })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Verify TLS certificates</span>
+          </label>
+          <p className="text-xs text-gray-500 mt-1">
+            Disable only for self-signed or untrusted certificates.
+          </p>
+        </div>
       )}
 
       {formData.authType === 'header' && (

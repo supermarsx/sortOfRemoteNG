@@ -100,7 +100,7 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
           username: connection.username || '',
           password: connection.password || '',
           local_port: 0, // Auto-assign
-          verify_ssl: true, // TODO: Make configurable
+          verify_ssl: connection.httpVerifySsl ?? true,
         };
 
         const response = await invoke<ProxyMediatorResponse>('start_basic_auth_proxy', {

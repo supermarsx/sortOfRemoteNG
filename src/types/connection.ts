@@ -42,6 +42,7 @@ export interface Connection {
   basicAuthRealm?: string;
   basicAuthUsername?: string;
   basicAuthPassword?: string;
+  httpVerifySsl?: boolean;
   
   // Database specific
   database?: string;
