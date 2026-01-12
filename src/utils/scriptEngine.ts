@@ -222,9 +222,7 @@ export class ScriptEngine {
       });
 
       if (result.success) {
-        // For now, return a simple result
-        // TODO: Implement proper result parsing and context handling
-        return result.result as T;
+        return this.parseScriptResult<T>(result.result);
       } else {
         const errorMessage = result.error || "Script execution failed";
         if (errorMessage.startsWith("AbortError:")) {
@@ -265,9 +263,7 @@ export class ScriptEngine {
       });
 
       if (result.success) {
-        // For now, return a simple result
-        // TODO: Implement proper result parsing and context handling
-        return result.result as T;
+        return this.parseScriptResult<T>(result.result);
       } else {
         const errorMessage = result.error || "Script execution failed";
         if (errorMessage.startsWith("AbortError:")) {
@@ -301,6 +297,51 @@ export class ScriptEngine {
       );
     }
     return result.outputText;
+  }
+
+  private parseScriptResult<T>(value: unknown): T {
+    if (value === null || value === undefined) {
+      return value as T;
+    }
+
+    if (typeof value !== "string") {
+      return value as T;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return value as T;
+    }
+
+    const looksLikeJson =
+      trimmed.startsWith("{") ||
+      trimmed.startsWith("[") ||
+      trimmed.startsWith("\"");
+
+    if (looksLikeJson) {
+      try {
+        return JSON.parse(trimmed) as T;
+      } catch {
+        return value as T;
+      }
+    }
+
+    if (trimmed === "true" || trimmed === "false") {
+      return (trimmed === "true") as T;
+    }
+
+    if (trimmed === "null") {
+      return null as T;
+    }
+
+    if (/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(trimmed)) {
+      const numeric = Number(trimmed);
+      if (!Number.isNaN(numeric)) {
+        return numeric as T;
+      }
+    }
+
+    return value as T;
   }
 
   private async httpRequest<T>(
