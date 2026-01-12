@@ -171,6 +171,7 @@ dependencies = [
  "serde_urlencoded",
  "serial_test",
  "serialport",
+ "sha1",
  "sha2",
  "shell-escape",
  "socket2 0.5.10",

@@ -5,15 +5,40 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
+use sha1::{Digest, Sha1};
 
 pub type OvhServiceState = Arc<Mutex<OvhService>>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OvhConnectionConfig {
     pub api_key: String,
+    pub app_secret: Option<String>,
+    pub consumer_key: Option<String>,
     pub service_id: Option<String>,
     pub project_name: Option<String>,
     pub region: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct OvhInstanceApi {
+    id: String,
+    name: String,
+    status: String,
+    #[serde(default)]
+    region: Option<String>,
+    #[serde(rename = "flavorId")]
+    flavor_id: Option<String>,
+    #[serde(rename = "ipAddresses", default)]
+    ip_addresses: Vec<OvhIpAddressApi>,
+    #[serde(rename = "created")]
+    created_at: Option<DateTime<Utc>>,
+    #[serde(rename = "updated")]
+    updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct OvhIpAddressApi {
+    ip: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +65,6 @@ pub struct OvhInstance {
 
 pub struct OvhService {
     sessions: HashMap<String, OvhSession>,
-    #[allow(dead_code)]
     client: Client,
 }
 
@@ -91,20 +115,91 @@ impl OvhService {
             return Err("OVH session is not connected".to_string());
         }
 
-        // TODO: Implement actual OVH API call to list instances
-        // For now, return mock data
-        let instances = vec![
-            OvhInstance {
-                id: "instance-1".to_string(),
-                name: "ovh-instance-1".to_string(),
-                status: "ACTIVE".to_string(),
-                flavor: "s1-2".to_string(),
-                region: session.config.region.clone().unwrap_or("GRA1".to_string()),
-                ip_addresses: vec!["51.178.123.456".to_string()],
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            }
-        ];
+        let app_key = session.config.api_key.trim();
+        if app_key.is_empty() {
+            return Err("OVH application key is required".to_string());
+        }
+
+        let app_secret = session
+            .config
+            .app_secret
+            .as_deref()
+            .ok_or("OVH application secret is required")?;
+
+        let consumer_key = session
+            .config
+            .consumer_key
+            .as_deref()
+            .ok_or("OVH consumer key is required")?;
+
+        let project_id = session
+            .config
+            .service_id
+            .as_deref()
+            .or(session.config.project_name.as_deref())
+            .ok_or("OVH project id is required")?;
+
+        let url = format!(
+            "https://api.ovh.com/1.0/cloud/project/{}/instance",
+            project_id
+        );
+        let timestamp = self.get_ovh_timestamp().await?;
+        let signature = self.sign_request(
+            app_secret,
+            consumer_key,
+            "GET",
+            &url,
+            "",
+            timestamp,
+        );
+
+        let response = self.client
+            .get(&url)
+            .header("X-Ovh-Application", app_key)
+            .header("X-Ovh-Consumer", consumer_key)
+            .header("X-Ovh-Timestamp", timestamp.to_string())
+            .header("X-Ovh-Signature", signature)
+            .send()
+            .await
+            .map_err(|err| format!("OVH API request failed: {}", err))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("OVH API error {}: {}", status, body));
+        }
+
+        let response_body: Vec<OvhInstanceApi> = response
+            .json()
+            .await
+            .map_err(|err| format!("Failed to parse OVH API response: {}", err))?;
+
+        let region_filter = session.config.region.as_deref();
+        let instances: Vec<OvhInstance> = response_body
+            .into_iter()
+            .filter(|instance| {
+                region_filter.map_or(true, |region| {
+                    instance.region.as_deref().map_or(false, |r| r == region)
+                })
+            })
+            .map(|instance| OvhInstance {
+                id: instance.id,
+                name: instance.name,
+                status: instance.status,
+                flavor: instance.flavor_id.unwrap_or_default(),
+                region: instance
+                    .region
+                    .or_else(|| session.config.region.clone())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                ip_addresses: instance
+                    .ip_addresses
+                    .into_iter()
+                    .map(|ip| ip.ip)
+                    .collect(),
+                created_at: instance.created_at.unwrap_or_else(Utc::now),
+                updated_at: instance.updated_at.unwrap_or_else(Utc::now),
+            })
+            .collect();
 
         // Update session with instances
         if let Some(session) = self.sessions.get_mut(session_id) {
@@ -113,6 +208,48 @@ impl OvhService {
         }
 
         Ok(instances)
+    }
+
+    async fn get_ovh_timestamp(&self) -> Result<i64, String> {
+        let response = self.client
+            .get("https://api.ovh.com/1.0/auth/time")
+            .send()
+            .await
+            .map_err(|err| format!("OVH time request failed: {}", err))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("OVH time error {}: {}", status, body));
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|err| format!("Failed to read OVH time response: {}", err))?;
+
+        body.trim()
+            .parse::<i64>()
+            .map_err(|err| format!("Invalid OVH time response: {}", err))
+    }
+
+    fn sign_request(
+        &self,
+        app_secret: &str,
+        consumer_key: &str,
+        method: &str,
+        url: &str,
+        body: &str,
+        timestamp: i64,
+    ) -> String {
+        let data = format!(
+            "{}+{}+{}+{}+{}+{}",
+            app_secret, consumer_key, method, url, body, timestamp
+        );
+        let mut hasher = Sha1::new();
+        hasher.update(data.as_bytes());
+        let digest = hasher.finalize();
+        format!("$1${}", hex::encode(digest))
     }
 
     pub async fn get_session(&self, session_id: &str) -> Option<&OvhSession> {
