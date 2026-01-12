@@ -19,10 +19,13 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use flate2::write::GzEncoder;
 use flate2::read::GzDecoder;
 use flate2::Compression;
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
+use rand::RngCore;
 
 /// Backup frequency options
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -328,11 +331,10 @@ impl BackupService {
             json_data.as_bytes().to_vec()
         };
 
-        // Encrypt if enabled (placeholder - implement actual encryption)
+        // Encrypt if enabled
         let encrypted_data = if self.config.encrypt_backups && self.config.encryption_password.is_some() {
-            // TODO: Implement actual AES-256-GCM encryption
-            // For now, just use the compressed/raw data
-            final_data
+            let password = self.config.encryption_password.as_ref().unwrap();
+            self.encrypt_backup_data(&final_data, password)?
         } else {
             final_data
         };
@@ -533,8 +535,14 @@ impl BackupService {
         let file_data = fs::read(&path)
             .map_err(|e| format!("Failed to read backup file: {}", e))?;
 
-        // Decrypt if needed (placeholder)
-        let decrypted_data = file_data;
+        // Decrypt if needed
+        let decrypted_data = if self.is_encrypted_backup(&file_data) {
+            let password = self.config.encryption_password.as_ref()
+                .ok_or_else(|| "Backup is encrypted but no password is configured".to_string())?;
+            self.decrypt_backup_data(&file_data, password)?
+        } else {
+            file_data
+        };
 
         // Decompress if needed
         let is_compressed = path.to_string_lossy().contains(".gz");
@@ -575,6 +583,49 @@ impl BackupService {
 
         self.update_backup_stats().await?;
         Ok(())
+    }
+
+    fn encrypt_backup_data(&self, plaintext: &[u8], password: &str) -> Result<Vec<u8>, String> {
+        let key = self.derive_key(password);
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| format!("Failed to create cipher: {}", e))?;
+        let mut nonce_bytes = [0u8; 12];
+        rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let ciphertext = cipher.encrypt(nonce, plaintext)
+            .map_err(|e| format!("Failed to encrypt backup: {}", e))?;
+        let mut out = Vec::with_capacity(6 + nonce_bytes.len() + ciphertext.len());
+        out.extend_from_slice(b"SORNG1");
+        out.extend_from_slice(&nonce_bytes);
+        out.extend_from_slice(&ciphertext);
+        Ok(out)
+    }
+
+    fn decrypt_backup_data(&self, data: &[u8], password: &str) -> Result<Vec<u8>, String> {
+        if data.len() < 6 + 12 || &data[..6] != b"SORNG1" {
+            return Err("Backup encryption header missing or invalid".to_string());
+        }
+        let nonce_bytes = &data[6..18];
+        let ciphertext = &data[18..];
+        let key = self.derive_key(password);
+        let cipher = Aes256Gcm::new_from_slice(&key)
+            .map_err(|e| format!("Failed to create cipher: {}", e))?;
+        let nonce = Nonce::from_slice(nonce_bytes);
+        cipher.decrypt(nonce, ciphertext)
+            .map_err(|e| format!("Failed to decrypt backup: {}", e))
+    }
+
+    fn is_encrypted_backup(&self, data: &[u8]) -> bool {
+        data.len() >= 6 && &data[..6] == b"SORNG1"
+    }
+
+    fn derive_key(&self, password: &str) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(password.as_bytes());
+        let result = hasher.finalize();
+        let mut key = [0u8; 32];
+        key.copy_from_slice(&result[..32]);
+        key
     }
 }
 
