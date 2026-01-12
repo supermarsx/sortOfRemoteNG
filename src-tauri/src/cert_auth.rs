@@ -18,7 +18,7 @@
 //! ## Example
 //!
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -26,6 +26,7 @@ use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use x509_parser::prelude::*;
 use rustls_pemfile::Item;
+use chrono::{DateTime, Utc};
 
 /// Certificate information structure
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -145,8 +146,13 @@ impl CertAuthService {
         let cert = self.parse_certificate_internal(&cert_data)?;
         let fingerprint = self.calculate_fingerprint(&cert_data);
 
-        // Validate certificate - for now, just check if parsing succeeded
-        // TODO: Add proper certificate validation
+        if !self.validate_certificate_internal(&cert)? {
+            return Err("Certificate validation failed".to_string());
+        }
+
+        if self.is_revoked(&fingerprint) {
+            return Err("Certificate has been revoked".to_string());
+        }
 
         let user = CertUser {
             username: username.clone(),
@@ -177,11 +183,13 @@ impl CertAuthService {
                     let cert = X509Certificate::from_der(&cert)
                         .map(|(_, cert)| cert)
                         .map_err(|e| format!("Failed to parse certificate: {}", e))?;
+                    let not_before = self.format_cert_time(&cert.validity().not_before);
+                    let not_after = self.format_cert_time(&cert.validity().not_after);
                     return Ok(CertInfo {
                         subject: cert.subject().to_string(),
                         issuer: cert.issuer().to_string(),
-                        not_before: cert.validity().not_before.to_string(),
-                        not_after: cert.validity().not_after.to_string(),
+                        not_before,
+                        not_after,
                         fingerprint: self.calculate_fingerprint(cert_data),
                     });
                 }
@@ -192,12 +200,14 @@ impl CertAuthService {
         let cert = X509Certificate::from_der(cert_data)
             .map(|(_, cert)| cert)
             .map_err(|e| format!("Failed to parse certificate: {}", e))?;
+        let not_before = self.format_cert_time(&cert.validity().not_before);
+        let not_after = self.format_cert_time(&cert.validity().not_after);
 
         Ok(CertInfo {
             subject: cert.subject().to_string(),
             issuer: cert.issuer().to_string(),
-            not_before: cert.validity().not_before.to_string(),
-            not_after: cert.validity().not_after.to_string(),
+            not_before,
+            not_after,
             fingerprint: self.calculate_fingerprint(cert_data),
         })
     }
@@ -210,8 +220,25 @@ impl CertAuthService {
 
     /// Validates a certificate (internal)
     fn validate_certificate_internal(&self, _cert: &CertInfo) -> Result<bool, String> {
-        // Parse the dates - for now, just return true since we don't have full validation
-        // TODO: Add proper date validation and CRL checking
+        let not_before = self.parse_cert_time(&_cert.not_before)?;
+        let not_after = self.parse_cert_time(&_cert.not_after)?;
+        let now = Utc::now();
+
+        if now < not_before || now > not_after {
+            return Ok(false);
+        }
+
+        if self.is_revoked(&_cert.fingerprint) {
+            return Ok(false);
+        }
+
+        if !self.trusted_cas.is_empty() {
+            let trusted_subjects = self.get_trusted_ca_subjects();
+            if !trusted_subjects.contains(&_cert.issuer) {
+                return Ok(false);
+            }
+        }
+
         Ok(true)
     }
 
@@ -227,6 +254,41 @@ impl CertAuthService {
     /// Checks if a certificate is revoked
     fn is_revoked(&self, fingerprint: &str) -> bool {
         self.crl.contains(&fingerprint.to_string())
+    }
+
+    fn get_trusted_ca_subjects(&self) -> HashSet<String> {
+        let mut subjects = HashSet::new();
+        for ca_cert in &self.trusted_cas {
+            if let Ok(info) = self.parse_certificate_internal(ca_cert) {
+                subjects.insert(info.subject);
+            }
+        }
+        subjects
+    }
+
+    fn format_cert_time(&self, time: &ASN1Time) -> String {
+        time.to_datetime()
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_else(|_| time.to_string())
+    }
+
+    fn parse_cert_time(&self, value: &str) -> Result<DateTime<Utc>, String> {
+        if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
+            return Ok(dt.with_timezone(&Utc));
+        }
+
+        let legacy_formats = [
+            "%Y-%m-%d %H:%M:%S %Z",
+            "%Y-%m-%d %H:%M:%S %z",
+        ];
+
+        for format in legacy_formats {
+            if let Ok(dt) = DateTime::parse_from_str(value, format) {
+                return Ok(dt.with_timezone(&Utc));
+            }
+        }
+
+        Err(format!("Unrecognized certificate date format: {}", value))
     }
 
     /// Adds a trusted certificate authority
