@@ -8,6 +8,63 @@ use reqwest::Client;
 
 pub type IbmServiceState = Arc<Mutex<IbmService>>;
 
+#[derive(Debug, Clone, Deserialize)]
+struct IbmIamTokenResponse {
+    access_token: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IbmInstanceListResponse {
+    instances: Vec<IbmVirtualServerApi>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IbmVirtualServerApi {
+    id: String,
+    name: String,
+    status: String,
+    created_at: String,
+    profile: Option<IbmProfileApi>,
+    zone: Option<IbmZoneApi>,
+    vpc: Option<IbmVpcApi>,
+    primary_network_interface: Option<IbmNetworkInterfaceApi>,
+    floating_ips: Option<Vec<IbmFloatingIpApi>>,
+    tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IbmProfileApi {
+    name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IbmZoneApi {
+    name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IbmVpcApi {
+    name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IbmNetworkInterfaceApi {
+    id: String,
+    name: String,
+    primary_ip: Option<IbmIpAddressApi>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IbmIpAddressApi {
+    address: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IbmFloatingIpApi {
+    id: String,
+    address: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IbmConnectionConfig {
     pub api_key: String,
@@ -59,7 +116,6 @@ pub struct IbmFloatingIp {
 
 pub struct IbmService {
     sessions: HashMap<String, IbmSession>,
-    #[allow(dead_code)]
     client: Client,
 }
 
@@ -110,31 +166,76 @@ impl IbmService {
             return Err("IBM Cloud session is not connected".to_string());
         }
 
-        // TODO: Implement actual IBM Cloud API call to list virtual servers
-        // For now, return mock data
-        let servers = vec![
-            IbmVirtualServer {
-                id: "test-server-1".to_string(),
-                name: "test-server-1".to_string(),
-                profile: "bx2-2x8".to_string(),
-                status: "running".to_string(),
-                zone: session.config.region.clone().unwrap_or("us-south-1".to_string()),
-                vpc: "test-vpc".to_string(),
-                created_at: "2024-01-01T00:00:00Z".to_string(),
-                primary_network_interface: IbmNetworkInterface {
-                    id: "nic-1".to_string(),
-                    name: "eth0".to_string(),
-                    primary_ip: IbmIpAddress {
-                        address: "10.0.0.1".to_string(),
-                    },
-                },
-                floating_ips: vec![IbmFloatingIp {
-                    id: "fip-1".to_string(),
-                    address: "169.61.123.456".to_string(),
-                }],
-                tags: vec![],
-            }
-        ];
+        let region = session
+            .config
+            .region
+            .as_deref()
+            .ok_or("IBM Cloud region is required")?;
+
+        let access_token = self.get_access_token(&session.config.api_key).await?;
+
+        let response = self.client
+            .get(format!("https://{}.iaas.cloud.ibm.com/v1/instances", region))
+            .query(&[("version", "2021-11-01"), ("generation", "2")])
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|err| format!("IBM Cloud API request failed: {}", err))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("IBM Cloud API error {}: {}", status, body));
+        }
+
+        let response_body: IbmInstanceListResponse = response
+            .json()
+            .await
+            .map_err(|err| format!("Failed to parse IBM Cloud API response: {}", err))?;
+
+        let servers: Vec<IbmVirtualServer> = response_body
+            .instances
+            .into_iter()
+            .map(|instance| IbmVirtualServer {
+                id: instance.id,
+                name: instance.name,
+                profile: instance.profile.map(|p| p.name).unwrap_or_default(),
+                status: instance.status,
+                zone: instance
+                    .zone
+                    .map(|z| z.name)
+                    .unwrap_or_else(|| region.to_string()),
+                vpc: instance.vpc.map(|v| v.name).unwrap_or_default(),
+                primary_network_interface: instance
+                    .primary_network_interface
+                    .map(|iface| IbmNetworkInterface {
+                        id: iface.id,
+                        name: iface.name,
+                        primary_ip: IbmIpAddress {
+                            address: iface
+                                .primary_ip
+                                .map(|ip| ip.address)
+                                .unwrap_or_default(),
+                        },
+                    })
+                    .unwrap_or(IbmNetworkInterface {
+                        id: String::new(),
+                        name: String::new(),
+                        primary_ip: IbmIpAddress { address: String::new() },
+                    }),
+                floating_ips: instance
+                    .floating_ips
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|ip| IbmFloatingIp {
+                        id: ip.id,
+                        address: ip.address,
+                    })
+                    .collect(),
+                created_at: instance.created_at,
+                tags: instance.tags.unwrap_or_default(),
+            })
+            .collect();
 
         // Update session with servers
         if let Some(session) = self.sessions.get_mut(session_id) {
@@ -143,6 +244,32 @@ impl IbmService {
         }
 
         Ok(servers)
+    }
+
+    async fn get_access_token(&self, api_key: &str) -> Result<String, String> {
+        let response = self.client
+            .post("https://iam.cloud.ibm.com/identity/token")
+            .header("Accept", "application/json")
+            .form(&[
+                ("grant_type", "urn:ibm:params:oauth:grant-type:apikey"),
+                ("apikey", api_key),
+            ])
+            .send()
+            .await
+            .map_err(|err| format!("IBM IAM request failed: {}", err))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("IBM IAM error {}: {}", status, body));
+        }
+
+        let token: IbmIamTokenResponse = response
+            .json()
+            .await
+            .map_err(|err| format!("Failed to parse IBM IAM response: {}", err))?;
+
+        Ok(token.access_token)
     }
 
     pub async fn get_session(&self, session_id: &str) -> Option<&IbmSession> {
