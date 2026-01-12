@@ -8,6 +8,25 @@ use reqwest::Client;
 
 pub type LinodeServiceState = Arc<Mutex<LinodeService>>;
 
+#[derive(Debug, Clone, Deserialize)]
+struct LinodeListResponse {
+    data: Vec<LinodeInstanceApi>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct LinodeInstanceApi {
+    id: i32,
+    label: String,
+    status: String,
+    region: String,
+    #[serde(rename = "type")]
+    type_name: String,
+    ipv4: Vec<String>,
+    ipv6: Option<String>,
+    created: DateTime<Utc>,
+    updated: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LinodeConnectionConfig {
     pub api_key: String,
@@ -39,7 +58,6 @@ pub struct LinodeInstance {
 
 pub struct LinodeService {
     sessions: HashMap<String, LinodeSession>,
-    #[allow(dead_code)]
     client: Client,
 }
 
@@ -90,21 +108,43 @@ impl LinodeService {
             return Err("Linode session is not connected".to_string());
         }
 
-        // TODO: Implement actual Linode API call to list instances
-        // For now, return mock data
-        let linodes = vec![
-            LinodeInstance {
-                id: 12345678,
-                label: "linode-instance-1".to_string(),
-                status: "running".to_string(),
-                region: session.config.region.clone().unwrap_or("us-east".to_string()),
-                type_name: "g6-standard-1".to_string(),
-                ipv4: vec!["192.168.1.100".to_string()],
-                ipv6: Some("2001:db8::1".to_string()),
-                created: Utc::now(),
-                updated: Utc::now(),
-            }
-        ];
+        let response = self.client
+            .get("https://api.linode.com/v4/linode/instances")
+            .bearer_auth(&session.config.api_key)
+            .send()
+            .await
+            .map_err(|err| format!("Linode API request failed: {}", err))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Linode API error {}: {}", status, body));
+        }
+
+        let response_body: LinodeListResponse = response
+            .json()
+            .await
+            .map_err(|err| format!("Failed to parse Linode API response: {}", err))?;
+
+        let region_filter = session.config.region.as_deref();
+        let linodes: Vec<LinodeInstance> = response_body
+            .data
+            .into_iter()
+            .filter(|instance| {
+                region_filter.map_or(true, |region| instance.region == region)
+            })
+            .map(|instance| LinodeInstance {
+                id: instance.id,
+                label: instance.label,
+                status: instance.status,
+                region: instance.region,
+                type_name: instance.type_name,
+                ipv4: instance.ipv4,
+                ipv6: instance.ipv6,
+                created: instance.created,
+                updated: instance.updated,
+            })
+            .collect();
 
         // Update session with linodes
         if let Some(session) = self.sessions.get_mut(session_id) {
