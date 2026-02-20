@@ -608,6 +608,12 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
       };
       const udpPort = udpPorts[connection.protocol.toLowerCase()] || 
         ([53, 123, 161, 162, 69, 67, 68, 500].includes(port) ? port : null);
+      const configuredProxyHost = connection.security?.proxy?.host;
+      const usesProxyPath = Boolean(
+        connection.security?.proxy?.enabled ||
+          connection.proxyChainId ||
+          connection.connectionChainId,
+      );
       
       const extendedChecksPromise = Promise.allSettled([
         // Asymmetric routing detection
@@ -626,9 +632,9 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
             })
           : Promise.resolve(null),
         // Leakage detection (only if connection uses proxy)
-        connection.proxyId || connection.proxyHost
+        usesProxyPath
           ? invoke<LeakageDetectionResult>('detect_proxy_leakage', { 
-              expectedExitIp: connection.proxyHost 
+              expectedExitIp: configuredProxyHost 
             })
           : Promise.resolve(null),
       ]).then(([asymmetricRes, geoRes, udpRes, leakageRes]) => {

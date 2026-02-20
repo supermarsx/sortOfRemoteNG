@@ -97,7 +97,7 @@ export const useAppLifecycle = ({
         if (lastSession !== null && !wasCleanExit) {
           setDidUnexpectedClose(true);
           settingsManager.logAction(
-            "warning",
+            "warn",
             "Unexpected close detected",
             undefined,
             "The application was not closed properly in the previous session",

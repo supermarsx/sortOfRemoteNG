@@ -206,17 +206,13 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      toast({
-        title: t("logs.exportSuccess", "Export successful"),
-        description: `${filteredLogs.length} entries exported to ${filename}`,
-        variant: "success",
-      });
+      toast.success(
+        `${t("logs.exportSuccess", "Export successful")}: ${filteredLogs.length} entries exported to ${filename}`,
+      );
     } catch (error) {
-      toast({
-        title: t("logs.exportError", "Export failed"),
-        description: error instanceof Error ? error.message : "Unknown error occurred",
-        variant: "error",
-      });
+      toast.error(
+        `${t("logs.exportError", "Export failed")}: ${error instanceof Error ? error.message : "Unknown error occurred"}`,
+      );
     }
   };
 

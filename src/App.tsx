@@ -754,7 +754,9 @@ const AppContent: React.FC = () => {
       }
 
       const nowSeconds = Math.floor(Date.now() / 1000);
-      const nextProviderStatus = { ...currentConfig.providerStatus };
+      const nextProviderStatus: GlobalSettings["cloudSync"]["providerStatus"] = {
+        ...currentConfig.providerStatus,
+      };
 
       targetProviders.forEach((target) => {
         nextProviderStatus[target] = {
@@ -766,7 +768,7 @@ const AppContent: React.FC = () => {
         };
       });
 
-      const updatedCloudSync = {
+      const updatedCloudSync: GlobalSettings["cloudSync"] = {
         ...currentConfig,
         providerStatus: nextProviderStatus,
         lastSyncTime: nowSeconds,

@@ -45,6 +45,7 @@ use windows::Win32::System::Registry::{
     HKEY,
     HKEY_CURRENT_USER,
     KEY_SET_VALUE,
+    REG_CREATE_KEY_DISPOSITION,
     REG_BINARY,
     REG_DWORD,
     REG_OPTION_NON_VOLATILE,
@@ -345,7 +346,7 @@ impl GpoService {
                         RRF_RT_REG_SZ,
                         None,
                         None,
-                        &mut data_len,
+                        Some(&mut data_len),
                     )
                 };
                 if status != ERROR_SUCCESS {
@@ -360,7 +361,7 @@ impl GpoService {
                         RRF_RT_REG_SZ,
                         None,
                         Some(buffer.as_mut_ptr() as *mut c_void),
-                        &mut data_len,
+                        Some(&mut data_len),
                     )
                 };
                 if status != ERROR_SUCCESS {
@@ -382,7 +383,7 @@ impl GpoService {
                         RRF_RT_REG_DWORD,
                         None,
                         Some((&mut value as *mut u32) as *mut c_void),
-                        &mut data_len,
+                        Some(&mut data_len),
                     )
                 };
                 if status != ERROR_SUCCESS {
@@ -401,7 +402,7 @@ impl GpoService {
                         RRF_RT_REG_QWORD,
                         None,
                         Some((&mut value as *mut u64) as *mut c_void),
-                        &mut data_len,
+                        Some(&mut data_len),
                     )
                 };
                 if status != ERROR_SUCCESS {
@@ -419,7 +420,7 @@ impl GpoService {
                         RRF_RT_REG_BINARY,
                         None,
                         None,
-                        &mut data_len,
+                        Some(&mut data_len),
                     )
                 };
                 if status != ERROR_SUCCESS {
@@ -434,7 +435,7 @@ impl GpoService {
                         RRF_RT_REG_BINARY,
                         None,
                         Some(buffer.as_mut_ptr() as *mut c_void),
-                        &mut data_len,
+                        Some(&mut data_len),
                     )
                 };
                 if status != ERROR_SUCCESS {
@@ -454,12 +455,12 @@ impl GpoService {
     ) -> Result<(), String> {
         let wide_key = Self::to_wide(key_path);
         let mut key = HKEY::default();
-        let mut disposition = 0u32;
+        let mut disposition = REG_CREATE_KEY_DISPOSITION::default();
         let status = unsafe {
             RegCreateKeyExW(
                 HKEY_CURRENT_USER,
                 PCWSTR(wide_key.as_ptr()),
-                0,
+                None,
                 PWSTR::null(),
                 REG_OPTION_NON_VOLATILE,
                 KEY_SET_VALUE,
@@ -480,7 +481,7 @@ impl GpoService {
                     RegSetValueExW(
                         key,
                         PCWSTR(wide_value.as_ptr()),
-                        0,
+                        None,
                         REG_SZ,
                         Some(std::slice::from_raw_parts(
                             wide_text.as_ptr() as *const u8,
@@ -493,7 +494,7 @@ impl GpoService {
                 RegSetValueExW(
                     key,
                     PCWSTR(wide_value.as_ptr()),
-                    0,
+                    None,
                     REG_DWORD,
                     Some(&number.to_le_bytes()),
                 )
@@ -502,7 +503,7 @@ impl GpoService {
                 RegSetValueExW(
                     key,
                     PCWSTR(wide_value.as_ptr()),
-                    0,
+                    None,
                     REG_QWORD,
                     Some(&number.to_le_bytes()),
                 )
@@ -511,7 +512,7 @@ impl GpoService {
                 RegSetValueExW(
                     key,
                     PCWSTR(wide_value.as_ptr()),
-                    0,
+                    None,
                     REG_BINARY,
                     Some(data),
                 )
@@ -537,7 +538,7 @@ impl GpoService {
             RegOpenKeyExW(
                 HKEY_CURRENT_USER,
                 PCWSTR(wide_key.as_ptr()),
-                0,
+                None,
                 KEY_SET_VALUE,
                 &mut key,
             )

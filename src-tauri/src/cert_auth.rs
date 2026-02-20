@@ -267,9 +267,10 @@ impl CertAuthService {
     }
 
     fn format_cert_time(&self, time: &ASN1Time) -> String {
-        time.to_datetime()
-            .map(|dt| dt.to_rfc3339())
-            .unwrap_or_else(|_| time.to_string())
+        let dt = time.to_datetime();
+        DateTime::<Utc>::from_timestamp(dt.unix_timestamp(), dt.nanosecond())
+            .map(|ts| ts.to_rfc3339())
+            .unwrap_or_else(|| time.to_string())
     }
 
     fn parse_cert_time(&self, value: &str) -> Result<DateTime<Utc>, String> {

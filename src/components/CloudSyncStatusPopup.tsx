@@ -7,8 +7,6 @@ import {
   AlertCircle,
   Clock,
   Loader2,
-  CloudUpload,
-  CloudDownload,
   X,
   Settings,
   TestTube,

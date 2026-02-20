@@ -1,4 +1,12 @@
-import { GlobalSettings, ActionLogEntry, PerformanceMetrics, CustomScript, defaultBackupConfig } from '../types/settings';
+import {
+  GlobalSettings,
+  ActionLogEntry,
+  PerformanceMetrics,
+  CustomScript,
+  defaultBackupConfig,
+  defaultSSHTerminalConfig,
+  defaultCloudSyncConfig,
+} from '../types/settings';
 import { SecureStorage } from './storage';
 import { IndexedDbService } from './indexedDbService';
 import { generateId } from './id';
@@ -23,6 +31,10 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   warnOnDetachClose: true,
   quickConnectHistoryEnabled: true,
   quickConnectHistory: [],
+  detectUnexpectedClose: true,
+  confirmMainAppClose: false,
+  hideQuickStartMessage: false,
+  hideQuickStartButtons: false,
 
   // Startup Settings
   startMinimized: false,
@@ -201,7 +213,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   exportEncryption: false,
   exportPassword: undefined,
 
+  sshTerminal: defaultSSHTerminalConfig,
   backup: defaultBackupConfig,
+  cloudSync: defaultCloudSyncConfig,
 };
 
 /**
@@ -409,6 +423,11 @@ export class SettingsManager {
      */
   getPerformanceMetrics(): PerformanceMetrics[] {
     return this.performanceMetrics;
+  }
+
+  clearPerformanceMetrics(): void {
+    this.performanceMetrics = [];
+    void this.savePerformanceMetrics();
   }
 
   private async savePerformanceMetrics(): Promise<void> {

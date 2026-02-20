@@ -221,28 +221,32 @@ class SSHTunnelService {
           strict_host_key_checking: override?.strictHostKeyChecking ?? !sshConnection.ignoreSshSecurityErrors ?? false,
           known_hosts_path: override?.knownHostsPath ?? sshConnection.sshKnownHostsPath ?? null,
           tcp_no_delay: override?.tcpNoDelay ?? true,
-          tcp_keepalive: override?.tcpKeepalive ?? true,
-          keepalive_probes: override?.keepaliveProbes ?? 3,
+          tcp_keepalive: override?.tcpKeepAlive ?? true,
+          keepalive_probes: override?.keepAliveProbes ?? 3,
           ip_protocol: override?.ipProtocol ?? 'any',
-          compression: override?.compression ?? false,
+          compression: override?.enableCompression ?? false,
           compression_level: override?.compressionLevel ?? 6,
           ssh_version: override?.sshVersion ?? '2',
           preferred_ciphers: override?.preferredCiphers ?? [],
-          preferred_macs: override?.preferredMacs ?? [],
-          preferred_kex: override?.preferredKex ?? [],
-          preferred_host_keys: override?.preferredHostKeys ?? [],
+          preferred_macs: override?.preferredMACs ?? [],
+          preferred_kex: override?.preferredKeyExchanges ?? [],
+          preferred_host_keys: override?.preferredHostKeyAlgorithms ?? [],
         },
       });
 
       // Determine the local port (use requested or find available)
       const localPort = tunnel.localPort || await this.findAvailablePort();
 
+      if (tunnel.type !== 'dynamic' && (!tunnel.remoteHost || !tunnel.remotePort)) {
+        throw new Error('Remote host and port are required for non-dynamic tunnels');
+      }
+
       // Set up port forwarding
       const portForwardConfig: PortForwardConfig = {
         local_host: '127.0.0.1',
         local_port: localPort,
-        remote_host: tunnel.remoteHost,
-        remote_port: tunnel.remotePort,
+        remote_host: tunnel.type === 'dynamic' ? '127.0.0.1' : tunnel.remoteHost!,
+        remote_port: tunnel.type === 'dynamic' ? 0 : tunnel.remotePort!,
         direction: tunnel.type === 'local' ? 'Local' : 
                    tunnel.type === 'remote' ? 'Remote' : 'Dynamic',
       };

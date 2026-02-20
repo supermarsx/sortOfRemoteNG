@@ -10,8 +10,6 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
-  CloudUpload,
-  CloudDownload,
   Archive,
   Timer,
   X,

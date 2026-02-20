@@ -687,7 +687,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
 
       <ConfirmDialog
         isOpen={showClearConfirm}
-        onClose={() => setShowClearConfirm(false)}
+        onCancel={() => setShowClearConfirm(false)}
         onConfirm={clearMetrics}
         title={t('performance.clearTitle', 'Clear Metrics')}
         message={t('performance.clearConfirm', 'Are you sure you want to clear all performance metrics? This action cannot be undone.')}
