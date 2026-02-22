@@ -289,9 +289,10 @@ pub struct ProxyMediatorResponse {
     pub proxy_url: String,
 }
 
-/// Active proxy mediator sessions
+/// Active proxy mediator session tracking
 use std::sync::atomic::{AtomicU16, Ordering};
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 
 static NEXT_PROXY_PORT: AtomicU16 = AtomicU16::new(18080);
 
@@ -300,8 +301,29 @@ fn get_next_proxy_port() -> u16 {
     NEXT_PROXY_PORT.fetch_add(1, Ordering::SeqCst)
 }
 
+/// Tracks active proxy mediator sessions so they can be stopped
+pub struct ProxySessionManager {
+    sessions: HashMap<String, ProxySessionEntry>,
+}
+
+struct ProxySessionEntry {
+    cancel_token: CancellationToken,
+    local_port: u16,
+    target_url: String,
+}
+
+impl ProxySessionManager {
+    pub fn new() -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self {
+            sessions: HashMap::new(),
+        }))
+    }
+}
+
+pub type ProxySessionManagerState = Arc<Mutex<ProxySessionManager>>;
+
 /// Start a basic auth proxy mediator
-/// 
+///
 /// This creates a local HTTP server that forwards requests to the target URL
 /// with basic authentication headers automatically added, allowing webviews
 /// and iframes to access protected resources without triggering auth prompts.
@@ -309,141 +331,282 @@ fn get_next_proxy_port() -> u16 {
 pub async fn start_basic_auth_proxy(
     config: BasicAuthProxyConfig,
     service: tauri::State<'_, HttpServiceState>,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
     // Find an available port
     let port = if config.local_port > 0 {
         config.local_port
     } else {
         get_next_proxy_port()
     };
-    
+
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
         .await
         .map_err(|e| format!("Failed to bind proxy port {}: {}", port, e))?;
-    
-    let actual_port = listener.local_addr()
+
+    let actual_port = listener
+        .local_addr()
         .map_err(|e| format!("Failed to get local address: {}", e))?
         .port();
-    
+
     let session_id = uuid::Uuid::new_v4().to_string();
     let target_url = config.target_url.clone();
     let username = config.username.clone();
     let password = config.password.clone();
     let verify_ssl = config.verify_ssl;
-    
+
+    let cancel_token = CancellationToken::new();
+
+    // Register the session for later cleanup
+    {
+        let mut mgr = sessions.lock().await;
+        mgr.sessions.insert(
+            session_id.clone(),
+            ProxySessionEntry {
+                cancel_token: cancel_token.clone(),
+                local_port: actual_port,
+                target_url: target_url.clone(),
+            },
+        );
+    }
+
     // Clone service for the spawned task
     let service_clone = service.inner().clone();
-    
+    let token = cancel_token.clone();
+
     // Spawn the proxy server
     tokio::spawn(async move {
         loop {
-            match listener.accept().await {
-                Ok((mut stream, _)) => {
-                    let target = target_url.clone();
-                    let user = username.clone();
-                    let pass = password.clone();
-                    let service = service_clone.clone();
-                    
-                    tokio::spawn(async move {
-                        let (reader, mut writer) = stream.split();
-                        let mut buf_reader = BufReader::new(reader);
-                        let mut request_line = String::new();
-                        
-                        // Read the request line
-                        if buf_reader.read_line(&mut request_line).await.is_err() {
-                            return;
-                        }
-                        
-                        // Parse the request path
-                        let parts: Vec<&str> = request_line.split_whitespace().collect();
-                        if parts.len() < 2 {
-                            return;
-                        }
-                        
-                        let method = parts[0];
-                        let path = parts[1];
-                        
-                        // Build the full URL
-                        let full_url = if path.starts_with("http") {
-                            path.to_string()
-                        } else {
-                            format!("{}{}", target.trim_end_matches('/'), path)
-                        };
-                        
-                        // Read and skip headers until empty line
-                        let mut headers_map = HashMap::new();
-                        loop {
-                            let mut header_line = String::new();
-                            if buf_reader.read_line(&mut header_line).await.is_err() {
-                                break;
-                            }
-                            let trimmed = header_line.trim();
-                            if trimmed.is_empty() {
-                                break;
-                            }
-                            if let Some((key, value)) = trimmed.split_once(':') {
-                                headers_map.insert(key.trim().to_string(), value.trim().to_string());
-                            }
-                        }
-                        
-                        // Create HTTP config with basic auth
-                        let http_config = HttpConnectionConfig {
-                            url: full_url,
-                            method: method.to_string(),
-                            auth_type: Some("basic".to_string()),
-                            username: Some(user),
-                            password: Some(pass),
-                            bearer_token: None,
-                            headers: headers_map,
-                            body: None,
-                            timeout: 60,
-                            follow_redirects: true,
-                            verify_ssl,
-                        };
-                        
-                        // Fetch through the HTTP service
-                        let service_guard = service.lock().await;
-                        match service_guard.fetch(http_config).await {
-                            Ok(response) => {
-                                // Build HTTP response
-                                let status_line = format!("HTTP/1.1 {} OK\r\n", response.status);
-                                let mut response_headers = String::new();
-                                
-                                if let Some(ct) = &response.content_type {
-                                    response_headers.push_str(&format!("Content-Type: {}\r\n", ct));
-                                }
-                                response_headers.push_str(&format!("Content-Length: {}\r\n", response.body.len()));
-                                response_headers.push_str("Access-Control-Allow-Origin: *\r\n");
-                                response_headers.push_str("Connection: close\r\n");
-                                response_headers.push_str("\r\n");
-                                
-                                let full_response = format!("{}{}{}", status_line, response_headers, response.body);
-                                let _ = writer.write_all(full_response.as_bytes()).await;
-                            }
-                            Err(e) => {
-                                let error_response = format!(
-                                    "HTTP/1.1 502 Bad Gateway\r\n\
-                                     Content-Type: text/plain\r\n\
-                                     Content-Length: {}\r\n\
-                                     Connection: close\r\n\r\n{}",
-                                    e.len(),
-                                    e
-                                );
-                                let _ = writer.write_all(error_response.as_bytes()).await;
-                            }
-                        }
-                    });
+            tokio::select! {
+                _ = token.cancelled() => {
+                    break;
                 }
-                Err(_) => break,
+                accept_result = listener.accept() => {
+                    match accept_result {
+                        Ok((mut stream, _)) => {
+                            let target = target_url.clone();
+                            let user = username.clone();
+                            let pass = password.clone();
+                            let svc = service_clone.clone();
+
+                            tokio::spawn(async move {
+                                let (reader, mut writer) = stream.split();
+                                let mut buf_reader = BufReader::new(reader);
+                                let mut request_line = String::new();
+
+                                // Read the request line
+                                if buf_reader.read_line(&mut request_line).await.is_err() {
+                                    return;
+                                }
+
+                                // Parse the request
+                                let parts: Vec<&str> = request_line.split_whitespace().collect();
+                                if parts.len() < 2 {
+                                    return;
+                                }
+
+                                let method = parts[0].to_string();
+                                let path = parts[1].to_string();
+
+                                // Build the full URL
+                                let full_url = if path.starts_with("http") {
+                                    path.clone()
+                                } else {
+                                    format!("{}{}", target.trim_end_matches('/'), path)
+                                };
+
+                                // Read headers until empty line
+                                let mut headers_map = HashMap::new();
+                                let mut content_length: usize = 0;
+                                loop {
+                                    let mut header_line = String::new();
+                                    if buf_reader.read_line(&mut header_line).await.is_err() {
+                                        break;
+                                    }
+                                    let trimmed = header_line.trim();
+                                    if trimmed.is_empty() {
+                                        break;
+                                    }
+                                    if let Some((key, value)) = trimmed.split_once(':') {
+                                        let key_lower = key.trim().to_lowercase();
+                                        let val = value.trim().to_string();
+                                        if key_lower == "content-length" {
+                                            content_length = val.parse().unwrap_or(0);
+                                        }
+                                        // Don't forward hop-by-hop or auth headers
+                                        // (we inject our own auth)
+                                        if key_lower != "authorization"
+                                            && key_lower != "host"
+                                            && key_lower != "connection"
+                                            && key_lower != "proxy-authorization"
+                                        {
+                                            headers_map.insert(key.trim().to_string(), val);
+                                        }
+                                    }
+                                }
+
+                                // Read request body if Content-Length > 0
+                                let body = if content_length > 0 {
+                                    let mut body_buf = vec![0u8; content_length];
+                                    match buf_reader.read_exact(&mut body_buf).await {
+                                        Ok(_) => String::from_utf8(body_buf).ok(),
+                                        Err(_) => None,
+                                    }
+                                } else {
+                                    None
+                                };
+
+                                // Build auth config - always inject basic auth
+                                let (auth_type, auth_user, auth_pass) =
+                                    if !user.is_empty() || !pass.is_empty() {
+                                        (
+                                            Some("basic".to_string()),
+                                            Some(user),
+                                            Some(pass),
+                                        )
+                                    } else {
+                                        (None, None, None)
+                                    };
+
+                                let http_config = HttpConnectionConfig {
+                                    url: full_url,
+                                    method,
+                                    auth_type,
+                                    username: auth_user,
+                                    password: auth_pass,
+                                    bearer_token: None,
+                                    headers: headers_map,
+                                    body,
+                                    timeout: 60,
+                                    follow_redirects: true,
+                                    verify_ssl,
+                                };
+
+                                // Fetch through the HTTP service
+                                let service_guard = svc.lock().await;
+                                match service_guard.fetch(http_config).await {
+                                    Ok(response) => {
+                                        let status_text = match response.status {
+                                            200 => "OK",
+                                            201 => "Created",
+                                            204 => "No Content",
+                                            301 => "Moved Permanently",
+                                            302 => "Found",
+                                            304 => "Not Modified",
+                                            400 => "Bad Request",
+                                            401 => "Unauthorized",
+                                            403 => "Forbidden",
+                                            404 => "Not Found",
+                                            500 => "Internal Server Error",
+                                            _ => "OK",
+                                        };
+                                        let status_line = format!(
+                                            "HTTP/1.1 {} {}\r\n",
+                                            response.status, status_text
+                                        );
+                                        let mut resp_headers = String::new();
+
+                                        // Forward upstream headers (except hop-by-hop)
+                                        for (key, value) in &response.headers {
+                                            let k = key.to_lowercase();
+                                            if k == "transfer-encoding"
+                                                || k == "connection"
+                                                || k == "content-length"
+                                                || k == "content-type"
+                                            {
+                                                continue;
+                                            }
+                                            resp_headers.push_str(&format!(
+                                                "{}: {}\r\n",
+                                                key, value
+                                            ));
+                                        }
+
+                                        if let Some(ct) = &response.content_type {
+                                            resp_headers.push_str(&format!(
+                                                "Content-Type: {}\r\n",
+                                                ct
+                                            ));
+                                        }
+                                        let body_bytes = response.body.as_bytes();
+                                        resp_headers.push_str(&format!(
+                                            "Content-Length: {}\r\n",
+                                            body_bytes.len()
+                                        ));
+                                        resp_headers
+                                            .push_str("Access-Control-Allow-Origin: *\r\n");
+                                        resp_headers.push_str("Connection: close\r\n");
+                                        resp_headers.push_str("\r\n");
+
+                                        let header_bytes =
+                                            format!("{}{}", status_line, resp_headers);
+                                        let _ = writer
+                                            .write_all(header_bytes.as_bytes())
+                                            .await;
+                                        let _ = writer.write_all(body_bytes).await;
+                                    }
+                                    Err(e) => {
+                                        let error_body = e.as_bytes();
+                                        let error_response = format!(
+                                            "HTTP/1.1 502 Bad Gateway\r\n\
+                                             Content-Type: text/plain\r\n\
+                                             Content-Length: {}\r\n\
+                                             Access-Control-Allow-Origin: *\r\n\
+                                             Connection: close\r\n\r\n",
+                                            error_body.len()
+                                        );
+                                        let _ = writer
+                                            .write_all(error_response.as_bytes())
+                                            .await;
+                                        let _ = writer.write_all(error_body).await;
+                                    }
+                                }
+                            });
+                        }
+                        Err(_) => break,
+                    }
+                }
             }
         }
     });
-    
+
     Ok(ProxyMediatorResponse {
         local_port: actual_port,
         session_id,
         proxy_url: format!("http://127.0.0.1:{}", actual_port),
     })
+}
+
+/// Stop a running basic auth proxy session
+#[command]
+pub async fn stop_basic_auth_proxy(
+    session_id: String,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<(), String> {
+    let mut mgr = sessions.lock().await;
+    if let Some(entry) = mgr.sessions.remove(&session_id) {
+        entry.cancel_token.cancel();
+        Ok(())
+    } else {
+        Err(format!("Proxy session {} not found", session_id))
+    }
+}
+
+/// List all active proxy sessions
+#[command]
+pub async fn list_proxy_sessions(
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<Vec<ProxyMediatorResponse>, String> {
+    let mgr = sessions.lock().await;
+    Ok(mgr
+        .sessions
+        .iter()
+        .map(|(id, entry)| ProxyMediatorResponse {
+            local_port: entry.local_port,
+            session_id: id.clone(),
+            proxy_url: format!("http://127.0.0.1:{}", entry.local_port),
+        })
+        .collect())
 }

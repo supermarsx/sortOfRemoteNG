@@ -74,6 +74,40 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
     return `${protocol}://${host}${portSuffix}`;
   }, [connection, session.protocol]);
 
+  // Resolve the best auth credentials from the connection
+  const resolveCredentials = useCallback((): { username: string; password: string } | null => {
+    if (!connection) return null;
+
+    // Prefer dedicated basicAuth fields when authType is 'basic'
+    if (
+      connection.authType === 'basic' &&
+      connection.basicAuthUsername &&
+      connection.basicAuthPassword
+    ) {
+      return {
+        username: connection.basicAuthUsername,
+        password: connection.basicAuthPassword,
+      };
+    }
+
+    // Fall back to general username/password fields
+    if (connection.username && connection.password) {
+      return { username: connection.username, password: connection.password };
+    }
+
+    return null;
+  }, [connection]);
+
+  // Stop a running proxy session
+  const stopProxy = useCallback(async (sessionId: string) => {
+    if (!sessionId) return;
+    try {
+      await invoke('stop_basic_auth_proxy', { sessionId });
+    } catch {
+      // Session may already be gone – ignore
+    }
+  }, []);
+
   // Initialize proxy connection
   const initProxy = useCallback(async () => {
     if (!connection) {
@@ -85,20 +119,25 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
     setStatus('connecting');
     setError('');
 
+    // Tear down previous session if any
+    if (proxySessionId) {
+      await stopProxy(proxySessionId);
+      setProxySessionId('');
+    }
+
     try {
       const targetUrl = buildTargetUrl();
       setCurrentUrl(targetUrl);
       setIsSecure(targetUrl.startsWith('https'));
 
-      // Check if basic auth is configured
-      const hasAuth = connection.username && connection.password;
+      const creds = resolveCredentials();
 
-      if (hasAuth) {
+      if (creds) {
         // Start the proxy mediator for authenticated connections
         const proxyConfig = {
           target_url: targetUrl,
-          username: connection.username || '',
-          password: connection.password || '',
+          username: creds.username,
+          password: creds.password,
           local_port: 0, // Auto-assign
           verify_ssl: connection.httpVerifySsl ?? true,
         };
@@ -124,12 +163,21 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
       setStatus('error');
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [connection, buildTargetUrl]);
+  }, [connection, buildTargetUrl, resolveCredentials, proxySessionId, stopProxy]);
 
   // Initialize on mount
   useEffect(() => {
     initProxy();
   }, [initProxy]);
+
+  // Cleanup proxy session on unmount
+  useEffect(() => {
+    return () => {
+      if (proxySessionId) {
+        invoke('stop_basic_auth_proxy', { sessionId: proxySessionId }).catch(() => {});
+      }
+    };
+  }, [proxySessionId]);
 
   // Navigation handlers
   const navigateTo = useCallback((url: string) => {
@@ -273,7 +321,7 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
             <Unlock className="w-4 h-4 text-yellow-500 flex-shrink-0" />
           )}
           <span className="text-gray-300 text-sm truncate flex-1">{currentUrl}</span>
-          {connection?.username && (
+          {resolveCredentials() && (
             <span className="flex items-center gap-1 text-xs text-blue-400 flex-shrink-0">
               <Shield className="w-3 h-3" />
               Authenticated
@@ -330,7 +378,7 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
             </div>
             <div>
               <span className="text-gray-400">Authentication:</span>
-              <p className="text-white">{connection?.username ? 'Basic Auth' : 'None'}</p>
+              <p className="text-white">{resolveCredentials() ? 'Basic Auth' : 'None'}</p>
             </div>
             <div>
               <span className="text-gray-400">Protocol:</span>

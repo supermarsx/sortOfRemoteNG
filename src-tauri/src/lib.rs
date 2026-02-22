@@ -140,6 +140,7 @@ use scaleway::ScalewayService;
 use linode::LinodeService;
 use ovh::OvhService;
 use http::HttpService;
+use http::ProxySessionManager;
 use passkey::PasskeyService;
 use ssh3::Ssh3Service;
 
@@ -431,6 +432,10 @@ pub fn run() {
       // Initialize HTTP service
       let http_service = HttpService::new();
       app.manage(http_service.clone());
+
+      // Initialize proxy session manager
+      let proxy_session_mgr = ProxySessionManager::new();
+      app.manage(proxy_session_mgr.clone());
 
       // Initialize Passkey service
       let passkey_service = PasskeyService::new();
@@ -776,6 +781,8 @@ pub fn run() {
         http::http_get,
         http::http_post,
         http::start_basic_auth_proxy,
+        http::stop_basic_auth_proxy,
+        http::list_proxy_sessions,
         passkey::passkey_is_available,
         passkey::passkey_authenticate,
         passkey::passkey_register,
