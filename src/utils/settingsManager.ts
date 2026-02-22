@@ -217,6 +217,13 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   sshTerminal: defaultSSHTerminalConfig,
   backup: defaultBackupConfig,
   cloudSync: defaultCloudSyncConfig,
+
+  // Trust & Verification
+  enableAutocomplete: false,
+  tlsTrustPolicy: 'tofu',
+  sshTrustPolicy: 'tofu',
+  showTrustIdentityInfo: true,
+  certExpiryWarningDays: 5,
 };
 
 /**

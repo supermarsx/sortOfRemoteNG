@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, AlertTriangle } from 'lucide-react';
+import { X, AlertTriangle, Lock, Trash2, Pencil } from 'lucide-react';
 import { Connection } from '../../types/connection';
+import {
+  getAllTrustRecords,
+  removeIdentity,
+  clearAllTrustRecords,
+  formatFingerprint,
+  updateTrustRecordNickname,
+  type TrustRecord,
+} from '../../utils/trustStore';
 
 interface HTTPOptionsProps {
   formData: Partial<Connection>;
@@ -51,7 +59,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
       <div className="md:col-span-2">
         <label className="block text-sm font-medium text-gray-300 mb-2">Authentication Type</label>
         <select
-          value={formData.authType}
+          value={formData.authType ?? 'basic'}
           onChange={(e) => setFormData({ ...formData, authType: e.target.value as any })}
           className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         >
@@ -153,6 +161,59 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
           <p className="text-xs text-gray-500 mt-1">
             Controls whether certificate fingerprints are memorized and verified across connections.
           </p>
+          {/* Per-connection stored TLS certificates */}
+          {formData.id && (() => {
+            const records = getAllTrustRecords(formData.id).filter(r => r.type === 'tls');
+            if (records.length === 0) return null;
+            return (
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                    <Lock size={14} className="text-green-400" />
+                    Stored Certificates ({records.length})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearAllTrustRecords(formData.id);
+                      setFormData({ ...formData }); // force re-render
+                    }}
+                    className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+                  >
+                    Clear all
+                  </button>
+                </div>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {records.map((record, i) => {
+                    const [host, portStr] = record.host.split(':');
+                    return (
+                      <div key={i} className="flex items-center gap-2 bg-gray-700/50 border border-gray-600/50 rounded px-3 py-1.5 text-xs">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-gray-300 truncate">{record.nickname || record.host}</p>
+                            {record.nickname && <p className="text-gray-500 truncate">({record.host})</p>}
+                          </div>
+                          <p className="font-mono text-gray-500 truncate">{formatFingerprint(record.identity.fingerprint)}</p>
+                        </div>
+                        <NicknameEditButton record={record} connectionId={formData.id} onSaved={() => setFormData({ ...formData })} />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            removeIdentity(host, parseInt(portStr, 10), record.type, formData.id);
+                            setFormData({ ...formData }); // force re-render
+                          }}
+                          className="text-gray-500 hover:text-red-400 p-0.5 transition-colors flex-shrink-0"
+                          title="Remove"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -276,5 +337,47 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
     </>
   );
 };
+
+/** Inline nickname edit button for trust record rows */
+function NicknameEditButton({ record, connectionId, onSaved }: { record: TrustRecord; connectionId?: string; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(record.nickname ?? '');
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            const [h, p] = record.host.split(':');
+            updateTrustRecordNickname(h, parseInt(p, 10), record.type, draft.trim(), connectionId);
+            setEditing(false);
+            onSaved();
+          } else if (e.key === 'Escape') { setDraft(record.nickname ?? ''); setEditing(false); }
+        }}
+        onBlur={() => {
+          const [h, p] = record.host.split(':');
+          updateTrustRecordNickname(h, parseInt(p, 10), record.type, draft.trim(), connectionId);
+          setEditing(false);
+          onSaved();
+        }}
+        placeholder="Nickname…"
+        className="w-24 px-1.5 py-0.5 bg-gray-700 border border-gray-600 rounded text-gray-200 placeholder-gray-500 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => { setDraft(record.nickname ?? ''); setEditing(true); }}
+      className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors flex-shrink-0"
+      title={record.nickname ? `Nickname: ${record.nickname}` : 'Add nickname'}
+    >
+      <Pencil size={10} />
+    </button>
+  );
+}
 
 export default HTTPOptions;

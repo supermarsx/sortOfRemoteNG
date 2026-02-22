@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { GlobalSettings } from '../../../types/settings';
 import {
   ShieldCheck,
@@ -9,12 +9,14 @@ import {
   Trash2,
   AlertTriangle,
   Clock,
+  Pencil,
 } from 'lucide-react';
 import {
   getAllTrustRecords,
   removeIdentity,
   clearAllTrustRecords,
   formatFingerprint,
+  updateTrustRecordNickname,
   type TrustRecord,
 } from '../../../utils/trustStore';
 
@@ -36,6 +38,13 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
 }) => {
   const [trustRecords, setTrustRecords] = useState<TrustRecord[]>(() => getAllTrustRecords());
   const [showConfirmClear, setShowConfirmClear] = useState(false);
+
+  const refreshRecords = useCallback(() => setTrustRecords(getAllTrustRecords()), []);
+
+  useEffect(() => {
+    window.addEventListener('trustStoreChanged', refreshRecords);
+    return () => window.removeEventListener('trustStoreChanged', refreshRecords);
+  }, [refreshRecords]);
 
   const tlsRecords = useMemo(() => trustRecords.filter(r => r.type === 'tls'), [trustRecords]);
   const sshRecords = useMemo(() => trustRecords.filter(r => r.type === 'ssh'), [trustRecords]);
@@ -76,7 +85,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             <h4 className="text-sm font-medium text-white">TLS Certificate Policy</h4>
           </div>
           <select
-            value={settings.tlsTrustPolicy}
+            value={settings.tlsTrustPolicy ?? 'tofu'}
             onChange={(e) => updateSettings({ tlsTrustPolicy: e.target.value as GlobalSettings['tlsTrustPolicy'] })}
             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-blue-500 text-sm"
           >
@@ -96,7 +105,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             <h4 className="text-sm font-medium text-white">SSH Host Key Policy</h4>
           </div>
           <select
-            value={settings.sshTrustPolicy}
+            value={settings.sshTrustPolicy ?? 'tofu'}
             onChange={(e) => updateSettings({ sshTrustPolicy: e.target.value as GlobalSettings['sshTrustPolicy'] })}
             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-blue-500 text-sm"
           >
@@ -110,12 +119,57 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
         </div>
       </div>
 
+      {/* Policy Explanations Accordion */}
+      <details className="group bg-gray-800/50 border border-gray-700 rounded-lg">
+        <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-gray-300 hover:text-white transition-colors flex items-center gap-2">
+          <ShieldAlert size={14} className="text-gray-400" />
+          What do these policies mean?
+          <span className="ml-auto text-gray-500 text-xs group-open:rotate-90 transition-transform">▶</span>
+        </summary>
+        <div className="px-4 pb-4 pt-1 space-y-3 text-xs text-gray-400 leading-relaxed border-t border-gray-700/60 mt-1">
+          <div>
+            <span className="text-white font-medium">Trust On First Use (TOFU)</span>
+            <p className="mt-0.5">
+              The first time you connect to a host, its certificate or host key is automatically accepted and stored.
+              On subsequent connections the stored identity is compared — if it changed you will see a warning so you
+              can decide whether the change is expected (e.g. a certificate renewal) or suspicious.
+              This is the recommended default for most users.
+            </p>
+          </div>
+          <div>
+            <span className="text-white font-medium">Always Ask</span>
+            <p className="mt-0.5">
+              Every time a new or previously unseen identity is encountered you will be prompted to manually
+              approve or reject it. Use this when you prefer explicit confirmation for every identity,
+              for example in high-security environments.
+            </p>
+          </div>
+          <div>
+            <span className="text-white font-medium">Always Trust</span>
+            <p className="mt-0.5">
+              All certificates and host keys are accepted without any verification or prompts.
+              This is convenient for development or lab environments but should <em>never</em> be
+              used in production or on untrusted networks — it leaves you vulnerable to
+              man-in-the-middle attacks.
+            </p>
+          </div>
+          <div>
+            <span className="text-white font-medium">Strict</span>
+            <p className="mt-0.5">
+              Connections are only allowed if the host&apos;s identity has been manually pre-approved
+              and stored beforehand. Any unknown or changed identity is immediately rejected.
+              Ideal when you manage a fixed set of known servers and want maximum security.
+            </p>
+          </div>
+        </div>
+      </details>
+
       {/* Additional options */}
       <div className="space-y-4">
         <label className="flex items-center gap-3 text-sm text-gray-300">
           <input
             type="checkbox"
-            checked={settings.showTrustIdentityInfo}
+            checked={settings.showTrustIdentityInfo ?? true}
             onChange={(e) => updateSettings({ showTrustIdentityInfo: e.target.checked })}
             className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
           />
@@ -136,7 +190,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             type="number"
             min={0}
             max={365}
-            value={settings.certExpiryWarningDays}
+            value={settings.certExpiryWarningDays ?? 5}
             onChange={(e) => updateSettings({ certExpiryWarningDays: parseInt(e.target.value, 10) || 0 })}
             className="w-20 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:ring-2 focus:ring-blue-500"
           />
@@ -198,7 +252,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
                 </h5>
                 <div className="space-y-2">
                   {tlsRecords.map((record, i) => (
-                    <TrustRecordRow key={`tls-${i}`} record={record} onRemove={handleRemoveRecord} />
+                    <TrustRecordRow key={`tls-${i}`} record={record} onRemove={handleRemoveRecord} onUpdated={() => setTrustRecords(getAllTrustRecords())} />
                   ))}
                 </div>
               </div>
@@ -212,7 +266,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
                 </h5>
                 <div className="space-y-2">
                   {sshRecords.map((record, i) => (
-                    <TrustRecordRow key={`ssh-${i}`} record={record} onRemove={handleRemoveRecord} />
+                    <TrustRecordRow key={`ssh-${i}`} record={record} onRemove={handleRemoveRecord} onUpdated={() => setTrustRecords(getAllTrustRecords())} />
                   ))}
                 </div>
               </div>
@@ -225,12 +279,48 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
 };
 
 /** A single trust record row with remove action. */
-function TrustRecordRow({ record, onRemove }: { record: TrustRecord; onRemove: (r: TrustRecord) => void }) {
+function TrustRecordRow({ record, onRemove, onUpdated }: { record: TrustRecord; onRemove: (r: TrustRecord) => void; onUpdated: () => void }) {
+  const [editingNick, setEditingNick] = React.useState(false);
+  const [nickDraft, setNickDraft] = React.useState(record.nickname ?? '');
+
+  const saveNickname = () => {
+    const [h, p] = record.host.split(':');
+    updateTrustRecordNickname(h, parseInt(p, 10), record.type, nickDraft.trim());
+    setEditingNick(false);
+    onUpdated();
+  };
+
   return (
     <div className="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm text-white font-medium truncate">{record.host}</span>
+          {editingNick ? (
+            <input
+              autoFocus
+              type="text"
+              value={nickDraft}
+              onChange={(e) => setNickDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveNickname();
+                else if (e.key === 'Escape') { setNickDraft(record.nickname ?? ''); setEditingNick(false); }
+              }}
+              onBlur={saveNickname}
+              placeholder="Nickname…"
+              className="w-40 px-2 py-0.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          ) : (
+            <>
+              <span className="text-sm text-white font-medium truncate">{record.nickname || record.host}</span>
+              {record.nickname && <span className="text-xs text-gray-500 truncate">({record.host})</span>}
+              <button
+                onClick={() => { setNickDraft(record.nickname ?? ''); setEditingNick(true); }}
+                className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors flex-shrink-0"
+                title={record.nickname ? 'Edit nickname' : 'Add nickname'}
+              >
+                <Pencil size={10} />
+              </button>
+            </>
+          )}
           {record.userApproved && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-900/50 text-green-400 border border-green-700/50">
               approved

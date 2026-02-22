@@ -69,6 +69,8 @@ export interface TrustRecord {
   identity: CertIdentity | SshHostKeyIdentity;
   /** User explicitly approved this identity */
   userApproved: boolean;
+  /** Optional user-assigned nickname / label */
+  nickname?: string;
   /** Previous identities (when user chose to update) */
   history?: Array<CertIdentity | SshHostKeyIdentity>;
 }
@@ -115,9 +117,18 @@ function saveStore(store: Record<string, TrustRecord>, connectionId?: string): v
 // Public API
 // ---------------------------------------------------------------------------
 
+/** Notify listeners that the trust store changed. */
+function notifyTrustStoreChanged(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('trustStoreChanged'));
+  }
+}
+
 /**
  * Check a received identity against the trust store.
  *
+ * @param connectionId  When provided the identity is looked up in the
+ *                      per-connection store instead of the global one.
  * @returns A `TrustVerifyResult` indicating whether the identity is trusted,
  *          seen for the first time, or differs from what was stored.
  */
@@ -126,8 +137,9 @@ export function verifyIdentity(
   port: number,
   type: 'tls' | 'ssh',
   received: CertIdentity | SshHostKeyIdentity,
+  connectionId?: string,
 ): TrustVerifyResult {
-  const store = loadStore();
+  const store = loadStore(connectionId);
   const key = hostKey(host, port, type);
   const record = store[key];
 
@@ -138,7 +150,7 @@ export function verifyIdentity(
   if (record.identity.fingerprint === received.fingerprint) {
     // Fingerprint matches — update lastSeen and return trusted
     record.identity.lastSeen = new Date().toISOString();
-    saveStore(store);
+    saveStore(store, connectionId);
     return { status: 'trusted' };
   }
 
@@ -153,6 +165,9 @@ export function verifyIdentity(
 /**
  * Store (memorize) an identity as trusted.
  * If a previous identity existed it is moved to history.
+ *
+ * @param connectionId  When provided the identity is stored in the
+ *                      per-connection store instead of the global one.
  */
 export function trustIdentity(
   host: string,
@@ -160,8 +175,9 @@ export function trustIdentity(
   type: 'tls' | 'ssh',
   identity: CertIdentity | SshHostKeyIdentity,
   userApproved = true,
+  connectionId?: string,
 ): void {
-  const store = loadStore();
+  const store = loadStore(connectionId);
   const key = hostKey(host, port, type);
   const existing = store[key];
   const now = new Date().toISOString();
@@ -181,17 +197,19 @@ export function trustIdentity(
     userApproved,
     history: history.length > 0 ? history : undefined,
   };
-  saveStore(store);
+  saveStore(store, connectionId);
+  notifyTrustStoreChanged();
 }
 
 /**
  * Remove a stored trust record.
  */
-export function removeIdentity(host: string, port: number, type: 'tls' | 'ssh'): void {
-  const store = loadStore();
+export function removeIdentity(host: string, port: number, type: 'tls' | 'ssh', connectionId?: string): void {
+  const store = loadStore(connectionId);
   const key = hostKey(host, port, type);
   delete store[key];
-  saveStore(store);
+  saveStore(store, connectionId);
+  notifyTrustStoreChanged();
 }
 
 /**
@@ -201,24 +219,51 @@ export function getStoredIdentity(
   host: string,
   port: number,
   type: 'tls' | 'ssh',
+  connectionId?: string,
 ): TrustRecord | undefined {
-  const store = loadStore();
+  const store = loadStore(connectionId);
   return store[hostKey(host, port, type)];
 }
 
 /**
- * Get all trust records.
+ * Get all trust records.  When connectionId is provided, returns only
+ * that connection's records.
  */
-export function getAllTrustRecords(): TrustRecord[] {
-  const store = loadStore();
+export function getAllTrustRecords(connectionId?: string): TrustRecord[] {
+  const store = loadStore(connectionId);
   return Object.values(store);
 }
 
 /**
- * Clear every trust record.
+ * Clear every trust record.  When connectionId is provided, only the
+ * per-connection store is cleared.
  */
-export function clearAllTrustRecords(): void {
-  localStorage.removeItem(TRUST_STORE_KEY);
+export function clearAllTrustRecords(connectionId?: string): void {
+  if (connectionId) {
+    localStorage.removeItem(connectionStoreKey(connectionId));
+  } else {
+    localStorage.removeItem(TRUST_STORE_KEY);
+  }
+  notifyTrustStoreChanged();
+}
+
+/**
+ * Update the nickname of a stored trust record.
+ */
+export function updateTrustRecordNickname(
+  host: string,
+  port: number,
+  type: 'tls' | 'ssh',
+  nickname: string,
+  connectionId?: string,
+): void {
+  const store = loadStore(connectionId);
+  const key = hostKey(host, port, type);
+  const record = store[key];
+  if (!record) return;
+  record.nickname = nickname || undefined;
+  saveStore(store, connectionId);
+  notifyTrustStoreChanged();
 }
 
 /**

@@ -168,7 +168,7 @@ const defaultSettings: GlobalSettings = {
   tlsTrustPolicy: 'tofu',
   sshTrustPolicy: 'tofu',
   showTrustIdentityInfo: true,
-  certExpiryWarningDays: 30,
+  certExpiryWarningDays: 5,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

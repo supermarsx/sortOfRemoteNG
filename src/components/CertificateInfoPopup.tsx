@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useRef, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Shield,
@@ -11,9 +12,11 @@ import {
   Globe,
   Server,
   Key,
+  Pencil,
+  Check,
 } from 'lucide-react';
 import type { CertIdentity, SshHostKeyIdentity, TrustRecord } from '../utils/trustStore';
-import { formatFingerprint } from '../utils/trustStore';
+import { formatFingerprint, updateTrustRecordNickname } from '../utils/trustStore';
 
 interface CertificateInfoPopupProps {
   type: 'tls' | 'ssh';
@@ -23,6 +26,10 @@ interface CertificateInfoPopupProps {
   currentIdentity?: CertIdentity | SshHostKeyIdentity;
   /** Stored trust record (if previously memorized) */
   trustRecord?: TrustRecord;
+  /** Connection ID owning this trust record (for per-connection stores) */
+  connectionId?: string;
+  /** Ref to the trigger element — popup positions itself below it */
+  triggerRef?: React.RefObject<HTMLElement | null>;
   onClose: () => void;
 }
 
@@ -37,8 +44,45 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
   port,
   currentIdentity,
   trustRecord,
+  connectionId,
+  triggerRef,
   onClose,
 }) => {
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [editingNick, setEditingNick] = useState(false);
+  const [nickDraft, setNickDraft] = useState(trustRecord?.nickname ?? '');
+  const [savedNick, setSavedNick] = useState(trustRecord?.nickname ?? '');
+
+  const POPUP_WIDTH = 384; // w-96 = 24rem = 384px
+  const EDGE_PAD = 8;
+
+  // Position the popup directly below the trigger element, clamped to viewport
+  useEffect(() => {
+    const trigger = triggerRef?.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const vw = window.innerWidth;
+    // Prefer aligning left edge to the trigger, but clamp so the popup
+    // never overflows the right edge of the viewport.
+    const idealLeft = rect.left;
+    const maxLeft = vw - POPUP_WIDTH - EDGE_PAD;
+    setPos({ top: rect.bottom + 4, left: Math.max(EDGE_PAD, Math.min(idealLeft, maxLeft)) });
+  }, [triggerRef]);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) {
+        const trigger = triggerRef?.current;
+        if (trigger && trigger.contains(e.target as Node)) return;
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose, triggerRef]);
+
   const isTls = type === 'tls';
   const identity = currentIdentity ?? trustRecord?.identity;
 
@@ -48,7 +92,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
   const isExpiringSoon = (id: CertIdentity): boolean => {
     if (!id.validTo) return false;
     const daysLeft = (new Date(id.validTo).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    return daysLeft > 0 && daysLeft <= 30;
+    return daysLeft > 0 && daysLeft <= 5;
   };
 
   const isExpired = (id: CertIdentity): boolean => {
@@ -70,8 +114,20 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
   const trustStatus = getTrustStatus();
   const TrustIcon = trustStatus.icon;
 
-  return (
-    <div className="absolute z-50 bottom-full left-0 mb-2 w-96 bg-gray-800 border border-gray-600 rounded-lg shadow-xl">
+  const content = (
+    <div
+      ref={popupRef}
+      className="fixed w-96 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl"
+      style={{
+        zIndex: 99999,
+        top: pos ? `${pos.top}px` : undefined,
+        left: pos ? `${pos.left}px` : undefined,
+        maxHeight: 'calc(100vh - 60px)',
+        overflowY: 'auto',
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       {/* Title bar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
         <div className="flex items-center gap-2">
@@ -85,7 +141,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
         </button>
       </div>
 
-      <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
+      <div className="p-4 space-y-3">
         {/* Connection info */}
         <div className="flex items-center gap-2 text-sm">
           <Globe size={14} className="text-gray-400 flex-shrink-0" />
@@ -94,6 +150,65 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
             {trustStatus.label}
           </span>
         </div>
+
+        {/* Nickname */}
+        {trustRecord && (
+          <div className="flex items-center gap-2 text-xs">
+            {editingNick ? (
+              <>
+                <input
+                  autoFocus
+                  type="text"
+                  value={nickDraft}
+                  onChange={(e) => setNickDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      updateTrustRecordNickname(host, port, type, nickDraft.trim(), connectionId);
+                      setSavedNick(nickDraft.trim());
+                      setEditingNick(false);
+                    } else if (e.key === 'Escape') {
+                      setNickDraft(savedNick);
+                      setEditingNick(false);
+                    }
+                  }}
+                  placeholder="Add a nickname…"
+                  className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+                />
+                <button
+                  onClick={() => {
+                    updateTrustRecordNickname(host, port, type, nickDraft.trim(), connectionId);
+                    setSavedNick(nickDraft.trim());
+                    setEditingNick(false);
+                  }}
+                  className="text-green-400 hover:text-green-300 p-0.5"
+                  title="Save"
+                >
+                  <Check size={12} />
+                </button>
+                <button
+                  onClick={() => { setNickDraft(savedNick); setEditingNick(false); }}
+                  className="text-gray-500 hover:text-gray-300 p-0.5"
+                  title="Cancel"
+                >
+                  <X size={12} />
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-gray-500 italic truncate">
+                  {savedNick || 'No nickname'}
+                </span>
+                <button
+                  onClick={() => { setNickDraft(savedNick); setEditingNick(true); }}
+                  className="text-gray-500 hover:text-gray-300 p-0.5"
+                  title="Edit nickname"
+                >
+                  <Pencil size={10} />
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {!identity ? (
           <p className="text-sm text-gray-500 italic">
@@ -210,6 +325,8 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(content, document.body);
 };
 
 /** Helper: a single info row */

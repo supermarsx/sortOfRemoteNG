@@ -95,6 +95,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const proxySessionIdRef = useRef<string>('');
   const proxyUrlRef = useRef<string>('');
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Navigation generation counter — prevents stale async navigations from
+   *  creating orphan proxy sessions when navigateToUrl is called concurrently
+   *  (e.g. React StrictMode double-mount). */
+  const navGenRef = useRef(0);
 
   // Timeout for loading (30 seconds)
   const LOAD_TIMEOUT_MS = 30_000;
@@ -146,13 +150,14 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
       setCertIdentity(identity);
 
-      const result = verifyIdentity(session.hostname, port, 'tls', identity);
+      const connId = connection?.id;
+      const result = verifyIdentity(session.hostname, port, 'tls', identity, connId);
 
       if (result.status === 'trusted') return true;
 
       if (result.status === 'first-use' && policy === 'tofu') {
         // TOFU — silently trust on first use
-        trustIdentity(session.hostname, port, 'tls', identity, false);
+        trustIdentity(session.hostname, port, 'tls', identity, false, connId);
         return true;
       }
 
@@ -175,7 +180,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const handleTrustAccept = useCallback(() => {
     if (trustPrompt && certIdentity) {
       const port = connection?.port || 443;
-      trustIdentity(session.hostname, port, 'tls', certIdentity, true);
+      trustIdentity(session.hostname, port, 'tls', certIdentity, true, connection?.id);
     }
     setTrustPrompt(null);
     trustResolveRef.current?.(true);
@@ -191,17 +196,6 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   }, []);
 
   // Close cert popup on outside click
-  useEffect(() => {
-    if (!showCertPopup) return;
-    const handler = (e: MouseEvent) => {
-      if (certPopupRef.current && !certPopupRef.current.contains(e.target as Node)) {
-        setShowCertPopup(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showCertPopup]);
-
   // ------------------------------------------------------------------
   // Proxy lifecycle helpers
   // ------------------------------------------------------------------
@@ -228,6 +222,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
    * credentials without ever showing a native browser auth prompt.
    */
   const navigateToUrl = useCallback(async (url: string, addToHistory = true) => {
+    // Bump generation so any in-flight navigateToUrl from a prior call
+    // knows it has been superseded and can clean up after itself.
+    const gen = ++navGenRef.current;
+
     setIsLoading(true);
     setLoadError('');
 
@@ -241,6 +239,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     if (url.startsWith('https://')) {
       const trusted = await fetchAndVerifyCert();
       if (!trusted) return; // user rejected — loadError already set
+      // Check if a newer navigation superseded us while we were awaiting
+      if (gen !== navGenRef.current) return;
     }
 
     // Start a timeout watchdog so we don't spin forever
@@ -252,6 +252,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     try {
       // Tear down any previous proxy session
       await stopProxy();
+      // Re-check generation after the async stop
+      if (gen !== navGenRef.current) return;
 
       if (hasAuth && resolvedCreds) {
         debugLog('WebBrowser', 'Starting auth proxy for', { url });
@@ -263,8 +265,16 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             password: resolvedCreds.password,
             local_port: 0,
             verify_ssl: (connection as Record<string, unknown>)?.httpVerifySsl ?? true,
+            connection_id: connection?.id ?? '',
           },
         });
+
+        // If a newer navigation started while we awaited, kill the proxy
+        // we just created — it's already orphaned.
+        if (gen !== navGenRef.current) {
+          invoke('stop_basic_auth_proxy', { sessionId: response.session_id }).catch(() => {});
+          return;
+        }
 
         proxySessionIdRef.current = response.session_id;
         proxyUrlRef.current = response.proxy_url;
@@ -291,6 +301,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
       debugLog('WebBrowser', 'Navigation initiated', { url, hasAuth });
     } catch (error) {
+      // Ignore errors from superseded navigations
+      if (gen !== navGenRef.current) return;
       console.error('Navigation failed:', error);
       const msg = error instanceof Error ? error.message : String(error);
 
@@ -421,7 +433,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     if (isSecure) {
       return (
         <button
-          onClick={(e) => { e.stopPropagation(); setShowCertPopup(v => !v); }}
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowCertPopup(v => !v); }}
           className="hover:bg-gray-600 rounded p-0.5 transition-colors"
           title="View certificate information"
         >
@@ -492,7 +505,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                       host={session.hostname}
                       port={connection?.port || 443}
                       currentIdentity={certIdentity ?? undefined}
-                      trustRecord={getStoredIdentity(session.hostname, connection?.port || 443, 'tls')}
+                      trustRecord={getStoredIdentity(session.hostname, connection?.port || 443, 'tls', connection?.id)}
+                      connectionId={connection?.id}
+                      triggerRef={certPopupRef}
                       onClose={() => setShowCertPopup(false)}
                     />
                   )}

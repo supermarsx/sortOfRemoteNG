@@ -130,7 +130,7 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
-              checked={settings.enableAutocomplete}
+              checked={settings.enableAutocomplete ?? false}
               onChange={(e) =>
                 updateSettings({ enableAutocomplete: e.target.checked })
               }

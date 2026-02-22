@@ -278,6 +278,9 @@ pub struct BasicAuthProxyConfig {
     /// Whether to verify SSL certificates
     #[serde(default = "default_verify_ssl")]
     pub verify_ssl: bool,
+    /// Connection ID that owns this proxy session (for per-connection isolation)
+    #[serde(default)]
+    pub connection_id: String,
 }
 
 /// Response from starting the proxy mediator
@@ -312,6 +315,7 @@ pub(crate) struct ProxySessionEntry {
     pub username: String,
     pub password: String,
     pub target_origin: String,
+    pub connection_id: String,
     pub created_at: String,
     pub local_port: u16,
     pub request_count: Arc<AtomicU64>,
@@ -338,6 +342,7 @@ pub struct ProxySessionDetail {
     pub session_id: String,
     pub target_url: String,
     pub username: String,
+    pub connection_id: String,
     pub proxy_url: String,
     pub created_at: String,
     pub request_count: u64,
@@ -376,6 +381,10 @@ struct AxumProxyState {
 }
 
 /// Axum fallback handler — proxies every request to the target server.
+///
+/// Includes one automatic retry for transient connection errors (connection
+/// reset, pool errors, timeouts on idle connections) that commonly occur when
+/// the upstream server silently closes keep-alive connections.
 async fn axum_proxy_handler(
     axum::extract::State(state): axum::extract::State<Arc<AxumProxyState>>,
     req: axum::extract::Request,
@@ -398,7 +407,6 @@ async fn axum_proxy_handler(
 
     let method_str = method.to_string();
 
-    // Build the upstream request.
     let reqwest_method = match method_str.as_str() {
         "POST" => reqwest::Method::POST,
         "PUT" => reqwest::Method::PUT,
@@ -409,14 +417,8 @@ async fn axum_proxy_handler(
         _ => reqwest::Method::GET,
     };
 
-    let mut upstream = state.client.request(reqwest_method, &full_url);
-
-    // Inject basic auth.
-    if !state.username.is_empty() || !state.password.is_empty() {
-        upstream = upstream.basic_auth(&state.username, Some(&state.password));
-    }
-
-    // Forward relevant request headers (skip hop-by-hop and auth headers).
+    // Collect request headers for potential retry.
+    let mut fwd_headers: Vec<(String, String)> = Vec::new();
     for (key, value) in req.headers() {
         let k = key.as_str().to_lowercase();
         if k == "authorization"
@@ -431,20 +433,19 @@ async fn axum_proxy_handler(
         if k == "referer" || k == "origin" {
             if let Ok(v) = value.to_str() {
                 if v.contains("127.0.0.1") {
-                    let rewritten = format!("{}/", state.target_origin);
-                    upstream = upstream.header(key.as_str(), rewritten);
+                    fwd_headers.push((key.as_str().to_string(), format!("{}/", state.target_origin)));
                     continue;
                 }
             }
         }
         if let Ok(v) = value.to_str() {
-            upstream = upstream.header(key.as_str(), v);
+            fwd_headers.push((key.as_str().to_string(), v.to_string()));
         }
     }
 
     // Forward request body.
     let body_bytes = match axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024).await {
-        Ok(b) => b,
+        Ok(b) => b.to_vec(),
         Err(e) => {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
@@ -452,12 +453,55 @@ async fn axum_proxy_handler(
                 .unwrap();
         }
     };
-    if !body_bytes.is_empty() {
-        upstream = upstream.body(body_bytes.to_vec());
+
+    /// Helper: returns true for transient errors worth retrying (connection
+    /// reset, broken pipe, pool timeouts).
+    fn is_retryable(e: &reqwest::Error) -> bool {
+        if e.is_connect() || e.is_timeout() {
+            return true;
+        }
+        let msg = e.to_string().to_lowercase();
+        msg.contains("connection reset")
+            || msg.contains("broken pipe")
+            || msg.contains("connection was idle")
+            || msg.contains("connection closed before")
+            || msg.contains("pool")
     }
 
+    /// Build and send one upstream request.
+    async fn send_upstream(
+        state: &AxumProxyState,
+        method: &reqwest::Method,
+        url: &str,
+        headers: &[(String, String)],
+        body: &[u8],
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        let mut upstream = state.client.request(method.clone(), url);
+        if !state.username.is_empty() || !state.password.is_empty() {
+            upstream = upstream.basic_auth(&state.username, Some(&state.password));
+        }
+        for (k, v) in headers {
+            upstream = upstream.header(k.as_str(), v.as_str());
+        }
+        if !body.is_empty() {
+            upstream = upstream.body(body.to_vec());
+        }
+        upstream.send().await
+    }
+
+    // Try once, and retry on transient failures.
+    let result = match send_upstream(&state, &reqwest_method, &full_url, &fwd_headers, &body_bytes).await {
+        Ok(resp) => Ok(resp),
+        Err(e) if is_retryable(&e) => {
+            // Brief pause before retry
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            send_upstream(&state, &reqwest_method, &full_url, &fwd_headers, &body_bytes).await
+        }
+        Err(e) => Err(e),
+    };
+
     // Execute the upstream request.
-    match upstream.send().await {
+    match result {
         Ok(resp) => {
             let status_code = resp.status();
             let status_u16 = status_code.as_u16();
@@ -630,6 +674,29 @@ pub async fn start_basic_auth_proxy(
     let session_id = uuid::Uuid::new_v4().to_string();
     let target_url = config.target_url.clone();
     let verify_ssl = config.verify_ssl;
+    let connection_id = config.connection_id.clone();
+
+    // ---- Per-connection isolation ----
+    // If a proxy already exists for this connection_id, shut it down first so
+    // we never have duplicate proxies for the same connection.
+    if !connection_id.is_empty() {
+        let mut mgr = sessions
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let stale_ids: Vec<String> = mgr
+            .sessions
+            .iter()
+            .filter(|(_, entry)| entry.connection_id == connection_id)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for stale in stale_ids {
+            if let Some(mut entry) = mgr.sessions.remove(&stale) {
+                if let Some(tx) = entry.shutdown_tx.take() {
+                    let _ = tx.send(());
+                }
+            }
+        }
+    }
 
     // Extract origin (scheme://host:port) for URL rewriting in responses.
     let target_origin = {
@@ -644,9 +711,14 @@ pub async fn start_basic_auth_proxy(
         }
     };
 
-    // Build an async reqwest client for this session.
+    // Build an async reqwest client for this session with connection keep-alive
+    // and reasonable timeouts to avoid stale-connection errors.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(120))
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .pool_idle_timeout(std::time::Duration::from_secs(20))
+        .pool_max_idle_per_host(4)
+        .tcp_keepalive(std::time::Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::limited(10))
         .danger_accept_invalid_certs(!verify_ssl)
         .cookie_store(true)
@@ -710,6 +782,7 @@ pub async fn start_basic_auth_proxy(
                 username: config.username.clone(),
                 password: config.password.clone(),
                 target_origin,
+                connection_id,
                 created_at: chrono::Utc::now().to_rfc3339(),
                 local_port,
                 request_count,
@@ -781,6 +854,7 @@ pub fn get_proxy_session_details(
             session_id: id.clone(),
             target_url: entry.target_url.clone(),
             username: entry.username.clone(),
+            connection_id: entry.connection_id.clone(),
             proxy_url: format!("http://127.0.0.1:{}/", entry.local_port),
             created_at: entry.created_at.clone(),
             request_count: entry.request_count.load(Ordering::Relaxed),

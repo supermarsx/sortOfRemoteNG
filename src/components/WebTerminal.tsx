@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search, Filter, Unplug, Fingerprint } from "lucide-react";
+import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search, Filter, Unplug, Fingerprint, Shield, ShieldCheck, ShieldAlert, Key } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
@@ -18,6 +18,7 @@ import {
   trustIdentity,
   getStoredIdentity,
   getEffectiveTrustPolicy,
+  formatFingerprint,
   type SshHostKeyIdentity,
   type TrustVerifyResult,
 } from '../utils/trustStore';
@@ -682,10 +683,11 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
           setHostKeyIdentity(identity);
 
           const sshPort = currentConnection.port || 22;
-          const result = verifyIdentity(currentSession.hostname, sshPort, 'ssh', identity);
+          const connId = currentConnection.id;
+          const result = verifyIdentity(currentSession.hostname, sshPort, 'ssh', identity, connId);
 
           if (result.status === 'first-use' && sshTrustPolicy === 'tofu') {
-            trustIdentity(currentSession.hostname, sshPort, 'ssh', identity, false);
+            trustIdentity(currentSession.hostname, sshPort, 'ssh', identity, false, connId);
             writeLine(`\x1b[90mHost key fingerprint (SHA-256): ${keyInfo.fingerprint}\x1b[0m`);
             writeLine(`\x1b[90mKey type: ${keyInfo.key_type ?? 'unknown'}\x1b[0m`);
             writeLine("\x1b[33mHost key memorized (Trust-On-First-Use)\x1b[0m");
@@ -715,7 +717,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
               return;
             }
 
-            trustIdentity(currentSession.hostname, sshPort, 'ssh', identity, true);
+            trustIdentity(currentSession.hostname, sshPort, 'ssh', identity, true, connId);
             writeLine("\x1b[32mHost key accepted and memorized\x1b[0m");
           }
         } catch (err) {
@@ -1316,8 +1318,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                 </button>
                 <div className="relative" ref={keyPopupRef}>
                   <button
+                    type="button"
                     onClick={() => setShowKeyPopup(v => !v)}
-                    className={`app-bar-button p-2 ${hostKeyIdentity ? 'text-green-400' : 'text-gray-500'}`}
+                    className="app-bar-button p-2"
                     data-tooltip="Host key info"
                     aria-label="Host key info"
                   >
@@ -1329,7 +1332,9 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                       host={session.hostname}
                       port={connection?.port || 22}
                       currentIdentity={hostKeyIdentity ?? undefined}
-                      trustRecord={getStoredIdentity(session.hostname, connection?.port || 22, 'ssh')}
+                      trustRecord={getStoredIdentity(session.hostname, connection?.port || 22, 'ssh', connection?.id)}
+                      connectionId={connection?.id}
+                      triggerRef={keyPopupRef}
                       onClose={() => setShowKeyPopup(false)}
                     />
                   )}
@@ -1374,6 +1379,43 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
               SSH lib: Rust
             </span>
           )}
+          {isSsh && hostKeyIdentity && hostKeyIdentity.fingerprint && (() => {
+            const sshPort = connection?.port || 22;
+            const stored = getStoredIdentity(session.hostname, sshPort, 'ssh', connection?.id);
+            const trustLabel = stored
+              ? stored.userApproved ? 'Trusted' : 'Remembered (TOFU)'
+              : 'Unknown';
+            const trustBadge = stored
+              ? stored.userApproved ? 'app-badge--success' : 'app-badge--info'
+              : 'app-badge--warning';
+            const TrustBadgeIcon = stored
+              ? stored.userApproved ? ShieldCheck : Shield
+              : ShieldAlert;
+            const shortFp = formatFingerprint(hostKeyIdentity.fingerprint).slice(0, 23) + '…';
+            return (
+              <>
+                <span className={`app-badge ${trustBadge}`} title={`Host key: ${trustLabel}`}>
+                  <TrustBadgeIcon size={10} className="mr-1 inline" />
+                  {trustLabel}
+                </span>
+                {hostKeyIdentity.keyType && (
+                  <span className="app-badge app-badge--neutral" title="Host key algorithm">
+                    <Key size={10} className="mr-1 inline" />
+                    {hostKeyIdentity.keyType}
+                    {hostKeyIdentity.keyBits ? ` (${hostKeyIdentity.keyBits})` : ''}
+                  </span>
+                )}
+                <span
+                  className="app-badge app-badge--neutral normal-case tracking-normal font-mono cursor-pointer hover:opacity-80"
+                  title={`SHA-256: ${formatFingerprint(hostKeyIdentity.fingerprint)}`}
+                  onClick={() => setShowKeyPopup(v => !v)}
+                >
+                  <Fingerprint size={10} className="mr-1 inline" />
+                  {shortFp}
+                </span>
+              </>
+            );
+          })()}
         </div>
       </div>
 
