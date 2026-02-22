@@ -71,6 +71,30 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
             />
             <span>Ignore SSH security errors (host keys/certs)</span>
           </label>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Host Key Trust Policy
+            </label>
+            <select
+              value={formData.sshTrustPolicy ?? ''}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  sshTrustPolicy: e.target.value === '' ? undefined : (e.target.value as 'tofu' | 'always-ask' | 'always-trust' | 'strict'),
+                })
+              }
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-blue-500 text-sm"
+            >
+              <option value="">Use global default</option>
+              <option value="tofu">Trust On First Use (TOFU)</option>
+              <option value="always-ask">Always Ask</option>
+              <option value="always-trust">Always Trust (skip verification)</option>
+              <option value="strict">Strict (reject unless pre-approved)</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              How to handle host key verification for this connection.
+            </p>
+          </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">

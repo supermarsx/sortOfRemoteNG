@@ -777,6 +777,7 @@ pub fn run() {
         ssh3::list_ssh3_sessions,
         ssh3::test_ssh3_connection,
         // NOTE: pause_shell and resume_shell removed - buffer always captures full session
+        ssh::get_ssh_host_key_info,
         http::http_fetch,
         http::http_get,
         http::http_post,
@@ -787,6 +788,7 @@ pub fn run() {
         http::get_proxy_request_log,
         http::clear_proxy_request_log,
         http::stop_all_proxy_sessions,
+        http::get_tls_certificate_info,
         passkey::passkey_is_available,
         passkey::passkey_authenticate,
         passkey::passkey_register,

@@ -283,10 +283,14 @@ export const useSessionManager = () => {
     hostname: string;
     protocol: string;
     username?: string;
-    authType?: "password" | "key";
     password?: string;
+    domain?: string;
+    authType?: "password" | "key";
     privateKey?: string;
     passphrase?: string;
+    basicAuthUsername?: string;
+    basicAuthPassword?: string;
+    httpVerifySsl?: boolean;
   }) => {
     const tempConnection: Connection = {
       id: generateId(),
@@ -305,6 +309,24 @@ export const useSessionManager = () => {
       tempConnection.password = payload.password;
       tempConnection.privateKey = payload.privateKey;
       tempConnection.passphrase = payload.passphrase;
+    } else if (payload.protocol === "rdp") {
+      tempConnection.username = payload.username;
+      tempConnection.password = payload.password;
+      tempConnection.domain = payload.domain;
+    } else if (payload.protocol === "vnc") {
+      tempConnection.password = payload.password;
+    } else if (payload.protocol === "http" || payload.protocol === "https") {
+      if (payload.basicAuthUsername || payload.basicAuthPassword) {
+        tempConnection.authType = "basic";
+        tempConnection.basicAuthUsername = payload.basicAuthUsername;
+        tempConnection.basicAuthPassword = payload.basicAuthPassword;
+      }
+      if (payload.protocol === "https" && payload.httpVerifySsl !== undefined) {
+        tempConnection.httpVerifySsl = payload.httpVerifySsl;
+      }
+    } else if (payload.protocol === "telnet") {
+      tempConnection.username = payload.username;
+      tempConnection.password = payload.password;
     }
 
     handleConnect(tempConnection);

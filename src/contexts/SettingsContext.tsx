@@ -163,6 +163,11 @@ const defaultSettings: GlobalSettings = {
   showBackupStatusIcon: true,          // Separate backup icon
   showCloudSyncStatusIcon: true,       // Separate cloud sync icon
   autoRepatriateWindow: true,
+  // Trust & Verification
+  tlsTrustPolicy: 'tofu',
+  sshTrustPolicy: 'tofu',
+  showTrustIdentityInfo: true,
+  certExpiryWarningDays: 30,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

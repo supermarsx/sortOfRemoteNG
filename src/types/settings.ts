@@ -248,6 +248,16 @@ export interface GlobalSettings {
 
   // Cloud Sync Settings
   cloudSync: CloudSyncConfig;
+
+  // Trust & Verification
+  /** Default TLS certificate trust policy */
+  tlsTrustPolicy: 'tofu' | 'always-ask' | 'always-trust' | 'strict';
+  /** Default SSH host key trust policy */
+  sshTrustPolicy: 'tofu' | 'always-ask' | 'always-trust' | 'strict';
+  /** Show certificate / host-key info in the URL bar / terminal toolbar */
+  showTrustIdentityInfo: boolean;
+  /** Warn on TLS certificate expiry within N days (0 = disabled) */
+  certExpiryWarningDays: number;
 }
 
 // Backup scheduling frequency

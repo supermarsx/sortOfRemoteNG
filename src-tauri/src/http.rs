@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::command;
 use tokio::sync::Mutex;
+use sha2::{Sha256, Digest};
 
 /// Configuration for an HTTP connection
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -831,4 +832,127 @@ pub fn stop_all_proxy_sessions(
         }
     }
     Ok(count)
+}
+
+// ---------------------------------------------------------------------------
+// TLS Certificate Info
+// ---------------------------------------------------------------------------
+
+/// Certificate information returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TlsCertificateInfo {
+    /// SHA-256 fingerprint (hex-encoded)
+    pub fingerprint: String,
+    /// Subject (from native-tls peer certificate)
+    pub subject: Option<String>,
+    /// Issuer
+    pub issuer: Option<String>,
+    /// PEM-encoded certificate
+    pub pem: Option<String>,
+    /// Not-before (ISO-8601)
+    pub valid_from: Option<String>,
+    /// Not-after (ISO-8601)
+    pub valid_to: Option<String>,
+    /// Serial number (hex)
+    pub serial: Option<String>,
+    /// Signature algorithm
+    pub signature_algorithm: Option<String>,
+    /// Subject Alternative Names
+    pub san: Vec<String>,
+}
+
+/// Fetch the TLS certificate presented by a remote server.
+/// Connects using native-tls with verification disabled so we can inspect
+/// self-signed / untrusted certificates as well.
+#[command]
+pub async fn get_tls_certificate_info(
+    host: String,
+    port: u16,
+) -> Result<TlsCertificateInfo, String> {
+    use tokio::net::TcpStream;
+
+    let addr = format!("{}:{}", host, port);
+
+    // Build a TLS connector that does NOT verify — we want the cert regardless
+    let tls_connector = native_tls::TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true)
+        .build()
+        .map_err(|e| format!("TLS connector error: {}", e))?;
+
+    let connector = tokio_native_tls::TlsConnector::from(tls_connector);
+
+    let tcp = TcpStream::connect(&addr)
+        .await
+        .map_err(|e| format!("TCP connect failed: {}", e))?;
+
+    let tls = connector
+        .connect(&host, tcp)
+        .await
+        .map_err(|e| format!("TLS handshake failed: {}", e))?;
+
+    // Get peer certificate
+    let peer_cert = tls
+        .get_ref()
+        .peer_certificate()
+        .map_err(|e| format!("Failed to get peer certificate: {}", e))?
+        .ok_or("Server did not present a certificate")?;
+
+    let der = peer_cert.to_der().map_err(|e| format!("DER encode failed: {}", e))?;
+
+    // SHA-256 fingerprint
+    let mut hasher = Sha256::new();
+    hasher.update(&der);
+    let fingerprint = hex::encode(hasher.finalize());
+
+    // Parse with x509-parser for rich details
+    let mut subject = None;
+    let mut issuer = None;
+    let mut valid_from = None;
+    let mut valid_to = None;
+    let mut serial = None;
+    let mut signature_algorithm = None;
+    let mut san: Vec<String> = Vec::new();
+
+    if let Ok((_rem, cert)) = x509_parser::parse_x509_certificate(&der) {
+        subject = Some(cert.subject().to_string());
+        issuer = Some(cert.issuer().to_string());
+        valid_from = Some(cert.validity().not_before.to_rfc2822().unwrap_or_default());
+        valid_to = Some(cert.validity().not_after.to_rfc2822().unwrap_or_default());
+        serial = Some(cert.raw_serial_as_string());
+        signature_algorithm = Some(
+            cert.signature_algorithm.algorithm.to_id_string(),
+        );
+
+        // Extract SANs
+        if let Ok(Some(san_ext)) = cert.subject_alternative_name() {
+            for name in &san_ext.value.general_names {
+                san.push(format!("{}", name));
+            }
+        }
+    }
+
+    // Build PEM
+    let pem = {
+        let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &der);
+        let mut pem_str = String::from("-----BEGIN CERTIFICATE-----\n");
+        for chunk in b64.as_bytes().chunks(64) {
+            pem_str.push_str(std::str::from_utf8(chunk).unwrap_or_default());
+            pem_str.push('\n');
+        }
+        pem_str.push_str("-----END CERTIFICATE-----\n");
+        Some(pem_str)
+    };
+
+    Ok(TlsCertificateInfo {
+        fingerprint,
+        subject,
+        issuer,
+        pem,
+        valid_from,
+        valid_to,
+        serial,
+        signature_algorithm,
+        san,
+    })
 }

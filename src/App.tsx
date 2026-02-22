@@ -200,10 +200,14 @@ const AppContent: React.FC = () => {
       hostname: string;
       protocol: string;
       username?: string;
-      authType?: "password" | "key";
       password?: string;
+      domain?: string;
+      authType?: "password" | "key";
       privateKey?: string;
       passphrase?: string;
+      basicAuthUsername?: string;
+      basicAuthPassword?: string;
+      httpVerifySsl?: boolean;
     }) => {
       if (appSettings.quickConnectHistoryEnabled) {
         const entry = {

@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search, Filter, Unplug } from "lucide-react";
+import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search, Filter, Unplug, Fingerprint } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
@@ -11,6 +11,16 @@ import { useConnections } from "../contexts/useConnections";
 import { useSettings } from "../contexts/SettingsContext";
 import { mergeSSHTerminalConfig } from "../types/settings";
 import { ManagedScript, getDefaultScripts, OSTag, OS_TAG_LABELS, OS_TAG_ICONS } from "./ScriptManager";
+import { CertificateInfoPopup } from './CertificateInfoPopup';
+import { TrustWarningDialog } from './TrustWarningDialog';
+import {
+  verifyIdentity,
+  trustIdentity,
+  getStoredIdentity,
+  getEffectiveTrustPolicy,
+  type SshHostKeyIdentity,
+  type TrustVerifyResult,
+} from '../utils/trustStore';
 
 interface WebTerminalProps {
   session: ConnectionSession;
@@ -62,6 +72,13 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const [scriptCategoryFilter, setScriptCategoryFilter] = useState<string>("all");
   const [scriptLanguageFilter, setScriptLanguageFilter] = useState<string>("all");
   const [scriptOsTagFilter, setScriptOsTagFilter] = useState<string>("all");
+
+  // ---- SSH host key trust state ----
+  const [showKeyPopup, setShowKeyPopup] = useState(false);
+  const [hostKeyIdentity, setHostKeyIdentity] = useState<SshHostKeyIdentity | null>(null);
+  const [sshTrustPrompt, setSshTrustPrompt] = useState<TrustVerifyResult | null>(null);
+  const sshTrustResolveRef = useRef<((accept: boolean) => void) | null>(null);
+  const keyPopupRef = useRef<HTMLDivElement>(null);
 
   const sessionRef = useRef(session);
   const connectionRef = useRef(connection);
@@ -638,6 +655,73 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         payload: { ...currentSession, backendSessionId: sessionId },
       });
       writeLine("\x1b[32mSSH connection established\x1b[0m");
+
+      // ---- Host key trust verification ----
+      const sshTrustPolicy = getEffectiveTrustPolicy(
+        currentConnection.sshTrustPolicy,
+        settings.sshTrustPolicy,
+      );
+      if (sshTrustPolicy !== 'always-trust') {
+        try {
+          const keyInfo = await invoke<{
+            fingerprint: string;
+            key_type: string | null;
+            key_bits: number | null;
+            public_key: string | null;
+          }>("get_ssh_host_key_info", { sessionId });
+
+          const now = new Date().toISOString();
+          const identity: SshHostKeyIdentity = {
+            fingerprint: keyInfo.fingerprint,
+            keyType: keyInfo.key_type ?? undefined,
+            keyBits: keyInfo.key_bits ?? undefined,
+            firstSeen: now,
+            lastSeen: now,
+            publicKey: keyInfo.public_key ?? undefined,
+          };
+          setHostKeyIdentity(identity);
+
+          const sshPort = currentConnection.port || 22;
+          const result = verifyIdentity(currentSession.hostname, sshPort, 'ssh', identity);
+
+          if (result.status === 'first-use' && sshTrustPolicy === 'tofu') {
+            trustIdentity(currentSession.hostname, sshPort, 'ssh', identity, false);
+            writeLine(`\x1b[90mHost key fingerprint (SHA-256): ${keyInfo.fingerprint}\x1b[0m`);
+            writeLine(`\x1b[90mKey type: ${keyInfo.key_type ?? 'unknown'}\x1b[0m`);
+            writeLine("\x1b[33mHost key memorized (Trust-On-First-Use)\x1b[0m");
+          } else if (result.status === 'trusted') {
+            writeLine(`\x1b[90mHost key fingerprint (SHA-256): ${keyInfo.fingerprint}\x1b[0m`);
+            writeLine("\x1b[32mHost key matches stored identity\x1b[0m");
+          } else {
+            // mismatch, first-use with always-ask/strict
+            writeLine(`\x1b[90mHost key fingerprint (SHA-256): ${keyInfo.fingerprint}\x1b[0m`);
+            if (result.status === 'mismatch') {
+              writeLine("\x1b[31;1m*** WARNING: HOST KEY HAS CHANGED! ***\x1b[0m");
+            } else {
+              writeLine("\x1b[33mNew host key — user confirmation required\x1b[0m");
+            }
+
+            const accepted = await new Promise<boolean>((resolve) => {
+              sshTrustResolveRef.current = resolve;
+              setSshTrustPrompt(result);
+            });
+
+            if (!accepted) {
+              await invoke("disconnect_ssh", { sessionId }).catch(() => {});
+              sshSessionId.current = null;
+              setStatusState("error");
+              setError("Connection aborted: host key not trusted by user.");
+              writeLine("\x1b[31mConnection aborted by user\x1b[0m");
+              return;
+            }
+
+            trustIdentity(currentSession.hostname, sshPort, 'ssh', identity, true);
+            writeLine("\x1b[32mHost key accepted and memorized\x1b[0m");
+          }
+        } catch (err) {
+          writeLine(`\x1b[33mCould not retrieve host key info: ${err}\x1b[0m`);
+        }
+      }
 
       const shellId = await invoke<string>("start_shell", { sessionId });
       dispatch({
@@ -1230,6 +1314,26 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                 >
                   <RotateCcw size={14} />
                 </button>
+                <div className="relative" ref={keyPopupRef}>
+                  <button
+                    onClick={() => setShowKeyPopup(v => !v)}
+                    className={`app-bar-button p-2 ${hostKeyIdentity ? 'text-green-400' : 'text-gray-500'}`}
+                    data-tooltip="Host key info"
+                    aria-label="Host key info"
+                  >
+                    <Fingerprint size={14} />
+                  </button>
+                  {showKeyPopup && (
+                    <CertificateInfoPopup
+                      type="ssh"
+                      host={session.hostname}
+                      port={connection?.port || 22}
+                      currentIdentity={hostKeyIdentity ?? undefined}
+                      trustRecord={getStoredIdentity(session.hostname, connection?.port || 22, 'ssh')}
+                      onClose={() => setShowKeyPopup(false)}
+                    />
+                  )}
+                </div>
               </>
             )}
             <button
@@ -1458,6 +1562,28 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
             </div>
           </div>
         </div>
+      )}
+
+      {/* SSH Host Key Trust Warning Dialog */}
+      {sshTrustPrompt && hostKeyIdentity && (
+        <TrustWarningDialog
+          type="ssh"
+          host={session.hostname}
+          port={connection?.port || 22}
+          reason={sshTrustPrompt.status === 'mismatch' ? 'mismatch' : 'first-use'}
+          receivedIdentity={hostKeyIdentity}
+          storedIdentity={sshTrustPrompt.status === 'mismatch' ? sshTrustPrompt.stored : undefined}
+          onAccept={() => {
+            setSshTrustPrompt(null);
+            sshTrustResolveRef.current?.(true);
+            sshTrustResolveRef.current = null;
+          }}
+          onReject={() => {
+            setSshTrustPrompt(null);
+            sshTrustResolveRef.current?.(false);
+            sshTrustResolveRef.current = null;
+          }}
+        />
       )}
     </div>
   );

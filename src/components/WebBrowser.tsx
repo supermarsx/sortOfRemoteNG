@@ -20,6 +20,17 @@ import {
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
+import { useSettings } from '../contexts/SettingsContext';
+import { CertificateInfoPopup } from './CertificateInfoPopup';
+import { TrustWarningDialog } from './TrustWarningDialog';
+import {
+  verifyIdentity,
+  trustIdentity,
+  getStoredIdentity,
+  getEffectiveTrustPolicy,
+  type CertIdentity,
+  type TrustVerifyResult,
+} from '../utils/trustStore';
 
 interface ProxyMediatorResponse {
   local_port: number;
@@ -33,6 +44,7 @@ interface WebBrowserProps {
 
 export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const { state } = useConnections();
+  const { settings } = useSettings();
   const connection = state.connections.find(c => c.id === session.connectionId);
 
   // Resolve the best auth credentials from the saved connection config.
@@ -70,6 +82,13 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
+  // ---- Certificate trust state ----
+  const [showCertPopup, setShowCertPopup] = useState(false);
+  const [certIdentity, setCertIdentity] = useState<CertIdentity | null>(null);
+  const [trustPrompt, setTrustPrompt] = useState<TrustVerifyResult | null>(null);
+  const trustResolveRef = useRef<((accept: boolean) => void) | null>(null);
+  const certPopupRef = useRef<HTMLDivElement>(null);
+
   // Track the active proxy session via refs so cleanup always sees the latest
   // values regardless of render cycle.
   const proxySessionIdRef = useRef<string>('');
@@ -81,6 +100,105 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
   const iconCount = 2 + (hasAuth ? 1 : 0);
   const iconPadding = 12 + iconCount * 18;
+
+  // ------------------------------------------------------------------
+  // TLS certificate trust helpers
+  // ------------------------------------------------------------------
+
+  /** Fetch the TLS certificate from the backend and run trust verification. */
+  const fetchAndVerifyCert = useCallback(async (): Promise<boolean> => {
+    if (session.protocol !== 'https') return true;
+
+    const port = connection?.port || 443;
+    const policy = getEffectiveTrustPolicy(connection?.tlsTrustPolicy, settings.tlsTrustPolicy);
+
+    if (policy === 'always-trust') return true;
+
+    try {
+      const info = await invoke<{
+        fingerprint: string;
+        subject: string | null;
+        issuer: string | null;
+        pem: string | null;
+        valid_from: string | null;
+        valid_to: string | null;
+        serial: string | null;
+        signature_algorithm: string | null;
+        san: string[];
+      }>('get_tls_certificate_info', { host: session.hostname, port });
+
+      const now = new Date().toISOString();
+      const identity: CertIdentity = {
+        fingerprint: info.fingerprint,
+        subject: info.subject ?? undefined,
+        issuer: info.issuer ?? undefined,
+        firstSeen: now,
+        lastSeen: now,
+        validFrom: info.valid_from ?? undefined,
+        validTo: info.valid_to ?? undefined,
+        pem: info.pem ?? undefined,
+        serial: info.serial ?? undefined,
+        signatureAlgorithm: info.signature_algorithm ?? undefined,
+        san: info.san.length > 0 ? info.san : undefined,
+      };
+
+      setCertIdentity(identity);
+
+      const result = verifyIdentity(session.hostname, port, 'tls', identity);
+
+      if (result.status === 'trusted') return true;
+
+      if (result.status === 'first-use' && policy === 'tofu') {
+        // TOFU — silently trust on first use
+        trustIdentity(session.hostname, port, 'tls', identity, false);
+        return true;
+      }
+
+      // For 'first-use' with always-ask/strict, or 'mismatch' — prompt the user
+      if (result.status === 'mismatch' || policy === 'always-ask' || policy === 'strict') {
+        return new Promise<boolean>((resolve) => {
+          trustResolveRef.current = resolve;
+          setTrustPrompt(result);
+        });
+      }
+
+      return true;
+    } catch (err) {
+      debugLog('WebBrowser', 'Failed to fetch TLS cert info', { err });
+      // If we can't get cert info, proceed anyway (degraded mode)
+      return true;
+    }
+  }, [session.protocol, session.hostname, connection, settings.tlsTrustPolicy]);
+
+  const handleTrustAccept = useCallback(() => {
+    if (trustPrompt && certIdentity) {
+      const port = connection?.port || 443;
+      trustIdentity(session.hostname, port, 'tls', certIdentity, true);
+    }
+    setTrustPrompt(null);
+    trustResolveRef.current?.(true);
+    trustResolveRef.current = null;
+  }, [trustPrompt, certIdentity, session.hostname, connection]);
+
+  const handleTrustReject = useCallback(() => {
+    setTrustPrompt(null);
+    trustResolveRef.current?.(false);
+    trustResolveRef.current = null;
+    setLoadError('Connection aborted: certificate not trusted by user.');
+    setIsLoading(false);
+  }, []);
+
+  // Close cert popup on outside click
+  useEffect(() => {
+    if (!showCertPopup) return;
+    const handler = (e: MouseEvent) => {
+      if (certPopupRef.current && !certPopupRef.current.contains(e.target as Node)) {
+        setShowCertPopup(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showCertPopup]);
 
   // ------------------------------------------------------------------
   // Proxy lifecycle helpers
@@ -115,6 +233,12 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
       loadTimeoutRef.current = null;
+    }
+
+    // ---- TLS trust verification (before loading content) ----
+    if (url.startsWith('https://')) {
+      const trusted = await fetchAndVerifyCert();
+      if (!trusted) return; // user rejected — loadError already set
     }
 
     // Start a timeout watchdog so we don't spin forever
@@ -179,7 +303,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       }
       setIsLoading(false);
     }
-  }, [hasAuth, resolvedCreds, connection, stopProxy, historyIndex]);
+  }, [hasAuth, resolvedCreds, connection, stopProxy, historyIndex, fetchAndVerifyCert]);
 
   // ------------------------------------------------------------------
   // Effects
@@ -240,6 +364,27 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       loadTimeoutRef.current = null;
     }
     setIsLoading(false);
+
+    // When routed through the local proxy, the iframe is same-origin so we
+    // can inspect the response.  If the proxy returned a plaintext error
+    // (e.g. certificate / upstream failure) we surface it as a loadError
+    // instead of showing raw text inside the iframe.
+    try {
+      const doc = iframeRef.current?.contentDocument;
+      if (doc) {
+        const body = doc.body?.innerText?.trim() ?? '';
+        if (
+          body.startsWith('Upstream request failed:') ||
+          body.startsWith('Failed to read upstream response:')
+        ) {
+          setLoadError(body);
+          return;
+        }
+      }
+    } catch {
+      // Cross-origin — cannot read; that's fine, clear the error.
+    }
+
     setLoadError('');
   };
 
@@ -272,7 +417,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
   const getSecurityIcon = () => {
     if (isSecure) {
-      return <Lock size={14} className="text-green-400" />;
+      return (
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowCertPopup(v => !v); }}
+          className="hover:bg-gray-600 rounded p-0.5 transition-colors"
+          title="View certificate information"
+        >
+          <Lock size={14} className="text-green-400" />
+        </button>
+      );
     } else {
       return <ShieldAlert size={14} className="text-yellow-400" />;
     }
@@ -329,7 +482,19 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           <form onSubmit={handleUrlSubmit} className="flex-1 flex items-center">
             <div className="flex-1 relative">
               <div className="absolute left-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
-                {getSecurityIcon()}
+                <div className="relative" ref={certPopupRef}>
+                  {getSecurityIcon()}
+                  {showCertPopup && isSecure && (
+                    <CertificateInfoPopup
+                      type="tls"
+                      host={session.hostname}
+                      port={connection?.port || 443}
+                      currentIdentity={certIdentity ?? undefined}
+                      trustRecord={getStoredIdentity(session.hostname, connection?.port || 443, 'tls')}
+                      onClose={() => setShowCertPopup(false)}
+                    />
+                  )}
+                </div>
                 {getAuthIcon()}
                 <Globe size={14} className="text-gray-400" />
               </div>
@@ -392,7 +557,42 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         {loadError ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-8">
             {/* Categorized error screen */}
-            {loadError.includes('refused') || loadError.includes('Upstream request failed') || loadError.includes('proxy') ? (
+            {loadError.includes('certificate') || loadError.includes('Certificate') || loadError.includes('SSL') || loadError.includes('CERT_') || loadError.includes('self-signed') || loadError.includes('trust provider') ? (
+              // Certificate / TLS error
+              <>
+                <div className="w-16 h-16 rounded-full bg-orange-900/30 flex items-center justify-center mb-4">
+                  <ShieldAlert size={32} className="text-orange-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-1">Certificate Error</h3>
+                <p className="text-gray-400 mb-4 max-w-lg text-sm">The connection to <span className="text-yellow-400">{session.hostname}</span> failed because the server&apos;s SSL/TLS certificate is not trusted.</p>
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-gray-300 font-medium mb-2">This usually means:</p>
+                  <ul className="list-disc list-inside text-sm text-gray-400 space-y-1">
+                    <li>The server is using a <span className="text-orange-400">self-signed certificate</span></li>
+                    <li>The certificate chain is incomplete or issued by an untrusted CA</li>
+                    <li>The certificate has expired or is not yet valid</li>
+                    <li>The hostname does not match the certificate&apos;s subject</li>
+                  </ul>
+                  <p className="text-sm text-gray-300 font-medium mt-3 mb-2">To fix this:</p>
+                  <ol className="list-decimal list-inside text-sm text-gray-400 space-y-1">
+                    <li>Edit this connection and <span className="text-blue-400">uncheck &quot;Verify SSL Certificate&quot;</span> to trust self-signed certs</li>
+                    <li>Or install the server&apos;s CA certificate into your system trust store</li>
+                  </ol>
+                </div>
+                <details className="mb-4 max-w-lg text-left">
+                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400">Technical details</summary>
+                  <pre className="mt-2 text-xs text-gray-500 bg-gray-800 border border-gray-700 rounded p-3 whitespace-pre-wrap break-all">{loadError}</pre>
+                </details>
+                <div className="flex items-center space-x-3">
+                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                    <RefreshCw size={14} /> <span>Retry Connection</span>
+                  </button>
+                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                    <ExternalLink size={14} /> <span>Open Externally</span>
+                  </button>
+                </div>
+              </>
+            ) : loadError.includes('refused') || loadError.includes('Upstream request failed') || loadError.includes('proxy') ? (
               // Internal proxy failure
               <>
                 <div className="w-16 h-16 rounded-full bg-red-900/30 flex items-center justify-center mb-4">
@@ -504,6 +704,20 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           />
         )}
       </div>
+
+      {/* Trust Warning Dialog */}
+      {trustPrompt && certIdentity && (
+        <TrustWarningDialog
+          type="tls"
+          host={session.hostname}
+          port={connection?.port || 443}
+          reason={trustPrompt.status === 'mismatch' ? 'mismatch' : 'first-use'}
+          receivedIdentity={certIdentity}
+          storedIdentity={trustPrompt.status === 'mismatch' ? trustPrompt.stored : undefined}
+          onAccept={handleTrustAccept}
+          onReject={handleTrustReject}
+        />
+      )}
     </div>
   );
 };

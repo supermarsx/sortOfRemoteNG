@@ -169,6 +169,9 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
     const description = formData.description || '';
     
     return {
+      // Spread existing connection data first so fields not managed
+      // by the editor (e.g. statusCheck, macAddress, etc.) are preserved.
+      ...(connection || {}),
       id: connection?.id || generateId(),
       name: formData.name || 'New Connection',
       protocol: formData.protocol as Connection['protocol'],
@@ -192,11 +195,14 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       basicAuthPassword: formData.basicAuthPassword,
       basicAuthRealm: formData.basicAuthRealm,
       httpHeaders: formData.httpHeaders,
+      httpVerifySsl: formData.httpVerifySsl,
       cloudProvider: formData.cloudProvider,
       ignoreSshSecurityErrors: formData.ignoreSshSecurityErrors ?? true,
       sshConnectTimeout: formData.sshConnectTimeout,
       sshKeepAliveInterval: formData.sshKeepAliveInterval,
       sshKnownHostsPath: formData.sshKnownHostsPath || undefined,
+      tlsTrustPolicy: formData.tlsTrustPolicy,
+      sshTrustPolicy: formData.sshTrustPolicy,
     };
   }, [formData, connection]);
 

@@ -1,4 +1,5 @@
 import { ProxyConfig, SSHTerminalConfig, SSHConnectionConfig } from "./settings";
+import type { TrustPolicy } from "../utils/trustStore";
 export interface Connection {
   id: string;
   name: string;
@@ -149,6 +150,12 @@ export interface Connection {
   
   // SSH Connection Config Override (protocol-level settings)
   sshConnectionConfigOverride?: Partial<SSHConnectionConfig>;
+
+  // Trust & Verification (per-connection override — falls back to global)
+  /** TLS certificate trust policy override */
+  tlsTrustPolicy?: TrustPolicy;
+  /** SSH host key trust policy override */
+  sshTrustPolicy?: TrustPolicy;
 }
 
 /**

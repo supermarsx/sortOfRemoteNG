@@ -12,10 +12,14 @@ interface QuickConnectProps {
     hostname: string;
     protocol: string;
     username?: string;
-    authType?: "password" | "key";
     password?: string;
+    domain?: string;
+    authType?: "password" | "key";
     privateKey?: string;
     passphrase?: string;
+    basicAuthUsername?: string;
+    basicAuthPassword?: string;
+    httpVerifySsl?: boolean;
   }) => void;
 }
 
@@ -30,42 +34,79 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
   const [hostname, setHostname] = useState('');
   const [protocol, setProtocol] = useState('rdp');
   const [username, setUsername] = useState('');
-  const [authType, setAuthType] = useState<'password' | 'key'>('password');
   const [password, setPassword] = useState('');
+  const [domain, setDomain] = useState('');
+  const [authType, setAuthType] = useState<'password' | 'key'>('password');
   const [privateKey, setPrivateKey] = useState('');
   const [passphrase, setPassphrase] = useState('');
+  const [basicAuthUsername, setBasicAuthUsername] = useState('');
+  const [basicAuthPassword, setBasicAuthPassword] = useState('');
+  const [httpVerifySsl, setHttpVerifySsl] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
+
   const isSsh = protocol === 'ssh';
+  const isRdp = protocol === 'rdp';
+  const isVnc = protocol === 'vnc';
+  const isHttp = protocol === 'http' || protocol === 'https';
+  const isHttps = protocol === 'https';
+  const isTelnet = protocol === 'telnet';
   const historyItems = historyEnabled ? history : [];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (hostname.trim()) {
-      if (isSsh && !username.trim()) {
-        return;
-      }
-      if (isSsh && authType === 'password' && !password) {
-        return;
-      }
-      if (isSsh && authType === 'key' && !privateKey.trim()) {
-        return;
-      }
-      onConnect({
-        hostname: hostname.trim(),
-        protocol,
-        username: isSsh ? username.trim() : undefined,
-        authType: isSsh ? authType : undefined,
-        password: isSsh && authType === 'password' ? password : undefined,
-        privateKey: isSsh && authType === 'key' ? privateKey.trim() : undefined,
-        passphrase: isSsh && authType === 'key' ? passphrase : undefined,
-      });
-      setHostname('');
-      setUsername('');
-      setPassword('');
-      setPrivateKey('');
-      setPassphrase('');
-      onClose();
+    if (!hostname.trim()) return;
+
+    // Validate SSH-specific fields
+    if (isSsh) {
+      if (!username.trim()) return;
+      if (authType === 'password' && !password) return;
+      if (authType === 'key' && !privateKey.trim()) return;
     }
+
+    const payload: Parameters<typeof onConnect>[0] = {
+      hostname: hostname.trim(),
+      protocol,
+    };
+
+    if (isSsh) {
+      payload.username = username.trim();
+      payload.authType = authType;
+      if (authType === 'password') {
+        payload.password = password;
+      } else {
+        payload.privateKey = privateKey.trim();
+        payload.passphrase = passphrase || undefined;
+      }
+    } else if (isRdp) {
+      if (username.trim()) payload.username = username.trim();
+      if (password) payload.password = password;
+      if (domain.trim()) payload.domain = domain.trim();
+    } else if (isVnc) {
+      if (password) payload.password = password;
+    } else if (isHttp) {
+      if (basicAuthUsername.trim()) payload.basicAuthUsername = basicAuthUsername.trim();
+      if (basicAuthPassword) payload.basicAuthPassword = basicAuthPassword;
+      if (isHttps) payload.httpVerifySsl = httpVerifySsl;
+    } else if (isTelnet) {
+      if (username.trim()) payload.username = username.trim();
+      if (password) payload.password = password;
+    }
+
+    onConnect(payload);
+    resetFields();
+    onClose();
+  };
+
+  const resetFields = () => {
+    setHostname('');
+    setUsername('');
+    setPassword('');
+    setDomain('');
+    setPrivateKey('');
+    setPassphrase('');
+    setBasicAuthUsername('');
+    setBasicAuthPassword('');
+    setHttpVerifySsl(true);
   };
 
   // Handle ESC key to close dialog
@@ -228,6 +269,51 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
               <option value="telnet">Telnet</option>
             </select>
           </div>
+          {/* RDP credentials */}
+          {isRdp && (
+            <>
+              <div>
+                <label htmlFor="rdp-username" className="block text-sm font-medium text-gray-300 mb-2">
+                  Username (optional)
+                </label>
+                <input
+                  id="rdp-username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Administrator"
+                />
+              </div>
+              <div>
+                <label htmlFor="rdp-password" className="block text-sm font-medium text-gray-300 mb-2">
+                  Password (optional)
+                </label>
+                <input
+                  id="rdp-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label htmlFor="rdp-domain" className="block text-sm font-medium text-gray-300 mb-2">
+                  Domain (optional)
+                </label>
+                <input
+                  id="rdp-domain"
+                  type="text"
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="DOMAIN"
+                />
+              </div>
+            </>
+          )}
+
+          {/* SSH credentials */}
           {isSsh && (
             <>
               <div>
@@ -302,6 +388,99 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   </div>
                 </>
               )}
+            </>
+          )}
+
+          {/* VNC credentials */}
+          {isVnc && (
+            <div>
+              <label htmlFor="vnc-password" className="block text-sm font-medium text-gray-300 mb-2">
+                Password (optional)
+              </label>
+              <input
+                id="vnc-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+          )}
+
+          {/* HTTP/HTTPS credentials */}
+          {isHttp && (
+            <>
+              <div>
+                <label htmlFor="http-username" className="block text-sm font-medium text-gray-300 mb-2">
+                  Basic Auth Username (optional)
+                </label>
+                <input
+                  id="http-username"
+                  type="text"
+                  value={basicAuthUsername}
+                  onChange={(e) => setBasicAuthUsername(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="admin"
+                />
+              </div>
+              <div>
+                <label htmlFor="http-password" className="block text-sm font-medium text-gray-300 mb-2">
+                  Basic Auth Password (optional)
+                </label>
+                <input
+                  id="http-password"
+                  type="password"
+                  value={basicAuthPassword}
+                  onChange={(e) => setBasicAuthPassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              {isHttps && (
+                <div>
+                  <label className="flex items-center space-x-2 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={httpVerifySsl}
+                      onChange={(e) => setHttpVerifySsl(e.target.checked)}
+                      className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>Verify TLS certificates</span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Disable for self-signed or untrusted certificates.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Telnet credentials */}
+          {isTelnet && (
+            <>
+              <div>
+                <label htmlFor="telnet-username" className="block text-sm font-medium text-gray-300 mb-2">
+                  Username (optional)
+                </label>
+                <input
+                  id="telnet-username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label htmlFor="telnet-password" className="block text-sm font-medium text-gray-300 mb-2">
+                  Password (optional)
+                </label>
+                <input
+                  id="telnet-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
             </>
           )}
           </div>

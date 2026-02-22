@@ -27,6 +27,7 @@ import {
   UserX,
   Activity,
   Upload,
+  X,
 } from "lucide-react";
 import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
@@ -1146,14 +1147,28 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           onClick={(e) => {
             if (e.target === e.currentTarget) setRenameTarget(null);
           }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setRenameTarget(null);
+          }}
         >
-          <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-sm mx-4 overflow-hidden">
-            <div className="border-b border-gray-700 px-4 py-3">
-              <h3 className="text-sm font-semibold text-white">Rename Connection</h3>
+          <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
+            <div className="relative h-12 border-b border-gray-700">
+              <h2 className="absolute left-5 top-3 text-sm font-semibold text-white">
+                Rename Connection
+              </h2>
+              <button
+                onClick={() => setRenameTarget(null)}
+                className="absolute right-3 top-2 text-gray-400 hover:text-white transition-colors"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
             </div>
-            <div className="p-4 space-y-3">
+            <div className="p-6">
+              <label className="block text-sm text-gray-400 mb-2">Connection Name</label>
               <input
                 type="text"
+                autoFocus
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onKeyDown={(e) => {
@@ -1171,11 +1186,11 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="New name"
               />
-              <div className="flex justify-end gap-2">
+              <div className="flex justify-end space-x-3 mt-6">
                 <button
                   type="button"
                   onClick={() => setRenameTarget(null)}
-                  className="px-3 py-2 text-sm text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md"
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
                 >
                   Cancel
                 </button>
@@ -1191,7 +1206,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                     });
                     setRenameTarget(null);
                   }}
-                  className="px-3 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+                  className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
                 >
                   Save
                 </button>

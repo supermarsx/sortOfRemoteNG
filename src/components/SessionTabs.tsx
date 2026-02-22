@@ -9,6 +9,7 @@ import {
   Wifi,
   WifiOff,
   ExternalLink,
+  ShieldOff,
 } from "lucide-react";
 import { useConnections } from "../contexts/useConnections";
 
@@ -194,6 +195,17 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             <span className="truncate text-sm mr-2 max-w-32">
               {session.name}
             </span>
+            {(() => {
+              const conn = state.connections.find(c => c.id === session.connectionId);
+              if (conn && (conn.protocol === 'https') && conn.httpVerifySsl === false) {
+                return (
+                  <span title="SSL verification disabled" className="flex-shrink-0 mr-1">
+                    <ShieldOff size={12} className="text-red-400" />
+                  </span>
+                );
+              }
+              return null;
+            })()}
             <StatusIcon
               size={12}
               className={`mr-2 flex-shrink-0 ${getStatusColor(session.status)}`}
