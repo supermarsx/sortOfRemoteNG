@@ -91,9 +91,14 @@ function hostKey(host: string, port: number, type: 'tls' | 'ssh'): string {
   return `${type}:${host}:${port}`;
 }
 
-function loadStore(): Record<string, TrustRecord> {
+function connectionStoreKey(connectionId: string): string {
+  return `trustStore:${connectionId}`;
+}
+
+function loadStore(connectionId?: string): Record<string, TrustRecord> {
   try {
-    const raw = localStorage.getItem(TRUST_STORE_KEY);
+    const key = connectionId ? connectionStoreKey(connectionId) : TRUST_STORE_KEY;
+    const raw = localStorage.getItem(key);
     if (raw) return JSON.parse(raw);
   } catch {
     // corrupted — reset
@@ -101,8 +106,9 @@ function loadStore(): Record<string, TrustRecord> {
   return {};
 }
 
-function saveStore(store: Record<string, TrustRecord>): void {
-  localStorage.setItem(TRUST_STORE_KEY, JSON.stringify(store));
+function saveStore(store: Record<string, TrustRecord>, connectionId?: string): void {
+  const key = connectionId ? connectionStoreKey(connectionId) : TRUST_STORE_KEY;
+  localStorage.setItem(key, JSON.stringify(store));
 }
 
 // ---------------------------------------------------------------------------
