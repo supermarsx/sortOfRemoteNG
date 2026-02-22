@@ -1069,7 +1069,7 @@ const AppContent: React.FC = () => {
       .then((stop) => {
         if (typeof stop === 'function') {
           if (isCancelled) {
-            try { stop(); } catch { /* ignore */ }
+            try { Promise.resolve(stop()).catch(() => {}); } catch { /* ignore */ }
           } else {
             unlistenFn = stop;
           }
@@ -1079,7 +1079,7 @@ const AppContent: React.FC = () => {
 
     return () => {
       isCancelled = true;
-      try { unlistenFn?.(); } catch { /* ignore */ }
+      try { Promise.resolve(unlistenFn?.()).catch(() => {}); } catch { /* ignore */ }
     };
   }, [handleSessionClose]);
 
@@ -1118,7 +1118,7 @@ const AppContent: React.FC = () => {
       .then((stop) => {
         if (typeof stop === 'function') {
           if (isCancelled) {
-            try { stop(); } catch { /* ignore */ }
+            try { Promise.resolve(stop()).catch(() => {}); } catch { /* ignore */ }
           } else {
             unlistenFn = stop;
           }
@@ -1128,7 +1128,7 @@ const AppContent: React.FC = () => {
 
     return () => {
       isCancelled = true;
-      try { unlistenFn?.(); } catch { /* ignore */ }
+      try { Promise.resolve(unlistenFn?.()).catch(() => {}); } catch { /* ignore */ }
     };
   }, [dispatch, setActiveSessionId, state.sessions]);
 

@@ -105,7 +105,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
   const sslVerifyDisabled = connection && connection.protocol === 'https' && (connection as Record<string, unknown>)?.httpVerifySsl === false;
   const iconCount = 2 + (hasAuth ? 1 : 0) + (sslVerifyDisabled ? 1 : 0);
-  const iconPadding = 12 + iconCount * 18;
+  // 12px left offset + each icon is 14px + 8px gap (space-x-2) + 16px for separator + 8px trailing
+  const iconPadding = 12 + iconCount * 22 + 16;
 
   // ------------------------------------------------------------------
   // TLS certificate trust helpers
@@ -518,7 +519,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   </span>
                 )}
                 {getAuthIcon()}
-                <Globe size={14} className="text-gray-400" />
+                <Globe size={14} className="text-gray-400 flex-shrink-0" />
+                <div className="w-px h-4 bg-gray-600 flex-shrink-0" />
               </div>
               <input
                 type="text"

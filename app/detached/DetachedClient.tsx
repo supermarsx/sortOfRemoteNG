@@ -187,7 +187,7 @@ const DetachedSessionContent: React.FC<{
     });
 
     return () => {
-      unlistenPromise.then((unlisten) => unlisten()).catch(() => undefined);
+      unlistenPromise.then((unlisten) => { try { Promise.resolve(unlisten()).catch(() => {}); } catch { /* ignore */ } }).catch(() => undefined);
     };
   }, [isTauri]);
 
@@ -209,7 +209,7 @@ const DetachedSessionContent: React.FC<{
     });
 
     return () => {
-      unlistenPromise.then((unlisten) => unlisten()).catch(() => undefined);
+      unlistenPromise.then((unlisten) => { try { Promise.resolve(unlisten()).catch(() => {}); } catch { /* ignore */ } }).catch(() => undefined);
     };
   }, [isTauri, sessionId]);
 

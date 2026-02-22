@@ -234,6 +234,39 @@ export function getAllTrustRecords(connectionId?: string): TrustRecord[] {
   return Object.values(store);
 }
 
+/** Entry returned by {@link getAllPerConnectionTrustRecords}. */
+export interface ConnectionTrustGroup {
+  connectionId: string;
+  records: TrustRecord[];
+}
+
+/**
+ * Scan localStorage for every per-connection trust store and return the
+ * records grouped by connection ID.
+ */
+export function getAllPerConnectionTrustRecords(): ConnectionTrustGroup[] {
+  const PREFIX = 'trustStore:';
+  const groups: ConnectionTrustGroup[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const storageKey = localStorage.key(i);
+    if (!storageKey || !storageKey.startsWith(PREFIX)) continue;
+    const connectionId = storageKey.slice(PREFIX.length);
+    if (!connectionId) continue;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) continue;
+      const store: Record<string, TrustRecord> = JSON.parse(raw);
+      const records = Object.values(store);
+      if (records.length > 0) {
+        groups.push({ connectionId, records });
+      }
+    } catch {
+      // corrupted entry — skip
+    }
+  }
+  return groups;
+}
+
 /**
  * Clear every trust record.  When connectionId is provided, only the
  * per-connection store is cleared.

@@ -10,15 +10,21 @@ import {
   AlertTriangle,
   Clock,
   Pencil,
+  Globe,
+  Link2,
+  ChevronRight,
 } from 'lucide-react';
 import {
   getAllTrustRecords,
+  getAllPerConnectionTrustRecords,
   removeIdentity,
   clearAllTrustRecords,
   formatFingerprint,
   updateTrustRecordNickname,
   type TrustRecord,
+  type ConnectionTrustGroup,
 } from '../../../utils/trustStore';
+import { useConnections } from '../../../contexts/useConnections';
 
 interface TrustVerificationSettingsProps {
   settings: GlobalSettings;
@@ -37,30 +43,45 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
   updateSettings,
 }) => {
   const [trustRecords, setTrustRecords] = useState<TrustRecord[]>(() => getAllTrustRecords());
+  const [connectionGroups, setConnectionGroups] = useState<ConnectionTrustGroup[]>(() => getAllPerConnectionTrustRecords());
   const [showConfirmClear, setShowConfirmClear] = useState(false);
+  const { state: connectionState } = useConnections();
 
-  const refreshRecords = useCallback(() => setTrustRecords(getAllTrustRecords()), []);
+  const refreshRecords = useCallback(() => {
+    setTrustRecords(getAllTrustRecords());
+    setConnectionGroups(getAllPerConnectionTrustRecords());
+  }, []);
 
   useEffect(() => {
     window.addEventListener('trustStoreChanged', refreshRecords);
     return () => window.removeEventListener('trustStoreChanged', refreshRecords);
   }, [refreshRecords]);
 
+  /** Resolve a connection ID to its name, falling back to a truncated ID. */
+  const connectionName = useCallback((id: string): string => {
+    const conn = connectionState.connections.find(c => c.id === id);
+    return conn?.name || `Connection ${id.slice(0, 8)}…`;
+  }, [connectionState.connections]);
+
   const tlsRecords = useMemo(() => trustRecords.filter(r => r.type === 'tls'), [trustRecords]);
   const sshRecords = useMemo(() => trustRecords.filter(r => r.type === 'ssh'), [trustRecords]);
 
-  const handleRemoveRecord = (record: TrustRecord) => {
+  const handleRemoveRecord = (record: TrustRecord, connectionId?: string) => {
     const [host, portStr] = record.host.split(':');
     const port = parseInt(portStr, 10);
-    removeIdentity(host, port, record.type);
-    setTrustRecords(getAllTrustRecords());
+    removeIdentity(host, port, record.type, connectionId);
+    refreshRecords();
   };
 
   const handleClearAll = () => {
     clearAllTrustRecords();
-    setTrustRecords([]);
+    // Also clear all per-connection stores
+    connectionGroups.forEach(g => clearAllTrustRecords(g.connectionId));
+    refreshRecords();
     setShowConfirmClear(false);
   };
+
+  const totalCount = trustRecords.length + connectionGroups.reduce((sum, g) => sum + g.records.length, 0);
 
   return (
     <div className="space-y-6">
@@ -120,15 +141,15 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
       </div>
 
       {/* Policy Explanations Accordion */}
-      <details className="group bg-gray-800/50 border border-gray-700 rounded-lg">
-        <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-gray-300 hover:text-white transition-colors flex items-center gap-2">
-          <ShieldAlert size={14} className="text-gray-400" />
+      <details className="group bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-lg">
+        <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors flex items-center gap-2">
+          <ShieldAlert size={14} className="text-[var(--color-textMuted)]" />
           What do these policies mean?
-          <span className="ml-auto text-gray-500 text-xs group-open:rotate-90 transition-transform">▶</span>
+          <span className="ml-auto text-[var(--color-textMuted)] text-xs group-open:rotate-90 transition-transform">▶</span>
         </summary>
-        <div className="px-4 pb-4 pt-1 space-y-3 text-xs text-gray-400 leading-relaxed border-t border-gray-700/60 mt-1">
+        <div className="px-4 pb-4 pt-1 space-y-3 text-xs text-[var(--color-textMuted)] leading-relaxed border-t border-[var(--color-border)]/60 mt-1">
           <div>
-            <span className="text-white font-medium">Trust On First Use (TOFU)</span>
+            <span className="text-[var(--color-text)] font-medium">Trust On First Use (TOFU)</span>
             <p className="mt-0.5">
               The first time you connect to a host, its certificate or host key is automatically accepted and stored.
               On subsequent connections the stored identity is compared — if it changed you will see a warning so you
@@ -137,7 +158,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             </p>
           </div>
           <div>
-            <span className="text-white font-medium">Always Ask</span>
+            <span className="text-[var(--color-text)] font-medium">Always Ask</span>
             <p className="mt-0.5">
               Every time a new or previously unseen identity is encountered you will be prompted to manually
               approve or reject it. Use this when you prefer explicit confirmation for every identity,
@@ -145,7 +166,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             </p>
           </div>
           <div>
-            <span className="text-white font-medium">Always Trust</span>
+            <span className="text-[var(--color-text)] font-medium">Always Trust</span>
             <p className="mt-0.5">
               All certificates and host keys are accepted without any verification or prompts.
               This is convenient for development or lab environments but should <em>never</em> be
@@ -154,7 +175,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             </p>
           </div>
           <div>
-            <span className="text-white font-medium">Strict</span>
+            <span className="text-[var(--color-text)] font-medium">Strict</span>
             <p className="mt-0.5">
               Connections are only allowed if the host&apos;s identity has been manually pre-approved
               and stored beforehand. Any unknown or changed identity is immediately rejected.
@@ -203,9 +224,9 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-sm font-medium text-white flex items-center gap-2">
             <ShieldAlert size={16} className="text-yellow-400" />
-            Stored Identities ({trustRecords.length})
+            Stored Identities ({totalCount})
           </h4>
-          {trustRecords.length > 0 && (
+          {totalCount > 0 && (
             showConfirmClear ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-red-400">Clear all stored identities?</span>
@@ -234,7 +255,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
           )}
         </div>
 
-        {trustRecords.length === 0 ? (
+        {totalCount === 0 ? (
           <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 text-center">
             <ShieldCheck size={24} className="text-gray-500 mx-auto mb-2" />
             <p className="text-sm text-gray-500">No stored identities yet.</p>
@@ -244,33 +265,98 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
           </div>
         ) : (
           <div className="space-y-4">
-            {/* TLS Records */}
-            {tlsRecords.length > 0 && (
-              <div>
-                <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                  <Lock size={12} /> TLS Certificates ({tlsRecords.length})
-                </h5>
-                <div className="space-y-2">
-                  {tlsRecords.map((record, i) => (
-                    <TrustRecordRow key={`tls-${i}`} record={record} onRemove={handleRemoveRecord} onUpdated={() => setTrustRecords(getAllTrustRecords())} />
-                  ))}
+            {/* ── Global Store ── */}
+            {trustRecords.length > 0 && (
+              <details className="group" open>
+                <summary className="cursor-pointer select-none text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
+                  <Globe size={12} />
+                  Global Identities ({trustRecords.length})
+                </summary>
+                <div className="space-y-3 ml-4">
+                  {/* TLS Records */}
+                  {tlsRecords.length > 0 && (
+                    <div>
+                      <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <Lock size={12} /> TLS Certificates ({tlsRecords.length})
+                      </h5>
+                      <div className="space-y-2">
+                        {tlsRecords.map((record, i) => (
+                          <TrustRecordRow key={`tls-${i}`} record={record} onRemove={(r) => handleRemoveRecord(r)} onUpdated={refreshRecords} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SSH Records */}
+                  {sshRecords.length > 0 && (
+                    <div>
+                      <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <Fingerprint size={12} /> SSH Host Keys ({sshRecords.length})
+                      </h5>
+                      <div className="space-y-2">
+                        {sshRecords.map((record, i) => (
+                          <TrustRecordRow key={`ssh-${i}`} record={record} onRemove={(r) => handleRemoveRecord(r)} onUpdated={refreshRecords} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+              </details>
             )}
 
-            {/* SSH Records */}
-            {sshRecords.length > 0 && (
-              <div>
-                <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
-                  <Fingerprint size={12} /> SSH Host Keys ({sshRecords.length})
-                </h5>
-                <div className="space-y-2">
-                  {sshRecords.map((record, i) => (
-                    <TrustRecordRow key={`ssh-${i}`} record={record} onRemove={handleRemoveRecord} onUpdated={() => setTrustRecords(getAllTrustRecords())} />
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* ── Per-Connection Stores ── */}
+            {connectionGroups.map(group => {
+              const connTls = group.records.filter(r => r.type === 'tls');
+              const connSsh = group.records.filter(r => r.type === 'ssh');
+              return (
+                <details key={group.connectionId} className="group">
+                  <summary className="cursor-pointer select-none text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
+                    <Link2 size={12} />
+                    {connectionName(group.connectionId)} ({group.records.length})
+                  </summary>
+                  <div className="space-y-3 ml-4">
+                    {connTls.length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                          <Lock size={12} /> TLS Certificates ({connTls.length})
+                        </h5>
+                        <div className="space-y-2">
+                          {connTls.map((record, i) => (
+                            <TrustRecordRow
+                              key={`${group.connectionId}-tls-${i}`}
+                              record={record}
+                              connectionId={group.connectionId}
+                              onRemove={(r) => handleRemoveRecord(r, group.connectionId)}
+                              onUpdated={refreshRecords}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {connSsh.length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                          <Fingerprint size={12} /> SSH Host Keys ({connSsh.length})
+                        </h5>
+                        <div className="space-y-2">
+                          {connSsh.map((record, i) => (
+                            <TrustRecordRow
+                              key={`${group.connectionId}-ssh-${i}`}
+                              record={record}
+                              connectionId={group.connectionId}
+                              onRemove={(r) => handleRemoveRecord(r, group.connectionId)}
+                              onUpdated={refreshRecords}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              );
+            })}
           </div>
         )}
       </div>
@@ -279,13 +365,13 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
 };
 
 /** A single trust record row with remove action. */
-function TrustRecordRow({ record, onRemove, onUpdated }: { record: TrustRecord; onRemove: (r: TrustRecord) => void; onUpdated: () => void }) {
+function TrustRecordRow({ record, connectionId, onRemove, onUpdated }: { record: TrustRecord; connectionId?: string; onRemove: (r: TrustRecord) => void; onUpdated: () => void }) {
   const [editingNick, setEditingNick] = React.useState(false);
   const [nickDraft, setNickDraft] = React.useState(record.nickname ?? '');
 
   const saveNickname = () => {
     const [h, p] = record.host.split(':');
-    updateTrustRecordNickname(h, parseInt(p, 10), record.type, nickDraft.trim());
+    updateTrustRecordNickname(h, parseInt(p, 10), record.type, nickDraft.trim(), connectionId);
     setEditingNick(false);
     onUpdated();
   };
