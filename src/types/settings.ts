@@ -260,6 +260,20 @@ export interface GlobalSettings {
   showTrustIdentityInfo: boolean;
   /** Warn on TLS certificate expiry within N days (0 = disabled) */
   certExpiryWarningDays: number;
+
+  // ── Web Browser / HTTP proxy settings ──
+
+  /** Enable automatic proxy keepalive health checks */
+  proxyKeepaliveEnabled: boolean;
+  /** Proxy health-check polling interval in seconds */
+  proxyKeepaliveIntervalSeconds: number;
+  /** Automatically restart a dead proxy without user intervention */
+  proxyAutoRestart: boolean;
+  /** Maximum consecutive auto-restart attempts before stopping (0 = unlimited) */
+  proxyMaxAutoRestarts: number;
+
+  /** Ask for confirmation before deleting all bookmarks */
+  confirmDeleteAllBookmarks: boolean;
 }
 
 // Backup scheduling frequency

@@ -224,6 +224,13 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   sshTrustPolicy: 'tofu',
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
+
+  // Web Browser / HTTP proxy
+  proxyKeepaliveEnabled: true,
+  proxyKeepaliveIntervalSeconds: 10,
+  proxyAutoRestart: true,
+  proxyMaxAutoRestarts: 5,
+  confirmDeleteAllBookmarks: true,
 };
 
 /**

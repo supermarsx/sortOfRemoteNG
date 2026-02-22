@@ -1,5 +1,11 @@
 import { ProxyConfig, SSHTerminalConfig, SSHConnectionConfig } from "./settings";
 import type { TrustPolicy } from "../utils/trustStore";
+
+/** A single bookmark or a folder containing bookmarks. */
+export type HttpBookmarkItem =
+  | { name: string; path: string; isFolder?: false }
+  | { name: string; isFolder: true; children: HttpBookmarkItem[] };
+
 export interface Connection {
   id: string;
   name: string;
@@ -44,6 +50,7 @@ export interface Connection {
   basicAuthUsername?: string;
   basicAuthPassword?: string;
   httpVerifySsl?: boolean;
+  httpBookmarks?: HttpBookmarkItem[];
   
   // Database specific
   database?: string;

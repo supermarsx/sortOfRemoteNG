@@ -488,6 +488,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
         greet,
         open_devtools,
+        open_url_external,
         get_launch_args,
         add_user,
         verify_user,
@@ -788,6 +789,8 @@ pub fn run() {
         http::get_proxy_request_log,
         http::clear_proxy_request_log,
         http::stop_all_proxy_sessions,
+        http::check_proxy_health,
+        http::restart_proxy_session,
         http::get_tls_certificate_info,
         passkey::passkey_is_available,
         passkey::passkey_authenticate,
@@ -933,6 +936,36 @@ pub fn run() {
 /// ```
 fn greet(name: &str) -> String {
   format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn open_url_external(url: String) -> Result<(), String> {
+  // Only allow http/https URLs for safety
+  if !url.starts_with("http://") && !url.starts_with("https://") {
+    return Err("Only http and https URLs are supported".into());
+  }
+  #[cfg(target_os = "windows")]
+  {
+    std::process::Command::new("cmd")
+      .args(["/C", "start", "", &url])
+      .spawn()
+      .map_err(|e| e.to_string())?;
+  }
+  #[cfg(target_os = "macos")]
+  {
+    std::process::Command::new("open")
+      .arg(&url)
+      .spawn()
+      .map_err(|e| e.to_string())?;
+  }
+  #[cfg(target_os = "linux")]
+  {
+    std::process::Command::new("xdg-open")
+      .arg(&url)
+      .spawn()
+      .map_err(|e| e.to_string())?;
+  }
+  Ok(())
 }
 
 #[tauri::command]

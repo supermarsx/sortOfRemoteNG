@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, AlertTriangle, Lock, Trash2, Pencil } from 'lucide-react';
-import { Connection } from '../../types/connection';
+import { X, AlertTriangle, Lock, Trash2, Pencil, Plus, GripVertical, Star, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
+import { Connection, HttpBookmarkItem } from '../../types/connection';
 import {
   getAllTrustRecords,
   removeIdentity,
@@ -24,12 +24,26 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
   const [headerValue, setHeaderValue] = useState('');
   const headerNameRef = useRef<HTMLInputElement>(null);
 
+  // Bookmark management state
+  const [showAddBookmark, setShowAddBookmark] = useState(false);
+  const [bookmarkName, setBookmarkName] = useState('');
+  const [bookmarkPath, setBookmarkPath] = useState('');
+  const [editingBookmarkIdx, setEditingBookmarkIdx] = useState<number | null>(null);
+  const bookmarkNameRef = useRef<HTMLInputElement>(null);
+
   // Focus the header name input when the dialog opens
   useEffect(() => {
     if (showAddHeader) {
       setTimeout(() => headerNameRef.current?.focus(), 50);
     }
   }, [showAddHeader]);
+
+  // Focus the bookmark name input when the dialog opens
+  useEffect(() => {
+    if (showAddBookmark) {
+      setTimeout(() => bookmarkNameRef.current?.focus(), 50);
+    }
+  }, [showAddBookmark]);
 
   if (formData.isGroup || !isHttpProtocol) return null;
 
@@ -52,6 +66,25 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
     const headers = { ...(formData.httpHeaders || {}) } as Record<string, string>;
     delete headers[key];
     setFormData({ ...formData, httpHeaders: headers });
+  };
+
+  const handleSaveBookmark = () => {
+    const name = bookmarkName.trim();
+    let path = bookmarkPath.trim();
+    if (!name || !path) return;
+    // Ensure path starts with /
+    if (!path.startsWith('/')) path = '/' + path;
+    const bookmarks = [...(formData.httpBookmarks || [])];
+    if (editingBookmarkIdx !== null) {
+      bookmarks[editingBookmarkIdx] = { name, path };
+    } else {
+      bookmarks.push({ name, path });
+    }
+    setFormData({ ...formData, httpBookmarks: bookmarks });
+    setBookmarkName('');
+    setBookmarkPath('');
+    setEditingBookmarkIdx(null);
+    setShowAddBookmark(false);
   };
 
   return (
@@ -251,6 +284,195 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
             >
               Add Header
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bookmarks / Favorites */}
+      <div className="md:col-span-2">
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-medium text-gray-300 flex items-center gap-1.5">
+            <Star size={14} className="text-yellow-400" />
+            Bookmarks ({(formData.httpBookmarks || []).length})
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setBookmarkName('');
+              setBookmarkPath('');
+              setEditingBookmarkIdx(null);
+              setShowAddBookmark(true);
+            }}
+            className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+          >
+            <Plus size={12} /> Add bookmark
+          </button>
+        </div>
+        {(formData.httpBookmarks || []).length === 0 ? (
+          <p className="text-xs text-gray-500 italic">
+            No bookmarks yet. Add quick-access paths for this connection.
+          </p>
+        ) : (
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {(formData.httpBookmarks || []).map((bm, idx) => (
+              <div
+                key={idx}
+                className="flex items-center gap-2 bg-gray-700/50 border border-gray-600/50 rounded px-3 py-1.5 text-xs group"
+              >
+                {bm.isFolder ? (
+                  <FolderOpen size={12} className="text-blue-400/70 flex-shrink-0" />
+                ) : (
+                  <Star size={12} className="text-yellow-400/70 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-gray-200 truncate">{bm.name}</p>
+                  {bm.isFolder ? (
+                    <p className="text-gray-500 font-mono truncate">{bm.children.length} items</p>
+                  ) : (
+                    <p className="text-gray-500 font-mono truncate">{bm.path}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {idx > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const bookmarks = [...(formData.httpBookmarks || [])];
+                        [bookmarks[idx - 1], bookmarks[idx]] = [bookmarks[idx], bookmarks[idx - 1]];
+                        setFormData({ ...formData, httpBookmarks: bookmarks });
+                      }}
+                      className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors"
+                      title="Move up"
+                    >
+                      <ArrowUp size={12} />
+                    </button>
+                  )}
+                  {idx < (formData.httpBookmarks || []).length - 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const bookmarks = [...(formData.httpBookmarks || [])];
+                        [bookmarks[idx], bookmarks[idx + 1]] = [bookmarks[idx + 1], bookmarks[idx]];
+                        setFormData({ ...formData, httpBookmarks: bookmarks });
+                      }}
+                      className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors"
+                      title="Move down"
+                    >
+                      <ArrowDown size={12} />
+                    </button>
+                  )}
+                  {!bm.isFolder && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBookmarkName(bm.name);
+                        setBookmarkPath(bm.path);
+                        setEditingBookmarkIdx(idx);
+                        setShowAddBookmark(true);
+                      }}
+                      className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors"
+                      title="Edit"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const bookmarks = (formData.httpBookmarks || []).filter((_, i) => i !== idx);
+                      setFormData({ ...formData, httpBookmarks: bookmarks });
+                    }}
+                    className="text-gray-500 hover:text-red-400 p-0.5 transition-colors"
+                    title="Remove"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Add/Edit Bookmark overlay dialog */}
+      {showAddBookmark && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAddBookmark(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setShowAddBookmark(false);
+          }}
+        >
+          <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
+            <div className="relative h-12 border-b border-gray-700">
+              <h2 className="absolute left-5 top-3 text-sm font-semibold text-white">
+                {editingBookmarkIdx !== null ? 'Edit Bookmark' : 'Add Bookmark'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowAddBookmark(false)}
+                className="absolute right-3 top-2 text-gray-400 hover:text-white transition-colors"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Name</label>
+                <input
+                  ref={bookmarkNameRef}
+                  type="text"
+                  value={bookmarkName}
+                  onChange={(e) => setBookmarkName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveBookmark();
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g. Status Page"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-2">Path</label>
+                <input
+                  type="text"
+                  value={bookmarkPath}
+                  onChange={(e) => setBookmarkPath(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSaveBookmark();
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g. /status-log.asp"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Relative path starting with /. Will be appended to the connection URL.
+                </p>
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddBookmark(false)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveBookmark}
+                  className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+                >
+                  {editingBookmarkIdx !== null ? 'Save' : 'Add'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -517,7 +517,7 @@ async fn axum_proxy_handler(
 
             // Log the request.
             if let Ok(mut mgr) = state.global_sessions.lock() {
-                if mgr.request_log.len() >= 200 {
+                if mgr.request_log.len() >= 1000 {
                     mgr.request_log.remove(0);
                 }
                 mgr.request_log.push(ProxyRequestLogEntry {
@@ -634,7 +634,7 @@ async fn axum_proxy_handler(
             }
 
             if let Ok(mut mgr) = state.global_sessions.lock() {
-                if mgr.request_log.len() >= 200 {
+                if mgr.request_log.len() >= 1000 {
                     mgr.request_log.remove(0);
                 }
                 mgr.request_log.push(ProxyRequestLogEntry {
@@ -906,6 +906,217 @@ pub fn stop_all_proxy_sessions(
         }
     }
     Ok(count)
+}
+
+/// Health-check result for a proxy session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyHealthResult {
+    pub session_id: String,
+    pub alive: bool,
+    pub port: u16,
+    pub error: Option<String>,
+}
+
+/// Check whether a proxy session's local TCP port is still accepting
+/// connections.  Returns a health status for each requested session ID.
+#[command]
+pub async fn check_proxy_health(
+    session_ids: Vec<String>,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<Vec<ProxyHealthResult>, String> {
+    // Collect info while holding the lock briefly.
+    let entries: Vec<(String, u16)> = {
+        let mgr = sessions
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        session_ids
+            .iter()
+            .filter_map(|id| {
+                mgr.sessions.get(id).map(|e| (id.clone(), e.local_port))
+            })
+            .collect()
+    };
+
+    let mut results: Vec<ProxyHealthResult> = Vec::new();
+
+    // For sessions that are no longer in the manager at all, report dead.
+    for id in &session_ids {
+        if !entries.iter().any(|(eid, _)| eid == id) {
+            results.push(ProxyHealthResult {
+                session_id: id.clone(),
+                alive: false,
+                port: 0,
+                error: Some("Session not found in manager".into()),
+            });
+        }
+    }
+
+    // Probe each known port with a quick TCP connect.
+    for (id, port) in entries {
+        let addr = format!("127.0.0.1:{}", port);
+        let alive = tokio::time::timeout(
+            std::time::Duration::from_millis(1500),
+            tokio::net::TcpStream::connect(&addr),
+        )
+        .await;
+        match alive {
+            Ok(Ok(_stream)) => {
+                results.push(ProxyHealthResult {
+                    session_id: id,
+                    alive: true,
+                    port,
+                    error: None,
+                });
+            }
+            Ok(Err(e)) => {
+                results.push(ProxyHealthResult {
+                    session_id: id,
+                    alive: false,
+                    port,
+                    error: Some(format!("Connect failed: {}", e)),
+                });
+            }
+            Err(_) => {
+                results.push(ProxyHealthResult {
+                    session_id: id,
+                    alive: false,
+                    port,
+                    error: Some("Health check timed out".into()),
+                });
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Restart a dead proxy session.  Uses the stored credentials and target_url
+/// from the original session to spin up a fresh axum server (potentially on a
+/// different local port).  Returns the new proxy URL.
+#[command]
+pub async fn restart_proxy_session(
+    session_id: String,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<ProxyMediatorResponse, String> {
+    // Extract the config from the existing (dead) session entry.
+    let (target_url, username, password, target_origin, connection_id, verify_ssl) = {
+        let mgr = sessions
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let entry = mgr
+            .sessions
+            .get(&session_id)
+            .ok_or_else(|| format!("Session {} not found", session_id))?;
+        (
+            entry.target_url.clone(),
+            entry.username.clone(),
+            entry.password.clone(),
+            entry.target_origin.clone(),
+            entry.connection_id.clone(),
+            // We don't persist verify_ssl in the entry, but the client will
+            // pass verify_ssl when it creates the proxy.  For restart we
+            // default to true (the safe option) — the client overrides this
+            // if needed.
+            true,
+        )
+    };
+
+    // Shut down the old axum server (may already be dead).
+    {
+        let mut mgr = sessions
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        if let Some(mut entry) = mgr.sessions.remove(&session_id) {
+            if let Some(tx) = entry.shutdown_tx.take() {
+                let _ = tx.send(());
+            }
+        }
+    }
+
+    // Build a fresh reqwest client.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .pool_idle_timeout(std::time::Duration::from_secs(20))
+        .pool_max_idle_per_host(4)
+        .tcp_keepalive(std::time::Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .danger_accept_invalid_certs(!verify_ssl)
+        .cookie_store(true)
+        .build()
+        .map_err(|e| format!("Failed to create proxy HTTP client: {}", e))?;
+
+    // Bind to a new random free port.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("Failed to bind proxy listener: {}", e))?;
+    let local_port = listener
+        .local_addr()
+        .map_err(|e| format!("Failed to get local address: {}", e))?
+        .port();
+
+    let new_session_id = uuid::Uuid::new_v4().to_string();
+    let request_count = Arc::new(AtomicU64::new(0));
+    let error_count = Arc::new(AtomicU64::new(0));
+    let last_error: Arc<std::sync::Mutex<Option<String>>> =
+        Arc::new(std::sync::Mutex::new(None));
+
+    let proxy_state = Arc::new(AxumProxyState {
+        session_id: new_session_id.clone(),
+        target_url: target_url.clone(),
+        username: username.clone(),
+        password: password.clone(),
+        target_origin: target_origin.clone(),
+        client,
+        request_count: request_count.clone(),
+        error_count: error_count.clone(),
+        last_error: last_error.clone(),
+        global_sessions: (*sessions).clone(),
+    });
+
+    let app = axum::Router::new()
+        .fallback(axum_proxy_handler)
+        .with_state(proxy_state);
+
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+    tokio::spawn(async move {
+        axum::serve(listener, app.into_make_service())
+            .with_graceful_shutdown(async {
+                shutdown_rx.await.ok();
+            })
+            .await
+            .ok();
+    });
+
+    // Store the new session.
+    {
+        let mut mgr = sessions
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        mgr.sessions.insert(
+            new_session_id.clone(),
+            ProxySessionEntry {
+                target_url,
+                username,
+                password,
+                target_origin,
+                connection_id,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                local_port,
+                request_count,
+                error_count,
+                last_error,
+                shutdown_tx: Some(shutdown_tx),
+            },
+        );
+    }
+
+    Ok(ProxyMediatorResponse {
+        local_port,
+        session_id: new_session_id,
+        proxy_url: format!("http://127.0.0.1:{}/", local_port),
+    })
 }
 
 // ---------------------------------------------------------------------------

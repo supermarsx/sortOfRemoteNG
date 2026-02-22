@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { invoke } from '@tauri-apps/api/core';
+import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -14,16 +15,27 @@ import {
   AlertTriangle,
   User,
   ServerCrash,
-  Wifi,
   WifiOff,
   RefreshCw,
-  Settings
+  Star,
+  Pencil,
+  Trash2,
+  Copy,
+  FolderPlus,
+  ChevronRight,
+  Download,
+  ClipboardCopy,
+  FolderOpen,
 } from 'lucide-react';
-import { ConnectionSession } from '../types/connection';
+import { ConnectionSession, HttpBookmarkItem } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
 import { useSettings } from '../contexts/SettingsContext';
+import { useToastContext } from '../contexts/ToastContext';
+import { generateId } from '../utils/id';
 import { CertificateInfoPopup } from './CertificateInfoPopup';
 import { TrustWarningDialog } from './TrustWarningDialog';
+import { InputDialog } from './InputDialog';
+import { ConfirmDialog } from './ConfirmDialog';
 import {
   verifyIdentity,
   trustIdentity,
@@ -44,8 +56,9 @@ interface WebBrowserProps {
 }
 
 export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
-  const { state } = useConnections();
+  const { state, dispatch } = useConnections();
   const { settings } = useSettings();
+  const { toast } = useToastContext();
   const connection = state.connections.find(c => c.id === session.connectionId);
 
   // Resolve the best auth credentials from the saved connection config.
@@ -107,6 +120,32 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const iconCount = 2 + (hasAuth ? 1 : 0) + (sslVerifyDisabled ? 1 : 0);
   // 12px left offset + each icon is 14px + 8px gap (space-x-2) + 16px for separator + 8px trailing
   const iconPadding = 12 + iconCount * 22 + 16;
+
+  // Bookmark context menu state  —  idx is the top-level index, folderPath
+  // is set when the right-clicked item lives inside a subfolder.
+  const [bmContextMenu, setBmContextMenu] = useState<{
+    x: number; y: number; idx: number; folderPath?: number[];
+  } | null>(null);
+  // Context menu when right-clicking the bookmark bar background (not a chip)
+  const [bmBarContextMenu, setBmBarContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [editingBmIdx, setEditingBmIdx] = useState<number | null>(null);
+  const [editBmName, setEditBmName] = useState('');
+  const editBmRef = useRef<HTMLInputElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  // Drag-to-reorder state (top-level only)
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  // Open subfolder names
+  const [openFolders, setOpenFolders] = useState<Set<number>>(new Set());
+
+  // ---- Proxy health / keepalive ----
+  const [proxyAlive, setProxyAlive] = useState(true);
+  const [proxyRestarting, setProxyRestarting] = useState(false);
+  const autoRestartCountRef = useRef(0);
+
+  // ---- Themed dialogs ----
+  const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
 
   // ------------------------------------------------------------------
   // TLS certificate trust helpers
@@ -251,38 +290,56 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     }, LOAD_TIMEOUT_MS);
 
     try {
-      // Tear down any previous proxy session
-      await stopProxy();
-      // Re-check generation after the async stop
-      if (gen !== navGenRef.current) return;
-
       if (hasAuth && resolvedCreds) {
         debugLog('WebBrowser', 'Starting auth proxy for', { url });
 
-        const response = await invoke<ProxyMediatorResponse>('start_basic_auth_proxy', {
-          config: {
-            target_url: url,
-            username: resolvedCreds.username,
-            password: resolvedCreds.password,
-            local_port: 0,
-            verify_ssl: (connection as Record<string, unknown>)?.httpVerifySsl ?? true,
-            connection_id: connection?.id ?? '',
-          },
-        });
+        // Always use the origin (scheme://host:port) as the proxy target so that
+        // every request from the page resolves relative to the site root, not
+        // to the specific page path we happen to be loading.
+        const urlObj = new URL(url);
+        const targetOrigin = urlObj.origin + '/';
+        const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
 
-        // If a newer navigation started while we awaited, kill the proxy
-        // we just created — it's already orphaned.
-        if (gen !== navGenRef.current) {
-          invoke('stop_basic_auth_proxy', { sessionId: response.session_id }).catch(() => {});
-          return;
-        }
+        // If we already have a proxy running for the same origin, just change
+        // the iframe path — no need to tear down and restart.
+        if (proxySessionIdRef.current && proxyUrlRef.current) {
+          const proxyBase = proxyUrlRef.current.replace(/\/+$/, '');
+          if (iframeRef.current) {
+            iframeRef.current.src = proxyBase + pagePath;
+          }
+        } else {
+          // Tear down any previous proxy session
+          await stopProxy();
+          // Re-check generation after the async stop
+          if (gen !== navGenRef.current) return;
 
-        proxySessionIdRef.current = response.session_id;
-        proxyUrlRef.current = response.proxy_url;
+          const response = await invoke<ProxyMediatorResponse>('start_basic_auth_proxy', {
+            config: {
+              target_url: targetOrigin,
+              username: resolvedCreds.username,
+              password: resolvedCreds.password,
+              local_port: 0,
+              verify_ssl: (connection as Record<string, unknown>)?.httpVerifySsl ?? true,
+              connection_id: connection?.id ?? '',
+            },
+          });
 
-        // Point the iframe at the local proxy — all requests now carry auth
-        if (iframeRef.current) {
-          iframeRef.current.src = response.proxy_url;
+          // If a newer navigation started while we awaited, kill the proxy
+          // we just created — it's already orphaned.
+          if (gen !== navGenRef.current) {
+            invoke('stop_basic_auth_proxy', { sessionId: response.session_id }).catch(() => {});
+            return;
+          }
+
+          proxySessionIdRef.current = response.session_id;
+          proxyUrlRef.current = response.proxy_url;
+
+          // Point the iframe at the local proxy + the page path so the initial
+          // page loads correctly while all other requests use the site root.
+          if (iframeRef.current) {
+            const proxyBase = response.proxy_url.replace(/\/+$/, '');
+            iframeRef.current.src = proxyBase + pagePath;
+          }
         }
       } else {
         // No auth — load directly
@@ -342,21 +399,123 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     };
   }, []);
 
-  // Track in-proxy navigation via the reporter script injected by the backend
+  // ---- Proxy keepalive polling ----
+  // Periodically check whether the proxy port is still alive.  If it
+  // isn't, mark proxyAlive=false so the UI can show a reconnect banner.
+  // Auto-restart is attempted up to the configured limit; if that also
+  // fails we leave the banner visible so the user can trigger a manual restart.
+  useEffect(() => {
+    if (!hasAuth) return;           // no proxy when auth is not needed
+    if (!settings.proxyKeepaliveEnabled) return; // keepalive disabled in settings
+    const intervalMs = (settings.proxyKeepaliveIntervalSeconds ?? 10) * 1000;
+    const id = setInterval(async () => {
+      const sid = proxySessionIdRef.current;
+      if (!sid) return;             // proxy not started yet
+      try {
+        const results = await invoke<Array<{ session_id: string; alive: boolean; error?: string }>>(
+          'check_proxy_health',
+          { sessionIds: [sid] },
+        );
+        const entry = results.find(r => r.session_id === sid);
+        if (entry && !entry.alive) {
+          debugLog('WebBrowser', 'Proxy health check failed — attempting auto-restart', { sid, error: entry.error });
+          setProxyAlive(false);
+
+          const maxRestarts = settings.proxyMaxAutoRestarts ?? 5;
+          const canAutoRestart = settings.proxyAutoRestart && (maxRestarts === 0 || autoRestartCountRef.current < maxRestarts);
+
+          if (canAutoRestart) {
+            try {
+              const resp = await invoke<ProxyMediatorResponse>('restart_proxy_session', { sessionId: sid });
+              proxySessionIdRef.current = resp.session_id;
+              proxyUrlRef.current = resp.proxy_url;
+              autoRestartCountRef.current += 1;
+              setProxyAlive(true);
+              // Re-point the iframe at the new proxy
+              if (iframeRef.current) {
+                const urlObj = new URL(currentUrl);
+                const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
+                iframeRef.current.src = resp.proxy_url.replace(/\/+$/, '') + pagePath;
+              }
+              debugLog('WebBrowser', 'Proxy auto-restarted successfully', {
+                newSessionId: resp.session_id,
+                restartCount: autoRestartCountRef.current,
+              });
+            } catch (restartErr) {
+              debugLog('WebBrowser', 'Auto-restart failed — user intervention needed', { restartErr });
+            }
+          } else {
+            debugLog('WebBrowser', 'Auto-restart skipped (disabled or limit reached)', {
+              autoRestart: settings.proxyAutoRestart,
+              count: autoRestartCountRef.current,
+              max: maxRestarts,
+            });
+          }
+        } else if (entry && entry.alive) {
+          // Only flip back to true if we previously marked it dead
+          setProxyAlive(true);
+        }
+      } catch {
+        // check_proxy_health command itself failed (e.g. app shutting down) — ignore
+      }
+    }, intervalMs);
+    return () => clearInterval(id);
+  }, [hasAuth, currentUrl, settings.proxyKeepaliveEnabled, settings.proxyKeepaliveIntervalSeconds, settings.proxyAutoRestart, settings.proxyMaxAutoRestarts]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Manually restart a dead proxy session. */
+  const handleRestartProxy = useCallback(async () => {
+    const sid = proxySessionIdRef.current;
+    if (!sid) {
+      // No existing session — do a full navigateToUrl which creates a new proxy
+      navigateToUrl(currentUrl);
+      return;
+    }
+    setProxyRestarting(true);
+    try {
+      const resp = await invoke<ProxyMediatorResponse>('restart_proxy_session', { sessionId: sid });
+      proxySessionIdRef.current = resp.session_id;
+      proxyUrlRef.current = resp.proxy_url;
+      setProxyAlive(true);
+      if (iframeRef.current) {
+        const urlObj = new URL(currentUrl);
+        const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
+        iframeRef.current.src = resp.proxy_url.replace(/\/+$/, '') + pagePath;
+      }
+    } catch {
+      // Restart via the stored session failed — fall back to a full re-navigate
+      // which will create a brand-new proxy from scratch.
+      proxySessionIdRef.current = '';
+      proxyUrlRef.current = '';
+      navigateToUrl(currentUrl);
+    } finally {
+      setProxyRestarting(false);
+    }
+  }, [currentUrl, navigateToUrl]);
+
+  // Track in-proxy navigation via the reporter script injected by the backend.
+  // We keep a ref to the base target URL so the listener is stable and does not
+  // depend on currentUrl (which would recreate the listener on every nav).
+  const baseTargetRef = useRef(buildTargetUrl().replace(/\/+$/, ''));
+  useEffect(() => {
+    baseTargetRef.current = buildTargetUrl().replace(/\/+$/, '');
+  }, [buildTargetUrl]);
+
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'proxy_navigate' && event.data.url) {
         const proxyOrigin = proxyUrlRef.current;
         if (proxyOrigin && event.data.url.startsWith(proxyOrigin)) {
-          const path = event.data.url.slice(proxyOrigin.length);
-          const realUrl = currentUrl.replace(/\/+$/, '') + path;
+          const rawPath = event.data.url.slice(proxyOrigin.length);
+          const path = rawPath && !rawPath.startsWith('/') ? '/' + rawPath : rawPath;
+          const realUrl = baseTargetRef.current + (path || '/');
+          setCurrentUrl(realUrl);
           setInputUrl(realUrl);
         }
       }
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [currentUrl]);
+  }, []);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -426,9 +585,277 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     }
   };
 
-  const handleOpenExternal = () => {
-    window.open(currentUrl, '_blank', 'noopener,noreferrer');
+  /** Open the current URL in a new session tab within the app.
+   *  The session status is set to 'connected' immediately so the WebBrowser
+   *  component mounts and starts its own proxy. */
+  const handleOpenInNewTab = () => {
+    if (!connection) return;
+    const newSession: ConnectionSession = {
+      id: generateId(),
+      connectionId: connection.id,
+      name: `${connection.name} (tab)`,
+      status: 'connected',
+      startTime: new Date(),
+      protocol: connection.protocol,
+      hostname: connection.hostname,
+    };
+    dispatch({ type: 'ADD_SESSION', payload: newSession });
   };
+
+  /** Open the current URL in the OS default browser */
+  const handleOpenExternal = () => {
+    invoke('open_url_external', { url: currentUrl }).catch(() => {
+      // Fallback if the Rust command isn't available
+      window.open(currentUrl, '_blank', 'noopener,noreferrer');
+    });
+  };
+
+  // ---- Active bookmark detection ----
+  /** Collect all leaf paths from the bookmark tree so we can check quickly. */
+  const collectPaths = useCallback((items: HttpBookmarkItem[]): string[] => {
+    const out: string[] = [];
+    for (const bm of items) {
+      if (bm.isFolder) out.push(...collectPaths(bm.children));
+      else out.push(bm.path);
+    }
+    return out;
+  }, []);
+
+  const currentPath = useMemo(() => {
+    const base = buildTargetUrl().replace(/\/+$/, '');
+    const url = inputUrl || currentUrl;
+    const raw = url.startsWith(base) ? url.slice(base.length) : '/';
+    return raw && raw.startsWith('/') ? raw : '/' + raw;
+  }, [inputUrl, currentUrl, buildTargetUrl]);
+
+  const activeBookmarkPaths = useMemo(
+    () => new Set(collectPaths(connection?.httpBookmarks || [])),
+    [connection?.httpBookmarks, collectPaths],
+  );
+  const isCurrentPageBookmarked = activeBookmarkPaths.has(currentPath);
+
+  /** Save the current page as a bookmark on this connection */
+  const handleAddBookmark = () => {
+    if (!connection) return;
+    const url = inputUrl || currentUrl;
+    const base = buildTargetUrl().replace(/\/+$/, '');
+    const rawPath = url.startsWith(base) ? url.slice(base.length) : '/';
+    const normalizedPath = rawPath && rawPath.startsWith('/') ? rawPath : '/' + rawPath;
+    // Avoid duplicate paths (check whole tree)
+    if (activeBookmarkPaths.has(normalizedPath)) return;
+    const name = normalizedPath === '/' ? 'Home' : decodeURIComponent(normalizedPath.split('/').filter(Boolean).pop() || 'Page');
+    dispatch({
+      type: 'UPDATE_CONNECTION',
+      payload: { ...connection, httpBookmarks: [...(connection.httpBookmarks || []), { name, path: normalizedPath }] },
+    });
+  };
+
+  /** Move a top-level bookmark to a new position (drag or context menu) */
+  const handleMoveBookmark = (fromIdx: number, toIdx: number) => {
+    if (!connection) return;
+    const bookmarks = [...(connection.httpBookmarks || [])];
+    if (toIdx < 0 || toIdx >= bookmarks.length) return;
+    const [moved] = bookmarks.splice(fromIdx, 1);
+    bookmarks.splice(toIdx, 0, moved);
+    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+  };
+
+  /** Remove a top-level bookmark by index */
+  const handleRemoveBookmark = (idx: number) => {
+    if (!connection) return;
+    const bookmarks = [...(connection.httpBookmarks || [])];
+    bookmarks.splice(idx, 1);
+    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+  };
+
+  /** Rename a top-level bookmark */
+  const handleRenameBookmark = (idx: number, newName: string) => {
+    if (!connection || !newName.trim()) return;
+    const bookmarks = [...(connection.httpBookmarks || [])];
+    bookmarks[idx] = { ...bookmarks[idx], name: newName.trim() };
+    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+  };
+
+  /** Delete ALL bookmarks */
+  const handleDeleteAllBookmarks = () => {
+    if (!connection) return;
+    if (settings.confirmDeleteAllBookmarks) {
+      setShowDeleteAllConfirm(true);
+    } else {
+      dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: [] } });
+    }
+  };
+
+  const confirmDeleteAllBookmarks = () => {
+    if (!connection) return;
+    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: [] } });
+    setShowDeleteAllConfirm(false);
+  };
+
+  /** Create a new subfolder at the top level */
+  const handleAddFolder = () => {
+    if (!connection) return;
+    setShowNewFolderDialog(true);
+  };
+
+  const confirmAddFolder = (folderName: string) => {
+    if (!connection || !folderName) return;
+    const folder: HttpBookmarkItem = { name: folderName, isFolder: true, children: [] };
+    dispatch({
+      type: 'UPDATE_CONNECTION',
+      payload: { ...connection, httpBookmarks: [...(connection.httpBookmarks || []), folder] },
+    });
+    setShowNewFolderDialog(false);
+  };
+
+  /** Move a bookmark into or out of a folder */
+  const handleMoveToFolder = (bmIdx: number, folderIdx: number) => {
+    if (!connection) return;
+    const bookmarks = [...(connection.httpBookmarks || [])].map(b =>
+      b.isFolder ? { ...b, children: [...b.children] } : { ...b },
+    );
+    const [item] = bookmarks.splice(bmIdx, 1);
+    if (item.isFolder) return; // don't nest folders
+    const folder = bookmarks[folderIdx > bmIdx ? folderIdx - 1 : folderIdx];
+    if (folder && folder.isFolder) {
+      folder.children.push(item);
+    }
+    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+  };
+
+  /** Remove bookmark inside a folder */
+  const handleRemoveFromFolder = (folderIdx: number, childIdx: number) => {
+    if (!connection) return;
+    const bookmarks = [...(connection.httpBookmarks || [])].map(b =>
+      b.isFolder ? { ...b, children: [...b.children] } : { ...b },
+    );
+    const folder = bookmarks[folderIdx];
+    if (folder && folder.isFolder) {
+      folder.children.splice(childIdx, 1);
+      dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+    }
+  };
+
+  /** Save the current page as a PDF via the print-to-PDF flow */
+  const handleSavePage = async () => {
+    if (!connection) return;
+    const now = new Date();
+    const ts = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0'),
+      String(now.getHours()).padStart(2, '0'),
+      String(now.getMinutes()).padStart(2, '0'),
+      String(now.getSeconds()).padStart(2, '0'),
+    ].join('-');
+    const defaultName = `${connection.name}-${ts}.pdf`;
+    try {
+      const filePath = await saveDialog({
+        title: 'Save page as PDF',
+        defaultPath: defaultName,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (!filePath) return;
+      // Use the Tauri webview print_to_pdf if available, otherwise fall back
+      // to triggering the browser print dialog on the iframe.
+      try {
+        await invoke('save_page_as_pdf', { sessionId: proxySessionIdRef.current, outputPath: filePath });
+      } catch {
+        // Fallback: trigger the iframe print dialog
+        iframeRef.current?.contentWindow?.print();
+      }
+    } catch (e) {
+      console.error('Save page failed:', e);
+    }
+  };
+
+  /** Copy all text content from the current page to clipboard */
+  const handleCopyAll = async () => {
+    // Strategy 1: read the iframe DOM directly (works when same-origin / proxied)
+    try {
+      const iframeDoc = iframeRef.current?.contentDocument || iframeRef.current?.contentWindow?.document;
+      if (iframeDoc) {
+        const text = iframeDoc.body?.innerText || iframeDoc.body?.textContent || '';
+        if (text.trim()) {
+          await navigator.clipboard.writeText(text);
+          toast.success('Page content copied to clipboard');
+          return;
+        }
+      }
+    } catch {
+      // Cross-origin — fall through to strategy 2
+    }
+
+    // Strategy 2: fetch the page HTML through the proxy URL and extract text
+    try {
+      const proxyUrl = proxyUrlRef.current;
+      if (proxyUrl) {
+        const urlObj = new URL(currentUrl);
+        const pagePath = urlObj.pathname + urlObj.search;
+        const fetchUrl = proxyUrl.replace(/\/+$/, '') + pagePath;
+        const resp = await fetch(fetchUrl);
+        if (resp.ok) {
+          const html = await resp.text();
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          const text = doc.body?.innerText || doc.body?.textContent || '';
+          if (text.trim()) {
+            await navigator.clipboard.writeText(text);
+            toast.success('Page content copied to clipboard');
+            return;
+          }
+        }
+      }
+    } catch {
+      // fetch failed — fall through
+    }
+
+    toast.error('Could not copy page content — the page may be empty or inaccessible');
+  };
+
+  // Drag handlers for bookmark reordering
+  const handleDragStart = (idx: number) => (e: React.DragEvent) => {
+    setDragIdx(idx);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(idx));
+  };
+  const handleDragOver = (idx: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIdx(idx);
+  };
+  const handleDrop = (idx: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragIdx !== null && dragIdx !== idx) {
+      handleMoveBookmark(dragIdx, idx);
+    }
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+  const handleDragEnd = () => {
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!bmContextMenu && !bmBarContextMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setBmContextMenu(null);
+        setBmBarContextMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [bmContextMenu, bmBarContextMenu]);
+
+  // Focus inline rename input
+  useEffect(() => {
+    if (editingBmIdx !== null) {
+      setTimeout(() => editBmRef.current?.focus(), 30);
+    }
+  }, [editingBmIdx]);
 
   const getSecurityIcon = () => {
     if (isSecure) {
@@ -534,9 +961,39 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           </form>
 
           <button
-            onClick={handleOpenExternal}
+            onClick={handleAddBookmark}
+            className={`p-2 hover:bg-gray-700 rounded transition-colors ${
+              isCurrentPageBookmarked ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'
+            }`}
+            title={isCurrentPageBookmarked ? 'Page is bookmarked' : 'Bookmark this page'}
+          >
+            <Star size={16} fill={isCurrentPageBookmarked ? 'currentColor' : 'none'} />
+          </button>
+          <button
+            onClick={handleSavePage}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title="Save page as PDF"
+          >
+            <Download size={16} />
+          </button>
+          <button
+            onClick={handleCopyAll}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title="Copy all page content"
+          >
+            <ClipboardCopy size={16} />
+          </button>
+          <button
+            onClick={handleOpenInNewTab}
             className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
             title="Open in new tab"
+          >
+            <Copy size={16} />
+          </button>
+          <button
+            onClick={handleOpenExternal}
+            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title="Open in external browser"
           >
             <ExternalLink size={16} />
           </button>
@@ -566,8 +1023,351 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         </div>
       </div>
 
+      {/* Bookmark Bar — always visible */}
+      <div
+        className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-3 py-1 flex items-center gap-1 overflow-x-auto min-h-[28px] relative"
+        onContextMenu={(e) => {
+          // Only fire when clicking the bar background, not a child chip
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            setBmBarContextMenu({ x: e.clientX, y: e.clientY });
+          }
+        }}
+      >
+        <Star
+          size={11}
+          className={`flex-shrink-0 ${isCurrentPageBookmarked ? 'text-yellow-400' : 'text-yellow-400/60'}`}
+          fill={isCurrentPageBookmarked ? 'currentColor' : 'none'}
+        />
+
+        {/* Render top-level bookmarks & folders */}
+        {(connection?.httpBookmarks || []).map((bm, idx) => {
+          const baseUrl = buildTargetUrl().replace(/\/+$/, '');
+
+          // ---- Folder chip ----
+          if (bm.isFolder) {
+            const isOpen = openFolders.has(idx);
+            return (
+              <div key={`folder-${idx}`} className="relative flex-shrink-0">
+                <button
+                  onClick={() => setOpenFolders(prev => {
+                    const next = new Set(prev);
+                    if (next.has(idx)) next.delete(idx); else next.add(idx);
+                    return next;
+                  })}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setBmContextMenu({ x: e.clientX, y: e.clientY, idx });
+                  }}
+                  draggable
+                  onDragStart={handleDragStart(idx)}
+                  onDragOver={handleDragOver(idx)}
+                  onDrop={handleDrop(idx)}
+                  onDragEnd={handleDragEnd}
+                  className={`text-xs px-2 py-0.5 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors whitespace-nowrap flex items-center gap-1 ${
+                    dragOverIdx === idx ? 'ring-1 ring-[var(--color-primary)]' : ''
+                  }`}
+                  title={bm.name}
+                >
+                  <FolderOpen size={11} />
+                  {bm.name}
+                  <ChevronRight size={10} className={`transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                </button>
+                {/* Folder dropdown */}
+                {isOpen && (
+                  <div className="absolute left-0 top-full mt-0.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded shadow-xl z-40 min-w-[140px] py-0.5">
+                    {bm.children.length === 0 && (
+                      <span className="text-xs text-[var(--color-textMuted,var(--color-textSecondary))] italic px-3 py-1 block select-none">Empty folder</span>
+                    )}
+                    {bm.children.map((child, cIdx) => {
+                      if (child.isFolder) return null; // no nested folders rendered
+                      const childUrl = baseUrl + child.path;
+                      const isActive = child.path === currentPath;
+                      return (
+                        <button
+                          key={cIdx}
+                          onClick={() => {
+                            setCurrentUrl(childUrl);
+                            setInputUrl(childUrl);
+                            setLoadError('');
+                            navigateToUrl(childUrl);
+                          }}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setBmContextMenu({ x: e.clientX, y: e.clientY, idx, folderPath: [cIdx] });
+                          }}
+                          className={`w-full text-left px-3 py-1 text-xs hover:bg-[var(--color-surfaceHover)] transition-colors whitespace-nowrap flex items-center gap-1 ${
+                            isActive ? 'text-yellow-400 font-semibold' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)]'
+                          }`}
+                          title={child.path}
+                        >
+                          {isActive && <Star size={9} fill="currentColor" />}
+                          {child.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          // ---- Regular bookmark chip ----
+          const bookmarkUrl = baseUrl + bm.path;
+          const isActive = bm.path === currentPath;
+
+          return editingBmIdx === idx ? (
+            <input
+              key={idx}
+              ref={editBmRef}
+              type="text"
+              value={editBmName}
+              onChange={(e) => setEditBmName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleRenameBookmark(idx, editBmName);
+                  setEditingBmIdx(null);
+                } else if (e.key === 'Escape') {
+                  setEditingBmIdx(null);
+                }
+              }}
+              onBlur={() => {
+                handleRenameBookmark(idx, editBmName);
+                setEditingBmIdx(null);
+              }}
+              className="text-xs px-2 py-0.5 rounded bg-[var(--color-background)] border border-[var(--color-primary)] text-[var(--color-text)] w-28 focus:outline-none"
+            />
+          ) : (
+            <button
+              key={idx}
+              draggable
+              onDragStart={handleDragStart(idx)}
+              onDragOver={handleDragOver(idx)}
+              onDrop={handleDrop(idx)}
+              onDragEnd={handleDragEnd}
+              onClick={() => {
+                setCurrentUrl(bookmarkUrl);
+                setInputUrl(bookmarkUrl);
+                setLoadError('');
+                navigateToUrl(bookmarkUrl);
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setBmContextMenu({ x: e.clientX, y: e.clientY, idx });
+              }}
+              className={`text-xs px-2 py-0.5 rounded hover:bg-[var(--color-surfaceHover)] transition-colors whitespace-nowrap flex-shrink-0 flex items-center gap-1 ${
+                dragOverIdx === idx ? 'ring-1 ring-[var(--color-primary)]' : ''
+              } ${
+                isActive
+                  ? 'text-yellow-400 font-semibold bg-[var(--color-surfaceHover)]'
+                  : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)]'
+              }`}
+              title={bm.path}
+            >
+              {isActive && <Star size={9} fill="currentColor" />}
+              {bm.name}
+            </button>
+          );
+        })}
+
+        {(connection?.httpBookmarks || []).length === 0 && (
+          <span className="text-xs text-[var(--color-textMuted,var(--color-textSecondary))] italic select-none">Right-click bar to add folders — use ★ to save pages</span>
+        )}
+
+        {/* ---- Bookmark chip / folder Context Menu ---- */}
+        {bmContextMenu && (
+          <div
+            ref={contextMenuRef}
+            className="fixed bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 z-50 min-w-[170px]"
+            style={{ left: bmContextMenu.x, top: bmContextMenu.y }}
+          >
+            {/* If inside a folder child */}
+            {bmContextMenu.folderPath ? (
+              <>
+                <button
+                  className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[var(--color-surfaceHover)] hover:text-red-300 flex items-center gap-2"
+                  onClick={() => {
+                    handleRemoveFromFolder(bmContextMenu.idx, bmContextMenu.folderPath![0]);
+                    setBmContextMenu(null);
+                  }}
+                >
+                  <Trash2 size={12} /> Remove from folder
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                  onClick={() => {
+                    const bm = (connection?.httpBookmarks || [])[bmContextMenu.idx];
+                    if (bm) {
+                      setEditBmName(bm.name);
+                      setEditingBmIdx(bmContextMenu.idx);
+                    }
+                    setBmContextMenu(null);
+                  }}
+                >
+                  <Pencil size={12} /> Rename
+                </button>
+                {/* Copy URL — only for leaf bookmarks */}
+                {!(connection?.httpBookmarks || [])[bmContextMenu.idx]?.isFolder && (
+                  <button
+                    className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                    onClick={() => {
+                      const bm = (connection?.httpBookmarks || [])[bmContextMenu.idx];
+                      if (bm && !bm.isFolder) {
+                        const baseUrl = buildTargetUrl().replace(/\/+$/, '');
+                        navigator.clipboard.writeText(baseUrl + bm.path).catch(() => {});
+                      }
+                      setBmContextMenu(null);
+                    }}
+                  >
+                    <Copy size={12} /> Copy URL
+                  </button>
+                )}
+                {/* Open externally — only for leaf bookmarks */}
+                {!(connection?.httpBookmarks || [])[bmContextMenu.idx]?.isFolder && (
+                  <button
+                    className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                    onClick={() => {
+                      const bm = (connection?.httpBookmarks || [])[bmContextMenu.idx];
+                      if (bm && !bm.isFolder) {
+                        const baseUrl = buildTargetUrl().replace(/\/+$/, '');
+                        invoke('open_url_external', { url: baseUrl + bm.path }).catch(() => {
+                          window.open(baseUrl + bm.path, '_blank', 'noopener,noreferrer');
+                        });
+                      }
+                      setBmContextMenu(null);
+                    }}
+                  >
+                    <ExternalLink size={12} /> Open externally
+                  </button>
+                )}
+                <div className="border-t border-[var(--color-border)] my-1" />
+                {/* Move to folder — available folders listed */}
+                {!(connection?.httpBookmarks || [])[bmContextMenu.idx]?.isFolder &&
+                  (connection?.httpBookmarks || []).some((b, i) => b.isFolder && i !== bmContextMenu.idx) && (
+                    <>
+                      {(connection?.httpBookmarks || []).map((b, i) =>
+                        b.isFolder && i !== bmContextMenu.idx ? (
+                          <button
+                            key={i}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                            onClick={() => {
+                              handleMoveToFolder(bmContextMenu.idx, i);
+                              setBmContextMenu(null);
+                            }}
+                          >
+                            <FolderOpen size={12} /> Move to {b.name}
+                          </button>
+                        ) : null,
+                      )}
+                      <div className="border-t border-[var(--color-border)] my-1" />
+                    </>
+                  )}
+                {bmContextMenu.idx > 0 && (
+                  <button
+                    className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                    onClick={() => {
+                      handleMoveBookmark(bmContextMenu.idx, bmContextMenu.idx - 1);
+                      setBmContextMenu(null);
+                    }}
+                  >
+                    <ArrowLeft size={12} /> Move left
+                  </button>
+                )}
+                {bmContextMenu.idx < (connection?.httpBookmarks || []).length - 1 && (
+                  <button
+                    className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                    onClick={() => {
+                      handleMoveBookmark(bmContextMenu.idx, bmContextMenu.idx + 1);
+                      setBmContextMenu(null);
+                    }}
+                  >
+                    <ArrowRight size={12} /> Move right
+                  </button>
+                )}
+                <div className="border-t border-[var(--color-border)] my-1" />
+                <button
+                  className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[var(--color-surfaceHover)] hover:text-red-300 flex items-center gap-2"
+                  onClick={() => {
+                    handleRemoveBookmark(bmContextMenu.idx);
+                    setBmContextMenu(null);
+                  }}
+                >
+                  <Trash2 size={12} /> Remove
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ---- Bar background Context Menu (right-click empty area) ---- */}
+        {bmBarContextMenu && (
+          <div
+            ref={contextMenuRef}
+            className="fixed bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 z-50 min-w-[170px]"
+            style={{ left: bmBarContextMenu.x, top: bmBarContextMenu.y }}
+          >
+            <button
+              className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+              onClick={() => {
+                handleAddFolder();
+                setBmBarContextMenu(null);
+              }}
+            >
+              <FolderPlus size={12} /> New folder
+            </button>
+            <button
+              className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+              onClick={() => {
+                handleAddBookmark();
+                setBmBarContextMenu(null);
+              }}
+            >
+              <Star size={12} /> Bookmark this page
+            </button>
+            {(connection?.httpBookmarks || []).length > 0 && (
+              <>
+                <div className="border-t border-[var(--color-border)] my-1" />
+                <button
+                  className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[var(--color-surfaceHover)] hover:text-red-300 flex items-center gap-2"
+                  onClick={() => {
+                    handleDeleteAllBookmarks();
+                    setBmBarContextMenu(null);
+                  }}
+                >
+                  <Trash2 size={12} /> Delete all bookmarks
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Content Area */}
       <div className="flex-1 relative">
+        {/* Proxy-dead banner — shown when the keepalive detects a dead proxy */}
+        {hasAuth && !proxyAlive && !isLoading && !loadError && (
+          <div className="absolute top-0 inset-x-0 z-20 bg-red-900/90 border-b border-red-700 px-4 py-2 flex items-center justify-between text-xs text-red-200">
+            <div className="flex items-center gap-2">
+              <WifiOff size={14} className="text-red-400" />
+              <span>Internal proxy session died unexpectedly.</span>
+            </div>
+            <button
+              onClick={handleRestartProxy}
+              disabled={proxyRestarting}
+              className="flex items-center gap-1 px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={proxyRestarting ? 'animate-spin' : ''} />
+              {proxyRestarting ? 'Restarting…' : 'Reconnect proxy'}
+            </button>
+          </div>
+        )}
+
         {isLoading && (
           <div className="absolute inset-0 bg-gray-900 flex items-center justify-center z-10">
             <div className="text-center">
@@ -657,12 +1457,18 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                     <li>A firewall is blocking the connection</li>
                     <li>The hostname or port may be incorrect</li>
                     <li>Network connectivity issues between you and the target</li>
+                    <li>The internal proxy session may have died</li>
                   </ul>
                 </div>
                 <div className="flex items-center space-x-3">
                   <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
                     <RefreshCw size={14} /> <span>Try Again</span>
                   </button>
+                  {hasAuth && (
+                    <button onClick={handleRestartProxy} disabled={proxyRestarting} className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors disabled:opacity-50">
+                      <RefreshCw size={14} className={proxyRestarting ? 'animate-spin' : ''} /> <span>{proxyRestarting ? 'Restarting…' : 'Reconnect Proxy'}</span>
+                    </button>
+                  )}
                   <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
@@ -703,6 +1509,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                     <li>The website blocks embedding (X-Frame-Options)</li>
                     <li>CORS restrictions prevent loading</li>
                     <li>The server is not responding</li>
+                    <li>The internal proxy may have died unexpectedly</li>
                     <li>Invalid URL or hostname</li>
                   </ul>
                 </div>
@@ -710,6 +1517,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
                     <RefreshCw size={14} /> <span>Try Again</span>
                   </button>
+                  {hasAuth && (
+                    <button onClick={handleRestartProxy} disabled={proxyRestarting} className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors disabled:opacity-50">
+                      <RefreshCw size={14} className={proxyRestarting ? 'animate-spin' : ''} /> <span>{proxyRestarting ? 'Restarting…' : 'Reconnect Proxy'}</span>
+                    </button>
+                  )}
                   <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
@@ -742,6 +1554,28 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           onReject={handleTrustReject}
         />
       )}
+
+      {/* New Folder dialog (themed) */}
+      <InputDialog
+        isOpen={showNewFolderDialog}
+        title="New Folder"
+        message="Enter a name for the new bookmark folder:"
+        placeholder="Folder name"
+        confirmText="Create"
+        onConfirm={confirmAddFolder}
+        onCancel={() => setShowNewFolderDialog(false)}
+      />
+
+      {/* Delete all bookmarks confirmation */}
+      <ConfirmDialog
+        isOpen={showDeleteAllConfirm}
+        title="Delete All Bookmarks"
+        message="Are you sure you want to delete all bookmarks for this connection? This cannot be undone."
+        confirmText="Delete All"
+        variant="danger"
+        onConfirm={confirmDeleteAllBookmarks}
+        onCancel={() => setShowDeleteAllConfirm(false)}
+      />
     </div>
   );
 };
