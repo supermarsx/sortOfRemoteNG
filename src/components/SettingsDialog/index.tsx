@@ -19,6 +19,7 @@ import {
   MousePointerClick,
   Archive,
   CloudCog,
+  Fingerprint,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig, defaultSSHTerminalConfig } from '../../types/settings';
@@ -36,6 +37,7 @@ import BehaviorSettings from './sections/BehaviorSettings';
 import SSHTerminalSettings from './sections/SSHTerminalSettings';
 import BackupSettings from './sections/BackupSettings';
 import CloudSyncSettings from './sections/CloudSyncSettings';
+import { TrustVerificationSettings } from './sections/TrustVerificationSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
@@ -77,6 +79,9 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'encryptionAlgorithm', 'blockCipherMode', 'keyDerivationIterations',
     'autoBenchmarkIterations', 'benchmarkTimeSeconds', 'totpEnabled',
     'totpIssuer', 'totpDigits', 'totpPeriod',
+  ],
+  trust: [
+    'tlsTrustPolicy', 'sshTrustPolicy', 'showTrustIdentityInfo', 'certExpiryWarningDays',
   ],
   performance: [
     'maxConcurrentConnections', 'connectionTimeout', 'retryAttempts', 'retryDelay',
@@ -442,6 +447,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     { id: 'theme', label: t('settings.theme'), icon: Palette },
     { id: 'layout', label: 'Layout', icon: LayoutGrid },
     { id: 'security', label: t('settings.security'), icon: Shield },
+    { id: 'trust', label: 'Trust & Verify', icon: Fingerprint },
     { id: 'performance', label: t('settings.performance'), icon: Zap },
     { id: 'backup', label: 'Backup', icon: Archive },
     { id: 'cloudSync', label: 'Cloud Sync', icon: CloudCog },
@@ -550,6 +556,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                   updateSettings={updateSettings}
                   handleBenchmark={handleBenchmark}
                   isBenchmarking={isBenchmarking}
+                />
+              )}
+
+              {activeTab === 'trust' && (
+                <TrustVerificationSettings
+                  settings={settings}
+                  updateSettings={updateSettings}
                 />
               )}
 
