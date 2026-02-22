@@ -26,6 +26,7 @@ import {
   Plus,
   FileCode,
   ScreenShare,
+  ArrowUpDown,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -68,6 +69,7 @@ import { ErrorLogBar } from "./components/ErrorLogBar";
 import { ConnectionDiagnostics } from "./components/ConnectionDiagnostics";
 import { BulkSSHCommander } from "./components/BulkSSHCommander";
 import { ScriptManager } from "./components/ScriptManager";
+import { InternalProxyManager } from "./components/InternalProxyManager";
 import { SyncBackupStatusBar } from "./components/SyncBackupStatusBar";
 import { BackupStatusPopup } from "./components/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "./components/CloudSyncStatusPopup";
@@ -99,6 +101,7 @@ const AppContent: React.FC = () => {
   const [importExportInitialTab, setImportExportInitialTab] = useState<'export' | 'import'>('export');
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showProxyMenu, setShowProxyMenu] = useState(false);
+  const [showInternalProxyManager, setShowInternalProxyManager] = useState(false);
   const [showWol, setShowWol] = useState(false);
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -1771,6 +1774,15 @@ const AppContent: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-1">
+          {appSettings.showInternalProxyIcon && (
+            <button
+              onClick={() => setShowInternalProxyManager(true)}
+              className="app-bar-button p-2"
+              title="Internal Proxy Manager"
+            >
+              <ArrowUpDown size={14} />
+            </button>
+          )}
           {appSettings.showProxyMenuIcon && (
             <button
               onClick={() => setShowProxyMenu(true)}
@@ -2081,6 +2093,11 @@ const AppContent: React.FC = () => {
       <ProxyChainMenu
         isOpen={showProxyMenu}
         onClose={() => setShowProxyMenu(false)}
+      />
+
+      <InternalProxyManager
+        isOpen={showInternalProxyManager}
+        onClose={() => setShowInternalProxyManager(false)}
       />
 
       <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />

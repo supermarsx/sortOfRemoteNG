@@ -120,6 +120,7 @@ export interface GlobalSettings {
   showDevtoolsIcon: boolean;
   showSecurityIcon: boolean;
   showProxyMenuIcon: boolean;
+  showInternalProxyIcon: boolean;
   showShortcutManagerIcon: boolean;
   showWolIcon: boolean;
   showBulkSSHIcon: boolean;

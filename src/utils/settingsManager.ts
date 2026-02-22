@@ -79,6 +79,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showDevtoolsIcon: true,
   showSecurityIcon: true,
   showProxyMenuIcon: true,
+  showInternalProxyIcon: true,
   showShortcutManagerIcon: true,
   showWolIcon: true,
   showBulkSSHIcon: true,

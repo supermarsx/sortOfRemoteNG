@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
   Save,
@@ -69,7 +69,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'persistWindowSize', 'persistWindowPosition', 'persistSidebarWidth',
     'persistSidebarPosition', 'persistSidebarCollapsed', 'enableTabReorder',
     'enableConnectionReorder', 'middleClickCloseTab', 'showQuickConnectIcon', 'showCollectionSwitcherIcon',
-    'showImportExportIcon', 'showSettingsIcon', 'showProxyMenuIcon',
+    'showImportExportIcon', 'showSettingsIcon', 'showProxyMenuIcon', 'showInternalProxyIcon',
     'showShortcutManagerIcon', 'showPerformanceMonitorIcon', 'showActionLogIcon',
     'showDevtoolsIcon', 'showSecurityIcon', 'showWolIcon',
   ],
@@ -142,6 +142,7 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
   showDevtoolsIcon: true,
   showSecurityIcon: true,
   showProxyMenuIcon: true,
+  showInternalProxyIcon: true,
   showShortcutManagerIcon: true,
   showWolIcon: true,
   maxConcurrentConnections: 10,
@@ -238,6 +239,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     if (!settings) return;
     
     try {
+      // Flush any pending debounced save first, then do the explicit save
+      await flushDebouncedSave();
       await settingsManager.saveSettings(settings);
       
       // Apply language change
@@ -327,40 +330,94 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     }
   };
 
+  // Debounced save: accumulate changes for 1.5s before writing to disk.
+  // UI state updates happen immediately; only the persist call is debounced.
+  const debounceSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSettingsRef = useRef<GlobalSettings | null>(null);
+
+  // Flush any pending debounced save (used on explicit Save click and unmount)
+  const flushDebouncedSave = useCallback(async () => {
+    if (debounceSaveRef.current) {
+      clearTimeout(debounceSaveRef.current);
+      debounceSaveRef.current = null;
+    }
+    const pending = pendingSettingsRef.current;
+    if (pending) {
+      pendingSettingsRef.current = null;
+      try {
+        await settingsManager.saveSettings(pending, { silent: true });
+        showAutoSave('success');
+      } catch (error) {
+        console.error('Failed to flush debounced save:', error);
+        showAutoSave('error');
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsManager, t]);
+
+  // Flush on unmount so unsaved edits aren't lost
+  useEffect(() => {
+    return () => {
+      if (debounceSaveRef.current) {
+        clearTimeout(debounceSaveRef.current);
+      }
+      const pending = pendingSettingsRef.current;
+      if (pending) {
+        settingsManager.saveSettings(pending, { silent: true }).catch(() => {});
+      }
+    };
+  }, [settingsManager]);
+
+  /** Schedule a debounced persist of settings (1.5 s after last change). */
+  const scheduleSave = useCallback((newSettings: GlobalSettings) => {
+    pendingSettingsRef.current = newSettings;
+    if (debounceSaveRef.current) {
+      clearTimeout(debounceSaveRef.current);
+    }
+    debounceSaveRef.current = setTimeout(async () => {
+      debounceSaveRef.current = null;
+      const toSave = pendingSettingsRef.current;
+      if (!toSave) return;
+      pendingSettingsRef.current = null;
+      try {
+        await settingsManager.saveSettings(toSave, { silent: true });
+        showAutoSave('success');
+      } catch (error) {
+        console.error('Failed to auto save settings:', error);
+        showAutoSave('error');
+      }
+    }, 1500);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsManager, t]);
+
   const updateSettings = async (updates: Partial<GlobalSettings>) => {
     if (!settings) return;
 
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);
 
-    try {
-      // Use silent save for auto-save to prevent action log spam
-      await settingsManager.saveSettings(newSettings, { silent: true });
-
-      if (updates.language && updates.language !== i18n.language) {
-        if (updates.language !== "en") {
-          await loadLanguage(updates.language);
-        }
-        await i18n.changeLanguage(updates.language);
+    // Apply language/theme changes immediately (UI responsiveness)
+    if (updates.language && updates.language !== i18n.language) {
+      if (updates.language !== "en") {
+        await loadLanguage(updates.language);
       }
-
-      if (
-        updates.theme ||
-        updates.colorScheme ||
-        typeof updates.primaryAccentColor !== "undefined"
-      ) {
-        themeManager.applyTheme(
-          newSettings.theme,
-          newSettings.colorScheme,
-          newSettings.primaryAccentColor,
-        );
-      }
-
-      showAutoSave('success');
-    } catch (error) {
-      console.error('Failed to auto save settings:', error);
-      showAutoSave('error');
+      await i18n.changeLanguage(updates.language);
     }
+
+    if (
+      updates.theme ||
+      updates.colorScheme ||
+      typeof updates.primaryAccentColor !== "undefined"
+    ) {
+      themeManager.applyTheme(
+        newSettings.theme,
+        newSettings.colorScheme,
+        newSettings.primaryAccentColor,
+      );
+    }
+
+    // Debounce the actual disk write
+    scheduleSave(newSettings);
   };
 
   const updateProxy = async (updates: Partial<ProxyConfig>) => {
@@ -372,14 +429,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     };
     setSettings(newSettings);
 
-    try {
-      // Use silent save for auto-save to prevent action log spam
-      await settingsManager.saveSettings(newSettings, { silent: true });
-      showAutoSave('success');
-    } catch (error) {
-      console.error('Failed to auto save settings:', error);
-      showAutoSave('error');
-    }
+    // Debounce the actual disk write
+    scheduleSave(newSettings);
   };
 
   if (!isOpen || !settings) return null;

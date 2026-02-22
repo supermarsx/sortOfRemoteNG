@@ -11,18 +11,20 @@ import {
   Globe,
   Lock,
   AlertTriangle,
-  User
+  User,
+  ServerCrash,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  Settings
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
 import { useConnections } from '../contexts/useConnections';
 
-interface HttpResponse {
-  status: number;
-  headers: Record<string, string>;
-  body: string;
-  content_type: string | null;
-  final_url: string;
-  response_time_ms: number;
+interface ProxyMediatorResponse {
+  local_port: number;
+  session_id: string;
+  proxy_url: string;
 }
 
 interface WebBrowserProps {
@@ -33,338 +35,189 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const { state } = useConnections();
   const connection = state.connections.find(c => c.id === session.connectionId);
 
-  const [currentUrl, setCurrentUrl] = useState(() => {
+  // Resolve the best auth credentials from the saved connection config.
+  // Prefer the dedicated basicAuth fields (set by the HTTP editor), then fall
+  // back to the generic username/password fields that older entries might use.
+  const resolvedCreds = React.useMemo<{ username: string; password: string } | null>(() => {
+    if (!connection) return null;
+    if (connection.authType === 'basic' && connection.basicAuthUsername && connection.basicAuthPassword) {
+      return { username: connection.basicAuthUsername, password: connection.basicAuthPassword };
+    }
+    if (connection.username && connection.password) {
+      return { username: connection.username, password: connection.password };
+    }
+    return null;
+  }, [connection]);
+
+  // True when any credentials are configured — all traffic will be proxied via
+  // the Rust backend so the browser never sees a 401 / auth popup.
+  const hasAuth = resolvedCreds !== null;
+
+  const buildTargetUrl = useCallback(() => {
     const protocol = session.protocol === 'https' ? 'https' : 'http';
-    const port = session.protocol === 'https' ? 443 : 80;
-    const urlPort = port === 80 || port === 443 ? '' : `:${port}`;
-    const baseUrl = `${protocol}://${session.hostname}${urlPort}`;
-    return baseUrl;
-  });
+    const defaultPort = session.protocol === 'https' ? 443 : 80;
+    const port = connection?.port || defaultPort;
+    const portSuffix = port === defaultPort ? '' : `:${port}`;
+    return `${protocol}://${session.hostname}${portSuffix}`;
+  }, [connection, session.protocol, session.hostname]);
+
+  const [currentUrl, setCurrentUrl] = useState(buildTargetUrl);
   const [inputUrl, setInputUrl] = useState(currentUrl);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>('');
   const [isSecure, setIsSecure] = useState(session.protocol === 'https');
-  const [htmlContent, setHtmlContent] = useState<string>('');
-  const [useProxy, setUseProxy] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const iconCount = 2 + (connection?.authType === 'basic' ? 1 : 0);
+  // Track the active proxy session via refs so cleanup always sees the latest
+  // values regardless of render cycle.
+  const proxySessionIdRef = useRef<string>('');
+  const proxyUrlRef = useRef<string>('');
+  const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Timeout for loading (30 seconds)
+  const LOAD_TIMEOUT_MS = 30_000;
+
+  const iconCount = 2 + (hasAuth ? 1 : 0);
   const iconPadding = 12 + iconCount * 18;
 
-  // Check if basic auth is required - when true, ALL requests go through Rust backend
-  const requiresBasicAuth = connection?.authType === 'basic' && 
-                            connection.basicAuthUsername && 
-                            connection.basicAuthPassword;
+  // ------------------------------------------------------------------
+  // Proxy lifecycle helpers
+  // ------------------------------------------------------------------
 
-  // Create a blob URL map for proxied resources
-  const blobUrlCache = useRef<Map<string, string>>(new Map());
-
-  // Cleanup blob URLs on unmount
-  useEffect(() => {
-    const cache = blobUrlCache.current;
-    return () => {
-      cache.forEach((blobUrl) => URL.revokeObjectURL(blobUrl));
-      cache.clear();
-    };
-  }, []);
-
-  // Proxy a resource and return a blob URL
-  const proxyResource = useCallback(async (url: string): Promise<string> => {
-    // Check cache first
-    if (blobUrlCache.current.has(url)) {
-      return blobUrlCache.current.get(url)!;
-    }
-
+  /** Stop a running proxy session. */
+  const stopProxy = useCallback(async (sessionId?: string) => {
+    const id = sessionId ?? proxySessionIdRef.current;
+    if (!id) return;
     try {
-      const response: HttpResponse = await invoke('http_get', {
-        url,
-        username: requiresBasicAuth ? connection?.basicAuthUsername : null,
-        password: requiresBasicAuth ? connection?.basicAuthPassword : null,
-        headers: null,
-      });
-
-      if (response.status >= 200 && response.status < 400) {
-        // Determine MIME type
-        const contentType = response.content_type || 'application/octet-stream';
-        
-        // Convert response body to blob - check if it's binary data (base64)
-        let blob: Blob;
-        if (contentType.startsWith('image/') || contentType.includes('font') || 
-            contentType.includes('application/javascript') || contentType.includes('text/css')) {
-          // For binary content, try to decode as base64 if the backend sends it that way
-          // Otherwise use the raw body
-          try {
-            const binaryString = atob(response.body);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            blob = new Blob([bytes], { type: contentType });
-          } catch {
-            // Not base64, use as text
-            blob = new Blob([response.body], { type: contentType });
-          }
-        } else {
-          blob = new Blob([response.body], { type: contentType });
-        }
-        
-        const blobUrl = URL.createObjectURL(blob);
-        blobUrlCache.current.set(url, blobUrl);
-        return blobUrl;
-      }
-    } catch (error) {
-      console.warn('Failed to proxy resource:', url, error);
+      await invoke('stop_basic_auth_proxy', { sessionId: id });
+    } catch {
+      // Session may already be gone – ignore
     }
-    
-    return url; // Fall back to original URL
-  }, [connection, requiresBasicAuth]);
-
-  // Inject a script to intercept link clicks, form submissions, and resource loading
-  const injectNavigationInterceptor = useCallback((html: string, baseUrl: string): string => {
-    const interceptorScript = `
-      <script>
-        (function() {
-          // Map to track pending resource proxy requests
-          var pendingResources = {};
-
-          // Listen for proxied resource responses from parent
-          window.addEventListener('message', function(e) {
-            if (e.data && e.data.type === 'resource_proxied') {
-              // Find images with matching src or originalSrc and update them
-              var imgs = document.querySelectorAll('img[data-original-src="' + e.data.originalUrl + '"], img[src="' + e.data.originalUrl + '"]');
-              imgs.forEach(function(img) {
-                img.src = e.data.blobUrl;
-              });
-              // Also try to find by element ID
-              if (e.data.elementId && pendingResources[e.data.elementId]) {
-                pendingResources[e.data.elementId].src = e.data.blobUrl;
-                delete pendingResources[e.data.elementId];
-              }
-            }
-          });
-
-          // Intercept link clicks
-          document.addEventListener('click', function(e) {
-            var target = e.target;
-            while (target && target.tagName !== 'A') {
-              target = target.parentElement;
-            }
-            if (target && target.href && !target.href.startsWith('javascript:') && !target.href.startsWith('#') && !target.href.startsWith('blob:')) {
-              e.preventDefault();
-              window.parent.postMessage({ type: 'navigate', url: target.href }, '*');
-            }
-          }, true);
-
-          // Intercept form submissions (both GET and POST)
-          document.addEventListener('submit', function(e) {
-            var form = e.target;
-            e.preventDefault();
-            var formData = new FormData(form);
-            var url = form.action || window.location.href;
-            
-            if (form.method && form.method.toLowerCase() === 'post') {
-              // For POST, serialize form data
-              var data = {};
-              formData.forEach(function(value, key) { data[key] = value; });
-              window.parent.postMessage({ 
-                type: 'form_submit', 
-                url: url, 
-                method: 'POST',
-                data: data
-              }, '*');
-            } else {
-              // GET request
-              var params = new URLSearchParams(formData);
-              var separator = url.includes('?') ? '&' : '?';
-              window.parent.postMessage({ type: 'navigate', url: url + separator + params.toString() }, '*');
-            }
-          }, true);
-
-          // Request resource proxying for failed images
-          document.addEventListener('error', function(e) {
-            var target = e.target;
-            if (target.tagName === 'IMG' && target.src && !target.src.startsWith('blob:') && !target.src.startsWith('data:') && !target.dataset.proxyAttempted) {
-              target.dataset.proxyAttempted = 'true';
-              var elementId = target.id || ('img_' + Math.random().toString(36).substr(2, 9));
-              pendingResources[elementId] = target;
-              window.parent.postMessage({ type: 'proxy_resource', url: target.src, elementId: elementId }, '*');
-            }
-          }, true);
-
-          // Also proactively try to proxy images that might need auth
-          setTimeout(function() {
-            document.querySelectorAll('img').forEach(function(img) {
-              // Proxy ALL images when basic auth is configured (data-needs-proxy attribute or any external image)
-              var needsProxy = img.dataset.needsProxy === 'true' || 
-                              (img.src && !img.src.startsWith('blob:') && !img.src.startsWith('data:'));
-              if (needsProxy && img.src && !img.dataset.proxyAttempted) {
-                img.dataset.proxyAttempted = 'true';
-                var elementId = img.id || ('img_' + Math.random().toString(36).substr(2, 9));
-                pendingResources[elementId] = img;
-                // Stop the browser from loading the image directly (prevents auth dialog)
-                var originalSrc = img.src;
-                img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // Tiny transparent gif
-                img.dataset.originalSrc = originalSrc;
-                window.parent.postMessage({ type: 'proxy_resource', url: originalSrc, elementId: elementId }, '*');
-              }
-            });
-          }, 50);
-        })();
-      </script>
-    `;
-    
-    // Insert the script before </body> or at the end
-    if (html.includes('</body>')) {
-      return html.replace('</body>', interceptorScript + '</body>');
-    } else if (html.includes('</html>')) {
-      return html.replace('</html>', interceptorScript + '</html>');
-    } else {
-      return html + interceptorScript;
+    if (!sessionId || sessionId === proxySessionIdRef.current) {
+      proxySessionIdRef.current = '';
+      proxyUrlRef.current = '';
     }
   }, []);
 
-  // Fetch content via Rust backend with credentials - ALL basic auth requests go through here
-  const fetchWithCredentials = useCallback(async (url: string, addToHistory = true, method: string = 'GET', postData?: Record<string, string>) => {
+  /**
+   * Navigate to a URL.  When auth is configured a local proxy is started on
+   * the Rust backend and the iframe loads through it — every sub-resource
+   * request (CSS, JS, images, fonts…) automatically carries the auth
+   * credentials without ever showing a native browser auth prompt.
+   */
+  const navigateToUrl = useCallback(async (url: string, addToHistory = true) => {
     setIsLoading(true);
     setLoadError('');
-    setHtmlContent('');
+
+    // Cancel any previous load timeout
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
+
+    // Start a timeout watchdog so we don't spin forever
+    loadTimeoutRef.current = setTimeout(() => {
+      setIsLoading(false);
+      setLoadError(`Connection timed out after ${LOAD_TIMEOUT_MS / 1000} seconds. The server at ${url} did not respond.`);
+    }, LOAD_TIMEOUT_MS);
 
     try {
-      debugLog('WebBrowser', 'Fetching via Rust backend', { url, method, hasAuth: requiresBasicAuth });
-      
-      // Use http_fetch for full control, or http_get/http_post for simpler requests
-      let response: HttpResponse;
-      
-      if (method === 'POST' && postData) {
-        // Use http_post for POST requests
-        const body = new URLSearchParams(postData).toString();
-        response = await invoke('http_post', {
-          url,
-          body,
-          username: requiresBasicAuth ? connection?.basicAuthUsername : null,
-          password: requiresBasicAuth ? connection?.basicAuthPassword : null,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      // Tear down any previous proxy session
+      await stopProxy();
+
+      if (hasAuth && resolvedCreds) {
+        debugLog('WebBrowser', 'Starting auth proxy for', { url });
+
+        const response = await invoke<ProxyMediatorResponse>('start_basic_auth_proxy', {
+          config: {
+            target_url: url,
+            username: resolvedCreds.username,
+            password: resolvedCreds.password,
+            local_port: 0,
+            verify_ssl: (connection as Record<string, unknown>)?.httpVerifySsl ?? true,
+          },
         });
+
+        proxySessionIdRef.current = response.session_id;
+        proxyUrlRef.current = response.proxy_url;
+
+        // Point the iframe at the local proxy — all requests now carry auth
+        if (iframeRef.current) {
+          iframeRef.current.src = response.proxy_url;
+        }
       } else {
-        // Use http_get for GET requests
-        response = await invoke('http_get', {
-          url,
-          username: requiresBasicAuth ? connection?.basicAuthUsername : null,
-          password: requiresBasicAuth ? connection?.basicAuthPassword : null,
-          headers: null,
-        });
+        // No auth — load directly
+        if (iframeRef.current) {
+          iframeRef.current.src = url;
+        }
       }
 
-      if (response.status >= 200 && response.status < 400) {
-        // Rewrite relative URLs to absolute
-        const finalUrl = response.final_url || url;
-        const baseUrl = new URL(finalUrl);
-        let content = response.body;
-        
-        // Simple URL rewriting for resources
-        content = content.replace(
-          /(href|src)=["'](?!https?:\/\/|data:|javascript:|#|blob:)([^"']+)["']/gi,
-          (match, attr, path) => {
-            const absoluteUrl = new URL(path, baseUrl).href;
-            return `${attr}="${absoluteUrl}"`;
-          }
-        );
+      setCurrentUrl(url);
+      setInputUrl(url);
+      setIsSecure(url.startsWith('https'));
 
-        // When basic auth is required, proactively proxy all images to prevent auth dialogs
-        if (requiresBasicAuth) {
-          // Mark all images for immediate proxying via message events
-          // The interceptor script will handle proxying them
-          const imgRegex = /<img\s+([^>]*src=["']([^"']+)["'][^>]*)>/gi;
-          content = content.replace(imgRegex, (match, attrs, src) => {
-            // Skip already processed images (blob: or data:)
-            if (src.startsWith('blob:') || src.startsWith('data:')) {
-              return match;
-            }
-            // Add a data attribute to mark for proxying
-            return match.replace(/<img\s+/, '<img data-needs-proxy="true" ');
-          });
-        }
-
-        // Inject navigation interceptor for proxy mode
-        content = injectNavigationInterceptor(content, finalUrl);
-
-        setHtmlContent(content);
-        setCurrentUrl(finalUrl);
-        setInputUrl(finalUrl);
-        setUseProxy(true);
-        
-        // Update history
-        if (addToHistory) {
-          setHistory(prev => {
-            const newHistory = prev.slice(0, historyIndex + 1);
-            newHistory.push(finalUrl);
-            return newHistory;
-          });
-          setHistoryIndex(prev => prev + 1);
-        }
-        
-        debugLog('WebBrowser', 'Content loaded via Rust backend', { finalUrl, status: response.status });
-      } else {
-        throw new Error(`HTTP ${response.status}`);
+      if (addToHistory) {
+        setHistory(prev => [...prev.slice(0, historyIndex + 1), url]);
+        setHistoryIndex(prev => prev + 1);
       }
+
+      debugLog('WebBrowser', 'Navigation initiated', { url, hasAuth });
     } catch (error) {
-      console.error('Rust backend fetch failed:', error);
-      setLoadError(`Failed to load page: ${error instanceof Error ? error.message : String(error)}`);
-      // Fall back to iframe only if basic auth is not required
-      if (!requiresBasicAuth) {
-        setUseProxy(false);
-        setHtmlContent('');
+      console.error('Navigation failed:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+
+      if (msg.includes('401') || msg.includes('Unauthorized')) {
+        setLoadError(
+          !resolvedCreds
+            ? 'Authentication required — No credentials configured for this connection. Edit the connection and add Basic Auth credentials.'
+            : 'Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings.',
+        );
+      } else {
+        setLoadError(`Failed to load page: ${msg}`);
       }
-    } finally {
       setIsLoading(false);
     }
-  }, [connection, requiresBasicAuth, injectNavigationInterceptor, historyIndex]);
+  }, [hasAuth, resolvedCreds, connection, stopProxy, historyIndex]);
 
-  // Listen for navigation messages from the iframe - all go through Rust backend
+  // ------------------------------------------------------------------
+  // Effects
+  // ------------------------------------------------------------------
+
+  // Initial load
   useEffect(() => {
-    const handleMessage = async (event: MessageEvent) => {
-      if (!event.data) return;
+    navigateToUrl(currentUrl);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-      if (event.data.type === 'navigate' && event.data.url) {
-        // Navigate to the clicked URL through Rust backend
-        fetchWithCredentials(event.data.url);
-      } else if (event.data.type === 'form_submit' && event.data.url) {
-        // Handle form submission through Rust backend
-        if (event.data.method === 'POST') {
-          // POST requests go through Rust backend with proper body
-          fetchWithCredentials(event.data.url, true, 'POST', event.data.data);
-        } else {
-          // GET requests with form data
-          const params = new URLSearchParams(event.data.data).toString();
-          const separator = event.data.url.includes('?') ? '&' : '?';
-          fetchWithCredentials(event.data.url + separator + params);
-        }
-      } else if (event.data.type === 'proxy_resource' && event.data.url) {
-        // Proxy the resource through Rust backend and send blob URL back
-        const blobUrl = await proxyResource(event.data.url);
-        if (iframeRef.current?.contentWindow) {
-          iframeRef.current.contentWindow.postMessage({
-            type: 'resource_proxied',
-            originalUrl: event.data.url,
-            blobUrl: blobUrl,
-            elementId: event.data.elementId
-          }, '*');
+  // Cleanup proxy and timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
+      const id = proxySessionIdRef.current;
+      if (id) {
+        invoke('stop_basic_auth_proxy', { sessionId: id }).catch(() => {});
+      }
+    };
+  }, []);
+
+  // Track in-proxy navigation via the reporter script injected by the backend
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'proxy_navigate' && event.data.url) {
+        const proxyOrigin = proxyUrlRef.current;
+        if (proxyOrigin && event.data.url.startsWith(proxyOrigin)) {
+          const path = event.data.url.slice(proxyOrigin.length);
+          const realUrl = currentUrl.replace(/\/+$/, '') + path;
+          setInputUrl(realUrl);
         }
       }
     };
-
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [fetchWithCredentials, proxyResource]);
-
-  // Initial load with credentials if configured
-  useEffect(() => {
-    if (requiresBasicAuth) {
-      fetchWithCredentials(currentUrl);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentUrl]);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -378,69 +231,38 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     setCurrentUrl(url);
     setIsSecure(url.startsWith('https://'));
     setLoadError('');
-    
-    // Use proxy if auth is configured
-    if (requiresBasicAuth) {
-      fetchWithCredentials(url);
-    } else {
-      setUseProxy(false);
-      setHtmlContent('');
-      setIsLoading(true);
-    }
+    navigateToUrl(url);
   };
 
   const handleIframeLoad = () => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
     setIsLoading(false);
     setLoadError('');
   };
 
-  const handleIframeError = () => {
-    setIsLoading(false);
-    setLoadError('Failed to load the webpage. This might be due to CORS restrictions, authentication requirements, or the site being unavailable.');
-  };
-
   const handleRefresh = () => {
-    if (useProxy && requiresBasicAuth) {
-      fetchWithCredentials(currentUrl, false);
-    } else if (iframeRef.current) {
-      setIsLoading(true);
-      setLoadError('');
-      iframeRef.current.src = currentUrl;
-    }
+    navigateToUrl(currentUrl, false);
   };
 
-  const canGoBack = useProxy ? historyIndex > 0 : true;
-  const canGoForward = useProxy ? historyIndex < history.length - 1 : true;
+  const canGoBack = historyIndex > 0;
+  const canGoForward = historyIndex < history.length - 1;
 
   const handleBack = () => {
-    if (useProxy && requiresBasicAuth) {
-      if (historyIndex > 0) {
-        const newIndex = historyIndex - 1;
-        setHistoryIndex(newIndex);
-        fetchWithCredentials(history[newIndex], false);
-      }
-    } else if (iframeRef.current && iframeRef.current.contentWindow) {
-      try {
-        iframeRef.current.contentWindow.history.back();
-      } catch (error) {
-        console.warn('Cannot access iframe history due to CORS restrictions');
-      }
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      navigateToUrl(history[newIndex], false);
     }
   };
 
   const handleForward = () => {
-    if (useProxy && requiresBasicAuth) {
-      if (historyIndex < history.length - 1) {
-        const newIndex = historyIndex + 1;
-        setHistoryIndex(newIndex);
-        fetchWithCredentials(history[newIndex], false);
-      }
-    } else if (iframeRef.current && iframeRef.current.contentWindow) {
-      try {
-        iframeRef.current.contentWindow.history.forward();
-      } catch (error) {
-        console.warn('Cannot access iframe history due to CORS restrictions');
-      }
+    if (historyIndex < history.length - 1) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      navigateToUrl(history[newIndex], false);
     }
   };
 
@@ -457,7 +279,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   };
 
   const getAuthIcon = () => {
-    if (connection?.authType === 'basic') {
+    if (hasAuth) {
       return <span data-tooltip="Basic Authentication"><User size={14} className="text-blue-400" /></span>;
     }
     return null;
@@ -546,10 +368,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           )}
           <span className="text-gray-500">•</span>
           <span className="text-gray-400">Connected to {session.hostname}</span>
-          {connection?.authType === 'basic' && (
+          {hasAuth && (
             <>
               <span className="text-gray-500">•</span>
-              <span className="text-blue-400">Basic Auth: {connection.basicAuthUsername}</span>
+              <span className="text-blue-400">Basic Auth: {resolvedCreds?.username}</span>
             </>
           )}
         </div>
@@ -561,62 +383,124 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           <div className="absolute inset-0 bg-gray-900 flex items-center justify-center z-10">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
-              <p className="text-gray-400">Loading {currentUrl}...</p>
+              <p className="text-gray-400 mb-2">Loading {currentUrl}...</p>
+              <p className="text-gray-600 text-xs">Taking too long? <button onClick={() => { setIsLoading(false); setLoadError(`Connection timed out. The server at ${currentUrl} did not respond.`); }} className="text-blue-500 hover:text-blue-400 underline">Cancel</button></p>
             </div>
           </div>
         )}
 
         {loadError ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-8">
-            <AlertTriangle size={48} className="text-yellow-400 mb-4" />
-            <h3 className="text-lg font-medium text-white mb-2">Unable to load webpage</h3>
-            <p className="text-gray-400 mb-4 max-w-md">{loadError}</p>
-            <div className="space-y-2">
-              <button
-                onClick={handleRefresh}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-              >
-                Try Again
-              </button>
-              <div className="text-sm text-gray-500">
-                <p>Common issues:</p>
-                <ul className="list-disc list-inside mt-1 space-y-1">
-                  <li>The website blocks embedding (X-Frame-Options)</li>
-                  <li>CORS restrictions prevent loading</li>
-                  <li>Authentication required</li>
-                  <li>The server is not responding</li>
-                  <li>Invalid URL or hostname</li>
-                </ul>
-              </div>
-              <button
-                onClick={handleOpenExternal}
-                className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors mx-auto"
-              >
-                <ExternalLink size={16} />
-                <span>Open in New Tab</span>
-              </button>
-            </div>
+            {/* Categorized error screen */}
+            {loadError.includes('refused') || loadError.includes('Upstream request failed') || loadError.includes('proxy') ? (
+              // Internal proxy failure
+              <>
+                <div className="w-16 h-16 rounded-full bg-red-900/30 flex items-center justify-center mb-4">
+                  <ServerCrash size={32} className="text-red-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-1">Internal Proxy Error</h3>
+                <p className="text-gray-400 mb-4 max-w-lg text-sm">{loadError}</p>
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-gray-300 font-medium mb-2">Troubleshooting steps:</p>
+                  <ol className="list-decimal list-inside text-sm text-gray-400 space-y-1">
+                    <li>Open the <span className="text-blue-400">Internal Proxy Manager</span> from the toolbar and check the proxy status</li>
+                    <li>Verify the target host <span className="text-yellow-400">{session.hostname}</span> is reachable on your network</li>
+                    <li>Check the proxy error log for detailed failure information</li>
+                    <li>Try restarting the proxy session via the manager</li>
+                  </ol>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                    <RefreshCw size={14} /> <span>Retry Connection</span>
+                  </button>
+                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                    <ExternalLink size={14} /> <span>Open Externally</span>
+                  </button>
+                </div>
+              </>
+            ) : loadError.includes('timed out') ? (
+              // Timeout error
+              <>
+                <div className="w-16 h-16 rounded-full bg-yellow-900/30 flex items-center justify-center mb-4">
+                  <WifiOff size={32} className="text-yellow-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-1">Connection Timed Out</h3>
+                <p className="text-gray-400 mb-4 max-w-lg text-sm">{loadError}</p>
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-gray-300 font-medium mb-2">Possible causes:</p>
+                  <ul className="list-disc list-inside text-sm text-gray-400 space-y-1">
+                    <li>The server at <span className="text-yellow-400">{session.hostname}</span> is not responding</li>
+                    <li>A firewall is blocking the connection</li>
+                    <li>The hostname or port may be incorrect</li>
+                    <li>Network connectivity issues between you and the target</li>
+                  </ul>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                    <RefreshCw size={14} /> <span>Try Again</span>
+                  </button>
+                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                    <ExternalLink size={14} /> <span>Open Externally</span>
+                  </button>
+                </div>
+              </>
+            ) : loadError.includes('Authentication required') ? (
+              // Auth error
+              <>
+                <div className="w-16 h-16 rounded-full bg-blue-900/30 flex items-center justify-center mb-4">
+                  <Shield size={32} className="text-blue-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-1">Authentication Required</h3>
+                <p className="text-gray-400 mb-4 max-w-lg text-sm">{loadError}</p>
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-gray-300 font-medium mb-2">To fix this:</p>
+                  <ol className="list-decimal list-inside text-sm text-gray-400 space-y-1">
+                    <li>Edit this connection in the sidebar</li>
+                    <li>Set Authentication Type to <span className="text-blue-400">Basic Authentication</span></li>
+                    <li>Enter the correct username and password</li>
+                    <li>Save and reconnect</li>
+                  </ol>
+                </div>
+                <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                  <RefreshCw size={14} /> <span>Try Again</span>
+                </button>
+              </>
+            ) : (
+              // Generic error
+              <>
+                <div className="w-16 h-16 rounded-full bg-yellow-900/30 flex items-center justify-center mb-4">
+                  <AlertTriangle size={32} className="text-yellow-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-white mb-1">Unable to Load Webpage</h3>
+                <p className="text-gray-400 mb-4 max-w-lg text-sm">{loadError}</p>
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-gray-300 font-medium mb-2">Common issues:</p>
+                  <ul className="list-disc list-inside text-sm text-gray-400 space-y-1">
+                    <li>The website blocks embedding (X-Frame-Options)</li>
+                    <li>CORS restrictions prevent loading</li>
+                    <li>The server is not responding</li>
+                    <li>Invalid URL or hostname</li>
+                  </ul>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                    <RefreshCw size={14} /> <span>Try Again</span>
+                  </button>
+                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                    <ExternalLink size={14} /> <span>Open Externally</span>
+                  </button>
+                </div>
+              </>
+            )}
           </div>
-        ) : useProxy && htmlContent ? (
-          <iframe
-            ref={iframeRef}
-            srcDoc={htmlContent}
-            className="w-full h-full border-0"
-            title={session.name}
-            onLoad={handleIframeLoad}
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
-          />
         ) : (
           <iframe
             ref={iframeRef}
-            src={currentUrl}
+            src="about:blank"
             className="w-full h-full border-0"
             title={session.name}
             onLoad={handleIframeLoad}
-            onError={handleIframeError}
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
-            referrerPolicy="no-referrer-when-downgrade"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           />
         )}
       </div>

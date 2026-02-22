@@ -23,7 +23,8 @@ import {
   Terminal,
   FileCode,
   Power,
-  ScreenShare
+  ScreenShare,
+  ArrowUpDown
 } from "lucide-react";
 
 interface LayoutSettingsProps {
@@ -221,6 +222,16 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             />
             <Shield className="w-4 h-4 text-indigo-500 group-hover:text-indigo-400" />
             <span className="text-gray-300 group-hover:text-white">Proxy/VPN Menu</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showInternalProxyIcon}
+              onChange={(e) => updateSettings({ showInternalProxyIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <ArrowUpDown className="w-4 h-4 text-cyan-500 group-hover:text-cyan-400" />
+            <span className="text-gray-300 group-hover:text-white">Internal Proxy Manager</span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
