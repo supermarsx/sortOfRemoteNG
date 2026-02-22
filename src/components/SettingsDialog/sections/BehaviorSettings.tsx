@@ -126,6 +126,20 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
               {t("connections.reconnectOnReload")}
             </span>
           </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.enableAutocomplete}
+              onChange={(e) =>
+                updateSettings({ enableAutocomplete: e.target.checked })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <span className="text-gray-300 group-hover:text-white">
+              Enable browser autocomplete on input fields
+            </span>
+          </label>
         </div>
       </div>
     </div>

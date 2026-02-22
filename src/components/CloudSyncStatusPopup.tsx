@@ -252,7 +252,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
 
       {/* Popup */}
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-2 w-96 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
+        <div className="absolute top-full right-0 mt-2 w-96 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
             <div className="flex items-center gap-2">

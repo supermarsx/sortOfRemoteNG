@@ -8,6 +8,7 @@ import {
   ExternalLink, 
   Shield, 
   ShieldAlert,
+  ShieldOff,
   Globe,
   Lock,
   AlertTriangle,
@@ -98,7 +99,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   // Timeout for loading (30 seconds)
   const LOAD_TIMEOUT_MS = 30_000;
 
-  const iconCount = 2 + (hasAuth ? 1 : 0);
+  const sslVerifyDisabled = connection && connection.protocol === 'https' && (connection as Record<string, unknown>)?.httpVerifySsl === false;
+  const iconCount = 2 + (hasAuth ? 1 : 0) + (sslVerifyDisabled ? 1 : 0);
   const iconPadding = 12 + iconCount * 18;
 
   // ------------------------------------------------------------------
@@ -495,6 +497,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                     />
                   )}
                 </div>
+                {sslVerifyDisabled && (
+                  <span title="SSL verification is disabled for this connection" className="flex items-center">
+                    <ShieldOff size={14} className="text-red-400" />
+                  </span>
+                )}
                 {getAuthIcon()}
                 <Globe size={14} className="text-gray-400" />
               </div>

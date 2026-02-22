@@ -164,6 +164,7 @@ const defaultSettings: GlobalSettings = {
   showCloudSyncStatusIcon: true,       // Separate cloud sync icon
   autoRepatriateWindow: true,
   // Trust & Verification
+  enableAutocomplete: false,
   tlsTrustPolicy: 'tofu',
   sshTrustPolicy: 'tofu',
   showTrustIdentityInfo: true,

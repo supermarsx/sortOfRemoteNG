@@ -62,6 +62,8 @@ export interface GlobalSettings {
   singleWindowMode: boolean;
   singleConnectionMode: boolean;
   reconnectOnReload: boolean;
+  /** Allow browser autocomplete on input fields (default: false) */
+  enableAutocomplete: boolean;
   warnOnClose: boolean;
   warnOnExit: boolean;
   warnOnDetachClose: boolean;

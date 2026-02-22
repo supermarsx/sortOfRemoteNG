@@ -188,6 +188,27 @@ const AppContent: React.FC = () => {
     showWindow();
   }, []);
 
+  // Suppress autocomplete on all inputs when the setting is disabled
+  useEffect(() => {
+    if (appSettings.enableAutocomplete) return;
+    const attr = 'autocomplete';
+    const applyToAll = () => {
+      document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select').forEach((el) => {
+        if (!el.getAttribute(attr) || el.getAttribute(attr) !== 'off') {
+          el.setAttribute(attr, 'off');
+          // Chrome ignores autocomplete="off" on some fields — use a non-standard
+          // value to ensure the browser doesn't auto-fill.
+          el.setAttribute('data-lpignore', 'true');
+          el.setAttribute('data-form-type', 'other');
+        }
+      });
+    };
+    applyToAll();
+    const observer = new MutationObserver(() => applyToAll());
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [appSettings.enableAutocomplete]);
+
   // Track when app is fully initialized
   useEffect(() => {
     if (isInitialized && !appReady) {

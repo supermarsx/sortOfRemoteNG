@@ -71,7 +71,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
   const TrustIcon = trustStatus.icon;
 
   return (
-    <div className="absolute z-50 top-full left-0 mt-2 w-96 bg-gray-800 border border-gray-600 rounded-lg shadow-xl">
+    <div className="absolute z-50 bottom-full left-0 mb-2 w-96 bg-gray-800 border border-gray-600 rounded-lg shadow-xl">
       {/* Title bar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
         <div className="flex items-center gap-2">

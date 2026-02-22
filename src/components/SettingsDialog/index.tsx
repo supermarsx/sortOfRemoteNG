@@ -53,7 +53,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   ],
   behavior: [
     'singleClickConnect', 'singleClickDisconnect', 'doubleClickRename',
-    'singleWindowMode', 'singleConnectionMode', 'reconnectOnReload',
+    'singleWindowMode', 'singleConnectionMode', 'reconnectOnReload', 'enableAutocomplete',
   ],
   startup: [
     'startMinimized', 'startMaximized', 'startWithSystem', 'reconnectPreviousSessions',
