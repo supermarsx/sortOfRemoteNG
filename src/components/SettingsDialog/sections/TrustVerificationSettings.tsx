@@ -141,13 +141,13 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
       </div>
 
       {/* Policy Explanations Accordion */}
-      <details className="group bg-[var(--color-surfaceHover)] border border-[var(--color-border)] rounded-lg">
+      <details className="group [&>summary]:list-none bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg">
         <summary className="cursor-pointer select-none px-4 py-2.5 text-sm font-medium text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors flex items-center gap-2">
-          <ShieldAlert size={14} className="text-[var(--color-textMuted)]" />
+          <ChevronRight size={14} className="text-[var(--color-textMuted)] transition-transform group-open:rotate-90 flex-shrink-0" />
+          <ShieldAlert size={14} className="text-[var(--color-textMuted)] flex-shrink-0" />
           What do these policies mean?
-          <span className="ml-auto text-[var(--color-textMuted)] text-xs group-open:rotate-90 transition-transform">▶</span>
         </summary>
-        <div className="px-4 pb-4 pt-1 space-y-3 text-xs text-[var(--color-textMuted)] leading-relaxed border-t border-[var(--color-border)]/60 mt-1">
+        <div className="px-4 pb-4 pt-2 space-y-3 text-xs text-[var(--color-textMuted)] leading-relaxed border-t border-[var(--color-border)] mt-1">
           <div>
             <span className="text-[var(--color-text)] font-medium">Trust On First Use (TOFU)</span>
             <p className="mt-0.5">
@@ -169,7 +169,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             <span className="text-[var(--color-text)] font-medium">Always Trust</span>
             <p className="mt-0.5">
               All certificates and host keys are accepted without any verification or prompts.
-              This is convenient for development or lab environments but should <em>never</em> be
+              This is convenient for development or lab environments but should <em className="text-[var(--color-textSecondary)] not-italic font-medium">never</em> be
               used in production or on untrusted networks — it leaves you vulnerable to
               man-in-the-middle attacks.
             </p>

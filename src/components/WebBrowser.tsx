@@ -71,7 +71,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     const defaultPort = session.protocol === 'https' ? 443 : 80;
     const port = connection?.port || defaultPort;
     const portSuffix = port === defaultPort ? '' : `:${port}`;
-    return `${protocol}://${session.hostname}${portSuffix}`;
+    return `${protocol}://${session.hostname}${portSuffix}/`;
   }, [connection, session.protocol, session.hostname]);
 
   const [currentUrl, setCurrentUrl] = useState(buildTargetUrl);
