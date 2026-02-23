@@ -30,7 +30,9 @@ bcrypt = "0.15"
 jsonwebtoken = "9"
 tokio = { version = "1", features = ["full"] }
 ssh2 = "0.9"
-rdp = "0.1"
+ironrdp = { version = "0.14", features = ["connector", "session", "graphics", "input"] }
+ironrdp-blocking = "0.8"
+x509-cert = { version = "0.2", features = ["std"] }
 vnc-rs = "0.5"
 sqlx = { version = "0.7", features = ["mysql", "runtime-tokio"] }
 suppaftp = "4.5"
@@ -59,7 +61,7 @@ axum = "0.7"
 tower = "0.4"
 tower-http = "0.5"
 hyper = "1.0"
-reqwest = { version = "0.11", features = ["json", "cookies"] }
+reqwest = { version = "0.11", features = ["json", "cookies", "blocking"] }
 regex = "1.10"
 rustls = "0.21"
 rustls-pemfile = "1.0"

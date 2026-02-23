@@ -1,3 +1,56 @@
+/**
+ * RDP Canvas utilities.
+ *
+ * This module provides helpers for working with the RDP canvas
+ * including frame rendering and legacy simulated desktop drawing
+ * (kept for offline/demo mode and tests).
+ */
+
+// ─── Real frame rendering helpers ──────────────────────────────────────────
+
+/**
+ * Paints a dirty-region RGBA frame onto a canvas context.
+ * The `rgba` data must be raw RGBA bytes (Uint8ClampedArray).
+ */
+export function paintFrame(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rgba: Uint8ClampedArray,
+): void {
+  if (width <= 0 || height <= 0 || rgba.length < width * height * 4) return;
+  const imgData = new ImageData(rgba, width, height);
+  ctx.putImageData(imgData, x, y);
+}
+
+/**
+ * Decodes a base64-encoded RGBA string to a Uint8ClampedArray.
+ */
+export function decodeBase64Rgba(base64: string): Uint8ClampedArray {
+  const binary = atob(base64);
+  const bytes = new Uint8ClampedArray(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * Clears the canvas with a dark background.
+ */
+export function clearCanvas(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): void {
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, width, height);
+}
+
+// ─── Legacy simulated desktop (demo / offline mode) ────────────────────────
+
 export const drawSimulatedDesktop = (
   ctx: CanvasRenderingContext2D,
   width: number,

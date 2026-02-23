@@ -516,6 +516,7 @@ pub fn run() {
         ssh::list_sessions,
         rdp::connect_rdp,
         rdp::disconnect_rdp,
+        rdp::rdp_send_input,
         rdp::get_rdp_session_info,
         rdp::list_rdp_sessions,
         vnc::connect_vnc,
