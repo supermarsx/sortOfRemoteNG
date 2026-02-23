@@ -187,6 +187,12 @@ export interface RdpConnectionSettings {
   performance?: RdpPerformanceSettings;
   // ─── Security ─────────────────────────────────────────────────────
   security?: RdpSecuritySettings;
+  // ─── Gateway ──────────────────────────────────────────────────────
+  gateway?: RdpGatewaySettings;
+  // ─── Hyper-V / Enhanced Session ───────────────────────────────────
+  hyperv?: RdpHyperVSettings;
+  // ─── Connection Negotiation ───────────────────────────────────────
+  negotiation?: RdpNegotiationSettings;
   // ─── Advanced / Internals ─────────────────────────────────────────
   advanced?: RdpAdvancedSettings;
 }
@@ -344,6 +350,8 @@ export interface RdpSecuritySettings {
   enableTls?: boolean;
   /** Enable NLA / CredSSP (recommended) */
   enableNla?: boolean;
+  /** Master toggle: use CredSSP at all (when false, disables CredSSP entirely) */
+  useCredSsp?: boolean;
   /** Auto logon (send credentials in INFO packet) */
   autoLogon?: boolean;
   /** Enable server-side pointer (cursor managed by server) */
@@ -395,6 +403,86 @@ export interface RdpSecuritySettings {
 
   /** Server certificate validation mode for the RDP TLS handshake */
   serverCertValidation?: 'validate' | 'warn' | 'ignore';
+}
+
+// ─── RDP Gateway ────────────────────────────────────────────────────
+
+/** Gateway authentication methods */
+export const GatewayAuthMethods = ['ntlm', 'basic', 'digest', 'negotiate', 'smartcard'] as const;
+export type GatewayAuthMethod = (typeof GatewayAuthMethods)[number];
+
+/** Gateway credential sources */
+export const GatewayCredentialSources = ['same-as-connection', 'separate', 'ask'] as const;
+export type GatewayCredentialSource = (typeof GatewayCredentialSources)[number];
+
+/** Gateway transport modes */
+export const GatewayTransportModes = ['auto', 'http', 'udp'] as const;
+export type GatewayTransportMode = (typeof GatewayTransportModes)[number];
+
+export interface RdpGatewaySettings {
+  /** Enable RDP Gateway tunnelling */
+  enabled?: boolean;
+  /** Gateway server hostname or IP */
+  hostname?: string;
+  /** Gateway server port (default 443) */
+  port?: number;
+  /** Authentication method for the gateway */
+  authMethod?: GatewayAuthMethod;
+  /** Where to get credentials for the gateway */
+  credentialSource?: GatewayCredentialSource;
+  /** Separate gateway username (when credentialSource is 'separate') */
+  username?: string;
+  /** Separate gateway password (when credentialSource is 'separate') */
+  password?: string;
+  /** Separate gateway domain (when credentialSource is 'separate') */
+  domain?: string;
+  /** Bypass gateway for local addresses */
+  bypassForLocal?: boolean;
+  /** Transport mode: HTTP, UDP, or auto */
+  transportMode?: GatewayTransportMode;
+  /** Access token for token-based gateway auth (e.g. Azure AD) */
+  accessToken?: string;
+}
+
+// ─── Hyper-V / Enhanced Session ─────────────────────────────────────
+
+export interface RdpHyperVSettings {
+  /** Connect to a Hyper-V VM by ID instead of hostname */
+  useVmId?: boolean;
+  /** The Hyper-V VM GUID (e.g. "12345678-abcd-...") */
+  vmId?: string;
+  /** Enable Hyper-V Enhanced Session Mode (VMBus channel) */
+  enhancedSessionMode?: boolean;
+  /** Hyper-V host server address (required when using VM ID) */
+  hostServer?: string;
+}
+
+// ─── Connection Negotiation & Auto-detect ───────────────────────────
+
+/** Negotiation strategies for auto-detect */
+export const NegotiationStrategies = [
+  'auto',            // Try all combos automatically
+  'nla-first',       // NLA/CredSSP → TLS → plain
+  'tls-first',       // TLS → NLA/CredSSP → plain
+  'nla-only',        // Only NLA/CredSSP, fail if unavailable
+  'tls-only',        // Only TLS, no CredSSP
+  'plain-only',      // No TLS, no CredSSP (extremely insecure)
+] as const;
+export type NegotiationStrategy = (typeof NegotiationStrategies)[number];
+
+export interface RdpNegotiationSettings {
+  /** Enable auto-detect: automatically try different negotiation strategies */
+  autoDetect?: boolean;
+  /** Negotiation strategy / order of protocols to attempt */
+  strategy?: NegotiationStrategy;
+  /** Maximum number of retry attempts during auto-detect */
+  maxRetries?: number;
+  /** Delay between retry attempts in ms */
+  retryDelayMs?: number;
+  /** Load balancing info string (RDP routing token / cookie sent during X.224) */
+  loadBalancingInfo?: string;
+  /** Use routing token format for load balancing (vs. cookie format) */
+  useRoutingToken?: boolean;
 }
 
 export interface RdpAdvancedSettings {
@@ -469,9 +557,33 @@ export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
   security: {
     enableTls: true,
     enableNla: true,
+    useCredSsp: true,
     autoLogon: false,
     enableServerPointer: true,
     pointerSoftwareRendering: true,
+  },
+  gateway: {
+    enabled: false,
+    hostname: '',
+    port: 443,
+    authMethod: 'ntlm',
+    credentialSource: 'same-as-connection',
+    bypassForLocal: true,
+    transportMode: 'auto',
+  },
+  hyperv: {
+    useVmId: false,
+    vmId: '',
+    enhancedSessionMode: false,
+    hostServer: '',
+  },
+  negotiation: {
+    autoDetect: false,
+    strategy: 'nla-first',
+    maxRetries: 3,
+    retryDelayMs: 1000,
+    loadBalancingInfo: '',
+    useRoutingToken: false,
   },
   advanced: {
     clientName: 'SortOfRemoteNG',

@@ -21,6 +21,7 @@ import {
   CloudCog,
   Fingerprint,
   Globe,
+  MonitorDot,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig, defaultSSHTerminalConfig } from '../../types/settings';
@@ -40,6 +41,7 @@ import BackupSettings from './sections/BackupSettings';
 import CloudSyncSettings from './sections/CloudSyncSettings';
 import { TrustVerificationSettings } from './sections/TrustVerificationSettings';
 import WebBrowserSettings from './sections/WebBrowserSettings';
+import RdpDefaultSettings from './sections/RdpDefaultSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
@@ -89,6 +91,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'maxConcurrentConnections', 'connectionTimeout', 'retryAttempts', 'retryDelay',
     'enablePerformanceTracking', 'performancePollIntervalMs', 'performanceLatencyTarget',
   ],
+  rdpDefaults: ['rdpDefaults'],
   backup: ['backup'],
   cloudSync: ['cloudSync'],
   proxy: ['globalProxy'],
@@ -455,6 +458,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     { id: 'security', label: t('settings.security'), icon: Shield },
     { id: 'trust', label: 'Trust & Verify', icon: Fingerprint },
     { id: 'performance', label: t('settings.performance'), icon: Zap },
+    { id: 'rdpDefaults', label: 'RDP Defaults', icon: MonitorDot },
     { id: 'backup', label: 'Backup', icon: Archive },
     { id: 'cloudSync', label: 'Cloud Sync', icon: CloudCog },
     { id: 'proxy', label: 'Proxy', icon: Wifi },
@@ -575,6 +579,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
               {activeTab === 'performance' && (
                 <PerformanceSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'rdpDefaults' && (
+                <RdpDefaultSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'backup' && (

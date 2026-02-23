@@ -14,6 +14,10 @@ import {
   Trash2,
   Pencil,
   ScanSearch,
+  Network,
+  Server,
+  Zap,
+  ToggleLeft,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { Connection, DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../../types/connection';
@@ -22,6 +26,10 @@ import {
   NlaModes,
   TlsVersions,
   CredsspVersions,
+  GatewayAuthMethods,
+  GatewayCredentialSources,
+  GatewayTransportModes,
+  NegotiationStrategies,
 } from '../../types/connection';
 import {
   getAllTrustRecords,
@@ -758,14 +766,31 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
       {/* ─── Security ────────────────────────────────────────────── */}
       <Section title="Security" icon={<Shield size={14} className="text-red-400" />}>
+        {/* CredSSP Master Toggle */}
+        <div className="pb-2 mb-2 border-b border-gray-700/60">
+          <label className={labelClass}>
+            <input
+              type="checkbox"
+              checked={rdp.security?.useCredSsp ?? true}
+              onChange={(e) => updateRdp('security', { useCredSsp: e.target.checked })}
+              className={checkboxClass}
+            />
+            <span className="font-medium">Use CredSSP</span>
+          </label>
+          <p className="text-xs text-gray-500 ml-5 mt-0.5">
+            Master toggle – when disabled, CredSSP/NLA is entirely skipped (TLS-only or plain RDP).
+          </p>
+        </div>
+
         <label className={labelClass}>
           <input
             type="checkbox"
             checked={rdp.security?.enableNla ?? true}
             onChange={(e) => updateRdp('security', { enableNla: e.target.checked })}
             className={checkboxClass}
+            disabled={!(rdp.security?.useCredSsp ?? true)}
           />
-          <span>Enable NLA (Network Level Authentication)</span>
+          <span className={!(rdp.security?.useCredSsp ?? true) ? 'opacity-50' : ''}>Enable NLA (Network Level Authentication)</span>
         </label>
 
         <label className={labelClass}>
@@ -1137,6 +1162,352 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             </div>
           </div>
         )}
+      </Section>
+
+      {/* ─── RDP Gateway ─────────────────────────────────────────── */}
+      <Section title="RDP Gateway" icon={<Network size={14} className="text-cyan-400" />}>
+        <label className={labelClass}>
+          <input
+            type="checkbox"
+            checked={rdp.gateway?.enabled ?? false}
+            onChange={(e) => updateRdp('gateway', { enabled: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span className="font-medium">Enable RDP Gateway</span>
+        </label>
+        <p className="text-xs text-gray-500 ml-5 -mt-1">
+          Tunnel the RDP session through an RD Gateway (HTTPS transport).
+        </p>
+
+        {(rdp.gateway?.enabled ?? false) && (
+          <div className="space-y-3 mt-2">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Gateway Hostname</label>
+              <input
+                type="text"
+                value={rdp.gateway?.hostname ?? ''}
+                onChange={(e) => updateRdp('gateway', { hostname: e.target.value })}
+                className={inputClass}
+                placeholder="gateway.example.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">
+                Gateway Port: {rdp.gateway?.port ?? 443}
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={65535}
+                value={rdp.gateway?.port ?? 443}
+                onChange={(e) => updateRdp('gateway', { port: parseInt(e.target.value) || 443 })}
+                className={inputClass}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Authentication Method</label>
+              <select
+                value={rdp.gateway?.authMethod ?? 'ntlm'}
+                onChange={(e) =>
+                  updateRdp('gateway', {
+                    authMethod: e.target.value as typeof GatewayAuthMethods[number],
+                  })
+                }
+                className={selectClass}
+              >
+                {GatewayAuthMethods.map((m) => (
+                  <option key={m} value={m}>
+                    {m === 'ntlm'
+                      ? 'NTLM'
+                      : m === 'basic'
+                        ? 'Basic'
+                        : m === 'digest'
+                          ? 'Digest'
+                          : m === 'negotiate'
+                            ? 'Negotiate (Kerberos/NTLM)'
+                            : 'Smart Card'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Credential Source</label>
+              <select
+                value={rdp.gateway?.credentialSource ?? 'same-as-connection'}
+                onChange={(e) =>
+                  updateRdp('gateway', {
+                    credentialSource: e.target.value as typeof GatewayCredentialSources[number],
+                  })
+                }
+                className={selectClass}
+              >
+                {GatewayCredentialSources.map((s) => (
+                  <option key={s} value={s}>
+                    {s === 'same-as-connection'
+                      ? 'Same as connection'
+                      : s === 'separate'
+                        ? 'Separate credentials'
+                        : 'Ask on connect'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {rdp.gateway?.credentialSource === 'separate' && (
+              <div className="space-y-2 pl-2 border-l-2 border-gray-700">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Gateway Username</label>
+                  <input
+                    type="text"
+                    value={rdp.gateway?.username ?? ''}
+                    onChange={(e) => updateRdp('gateway', { username: e.target.value })}
+                    className={inputClass}
+                    placeholder="DOMAIN\\user"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Gateway Password</label>
+                  <input
+                    type="password"
+                    value={rdp.gateway?.password ?? ''}
+                    onChange={(e) => updateRdp('gateway', { password: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Gateway Domain</label>
+                  <input
+                    type="text"
+                    value={rdp.gateway?.domain ?? ''}
+                    onChange={(e) => updateRdp('gateway', { domain: e.target.value })}
+                    className={inputClass}
+                    placeholder="DOMAIN"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Transport Mode</label>
+              <select
+                value={rdp.gateway?.transportMode ?? 'auto'}
+                onChange={(e) =>
+                  updateRdp('gateway', {
+                    transportMode: e.target.value as typeof GatewayTransportModes[number],
+                  })
+                }
+                className={selectClass}
+              >
+                {GatewayTransportModes.map((m) => (
+                  <option key={m} value={m}>
+                    {m === 'auto' ? 'Auto' : m === 'http' ? 'HTTP' : 'UDP'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <label className={labelClass}>
+              <input
+                type="checkbox"
+                checked={rdp.gateway?.bypassForLocal ?? true}
+                onChange={(e) => updateRdp('gateway', { bypassForLocal: e.target.checked })}
+                className={checkboxClass}
+              />
+              <span>Bypass gateway for local addresses</span>
+            </label>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Access Token (optional)</label>
+              <input
+                type="text"
+                value={rdp.gateway?.accessToken ?? ''}
+                onChange={(e) => updateRdp('gateway', { accessToken: e.target.value || undefined })}
+                className={inputClass}
+                placeholder="Azure AD / OAuth token"
+              />
+              <p className="text-xs text-gray-500 mt-0.5">For token-based gateway authentication (e.g. Azure AD).</p>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {/* ─── Hyper-V / Enhanced Session ──────────────────────────── */}
+      <Section title="Hyper-V / Enhanced Session" icon={<Server size={14} className="text-violet-400" />}>
+        <label className={labelClass}>
+          <input
+            type="checkbox"
+            checked={rdp.hyperv?.useVmId ?? false}
+            onChange={(e) => updateRdp('hyperv', { useVmId: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span className="font-medium">Connect via VM ID</span>
+        </label>
+        <p className="text-xs text-gray-500 ml-5 -mt-1">
+          Connect to a Hyper-V VM using its GUID instead of hostname.
+        </p>
+
+        {(rdp.hyperv?.useVmId ?? false) && (
+          <div className="space-y-3 mt-2">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">VM ID (GUID)</label>
+              <input
+                type="text"
+                value={rdp.hyperv?.vmId ?? ''}
+                onChange={(e) => updateRdp('hyperv', { vmId: e.target.value })}
+                className={inputClass}
+                placeholder="12345678-abcd-1234-ef00-123456789abc"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Hyper-V Host Server</label>
+              <input
+                type="text"
+                value={rdp.hyperv?.hostServer ?? ''}
+                onChange={(e) => updateRdp('hyperv', { hostServer: e.target.value })}
+                className={inputClass}
+                placeholder="hyperv-host.example.com"
+              />
+              <p className="text-xs text-gray-500 mt-0.5">The Hyper-V server hosting the VM.</p>
+            </div>
+          </div>
+        )}
+
+        <div className="pt-2 mt-2 border-t border-gray-700/60">
+          <label className={labelClass}>
+            <input
+              type="checkbox"
+              checked={rdp.hyperv?.enhancedSessionMode ?? false}
+              onChange={(e) => updateRdp('hyperv', { enhancedSessionMode: e.target.checked })}
+              className={checkboxClass}
+            />
+            <span>Enhanced Session Mode</span>
+          </label>
+          <p className="text-xs text-gray-500 ml-5 -mt-1">
+            Uses VMBus channel for better performance, clipboard, drive redirection and audio in Hyper-V VMs.
+          </p>
+        </div>
+      </Section>
+
+      {/* ─── Connection Negotiation / Auto-detect ────────────────── */}
+      <Section title="Connection Negotiation" icon={<Zap size={14} className="text-amber-400" />}>
+        <label className={labelClass}>
+          <input
+            type="checkbox"
+            checked={rdp.negotiation?.autoDetect ?? false}
+            onChange={(e) => updateRdp('negotiation', { autoDetect: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span className="font-medium">Auto-detect negotiation</span>
+        </label>
+        <p className="text-xs text-gray-500 ml-5 -mt-1">
+          Automatically try different protocol combinations (CredSSP, TLS, plain) until a working one is found.
+        </p>
+
+        {(rdp.negotiation?.autoDetect ?? false) && (
+          <div className="space-y-3 mt-2">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Negotiation Strategy</label>
+              <select
+                value={rdp.negotiation?.strategy ?? 'nla-first'}
+                onChange={(e) =>
+                  updateRdp('negotiation', {
+                    strategy: e.target.value as typeof NegotiationStrategies[number],
+                  })
+                }
+                className={selectClass}
+              >
+                {NegotiationStrategies.map((s) => (
+                  <option key={s} value={s}>
+                    {s === 'auto'
+                      ? 'Auto (try all combinations)'
+                      : s === 'nla-first'
+                        ? 'NLA First (CredSSP → TLS → Plain)'
+                        : s === 'tls-first'
+                          ? 'TLS First (TLS → CredSSP → Plain)'
+                          : s === 'nla-only'
+                            ? 'NLA Only (fail if unavailable)'
+                            : s === 'tls-only'
+                              ? 'TLS Only (no CredSSP)'
+                              : 'Plain Only (no security — DANGEROUS)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">
+                Max Retries: {rdp.negotiation?.maxRetries ?? 3}
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={10}
+                step={1}
+                value={rdp.negotiation?.maxRetries ?? 3}
+                onChange={(e) => updateRdp('negotiation', { maxRetries: parseInt(e.target.value) })}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>1</span>
+                <span>10</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">
+                Retry Delay: {rdp.negotiation?.retryDelayMs ?? 1000}ms
+              </label>
+              <input
+                type="range"
+                min={100}
+                max={5000}
+                step={100}
+                value={rdp.negotiation?.retryDelayMs ?? 1000}
+                onChange={(e) => updateRdp('negotiation', { retryDelayMs: parseInt(e.target.value) })}
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>100ms</span>
+                <span>5000ms</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── Load Balancing ────────────────────────────────────── */}
+        <div className="pt-3 mt-2 border-t border-gray-700/60">
+          <div className="flex items-center gap-2 mb-2 text-sm text-gray-300">
+            <ToggleLeft size={14} className="text-blue-400" />
+            <span className="font-medium">Load Balancing</span>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Load Balancing Info</label>
+            <input
+              type="text"
+              value={rdp.negotiation?.loadBalancingInfo ?? ''}
+              onChange={(e) => updateRdp('negotiation', { loadBalancingInfo: e.target.value })}
+              className={inputClass}
+              placeholder="e.g. tsv://MS Terminal Services Plugin.1.Farm1"
+            />
+            <p className="text-xs text-gray-500 mt-0.5">
+              Sent during X.224 negotiation for RDP load balancers / Session Brokers.
+            </p>
+          </div>
+
+          <label className={`${labelClass} mt-2`}>
+            <input
+              type="checkbox"
+              checked={rdp.negotiation?.useRoutingToken ?? false}
+              onChange={(e) => updateRdp('negotiation', { useRoutingToken: e.target.checked })}
+              className={checkboxClass}
+            />
+            <span>Use routing token format (instead of cookie)</span>
+          </label>
+        </div>
       </Section>
 
       {/* ─── Advanced ────────────────────────────────────────────── */}

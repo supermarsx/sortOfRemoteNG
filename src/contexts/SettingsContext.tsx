@@ -194,6 +194,28 @@ const defaultSettings: GlobalSettings = {
     showByDefault: false,
     maskIcon: false,
   },
+  // RDP Global Defaults
+  rdpDefaults: {
+    useCredSsp: true,
+    enableTls: true,
+    enableNla: true,
+    autoLogon: false,
+    gatewayEnabled: false,
+    gatewayHostname: '',
+    gatewayPort: 443,
+    gatewayAuthMethod: 'ntlm',
+    gatewayTransportMode: 'auto',
+    gatewayBypassLocal: true,
+    enhancedSessionMode: false,
+    autoDetect: false,
+    negotiationStrategy: 'nla-first',
+    maxRetries: 3,
+    retryDelayMs: 1000,
+    defaultWidth: 1920,
+    defaultHeight: 1080,
+    defaultColorDepth: 32,
+    smartSizing: true,
+  },
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

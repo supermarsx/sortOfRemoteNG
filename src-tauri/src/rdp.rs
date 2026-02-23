@@ -104,6 +104,12 @@ pub struct RdpSettingsPayload {
     #[serde(default)]
     pub security: Option<RdpSecurityPayload>,
     #[serde(default)]
+    pub gateway: Option<RdpGatewayPayload>,
+    #[serde(default)]
+    pub hyperv: Option<RdpHyperVPayload>,
+    #[serde(default)]
+    pub negotiation: Option<RdpNegotiationPayload>,
+    #[serde(default)]
     pub advanced: Option<RdpAdvancedPayload>,
 }
 
@@ -178,6 +184,7 @@ pub struct RdpPerformancePayload {
 pub struct RdpSecurityPayload {
     pub enable_tls: Option<bool>,
     pub enable_nla: Option<bool>,
+    pub use_credssp: Option<bool>,
     pub auto_logon: Option<bool>,
     pub enable_server_pointer: Option<bool>,
     pub pointer_software_rendering: Option<bool>,
@@ -207,6 +214,42 @@ pub struct RdpAdvancedPayload {
     pub full_frame_sync_interval: Option<u64>,
     pub max_consecutive_errors: Option<u32>,
     pub stats_interval_secs: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpGatewayPayload {
+    pub enabled: Option<bool>,
+    pub hostname: Option<String>,
+    pub port: Option<u16>,
+    pub auth_method: Option<String>,        // "ntlm" | "basic" | "digest" | "negotiate" | "smartcard"
+    pub credential_source: Option<String>,   // "same-as-connection" | "separate" | "ask"
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub domain: Option<String>,
+    pub bypass_for_local: Option<bool>,
+    pub transport_mode: Option<String>,      // "auto" | "http" | "udp"
+    pub access_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpHyperVPayload {
+    pub use_vm_id: Option<bool>,
+    pub vm_id: Option<String>,
+    pub enhanced_session_mode: Option<bool>,
+    pub host_server: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpNegotiationPayload {
+    pub auto_detect: Option<bool>,
+    pub strategy: Option<String>,            // "auto" | "nla-first" | "tls-first" | "nla-only" | "tls-only" | "plain-only"
+    pub max_retries: Option<u32>,
+    pub retry_delay_ms: Option<u64>,
+    pub load_balancing_info: Option<String>,
+    pub use_routing_token: Option<bool>,
 }
 
 /// Build IronRDP PerformanceFlags from the frontend settings
@@ -254,6 +297,7 @@ fn parse_keyboard_type(s: &str) -> ironrdp::pdu::gcc::KeyboardType {
 }
 
 /// Resolved settings used internally by the session runner (all defaults applied).
+#[derive(Clone)]
 struct ResolvedSettings {
     width: u16,
     height: u16,
@@ -262,6 +306,7 @@ struct ResolvedSettings {
     lossy_compression: bool,
     enable_tls: bool,
     enable_credssp: bool,
+    use_credssp: bool,
     autologon: bool,
     enable_audio_playback: bool,
     keyboard_type: ironrdp::pdu::gcc::KeyboardType,
@@ -283,6 +328,25 @@ struct ResolvedSettings {
     sspi_package_list: String,
     _server_cert_validation: String,
     performance_flags: PerformanceFlags,
+    // Gateway
+    gateway_enabled: bool,
+    gateway_hostname: String,
+    gateway_port: u16,
+    _gateway_auth_method: String,
+    _gateway_transport_mode: String,
+    _gateway_bypass_local: bool,
+    // Hyper-V
+    use_vm_id: bool,
+    vm_id: String,
+    enhanced_session_mode: bool,
+    _host_server: String,
+    // Negotiation
+    auto_detect: bool,
+    negotiation_strategy: String,
+    max_retries: u32,
+    retry_delay_ms: u64,
+    load_balancing_info: String,
+    use_routing_token: bool,
     // Frame delivery
     frame_batching: bool,
     frame_batch_interval: Duration,
@@ -300,6 +364,9 @@ impl ResolvedSettings {
         let sec = payload.security.as_ref();
         let input = payload.input.as_ref();
         let adv = payload.advanced.as_ref();
+        let gw = payload.gateway.as_ref();
+        let hv = payload.hyperv.as_ref();
+        let nego = payload.negotiation.as_ref();
 
         let w = display.and_then(|d| d.width).unwrap_or(width);
         let h = display.and_then(|d| d.height).unwrap_or(height);
@@ -318,6 +385,10 @@ impl ResolvedSettings {
             .and_then(|p| p.frame_batch_interval_ms)
             .unwrap_or(33);
 
+        // Master CredSSP toggle: if useCredSsp is false, force credssp off
+        let use_credssp_master = sec.and_then(|s| s.use_credssp).unwrap_or(true);
+        let enable_credssp_nla = sec.and_then(|s| s.enable_nla).unwrap_or(true);
+
         Self {
             width: w,
             height: h,
@@ -325,7 +396,8 @@ impl ResolvedSettings {
             desktop_scale_factor: display.and_then(|d| d.desktop_scale_factor).unwrap_or(100),
             lossy_compression: display.and_then(|d| d.lossy_compression).unwrap_or(true),
             enable_tls: sec.and_then(|s| s.enable_tls).unwrap_or(true),
-            enable_credssp: sec.and_then(|s| s.enable_nla).unwrap_or(true),
+            enable_credssp: use_credssp_master && enable_credssp_nla,
+            use_credssp: use_credssp_master,
             autologon: sec.and_then(|s| s.auto_logon).unwrap_or(true),
             enable_audio_playback: payload
                 .audio
@@ -367,6 +439,34 @@ impl ResolvedSettings {
                 .and_then(|s| s.server_cert_validation.clone())
                 .unwrap_or_else(|| "validate".to_string()),
             performance_flags,
+            // Gateway
+            gateway_enabled: gw.and_then(|g| g.enabled).unwrap_or(false),
+            gateway_hostname: gw.and_then(|g| g.hostname.clone()).unwrap_or_default(),
+            gateway_port: gw.and_then(|g| g.port).unwrap_or(443),
+            _gateway_auth_method: gw
+                .and_then(|g| g.auth_method.clone())
+                .unwrap_or_else(|| "ntlm".to_string()),
+            _gateway_transport_mode: gw
+                .and_then(|g| g.transport_mode.clone())
+                .unwrap_or_else(|| "auto".to_string()),
+            _gateway_bypass_local: gw.and_then(|g| g.bypass_for_local).unwrap_or(true),
+            // Hyper-V
+            use_vm_id: hv.and_then(|h| h.use_vm_id).unwrap_or(false),
+            vm_id: hv.and_then(|h| h.vm_id.clone()).unwrap_or_default(),
+            enhanced_session_mode: hv.and_then(|h| h.enhanced_session_mode).unwrap_or(false),
+            _host_server: hv.and_then(|h| h.host_server.clone()).unwrap_or_default(),
+            // Negotiation
+            auto_detect: nego.and_then(|n| n.auto_detect).unwrap_or(false),
+            negotiation_strategy: nego
+                .and_then(|n| n.strategy.clone())
+                .unwrap_or_else(|| "nla-first".to_string()),
+            max_retries: nego.and_then(|n| n.max_retries).unwrap_or(3),
+            retry_delay_ms: nego.and_then(|n| n.retry_delay_ms).unwrap_or(1000),
+            load_balancing_info: nego
+                .and_then(|n| n.load_balancing_info.clone())
+                .unwrap_or_default(),
+            use_routing_token: nego.and_then(|n| n.use_routing_token).unwrap_or(false),
+            // Frame delivery
             frame_batching: perf.and_then(|p| p.frame_batching).unwrap_or(true),
             frame_batch_interval: Duration::from_millis(batch_ms),
             full_frame_sync_interval: adv
@@ -957,20 +1057,38 @@ fn run_rdp_session(
     cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
 ) {
-    let result = run_rdp_session_inner(
-        &session_id,
-        &host,
-        port,
-        &username,
-        &password,
-        domain.as_deref(),
-        &settings,
-        &app_handle,
-        &mut cmd_rx,
-        &stats,
-        cached_tls_connector,
-        cached_http_client,
-    );
+    let result = if settings.auto_detect {
+        // ── Auto-detect negotiation: try different protocol combos ───
+        run_rdp_session_auto_detect(
+            &session_id,
+            &host,
+            port,
+            &username,
+            &password,
+            domain.as_deref(),
+            &settings,
+            &app_handle,
+            &mut cmd_rx,
+            &stats,
+            cached_tls_connector,
+            cached_http_client,
+        )
+    } else {
+        run_rdp_session_inner(
+            &session_id,
+            &host,
+            port,
+            &username,
+            &password,
+            domain.as_deref(),
+            &settings,
+            &app_handle,
+            &mut cmd_rx,
+            &stats,
+            cached_tls_connector,
+            cached_http_client,
+        )
+    };
 
     stats.alive.store(false, Ordering::Relaxed);
 
@@ -1007,6 +1125,151 @@ fn run_rdp_session(
             desktop_height: None,
         },
     );
+}
+
+/// Build a list of (enable_tls, enable_credssp, allow_hybrid_ex) combos to try
+/// based on the negotiation strategy.
+fn build_negotiation_combos(strategy: &str, base: &ResolvedSettings) -> Vec<(bool, bool, bool)> {
+    match strategy {
+        "nla-first" => vec![
+            (true, true, base.allow_hybrid_ex),   // TLS + CredSSP (best)
+            (true, true, !base.allow_hybrid_ex),   // TLS + CredSSP (flip HYBRID_EX)
+            (true, false, false),                   // TLS only
+            (false, false, false),                  // Plain (no security)
+        ],
+        "tls-first" => vec![
+            (true, false, false),                   // TLS only
+            (true, true, base.allow_hybrid_ex),     // TLS + CredSSP
+            (true, true, !base.allow_hybrid_ex),    // TLS + CredSSP (flip HYBRID_EX)
+            (false, false, false),                   // Plain
+        ],
+        "nla-only" => vec![
+            (true, true, base.allow_hybrid_ex),
+            (true, true, !base.allow_hybrid_ex),
+        ],
+        "tls-only" => vec![
+            (true, false, false),
+        ],
+        "plain-only" => vec![
+            (false, false, false),
+        ],
+        // "auto" – try everything
+        _ => vec![
+            (true, true, false),                    // TLS + CredSSP, no HYBRID_EX
+            (true, true, true),                     // TLS + CredSSP, with HYBRID_EX
+            (true, false, false),                   // TLS only
+            (false, true, false),                   // CredSSP without TLS
+            (false, false, false),                  // Plain
+        ],
+    }
+}
+
+/// Auto-detect negotiation: retry with different protocol combinations until
+/// one works or all are exhausted.
+#[allow(clippy::too_many_arguments)]
+fn run_rdp_session_auto_detect(
+    session_id: &str,
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    domain: Option<&str>,
+    settings: &ResolvedSettings,
+    app_handle: &AppHandle,
+    cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    stats: &Arc<RdpSessionStats>,
+    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_http_client: Option<Arc<reqwest::blocking::Client>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
+    let max_attempts = (settings.max_retries as usize + 1).min(combos.len());
+
+    log::info!(
+        "RDP session {session_id}: auto-detect starting with {} combos (strategy={})",
+        max_attempts,
+        settings.negotiation_strategy
+    );
+
+    let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+
+    for (i, (tls, credssp, hybrid_ex)) in combos.iter().take(max_attempts).enumerate() {
+        log::info!(
+            "RDP session {session_id}: auto-detect attempt {}/{} → tls={} credssp={} hybrid_ex={}",
+            i + 1, max_attempts, tls, credssp, hybrid_ex
+        );
+
+        // Emit status to frontend
+        let _ = app_handle.emit(
+            "rdp://status",
+            RdpStatusEvent {
+                session_id: session_id.to_string(),
+                status: "negotiating".to_string(),
+                message: format!(
+                    "Auto-detect attempt {}/{}: TLS={} CredSSP={} HYBRID_EX={}",
+                    i + 1, max_attempts, tls, credssp, hybrid_ex
+                ),
+                desktop_width: None,
+                desktop_height: None,
+            },
+        );
+
+        // Build modified settings for this attempt
+        let mut attempt_settings = ResolvedSettings {
+            enable_tls: *tls,
+            enable_credssp: *credssp,
+            allow_hybrid_ex: *hybrid_ex,
+            ..settings.clone()
+        };
+        // If CredSSP is disabled for this attempt, don't bother with SSPI
+        if !credssp {
+            attempt_settings.sspi_package_list = String::new();
+        }
+
+        let result = run_rdp_session_inner(
+            session_id,
+            host,
+            port,
+            username,
+            password,
+            domain,
+            &attempt_settings,
+            app_handle,
+            cmd_rx,
+            stats,
+            cached_tls_connector.clone(),
+            cached_http_client.clone(),
+        );
+
+        match result {
+            Ok(()) => {
+                log::info!(
+                    "RDP session {session_id}: auto-detect succeeded on attempt {} (tls={} credssp={} hybrid_ex={})",
+                    i + 1, tls, credssp, hybrid_ex
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                log::warn!(
+                    "RDP session {session_id}: auto-detect attempt {} failed: {e}",
+                    i + 1
+                );
+                last_error = Some(e);
+
+                // Wait before retrying
+                if i + 1 < max_attempts {
+                    std::thread::sleep(Duration::from_millis(settings.retry_delay_ms));
+                }
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        format!(
+            "Auto-detect exhausted all {} negotiation strategies",
+            max_attempts
+        )
+        .into()
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1103,7 +1366,7 @@ fn run_rdp_session_inner(
 
     let config = connector::Config {
         credentials: Credentials::UsernamePassword {
-            username: actual_user,
+            username: actual_user.clone(),
             password: password.to_string(),
         },
         domain: actual_domain,
@@ -1130,7 +1393,26 @@ fn run_rdp_session_inner(
         client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
         platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
         hardware_id: None,
-        request_data: None,
+        request_data: {
+            // Load-balancing info: routing token or cookie
+            let lb = &settings.load_balancing_info;
+            if !lb.is_empty() {
+                if settings.use_routing_token {
+                    // Routing token for RDP load balancers (Session Broker, etc.)
+                    Some(ironrdp::pdu::nego::NegoRequestData::routing_token(lb.clone()))
+                } else {
+                    // Cookie format (standard mstshash cookie)
+                    Some(ironrdp::pdu::nego::NegoRequestData::cookie(lb.clone()))
+                }
+            } else if settings.use_vm_id && !settings.vm_id.is_empty() {
+                // For Hyper-V: use VM ID as a routing token
+                Some(ironrdp::pdu::nego::NegoRequestData::cookie(
+                    format!("vmconnect/{}", settings.vm_id),
+                ))
+            } else {
+                None
+            }
+        },
         autologon: settings.autologon,
         enable_audio_playback: settings.enable_audio_playback,
         performance_flags: settings.performance_flags,
@@ -1167,6 +1449,35 @@ fn run_rdp_session_inner(
 
     let server_socket_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
     let mut connector = ClientConnector::new(config, server_socket_addr);
+
+    // Log gateway / Hyper-V / negotiation settings
+    if settings.gateway_enabled {
+        log::info!(
+            "RDP session {session_id}: gateway enabled → {}:{}",
+            settings.gateway_hostname, settings.gateway_port
+        );
+    }
+    if settings.use_vm_id {
+        log::info!(
+            "RDP session {session_id}: Hyper-V VM ID mode → vm_id={:?} enhanced={}",
+            settings.vm_id, settings.enhanced_session_mode
+        );
+    }
+    if settings.auto_detect {
+        log::info!(
+            "RDP session {session_id}: auto-detect negotiation → strategy={} maxRetries={}",
+            settings.negotiation_strategy, settings.max_retries
+        );
+    }
+    if !settings.load_balancing_info.is_empty() {
+        log::info!(
+            "RDP session {session_id}: load balancing info → {:?} (routing_token={})",
+            settings.load_balancing_info, settings.use_routing_token
+        );
+    }
+    if !settings.use_credssp {
+        log::info!("RDP session {session_id}: CredSSP globally DISABLED by user");
+    }
 
     // ── 3. Connection begin (pre-TLS phase) ─────────────────────────────
 
@@ -1898,7 +2209,7 @@ pub async fn connect_rdp(
         );
     });
 
-    let connection = RdpActiveConnection {de vez e
+    let connection = RdpActiveConnection {
         session,
         cmd_tx,
         stats,

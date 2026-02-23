@@ -287,6 +287,13 @@ export interface GlobalSettings {
    * Controls the show/hide password eye icon on all password fields.
    */
   passwordReveal: PasswordRevealConfig;
+
+  // ─── RDP Global Defaults ──────────────────────────────────────
+  /**
+   * Global default RDP configuration applied to new connections.
+   * Per-connection settings override these.
+   */
+  rdpDefaults: RdpGlobalDefaultsConfig;
 }
 
 /** Global default CredSSP remediation configuration */
@@ -333,6 +340,57 @@ export interface PasswordRevealConfig {
   showByDefault: boolean;
   /** Whether to mask the password icon itself when hidden */
   maskIcon: boolean;
+}
+
+/** Global default RDP configuration applied to new connections */
+export interface RdpGlobalDefaultsConfig {
+  // ─── Security defaults ─────────────────────────────────────
+  /** Master CredSSP toggle: enable/disable CredSSP globally */
+  useCredSsp: boolean;
+  /** Enable TLS for RDP connections */
+  enableTls: boolean;
+  /** Enable NLA (Network Level Authentication) */
+  enableNla: boolean;
+  /** Auto logon (send credentials in INFO packet) */
+  autoLogon: boolean;
+
+  // ─── Gateway defaults ──────────────────────────────────────
+  /** Enable RDP Gateway by default */
+  gatewayEnabled: boolean;
+  /** Default gateway hostname */
+  gatewayHostname: string;
+  /** Default gateway port */
+  gatewayPort: number;
+  /** Default gateway auth method */
+  gatewayAuthMethod: 'ntlm' | 'basic' | 'digest' | 'negotiate' | 'smartcard';
+  /** Default gateway transport */
+  gatewayTransportMode: 'auto' | 'http' | 'udp';
+  /** Bypass gateway for local addresses */
+  gatewayBypassLocal: boolean;
+
+  // ─── Hyper-V defaults ──────────────────────────────────────
+  /** Default to Hyper-V Enhanced Session Mode */
+  enhancedSessionMode: boolean;
+
+  // ─── Negotiation defaults ──────────────────────────────────
+  /** Enable auto-detect negotiation by default */
+  autoDetect: boolean;
+  /** Default negotiation strategy */
+  negotiationStrategy: 'auto' | 'nla-first' | 'tls-first' | 'nla-only' | 'tls-only' | 'plain-only';
+  /** Max auto-detect retries */
+  maxRetries: number;
+  /** Delay between retries in ms */
+  retryDelayMs: number;
+
+  // ─── Display defaults ──────────────────────────────────────
+  /** Default resolution width */
+  defaultWidth: number;
+  /** Default resolution height */
+  defaultHeight: number;
+  /** Default color depth */
+  defaultColorDepth: 16 | 24 | 32;
+  /** Default smart sizing */
+  smartSizing: boolean;
 }
 
 // Backup scheduling frequency
