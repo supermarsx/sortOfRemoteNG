@@ -320,6 +320,16 @@ impl Sequence for ClientConnector {
                     ));
                 }
 
+                // Strip HYBRID_EX if the server selected it even though we
+                // didn't request it.  Some servers always respond with
+                // HYBRID_EX regardless of the client offer, causing a read
+                // failure when the EarlyUserAuthResult PDU is never sent.
+                let selected_protocol = if !requested_protocol.contains(nego::SecurityProtocol::HYBRID_EX) {
+                    selected_protocol & !nego::SecurityProtocol::HYBRID_EX
+                } else {
+                    selected_protocol
+                };
+
                 (
                     Written::Nothing,
                     ClientConnectorState::EnhancedSecurityUpgrade { selected_protocol },

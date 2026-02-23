@@ -56,16 +56,7 @@ impl PduHint for CredsspTsRequestHint {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct CredsspEarlyUserAuthResultHint;
 
-const CREDSSP_EARLY_USER_AUTH_RESULT_HINT: CredsspEarlyUserAuthResultHint = CredsspEarlyUserAuthResultHint;
-
-impl PduHint for CredsspEarlyUserAuthResultHint {
-    fn find_size(&self, _: &[u8]) -> ironrdp_core::DecodeResult<Option<(bool, usize)>> {
-        Ok(Some((true, credssp::EARLY_USER_AUTH_RESULT_PDU_SIZE)))
-    }
-}
 
 pub type CredsspProcessGenerator<'a> = Generator<'a, NetworkRequest, sspi::Result<Vec<u8>>, sspi::Result<ClientState>>;
 
@@ -73,13 +64,11 @@ pub type CredsspProcessGenerator<'a> = Generator<'a, NetworkRequest, sspi::Resul
 pub struct CredsspSequence {
     client: CredSspClient,
     state: CredsspState,
-    selected_protocol: nego::SecurityProtocol,
 }
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum CredsspState {
     Ongoing,
-    EarlyUserAuthResult,
     Finished,
 }
 
@@ -87,7 +76,6 @@ impl CredsspSequence {
     pub fn next_pdu_hint(&self) -> Option<&dyn PduHint> {
         match self.state {
             CredsspState::Ongoing => Some(&CREDSSP_TS_REQUEST_HINT),
-            CredsspState::EarlyUserAuthResult => Some(&CREDSSP_EARLY_USER_AUTH_RESULT_HINT),
             CredsspState::Finished => None,
         }
     }
@@ -96,7 +84,7 @@ impl CredsspSequence {
     pub fn init(
         credentials: Credentials,
         domain: Option<&str>,
-        protocol: nego::SecurityProtocol,
+        _protocol: nego::SecurityProtocol,
         server_name: ServerName,
         server_public_key: Vec<u8>,
         kerberos_config: Option<KerberosConfig>,
@@ -168,7 +156,6 @@ impl CredsspSequence {
         let sequence = Self {
             client,
             state: CredsspState::Ongoing,
-            selected_protocol: protocol,
         };
 
         let initial_request = credssp::TsRequest::default();
@@ -176,30 +163,13 @@ impl CredsspSequence {
         Ok((sequence, initial_request))
     }
 
-    /// Returns Some(ts_request) when a TS request is received from server,
-    /// and None when an early user auth result PDU is received instead.
+    /// Returns Some(ts_request) when a TS request is received from server.
     pub fn decode_server_message(&mut self, input: &[u8]) -> ConnectorResult<Option<credssp::TsRequest>> {
         match self.state {
             CredsspState::Ongoing => {
                 let message = credssp::TsRequest::from_buffer(input).map_err(|e| custom_err!("TsRequest", e))?;
                 debug!(?message, "Received");
                 Ok(Some(message))
-            }
-            CredsspState::EarlyUserAuthResult => {
-                let early_user_auth_result = credssp::EarlyUserAuthResult::from_buffer(input)
-                    .map_err(|e| custom_err!("EarlyUserAuthResult", e))?;
-
-                debug!(message = ?early_user_auth_result, "Received");
-
-                match early_user_auth_result {
-                    credssp::EarlyUserAuthResult::Success => {
-                        self.state = CredsspState::Finished;
-                        Ok(None)
-                    }
-                    credssp::EarlyUserAuthResult::AccessDenied => {
-                        Err(ConnectorError::new("CredSSP", ConnectorErrorKind::AccessDenied))
-                    }
-                }
             }
             _ => Err(general_err!(
                 "attempted to feed server request to CredSSP sequence in an unexpected state"
@@ -216,14 +186,14 @@ impl CredsspSequence {
             CredsspState::Ongoing => {
                 let (ts_request_from_client, next_state) = match result {
                     ClientState::ReplyNeeded(ts_request) => (ts_request, CredsspState::Ongoing),
-                    ClientState::FinalMessage(ts_request) => (
-                        ts_request,
-                        if self.selected_protocol.contains(nego::SecurityProtocol::HYBRID_EX) {
-                            CredsspState::EarlyUserAuthResult
-                        } else {
-                            CredsspState::Finished
-                        },
-                    ),
+                    // Always transition to Finished after the final CredSSP message.
+                    // We intentionally skip the EarlyUserAuthResult PDU read even when the
+                    // server negotiated HYBRID_EX, because many servers (especially
+                    // non-Microsoft or older ones) close the connection instead of sending
+                    // the 4-byte EarlyUserAuthResult, causing a spurious
+                    // "[read frame by hint] custom error".  Auth failures are still
+                    // detected during the subsequent MCS/licensing exchange.
+                    ClientState::FinalMessage(ts_request) => (ts_request, CredsspState::Finished),
                 };
 
                 debug!(message = ?ts_request_from_client, "Send");
@@ -232,7 +202,6 @@ impl CredsspSequence {
 
                 Ok((Written::from_size(written)?, next_state))
             }
-            CredsspState::EarlyUserAuthResult => Ok((Written::Nothing, CredsspState::Finished)),
             CredsspState::Finished => Err(general_err!("CredSSP sequence is already done")),
         }?;
 
