@@ -204,6 +204,8 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       sshKnownHostsPath: formData.sshKnownHostsPath || undefined,
       tlsTrustPolicy: formData.tlsTrustPolicy,
       sshTrustPolicy: formData.sshTrustPolicy,
+      rdpTrustPolicy: formData.rdpTrustPolicy,
+      rdpSettings: formData.rdpSettings,
     };
   }, [formData, connection]);
 

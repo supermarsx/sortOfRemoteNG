@@ -572,11 +572,67 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
                     })?
                     .to_vec()
             }
-            _ => {
-                return Err(ironrdp::connector::sspi::Error::new(
-                    ironrdp::connector::sspi::ErrorKind::InternalError,
-                    format!("Unsupported protocol: {:?}", request.protocol),
-                ));
+            // Handle raw TCP/UDP Kerberos KDC requests with a short-
+            // timeout TCP attempt so the Negotiate layer sees a quick
+            // failure and falls back to NTLM instead of blocking for
+            // minutes on unresolvable DNS SRV lookups.
+            NetworkProtocol::Tcp | NetworkProtocol::Udp => {
+                log::debug!(
+                    "Kerberos KDC network request ({:?}) to {url} – attempting fast connect",
+                    request.protocol,
+                );
+                // Try a quick TCP connect (1s).  If the KDC is unreachable
+                // this will fail almost instantly.
+                let addr_str = url
+                    .trim_start_matches("tcp://")
+                    .trim_start_matches("udp://");
+                let sock = std::net::TcpStream::connect_timeout(
+                    &addr_str
+                        .to_socket_addrs()
+                        .map_err(|e| {
+                            ironrdp::connector::sspi::Error::new(
+                                ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                                format!("KDC address resolution failed: {e}"),
+                            )
+                        })?
+                        .next()
+                        .ok_or_else(|| {
+                            ironrdp::connector::sspi::Error::new(
+                                ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                                "KDC address resolved to nothing".to_string(),
+                            )
+                        })?,
+                    Duration::from_secs(1),
+                );
+                match sock {
+                    Ok(mut stream) => {
+                        use std::io::{Read, Write};
+                        let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                        let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+                        stream.write_all(&data).map_err(|e| {
+                            ironrdp::connector::sspi::Error::new(
+                                ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                                format!("KDC write failed: {e}"),
+                            )
+                        })?;
+                        let mut buf = vec![0u8; 65536];
+                        let n = stream.read(&mut buf).map_err(|e| {
+                            ironrdp::connector::sspi::Error::new(
+                                ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                                format!("KDC read failed: {e}"),
+                            )
+                        })?;
+                        buf.truncate(n);
+                        buf
+                    }
+                    Err(e) => {
+                        log::debug!("KDC connection failed (expected): {e}");
+                        return Err(ironrdp::connector::sspi::Error::new(
+                            ironrdp::connector::sspi::ErrorKind::NoCredentials,
+                            format!("KDC unreachable: {e}"),
+                        ));
+                    }
+                }
             }
         };
 
@@ -1080,6 +1136,16 @@ fn run_rdp_session_inner(
     );
 
     let t_auth = Instant::now();
+
+    // Short-circuit Kerberos KDC discovery: point the sspi crate's env-
+    // var based detection at a non-routable address so it skips the
+    // extremely slow DNS SRV lookups (_kerberos._tcp.{domain}) that can
+    // block for 30-60 seconds on non-domain-joined networks.  The
+    // actual TCP connect to 192.0.2.1 (TEST-NET, RFC 5737) will fail
+    // within the 1-second timeout in our NetworkClient, causing an
+    // immediate NTLM fallback.
+    std::env::set_var("SSPI_KDC_URL", "tcp://192.0.2.1:88");
+
     let mut network_client = BlockingNetworkClient::new(cached_http_client);
     let server_name = ironrdp::connector::ServerName::new(host);
 
@@ -1613,6 +1679,35 @@ fn set_read_timeout_on_framed(
 }
 
 // ─── Tauri commands ────────────────────────────────────────────────────────
+
+/// Detect the current Windows keyboard layout and return the HKL (low 16 bits
+/// = keyboard layout ID which is the value IronRDP's `keyboard_layout` expects).
+#[tauri::command]
+pub fn detect_keyboard_layout() -> Result<u32, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout;
+
+        // GetKeyboardLayout(0) returns the layout for the current thread's
+        // foreground window.  The low 16 bits are the Language ID (LANGID),
+        // which maps directly to the RDP keyboard layout value.
+        let hkl = unsafe { GetKeyboardLayout(0) };
+        let raw = hkl.0 as usize;
+        // The low 16 bits hold the language identifier.
+        let lang_id = (raw & 0xFFFF) as u32;
+        // The full 32-bit value includes the layout in the high word.
+        // For RDP we need the full layout identifier if available,
+        // otherwise the language ID is sufficient.
+        let layout = raw as u32;
+        log::info!("Detected keyboard layout: HKL=0x{raw:08x} lang=0x{lang_id:04x} layout=0x{layout:08x}");
+        Ok(layout)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // On non-Windows platforms return US English as a safe default.
+        Ok(0x0409)
+    }
+}
 
 #[tauri::command]
 pub async fn connect_rdp(

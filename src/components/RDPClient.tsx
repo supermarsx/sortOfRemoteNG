@@ -74,6 +74,16 @@ interface RdpCertFingerprintEvent {
   port: number;
 }
 
+interface RdpTimingEvent {
+  session_id: string;
+  dns_ms: number;
+  tcp_ms: number;
+  negotiate_ms: number;
+  tls_ms: number;
+  auth_ms: number;
+  total_ms: number;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -166,6 +176,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const [magnifierActive, setMagnifierActive] = useState(false);
   const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0 });
   const [certFingerprint, setCertFingerprint] = useState<string | null>(null);
+  const [connectTiming, setConnectTiming] = useState<RdpTimingEvent | null>(null);
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
@@ -343,6 +354,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setCertFingerprint(fp.fingerprint);
     }).then(fn => unlisteners.push(fn));
 
+    // Listen for connection timing breakdown
+    listen<RdpTimingEvent>('rdp://timing', (event) => {
+      const t = event.payload;
+      if (t.session_id !== sessionIdRef.current) return;
+      setConnectTiming(t);
+    }).then(fn => unlisteners.push(fn));
+
     return () => {
       unlisteners.forEach(fn => fn());
     };
@@ -386,13 +404,52 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
   // ─── Input handlers ────────────────────────────────────────────────
 
-  const sendInput = useCallback((events: Record<string, unknown>[]) => {
+  // Batched input:  mouse move events are extremely frequent (~200 Hz on
+  // modern browsers).  Sending each one through Tauri IPC individually
+  // produces massive overhead and makes the remote desktop feel sluggish.
+  // Instead we accumulate events in a buffer and flush at most once per
+  // requestAnimationFrame (~60 Hz), which keeps IPC overhead low while
+  // maintaining smooth cursor tracking.
+  const inputBufferRef = useRef<Record<string, unknown>[]>([]);
+  const flushScheduledRef = useRef(false);
+
+  const flushInputBuffer = useCallback(() => {
+    flushScheduledRef.current = false;
     const sid = sessionIdRef.current;
-    if (!sid || !isConnected) return;
-    invoke('rdp_send_input', { sessionId: sid, events }).catch(e => {
+    if (!sid || inputBufferRef.current.length === 0) return;
+    const batch = inputBufferRef.current;
+    inputBufferRef.current = [];
+    invoke('rdp_send_input', { sessionId: sid, events: batch }).catch(e => {
       debugLog(`Input send error: ${e}`);
     });
-  }, [isConnected]);
+  }, []);
+
+  const sendInput = useCallback((events: Record<string, unknown>[], immediate = false) => {
+    if (!isConnected || !sessionIdRef.current) return;
+    if (immediate) {
+      // Flush buffer first, then send the priority events immediately
+      if (inputBufferRef.current.length > 0) {
+        const buffered = inputBufferRef.current;
+        inputBufferRef.current = [];
+        const sid = sessionIdRef.current;
+        invoke('rdp_send_input', { sessionId: sid!, events: [...buffered, ...events] }).catch(e => {
+          debugLog(`Input send error: ${e}`);
+        });
+      } else {
+        const sid = sessionIdRef.current;
+        invoke('rdp_send_input', { sessionId: sid!, events }).catch(e => {
+          debugLog(`Input send error: ${e}`);
+        });
+      }
+      return;
+    }
+    // Buffer the events and schedule a flush on the next animation frame
+    inputBufferRef.current.push(...events);
+    if (!flushScheduledRef.current) {
+      flushScheduledRef.current = true;
+      requestAnimationFrame(flushInputBuffer);
+    }
+  }, [isConnected, flushInputBuffer]);
 
   const scaleCoords = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
     const canvas = canvasRef.current;
@@ -807,6 +864,49 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             </div>
           ) : (
             <p className="text-gray-500 text-xs">Waiting for session statistics...</p>
+          )}
+
+          {/* Connection timing breakdown */}
+          {connectTiming && (
+            <div className="mt-3 border-t border-gray-700 pt-3">
+              <h4 className="text-xs font-semibold text-gray-300 mb-2">Connection Timing</h4>
+              <div className="flex items-center gap-1 text-xs h-6">
+                {[
+                  { label: 'DNS', ms: connectTiming.dns_ms, color: 'bg-purple-500' },
+                  { label: 'TCP', ms: connectTiming.tcp_ms, color: 'bg-blue-500' },
+                  { label: 'Negotiate', ms: connectTiming.negotiate_ms, color: 'bg-cyan-500' },
+                  { label: 'TLS', ms: connectTiming.tls_ms, color: 'bg-green-500' },
+                  { label: 'Auth', ms: connectTiming.auth_ms, color: 'bg-orange-500' },
+                ].map((phase) => {
+                  const pct = connectTiming.total_ms > 0 ? Math.max((phase.ms / connectTiming.total_ms) * 100, 4) : 20;
+                  return (
+                    <div
+                      key={phase.label}
+                      className={`${phase.color} rounded h-full flex items-center justify-center text-white font-mono`}
+                      style={{ width: `${pct}%`, minWidth: '40px' }}
+                      title={`${phase.label}: ${phase.ms}ms`}
+                    >
+                      {phase.ms}ms
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+                {[
+                  { label: 'DNS', color: 'bg-purple-500' },
+                  { label: 'TCP', color: 'bg-blue-500' },
+                  { label: 'Negotiate', color: 'bg-cyan-500' },
+                  { label: 'TLS', color: 'bg-green-500' },
+                  { label: 'Auth', color: 'bg-orange-500' },
+                ].map((l) => (
+                  <span key={l.label} className="flex items-center gap-1">
+                    <span className={`inline-block w-2 h-2 rounded-sm ${l.color}`} />
+                    {l.label}
+                  </span>
+                ))}
+                <span className="ml-auto font-mono text-gray-400">Total: {connectTiming.total_ms}ms</span>
+              </div>
+            </div>
           )}
         </div>
       )}

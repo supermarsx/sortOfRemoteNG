@@ -70,7 +70,7 @@ rustls-pemfile = "1.0"
 x509-parser = "0.15"
 native-tls = "0.2"
 tokio-native-tls = "0.3"
-windows = { version = "0.62", features = ["Win32_System_Registry", "Win32_Foundation", "Win32_Security_Credentials", "Win32_Graphics_Gdi"] }
+windows = { version = "0.62", features = ["Win32_System_Registry", "Win32_Foundation", "Win32_Security_Credentials", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_TextServices"] }
 tauri-plugin-window-state = "2"
 oauth2 = "4.4"
 url = "2.5"
