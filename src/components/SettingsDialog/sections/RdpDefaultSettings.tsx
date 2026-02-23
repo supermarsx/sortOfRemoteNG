@@ -6,6 +6,7 @@ import {
   Server,
   Zap,
   Monitor,
+  Cable,
 } from 'lucide-react';
 
 interface RdpDefaultSettingsProps {
@@ -31,7 +32,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-white mb-1">RDP Global Defaults</h3>
+        <h3 className="text-lg font-semibold text-white mb-1">RDP</h3>
         <p className="text-sm text-gray-400">
           Default configuration applied to all new RDP connections. Individual connections can
           override these settings.
@@ -357,6 +358,117 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
           <div className="flex justify-between text-xs text-gray-600">
             <span>100ms</span>
             <span>5000ms</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── TCP / Socket Defaults ─────────────────────────────── */}
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+          <Cable className="w-4 h-4 text-emerald-400" />
+          TCP / Socket Defaults
+        </h4>
+        <p className="text-xs text-gray-500">
+          Low-level socket settings applied during the TCP connection phase. Incorrect values may cause connectivity issues.
+        </p>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">
+            Connect Timeout: {rdp.tcpConnectTimeoutSecs ?? 10}s
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={60}
+            step={1}
+            value={rdp.tcpConnectTimeoutSecs ?? 10}
+            onChange={(e) => update({ tcpConnectTimeoutSecs: parseInt(e.target.value) })}
+            className="w-full"
+          />
+          <div className="flex justify-between text-xs text-gray-600">
+            <span>1s</span>
+            <span>60s</span>
+          </div>
+        </div>
+
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={rdp.tcpNodelay ?? true}
+            onChange={(e) => update({ tcpNodelay: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            TCP_NODELAY (disable Nagle&apos;s algorithm)
+          </span>
+        </label>
+        <p className="text-xs text-gray-500 ml-7 -mt-2">
+          Reduces latency for interactive sessions. Recommended ON.
+        </p>
+
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={rdp.tcpKeepAlive ?? true}
+            onChange={(e) => update({ tcpKeepAlive: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            TCP Keep-Alive
+          </span>
+        </label>
+
+        {(rdp.tcpKeepAlive ?? true) && (
+          <div className="ml-7">
+            <label className="block text-sm text-gray-400 mb-1">
+              Keep-Alive Interval: {rdp.tcpKeepAliveIntervalSecs ?? 60}s
+            </label>
+            <input
+              type="range"
+              min={5}
+              max={300}
+              step={5}
+              value={rdp.tcpKeepAliveIntervalSecs ?? 60}
+              onChange={(e) => update({ tcpKeepAliveIntervalSecs: parseInt(e.target.value) })}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-gray-600">
+              <span>5s</span>
+              <span>300s</span>
+            </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Receive Buffer (bytes)</label>
+            <select
+              value={rdp.tcpRecvBufferSize ?? 262144}
+              onChange={(e) => update({ tcpRecvBufferSize: parseInt(e.target.value) })}
+              className={selectClass}
+            >
+              <option value={65536}>64 KB</option>
+              <option value={131072}>128 KB</option>
+              <option value={262144}>256 KB (default)</option>
+              <option value={524288}>512 KB</option>
+              <option value={1048576}>1 MB</option>
+              <option value={2097152}>2 MB</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Send Buffer (bytes)</label>
+            <select
+              value={rdp.tcpSendBufferSize ?? 262144}
+              onChange={(e) => update({ tcpSendBufferSize: parseInt(e.target.value) })}
+              className={selectClass}
+            >
+              <option value={65536}>64 KB</option>
+              <option value={131072}>128 KB</option>
+              <option value={262144}>256 KB (default)</option>
+              <option value={524288}>512 KB</option>
+              <option value={1048576}>1 MB</option>
+              <option value={2097152}>2 MB</option>
+            </select>
           </div>
         </div>
       </div>

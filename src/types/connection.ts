@@ -195,6 +195,8 @@ export interface RdpConnectionSettings {
   negotiation?: RdpNegotiationSettings;
   // ─── Advanced / Internals ─────────────────────────────────────────
   advanced?: RdpAdvancedSettings;
+  // ─── TCP / Socket ─────────────────────────────────────────────────
+  tcp?: RdpTcpSettings;
 }
 
 export interface RdpDisplaySettings {
@@ -500,6 +502,21 @@ export interface RdpAdvancedSettings {
   statsIntervalSecs?: number;
 }
 
+export interface RdpTcpSettings {
+  /** TCP connect timeout in seconds */
+  connectTimeoutSecs?: number;
+  /** Enable TCP_NODELAY (Nagle's algorithm disabled) */
+  nodelay?: boolean;
+  /** Enable TCP keep-alive */
+  keepAlive?: boolean;
+  /** TCP keep-alive interval in seconds (only when keepAlive is true) */
+  keepAliveIntervalSecs?: number;
+  /** Socket receive buffer size in bytes */
+  recvBufferSize?: number;
+  /** Socket send buffer size in bytes */
+  sendBufferSize?: number;
+}
+
 /** Default RDP settings for new connections */
 export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
   display: {
@@ -592,6 +609,14 @@ export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
     fullFrameSyncInterval: 300,
     maxConsecutiveErrors: 50,
     statsIntervalSecs: 1,
+  },
+  tcp: {
+    connectTimeoutSecs: 10,
+    nodelay: true,
+    keepAlive: true,
+    keepAliveIntervalSecs: 60,
+    recvBufferSize: 262144,
+    sendBufferSize: 262144,
   },
 };
 

@@ -111,6 +111,8 @@ pub struct RdpSettingsPayload {
     pub negotiation: Option<RdpNegotiationPayload>,
     #[serde(default)]
     pub advanced: Option<RdpAdvancedPayload>,
+    #[serde(default)]
+    pub tcp: Option<RdpTcpPayload>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -252,6 +254,17 @@ pub struct RdpNegotiationPayload {
     pub use_routing_token: Option<bool>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpTcpPayload {
+    pub connect_timeout_secs: Option<u64>,
+    pub nodelay: Option<bool>,
+    pub keep_alive: Option<bool>,
+    pub keep_alive_interval_secs: Option<u64>,
+    pub recv_buffer_size: Option<u32>,
+    pub send_buffer_size: Option<u32>,
+}
+
 /// Build IronRDP PerformanceFlags from the frontend settings
 fn build_performance_flags(perf: &RdpPerformancePayload) -> PerformanceFlags {
     let mut flags = PerformanceFlags::empty();
@@ -355,6 +368,13 @@ struct ResolvedSettings {
     read_timeout: Duration,
     max_consecutive_errors: u32,
     stats_interval: Duration,
+    // TCP / Socket
+    tcp_connect_timeout: Duration,
+    tcp_nodelay: bool,
+    tcp_keep_alive: bool,
+    tcp_keep_alive_interval: Duration,
+    tcp_recv_buffer_size: u32,
+    tcp_send_buffer_size: u32,
 }
 
 impl ResolvedSettings {
@@ -481,6 +501,17 @@ impl ResolvedSettings {
             stats_interval: Duration::from_secs(
                 adv.and_then(|a| a.stats_interval_secs).unwrap_or(1),
             ),
+            // TCP / Socket
+            tcp_connect_timeout: Duration::from_secs(
+                payload.tcp.as_ref().and_then(|t| t.connect_timeout_secs).unwrap_or(10),
+            ),
+            tcp_nodelay: payload.tcp.as_ref().and_then(|t| t.nodelay).unwrap_or(true),
+            tcp_keep_alive: payload.tcp.as_ref().and_then(|t| t.keep_alive).unwrap_or(true),
+            tcp_keep_alive_interval: Duration::from_secs(
+                payload.tcp.as_ref().and_then(|t| t.keep_alive_interval_secs).unwrap_or(60),
+            ),
+            tcp_recv_buffer_size: payload.tcp.as_ref().and_then(|t| t.recv_buffer_size).unwrap_or(256 * 1024),
+            tcp_send_buffer_size: payload.tcp.as_ref().and_then(|t| t.send_buffer_size).unwrap_or(256 * 1024),
         }
     }
 }
@@ -1096,6 +1127,17 @@ fn run_rdp_session(
         Ok(()) => {
             log::info!("RDP session {session_id} ended normally");
             stats.set_phase("disconnected");
+            // Only emit disconnected for clean exits – errors already emitted their own status.
+            let _ = app_handle.emit(
+                "rdp://status",
+                RdpStatusEvent {
+                    session_id,
+                    status: "disconnected".to_string(),
+                    message: "Session ended".to_string(),
+                    desktop_width: None,
+                    desktop_height: None,
+                },
+            );
         }
         Err(e) => {
             let err_msg = format!("{e}");
@@ -1105,7 +1147,7 @@ fn run_rdp_session(
             let _ = app_handle.emit(
                 "rdp://status",
                 RdpStatusEvent {
-                    session_id: session_id.clone(),
+                    session_id,
                     status: "error".to_string(),
                     message: err_msg,
                     desktop_width: None,
@@ -1114,17 +1156,6 @@ fn run_rdp_session(
             );
         }
     }
-
-    let _ = app_handle.emit(
-        "rdp://status",
-        RdpStatusEvent {
-            session_id,
-            status: "disconnected".to_string(),
-            message: "Session ended".to_string(),
-            desktop_width: None,
-            desktop_height: None,
-        },
-    );
 }
 
 /// Build a list of (enable_tls, enable_credssp, allow_hybrid_ex) combos to try
@@ -1317,15 +1348,25 @@ fn run_rdp_session_inner(
     log::info!("RDP session {session_id}: DNS resolved in {dns_ms}ms → {socket_addr}");
 
     let t_tcp = Instant::now();
-    let tcp_stream = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(10))?;
-    tcp_stream.set_nodelay(true)?;
+    let tcp_stream = TcpStream::connect_timeout(&socket_addr, settings.tcp_connect_timeout)?;
+    tcp_stream.set_nodelay(settings.tcp_nodelay)?;
 
-    // Enlarge socket buffers for faster handshake throughput
+    // TCP keep-alive
+    if settings.tcp_keep_alive {
+        use socket2::Socket;
+        let sock = Socket::from(tcp_stream.try_clone()?);
+        let ka = socket2::TcpKeepalive::new()
+            .with_time(settings.tcp_keep_alive_interval);
+        let _ = sock.set_tcp_keepalive(&ka);
+        std::mem::forget(sock);
+    }
+
+    // Configure socket buffer sizes
     {
         use socket2::Socket;
         let sock = Socket::from(tcp_stream.try_clone()?);
-        let _ = sock.set_recv_buffer_size(256 * 1024);
-        let _ = sock.set_send_buffer_size(256 * 1024);
+        let _ = sock.set_recv_buffer_size(settings.tcp_recv_buffer_size as usize);
+        let _ = sock.set_send_buffer_size(settings.tcp_send_buffer_size as usize);
         // Detach without closing – the TcpStream still owns the fd
         std::mem::forget(sock);
     }
@@ -1561,6 +1602,13 @@ fn run_rdp_session_inner(
             msg.push_str(&format!(", caused by: {cause}"));
             source = std::error::Error::source(cause);
         }
+
+        // Include timing context
+        let fail_auth_ms = t_auth.elapsed().as_millis();
+        msg.push_str(&format!(
+            " [phase=BasicSettingsExchange, auth_elapsed={fail_auth_ms}ms, tcp={tcp_ms}ms, tls={tls_ms}ms, negotiate={negotiate_ms}ms]"
+        ));
+
         // Detect the very common "server closed after CredSSP" pattern and
         // provide actionable guidance.
         if msg.contains("10054") || msg.contains("forcibly closed") {
@@ -1569,7 +1617,9 @@ fn run_rdp_session_inner(
                  Common causes: (1) incorrect credentials or domain, \
                  (2) the user account lacks 'Allow log on through Remote Desktop Services' right, \
                  (3) the account is locked/disabled, \
-                 (4) CredSSP Encryption Oracle Remediation policy ('Force Updated Clients') on the server."
+                 (4) CredSSP Encryption Oracle Remediation policy ('Force Updated Clients') on the server, \
+                 (5) RD licensing server misconfigured or license limit exceeded, \
+                 (6) Group Policy blocking session (e.g. max sessions, user restrictions)."
             );
         }
         msg
@@ -2152,6 +2202,22 @@ pub async fn connect_rdp(
     height: Option<u16>,
     rdp_settings: Option<RdpSettingsPayload>,
 ) -> Result<String, String> {
+    // ── De-duplicate: reject if an active session to the same host+port+user already exists ──
+    {
+        let service = state.lock().await;
+        let duplicate = service.connections.values().any(|c| {
+            c.session.host == host && c.session.port == port && c.session.username == username && c.session.connected
+        });
+        if duplicate {
+            log::warn!(
+                "Duplicate connect_rdp call for {host}:{port} user={username} — rejecting"
+            );
+            return Err(format!(
+                "A session to {host}:{port} as '{username}' is already active or connecting"
+            ));
+        }
+    }
+
     let session_id = Uuid::new_v4().to_string();
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<RdpCommand>();
 
@@ -2290,5 +2356,455 @@ pub async fn get_rdp_stats(
         Ok(conn.stats.to_event(&session_id))
     } else {
         Err(format!("RDP session {session_id} not found"))
+    }
+}
+
+// ─── Deep Connection Diagnostics ────────────────────────────────────────────
+
+/// Result of a single diagnostic probe step.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticStep {
+    pub name: String,
+    pub status: String,       // "pass" | "fail" | "skip" | "warn"
+    pub message: String,
+    pub duration_ms: u64,
+    pub detail: Option<String>,
+}
+
+/// Full diagnostic report returned to the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticReport {
+    pub host: String,
+    pub port: u16,
+    pub resolved_ip: Option<String>,
+    pub steps: Vec<DiagnosticStep>,
+    pub summary: String,
+    pub root_cause_hint: Option<String>,
+}
+
+/// Run a deep diagnostic probe against an RDP server.
+/// This performs each connection phase independently and reports
+/// detailed results for each step, without actually creating an
+/// active session.
+#[tauri::command]
+pub async fn diagnose_rdp_connection(
+    state: tauri::State<'_, RdpServiceState>,
+    host: String,
+    port: u16,
+    username: String,
+    password: String,
+    domain: Option<String>,
+    rdp_settings: Option<RdpSettingsPayload>,
+) -> Result<DiagnosticReport, String> {
+    let h = host.clone();
+    let u = username.clone();
+    let p = password.clone();
+    let d = domain.clone();
+
+    let payload = rdp_settings.unwrap_or_default();
+    let settings = ResolvedSettings::from_payload(&payload, 1024, 768);
+
+    let service = state.lock().await;
+    let cached_tls = service.cached_tls_connector.clone();
+    let cached_http = service.cached_http_client.clone();
+    drop(service);
+
+    tokio::task::spawn_blocking(move || {
+        run_diagnostics(&h, port, &u, &p, d.as_deref(), &settings, cached_tls, cached_http)
+    })
+    .await
+    .map_err(|e| format!("Diagnostic task panicked: {e}"))
+}
+
+fn run_diagnostics(
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    domain: Option<&str>,
+    settings: &ResolvedSettings,
+    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_http_client: Option<Arc<reqwest::blocking::Client>>,
+) -> DiagnosticReport {
+    let mut steps: Vec<DiagnosticStep> = Vec::new();
+    let mut resolved_ip: Option<String> = None;
+    let addr = format!("{host}:{port}");
+
+    // ── Step 1: DNS Resolution ──────────────────────────────────────────
+
+    let t = Instant::now();
+    let socket_addr = match addr.to_socket_addrs() {
+        Ok(mut addrs) => match addrs.next() {
+            Some(a) => {
+                resolved_ip = Some(a.ip().to_string());
+                steps.push(DiagnosticStep {
+                    name: "DNS Resolution".into(),
+                    status: "pass".into(),
+                    message: format!("{host} → {}", a.ip()),
+                    duration_ms: t.elapsed().as_millis() as u64,
+                    detail: None,
+                });
+                a
+            }
+            None => {
+                steps.push(DiagnosticStep {
+                    name: "DNS Resolution".into(),
+                    status: "fail".into(),
+                    message: format!("DNS returned no addresses for {host}"),
+                    duration_ms: t.elapsed().as_millis() as u64,
+                    detail: Some("Verify the hostname is correct and DNS is configured".into()),
+                });
+                return finish_report(host, port, resolved_ip, steps);
+            }
+        },
+        Err(e) => {
+            steps.push(DiagnosticStep {
+                name: "DNS Resolution".into(),
+                status: "fail".into(),
+                message: format!("DNS lookup failed: {e}"),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: Some("Check hostname spelling, DNS server, and network connectivity".into()),
+            });
+            return finish_report(host, port, resolved_ip, steps);
+        }
+    };
+
+    // ── Step 2: TCP Connect ─────────────────────────────────────────────
+
+    let t = Instant::now();
+    let tcp_stream = match TcpStream::connect_timeout(&socket_addr, settings.tcp_connect_timeout) {
+        Ok(s) => {
+            let _ = s.set_nodelay(settings.tcp_nodelay);
+            steps.push(DiagnosticStep {
+                name: "TCP Connect".into(),
+                status: "pass".into(),
+                message: format!("Connected to {socket_addr}"),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: None,
+            });
+            s
+        }
+        Err(e) => {
+            let detail = if e.kind() == std::io::ErrorKind::TimedOut {
+                "Connection timed out — the port may be firewalled or the host is unreachable"
+            } else if e.kind() == std::io::ErrorKind::ConnectionRefused {
+                "Connection refused — Remote Desktop may be disabled on the target or is listening on a different port"
+            } else {
+                "Check firewall rules, VPN connectivity, and that the RDP service is running"
+            };
+            steps.push(DiagnosticStep {
+                name: "TCP Connect".into(),
+                status: "fail".into(),
+                message: format!("TCP connect failed: {e}"),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: Some(detail.into()),
+            });
+            return finish_report(host, port, resolved_ip, steps);
+        }
+    };
+
+    // ── Step 3: X.224 / RDP Negotiation ──────────────────────────────────
+
+    let t = Instant::now();
+    let mut framed = Framed::new(tcp_stream);
+
+    // Build a minimal config for negotiation probing
+    let (actual_user, actual_domain) = resolve_credentials(username, domain, host);
+    let probe_config = connector::Config {
+        credentials: connector::Credentials::UsernamePassword {
+            username: actual_user.clone(),
+            password: password.to_string(),
+        },
+        domain: actual_domain,
+        enable_tls: settings.enable_tls,
+        enable_credssp: settings.enable_credssp,
+        keyboard_type: settings.keyboard_type,
+        keyboard_subtype: settings.keyboard_subtype,
+        keyboard_functional_keys_count: settings.keyboard_functional_keys_count,
+        keyboard_layout: settings.keyboard_layout,
+        ime_file_name: settings.ime_file_name.clone(),
+        dig_product_id: String::new(),
+        desktop_size: connector::DesktopSize { width: 1024, height: 768 },
+        desktop_scale_factor: 100,
+        bitmap: Some(connector::BitmapConfig {
+            lossy_compression: false,
+            color_depth: 32,
+            codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
+        }),
+        client_build: settings.client_build,
+        client_name: settings.client_name.clone(),
+        client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
+        platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
+        hardware_id: None,
+        request_data: None,
+        autologon: false,
+        enable_audio_playback: false,
+        performance_flags: settings.performance_flags,
+        license_cache: None,
+        timezone_info: Default::default(),
+        enable_server_pointer: true,
+        pointer_software_rendering: false,
+        allow_hybrid_ex: settings.allow_hybrid_ex,
+        sspi_package_list: None,
+    };
+
+    let server_socket_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
+    let mut connector = ClientConnector::new(probe_config, server_socket_addr);
+
+    match ironrdp_blocking::connect_begin(&mut framed, &mut connector) {
+        Ok(should_upgrade) => {
+            let negotiate_ms = t.elapsed().as_millis() as u64;
+            let negotiated_proto = connector.state.name();
+            steps.push(DiagnosticStep {
+                name: "X.224 Negotiation".into(),
+                status: "pass".into(),
+                message: format!("Protocol negotiated → state: {negotiated_proto}"),
+                duration_ms: negotiate_ms,
+                detail: Some(format!(
+                    "TLS={}, CredSSP={}, HYBRID_EX={}",
+                    settings.enable_tls, settings.enable_credssp, settings.allow_hybrid_ex
+                )),
+            });
+
+            // ── Step 4: TLS Upgrade ─────────────────────────────────
+
+            let t = Instant::now();
+            let (tcp_stream, leftover) = framed.into_inner();
+            match tls_upgrade(tcp_stream, host, leftover, cached_tls_connector) {
+                Ok((mut tls_framed, server_public_key)) => {
+                    let tls_ms = t.elapsed().as_millis() as u64;
+
+                    // Extract cert info for the report
+                    let cert_detail = {
+                        let (tls_stream, _) = tls_framed.get_inner();
+                        extract_cert_fingerprint(tls_stream)
+                            .map(|fp| format!("SHA-256: {fp}"))
+                            .unwrap_or_else(|| "Certificate fingerprint unavailable".into())
+                    };
+
+                    steps.push(DiagnosticStep {
+                        name: "TLS Upgrade".into(),
+                        status: "pass".into(),
+                        message: format!("TLS handshake completed (server pubkey: {} bytes)", server_public_key.len()),
+                        duration_ms: tls_ms,
+                        detail: Some(cert_detail),
+                    });
+
+                    let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
+
+                    // ── Step 5: CredSSP / NLA Authentication ─────────
+
+                    let t = Instant::now();
+                    let mut network_client = BlockingNetworkClient::new(cached_http_client);
+                    let server_name = ironrdp::connector::ServerName::new(host);
+
+                    match ironrdp_blocking::connect_finalize(
+                        upgraded,
+                        connector,
+                        &mut tls_framed,
+                        &mut network_client,
+                        server_name,
+                        server_public_key,
+                        None,
+                    ) {
+                        Ok(connection_result) => {
+                            let auth_ms = t.elapsed().as_millis() as u64;
+                            steps.push(DiagnosticStep {
+                                name: "CredSSP / NLA + Session Setup".into(),
+                                status: "pass".into(),
+                                message: format!(
+                                    "Fully connected! Desktop: {}x{}",
+                                    connection_result.desktop_size.width,
+                                    connection_result.desktop_size.height
+                                ),
+                                duration_ms: auth_ms,
+                                detail: Some("Authentication, licensing, and capability exchange all succeeded".into()),
+                            });
+                            // We have a full connection — gracefully close it.
+                            // (connection_result is dropped, tls_framed will close on drop)
+                        }
+                        Err(e) => {
+                            let auth_ms = t.elapsed().as_millis() as u64;
+                            // Walk the error chain for maximum detail
+                            let mut err_detail = format!("{e}");
+                            let mut source: Option<&dyn std::error::Error> = std::error::Error::source(&e);
+                            while let Some(cause) = source {
+                                err_detail.push_str(&format!(" → {cause}"));
+                                source = std::error::Error::source(cause);
+                            }
+
+                            let (status, root_hint) = classify_finalize_error(&err_detail);
+
+                            steps.push(DiagnosticStep {
+                                name: "CredSSP / NLA + Session Setup".into(),
+                                status: status.into(),
+                                message: format!("Failed: {e}"),
+                                duration_ms: auth_ms,
+                                detail: Some(err_detail.clone()),
+                            });
+
+                            // Try to isolate CredSSP vs post-CredSSP failure
+                            if err_detail.contains("10054") || err_detail.contains("forcibly closed") {
+                                steps.push(DiagnosticStep {
+                                    name: "Root Cause Analysis".into(),
+                                    status: "warn".into(),
+                                    message: "Server accepted TLS but closed connection during/after CredSSP".into(),
+                                    duration_ms: 0,
+                                    detail: Some(root_hint.unwrap_or_else(|| {
+                                        "The CredSSP handshake itself may have succeeded (NTLM OK), \
+                                         but the server rejected the session during BasicSettingsExchange. \
+                                         This typically means the server accepted your identity but a \
+                                         policy or licensing issue prevented session creation. \
+                                         Check Windows Event Viewer on the server: \
+                                         Applications and Services Logs → Microsoft → Windows → \
+                                         TerminalServices-RemoteConnectionManager → Operational \
+                                         for the specific rejection reason.".into()
+                                    })),
+                                });
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let tls_ms = t.elapsed().as_millis() as u64;
+                    steps.push(DiagnosticStep {
+                        name: "TLS Upgrade".into(),
+                        status: "fail".into(),
+                        message: format!("TLS handshake failed: {e}"),
+                        duration_ms: tls_ms,
+                        detail: Some("The server may not support TLS, or its certificate is invalid. Try disabling TLS in connection settings.".into()),
+                    });
+                }
+            }
+        }
+        Err(e) => {
+            let negotiate_ms = t.elapsed().as_millis() as u64;
+            let mut err_detail = format!("{e}");
+            let mut source: Option<&dyn std::error::Error> = std::error::Error::source(&e);
+            while let Some(cause) = source {
+                err_detail.push_str(&format!(" → {cause}"));
+                source = std::error::Error::source(cause);
+            }
+            steps.push(DiagnosticStep {
+                name: "X.224 Negotiation".into(),
+                status: "fail".into(),
+                message: format!("Protocol negotiation failed: {e}"),
+                duration_ms: negotiate_ms,
+                detail: Some(err_detail),
+            });
+        }
+    }
+
+    finish_report(host, port, resolved_ip, steps)
+}
+
+/// Extract username and domain from various formats (DOMAIN\\user, user@domain, plain user)
+fn resolve_credentials(username: &str, domain: Option<&str>, host: &str) -> (String, Option<String>) {
+    if let Some(d) = domain {
+        if !d.is_empty() {
+            return (username.to_string(), Some(d.to_string()));
+        }
+    }
+    if let Some(idx) = username.find('\\') {
+        let d = &username[..idx];
+        let u = &username[idx + 1..];
+        return (u.to_string(), Some(d.to_string()));
+    }
+    if let Some(idx) = username.find('@') {
+        let u = &username[..idx];
+        let d = &username[idx + 1..];
+        return (u.to_string(), Some(d.to_string()));
+    }
+    let _ = host; // hostname fallback not used in diagnostics
+    (username.to_string(), None)
+}
+
+/// Classify the connect_finalize error to provide a root cause hint.
+fn classify_finalize_error(err: &str) -> (&'static str, Option<String>) {
+    let lower = err.to_lowercase();
+
+    if lower.contains("10054") || lower.contains("forcibly closed") || lower.contains("connection reset") {
+        if lower.contains("basicsettingsexchange") || lower.contains("basic settings") {
+            // Server closed after CredSSP but during MCS GCC exchange — policy / licensing
+            return ("fail", Some(
+                "The server authenticated you (CredSSP/NTLM succeeded) but refused the session \
+                 during MCS/GCC negotiation. This usually points to:\n\
+                 • RD Licensing: no licenses available or licensing server unreachable\n\
+                 • Group Policy: the user is denied logon via 'Allow/Deny log on through Remote Desktop Services'\n\
+                 • Max sessions: the server has reached its connection limit\n\
+                 • Account restrictions: logon hours, workstation restrictions, or disabled account\n\n\
+                 → Check Event Viewer on the server:\n\
+                   Applications and Services Logs → Microsoft → Windows →\n\
+                   TerminalServices-RemoteConnectionManager → Operational\n\
+                   TerminalServices-LocalSessionManager → Operational\n\
+                   System log (source: TermService)"
+                .into(),
+            ));
+        }
+        if lower.contains("credssp") || lower.contains("nla") || lower.contains("authenticat") {
+            return ("fail", Some(
+                "The connection was reset during the CredSSP/NLA authentication phase. \
+                 This usually means invalid credentials, CredSSP oracle remediation policy mismatch, \
+                 or the account lacks remote logon rights."
+                .into(),
+            ));
+        }
+        // Generic 10054
+        return ("fail", Some(
+            "The server sent a TCP RST (forcible close). The connection was dropped \
+             before the session could be established. Check the server's Event Viewer \
+             for the specific rejection reason."
+            .into(),
+        ));
+    }
+
+    if lower.contains("access denied") || lower.contains("accessdenied") {
+        return ("fail", Some("Access was explicitly denied by the server.".into()));
+    }
+
+    if lower.contains("license") {
+        return ("fail", Some(
+            "A licensing error occurred. The RD licensing server may be unreachable or out of CALs."
+            .into(),
+        ));
+    }
+
+    ("fail", None)
+}
+
+fn finish_report(
+    host: &str,
+    port: u16,
+    resolved_ip: Option<String>,
+    steps: Vec<DiagnosticStep>,
+) -> DiagnosticReport {
+    let all_pass = steps.iter().all(|s| s.status == "pass");
+    let first_fail = steps.iter().find(|s| s.status == "fail");
+    let any_warn = steps.iter().any(|s| s.status == "warn");
+    let root_cause = steps
+        .iter()
+        .filter(|s| s.name == "Root Cause Analysis")
+        .last()
+        .and_then(|s| s.detail.clone());
+
+    let summary = if all_pass {
+        "All diagnostic probes passed — the server is fully reachable and accepted the connection.".into()
+    } else if let Some(fail) = first_fail {
+        format!("Diagnostics stopped at: {} — {}", fail.name, fail.message)
+    } else if any_warn {
+        "Connection partially succeeded but warnings were reported.".into()
+    } else {
+        "Diagnostics completed with mixed results.".into()
+    };
+
+    DiagnosticReport {
+        host: host.to_string(),
+        port,
+        resolved_ip,
+        steps,
+        summary,
+        root_cause_hint: root_cause,
     }
 }

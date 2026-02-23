@@ -215,6 +215,12 @@ const defaultSettings: GlobalSettings = {
     defaultHeight: 1080,
     defaultColorDepth: 32,
     smartSizing: true,
+    tcpConnectTimeoutSecs: 10,
+    tcpNodelay: true,
+    tcpKeepAlive: true,
+    tcpKeepAliveIntervalSecs: 60,
+    tcpRecvBufferSize: 262144,
+    tcpSendBufferSize: 262144,
   },
 };
 

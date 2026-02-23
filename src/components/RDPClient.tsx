@@ -22,6 +22,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useConnections } from '../contexts/useConnections';
+import RdpErrorScreen from './RdpErrorScreen';
 import { useSettings } from '../contexts/SettingsContext';
 import {
   verifyIdentity,
@@ -192,6 +193,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
+  const connectGenRef = useRef(0);
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
@@ -209,6 +211,9 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
   const initializeRDPConnection = useCallback(async () => {
     if (!connection) return;
+
+    // Guard: prevent duplicate connection attempts (React StrictMode double-mount)
+    const gen = ++connectGenRef.current;
 
     try {
       setConnectionStatus('connecting');
@@ -229,9 +234,18 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         rdpSettings: rdpSettings,
       };
 
-      debugLog(`Attempting RDP connection to ${connectionDetails.host}:${connectionDetails.port}`);
+      debugLog(`Attempting RDP connection to ${connectionDetails.host}:${connectionDetails.port} (gen=${gen})`);
 
       const sessionId = await invoke('connect_rdp', connectionDetails) as string;
+
+      // If a newer connect attempt was started (or cleanup ran) while we were
+      // awaiting, this session is stale — tear it down immediately.
+      if (gen !== connectGenRef.current) {
+        debugLog(`Stale RDP session ${sessionId} (gen=${gen}, current=${connectGenRef.current}) — disconnecting`);
+        try { await invoke('disconnect_rdp', { sessionId }); } catch { /* ignore */ }
+        return;
+      }
+
       debugLog(`RDP session created: ${sessionId}`);
       setRdpSessionId(sessionId);
       sessionIdRef.current = sessionId;
@@ -252,6 +266,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         }
       }
     } catch (error) {
+      if (gen !== connectGenRef.current) return; // Stale attempt, ignore
       setConnectionStatus('error');
       setStatusMessage(`Connection failed: ${error}`);
       console.error('RDP initialization failed:', error);
@@ -261,14 +276,17 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   // ─── Disconnect ────────────────────────────────────────────────────
 
   const cleanup = useCallback(async () => {
+    // Invalidate any in-flight connect so its result is discarded
+    connectGenRef.current++;
+
     const sid = sessionIdRef.current;
+    sessionIdRef.current = null;
     if (sid) {
       try {
         await invoke('disconnect_rdp', { sessionId: sid });
       } catch {
         // ignore disconnect errors during cleanup
       }
-      sessionIdRef.current = null;
     }
     setIsConnected(false);
     setConnectionStatus('disconnected');
@@ -350,9 +368,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           break;
         case 'disconnected':
           setIsConnected(false);
-          setConnectionStatus('disconnected');
-          setRdpSessionId(null);
-          sessionIdRef.current = null;
+          // Preserve the error screen – don't overwrite 'error' with 'disconnected'
+          setConnectionStatus((prev) => {
+            if (prev === 'error') return 'error';
+            setRdpSessionId(null);
+            sessionIdRef.current = null;
+            return 'disconnected';
+          });
           break;
       }
     }).then(fn => unlisteners.push(fn));
@@ -1045,11 +1067,25 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         )}
         
         {connectionStatus === 'error' && (
-          <div className="text-center">
-            <WifiOff size={48} className="text-red-400 mx-auto mb-4" />
-            <p className="text-red-400 mb-2">RDP Connection Failed</p>
-            <p className="text-gray-500 text-sm">{statusMessage || `Unable to connect to ${session.hostname}`}</p>
-          </div>
+          <RdpErrorScreen
+            sessionId={rdpSessionId || session.id}
+            hostname={session.hostname}
+            errorMessage={statusMessage || `Unable to connect to ${session.hostname}`}
+            onRetry={() => {
+              setConnectionStatus('disconnected');
+              setStatusMessage('');
+              setRdpSessionId(null);
+              sessionIdRef.current = null;
+              initializeRDPConnection();
+            }}
+            connectionDetails={{
+              port: connection?.port || 3389,
+              username: connection?.username || '',
+              password: connection?.password || '',
+              domain: (connection as Record<string, unknown> | undefined)?.domain as string | undefined,
+              rdpSettings,
+            }}
+          />
         )}
 
         {connectionStatus === 'disconnected' && (

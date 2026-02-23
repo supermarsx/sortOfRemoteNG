@@ -391,6 +391,20 @@ export interface RdpGlobalDefaultsConfig {
   defaultColorDepth: 16 | 24 | 32;
   /** Default smart sizing */
   smartSizing: boolean;
+
+  // ─── TCP / Socket defaults ─────────────────────────────────
+  /** TCP connect timeout in seconds */
+  tcpConnectTimeoutSecs: number;
+  /** Enable TCP_NODELAY (disable Nagle) */
+  tcpNodelay: boolean;
+  /** Enable TCP keep-alive */
+  tcpKeepAlive: boolean;
+  /** TCP keep-alive interval in seconds */
+  tcpKeepAliveIntervalSecs: number;
+  /** Socket receive buffer size in bytes */
+  tcpRecvBufferSize: number;
+  /** Socket send buffer size in bytes */
+  tcpSendBufferSize: number;
 }
 
 // Backup scheduling frequency

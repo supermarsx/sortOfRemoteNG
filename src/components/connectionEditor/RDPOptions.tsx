@@ -18,6 +18,7 @@ import {
   Server,
   Zap,
   ToggleLeft,
+  Cable,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { Connection, DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../../types/connection';
@@ -1592,6 +1593,106 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             }
             className="w-full"
           />
+        </div>
+      </Section>
+
+      {/* ─── TCP / Socket ────────────────────────────────────────── */}
+      <Section title="TCP / Socket" icon={<Cable size={14} className="text-emerald-400" />}>
+        <p className="text-xs text-gray-500 mb-3">
+          Low-level socket options for the underlying TCP connection.
+        </p>
+
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">
+            Connect Timeout: {rdp.tcp?.connectTimeoutSecs ?? 10}s
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={60}
+            step={1}
+            value={rdp.tcp?.connectTimeoutSecs ?? 10}
+            onChange={(e) => updateRdp('tcp', { connectTimeoutSecs: parseInt(e.target.value) })}
+            className="w-full"
+          />
+          <div className="flex justify-between text-xs text-gray-600">
+            <span>1s</span>
+            <span>60s</span>
+          </div>
+        </div>
+
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={rdp.tcp?.nodelay ?? true}
+            onChange={(e) => updateRdp('tcp', { nodelay: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-xs text-gray-300 group-hover:text-white transition-colors">
+            TCP_NODELAY (disable Nagle&apos;s algorithm)
+          </span>
+        </label>
+
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={rdp.tcp?.keepAlive ?? true}
+            onChange={(e) => updateRdp('tcp', { keepAlive: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-xs text-gray-300 group-hover:text-white transition-colors">
+            TCP Keep-Alive
+          </span>
+        </label>
+
+        {(rdp.tcp?.keepAlive ?? true) && (
+          <div className="ml-6">
+            <label className="block text-xs text-gray-400 mb-1">
+              Keep-Alive Interval: {rdp.tcp?.keepAliveIntervalSecs ?? 60}s
+            </label>
+            <input
+              type="range"
+              min={5}
+              max={300}
+              step={5}
+              value={rdp.tcp?.keepAliveIntervalSecs ?? 60}
+              onChange={(e) => updateRdp('tcp', { keepAliveIntervalSecs: parseInt(e.target.value) })}
+              className="w-full"
+            />
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3 mt-2">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Recv Buffer</label>
+            <select
+              value={rdp.tcp?.recvBufferSize ?? 262144}
+              onChange={(e) => updateRdp('tcp', { recvBufferSize: parseInt(e.target.value) })}
+              className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
+            >
+              <option value={65536}>64 KB</option>
+              <option value={131072}>128 KB</option>
+              <option value={262144}>256 KB</option>
+              <option value={524288}>512 KB</option>
+              <option value={1048576}>1 MB</option>
+              <option value={2097152}>2 MB</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Send Buffer</label>
+            <select
+              value={rdp.tcp?.sendBufferSize ?? 262144}
+              onChange={(e) => updateRdp('tcp', { sendBufferSize: parseInt(e.target.value) })}
+              className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
+            >
+              <option value={65536}>64 KB</option>
+              <option value={131072}>128 KB</option>
+              <option value={262144}>256 KB</option>
+              <option value={524288}>512 KB</option>
+              <option value={1048576}>1 MB</option>
+              <option value={2097152}>2 MB</option>
+            </select>
+          </div>
         </div>
       </Section>
     </div>

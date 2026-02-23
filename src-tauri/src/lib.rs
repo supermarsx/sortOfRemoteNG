@@ -521,6 +521,7 @@ pub fn run() {
         rdp::list_rdp_sessions,
         rdp::get_rdp_stats,
         rdp::detect_keyboard_layout,
+        rdp::diagnose_rdp_connection,
         vnc::connect_vnc,
         vnc::disconnect_vnc,
         vnc::get_vnc_session_info,
