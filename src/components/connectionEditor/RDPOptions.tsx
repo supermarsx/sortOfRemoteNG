@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Monitor,
   Volume2,
@@ -12,7 +12,9 @@ import {
   Fingerprint,
   Trash2,
   Pencil,
+  ScanSearch,
 } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 import { Connection, DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../../types/connection';
 import {
   getAllTrustRecords,
@@ -82,6 +84,29 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
   const [rdpTrustRecords, setRdpTrustRecords] = useState<TrustRecord[]>([]);
   const [editingNickname, setEditingNickname] = useState<string | null>(null);
   const [nicknameInput, setNicknameInput] = useState('');
+  const [detectingLayout, setDetectingLayout] = useState(false);
+
+  const detectKeyboardLayout = useCallback(async () => {
+    setDetectingLayout(true);
+    try {
+      const layout = await invoke<number>('detect_keyboard_layout');
+      const langId = layout & 0xffff;
+      setFormData((prev) => ({
+        ...prev,
+        rdpSettings: {
+          ...(prev.rdpSettings ?? DEFAULT_RDP_SETTINGS),
+          input: {
+            ...((prev.rdpSettings ?? DEFAULT_RDP_SETTINGS).input),
+            keyboardLayout: langId,
+          },
+        },
+      }));
+    } catch {
+      /* detection not available outside Tauri */
+    } finally {
+      setDetectingLayout(false);
+    }
+  }, [setFormData]);
 
   // Load trust records for RDP (must be before early return to satisfy hook rules)
   useEffect(() => {
@@ -345,17 +370,29 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
         <div>
           <label className="block text-xs text-gray-400 mb-1">Keyboard Layout</label>
-          <select
-            value={rdp.input?.keyboardLayout ?? 0x0409}
-            onChange={(e) => updateRdp('input', { keyboardLayout: parseInt(e.target.value) })}
-            className={selectClass}
-          >
-            {KEYBOARD_LAYOUTS.map((kl) => (
-              <option key={kl.value} value={kl.value}>
-                {kl.label} (0x{kl.value.toString(16).padStart(4, '0')})
-              </option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <select
+              value={rdp.input?.keyboardLayout ?? 0x0409}
+              onChange={(e) => updateRdp('input', { keyboardLayout: parseInt(e.target.value) })}
+              className={selectClass + ' flex-1'}
+            >
+              {KEYBOARD_LAYOUTS.map((kl) => (
+                <option key={kl.value} value={kl.value}>
+                  {kl.label} (0x{kl.value.toString(16).padStart(4, '0')})
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={detectKeyboardLayout}
+              disabled={detectingLayout}
+              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs text-gray-300 flex items-center gap-1 disabled:opacity-50"
+              title="Auto-detect current keyboard layout"
+            >
+              <ScanSearch size={12} />
+              {detectingLayout ? '...' : 'Detect'}
+            </button>
+          </div>
         </div>
 
         <div>

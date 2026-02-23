@@ -549,13 +549,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     if (!isConnected) return;
     e.preventDefault();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
-    sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: true }]);
+    sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: true }], true);
   }, [isConnected, scaleCoords, sendInput]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isConnected) return;
     const { x, y } = scaleCoords(e.clientX, e.clientY);
-    sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: false }]);
+    sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: false }], true);
   }, [isConnected, scaleCoords, sendInput]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -563,7 +563,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     e.preventDefault();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     const delta = Math.sign(e.deltaY) * -120;
-    sendInput([{ type: 'Wheel', x, y, delta, horizontal: e.shiftKey }]);
+    sendInput([{ type: 'Wheel', x, y, delta, horizontal: e.shiftKey }], true);
   }, [isConnected, scaleCoords, sendInput]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -572,7 +572,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
     const scan = keyToScancode(e.nativeEvent);
     if (scan) {
-      sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: true, extended: scan.extended }]);
+      sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: true, extended: scan.extended }], true);
     }
   }, [isConnected, sendInput]);
 
@@ -582,7 +582,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
     const scan = keyToScancode(e.nativeEvent);
     if (scan) {
-      sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: false, extended: scan.extended }]);
+      sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: false, extended: scan.extended }], true);
     }
   }, [isConnected, sendInput]);
 
