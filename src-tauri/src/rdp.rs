@@ -1147,6 +1147,26 @@ fn run_rdp_session(
         }
         Err(e) => {
             let err_msg = format!("{e}");
+
+            // Shutdown sentinel: the session was evicted or disconnected
+            // before it could fully connect.  Treat this as a clean
+            // disconnect rather than an error visible to the user.
+            if err_msg.contains("session_shutdown") {
+                log::info!("RDP session {session_id} was shut down before connecting");
+                stats.set_phase("disconnected");
+                let _ = app_handle.emit(
+                    "rdp://status",
+                    RdpStatusEvent {
+                        session_id,
+                        status: "disconnected".to_string(),
+                        message: "Session cancelled".to_string(),
+                        desktop_width: None,
+                        desktop_height: None,
+                    },
+                );
+                return;
+            }
+
             log::error!("RDP session {session_id} error: {err_msg}");
             stats.set_phase("error");
             stats.set_last_error(&err_msg);
@@ -1203,6 +1223,13 @@ fn build_negotiation_combos(strategy: &str, base: &ResolvedSettings) -> Vec<(boo
 
 /// Auto-detect negotiation: retry with different protocol combinations until
 /// one works or all are exhausted.
+///
+/// **Phase 1** – vary `(tls, credssp, hybrid_ex)` with the user's full Config.
+/// **Phase 2** – if Phase 1 failed at the BasicSettingsExchange (GCC/MCS)
+///   stage, re-run the winning-protocol combo (or all combos) with a
+///   *minimal* Config identical to the diagnostic probe.  The diagnostic
+///   probe often succeeds because it strips load-balancing info, SSPI
+///   restrictions, audio, autologon, etc.
 #[allow(clippy::too_many_arguments)]
 fn run_rdp_session_auto_detect(
     session_id: &str,
@@ -1228,6 +1255,9 @@ fn run_rdp_session_auto_detect(
     );
 
     let mut last_error: Option<Box<dyn std::error::Error + Send + Sync>> = None;
+    let mut had_basic_settings_failure = false;
+
+    // ── Phase 1: vary protocol flags with user Config ────────────────
 
     for (i, (tls, credssp, hybrid_ex)) in combos.iter().take(max_attempts).enumerate() {
         log::info!(
@@ -1235,7 +1265,6 @@ fn run_rdp_session_auto_detect(
             i + 1, max_attempts, tls, credssp, hybrid_ex
         );
 
-        // Emit status to frontend
         let _ = app_handle.emit(
             "rdp://status",
             RdpStatusEvent {
@@ -1250,14 +1279,12 @@ fn run_rdp_session_auto_detect(
             },
         );
 
-        // Build modified settings for this attempt
         let mut attempt_settings = ResolvedSettings {
             enable_tls: *tls,
             enable_credssp: *credssp,
             allow_hybrid_ex: *hybrid_ex,
             ..settings.clone()
         };
-        // If CredSSP is disabled for this attempt, don't bother with SSPI
         if !credssp {
             attempt_settings.sspi_package_list = String::new();
         }
@@ -1286,13 +1313,30 @@ fn run_rdp_session_auto_detect(
                 return Ok(());
             }
             Err(e) => {
+                let err_str = format!("{e}");
+                if err_str.contains("session_shutdown") {
+                    log::info!(
+                        "RDP session {session_id}: auto-detect aborting (session shutdown)"
+                    );
+                    return Err(e);
+                }
+
+                // Track whether any failure was at the BasicSettingsExchange
+                // (GCC/MCS) stage — this means the protocol itself was fine
+                // but the Config fields upset the server.
+                if err_str.contains("BasicSettingsExchange")
+                    || err_str.contains("basic settings")
+                    || err_str.contains("connect_finalize")
+                {
+                    had_basic_settings_failure = true;
+                }
+
                 log::warn!(
                     "RDP session {session_id}: auto-detect attempt {} failed: {e}",
                     i + 1
                 );
                 last_error = Some(e);
 
-                // Wait before retrying
                 if i + 1 < max_attempts {
                     std::thread::sleep(Duration::from_millis(settings.retry_delay_ms));
                 }
@@ -1300,10 +1344,136 @@ fn run_rdp_session_auto_detect(
         }
     }
 
+    // ── Phase 2: try minimal/fallback Config ─────────────────────────
+    // If we saw a BasicSettingsExchange failure the protocol negotiation
+    // itself worked — the server just didn't like something in the GCC
+    // Conference Create data.  Re-try with a stripped-down Config that
+    // mirrors what the diagnostic probe sends (which often succeeds).
+    //
+    // We also vary the color depth: some servers reject 24-bit but accept
+    // 32 or 16.  The order [32, 16] covers the vast majority of cases.
+
+    if had_basic_settings_failure {
+        log::info!(
+            "RDP session {session_id}: auto-detect Phase 2 — retrying with minimal Config \
+             (BasicSettingsExchange failures detected in Phase 1)"
+        );
+
+        let fallback_combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
+        let fallback_max = (settings.max_retries as usize + 1).min(fallback_combos.len());
+        let color_depths: &[u32] = &[32, 16];
+        let total_fallback = fallback_max * color_depths.len();
+        let mut attempt_num = 0usize;
+
+        for (i, (tls, credssp, hybrid_ex)) in fallback_combos.iter().take(fallback_max).enumerate() {
+            for &depth in color_depths {
+                attempt_num += 1;
+                log::info!(
+                    "RDP session {session_id}: auto-detect fallback {}/{} → tls={} credssp={} hybrid_ex={} color={}bpp (minimal config)",
+                    attempt_num, total_fallback, tls, credssp, hybrid_ex, depth
+                );
+
+                let _ = app_handle.emit(
+                    "rdp://status",
+                    RdpStatusEvent {
+                        session_id: session_id.to_string(),
+                        status: "negotiating".to_string(),
+                        message: format!(
+                            "Auto-detect fallback {}/{}: TLS={} CredSSP={} HYBRID_EX={} color={}bpp (simplified)",
+                            attempt_num, total_fallback, tls, credssp, hybrid_ex, depth
+                        ),
+                        desktop_width: None,
+                        desktop_height: None,
+                    },
+                );
+
+                // Build minimal settings — keep the protocol flags but strip
+                // everything that might upset the GCC exchange.
+                let mut fallback_settings = ResolvedSettings {
+                    enable_tls: *tls,
+                    enable_credssp: *credssp,
+                    allow_hybrid_ex: *hybrid_ex,
+                    // Minimal display — matches diagnostic probe
+                    width: 1024,
+                    height: 768,
+                    desktop_scale_factor: 100,
+                    lossy_compression: false,
+                    color_depth: depth,
+                    // Strip load-balancing / routing
+                    load_balancing_info: String::new(),
+                    use_routing_token: false,
+                    // No autologon, no audio
+                    autologon: false,
+                    enable_audio_playback: false,
+                    // No SSPI restrictions
+                    sspi_package_list: String::new(),
+                    // Keep everything else from the user settings
+                    ..settings.clone()
+                };
+                if !credssp {
+                    fallback_settings.sspi_package_list = String::new();
+                }
+
+                let result = run_rdp_session_inner(
+                    session_id,
+                    host,
+                    port,
+                    username,
+                    password,
+                    domain,
+                    &fallback_settings,
+                    app_handle,
+                    cmd_rx,
+                    stats,
+                    cached_tls_connector.clone(),
+                    cached_http_client.clone(),
+                );
+
+                match result {
+                    Ok(()) => {
+                        log::info!(
+                            "RDP session {session_id}: auto-detect fallback succeeded on attempt {} \
+                             (tls={} credssp={} hybrid_ex={} color={}bpp, minimal config). \
+                             The server rejected the original Config at BasicSettingsExchange — \
+                             one of: color_depth, load_balancing_info, sspi_package_list, autologon, \
+                             audio, desktop_size, or lossy_compression was the culprit.",
+                            attempt_num, tls, credssp, hybrid_ex, depth
+                        );
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        let err_str = format!("{e}");
+                        if err_str.contains("session_shutdown") {
+                            log::info!(
+                                "RDP session {session_id}: auto-detect fallback aborting (session shutdown)"
+                            );
+                            return Err(e);
+                        }
+
+                        log::warn!(
+                            "RDP session {session_id}: auto-detect fallback {} failed: {e}",
+                            attempt_num
+                        );
+                        last_error = Some(e);
+
+                        if attempt_num < total_fallback {
+                            std::thread::sleep(Duration::from_millis(settings.retry_delay_ms));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Err(last_error.unwrap_or_else(|| {
         format!(
-            "Auto-detect exhausted all {} negotiation strategies",
-            max_attempts
+            "Auto-detect exhausted all {} negotiation strategies{}",
+            max_attempts,
+            if had_basic_settings_failure {
+                " (including minimal-config fallback)"
+            } else {
+                ""
+            }
         )
         .into()
     }))
@@ -1328,10 +1498,12 @@ fn run_rdp_session_inner(
 
     // ── 0. Pre-flight shutdown check ────────────────────────────────────
     // If an evict/disconnect was sent before we even started, bail out.
+    // Return a sentinel error so auto-detect does NOT interpret this as
+    // "connected successfully".
     match cmd_rx.try_recv() {
         Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
             log::info!("RDP session {session_id}: shutdown before connect (pre-flight)");
-            return Ok(());
+            return Err("session_shutdown: cancelled before connect".into());
         }
         _ => {}
     }
@@ -1393,7 +1565,7 @@ fn run_rdp_session_inner(
     match cmd_rx.try_recv() {
         Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
             log::info!("RDP session {session_id}: shutdown after TCP connect");
-            return Ok(());
+            return Err("session_shutdown: cancelled after TCP connect".into());
         }
         _ => {}
     }
@@ -1593,7 +1765,7 @@ fn run_rdp_session_inner(
     match cmd_rx.try_recv() {
         Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
             log::info!("RDP session {session_id}: shutdown before CredSSP");
-            return Ok(());
+            return Err("session_shutdown: cancelled before CredSSP".into());
         }
         _ => {}
     }

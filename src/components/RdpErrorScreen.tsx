@@ -58,6 +58,7 @@ interface DiagnosticCause {
 
 type ErrorCategory =
   | 'duplicate_session'
+  | 'negotiation_failure'
   | 'credssp_post_auth'
   | 'credssp_oracle'
   | 'credentials'
@@ -69,6 +70,16 @@ function classifyError(raw: string): ErrorCategory {
   const msg = raw.toLowerCase();
   if (msg.includes('already active or connecting')) {
     return 'duplicate_session';
+  }
+  // Negotiation failure: server requires a specific security mode the client didn't offer
+  if (
+    msg.includes('negotiation failure') ||
+    (msg.includes('connect_begin') &&
+      (msg.includes('negotiat') || msg.includes('security'))) ||
+    (msg.includes('requires') && msg.includes('enhanced rdp security')) ||
+    (msg.includes('required protocols') && msg.includes('not enabled'))
+  ) {
+    return 'negotiation_failure';
   }
   if (
     (msg.includes('10054') || msg.includes('forcibly closed')) &&
@@ -108,6 +119,37 @@ function buildDiagnostics(category: ErrorCategory): DiagnosticCause[] {
           severity: 'low',
         },
       ];
+    case 'negotiation_failure':
+      return [
+        {
+          icon: <ShieldAlert size={20} className="text-amber-400" />,
+          title: 'Server requires Enhanced RDP Security (CredSSP / NLA)',
+          description:
+            'The RDP server requires Enhanced RDP Security with CredSSP (Network Level Authentication) ' +
+            'but the current connection settings do not offer it, or the server rejected the offered ' +
+            'security protocol during X.224 negotiation.',
+          remediation: [
+            'In this connection\'s Security settings, ensure "Use CredSSP / NLA" is enabled.',
+            'Try enabling "Auto-detect negotiation" so the app can find a working protocol automatically.',
+            'If the server requires HYBRID_EX, enable "Allow Hybrid Extended Security" in Security settings.',
+            'On the server, check "Security Layer" in RD Session Host Configuration — if set to "Negotiate" or "SSL (TLS 1.0)", the server should accept TLS without CredSSP.',
+          ],
+          severity: 'high',
+        },
+        {
+          icon: <Lock size={20} className="text-yellow-400" />,
+          title: 'Protocol mismatch',
+          description:
+            'The client offered a security protocol (e.g. TLS-only, plain) that the server does not support. ' +
+            'Most modern Windows servers require NLA/CredSSP.',
+          remediation: [
+            'Switch the negotiation strategy to "NLA First" or "Auto" in the Negotiation settings tab.',
+            'On the server, verify Remote Desktop → Advanced → "Require Network Level Authentication" is consistent with your settings.',
+          ],
+          severity: 'medium',
+        },
+      ];
+
     case 'credssp_post_auth':
       return [
         {
@@ -242,6 +284,7 @@ function buildDiagnostics(category: ErrorCategory): DiagnosticCause[] {
 
 const CATEGORY_LABELS: Record<ErrorCategory, string> = {
   duplicate_session: 'Duplicate Session',
+  negotiation_failure: 'Security Negotiation Failure',
   credssp_post_auth: 'Post-Authentication Rejection (NLA / CredSSP)',
   credssp_oracle: 'CredSSP Encryption Oracle Mismatch',
   credentials: 'Authentication Failure',
@@ -346,6 +389,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
   /* severity → header bar colour */
   const headerColor: Record<ErrorCategory, string> = {
     duplicate_session: 'from-yellow-900/60 to-yellow-950/40',
+    negotiation_failure: 'from-amber-900/60 to-amber-950/40',
     credssp_post_auth: 'from-red-900/60 to-red-950/40',
     credssp_oracle: 'from-purple-900/60 to-purple-950/40',
     credentials: 'from-orange-900/60 to-orange-950/40',
