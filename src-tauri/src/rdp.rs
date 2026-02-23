@@ -7,13 +7,12 @@ use std::time::Duration;
 use base64::Engine as _;
 use ironrdp::connector::{self, ClientConnector, ConnectionResult, Credentials};
 use ironrdp::graphics::image_processing::PixelFormat;
-use ironrdp::input::fast_path::FastPathInputEvent;
-use ironrdp::pdu::Action;
+use ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
 use ironrdp_blocking::{self, Framed};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
@@ -122,41 +121,44 @@ impl BlockingNetworkClient {
 }
 
 impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetworkClient {
-    fn send_http(
+    fn send(
         &self,
-        request: &ironrdp::connector::sspi::network_client::NetworkRequest,
-    ) -> Result<
-        ironrdp::connector::sspi::network_client::NetworkResponse,
-        ironrdp::connector::sspi::network_client::NetworkClientError,
-    > {
-        use ironrdp::connector::sspi::network_client::{
-            NetworkClientError, NetworkResponse,
-        };
+        request: &ironrdp::connector::sspi::generator::NetworkRequest,
+    ) -> ironrdp::connector::sspi::Result<Vec<u8>> {
+        use ironrdp::connector::sspi::network_client::NetworkProtocol;
 
         let url = request.url.to_string();
-        let body = request.body.clone();
+        let data = request.data.clone();
 
-        let mut req_builder = self.client.post(&url);
+        let response_bytes = match request.protocol {
+            NetworkProtocol::Http | NetworkProtocol::Https => {
+                let resp = self.client.post(&url)
+                    .body(data)
+                    .send()
+                    .map_err(|e| {
+                        ironrdp::connector::sspi::Error::new(
+                            ironrdp::connector::sspi::ErrorKind::InternalError,
+                            format!("HTTP request failed: {e}"),
+                        )
+                    })?;
+                resp.bytes()
+                    .map_err(|e| {
+                        ironrdp::connector::sspi::Error::new(
+                            ironrdp::connector::sspi::ErrorKind::InternalError,
+                            format!("Failed to read response body: {e}"),
+                        )
+                    })?
+                    .to_vec()
+            }
+            _ => {
+                return Err(ironrdp::connector::sspi::Error::new(
+                    ironrdp::connector::sspi::ErrorKind::InternalError,
+                    format!("Unsupported protocol: {:?}", request.protocol),
+                ));
+            }
+        };
 
-        for header in &request.headers {
-            req_builder = req_builder.header(&header.name, &header.value);
-        }
-
-        req_builder = req_builder.body(body);
-
-        let response = req_builder.send().map_err(|e| {
-            NetworkClientError::new("reqwest", format!("HTTP request failed: {e}"))
-        })?;
-
-        let status = response.status().as_u16();
-        let body = response.bytes().map_err(|e| {
-            NetworkClientError::new("reqwest", format!("Failed to read response body: {e}"))
-        })?;
-
-        Ok(NetworkResponse {
-            status_code: status,
-            body: body.to_vec(),
-        })
+        Ok(response_bytes)
     }
 }
 
@@ -167,7 +169,7 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
 fn tls_upgrade(
     stream: TcpStream,
     server_name: &str,
-    leftover: bytes::BytesMut,
+    leftover: ::bytes::BytesMut,
 ) -> Result<
     (Framed<native_tls::TlsStream<TcpStream>>, Vec<u8>),
     Box<dyn std::error::Error + Send + Sync>,
@@ -221,11 +223,19 @@ fn extract_server_public_key(
 // ─── Convert frontend input to IronRDP FastPathInputEvent ──────────────────
 
 fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
-    use ironrdp::input::fast_path::FastPathInput;
+    use ironrdp::pdu::input::fast_path::KeyboardFlags;
+    use ironrdp::pdu::input::mouse::PointerFlags;
+    use ironrdp::pdu::input::mouse_x::PointerXFlags;
+    use ironrdp::pdu::input::{MousePdu, MouseXPdu};
 
     match action {
         RdpInputAction::MouseMove { x, y } => {
-            vec![FastPathInput::mouse_move(*x, *y)]
+            vec![FastPathInputEvent::MouseEvent(MousePdu {
+                flags: PointerFlags::MOVE,
+                number_of_wheel_rotation_units: 0,
+                x_position: *x,
+                y_position: *y,
+            })]
         }
         RdpInputAction::MouseButton {
             x,
@@ -233,19 +243,29 @@ fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
             button,
             pressed,
         } => {
-            let btn = match button {
-                0 => ironrdp::input::MouseButton::Left,
-                1 => ironrdp::input::MouseButton::Middle,
-                2 => ironrdp::input::MouseButton::Right,
-                3 => ironrdp::input::MouseButton::X1,
-                4 => ironrdp::input::MouseButton::X2,
-                _ => ironrdp::input::MouseButton::Left,
+            let (is_extended, flags) = match button {
+                0 => (false, PointerFlags::LEFT_BUTTON),
+                1 => (false, PointerFlags::MIDDLE_BUTTON_OR_WHEEL),
+                2 => (false, PointerFlags::RIGHT_BUTTON),
+                3 => return vec![FastPathInputEvent::MouseEventEx(MouseXPdu {
+                    flags: if *pressed { PointerXFlags::DOWN | PointerXFlags::BUTTON1 } else { PointerXFlags::BUTTON1 },
+                    x_position: *x,
+                    y_position: *y,
+                })],
+                4 => return vec![FastPathInputEvent::MouseEventEx(MouseXPdu {
+                    flags: if *pressed { PointerXFlags::DOWN | PointerXFlags::BUTTON2 } else { PointerXFlags::BUTTON2 },
+                    x_position: *x,
+                    y_position: *y,
+                })],
+                _ => (false, PointerFlags::LEFT_BUTTON),
             };
-            if *pressed {
-                vec![FastPathInput::mouse_button_pressed(btn, *x, *y)]
-            } else {
-                vec![FastPathInput::mouse_button_released(btn, *x, *y)]
-            }
+            let mouse_flags = if *pressed { PointerFlags::DOWN | flags } else { flags };
+            vec![FastPathInputEvent::MouseEvent(MousePdu {
+                flags: mouse_flags,
+                number_of_wheel_rotation_units: 0,
+                x_position: *x,
+                y_position: *y,
+            })]
         }
         RdpInputAction::Wheel {
             x: _,
@@ -253,37 +273,40 @@ fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
             delta,
             horizontal,
         } => {
-            if *horizontal {
-                vec![FastPathInput::mouse_wheel_horizontal(*delta)]
+            let flags = if *horizontal {
+                PointerFlags::HORIZONTAL_WHEEL
             } else {
-                vec![FastPathInput::mouse_wheel_vertical(*delta)]
-            }
+                PointerFlags::VERTICAL_WHEEL
+            };
+            vec![FastPathInputEvent::MouseEvent(MousePdu {
+                flags,
+                number_of_wheel_rotation_units: *delta,
+                x_position: 0,
+                y_position: 0,
+            })]
         }
         RdpInputAction::KeyboardKey {
             scancode,
             pressed,
             extended,
         } => {
-            if *pressed {
-                if *extended {
-                    vec![FastPathInput::key_pressed_extended(*scancode as u8)]
-                } else {
-                    vec![FastPathInput::key_pressed(*scancode as u8)]
-                }
+            let mut flags = if *pressed {
+                KeyboardFlags::empty()
             } else {
-                if *extended {
-                    vec![FastPathInput::key_released_extended(*scancode as u8)]
-                } else {
-                    vec![FastPathInput::key_released(*scancode as u8)]
-                }
+                KeyboardFlags::RELEASE
+            };
+            if *extended {
+                flags |= KeyboardFlags::EXTENDED;
             }
+            vec![FastPathInputEvent::KeyboardEvent(flags, *scancode as u8)]
         }
         RdpInputAction::Unicode { code, pressed } => {
-            if *pressed {
-                vec![FastPathInput::unicode_key_pressed(*code)]
+            let flags = if *pressed {
+                KeyboardFlags::empty()
             } else {
-                vec![FastPathInput::unicode_key_released(*code)]
-            }
+                KeyboardFlags::RELEASE
+            };
+            vec![FastPathInputEvent::UnicodeKeyboardEvent(flags, *code)]
         }
     }
 }
@@ -394,24 +417,32 @@ fn run_rdp_session_inner(
         domain: domain.map(String::from),
         enable_tls: true,
         enable_credssp: true,
-        keyboard_type: connector::KeyboardType::IbmEnhanced,
+        keyboard_type: ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
         keyboard_subtype: 0,
         keyboard_functional_keys_count: 12,
+        keyboard_layout: 0x0409, // US English
         ime_file_name: String::new(),
         dig_product_id: String::new(),
         desktop_size: connector::DesktopSize { width, height },
+        desktop_scale_factor: 100,
         bitmap: Some(connector::BitmapConfig {
             lossy_compression: true,
             color_depth: 32,
+            codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
         }),
         client_build: 0,
         client_name: String::from("SortOfRemoteNG"),
         client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
-        platform: connector::MajorPlatformType::WINDOWS,
-        no_server_pointer: false,
+        platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
+        hardware_id: None,
+        request_data: None,
         autologon: false,
+        enable_audio_playback: true,
+        performance_flags: ironrdp::pdu::rdp::client_info::PerformanceFlags::empty(),
+        license_cache: None,
+        timezone_info: Default::default(),
+        enable_server_pointer: true,
         pointer_software_rendering: true,
-        graphics_config: None,
     };
 
     let server_addr = std::net::SocketAddr::new(
@@ -510,14 +541,18 @@ fn run_rdp_session_inner(
             }
             Ok(RdpCommand::Input(events)) => {
                 // Process input and send to server
-                let mut buf = ironrdp::core::WriteBuf::new();
-                match active_stage.process_fastpath_input(&mut buf, &events) {
-                    Ok(written) => {
-                        if let Some(len) = written.size() {
-                            let data = &buf[..len];
-                            if let Err(e) = tls_framed.write_all(data) {
-                                log::error!("RDP {session_id}: failed to send input: {e}");
-                                break;
+                match active_stage.process_fastpath_input(&mut image, &events) {
+                    Ok(outputs) => {
+                        for output in outputs {
+                            match output {
+                                ActiveStageOutput::ResponseFrame(data) => {
+                                    if let Err(e) = tls_framed.write_all(&data) {
+                                        log::error!("RDP {session_id}: failed to send input: {e}");
+                                        break;
+                                    }
+                                }
+                                ActiveStageOutput::GraphicsUpdate(_) => {}
+                                _ => {}
                             }
                         }
                     }
@@ -620,25 +655,28 @@ fn run_rdp_session_inner(
                         ActiveStageOutput::PointerBitmap(_bitmap) => {
                             // TODO: send custom cursor bitmap to frontend
                         }
-                        ActiveStageOutput::Terminate => {
-                            log::info!("RDP session {session_id}: server terminated session");
+                        ActiveStageOutput::Terminate(reason) => {
+                            log::info!("RDP session {session_id}: server terminated session: {reason}");
                             break;
                         }
-                        ActiveStageOutput::DeactivateAll(new_result) => {
+                        ActiveStageOutput::DeactivateAll(_connection_activation) => {
                             log::info!(
-                                "RDP session {session_id}: deactivate-all, reinitializing"
+                                "RDP session {session_id}: deactivate-all received"
                             );
-                            let new_w = new_result.desktop_size.width;
-                            let new_h = new_result.desktop_size.height;
-                            image = DecodedImage::new(PixelFormat::RgbA32, new_w, new_h);
-                            active_stage = ActiveStage::new(new_result);
+                            // DeactivateAll carries a Box<ConnectionActivationSequence>,
+                            // not a new ConnectionResult. We'd need to re-run the activation
+                            // sequence to get a new ConnectionResult. For now, just continue
+                            // with the current session state.
+                            let new_w = desktop_width;
+                            let new_h = desktop_height;
+                            // Don't reinitialize — continue with existing session
 
                             let _ = app_handle.emit(
                                 "rdp://status",
                                 RdpStatusEvent {
                                     session_id: session_id.to_string(),
                                     status: "connected".to_string(),
-                                    message: format!("Reconnected ({new_w}x{new_h})"),
+                                    message: format!("Deactivate-all received ({new_w}x{new_h})"),
                                     desktop_width: Some(new_w),
                                     desktop_height: Some(new_h),
                                 },
@@ -674,11 +712,12 @@ fn is_timeout_error(e: &io::Error) -> bool {
 /// Extracts RGBA pixel data for a rectangular region from the full framebuffer.
 /// The DecodedImage stores pixel data as u32 (RGBA packed).
 fn extract_region_rgba(
-    framebuffer: &[u32],
+    framebuffer: &[u8],
     fb_width: u16,
     region: &ironrdp::pdu::geometry::InclusiveRectangle,
 ) -> Vec<u8> {
-    let fb_w = fb_width as usize;
+    let bytes_per_pixel = 4usize; // RGBA32
+    let stride = fb_width as usize * bytes_per_pixel;
     let left = region.left as usize;
     let top = region.top as usize;
     let right = region.right as usize;
@@ -686,17 +725,15 @@ fn extract_region_rgba(
     let region_w = right.saturating_sub(left) + 1;
     let region_h = bottom.saturating_sub(top) + 1;
 
-    let mut rgba = Vec::with_capacity(region_w * region_h * 4);
+    let mut rgba = Vec::with_capacity(region_w * region_h * bytes_per_pixel);
 
-    for row in top..=bottom.min(framebuffer.len() / fb_w.max(1)) {
-        let row_start = row * fb_w + left;
-        let row_end = (row_start + region_w).min(framebuffer.len());
-        if row_start >= framebuffer.len() {
+    for row in top..=bottom {
+        let row_start = row * stride + left * bytes_per_pixel;
+        let row_end = row_start + region_w * bytes_per_pixel;
+        if row_end > framebuffer.len() {
             break;
         }
-        for &pixel in &framebuffer[row_start..row_end] {
-            rgba.extend_from_slice(&pixel.to_le_bytes());
-        }
+        rgba.extend_from_slice(&framebuffer[row_start..row_end]);
     }
 
     rgba
@@ -711,11 +748,7 @@ fn send_full_frame(
     b64: &base64::engine::GeneralPurpose,
 ) {
     let data = image.data();
-    let mut rgba = Vec::with_capacity(data.len() * 4);
-    for &pixel in data {
-        rgba.extend_from_slice(&pixel.to_le_bytes());
-    }
-    let encoded = b64.encode(&rgba);
+    let encoded = b64.encode(data);
     let _ = app_handle.emit(
         "rdp://frame",
         RdpFrameEvent {
