@@ -10,6 +10,7 @@ use ironrdp::connector::connection_activation::ConnectionActivationState;
 use ironrdp::connector::{self, ClientConnector, ConnectionResult, Credentials, Sequence, State as _};
 use ironrdp::graphics::image_processing::PixelFormat;
 use ironrdp::pdu::input::fast_path::FastPathInputEvent;
+use ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use ironrdp_blocking::Framed;
 use ironrdp::core::WriteBuf;
 use serde::{Deserialize, Serialize};
@@ -83,6 +84,268 @@ pub enum RdpInputAction {
     KeyboardKey { scancode: u16, pressed: bool, extended: bool },
     Wheel { x: u16, y: u16, delta: i16, horizontal: bool },
     Unicode { code: u16, pressed: bool },
+}
+
+// ─── Frontend RDP settings (mirrors TypeScript RdpConnectionSettings) ──────
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpSettingsPayload {
+    #[serde(default)]
+    pub display: Option<RdpDisplayPayload>,
+    #[serde(default)]
+    pub audio: Option<RdpAudioPayload>,
+    #[serde(default)]
+    pub input: Option<RdpInputPayload>,
+    #[serde(default)]
+    pub device_redirection: Option<RdpDeviceRedirectionPayload>,
+    #[serde(default)]
+    pub performance: Option<RdpPerformancePayload>,
+    #[serde(default)]
+    pub security: Option<RdpSecurityPayload>,
+    #[serde(default)]
+    pub advanced: Option<RdpAdvancedPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpDisplayPayload {
+    pub width: Option<u16>,
+    pub height: Option<u16>,
+    pub resize_to_window: Option<bool>,
+    pub color_depth: Option<u32>,
+    pub desktop_scale_factor: Option<u32>,
+    pub lossy_compression: Option<bool>,
+    pub magnifier_enabled: Option<bool>,
+    pub magnifier_zoom: Option<u32>,
+    pub smart_sizing: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpAudioPayload {
+    pub playback_mode: Option<String>,
+    pub recording_mode: Option<String>,
+    pub audio_quality: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpInputPayload {
+    pub mouse_mode: Option<String>,
+    pub keyboard_layout: Option<u32>,
+    pub keyboard_type: Option<String>,
+    pub keyboard_function_keys: Option<u32>,
+    pub ime_file_name: Option<String>,
+    pub enable_unicode_input: Option<bool>,
+    pub input_priority: Option<String>,
+    pub batch_interval_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpDeviceRedirectionPayload {
+    pub clipboard: Option<bool>,
+    pub printers: Option<bool>,
+    pub ports: Option<bool>,
+    pub smart_cards: Option<bool>,
+    pub web_authn: Option<bool>,
+    pub video_capture: Option<bool>,
+    pub usb_devices: Option<bool>,
+    pub audio_input: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpPerformancePayload {
+    pub disable_wallpaper: Option<bool>,
+    pub disable_full_window_drag: Option<bool>,
+    pub disable_menu_animations: Option<bool>,
+    pub disable_theming: Option<bool>,
+    pub disable_cursor_shadow: Option<bool>,
+    pub disable_cursor_settings: Option<bool>,
+    pub enable_font_smoothing: Option<bool>,
+    pub enable_desktop_composition: Option<bool>,
+    pub persistent_bitmap_caching: Option<bool>,
+    pub connection_speed: Option<String>,
+    pub target_fps: Option<u32>,
+    pub frame_batching: Option<bool>,
+    pub frame_batch_interval_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpSecurityPayload {
+    pub enable_tls: Option<bool>,
+    pub enable_nla: Option<bool>,
+    pub auto_logon: Option<bool>,
+    pub enable_server_pointer: Option<bool>,
+    pub pointer_software_rendering: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpAdvancedPayload {
+    pub client_name: Option<String>,
+    pub client_build: Option<u32>,
+    pub read_timeout_ms: Option<u64>,
+    pub full_frame_sync_interval: Option<u64>,
+    pub max_consecutive_errors: Option<u32>,
+    pub stats_interval_secs: Option<u64>,
+}
+
+/// Build IronRDP PerformanceFlags from the frontend settings
+fn build_performance_flags(perf: &RdpPerformancePayload) -> PerformanceFlags {
+    let mut flags = PerformanceFlags::empty();
+    if perf.disable_wallpaper.unwrap_or(true) {
+        flags |= PerformanceFlags::DISABLE_WALLPAPER;
+    }
+    if perf.disable_full_window_drag.unwrap_or(true) {
+        flags |= PerformanceFlags::DISABLE_FULLWINDOWDRAG;
+    }
+    if perf.disable_menu_animations.unwrap_or(true) {
+        flags |= PerformanceFlags::DISABLE_MENUANIMATIONS;
+    }
+    if perf.disable_theming.unwrap_or(false) {
+        flags |= PerformanceFlags::DISABLE_THEMING;
+    }
+    if perf.disable_cursor_shadow.unwrap_or(true) {
+        flags |= PerformanceFlags::DISABLE_CURSOR_SHADOW;
+    }
+    if perf.disable_cursor_settings.unwrap_or(false) {
+        flags |= PerformanceFlags::DISABLE_CURSORSETTINGS;
+    }
+    if perf.enable_font_smoothing.unwrap_or(true) {
+        flags |= PerformanceFlags::ENABLE_FONT_SMOOTHING;
+    }
+    if perf.enable_desktop_composition.unwrap_or(false) {
+        flags |= PerformanceFlags::ENABLE_DESKTOP_COMPOSITION;
+    }
+    flags
+}
+
+/// Map frontend keyboard type string to IronRDP enum
+fn parse_keyboard_type(s: &str) -> ironrdp::pdu::gcc::KeyboardType {
+    match s {
+        "ibm-pc-xt" => ironrdp::pdu::gcc::KeyboardType::IbmPcXt,
+        "olivetti" => ironrdp::pdu::gcc::KeyboardType::OlivettiIco,
+        "ibm-pc-at" => ironrdp::pdu::gcc::KeyboardType::IbmPcAt,
+        "ibm-enhanced" => ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
+        "nokia1050" => ironrdp::pdu::gcc::KeyboardType::Nokia1050,
+        "nokia9140" => ironrdp::pdu::gcc::KeyboardType::Nokia9140,
+        "japanese" => ironrdp::pdu::gcc::KeyboardType::Japanese,
+        _ => ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
+    }
+}
+
+/// Resolved settings used internally by the session runner (all defaults applied).
+struct ResolvedSettings {
+    width: u16,
+    height: u16,
+    color_depth: u32,
+    desktop_scale_factor: u32,
+    lossy_compression: bool,
+    enable_tls: bool,
+    enable_credssp: bool,
+    autologon: bool,
+    enable_audio_playback: bool,
+    keyboard_type: ironrdp::pdu::gcc::KeyboardType,
+    keyboard_layout: u32,
+    keyboard_subtype: u32,
+    keyboard_functional_keys_count: u32,
+    ime_file_name: String,
+    client_name: String,
+    client_build: u32,
+    enable_server_pointer: bool,
+    pointer_software_rendering: bool,
+    performance_flags: PerformanceFlags,
+    // Frame delivery
+    frame_batching: bool,
+    frame_batch_interval: Duration,
+    full_frame_sync_interval: u64,
+    // Session behaviour
+    read_timeout: Duration,
+    max_consecutive_errors: u32,
+    stats_interval: Duration,
+}
+
+impl ResolvedSettings {
+    fn from_payload(payload: &RdpSettingsPayload, width: u16, height: u16) -> Self {
+        let display = payload.display.as_ref();
+        let perf = payload.performance.as_ref();
+        let sec = payload.security.as_ref();
+        let input = payload.input.as_ref();
+        let adv = payload.advanced.as_ref();
+
+        let w = display.and_then(|d| d.width).unwrap_or(width);
+        let h = display.and_then(|d| d.height).unwrap_or(height);
+
+        let performance_flags = perf
+            .map(|p| build_performance_flags(p))
+            .unwrap_or_else(|| {
+                PerformanceFlags::DISABLE_WALLPAPER
+                    | PerformanceFlags::DISABLE_FULLWINDOWDRAG
+                    | PerformanceFlags::DISABLE_MENUANIMATIONS
+                    | PerformanceFlags::DISABLE_CURSOR_SHADOW
+                    | PerformanceFlags::ENABLE_FONT_SMOOTHING
+            });
+
+        let batch_ms = perf
+            .and_then(|p| p.frame_batch_interval_ms)
+            .unwrap_or(33);
+
+        Self {
+            width: w,
+            height: h,
+            color_depth: display.and_then(|d| d.color_depth).unwrap_or(32),
+            desktop_scale_factor: display.and_then(|d| d.desktop_scale_factor).unwrap_or(100),
+            lossy_compression: display.and_then(|d| d.lossy_compression).unwrap_or(true),
+            enable_tls: sec.and_then(|s| s.enable_tls).unwrap_or(true),
+            enable_credssp: sec.and_then(|s| s.enable_nla).unwrap_or(true),
+            autologon: sec.and_then(|s| s.auto_logon).unwrap_or(false),
+            enable_audio_playback: payload
+                .audio
+                .as_ref()
+                .and_then(|a| a.playback_mode.as_deref())
+                .map(|m| m != "disabled")
+                .unwrap_or(true),
+            keyboard_type: input
+                .and_then(|i| i.keyboard_type.as_deref())
+                .map(parse_keyboard_type)
+                .unwrap_or(ironrdp::pdu::gcc::KeyboardType::IbmEnhanced),
+            keyboard_layout: input.and_then(|i| i.keyboard_layout).unwrap_or(0x0409),
+            keyboard_subtype: 0,
+            keyboard_functional_keys_count: input
+                .and_then(|i| i.keyboard_function_keys)
+                .unwrap_or(12),
+            ime_file_name: input
+                .and_then(|i| i.ime_file_name.clone())
+                .unwrap_or_default(),
+            client_name: adv
+                .and_then(|a| a.client_name.clone())
+                .unwrap_or_else(|| "SortOfRemoteNG".to_string()),
+            client_build: adv.and_then(|a| a.client_build).unwrap_or(0),
+            enable_server_pointer: sec.and_then(|s| s.enable_server_pointer).unwrap_or(true),
+            pointer_software_rendering: sec
+                .and_then(|s| s.pointer_software_rendering)
+                .unwrap_or(true),
+            performance_flags,
+            frame_batching: perf.and_then(|p| p.frame_batching).unwrap_or(true),
+            frame_batch_interval: Duration::from_millis(batch_ms),
+            full_frame_sync_interval: adv
+                .and_then(|a| a.full_frame_sync_interval)
+                .unwrap_or(300),
+            read_timeout: Duration::from_millis(
+                adv.and_then(|a| a.read_timeout_ms).unwrap_or(16),
+            ),
+            max_consecutive_errors: adv
+                .and_then(|a| a.max_consecutive_errors)
+                .unwrap_or(50),
+            stats_interval: Duration::from_secs(
+                adv.and_then(|a| a.stats_interval_secs).unwrap_or(1),
+            ),
+        }
+    }
 }
 
 // ─── Session statistics (shared between session thread and main) ───────────
@@ -195,6 +458,9 @@ pub struct RdpSession {
     pub connected: bool,
     pub desktop_width: u16,
     pub desktop_height: u16,
+    /// SHA-256 fingerprint of the server's TLS certificate (hex)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server_cert_fingerprint: Option<String>,
 }
 
 enum RdpCommand {
@@ -332,6 +598,19 @@ fn extract_server_public_key(
         .to_vec();
 
     Ok(spki_bytes)
+}
+
+/// Extract SHA-256 fingerprint of the server's TLS certificate
+fn extract_cert_fingerprint(
+    tls_stream: &native_tls::TlsStream<TcpStream>,
+) -> Option<String> {
+    use sha2::{Sha256, Digest};
+
+    let peer_cert = tls_stream.peer_certificate().ok()??;
+    let der = peer_cert.to_der().ok()?;
+    let hash = Sha256::digest(&der);
+    let hex: Vec<String> = hash.iter().map(|b| format!("{b:02x}")).collect();
+    Some(hex.join(":"))
 }
 
 // ─── Convert frontend input to IronRDP FastPathInputEvent ──────────────────
@@ -533,8 +812,7 @@ fn run_rdp_session(
     username: String,
     password: String,
     domain: Option<String>,
-    width: u16,
-    height: u16,
+    settings: ResolvedSettings,
     app_handle: AppHandle,
     mut cmd_rx: mpsc::UnboundedReceiver<RdpCommand>,
     stats: Arc<RdpSessionStats>,
@@ -546,8 +824,7 @@ fn run_rdp_session(
         &username,
         &password,
         domain.as_deref(),
-        width,
-        height,
+        &settings,
         &app_handle,
         &mut cmd_rx,
         &stats,
@@ -598,8 +875,7 @@ fn run_rdp_session_inner(
     username: &str,
     password: &str,
     domain: Option<&str>,
-    width: u16,
-    height: u16,
+    settings: &ResolvedSettings,
     app_handle: &AppHandle,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
     stats: &Arc<RdpSessionStats>,
@@ -639,34 +915,37 @@ fn run_rdp_session_inner(
             password: password.to_string(),
         },
         domain: domain.map(String::from),
-        enable_tls: true,
-        enable_credssp: true,
-        keyboard_type: ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
-        keyboard_subtype: 0,
-        keyboard_functional_keys_count: 12,
-        keyboard_layout: 0x0409,
-        ime_file_name: String::new(),
+        enable_tls: settings.enable_tls,
+        enable_credssp: settings.enable_credssp,
+        keyboard_type: settings.keyboard_type,
+        keyboard_subtype: settings.keyboard_subtype,
+        keyboard_functional_keys_count: settings.keyboard_functional_keys_count,
+        keyboard_layout: settings.keyboard_layout,
+        ime_file_name: settings.ime_file_name.clone(),
         dig_product_id: String::new(),
-        desktop_size: connector::DesktopSize { width, height },
-        desktop_scale_factor: 100,
+        desktop_size: connector::DesktopSize {
+            width: settings.width,
+            height: settings.height,
+        },
+        desktop_scale_factor: settings.desktop_scale_factor,
         bitmap: Some(connector::BitmapConfig {
-            lossy_compression: true,
-            color_depth: 32,
+            lossy_compression: settings.lossy_compression,
+            color_depth: settings.color_depth,
             codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
         }),
-        client_build: 0,
-        client_name: String::from("SortOfRemoteNG"),
+        client_build: settings.client_build,
+        client_name: settings.client_name.clone(),
         client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
         platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
         hardware_id: None,
         request_data: None,
-        autologon: false,
-        enable_audio_playback: true,
-        performance_flags: ironrdp::pdu::rdp::client_info::PerformanceFlags::empty(),
+        autologon: settings.autologon,
+        enable_audio_playback: settings.enable_audio_playback,
+        performance_flags: settings.performance_flags,
         license_cache: None,
         timezone_info: Default::default(),
-        enable_server_pointer: true,
-        pointer_software_rendering: true,
+        enable_server_pointer: settings.enable_server_pointer,
+        pointer_software_rendering: settings.pointer_software_rendering,
     };
 
     let server_socket_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
@@ -686,6 +965,23 @@ fn run_rdp_session_inner(
 
     let (tcp_stream, leftover) = framed.into_inner();
     let (mut tls_framed, server_public_key) = tls_upgrade(tcp_stream, host, leftover)?;
+
+    // Extract and emit server certificate fingerprint
+    {
+        let (tls_stream, _) = tls_framed.get_inner();
+        if let Some(fp) = extract_cert_fingerprint(tls_stream) {
+            let _ = app_handle.emit(
+                "rdp://cert-fingerprint",
+                serde_json::json!({
+                    "session_id": session_id,
+                    "fingerprint": fp,
+                    "host": host,
+                    "port": port,
+                }),
+            );
+        }
+    }
+
     let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
 
     // ── 5. Finalize connection (CredSSP / NLA + remaining handshake) ────
@@ -741,16 +1037,23 @@ fn run_rdp_session_inner(
     let mut active_stage = ActiveStage::new(connection_result);
 
     // Set a short read timeout so we can interleave input handling
-    set_read_timeout_on_framed(&tls_framed, Some(Duration::from_millis(50)));
+    set_read_timeout_on_framed(&tls_framed, Some(settings.read_timeout));
 
     // ── 7. Main session loop ────────────────────────────────────────────
 
     let b64 = base64::engine::general_purpose::STANDARD;
     let mut last_stats_emit = Instant::now();
-    let stats_interval = Duration::from_secs(1);
+    let stats_interval = settings.stats_interval;
     #[allow(unused_assignments)]
     let mut consecutive_errors: u32 = 0;
-    const MAX_CONSECUTIVE_ERRORS: u32 = 50;
+    let max_consecutive_errors = settings.max_consecutive_errors;
+    let full_frame_sync_interval = settings.full_frame_sync_interval;
+
+    // Frame batching state
+    let frame_batching = settings.frame_batching;
+    let batch_interval = settings.frame_batch_interval;
+    let mut dirty_regions: Vec<(u16, u16, u16, u16)> = Vec::new(); // (x, y, w, h)
+    let mut last_frame_emit = Instant::now();
 
     loop {
         // ─ Check for shutdown / input commands ─────────────────────────
@@ -806,6 +1109,34 @@ fn run_rdp_session_inner(
             last_stats_emit = Instant::now();
         }
 
+        // ─ Flush batched frame updates ─────────────────────────────────
+        if frame_batching && !dirty_regions.is_empty() && last_frame_emit.elapsed() >= batch_interval {
+            // Compute bounding box of all dirty regions
+            let mut min_x = u16::MAX;
+            let mut min_y = u16::MAX;
+            let mut max_x = 0u16;
+            let mut max_y = 0u16;
+            for &(x, y, w, h) in &dirty_regions {
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x.saturating_add(w));
+                max_y = max_y.max(y.saturating_add(h));
+            }
+            let merged_w = max_x.saturating_sub(min_x);
+            let merged_h = max_y.saturating_sub(min_y);
+            if merged_w > 0 && merged_h > 0 {
+                let region = ironrdp::pdu::geometry::InclusiveRectangle {
+                    left: min_x,
+                    top: min_y,
+                    right: max_x.saturating_sub(1),
+                    bottom: max_y.saturating_sub(1),
+                };
+                emit_region(session_id, &image, desktop_width, &region, app_handle, &b64);
+            }
+            dirty_regions.clear();
+            last_frame_emit = Instant::now();
+        }
+
         // ─ Read and process PDUs ───────────────────────────────────────
         match tls_framed.read_pdu() {
             Ok((action, payload)) => {
@@ -849,18 +1180,28 @@ fn run_rdp_session_inner(
                                 }
                                 ActiveStageOutput::GraphicsUpdate(region) => {
                                     stats.record_frame();
-                                    emit_region(
-                                        session_id,
-                                        &image,
-                                        desktop_width,
-                                        &region,
-                                        app_handle,
-                                        &b64,
-                                    );
+
+                                    let rw = region.right.saturating_sub(region.left) + 1;
+                                    let rh = region.bottom.saturating_sub(region.top) + 1;
+
+                                    if frame_batching {
+                                        // Accumulate dirty region for batched emission
+                                        dirty_regions.push((region.left, region.top, rw, rh));
+                                    } else {
+                                        // Immediate emission (no batching)
+                                        emit_region(
+                                            session_id,
+                                            &image,
+                                            desktop_width,
+                                            &region,
+                                            app_handle,
+                                            &b64,
+                                        );
+                                    }
 
                                     // Periodic full-frame sync
                                     let fc = stats.frame_count.load(Ordering::Relaxed);
-                                    if fc % 120 == 0 {
+                                    if fc > 0 && fc % full_frame_sync_interval == 0 {
                                         send_full_frame(
                                             session_id,
                                             &image,
@@ -977,7 +1318,7 @@ fn run_rdp_session_inner(
                                     // Restore read timeout for normal operation
                                     set_read_timeout_on_framed(
                                         &tls_framed,
-                                        Some(Duration::from_millis(50)),
+                                        Some(settings.read_timeout),
                                     );
                                 }
                                 Err(e) => {
@@ -1002,7 +1343,7 @@ fn run_rdp_session_inner(
                         stats.set_last_error(&err_str);
                         consecutive_errors += 1;
 
-                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                        if consecutive_errors >= max_consecutive_errors {
                             return Err(format!(
                                 "Too many consecutive errors ({consecutive_errors}), last: {err_str}"
                             )
@@ -1183,6 +1524,7 @@ pub async fn connect_rdp(
     domain: Option<String>,
     width: Option<u16>,
     height: Option<u16>,
+    rdp_settings: Option<RdpSettingsPayload>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<RdpCommand>();
@@ -1190,14 +1532,20 @@ pub async fn connect_rdp(
     let requested_width = width.unwrap_or(1920);
     let requested_height = height.unwrap_or(1080);
 
+    let payload = rdp_settings.unwrap_or_default();
+    let settings = ResolvedSettings::from_payload(&payload, requested_width, requested_height);
+    let actual_width = settings.width;
+    let actual_height = settings.height;
+
     let session = RdpSession {
         id: session_id.clone(),
         host: host.clone(),
         port,
         username: username.clone(),
         connected: true,
-        desktop_width: requested_width,
-        desktop_height: requested_height,
+        desktop_width: actual_width,
+        desktop_height: actual_height,
+        server_cert_fingerprint: None,
     };
 
     let stats = Arc::new(RdpSessionStats::new());
@@ -1219,8 +1567,7 @@ pub async fn connect_rdp(
             u,
             p,
             d,
-            requested_width,
-            requested_height,
+            settings,
             ah,
             cmd_rx,
             stats_clone,

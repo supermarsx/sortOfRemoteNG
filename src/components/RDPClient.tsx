@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { ConnectionSession } from '../types/connection';
+import { DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../types/connection';
 import { 
   Monitor, 
   Maximize2, 
@@ -13,9 +14,10 @@ import {
   Volume2,
   VolumeX,
   Copy,
-  Clipboard,
   Activity,
-  X
+  X,
+  Search,
+  ZoomIn,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -65,6 +67,13 @@ interface RdpStatsEvent {
   last_error: string | null;
 }
 
+interface RdpCertFingerprintEvent {
+  session_id: string;
+  fingerprint: string;
+  host: string;
+  port: number;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -95,7 +104,6 @@ function mouseButtonCode(jsButton: number): number {
 
 // Map JS keyboard event to scancode + extended flag
 function keyToScancode(e: KeyboardEvent): { scancode: number; extended: boolean } | null {
-  // Use e.code for physical key mapping
   const map: Record<string, [number, boolean]> = {
     Escape: [0x01, false], Digit1: [0x02, false], Digit2: [0x03, false],
     Digit3: [0x04, false], Digit4: [0x05, false], Digit5: [0x06, false],
@@ -143,6 +151,8 @@ function keyToScancode(e: KeyboardEvent): { scancode: number; extended: boolean 
 const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const { state } = useConnections();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [statusMessage, setStatusMessage] = useState('');
@@ -153,20 +163,18 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const [pointerStyle, setPointerStyle] = useState<string>('default');
   const [showInternals, setShowInternals] = useState(false);
   const [stats, setStats] = useState<RdpStatsEvent | null>(null);
-  const [settings, setSettings] = useState({
-    resolution: '1920x1080',
-    colorDepth: 32,
-    audioEnabled: true,
-    clipboardEnabled: true,
-    compressionEnabled: true,
-    encryptionEnabled: true
-  });
+  const [magnifierActive, setMagnifierActive] = useState(false);
+  const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0 });
+  const [certFingerprint, setCertFingerprint] = useState<string | null>(null);
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
+  const rdpSettings: RdpConnectionSettings = connection?.rdpSettings ?? DEFAULT_RDP_SETTINGS;
+  const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
+  const magnifierZoom = rdpSettings.display?.magnifierZoom ?? 3;
 
   // ─── Initialize RDP connection ─────────────────────────────────────
 
@@ -177,7 +185,10 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setConnectionStatus('connecting');
       setStatusMessage('Initiating connection...');
 
-      const [resW, resH] = settings.resolution.split('x').map(Number);
+      const display = rdpSettings.display ?? DEFAULT_RDP_SETTINGS.display;
+      const resW = display?.width ?? 1920;
+      const resH = display?.height ?? 1080;
+
       const connectionDetails = {
         host: session.hostname,
         port: connection.port || 3389,
@@ -186,6 +197,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         domain: (connection as Record<string, unknown>).domain as string | undefined,
         width: resW,
         height: resH,
+        rdpSettings: rdpSettings,
       };
 
       debugLog(`Attempting RDP connection to ${connectionDetails.host}:${connectionDetails.port}`);
@@ -215,7 +227,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setStatusMessage(`Connection failed: ${error}`);
       console.error('RDP initialization failed:', error);
     }
-  }, [session, connection, settings.resolution]);
+  }, [session, connection, rdpSettings]);
 
   // ─── Disconnect ────────────────────────────────────────────────────
 
@@ -313,7 +325,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           setPointerStyle('none');
           break;
         case 'position':
-          // Server-side pointer position, could render custom cursor overlay
           break;
       }
     }).then(fn => unlisteners.push(fn));
@@ -323,6 +334,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       const s = event.payload;
       if (s.session_id !== sessionIdRef.current) return;
       setStats(s);
+    }).then(fn => unlisteners.push(fn));
+
+    // Listen for certificate fingerprint
+    listen<RdpCertFingerprintEvent>('rdp://cert-fingerprint', (event) => {
+      const fp = event.payload;
+      if (fp.session_id !== sessionIdRef.current) return;
+      setCertFingerprint(fp.fingerprint);
     }).then(fn => unlisteners.push(fn));
 
     return () => {
@@ -338,6 +356,33 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       cleanup();
     };
   }, [session, initializeRDPConnection, cleanup]);
+
+  // ─── Resize to window support ──────────────────────────────────────
+
+  useEffect(() => {
+    if (!rdpSettings.display?.resizeToWindow) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry || !isConnected) return;
+      const { width, height } = entry.contentRect;
+      const w = Math.round(width);
+      const h = Math.round(height);
+      if (w > 100 && h > 100) {
+        setDesktopSize({ width: w, height: h });
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+      }
+    });
+
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [isConnected, rdpSettings.display?.resizeToWindow]);
 
   // ─── Input handlers ────────────────────────────────────────────────
 
@@ -361,11 +406,87 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     };
   }, []);
 
+  // ─── Magnifier Glass ───────────────────────────────────────────────
+
+  const updateMagnifier = useCallback((mouseX: number, mouseY: number) => {
+    const canvas = canvasRef.current;
+    const magCanvas = magnifierCanvasRef.current;
+    if (!canvas || !magCanvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const magCtx = magCanvas.getContext('2d');
+    if (!ctx || !magCtx) return;
+
+    const magSize = 160;
+    magCanvas.width = magSize;
+    magCanvas.height = magSize;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    const srcX = mouseX * scaleX;
+    const srcY = mouseY * scaleY;
+    const srcSize = magSize / magnifierZoom;
+
+    magCtx.imageSmoothingEnabled = false;
+    magCtx.clearRect(0, 0, magSize, magSize);
+
+    // Clip to circle
+    magCtx.save();
+    magCtx.beginPath();
+    magCtx.arc(magSize / 2, magSize / 2, magSize / 2 - 2, 0, Math.PI * 2);
+    magCtx.clip();
+
+    magCtx.drawImage(
+      canvas,
+      srcX - srcSize / 2,
+      srcY - srcSize / 2,
+      srcSize,
+      srcSize,
+      0,
+      0,
+      magSize,
+      magSize,
+    );
+    magCtx.restore();
+
+    // Draw border
+    magCtx.beginPath();
+    magCtx.arc(magSize / 2, magSize / 2, magSize / 2 - 2, 0, Math.PI * 2);
+    magCtx.strokeStyle = '#3b82f6';
+    magCtx.lineWidth = 2;
+    magCtx.stroke();
+
+    // Draw crosshair
+    magCtx.beginPath();
+    magCtx.moveTo(magSize / 2 - 8, magSize / 2);
+    magCtx.lineTo(magSize / 2 + 8, magSize / 2);
+    magCtx.moveTo(magSize / 2, magSize / 2 - 8);
+    magCtx.lineTo(magSize / 2, magSize / 2 + 8);
+    magCtx.strokeStyle = 'rgba(255,255,255,0.5)';
+    magCtx.lineWidth = 1;
+    magCtx.stroke();
+  }, [magnifierZoom]);
+
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isConnected) return;
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseMove', x, y }]);
-  }, [isConnected, scaleCoords, sendInput]);
+
+    // Update magnifier position
+    if (magnifierEnabled && magnifierActive) {
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        setMagnifierPos({
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top,
+        });
+        updateMagnifier(e.clientX - rect.left, e.clientY - rect.top);
+      }
+    }
+  }, [isConnected, scaleCoords, sendInput, magnifierEnabled, magnifierActive, updateMagnifier]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isConnected) return;
@@ -384,7 +505,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     if (!isConnected) return;
     e.preventDefault();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
-    // Normalize delta to ±120 increments (standard Windows wheel delta)
     const delta = Math.sign(e.deltaY) * -120;
     sendInput([{ type: 'Wheel', x, y, delta, horizontal: e.shiftKey }]);
   }, [isConnected, scaleCoords, sendInput]);
@@ -435,6 +555,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     }
   };
 
+  const perfLabel = rdpSettings.performance?.connectionSpeed ?? 'broadband-high';
+  const audioEnabled = rdpSettings.audio?.playbackMode !== 'disabled';
+  const clipboardEnabled = rdpSettings.deviceRedirection?.clipboard ?? true;
+  const colorDepth = rdpSettings.display?.colorDepth ?? 32;
+
   return (
     <div className={`flex flex-col bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
       {/* RDP Header */}
@@ -457,8 +582,20 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           <div className="flex items-center space-x-1 text-xs text-gray-400">
             <span>{desktopSize.width}x{desktopSize.height}</span>
             <span>•</span>
-            <span>{settings.colorDepth}-bit</span>
+            <span>{colorDepth}-bit</span>
+            <span>•</span>
+            <span className="capitalize">{perfLabel}</span>
           </div>
+
+          {magnifierEnabled && (
+            <button
+              onClick={() => setMagnifierActive(!magnifierActive)}
+              className={`p-1 hover:bg-gray-700 rounded transition-colors ${magnifierActive ? 'text-blue-400 bg-gray-700' : 'text-gray-400 hover:text-white'}`}
+              title="Magnifier Glass"
+            >
+              <Search size={14} />
+            </button>
+          )}
           
           <button
             onClick={() => setShowInternals(!showInternals)}
@@ -489,55 +626,75 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       {/* Settings Panel */}
       {showSettings && (
         <div className="bg-gray-800 border-b border-gray-700 p-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <label className="block text-gray-300 mb-1">Resolution</label>
-              <select
-                value={settings.resolution}
-                onChange={(e) => setSettings({...settings, resolution: e.target.value})}
-                className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
-              >
-                <option value="800x600">800x600</option>
-                <option value="1024x768">1024x768</option>
-                <option value="1280x1024">1280x1024</option>
-                <option value="1920x1080">1920x1080</option>
-              </select>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Resolution</div>
+              <div className="text-white text-xs font-mono">{rdpSettings.display?.width ?? 1920}x{rdpSettings.display?.height ?? 1080}</div>
             </div>
-            
-            <div>
-              <label className="block text-gray-300 mb-1">Color Depth</label>
-              <select
-                value={settings.colorDepth}
-                onChange={(e) => setSettings({...settings, colorDepth: parseInt(e.target.value)})}
-                className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
-              >
-                <option value="16">16-bit</option>
-                <option value="24">24-bit</option>
-                <option value="32">32-bit</option>
-              </select>
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Color Depth</div>
+              <div className="text-white text-xs font-mono">{colorDepth}-bit</div>
             </div>
-            
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={settings.audioEnabled}
-                onChange={(e) => setSettings({...settings, audioEnabled: e.target.checked})}
-                className="rounded"
-              />
-              <label className="text-gray-300 text-xs">Audio</label>
-              {settings.audioEnabled ? <Volume2 size={12} /> : <VolumeX size={12} />}
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Audio</div>
+              <div className="text-white text-xs font-mono flex items-center gap-1">
+                {audioEnabled ? <Volume2 size={12} className="text-green-400" /> : <VolumeX size={12} className="text-gray-600" />}
+                {rdpSettings.audio?.playbackMode ?? 'local'}
+              </div>
             </div>
-            
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={settings.clipboardEnabled}
-                onChange={(e) => setSettings({...settings, clipboardEnabled: e.target.checked})}
-                className="rounded"
-              />
-              <label className="text-gray-300 text-xs">Clipboard</label>
-              <Clipboard size={12} />
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Clipboard</div>
+              <div className={`text-xs font-mono ${clipboardEnabled ? 'text-green-400' : 'text-gray-600'}`}>
+                {clipboardEnabled ? 'Enabled' : 'Disabled'}
+              </div>
             </div>
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Speed Preset</div>
+              <div className="text-white text-xs font-mono capitalize">{perfLabel}</div>
+            </div>
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Frame Batching</div>
+              <div className={`text-xs font-mono ${rdpSettings.performance?.frameBatching ? 'text-green-400' : 'text-yellow-400'}`}>
+                {rdpSettings.performance?.frameBatching ? `On (${rdpSettings.performance?.frameBatchIntervalMs ?? 33}ms)` : 'Off'}
+              </div>
+            </div>
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Security</div>
+              <div className="text-white text-xs font-mono">
+                {rdpSettings.security?.enableNla ? 'NLA' : ''}{rdpSettings.security?.enableTls ? '+TLS' : ''}
+              </div>
+            </div>
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Keyboard</div>
+              <div className="text-white text-xs font-mono">
+                0x{(rdpSettings.input?.keyboardLayout ?? 0x0409).toString(16).padStart(4, '0')}
+              </div>
+            </div>
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Mouse Mode</div>
+              <div className="text-white text-xs font-mono capitalize">{rdpSettings.input?.mouseMode ?? 'absolute'}</div>
+            </div>
+            <div className="bg-gray-900 rounded p-2">
+              <div className="text-gray-500 text-xs mb-1">Perf Flags</div>
+              <div className="text-white text-xs font-mono">
+                {[
+                  rdpSettings.performance?.disableWallpaper && 'noWP',
+                  rdpSettings.performance?.disableFullWindowDrag && 'noDrag',
+                  rdpSettings.performance?.disableMenuAnimations && 'noAnim',
+                  rdpSettings.performance?.disableTheming && 'noTheme',
+                  rdpSettings.performance?.enableFontSmoothing && 'CT',
+                  rdpSettings.performance?.enableDesktopComposition && 'Aero',
+                ].filter(Boolean).join(' ')}
+              </div>
+            </div>
+            {certFingerprint && (
+              <div className="bg-gray-900 rounded p-2 col-span-2">
+                <div className="text-gray-500 text-xs mb-1">Server Certificate</div>
+                <div className="text-cyan-400 text-xs font-mono truncate" title={certFingerprint}>
+                  SHA256:{certFingerprint.slice(0, 23)}…
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -610,6 +767,37 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
                   {stats.uptime_secs > 0 ? formatBytes(Math.round(stats.bytes_received / stats.uptime_secs)) : '0 B'}/s
                 </div>
               </div>
+              {/* Extended internals */}
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Avg Frame Size</div>
+                <div className="text-white font-mono">
+                  {stats.frame_count > 0 ? formatBytes(Math.round(stats.bytes_received / stats.frame_count)) : '–'}
+                </div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">PDU Rate</div>
+                <div className="text-white font-mono">
+                  {stats.uptime_secs > 0 ? `${(stats.pdus_received / stats.uptime_secs).toFixed(0)}/s` : '–'}
+                </div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Frame Batching</div>
+                <div className={`font-mono ${rdpSettings.performance?.frameBatching ? 'text-green-400' : 'text-yellow-400'}`}>
+                  {rdpSettings.performance?.frameBatching ? `On @ ${rdpSettings.performance?.frameBatchIntervalMs ?? 33}ms` : 'Off'}
+                </div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Read Timeout</div>
+                <div className="text-white font-mono">{rdpSettings.advanced?.readTimeoutMs ?? 16}ms</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Target FPS</div>
+                <div className="text-white font-mono">{rdpSettings.performance?.targetFps ?? 30}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Sync Interval</div>
+                <div className="text-white font-mono">every {rdpSettings.advanced?.fullFrameSyncInterval ?? 300} frames</div>
+              </div>
               {stats.last_error && (
                 <div className="bg-gray-900 rounded p-2 col-span-2 md:col-span-4 lg:col-span-6">
                   <div className="text-gray-500 mb-1">Last Error</div>
@@ -624,12 +812,12 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       )}
 
       {/* RDP Canvas */}
-      <div className="flex-1 flex items-center justify-center bg-black p-1 relative">
+      <div ref={containerRef} className="flex-1 flex items-center justify-center bg-black p-1 relative">
         <canvas
           ref={canvasRef}
           className="border border-gray-600 max-w-full max-h-full"
           style={{
-            cursor: pointerStyle,
+            cursor: magnifierActive ? 'crosshair' : pointerStyle,
             imageRendering: 'auto',
             objectFit: 'contain',
             display: connectionStatus !== 'disconnected' ? 'block' : 'none'
@@ -645,6 +833,30 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           width={desktopSize.width}
           height={desktopSize.height}
         />
+
+        {/* Magnifier Glass Overlay */}
+        {magnifierEnabled && magnifierActive && isConnected && (
+          <canvas
+            ref={magnifierCanvasRef}
+            className="absolute pointer-events-none border-2 border-blue-500 rounded-full shadow-lg shadow-blue-900/50"
+            style={{
+              left: `${magnifierPos.x - 80}px`,
+              top: `${magnifierPos.y - 80}px`,
+              width: '160px',
+              height: '160px',
+            }}
+            width={160}
+            height={160}
+          />
+        )}
+
+        {/* Magnifier zoom indicator */}
+        {magnifierEnabled && magnifierActive && isConnected && (
+          <div className="absolute top-2 right-2 bg-blue-600 bg-opacity-80 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+            <ZoomIn size={12} />
+            {magnifierZoom}x
+          </div>
+        )}
         
         {connectionStatus === 'connecting' && (
           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60">
@@ -689,6 +901,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
                   <span>↑{formatBytes(stats.bytes_sent)}</span>
                 </>
               )}
+              {certFingerprint && (
+                <span className="text-cyan-400" title={`SHA256:${certFingerprint}`}>
+                  Cert: {certFingerprint.slice(0, 11)}…
+                </span>
+              )}
             </>
           )}
         </div>
@@ -696,8 +913,9 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         <div className="flex items-center space-x-2">
           <MousePointer size={12} />
           <Keyboard size={12} />
-          {settings.audioEnabled && <Volume2 size={12} />}
-          {settings.clipboardEnabled && <Copy size={12} />}
+          {audioEnabled && <Volume2 size={12} />}
+          {clipboardEnabled && <Copy size={12} />}
+          {magnifierActive && <Search size={12} className="text-blue-400" />}
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { generateId } from '../utils/id';
 import SSHOptions from './connectionEditor/SSHOptions';
 import HTTPOptions from './connectionEditor/HTTPOptions';
 import CloudProviderOptions from './connectionEditor/CloudProviderOptions';
+import RDPOptions from './connectionEditor/RDPOptions';
 import { useSettings } from '../contexts/SettingsContext';
 import { getConnectionDepth, getMaxDescendantDepth, MAX_NESTING_DEPTH } from '../utils/dragDropManager';
 
@@ -578,26 +579,13 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                       max={65535}
                     />
                   </div>
-                  {formData.protocol === 'rdp' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
-                        Domain
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.domain || ''}
-                        onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                        className="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-                        placeholder="WORKGROUP"
-                      />
-                    </div>
-                  )}
                 </div>
 
                 {/* Protocol-specific options */}
                 <SSHOptions formData={formData} setFormData={setFormData} />
                 <HTTPOptions formData={formData} setFormData={setFormData} />
                 <CloudProviderOptions formData={formData} setFormData={setFormData} />
+                <RDPOptions formData={formData} setFormData={setFormData} />
               </>
             )}
 

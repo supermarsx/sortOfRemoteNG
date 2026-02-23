@@ -163,7 +163,258 @@ export interface Connection {
   tlsTrustPolicy?: TrustPolicy;
   /** SSH host key trust policy override */
   sshTrustPolicy?: TrustPolicy;
+  /** RDP server certificate trust policy override */
+  rdpTrustPolicy?: TrustPolicy;
+
+  // RDP Connection Settings
+  rdpSettings?: RdpConnectionSettings;
 }
+
+/**
+ * Comprehensive RDP connection settings covering display, audio, input,
+ * device redirection, performance, and security/fingerprint options.
+ */
+export interface RdpConnectionSettings {
+  // ─── Display ──────────────────────────────────────────────────────
+  display?: RdpDisplaySettings;
+  // ─── Audio ────────────────────────────────────────────────────────
+  audio?: RdpAudioSettings;
+  // ─── Input ────────────────────────────────────────────────────────
+  input?: RdpInputSettings;
+  // ─── Local Device Redirection ─────────────────────────────────────
+  deviceRedirection?: RdpDeviceRedirection;
+  // ─── Performance ──────────────────────────────────────────────────
+  performance?: RdpPerformanceSettings;
+  // ─── Security ─────────────────────────────────────────────────────
+  security?: RdpSecuritySettings;
+  // ─── Advanced / Internals ─────────────────────────────────────────
+  advanced?: RdpAdvancedSettings;
+}
+
+export interface RdpDisplaySettings {
+  /** Initial resolution width (0 = match window) */
+  width?: number;
+  /** Initial resolution height (0 = match window) */
+  height?: number;
+  /** Dynamically resize to match the window dimensions */
+  resizeToWindow?: boolean;
+  /** Color depth: 16, 24, or 32 */
+  colorDepth?: 16 | 24 | 32;
+  /** Desktop scale factor (100-500) */
+  desktopScaleFactor?: number;
+  /** Enable lossy bitmap compression (reduces bandwidth) */
+  lossyCompression?: boolean;
+  /** Enable magnifier glass overlay tool */
+  magnifierEnabled?: boolean;
+  /** Magnifier zoom level (2-8x) */
+  magnifierZoom?: number;
+  /** Smart sizing: scale the remote desktop to fit the client window */
+  smartSizing?: boolean;
+}
+
+export type RdpAudioPlaybackMode = 'local' | 'remote' | 'disabled';
+export type RdpAudioRecordingMode = 'enabled' | 'disabled';
+export type RdpAudioQuality = 'dynamic' | 'medium' | 'high';
+
+export interface RdpAudioSettings {
+  /** Where to play remote audio: on the local machine, remote, or disable */
+  playbackMode?: RdpAudioPlaybackMode;
+  /** Audio recording / microphone redirection */
+  recordingMode?: RdpAudioRecordingMode;
+  /** Audio quality hint */
+  audioQuality?: RdpAudioQuality;
+}
+
+export type RdpMouseMode = 'relative' | 'absolute';
+export type RdpKeyboardLayout = number; // LCID e.g. 0x0409 for US English
+
+export interface RdpInputSettings {
+  /** Mouse input mode: relative (virtual) or absolute (real) */
+  mouseMode?: RdpMouseMode;
+  /** Keyboard layout LCID (e.g., 0x0409 = US, 0x0407 = German) */
+  keyboardLayout?: RdpKeyboardLayout;
+  /** Keyboard type */
+  keyboardType?:
+    | 'ibm-pc-xt'
+    | 'olivetti'
+    | 'ibm-pc-at'
+    | 'ibm-enhanced'
+    | 'nokia1050'
+    | 'nokia9140'
+    | 'japanese';
+  /** Number of function keys (typically 12) */
+  keyboardFunctionKeys?: number;
+  /** IME filename for Asian input methods */
+  imeFileName?: string;
+  /** Enable Unicode keyboard events (for characters without scancodes) */
+  enableUnicodeInput?: boolean;
+  /** Input event priority: 'realtime' sends immediately, 'batched' groups events */
+  inputPriority?: 'realtime' | 'batched';
+  /** Batch interval in ms when inputPriority is 'batched' */
+  batchIntervalMs?: number;
+}
+
+export interface RdpDeviceRedirection {
+  /** Clipboard redirection */
+  clipboard?: boolean;
+  /** Drive/folder redirection (list of local paths to share) */
+  drives?: RdpDriveRedirection[];
+  /** Printer redirection */
+  printers?: boolean;
+  /** Serial/COM port redirection */
+  ports?: boolean;
+  /** Smart card redirection */
+  smartCards?: boolean;
+  /** WebAuthn / FIDO device redirection */
+  webAuthn?: boolean;
+  /** Video capture device (camera) redirection */
+  videoCapture?: boolean;
+  /** USB device redirection */
+  usbDevices?: boolean;
+  /** Audio input (microphone) device redirection */
+  audioInput?: boolean;
+}
+
+export interface RdpDriveRedirection {
+  name: string;
+  path: string;
+  readOnly?: boolean;
+}
+
+export interface RdpPerformanceSettings {
+  // ─── Visual Experience ────────────────────────────────────────────
+  /** Disable desktop wallpaper (saves bandwidth) */
+  disableWallpaper?: boolean;
+  /** Disable full-window drag (show contents during drag) */
+  disableFullWindowDrag?: boolean;
+  /** Disable menu/window animations */
+  disableMenuAnimations?: boolean;
+  /** Disable visual themes */
+  disableTheming?: boolean;
+  /** Disable cursor shadow */
+  disableCursorShadow?: boolean;
+  /** Disable cursor blinking/settings */
+  disableCursorSettings?: boolean;
+  /** Enable ClearType font smoothing */
+  enableFontSmoothing?: boolean;
+  /** Enable desktop composition (Aero) */
+  enableDesktopComposition?: boolean;
+
+  // ─── Bitmap Caching ───────────────────────────────────────────────
+  /** Enable persistent bitmap caching (disk cache) */
+  persistentBitmapCaching?: boolean;
+  
+  // ─── Network ──────────────────────────────────────────────────────
+  /** Connection speed preset: determines which optimizations to enable */
+  connectionSpeed?: 'modem' | 'broadband-low' | 'broadband-high' | 'wan' | 'lan' | 'auto-detect';
+  
+  // ─── Frame Delivery ───────────────────────────────────────────────
+  /** Target frame rate limit (0 = unlimited) */
+  targetFps?: number;
+  /** Frame batching: accumulate dirty regions and emit combined updates */
+  frameBatching?: boolean;
+  /** Frame batch interval in ms (16 = ~60fps, 33 = ~30fps) */
+  frameBatchIntervalMs?: number;
+}
+
+export interface RdpSecuritySettings {
+  /** Enable TLS security protocol (legacy graphical logon) */
+  enableTls?: boolean;
+  /** Enable NLA / CredSSP (recommended) */
+  enableNla?: boolean;
+  /** Auto logon (send credentials in INFO packet) */
+  autoLogon?: boolean;
+  /** Enable server-side pointer (cursor managed by server) */
+  enableServerPointer?: boolean;
+  /** Use software rendering for server pointers */
+  pointerSoftwareRendering?: boolean;
+}
+
+export interface RdpAdvancedSettings {
+  /** Client name reported to server (max 15 chars) */
+  clientName?: string;
+  /** Client build number */
+  clientBuild?: number;
+  /** Read timeout in ms for the PDU read loop (affects responsiveness vs CPU) */
+  readTimeoutMs?: number;
+  /** Full-frame sync interval (emit complete framebuffer every N frames) */
+  fullFrameSyncInterval?: number;
+  /** Maximum consecutive PDU errors before disconnecting */
+  maxConsecutiveErrors?: number;
+  /** Stats emission interval in seconds */
+  statsIntervalSecs?: number;
+}
+
+/** Default RDP settings for new connections */
+export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
+  display: {
+    width: 1920,
+    height: 1080,
+    resizeToWindow: false,
+    colorDepth: 32,
+    desktopScaleFactor: 100,
+    lossyCompression: true,
+    magnifierEnabled: false,
+    magnifierZoom: 3,
+    smartSizing: true,
+  },
+  audio: {
+    playbackMode: 'local',
+    recordingMode: 'disabled',
+    audioQuality: 'dynamic',
+  },
+  input: {
+    mouseMode: 'absolute',
+    keyboardLayout: 0x0409,
+    keyboardType: 'ibm-enhanced',
+    keyboardFunctionKeys: 12,
+    imeFileName: '',
+    enableUnicodeInput: true,
+    inputPriority: 'realtime',
+    batchIntervalMs: 16,
+  },
+  deviceRedirection: {
+    clipboard: true,
+    drives: [],
+    printers: false,
+    ports: false,
+    smartCards: false,
+    webAuthn: false,
+    videoCapture: false,
+    usbDevices: false,
+    audioInput: false,
+  },
+  performance: {
+    disableWallpaper: true,
+    disableFullWindowDrag: true,
+    disableMenuAnimations: true,
+    disableTheming: false,
+    disableCursorShadow: true,
+    disableCursorSettings: false,
+    enableFontSmoothing: true,
+    enableDesktopComposition: false,
+    persistentBitmapCaching: false,
+    connectionSpeed: 'broadband-high',
+    targetFps: 30,
+    frameBatching: true,
+    frameBatchIntervalMs: 33,
+  },
+  security: {
+    enableTls: true,
+    enableNla: true,
+    autoLogon: false,
+    enableServerPointer: true,
+    pointerSoftwareRendering: true,
+  },
+  advanced: {
+    clientName: 'SortOfRemoteNG',
+    clientBuild: 0,
+    readTimeoutMs: 16,
+    fullFrameSyncInterval: 300,
+    maxConsecutiveErrors: 50,
+    statsIntervalSecs: 1,
+  },
+};
 
 /**
  * Types of tunnel/proxy layers that can be chained
