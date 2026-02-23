@@ -32,6 +32,7 @@ import {
   type TrustVerifyResult,
 } from '../utils/trustStore';
 import { TrustWarningDialog } from './TrustWarningDialog';
+import { FrameBuffer, decodeBase64Rgba } from './rdpCanvas';
 
 interface RDPClientProps {
   session: ConnectionSession;
@@ -174,6 +175,12 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** Offscreen double-buffer / wallpaper cache */
+  const frameBufferRef = useRef<FrameBuffer | null>(null);
+  /** rAF handle for the blit loop */
+  const rafIdRef = useRef<number>(0);
+  /** Whether new frame data has been painted to the offscreen buffer since the last blit */
+  const frameDirtyRef = useRef(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [statusMessage, setStatusMessage] = useState('');
@@ -302,27 +309,18 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
 
-    // Listen for frame updates
+    // Listen for frame updates → paint to offscreen buffer (rAF blits to visible)
     listen<RdpFrameEvent>('rdp://frame', (event) => {
       const frame = event.payload;
       if (frame.session_id !== sessionIdRef.current) return;
 
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      const fb = frameBufferRef.current;
+      if (!fb) return;
 
       try {
-        // Decode base64 RGBA data
-        const binary = atob(frame.data);
-        const bytes = new Uint8ClampedArray(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-
-        // Create ImageData and paint the dirty region
-        const imgData = new ImageData(bytes, frame.width, frame.height);
-        ctx.putImageData(imgData, frame.x, frame.y);
+        const bytes = decodeBase64Rgba(frame.data);
+        fb.applyRegion(frame.x, frame.y, frame.width, frame.height, bytes);
+        frameDirtyRef.current = true;
       } catch (e) {
         debugLog(`Frame decode error: ${e}`);
       }
@@ -346,6 +344,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
               canvas.width = status.desktop_width;
               canvas.height = status.desktop_height;
             }
+            // Initialize (or reinitialize) the offscreen frame buffer
+            frameBufferRef.current = new FrameBuffer(status.desktop_width, status.desktop_height);
           }
           break;
         case 'connecting':
@@ -448,12 +448,47 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     };
   }, [session, initializeRDPConnection, cleanup]);
 
+  // ─── rAF blit loop ────────────────────────────────────────────────
+  // Instead of painting directly to the visible canvas on every frame
+  // event (which can cause partial-paint flicker and blocks the main
+  // thread), we accumulate updates in the FrameBuffer offscreen canvas
+  // and blit once per vsync via requestAnimationFrame.
+
+  useEffect(() => {
+    let running = true;
+
+    const blitLoop = () => {
+      if (!running) return;
+      if (frameDirtyRef.current) {
+        frameDirtyRef.current = false;
+        const canvas = canvasRef.current;
+        const fb = frameBufferRef.current;
+        if (canvas && fb) {
+          fb.blitTo(canvas);
+        }
+      }
+      rafIdRef.current = requestAnimationFrame(blitLoop);
+    };
+
+    rafIdRef.current = requestAnimationFrame(blitLoop);
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafIdRef.current);
+    };
+  }, []);
+
   // ─── Resize to window support ──────────────────────────────────────
+  // Debounced ResizeObserver: on resize, immediately scale the cached
+  // offscreen buffer to the new dimensions for instant visual feedback,
+  // then update state after a short debounce to avoid rapid thrashing.
 
   useEffect(() => {
     if (!rdpSettings.display?.resizeToWindow) return;
     const container = containerRef.current;
     if (!container) return;
+
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
@@ -461,18 +496,44 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       const { width, height } = entry.contentRect;
       const w = Math.round(width);
       const h = Math.round(height);
-      if (w > 100 && h > 100) {
-        setDesktopSize({ width: w, height: h });
-        const canvas = canvasRef.current;
-        if (canvas) {
-          canvas.width = w;
-          canvas.height = h;
+      if (w <= 100 || h <= 100) return;
+
+      // Immediately scale the cached frame into the visible canvas at
+      // the new dimensions so the user sees instant feedback.
+      const canvas = canvasRef.current;
+      const fb = frameBufferRef.current;
+      if (canvas && fb && fb.hasPainted) {
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(fb.offscreen, 0, 0, fb.offscreen.width, fb.offscreen.height, 0, 0, w, h);
         }
       }
+
+      // Debounce the actual state update + offscreen resize
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        setDesktopSize({ width: w, height: h });
+        const c = canvasRef.current;
+        if (c) {
+          c.width = w;
+          c.height = h;
+        }
+        // Resize the offscreen buffer (scales cached content)
+        if (frameBufferRef.current) {
+          frameBufferRef.current.resize(w, h);
+          // Blit the scaled cache to visible canvas immediately
+          frameBufferRef.current.blitTo(c!);
+        }
+      }, 150);
     });
 
     observer.observe(container);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
+    };
   }, [isConnected, rdpSettings.display?.resizeToWindow]);
 
   // ─── Input handlers ────────────────────────────────────────────────

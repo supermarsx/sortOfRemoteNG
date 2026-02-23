@@ -91,6 +91,7 @@ pub mod ovh;
 pub mod http;
 pub mod passkey;
 pub mod ssh3;
+pub mod diagnostics;
 
 #[cfg(test)]
 mod tests {
@@ -783,9 +784,11 @@ pub fn run() {
         ssh3::test_ssh3_connection,
         // NOTE: pause_shell and resume_shell removed - buffer always captures full session
         ssh::get_ssh_host_key_info,
+        ssh::diagnose_ssh_connection,
         http::http_fetch,
         http::http_get,
         http::http_post,
+        http::diagnose_http_connection,
         http::start_basic_auth_proxy,
         http::stop_basic_auth_proxy,
         http::list_proxy_sessions,

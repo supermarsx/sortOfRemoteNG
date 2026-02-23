@@ -1241,3 +1241,351 @@ pub async fn get_tls_certificate_info(
         san,
     })
 }
+
+// ─── Deep HTTP/HTTPS Connection Diagnostics ─────────────────────────────────
+
+use crate::diagnostics::{self, DiagnosticReport, DiagnosticStep};
+
+/// Run a deep diagnostic probe against an HTTP/HTTPS endpoint.
+///
+/// Steps:
+///   1. DNS Resolution (multi-address)
+///   2. TCP Connect
+///   3. TLS Handshake + Certificate (HTTPS only)
+///   4. HTTP Request (GET/HEAD with status code, headers, timing)
+///   5. Redirect Chain (if any)
+///   6. Response Body Probe (first bytes, content-type, size)
+#[command]
+pub async fn diagnose_http_connection(
+    host: String,
+    port: u16,
+    use_tls: bool,
+    path: Option<String>,
+    method: Option<String>,
+    expected_status: Option<u16>,
+    connect_timeout_secs: Option<u64>,
+    verify_ssl: Option<bool>,
+) -> Result<DiagnosticReport, String> {
+    let run_start = std::time::Instant::now();
+    let mut steps: Vec<DiagnosticStep> = Vec::new();
+    let mut resolved_ip: Option<String> = None;
+    let timeout_secs = connect_timeout_secs.unwrap_or(15);
+    let timeout = std::time::Duration::from_secs(timeout_secs);
+    let protocol = if use_tls { "https" } else { "http" };
+    let req_path = path.unwrap_or_else(|| "/".to_string());
+    let req_method = method.unwrap_or_else(|| "GET".to_string());
+    let verify = verify_ssl.unwrap_or(true);
+
+    // ── Step 1: DNS Resolution ──────────────────────────────────────────
+
+    let (socket_addr, ip_str, _all_ips) = diagnostics::probe_dns(&host, port, &mut steps);
+    let socket_addr = match socket_addr {
+        Some(a) => {
+            resolved_ip = ip_str;
+            a
+        }
+        None => {
+            return Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start));
+        }
+    };
+
+    // ── Step 2: TCP Connect ─────────────────────────────────────────────
+    // We use the shared probe for consistency
+    let tcp_ok = diagnostics::probe_tcp(socket_addr, timeout, true, &mut steps).is_some();
+    if !tcp_ok {
+        return Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start));
+    }
+
+    // ── Step 3: TLS Handshake + Certificate (HTTPS only) ────────────────
+
+    if use_tls {
+        let h = host.clone();
+        let t = std::time::Instant::now();
+
+        // Use native-tls with configurable verification
+        let tls_builder = if verify {
+            native_tls::TlsConnector::builder().build()
+        } else {
+            native_tls::TlsConnector::builder()
+                .danger_accept_invalid_certs(true)
+                .danger_accept_invalid_hostnames(true)
+                .build()
+        };
+
+        match tls_builder {
+            Ok(connector) => {
+                let tls_connector = tokio_native_tls::TlsConnector::from(connector);
+                let tcp = match tokio::net::TcpStream::connect(&socket_addr).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        steps.push(DiagnosticStep {
+                            name: "TLS Handshake".into(),
+                            status: "fail".into(),
+                            message: format!("TCP reconnect for TLS failed: {e}"),
+                            duration_ms: t.elapsed().as_millis() as u64,
+                            detail: None,
+                        });
+                        return Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start));
+                    }
+                };
+
+                match tls_connector.connect(&h, tcp).await {
+                    Ok(tls_stream) => {
+                        let elapsed = t.elapsed().as_millis() as u64;
+
+                        // Extract certificate info
+                        let cert_detail = tls_stream
+                            .get_ref()
+                            .peer_certificate()
+                            .ok()
+                            .flatten()
+                            .and_then(|cert| {
+                                let der = cert.to_der().ok()?;
+                                let mut hasher = Sha256::new();
+                                hasher.update(&der);
+                                let fp = hex::encode(hasher.finalize());
+
+                                let mut detail = format!("Fingerprint: SHA256:{}", fp);
+
+                                if let Ok((_rem, x509)) = x509_parser::parse_x509_certificate(&der) {
+                                    detail.push_str(&format!(
+                                        "\nSubject: {}\nIssuer: {}\nValid: {} → {}\nSANs: {}",
+                                        x509.subject(),
+                                        x509.issuer(),
+                                        x509.validity().not_before.to_rfc2822().unwrap_or_default(),
+                                        x509.validity().not_after.to_rfc2822().unwrap_or_default(),
+                                        x509.subject_alternative_name()
+                                            .ok()
+                                            .flatten()
+                                            .map(|san| san
+                                                .value
+                                                .general_names
+                                                .iter()
+                                                .map(|n| format!("{n}"))
+                                                .collect::<Vec<_>>()
+                                                .join(", "))
+                                            .unwrap_or_else(|| "none".into()),
+                                    ));
+
+                                    // Check expiry
+                                    let now = chrono::Utc::now();
+                                    if let Ok(not_after_str) = x509.validity().not_after.to_rfc2822() {
+                                        if let Ok(not_after) = chrono::DateTime::parse_from_rfc2822(&not_after_str) {
+                                            let days_left = (not_after.signed_duration_since(now)).num_days();
+                                            if days_left < 0 {
+                                                detail.push_str(&format!("\n⚠ EXPIRED {} days ago!", -days_left));
+                                            } else if days_left < 30 {
+                                                detail.push_str(&format!("\n⚠ Expires in {} days", days_left));
+                                            }
+                                        }
+                                    }
+                                }
+                                Some(detail)
+                            });
+
+                        steps.push(DiagnosticStep {
+                            name: "TLS Handshake".into(),
+                            status: "pass".into(),
+                            message: "TLS handshake completed, certificate obtained".into(),
+                            duration_ms: elapsed,
+                            detail: cert_detail,
+                        });
+                    }
+                    Err(e) => {
+                        let msg = format!("{e}");
+                        let hint = if msg.contains("certificate") {
+                            Some("Certificate verification failed. The server may use a self-signed, expired, or mismatched certificate.".into())
+                        } else if msg.contains("handshake") || msg.contains("alert") {
+                            Some("TLS protocol negotiation failed. Check the server supports modern TLS versions (1.2+).".into())
+                        } else {
+                            None
+                        };
+                        steps.push(DiagnosticStep {
+                            name: "TLS Handshake".into(),
+                            status: "fail".into(),
+                            message: format!("TLS handshake failed: {}", msg),
+                            duration_ms: t.elapsed().as_millis() as u64,
+                            detail: hint,
+                        });
+                        // Don't return yet — we can still try HTTP (useful for diagnostic info)
+                    }
+                }
+            }
+            Err(e) => {
+                steps.push(DiagnosticStep {
+                    name: "TLS Handshake".into(),
+                    status: "fail".into(),
+                    message: format!("Failed to create TLS connector: {e}"),
+                    duration_ms: t.elapsed().as_millis() as u64,
+                    detail: None,
+                });
+            }
+        }
+    }
+
+    // ── Step 4: HTTP Request ────────────────────────────────────────────
+
+    let t = std::time::Instant::now();
+    let url = format!("{}://{}:{}{}", protocol, host, port, req_path);
+
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .danger_accept_invalid_certs(!verify)
+        .redirect(reqwest::redirect::Policy::none()) // we'll handle redirects manually
+        .build();
+
+    let client = match client {
+        Ok(c) => c,
+        Err(e) => {
+            steps.push(DiagnosticStep {
+                name: "HTTP Request".into(),
+                status: "fail".into(),
+                message: format!("Failed to create HTTP client: {e}"),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: None,
+            });
+            return Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start));
+        }
+    };
+
+    let request = match req_method.to_uppercase().as_str() {
+        "HEAD" => client.head(&url),
+        "POST" => client.post(&url),
+        "PUT" => client.put(&url),
+        "DELETE" => client.delete(&url),
+        _ => client.get(&url),
+    };
+
+    match request.send().await {
+        Ok(response) => {
+            let status = response.status();
+            let status_code = status.as_u16();
+            let headers = response.headers().clone();
+            let elapsed = t.elapsed().as_millis() as u64;
+
+            // Gather header info
+            let server = headers
+                .get("server")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("(not reported)")
+                .to_string();
+            let content_type = headers
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("(not reported)")
+                .to_string();
+            let content_length = headers
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.to_string());
+
+            // Check expected status
+            let status_ok = expected_status
+                .map(|exp| exp == status_code)
+                .unwrap_or(status.is_success() || status.is_redirection());
+
+            steps.push(DiagnosticStep {
+                name: "HTTP Response".into(),
+                status: if status_ok { "pass" } else { "warn" }.into(),
+                message: format!(
+                    "{} {} → {} {} ({}ms)",
+                    req_method, req_path, status_code,
+                    status.canonical_reason().unwrap_or(""),
+                    elapsed
+                ),
+                duration_ms: elapsed,
+                detail: Some(format!(
+                    "Server: {}\nContent-Type: {}\nContent-Length: {}\nHeaders: {}",
+                    server,
+                    content_type,
+                    content_length.unwrap_or_else(|| "(not reported)".into()),
+                    headers.len()
+                )),
+            });
+
+            // ── Step 5: Redirect check ──────────────────────────────────
+            if status.is_redirection() {
+                let location = headers
+                    .get("location")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("(missing)");
+
+                steps.push(DiagnosticStep {
+                    name: "Redirect".into(),
+                    status: "info".into(),
+                    message: format!("Redirects to: {}", location),
+                    duration_ms: 0,
+                    detail: Some(format!(
+                        "Status {} indicates a redirect. Follow the Location header to reach the final resource.",
+                        status_code
+                    )),
+                });
+            }
+
+            // ── Step 6: Response Body Probe ─────────────────────────────
+            let t2 = std::time::Instant::now();
+            match response.bytes().await {
+                Ok(body) => {
+                    let body_len = body.len();
+                    let preview: String = String::from_utf8_lossy(
+                        &body[..std::cmp::min(body_len, 200)],
+                    )
+                    .chars()
+                    .filter(|c| !c.is_control() || *c == '\n')
+                    .collect();
+
+                    steps.push(DiagnosticStep {
+                        name: "Response Body".into(),
+                        status: "info".into(),
+                        message: format!("Received {} bytes", body_len),
+                        duration_ms: t2.elapsed().as_millis() as u64,
+                        detail: if !preview.trim().is_empty() {
+                            Some(format!("Preview: {}", preview.trim()))
+                        } else {
+                            None
+                        },
+                    });
+                }
+                Err(e) => {
+                    steps.push(DiagnosticStep {
+                        name: "Response Body".into(),
+                        status: "warn".into(),
+                        message: format!("Could not read response body: {e}"),
+                        duration_ms: t2.elapsed().as_millis() as u64,
+                        detail: None,
+                    });
+                }
+            }
+        }
+        Err(e) => {
+            let msg = format!("{e}");
+            let hint = if msg.contains("timeout") || msg.contains("timed out") {
+                Some(format!(
+                    "The server did not respond within {}s. It may be overloaded, \
+                     behind a firewall, or the URL may be incorrect.",
+                    timeout_secs
+                ))
+            } else if msg.contains("connection refused") {
+                Some(format!(
+                    "Connection refused on {}:{}. Verify the web server is running \
+                     and listening on this port.",
+                    host, port
+                ))
+            } else if msg.contains("certificate") || msg.contains("ssl") || msg.contains("tls") {
+                Some("TLS/SSL error during the HTTP request. Try with verify_ssl=false for diagnostics.".into())
+            } else {
+                None
+            };
+
+            steps.push(DiagnosticStep {
+                name: "HTTP Request".into(),
+                status: "fail".into(),
+                message: format!("Request failed: {}", msg),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: hint,
+            });
+        }
+    }
+
+    Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start))
+}

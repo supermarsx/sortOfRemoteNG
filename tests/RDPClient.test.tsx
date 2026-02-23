@@ -26,6 +26,14 @@ vi.mock('../src/components/rdpCanvas', () => ({
   paintFrame: vi.fn(),
   decodeBase64Rgba: vi.fn(() => new Uint8ClampedArray(0)),
   clearCanvas: vi.fn(),
+  FrameBuffer: class {
+    offscreen = { width: 1920, height: 1080 };
+    ctx = {};
+    hasPainted = false;
+    applyRegion() { this.hasPainted = true; }
+    resize() {}
+    blitTo() {}
+  },
 }));
 
 // Mock useConnections hook

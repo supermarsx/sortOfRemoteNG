@@ -31,7 +31,7 @@ import type { RdpConnectionSettings } from '../types/connection';
 
 interface DiagnosticStepResult {
   name: string;
-  status: 'pass' | 'fail' | 'skip' | 'warn';
+  status: 'pass' | 'fail' | 'skip' | 'warn' | 'info';
   message: string;
   durationMs: number;
   detail: string | null;
@@ -40,10 +40,12 @@ interface DiagnosticStepResult {
 interface DiagnosticReportResult {
   host: string;
   port: number;
+  protocol: string;
   resolvedIp: string | null;
   steps: DiagnosticStepResult[];
   summary: string;
   rootCauseHint: string | null;
+  totalDurationMs: number;
 }
 
 /* ── Error classification ──────────────────────────────────────────── */
@@ -315,6 +317,7 @@ const STEP_ICON: Record<string, React.ReactNode> = {
   pass: <CheckCircle2 size={16} className="text-green-400" />,
   fail: <XCircle size={16} className="text-red-400" />,
   warn: <AlertCircle size={16} className="text-yellow-400" />,
+  info: <Info size={16} className="text-blue-400" />,
   skip: <SkipForward size={16} className="text-gray-500" />,
 };
 
@@ -552,7 +555,9 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
                 <h3 className="text-sm font-semibold text-purple-300">Deep Diagnostics Report</h3>
                 {diagnosticReport && (
                   <span className="ml-auto text-xs text-gray-500">
+                    {diagnosticReport.protocol.toUpperCase()}{' '}
                     {diagnosticReport.resolvedIp && `${diagnosticReport.host} → ${diagnosticReport.resolvedIp}:${diagnosticReport.port}`}
+                    {diagnosticReport.totalDurationMs > 0 && ` (${diagnosticReport.totalDurationMs}ms)`}
                   </span>
                 )}
               </div>
@@ -588,7 +593,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
                         </button>
                         {/* step message (always visible) */}
                         <div className="px-4 pb-1 -mt-1 pl-11">
-                          <p className={`text-xs ${step.status === 'fail' ? 'text-red-400' : step.status === 'warn' ? 'text-yellow-400' : 'text-gray-500'}`}>
+                          <p className={`text-xs ${step.status === 'fail' ? 'text-red-400' : step.status === 'warn' ? 'text-yellow-400' : step.status === 'info' ? 'text-blue-400' : 'text-gray-500'}`}>
                             {step.message}
                           </p>
                         </div>

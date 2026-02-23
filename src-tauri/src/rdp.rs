@@ -952,7 +952,7 @@ fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
             })]
         }
         RdpInputAction::Wheel {
-            delta, horizontal, ..
+            x, y, delta, horizontal,
         } => {
             let flags = if *horizontal {
                 PointerFlags::HORIZONTAL_WHEEL
@@ -962,8 +962,8 @@ fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
             vec![FastPathInputEvent::MouseEvent(MousePdu {
                 flags,
                 number_of_wheel_rotation_units: *delta,
-                x_position: 0,
-                y_position: 0,
+                x_position: *x,
+                y_position: *y,
             })]
         }
         RdpInputAction::KeyboardKey {
@@ -1365,7 +1365,7 @@ fn run_rdp_session_auto_detect(
         let total_fallback = fallback_max * color_depths.len();
         let mut attempt_num = 0usize;
 
-        for (i, (tls, credssp, hybrid_ex)) in fallback_combos.iter().take(fallback_max).enumerate() {
+        for (_i, (tls, credssp, hybrid_ex)) in fallback_combos.iter().take(fallback_max).enumerate() {
             for &depth in color_depths {
                 attempt_num += 1;
                 log::info!(
@@ -1948,6 +1948,7 @@ fn run_rdp_session_inner(
                         app_handle,
                         stats,
                         &b64,
+                        full_frame_sync_interval,
                     )?;
                 }
                 Err(e) => {
@@ -2247,6 +2248,7 @@ fn process_outputs(
     app_handle: &AppHandle,
     stats: &RdpSessionStats,
     b64: &base64::engine::GeneralPurpose,
+    full_frame_sync_interval: u64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for output in outputs {
         match output {
@@ -2263,7 +2265,7 @@ fn process_outputs(
                 stats.record_frame();
                 emit_region(session_id, image, desktop_width, region, app_handle, b64);
                 let fc = stats.frame_count.load(Ordering::Relaxed);
-                if fc % 120 == 0 {
+                if fc > 0 && fc % full_frame_sync_interval == 0 {
                     send_full_frame(
                         session_id,
                         image,
@@ -2613,28 +2615,8 @@ pub async fn get_rdp_stats(
 
 // ─── Deep Connection Diagnostics ────────────────────────────────────────────
 
-/// Result of a single diagnostic probe step.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiagnosticStep {
-    pub name: String,
-    pub status: String,       // "pass" | "fail" | "skip" | "warn"
-    pub message: String,
-    pub duration_ms: u64,
-    pub detail: Option<String>,
-}
-
-/// Full diagnostic report returned to the frontend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiagnosticReport {
-    pub host: String,
-    pub port: u16,
-    pub resolved_ip: Option<String>,
-    pub steps: Vec<DiagnosticStep>,
-    pub summary: String,
-    pub root_cause_hint: Option<String>,
-}
+// Re-export shared types so the frontend API stays unchanged.
+pub use crate::diagnostics::{DiagnosticStep, DiagnosticReport};
 
 /// Run a deep diagnostic probe against an RDP server.
 /// This performs each connection phase independently and reports
@@ -2680,80 +2662,36 @@ fn run_diagnostics(
     cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
 ) -> DiagnosticReport {
+    use crate::diagnostics::{self, DiagnosticStep};
+    let run_start = Instant::now();
     let mut steps: Vec<DiagnosticStep> = Vec::new();
     let mut resolved_ip: Option<String> = None;
-    let addr = format!("{host}:{port}");
 
-    // ── Step 1: DNS Resolution ──────────────────────────────────────────
+    // ── Step 1: DNS Resolution (multi-address) ──────────────────────────
 
-    let t = Instant::now();
-    let socket_addr = match addr.to_socket_addrs() {
-        Ok(mut addrs) => match addrs.next() {
-            Some(a) => {
-                resolved_ip = Some(a.ip().to_string());
-                steps.push(DiagnosticStep {
-                    name: "DNS Resolution".into(),
-                    status: "pass".into(),
-                    message: format!("{host} → {}", a.ip()),
-                    duration_ms: t.elapsed().as_millis() as u64,
-                    detail: None,
-                });
-                a
-            }
-            None => {
-                steps.push(DiagnosticStep {
-                    name: "DNS Resolution".into(),
-                    status: "fail".into(),
-                    message: format!("DNS returned no addresses for {host}"),
-                    duration_ms: t.elapsed().as_millis() as u64,
-                    detail: Some("Verify the hostname is correct and DNS is configured".into()),
-                });
-                return finish_report(host, port, resolved_ip, steps);
-            }
-        },
-        Err(e) => {
-            steps.push(DiagnosticStep {
-                name: "DNS Resolution".into(),
-                status: "fail".into(),
-                message: format!("DNS lookup failed: {e}"),
-                duration_ms: t.elapsed().as_millis() as u64,
-                detail: Some("Check hostname spelling, DNS server, and network connectivity".into()),
-            });
-            return finish_report(host, port, resolved_ip, steps);
+    let (socket_addr, ip_str, _all_ips) =
+        diagnostics::probe_dns(host, port, &mut steps);
+    let socket_addr = match socket_addr {
+        Some(a) => {
+            resolved_ip = ip_str;
+            a
+        }
+        None => {
+            return diagnostics::finish_report(host, port, "rdp", resolved_ip, steps, run_start);
         }
     };
 
     // ── Step 2: TCP Connect ─────────────────────────────────────────────
 
-    let t = Instant::now();
-    let tcp_stream = match TcpStream::connect_timeout(&socket_addr, settings.tcp_connect_timeout) {
-        Ok(s) => {
-            let _ = s.set_nodelay(settings.tcp_nodelay);
-            steps.push(DiagnosticStep {
-                name: "TCP Connect".into(),
-                status: "pass".into(),
-                message: format!("Connected to {socket_addr}"),
-                duration_ms: t.elapsed().as_millis() as u64,
-                detail: None,
-            });
-            s
-        }
-        Err(e) => {
-            let detail = if e.kind() == std::io::ErrorKind::TimedOut {
-                "Connection timed out — the port may be firewalled or the host is unreachable"
-            } else if e.kind() == std::io::ErrorKind::ConnectionRefused {
-                "Connection refused — Remote Desktop may be disabled on the target or is listening on a different port"
-            } else {
-                "Check firewall rules, VPN connectivity, and that the RDP service is running"
-            };
-            steps.push(DiagnosticStep {
-                name: "TCP Connect".into(),
-                status: "fail".into(),
-                message: format!("TCP connect failed: {e}"),
-                duration_ms: t.elapsed().as_millis() as u64,
-                detail: Some(detail.into()),
-            });
-            return finish_report(host, port, resolved_ip, steps);
+    let tcp_stream = match diagnostics::probe_tcp(
+        socket_addr,
+        settings.tcp_connect_timeout,
+        settings.tcp_nodelay,
+        &mut steps,
+    ) {
+        Some(s) => s,
+        None => {
+            return diagnostics::finish_report(host, port, "rdp", resolved_ip, steps, run_start);
         }
     };
 
@@ -2762,7 +2700,6 @@ fn run_diagnostics(
     let t = Instant::now();
     let mut framed = Framed::new(tcp_stream);
 
-    // Build a minimal config for negotiation probing
     let (actual_user, actual_domain) = resolve_credentials(username, domain, host);
     let probe_config = connector::Config {
         credentials: connector::Credentials::UsernamePassword {
@@ -2828,7 +2765,6 @@ fn run_diagnostics(
                 Ok((mut tls_framed, server_public_key)) => {
                     let tls_ms = t.elapsed().as_millis() as u64;
 
-                    // Extract cert info for the report
                     let cert_detail = {
                         let (tls_stream, _) = tls_framed.get_inner();
                         extract_cert_fingerprint(tls_stream)
@@ -2846,10 +2782,10 @@ fn run_diagnostics(
 
                     let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
 
-                    // ── Step 5: CredSSP / NLA Authentication ─────────
+                    // ── Step 5: CredSSP / NLA + Session Setup ────────
 
                     let t = Instant::now();
-                    let mut network_client = BlockingNetworkClient::new(cached_http_client);
+                    let mut network_client = BlockingNetworkClient::new(cached_http_client.clone());
                     let server_name = ironrdp::connector::ServerName::new(host);
 
                     match ironrdp_blocking::connect_finalize(
@@ -2874,12 +2810,24 @@ fn run_diagnostics(
                                 duration_ms: auth_ms,
                                 detail: Some("Authentication, licensing, and capability exchange all succeeded".into()),
                             });
-                            // We have a full connection — gracefully close it.
-                            // (connection_result is dropped, tls_framed will close on drop)
+
+                            // ── Step 6 (RDP-specific): Color Depth Compatibility ──
+                            // Probe which color depths the server actually accepts.
+                            // This runs a quick sequence of connect_begin → finalize
+                            // with different depths to detect rejections like 24-bit.
+                            let user_depth = settings.color_depth;
+                            if user_depth != 32 {
+                                // The probe just succeeded with 32-bit.  If the user
+                                // wants a different depth, test it too.
+                                let depth_result = probe_color_depth(
+                                    host, port, username, password, domain,
+                                    settings, user_depth, cached_http_client,
+                                );
+                                steps.push(depth_result);
+                            }
                         }
                         Err(e) => {
                             let auth_ms = t.elapsed().as_millis() as u64;
-                            // Walk the error chain for maximum detail
                             let mut err_detail = format!("{e}");
                             let mut source: Option<&dyn std::error::Error> = std::error::Error::source(&e);
                             while let Some(cause) = source {
@@ -2897,7 +2845,6 @@ fn run_diagnostics(
                                 detail: Some(err_detail.clone()),
                             });
 
-                            // Try to isolate CredSSP vs post-CredSSP failure
                             if err_detail.contains("10054") || err_detail.contains("forcibly closed") {
                                 steps.push(DiagnosticStep {
                                     name: "Root Cause Analysis".into(),
@@ -2915,6 +2862,16 @@ fn run_diagnostics(
                                          for the specific rejection reason.".into()
                                     })),
                                 });
+                            }
+
+                            // ── Additional: Color Depth Probe on failure ─────
+                            // If the session setup failed, probe multiple color
+                            // depths to see if a different one works.
+                            let depth_step = probe_color_depths_on_failure(
+                                host, port, username, password, domain, settings,
+                            );
+                            if let Some(ds) = depth_step {
+                                steps.push(ds);
                             }
                         }
                     }
@@ -2939,17 +2896,374 @@ fn run_diagnostics(
                 err_detail.push_str(&format!(" → {cause}"));
                 source = std::error::Error::source(cause);
             }
+
+            // Detect specific negotiation failure — server requires CredSSP
+            let status = if err_detail.to_lowercase().contains("negotiation")
+                || err_detail.to_lowercase().contains("security")
+            {
+                "fail"
+            } else {
+                "fail"
+            };
+
             steps.push(DiagnosticStep {
                 name: "X.224 Negotiation".into(),
-                status: "fail".into(),
+                status: status.into(),
                 message: format!("Protocol negotiation failed: {e}"),
                 duration_ms: negotiate_ms,
-                detail: Some(err_detail),
+                detail: Some(err_detail.clone()),
             });
+
+            // Try alternative protocol flags if negotiation failed
+            let alt_step = probe_alternative_protocols(host, port, username, password, domain, settings);
+            if let Some(s) = alt_step {
+                steps.push(s);
+            }
         }
     }
 
-    finish_report(host, port, resolved_ip, steps)
+    diagnostics::finish_report(host, port, "rdp", resolved_ip, steps, run_start)
+}
+
+/// Quick probe: can the server accept a specific color depth?
+/// Performs a new TCP → X.224 → TLS → finalize cycle with the given depth.
+fn probe_color_depth(
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    domain: Option<&str>,
+    settings: &ResolvedSettings,
+    depth: u32,
+    cached_http_client: Option<Arc<reqwest::blocking::Client>>,
+) -> DiagnosticStep {
+    let t = Instant::now();
+    let addr = format!("{host}:{port}");
+    let socket_addr = match addr.to_socket_addrs().ok().and_then(|mut a| a.next()) {
+        Some(a) => a,
+        None => {
+            return DiagnosticStep {
+                name: format!("Color Depth Probe ({depth}bpp)"),
+                status: "skip".into(),
+                message: "DNS failed (skipped)".into(),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: None,
+            };
+        }
+    };
+
+    let tcp = match TcpStream::connect_timeout(&socket_addr, settings.tcp_connect_timeout) {
+        Ok(s) => s,
+        Err(_) => {
+            return DiagnosticStep {
+                name: format!("Color Depth Probe ({depth}bpp)"),
+                status: "skip".into(),
+                message: "TCP failed (skipped)".into(),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: None,
+            };
+        }
+    };
+    let _ = tcp.set_nodelay(true);
+    let mut framed = Framed::new(tcp);
+
+    let (actual_user, actual_domain) = resolve_credentials(username, domain, host);
+    let config = connector::Config {
+        credentials: connector::Credentials::UsernamePassword {
+            username: actual_user,
+            password: password.to_string(),
+        },
+        domain: actual_domain,
+        enable_tls: settings.enable_tls,
+        enable_credssp: settings.enable_credssp,
+        keyboard_type: settings.keyboard_type,
+        keyboard_subtype: settings.keyboard_subtype,
+        keyboard_functional_keys_count: settings.keyboard_functional_keys_count,
+        keyboard_layout: settings.keyboard_layout,
+        ime_file_name: settings.ime_file_name.clone(),
+        dig_product_id: String::new(),
+        desktop_size: connector::DesktopSize { width: 1024, height: 768 },
+        desktop_scale_factor: 100,
+        bitmap: Some(connector::BitmapConfig {
+            lossy_compression: false,
+            color_depth: depth,
+            codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
+        }),
+        client_build: settings.client_build,
+        client_name: settings.client_name.clone(),
+        client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
+        platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
+        hardware_id: None,
+        request_data: None,
+        autologon: false,
+        enable_audio_playback: false,
+        performance_flags: settings.performance_flags,
+        license_cache: None,
+        timezone_info: Default::default(),
+        enable_server_pointer: true,
+        pointer_software_rendering: false,
+        allow_hybrid_ex: settings.allow_hybrid_ex,
+        sspi_package_list: None,
+    };
+
+    let server_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
+    let mut conn = ClientConnector::new(config, server_addr);
+
+    let should_upgrade = match ironrdp_blocking::connect_begin(&mut framed, &mut conn) {
+        Ok(u) => u,
+        Err(e) => {
+            return DiagnosticStep {
+                name: format!("Color Depth Probe ({depth}bpp)"),
+                status: "warn".into(),
+                message: format!("Negotiation failed: {e}"),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: None,
+            };
+        }
+    };
+
+    let (tcp_inner, leftover) = framed.into_inner();
+    let (mut tls_framed, server_pk) = match tls_upgrade(tcp_inner, host, leftover, None) {
+        Ok(r) => r,
+        Err(e) => {
+            return DiagnosticStep {
+                name: format!("Color Depth Probe ({depth}bpp)"),
+                status: "warn".into(),
+                message: format!("TLS failed: {e}"),
+                duration_ms: t.elapsed().as_millis() as u64,
+                detail: None,
+            };
+        }
+    };
+
+    let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut conn);
+    let mut net_client = BlockingNetworkClient::new(cached_http_client);
+    let sn = ironrdp::connector::ServerName::new(host);
+
+    match ironrdp_blocking::connect_finalize(upgraded, conn, &mut tls_framed, &mut net_client, sn, server_pk, None) {
+        Ok(cr) => DiagnosticStep {
+            name: format!("Color Depth Probe ({depth}bpp)"),
+            status: "pass".into(),
+            message: format!("{depth}bpp accepted — desktop {}x{}", cr.desktop_size.width, cr.desktop_size.height),
+            duration_ms: t.elapsed().as_millis() as u64,
+            detail: Some(format!("The server accepts {depth}-bit color depth")),
+        },
+        Err(e) => DiagnosticStep {
+            name: format!("Color Depth Probe ({depth}bpp)"),
+            status: "warn".into(),
+            message: format!("{depth}bpp REJECTED — {e}"),
+            duration_ms: t.elapsed().as_millis() as u64,
+            detail: Some(format!(
+                "The server does NOT accept {depth}-bit color depth. \
+                 Try 32-bit or 16-bit in connection settings."
+            )),
+        },
+    }
+}
+
+/// After a session-setup failure, quick-test multiple color depths to find
+/// which ones the server accepts.
+fn probe_color_depths_on_failure(
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    domain: Option<&str>,
+    settings: &ResolvedSettings,
+) -> Option<DiagnosticStep> {
+    let t = Instant::now();
+    let depths = [32u32, 24, 16, 15];
+
+    // Probe all depths in parallel — each one opens its own TCP connection.
+    let results: Vec<(u32, DiagnosticStep)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = depths
+            .iter()
+            .map(|&depth| {
+                scope.spawn(move || {
+                    let step = probe_color_depth(
+                        host, port, username, password, domain, settings, depth, None,
+                    );
+                    (depth, step)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().ok())
+            .collect()
+    });
+
+    let mut accepted: Vec<u32> = Vec::new();
+    let mut rejected: Vec<u32> = Vec::new();
+    for (depth, step) in &results {
+        if step.status == "pass" {
+            accepted.push(*depth);
+        } else if step.status == "warn" && step.message.contains("REJECTED") {
+            rejected.push(*depth);
+        }
+    }
+
+    if accepted.is_empty() && rejected.is_empty() {
+        return None; // couldn't test any
+    }
+
+    let accepted_str: Vec<String> = accepted.iter().map(|d| format!("{d}bpp")).collect();
+    let rejected_str: Vec<String> = rejected.iter().map(|d| format!("{d}bpp")).collect();
+
+    let user_depth = settings.color_depth;
+    let user_ok = accepted.contains(&user_depth);
+
+    let message = if user_ok {
+        format!(
+            "Your color depth ({user_depth}bpp) is accepted. Accepted: {}",
+            accepted_str.join(", ")
+        )
+    } else if !accepted.is_empty() {
+        format!(
+            "Your color depth ({user_depth}bpp) may be rejected! Accepted: {}. Rejected: {}",
+            accepted_str.join(", "),
+            rejected_str.join(", ")
+        )
+    } else {
+        format!(
+            "No color depths tested successfully. Rejected: {}",
+            rejected_str.join(", ")
+        )
+    };
+
+    Some(DiagnosticStep {
+        name: "Color Depth Compatibility".into(),
+        status: if user_ok { "pass" } else { "warn" }.into(),
+        message,
+        duration_ms: t.elapsed().as_millis() as u64,
+        detail: Some(format!(
+            "Tested depths: {:?}. Accepted: {:?}. Rejected: {:?}. \
+             If your chosen depth is rejected, change it in Display settings.",
+            depths, accepted, rejected
+        )),
+    })
+}
+
+/// If X.224 negotiation failed, try alternative protocol flag combinations
+/// to see which ones the server accepts.  All combos are probed in parallel.
+fn probe_alternative_protocols(
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    domain: Option<&str>,
+    settings: &ResolvedSettings,
+) -> Option<DiagnosticStep> {
+    let t = Instant::now();
+    let combos: &[(bool, bool, bool, &str)] = &[
+        (true, true, false, "TLS+CredSSP"),
+        (true, true, true, "TLS+CredSSP+HYBRID_EX"),
+        (true, false, false, "TLS only"),
+        (false, false, false, "Plain (no security)"),
+    ];
+
+    // Probe all protocol combinations in parallel.
+    let results: Vec<(&str, bool)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = combos
+            .iter()
+            .map(|&(tls, credssp, hybrid_ex, label)| {
+                scope.spawn(move || {
+                    let addr = format!("{host}:{port}");
+                    let socket_addr = match addr.to_socket_addrs().ok().and_then(|mut a| a.next()) {
+                        Some(a) => a,
+                        None => return (label, false),
+                    };
+                    let tcp = match TcpStream::connect_timeout(&socket_addr, settings.tcp_connect_timeout) {
+                        Ok(s) => s,
+                        Err(_) => return (label, false),
+                    };
+                    let _ = tcp.set_nodelay(true);
+                    let mut framed = Framed::new(tcp);
+
+                    let (actual_user, actual_domain) = resolve_credentials(username, domain, host);
+                    let config = connector::Config {
+                        credentials: connector::Credentials::UsernamePassword {
+                            username: actual_user,
+                            password: password.to_string(),
+                        },
+                        domain: actual_domain,
+                        enable_tls: tls,
+                        enable_credssp: credssp,
+                        keyboard_type: settings.keyboard_type,
+                        keyboard_subtype: settings.keyboard_subtype,
+                        keyboard_functional_keys_count: settings.keyboard_functional_keys_count,
+                        keyboard_layout: settings.keyboard_layout,
+                        ime_file_name: settings.ime_file_name.clone(),
+                        dig_product_id: String::new(),
+                        desktop_size: connector::DesktopSize { width: 1024, height: 768 },
+                        desktop_scale_factor: 100,
+                        bitmap: Some(connector::BitmapConfig {
+                            lossy_compression: false,
+                            color_depth: 32,
+                            codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
+                        }),
+                        client_build: settings.client_build,
+                        client_name: settings.client_name.clone(),
+                        client_dir: String::from("C:\\Windows\\System32\\mstscax.dll"),
+                        platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
+                        hardware_id: None,
+                        request_data: None,
+                        autologon: false,
+                        enable_audio_playback: false,
+                        performance_flags: settings.performance_flags,
+                        license_cache: None,
+                        timezone_info: Default::default(),
+                        enable_server_pointer: true,
+                        pointer_software_rendering: false,
+                        allow_hybrid_ex: hybrid_ex,
+                        sspi_package_list: None,
+                    };
+
+                    let server_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
+                    let mut conn = ClientConnector::new(config, server_addr);
+
+                    match ironrdp_blocking::connect_begin(&mut framed, &mut conn) {
+                        Ok(_) => (label, true),
+                        Err(_) => (label, false),
+                    }
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().ok())
+            .collect()
+    });
+
+    let accepted: Vec<&str> = results.iter().filter(|(_, ok)| *ok).map(|(l, _)| *l).collect();
+    let rejected: Vec<&str> = results.iter().filter(|(_, ok)| !*ok).map(|(l, _)| *l).collect();
+
+    if accepted.is_empty() && rejected.is_empty() {
+        return None;
+    }
+
+    let current = format!(
+        "TLS={}, CredSSP={}, HYBRID_EX={}",
+        settings.enable_tls, settings.enable_credssp, settings.allow_hybrid_ex
+    );
+
+    Some(DiagnosticStep {
+        name: "Protocol Compatibility".into(),
+        status: if accepted.is_empty() { "fail" } else { "warn" }.into(),
+        message: if accepted.is_empty() {
+            format!("No protocol combinations accepted by the server. Current: {current}")
+        } else {
+            format!(
+                "Server accepts: {}. Rejected: {}. Current: {current}",
+                accepted.join(", "),
+                rejected.join(", ")
+            )
+        },
+        duration_ms: t.elapsed().as_millis() as u64,
+        detail: Some(
+            "Enable Auto-detect negotiation or switch to an accepted protocol combination in Security settings.".into()
+        ),
+    })
 }
 
 /// Extract username and domain from various formats (DOMAIN\\user, user@domain, plain user)
@@ -3026,37 +3340,4 @@ fn classify_finalize_error(err: &str) -> (&'static str, Option<String>) {
     ("fail", None)
 }
 
-fn finish_report(
-    host: &str,
-    port: u16,
-    resolved_ip: Option<String>,
-    steps: Vec<DiagnosticStep>,
-) -> DiagnosticReport {
-    let all_pass = steps.iter().all(|s| s.status == "pass");
-    let first_fail = steps.iter().find(|s| s.status == "fail");
-    let any_warn = steps.iter().any(|s| s.status == "warn");
-    let root_cause = steps
-        .iter()
-        .filter(|s| s.name == "Root Cause Analysis")
-        .last()
-        .and_then(|s| s.detail.clone());
 
-    let summary = if all_pass {
-        "All diagnostic probes passed — the server is fully reachable and accepted the connection.".into()
-    } else if let Some(fail) = first_fail {
-        format!("Diagnostics stopped at: {} — {}", fail.name, fail.message)
-    } else if any_warn {
-        "Connection partially succeeded but warnings were reported.".into()
-    } else {
-        "Diagnostics completed with mixed results.".into()
-    };
-
-    DiagnosticReport {
-        host: host.to_string(),
-        port,
-        resolved_ip,
-        steps,
-        summary,
-        root_cause_hint: root_cause,
-    }
-}

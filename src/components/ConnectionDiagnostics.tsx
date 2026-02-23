@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, RefreshCw, Globe, Router, Network, Activity, CheckCircle, XCircle, Clock, Loader2, Stethoscope, Server, Tags, Copy, MapPin, GitBranch, Radio, Shield } from 'lucide-react';
+import { X, RefreshCw, Globe, Router, Network, Activity, CheckCircle, XCircle, Clock, Loader2, Stethoscope, Server, Tags, Copy, MapPin, GitBranch, Radio, Shield, AlertCircle, ChevronDown, ChevronUp, Info, Microscope } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from 'react-i18next';
 import { Connection } from '../types/connection';
@@ -173,6 +173,27 @@ interface DiagnosticResults {
   leakageDetection: LeakageDetectionResult | null;
 }
 
+/* ── Protocol-specific deep diagnostic types (match Rust DiagnosticStep/Report) ── */
+
+interface ProtocolDiagnosticStep {
+  name: string;
+  status: 'pass' | 'fail' | 'skip' | 'warn' | 'info';
+  message: string;
+  durationMs: number;
+  detail: string | null;
+}
+
+interface ProtocolDiagnosticReport {
+  host: string;
+  port: number;
+  protocol: string;
+  resolvedIp: string | null;
+  steps: ProtocolDiagnosticStep[];
+  summary: string;
+  rootCauseHint: string | null;
+  totalDurationMs: number;
+}
+
 const initialResults: DiagnosticResults = {
   internetCheck: 'pending',
   gatewayCheck: 'pending',
@@ -202,6 +223,10 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   const [results, setResults] = useState<DiagnosticResults>(initialResults);
   const [isRunning, setIsRunning] = useState(false);
   const [currentStep, setCurrentStep] = useState<string>('');
+  const [protocolReport, setProtocolReport] = useState<ProtocolDiagnosticReport | null>(null);
+  const [protocolDiagRunning, setProtocolDiagRunning] = useState(false);
+  const [protocolDiagError, setProtocolDiagError] = useState<string | null>(null);
+  const [expandedProtoStep, setExpandedProtoStep] = useState<number | null>(null);
 
   const copyDiagnosticsToClipboard = useCallback(() => {
     const lines: string[] = [
@@ -426,6 +451,26 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
       lines.push(``);
     }
 
+    if (protocolReport) {
+      lines.push(`--- ${protocolReport.protocol.toUpperCase()} Deep Diagnostics ---`);
+      lines.push(`Host: ${protocolReport.host}:${protocolReport.port}`);
+      if (protocolReport.resolvedIp) {
+        lines.push(`Resolved IP: ${protocolReport.resolvedIp}`);
+      }
+      lines.push(`Total Duration: ${protocolReport.totalDurationMs}ms`);
+      protocolReport.steps.forEach(step => {
+        lines.push(`  [${step.status.toUpperCase()}] ${step.name}: ${step.message} (${step.durationMs}ms)`);
+        if (step.detail) {
+          lines.push(`    Detail: ${step.detail}`);
+        }
+      });
+      lines.push(`Summary: ${protocolReport.summary}`);
+      if (protocolReport.rootCauseHint) {
+        lines.push(`Root Cause: ${protocolReport.rootCauseHint}`);
+      }
+      lines.push(``);
+    }
+
     lines.push(`Generated: ${new Date().toISOString()}`);
 
     navigator.clipboard.writeText(lines.join('\n')).then(() => {
@@ -433,7 +478,7 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
     }).catch(() => {
       toast.error(t('diagnostics.copyFailed', 'Failed to copy to clipboard'));
     });
-  }, [connection, results, t, toast]);
+  }, [connection, results, protocolReport, t, toast]);
 
   const getDefaultPort = (protocol: string): number => {
     const ports: Record<string, number> = {
@@ -456,6 +501,9 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
   const runDiagnostics = useCallback(async () => {
     setIsRunning(true);
     setResults(initialResults);
+    setProtocolReport(null);
+    setProtocolDiagError(null);
+    setExpandedProtoStep(null);
     let resolvedDnsIp: string | undefined;
 
     const isTauri = typeof window !== "undefined" &&
@@ -667,6 +715,53 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
         }
         // Small delay between pings
         await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      // Group 7: Protocol-specific deep diagnostics
+      const proto = connection.protocol.toLowerCase();
+      if (['ssh', 'http', 'https', 'rdp'].includes(proto)) {
+        setCurrentStep(t('diagnostics.runningProtocol', 'Running {{protocol}} diagnostics...', { protocol: proto.toUpperCase() }));
+        setProtocolDiagRunning(true);
+        setProtocolDiagError(null);
+        try {
+          let report: ProtocolDiagnosticReport | null = null;
+          if (proto === 'ssh') {
+            report = await invoke<ProtocolDiagnosticReport>('diagnose_ssh_connection', {
+              host: connection.hostname,
+              port,
+              username: connection.username || '',
+              password: connection.password || null,
+              privateKeyPath: connection.privateKey || null,
+              privateKeyPassphrase: null,
+              connectTimeoutSecs: 10,
+            });
+          } else if (proto === 'http' || proto === 'https') {
+            report = await invoke<ProtocolDiagnosticReport>('diagnose_http_connection', {
+              host: connection.hostname,
+              port,
+              useTls: proto === 'https',
+              path: '/',
+              method: 'GET',
+              expectedStatus: null,
+              connectTimeoutSecs: 15,
+              verifySsl: true,
+            });
+          } else if (proto === 'rdp') {
+            report = await invoke<ProtocolDiagnosticReport>('diagnose_rdp_connection', {
+              host: connection.hostname,
+              port,
+              username: connection.username || '',
+              password: connection.password || '',
+              domain: connection.domain || null,
+              settings: null,
+            });
+          }
+          setProtocolReport(report);
+        } catch (err) {
+          setProtocolDiagError(String(err));
+        } finally {
+          setProtocolDiagRunning(false);
+        }
       }
 
     } catch (error) {
@@ -1560,6 +1655,111 @@ export const ConnectionDiagnostics: React.FC<ConnectionDiagnosticsProps> = ({
               </div>
             </div>
           </div>
+
+          {/* ── Protocol-Specific Deep Diagnostics ──────────────────── */}
+          {(protocolReport || protocolDiagRunning || protocolDiagError) && (
+            <div className="bg-[var(--color-surfaceHover)]/50 border border-purple-500/30 rounded-lg overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 bg-purple-950/20 border-b border-purple-500/20">
+                <Microscope size={14} className="text-purple-400" />
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-purple-300">
+                  {connection.protocol.toUpperCase()} Deep Diagnostics
+                </h3>
+                {protocolReport && (
+                  <span className="ml-auto text-[10px] text-[var(--color-textSecondary)]">
+                    {protocolReport.protocol.toUpperCase()}{' '}
+                    {protocolReport.resolvedIp && `${protocolReport.host} → ${protocolReport.resolvedIp}:${protocolReport.port}`}
+                    {protocolReport.totalDurationMs > 0 && ` (${protocolReport.totalDurationMs}ms)`}
+                  </span>
+                )}
+              </div>
+
+              {protocolDiagRunning && (
+                <div className="flex items-center gap-2 px-4 py-3 text-sm text-purple-400">
+                  <Loader2 size={14} className="animate-spin" />
+                  Running {connection.protocol.toUpperCase()} diagnostics…
+                </div>
+              )}
+
+              {protocolDiagError && (
+                <div className="px-4 py-3 text-sm text-red-400">
+                  Diagnostics failed: {protocolDiagError}
+                </div>
+              )}
+
+              {protocolReport && (
+                <div className="divide-y divide-[var(--color-border)]/40">
+                  {protocolReport.steps.map((step, idx) => {
+                    const isExpanded = expandedProtoStep === idx;
+                    const stepIcon = step.status === 'pass'
+                      ? <CheckCircle size={14} className="text-green-400" />
+                      : step.status === 'fail'
+                        ? <XCircle size={14} className="text-red-400" />
+                        : step.status === 'warn'
+                          ? <AlertCircle size={14} className="text-yellow-400" />
+                          : step.status === 'info'
+                            ? <Info size={14} className="text-blue-400" />
+                            : <Activity size={14} className="text-gray-500" />;
+                    return (
+                      <div key={idx}>
+                        <button
+                          onClick={() => setExpandedProtoStep(p => p === idx ? null : idx)}
+                          className="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-[var(--color-surfaceHover)] transition-colors"
+                        >
+                          {stepIcon}
+                          <span className="flex-1 text-xs text-[var(--color-text)]">{step.name}</span>
+                          <span className="flex items-center gap-1 text-[10px] text-[var(--color-textSecondary)]">
+                            <Clock size={10} />
+                            {step.durationMs}ms
+                          </span>
+                          {step.detail && (
+                            isExpanded
+                              ? <ChevronUp size={12} className="text-[var(--color-textMuted)]" />
+                              : <ChevronDown size={12} className="text-[var(--color-textMuted)]" />
+                          )}
+                        </button>
+                        <div className="px-4 pb-1 -mt-0.5 pl-10">
+                          <p className={`text-[10px] ${
+                            step.status === 'fail' ? 'text-red-400' :
+                            step.status === 'warn' ? 'text-yellow-400' :
+                            step.status === 'info' ? 'text-blue-400' :
+                            'text-[var(--color-textSecondary)]'
+                          }`}>
+                            {step.message}
+                          </p>
+                        </div>
+                        {isExpanded && step.detail && (
+                          <div className="px-4 pb-2 pl-10">
+                            <pre className="text-[10px] text-[var(--color-textSecondary)] whitespace-pre-wrap bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-2 mt-1">
+                              {step.detail}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Summary */}
+                  <div className="px-4 py-3 space-y-2">
+                    <p className="text-xs text-[var(--color-text)]">
+                      <span className="font-semibold text-[var(--color-textSecondary)]">Summary: </span>
+                      {protocolReport.summary}
+                    </p>
+                    {protocolReport.rootCauseHint && (
+                      <div className="rounded-lg border border-yellow-500/30 bg-yellow-950/20 p-3">
+                        <h4 className="text-[10px] font-semibold text-yellow-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          <AlertCircle size={10} />
+                          Root Cause Analysis
+                        </h4>
+                        <pre className="text-[10px] text-yellow-200/80 whitespace-pre-wrap leading-relaxed">
+                          {protocolReport.rootCauseHint}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
