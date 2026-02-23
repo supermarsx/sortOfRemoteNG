@@ -113,6 +113,7 @@ describe("RDPClient", () => {
 
       await waitFor(() => {
         expect(mockInvoke).toHaveBeenCalledWith('connect_rdp', expect.objectContaining({
+          connectionId: 'test-connection',
           host: '192.168.1.100',
           port: 3389,
           username: 'testuser',
@@ -348,9 +349,9 @@ describe("RDPClient", () => {
 
       unmount();
 
-      // Should try to disconnect the session
+      // Should try to disconnect the session by connectionId
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('disconnect_rdp', { sessionId: 'rdp-session-123' });
+        expect(mockInvoke).toHaveBeenCalledWith('disconnect_rdp', { connectionId: 'test-connection' });
       });
     });
   });

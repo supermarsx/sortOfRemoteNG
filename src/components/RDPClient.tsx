@@ -193,7 +193,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
-  const connectGenRef = useRef(0);
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
@@ -212,9 +211,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const initializeRDPConnection = useCallback(async () => {
     if (!connection) return;
 
-    // Guard: prevent duplicate connection attempts (React StrictMode double-mount)
-    const gen = ++connectGenRef.current;
-
     try {
       setConnectionStatus('connecting');
       setStatusMessage('Initiating connection...');
@@ -224,6 +220,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       const resH = display?.height ?? 1080;
 
       const connectionDetails = {
+        connectionId: connection.id,
         host: session.hostname,
         port: connection.port || 3389,
         username: connection.username || '',
@@ -234,17 +231,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         rdpSettings: rdpSettings,
       };
 
-      debugLog(`Attempting RDP connection to ${connectionDetails.host}:${connectionDetails.port} (gen=${gen})`);
+      debugLog(`Attempting RDP connection to ${connectionDetails.host}:${connectionDetails.port}`);
 
+      // The backend handles eviction of any stale session for this connectionId,
+      // so we don't need generation counters or duplicate guards on the frontend.
       const sessionId = await invoke('connect_rdp', connectionDetails) as string;
-
-      // If a newer connect attempt was started (or cleanup ran) while we were
-      // awaiting, this session is stale — tear it down immediately.
-      if (gen !== connectGenRef.current) {
-        debugLog(`Stale RDP session ${sessionId} (gen=${gen}, current=${connectGenRef.current}) — disconnecting`);
-        try { await invoke('disconnect_rdp', { sessionId }); } catch { /* ignore */ }
-        return;
-      }
 
       debugLog(`RDP session created: ${sessionId}`);
       setRdpSessionId(sessionId);
@@ -266,7 +257,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         }
       }
     } catch (error) {
-      if (gen !== connectGenRef.current) return; // Stale attempt, ignore
       setConnectionStatus('error');
       setStatusMessage(`Connection failed: ${error}`);
       console.error('RDP initialization failed:', error);
@@ -276,22 +266,20 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   // ─── Disconnect ────────────────────────────────────────────────────
 
   const cleanup = useCallback(async () => {
-    // Invalidate any in-flight connect so its result is discarded
-    connectGenRef.current++;
-
-    const sid = sessionIdRef.current;
     sessionIdRef.current = null;
-    if (sid) {
-      try {
-        await invoke('disconnect_rdp', { sessionId: sid });
-      } catch {
-        // ignore disconnect errors during cleanup
-      }
-    }
     setIsConnected(false);
     setConnectionStatus('disconnected');
     setRdpSessionId(null);
-  }, []);
+    // Disconnect by connectionId — the backend figures out which session
+    // to tear down, even if our invoke('connect_rdp') hasn't resolved yet.
+    if (connection) {
+      try {
+        await invoke('disconnect_rdp', { connectionId: connection.id });
+      } catch {
+        // ignore — session may already have been evicted by a new connect
+      }
+    }
+  }, [connection]);
 
   // ─── Trust accept / reject ─────────────────────────────────────────
 
@@ -1076,6 +1064,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
               setStatusMessage('');
               setRdpSessionId(null);
               sessionIdRef.current = null;
+              // Backend evicts the old session automatically when connectionId matches
               initializeRDPConnection();
             }}
             connectionDetails={{

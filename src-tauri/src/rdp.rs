@@ -618,8 +618,14 @@ impl RdpSessionStats {
 // ─── Session and service types ─────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RdpSession {
     pub id: String,
+    /// Stable frontend connection ID used for lifecycle management.
+    /// Multiple `connect_rdp` invocations with the same `connection_id`
+    /// automatically evict any previous session for that slot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_id: Option<String>,
     pub host: String,
     pub port: u16,
     pub username: String,
@@ -1320,6 +1326,16 @@ fn run_rdp_session_inner(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conn_start = Instant::now();
 
+    // ── 0. Pre-flight shutdown check ────────────────────────────────────
+    // If an evict/disconnect was sent before we even started, bail out.
+    match cmd_rx.try_recv() {
+        Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+            log::info!("RDP session {session_id}: shutdown before connect (pre-flight)");
+            return Ok(());
+        }
+        _ => {}
+    }
+
     // ── 1. TCP connect (with hostname DNS resolution support) ───────────
 
     let addr = format!("{host}:{port}");
@@ -1372,6 +1388,15 @@ fn run_rdp_session_inner(
     }
     let tcp_ms = t_tcp.elapsed().as_millis();
     log::info!("RDP session {session_id}: TCP connected in {tcp_ms}ms");
+
+    // ── Shutdown check after TCP connect ──────────────────────────────
+    match cmd_rx.try_recv() {
+        Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+            log::info!("RDP session {session_id}: shutdown after TCP connect");
+            return Ok(());
+        }
+        _ => {}
+    }
 
     let mut framed = Framed::new(tcp_stream);
 
@@ -1563,6 +1588,15 @@ fn run_rdp_session_inner(
     }
 
     let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
+
+    // ── Shutdown check before CredSSP/NLA ─────────────────────────────
+    match cmd_rx.try_recv() {
+        Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+            log::info!("RDP session {session_id}: shutdown before CredSSP");
+            return Ok(());
+        }
+        _ => {}
+    }
 
     // ── 5. Finalize connection (CredSSP / NLA + remaining handshake) ────
 
@@ -2201,20 +2235,41 @@ pub async fn connect_rdp(
     width: Option<u16>,
     height: Option<u16>,
     rdp_settings: Option<RdpSettingsPayload>,
+    // Stable frontend connection slot ID.  When provided the backend
+    // automatically evicts any prior session occupying the same slot.
+    connection_id: Option<String>,
 ) -> Result<String, String> {
-    // ── De-duplicate: reject if an active session to the same host+port+user already exists ──
+    // ── Evict any previous session for this connection slot ──────────────
     {
-        let service = state.lock().await;
-        let duplicate = service.connections.values().any(|c| {
-            c.session.host == host && c.session.port == port && c.session.username == username && c.session.connected
-        });
-        if duplicate {
-            log::warn!(
-                "Duplicate connect_rdp call for {host}:{port} user={username} — rejecting"
+        let mut service = state.lock().await;
+        let old_id = if let Some(ref cid) = connection_id {
+            // Primary: evict by connection_id (stable frontend slot)
+            service
+                .connections
+                .values()
+                .find(|c| c.session.connection_id.as_deref() == Some(cid))
+                .map(|c| c.session.id.clone())
+        } else {
+            // Fallback: evict by host+port+user (for callers without connection_id)
+            service
+                .connections
+                .values()
+                .find(|c| {
+                    c.session.host == host
+                        && c.session.port == port
+                        && c.session.username == username
+                        && c.session.connected
+                })
+                .map(|c| c.session.id.clone())
+        };
+        if let Some(id) = old_id {
+            log::info!(
+                "Evicting previous session {id} (connection_id={:?}) for {host}:{port}",
+                connection_id
             );
-            return Err(format!(
-                "A session to {host}:{port} as '{username}' is already active or connecting"
-            ));
+            if let Some(old) = service.connections.remove(&id) {
+                let _ = old.cmd_tx.send(RdpCommand::Shutdown);
+            }
         }
     }
 
@@ -2231,6 +2286,7 @@ pub async fn connect_rdp(
 
     let session = RdpSession {
         id: session_id.clone(),
+        connection_id: connection_id.clone(),
         host: host.clone(),
         port,
         username: username.clone(),
@@ -2291,16 +2347,40 @@ pub async fn connect_rdp(
 #[tauri::command]
 pub async fn disconnect_rdp(
     state: tauri::State<'_, RdpServiceState>,
-    session_id: String,
+    session_id: Option<String>,
+    // Disconnect by stable frontend connection slot ID (preferred).
+    connection_id: Option<String>,
 ) -> Result<(), String> {
     let mut service = state.lock().await;
-    if let Some(conn) = service.connections.remove(&session_id) {
-        let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        Ok(())
-    } else {
-        Err(format!("RDP session {session_id} not found"))
+
+    // 1) Try by session_id first
+    if let Some(ref sid) = session_id {
+        if let Some(conn) = service.connections.remove(sid) {
+            let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            return Ok(());
+        }
     }
+
+    // 2) Fall back to connection_id (scan values)
+    if let Some(ref cid) = connection_id {
+        let old_id = service
+            .connections
+            .values()
+            .find(|c| c.session.connection_id.as_deref() == Some(cid.as_str()))
+            .map(|c| c.session.id.clone());
+        if let Some(id) = old_id {
+            if let Some(conn) = service.connections.remove(&id) {
+                let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                return Ok(());
+            }
+        }
+    }
+
+    // Nothing to disconnect — this is not an error (the session may
+    // have already been evicted by a racing connect_rdp call).
+    Ok(())
 }
 
 #[tauri::command]

@@ -57,6 +57,7 @@ interface DiagnosticCause {
 }
 
 type ErrorCategory =
+  | 'duplicate_session'
   | 'credssp_post_auth'
   | 'credssp_oracle'
   | 'credentials'
@@ -66,6 +67,9 @@ type ErrorCategory =
 
 function classifyError(raw: string): ErrorCategory {
   const msg = raw.toLowerCase();
+  if (msg.includes('already active or connecting')) {
+    return 'duplicate_session';
+  }
   if (
     (msg.includes('10054') || msg.includes('forcibly closed')) &&
     (msg.includes('connect_finalize') || msg.includes('nla') || msg.includes('credssp'))
@@ -89,6 +93,21 @@ function classifyError(raw: string): ErrorCategory {
 
 function buildDiagnostics(category: ErrorCategory): DiagnosticCause[] {
   switch (category) {
+    case 'duplicate_session':
+      return [
+        {
+          icon: <RefreshCw size={20} className="text-yellow-400" />,
+          title: 'Duplicate connection attempt',
+          description:
+            'Another session to this server with the same credentials is already being established. ' +
+            'This is often caused by React StrictMode\'s double-mount during development, or by rapidly clicking "Connect" twice.',
+          remediation: [
+            'Click "Retry Connection" below — the stale session will be evicted automatically.',
+            'If this keeps happening in production, ensure only one tab or window is connecting to this host.',
+          ],
+          severity: 'low',
+        },
+      ];
     case 'credssp_post_auth':
       return [
         {
@@ -222,6 +241,7 @@ function buildDiagnostics(category: ErrorCategory): DiagnosticCause[] {
 }
 
 const CATEGORY_LABELS: Record<ErrorCategory, string> = {
+  duplicate_session: 'Duplicate Session',
   credssp_post_auth: 'Post-Authentication Rejection (NLA / CredSSP)',
   credssp_oracle: 'CredSSP Encryption Oracle Mismatch',
   credentials: 'Authentication Failure',
@@ -325,6 +345,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
 
   /* severity → header bar colour */
   const headerColor: Record<ErrorCategory, string> = {
+    duplicate_session: 'from-yellow-900/60 to-yellow-950/40',
     credssp_post_auth: 'from-red-900/60 to-red-950/40',
     credssp_oracle: 'from-purple-900/60 to-purple-950/40',
     credentials: 'from-orange-900/60 to-orange-950/40',
