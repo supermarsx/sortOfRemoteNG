@@ -1137,15 +1137,6 @@ fn run_rdp_session_inner(
 
     let t_auth = Instant::now();
 
-    // Short-circuit Kerberos KDC discovery: point the sspi crate's env-
-    // var based detection at a non-routable address so it skips the
-    // extremely slow DNS SRV lookups (_kerberos._tcp.{domain}) that can
-    // block for 30-60 seconds on non-domain-joined networks.  The
-    // actual TCP connect to 192.0.2.1 (TEST-NET, RFC 5737) will fail
-    // within the 1-second timeout in our NetworkClient, causing an
-    // immediate NTLM fallback.
-    std::env::set_var("SSPI_KDC_URL", "tcp://192.0.2.1:88");
-
     let mut network_client = BlockingNetworkClient::new(cached_http_client);
     let server_name = ironrdp::connector::ServerName::new(host);
 
@@ -1158,7 +1149,16 @@ fn run_rdp_session_inner(
         server_public_key,
         None,
     )
-    .map_err(|e| format!("connect_finalize failed: {e}"))?;
+    .map_err(|e| {
+        // Walk the error source chain to surface the real underlying cause
+        let mut msg = format!("connect_finalize failed: {e}");
+        let mut source: Option<&dyn std::error::Error> = std::error::Error::source(&e);
+        while let Some(cause) = source {
+            msg.push_str(&format!(", caused by: {cause}"));
+            source = std::error::Error::source(cause);
+        }
+        msg
+    })?;
     let auth_ms = t_auth.elapsed().as_millis();
     let total_ms = conn_start.elapsed().as_millis();
     log::info!(
@@ -1223,50 +1223,65 @@ fn run_rdp_session_inner(
     let mut last_frame_emit = Instant::now();
 
     loop {
-        // ─ Check for shutdown / input commands ─────────────────────────
-        match cmd_rx.try_recv() {
-            Ok(RdpCommand::Shutdown) => {
-                log::info!("RDP session {session_id}: shutdown requested");
-                // Attempt graceful shutdown
-                if let Ok(outputs) = active_stage.graceful_shutdown() {
-                    for output in outputs {
-                        if let ActiveStageOutput::ResponseFrame(data) = output {
-                            stats
-                                .bytes_sent
-                                .fetch_add(data.len() as u64, Ordering::Relaxed);
-                            let _ = tls_framed.write_all(&data);
+        // ─ Drain ALL pending commands (input coalescing) ───────────────
+        // Reading only one command per iteration adds up to read_timeout
+        // latency per buffered event.  Draining all pending commands and
+        // merging input events keeps the cursor responsive.
+        let mut merged_inputs: Vec<FastPathInputEvent> = Vec::new();
+        let mut should_break = false;
+        loop {
+            match cmd_rx.try_recv() {
+                Ok(RdpCommand::Shutdown) => {
+                    log::info!("RDP session {session_id}: shutdown requested");
+                    if let Ok(outputs) = active_stage.graceful_shutdown() {
+                        for output in outputs {
+                            if let ActiveStageOutput::ResponseFrame(data) = output {
+                                stats
+                                    .bytes_sent
+                                    .fetch_add(data.len() as u64, Ordering::Relaxed);
+                                let _ = tls_framed.write_all(&data);
+                            }
                         }
                     }
+                    should_break = true;
+                    break;
                 }
-                break;
-            }
-            Ok(RdpCommand::Input(events)) => {
-                stats
-                    .input_events
-                    .fetch_add(events.len() as u64, Ordering::Relaxed);
-                match active_stage.process_fastpath_input(&mut image, &events) {
-                    Ok(outputs) => {
-                        process_outputs(
-                            session_id,
-                            &outputs,
-                            &mut tls_framed,
-                            &image,
-                            desktop_width,
-                            desktop_height,
-                            app_handle,
-                            stats,
-                            &b64,
-                        )?;
-                    }
-                    Err(e) => {
-                        log::warn!("RDP {session_id}: input processing error: {e}");
-                    }
+                Ok(RdpCommand::Input(events)) => {
+                    merged_inputs.extend(events);
+                }
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    log::info!("RDP session {session_id}: command channel closed");
+                    should_break = true;
+                    break;
                 }
             }
-            Err(mpsc::error::TryRecvError::Empty) => {}
-            Err(mpsc::error::TryRecvError::Disconnected) => {
-                log::info!("RDP session {session_id}: command channel closed");
-                break;
+        }
+        if should_break {
+            break;
+        }
+        // Send all coalesced input in a single batch
+        if !merged_inputs.is_empty() {
+            stats
+                .input_events
+                .fetch_add(merged_inputs.len() as u64, Ordering::Relaxed);
+            match active_stage.process_fastpath_input(&mut image, &merged_inputs) {
+                Ok(outputs) => {
+                    process_outputs(
+                        session_id,
+                        &outputs,
+                        &mut tls_framed,
+                        &image,
+                        desktop_width,
+                        desktop_height,
+                        app_handle,
+                        stats,
+                        &b64,
+                    )?;
+                }
+                Err(e) => {
+                    log::warn!("RDP {session_id}: input processing error: {e}");
+                }
             }
         }
 

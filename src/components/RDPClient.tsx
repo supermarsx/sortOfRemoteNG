@@ -22,6 +22,15 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useConnections } from '../contexts/useConnections';
+import { useSettings } from '../contexts/SettingsContext';
+import {
+  verifyIdentity,
+  trustIdentity,
+  getEffectiveTrustPolicy,
+  type CertIdentity,
+  type TrustVerifyResult,
+} from '../utils/trustStore';
+import { TrustWarningDialog } from './TrustWarningDialog';
 
 interface RDPClientProps {
   session: ConnectionSession;
@@ -160,6 +169,7 @@ function keyToScancode(e: KeyboardEvent): { scancode: number; extended: boolean 
 
 const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const { state } = useConnections();
+  const { settings } = useSettings();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -176,6 +186,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const [magnifierActive, setMagnifierActive] = useState(false);
   const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0 });
   const [certFingerprint, setCertFingerprint] = useState<string | null>(null);
+  const [certIdentity, setCertIdentity] = useState<CertIdentity | null>(null);
+  const [trustPrompt, setTrustPrompt] = useState<TrustVerifyResult | null>(null);
   const [connectTiming, setConnectTiming] = useState<RdpTimingEvent | null>(null);
 
   // Track current session ID for event filtering
@@ -186,6 +198,12 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const rdpSettings: RdpConnectionSettings = connection?.rdpSettings ?? DEFAULT_RDP_SETTINGS;
   const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
   const magnifierZoom = rdpSettings.display?.magnifierZoom ?? 3;
+
+  // Refs for values used inside stable event listeners (avoids stale closures)
+  const connectionRef = useRef(connection);
+  connectionRef.current = connection;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   // ─── Initialize RDP connection ─────────────────────────────────────
 
@@ -256,6 +274,22 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     setConnectionStatus('disconnected');
     setRdpSessionId(null);
   }, []);
+
+  // ─── Trust accept / reject ─────────────────────────────────────────
+
+  const handleTrustAccept = useCallback(() => {
+    if (certIdentity && connection) {
+      const port = connection.port || 3389;
+      trustIdentity(session.hostname, port, 'tls', certIdentity, true, connection.id);
+    }
+    setTrustPrompt(null);
+  }, [certIdentity, connection, session.hostname]);
+
+  const handleTrustReject = useCallback(() => {
+    setTrustPrompt(null);
+    // Disconnect on rejection
+    cleanup();
+  }, [cleanup]);
 
   // ─── Event listeners for RDP frames/status/pointer ─────────────────
 
@@ -347,11 +381,40 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setStats(s);
     }).then(fn => unlisteners.push(fn));
 
-    // Listen for certificate fingerprint
+    // Listen for certificate fingerprint → verify against trust store
     listen<RdpCertFingerprintEvent>('rdp://cert-fingerprint', (event) => {
       const fp = event.payload;
       if (fp.session_id !== sessionIdRef.current) return;
       setCertFingerprint(fp.fingerprint);
+
+      const now = new Date().toISOString();
+      const identity: CertIdentity = {
+        fingerprint: fp.fingerprint,
+        subject: fp.host,
+        firstSeen: now,
+        lastSeen: now,
+      };
+      setCertIdentity(identity);
+
+      const conn = connectionRef.current;
+      const connId = conn?.id;
+      const policy = getEffectiveTrustPolicy(conn?.rdpTrustPolicy, settingsRef.current.tlsTrustPolicy);
+      const result = verifyIdentity(fp.host, fp.port, 'tls', identity, connId);
+
+      if (result.status === 'trusted') return;
+
+      if (result.status === 'first-use' && policy === 'tofu') {
+        trustIdentity(fp.host, fp.port, 'tls', identity, false, connId);
+        return;
+      }
+
+      if (result.status === 'first-use' && policy === 'always-trust') {
+        trustIdentity(fp.host, fp.port, 'tls', identity, false, connId);
+        return;
+      }
+
+      // Prompt the user for first-use (always-ask/strict) or mismatch
+      setTrustPrompt(result);
     }).then(fn => unlisteners.push(fn));
 
     // Listen for connection timing breakdown
@@ -404,21 +467,36 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
   // ─── Input handlers ────────────────────────────────────────────────
 
-  // Batched input:  mouse move events are extremely frequent (~200 Hz on
-  // modern browsers).  Sending each one through Tauri IPC individually
-  // produces massive overhead and makes the remote desktop feel sluggish.
-  // Instead we accumulate events in a buffer and flush at most once per
-  // requestAnimationFrame (~60 Hz), which keeps IPC overhead low while
-  // maintaining smooth cursor tracking.
+  // Mouse move events fire at ~200 Hz on modern browsers.  Sending each
+  // one through Tauri IPC individually is prohibitively expensive (+4ms
+  // per round-trip from serialisation, Rust Mutex lock, channel send).
+  //
+  // Strategy:
+  //   • Buffer non-priority events (mouse moves).
+  //   • Coalesce: only keep the *latest* MouseMove per flush interval
+  //     (intermediate positions are skipped — the server only cares
+  //     about the current pointer position for absolute mode).
+  //   • Flush via setTimeout(0) (~4 ms on most browsers — significantly
+  //     faster than requestAnimationFrame's ~16 ms).
+  //   • Priority events (clicks, keys, wheel) flush the buffer
+  //     immediately so they are never delayed.
   const inputBufferRef = useRef<Record<string, unknown>[]>([]);
-  const flushScheduledRef = useRef(false);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flushInputBuffer = useCallback(() => {
-    flushScheduledRef.current = false;
+    flushTimerRef.current = null;
     const sid = sessionIdRef.current;
     if (!sid || inputBufferRef.current.length === 0) return;
-    const batch = inputBufferRef.current;
+    // Coalesce: drop all but the last MouseMove in the batch
+    const raw = inputBufferRef.current;
     inputBufferRef.current = [];
+    let lastMoveIdx = -1;
+    for (let i = raw.length - 1; i >= 0; i--) {
+      if (raw[i].type === 'MouseMove') { lastMoveIdx = i; break; }
+    }
+    const batch = lastMoveIdx <= 0
+      ? raw
+      : raw.filter((ev, i) => ev.type !== 'MouseMove' || i === lastMoveIdx);
     invoke('rdp_send_input', { sessionId: sid, events: batch }).catch(e => {
       debugLog(`Input send error: ${e}`);
     });
@@ -427,27 +505,24 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const sendInput = useCallback((events: Record<string, unknown>[], immediate = false) => {
     if (!isConnected || !sessionIdRef.current) return;
     if (immediate) {
-      // Flush buffer first, then send the priority events immediately
-      if (inputBufferRef.current.length > 0) {
-        const buffered = inputBufferRef.current;
-        inputBufferRef.current = [];
-        const sid = sessionIdRef.current;
-        invoke('rdp_send_input', { sessionId: sid!, events: [...buffered, ...events] }).catch(e => {
-          debugLog(`Input send error: ${e}`);
-        });
-      } else {
-        const sid = sessionIdRef.current;
-        invoke('rdp_send_input', { sessionId: sid!, events }).catch(e => {
-          debugLog(`Input send error: ${e}`);
-        });
+      // Cancel pending flush timer, merge buffer + priority events
+      if (flushTimerRef.current !== null) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
       }
+      const buffered = inputBufferRef.current;
+      inputBufferRef.current = [];
+      const sid = sessionIdRef.current;
+      const all = buffered.length > 0 ? [...buffered, ...events] : events;
+      invoke('rdp_send_input', { sessionId: sid!, events: all }).catch(e => {
+        debugLog(`Input send error: ${e}`);
+      });
       return;
     }
-    // Buffer the events and schedule a flush on the next animation frame
+    // Buffer the events and schedule a flush via setTimeout(0) (~4ms)
     inputBufferRef.current.push(...events);
-    if (!flushScheduledRef.current) {
-      flushScheduledRef.current = true;
-      requestAnimationFrame(flushInputBuffer);
+    if (flushTimerRef.current === null) {
+      flushTimerRef.current = setTimeout(flushInputBuffer, 0);
     }
   }, [isConnected, flushInputBuffer]);
 
@@ -1018,6 +1093,20 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           {magnifierActive && <Search size={12} className="text-blue-400" />}
         </div>
       </div>
+
+      {/* Trust Warning Dialog */}
+      {trustPrompt && certIdentity && (
+        <TrustWarningDialog
+          type="tls"
+          host={session.hostname}
+          port={connection?.port || 3389}
+          reason={trustPrompt.status === 'mismatch' ? 'mismatch' : 'first-use'}
+          receivedIdentity={certIdentity}
+          storedIdentity={trustPrompt.status === 'mismatch' ? trustPrompt.stored : undefined}
+          onAccept={handleTrustAccept}
+          onReject={handleTrustReject}
+        />
+      )}
     </div>
   );
 };

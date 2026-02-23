@@ -108,19 +108,30 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
     }
   }, [setFormData]);
 
-  // Load trust records for RDP (must be before early return to satisfy hook rules)
+  // Load trust records for RDP connections (uses TLS cert type)
   useEffect(() => {
     if (formData.isGroup || formData.protocol !== 'rdp') return;
-    const loadRecords = async () => {
+    const loadRecords = () => {
       try {
-        const all = await getAllTrustRecords();
-        setRdpTrustRecords(all.filter((r) => r.protocol === 'rdp'));
+        // Load from both per-connection store and global store
+        const connRecords = formData.id ? getAllTrustRecords(formData.id) : [];
+        const globalRecords = getAllTrustRecords();
+        // Combine, preferring per-connection. Filter to TLS type (RDP uses TLS certs).
+        const all = [...connRecords, ...globalRecords].filter((r) => r.type === 'tls');
+        // Deduplicate by fingerprint
+        const seen = new Set<string>();
+        const deduped = all.filter((r) => {
+          if (seen.has(r.identity.fingerprint)) return false;
+          seen.add(r.identity.fingerprint);
+          return true;
+        });
+        setRdpTrustRecords(deduped);
       } catch {
         /* ignore */
       }
     };
     loadRecords();
-  }, [formData.isGroup, formData.protocol]);
+  }, [formData.isGroup, formData.protocol, formData.id]);
 
   if (formData.isGroup || formData.protocol !== 'rdp') return null;
 
@@ -143,30 +154,36 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
     }));
   };
 
-  const handleRemoveTrust = async (fingerprint: string) => {
+  const handleRemoveTrust = (record: TrustRecord) => {
     try {
-      await removeIdentity(fingerprint);
-      setRdpTrustRecords((prev) => prev.filter((r) => r.fingerprint !== fingerprint));
+      const [host, portStr] = record.host.split(':');
+      const port = parseInt(portStr, 10) || 3389;
+      removeIdentity(host, port, 'tls', formData.id);
+      // Also remove from global store
+      removeIdentity(host, port, 'tls');
+      setRdpTrustRecords((prev) => prev.filter((r) => r.identity.fingerprint !== record.identity.fingerprint));
     } catch {
       /* ignore */
     }
   };
 
-  const handleClearAllRdpTrust = async () => {
+  const handleClearAllRdpTrust = () => {
     try {
-      await clearAllTrustRecords('rdp');
+      if (formData.id) clearAllTrustRecords(formData.id);
       setRdpTrustRecords([]);
     } catch {
       /* ignore */
     }
   };
 
-  const handleSaveNickname = async (fingerprint: string) => {
+  const handleSaveNickname = (record: TrustRecord) => {
     try {
-      await updateTrustRecordNickname(fingerprint, nicknameInput);
+      const [host, portStr] = record.host.split(':');
+      const port = parseInt(portStr, 10) || 3389;
+      updateTrustRecordNickname(host, port, 'tls', nicknameInput, formData.id);
       setRdpTrustRecords((prev) =>
         prev.map((r) =>
-          r.fingerprint === fingerprint ? { ...r, nickname: nicknameInput } : r
+          r.identity.fingerprint === record.identity.fingerprint ? { ...r, nickname: nicknameInput } : r
         )
       );
       setEditingNickname(null);
@@ -176,9 +193,10 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
     }
   };
 
-  const hostRecords = rdpTrustRecords.filter(
-    (r) => r.hostname === formData.hostname && r.port === (formData.port || 3389)
-  );
+  const hostRecords = rdpTrustRecords.filter((r) => {
+    const expectedHost = `${formData.hostname}:${formData.port || 3389}`;
+    return r.host === expectedHost;
+  });
 
   const selectClass =
     'w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
@@ -827,18 +845,18 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             <div className="space-y-2">
               {hostRecords.map((r) => (
                 <div
-                  key={r.fingerprint}
+                  key={r.identity.fingerprint}
                   className="bg-gray-900 rounded p-2 text-xs font-mono"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-300 truncate max-w-[200px]" title={r.fingerprint}>
-                      {r.nickname || formatFingerprint(r.fingerprint).slice(0, 32) + '…'}
+                    <span className="text-gray-300 truncate max-w-[200px]" title={r.identity.fingerprint}>
+                      {r.nickname || formatFingerprint(r.identity.fingerprint).slice(0, 32) + '…'}
                     </span>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={() => {
-                          setEditingNickname(r.fingerprint);
+                          setEditingNickname(r.identity.fingerprint);
                           setNicknameInput(r.nickname || '');
                         }}
                         className="text-gray-500 hover:text-blue-400"
@@ -848,7 +866,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleRemoveTrust(r.fingerprint)}
+                        onClick={() => handleRemoveTrust(r)}
                         className="text-gray-500 hover:text-red-400"
                         title="Remove trust"
                       >
@@ -856,7 +874,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
                       </button>
                     </div>
                   </div>
-                  {editingNickname === r.fingerprint && (
+                  {editingNickname === r.identity.fingerprint && (
                     <div className="mt-1 flex gap-1">
                       <input
                         type="text"
@@ -867,7 +885,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
                       />
                       <button
                         type="button"
-                        onClick={() => handleSaveNickname(r.fingerprint)}
+                        onClick={() => handleSaveNickname(r)}
                         className="text-xs text-green-400 hover:text-green-300"
                       >
                         Save
@@ -875,7 +893,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
                     </div>
                   )}
                   <div className="text-gray-600 mt-1">
-                    First seen: {new Date(r.firstSeen).toLocaleDateString()}
+                    First seen: {new Date(r.identity.firstSeen).toLocaleDateString()}
                   </div>
                 </div>
               ))}
