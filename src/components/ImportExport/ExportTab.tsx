@@ -1,5 +1,6 @@
 import React from 'react';
 import { Download, FileText, Database, Settings, Lock } from 'lucide-react';
+import { PasswordInput } from '../ui/PasswordInput';
 import { Connection } from '../../types/connection';
 
 interface ExportTabProps {
@@ -104,8 +105,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
             <label className="block text-sm font-medium text-gray-300 mb-2">
               Encryption Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               value={exportPassword}
               onChange={e => setExportPassword(e.target.value)}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"

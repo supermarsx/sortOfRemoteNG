@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { PasswordInput } from '../../ui/PasswordInput';
 import { GlobalSettings, ProxyConfig } from '../../../types/settings';
 import {
   Shield,
@@ -146,8 +147,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                     <Lock className="w-4 h-4" />
                     Password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={settings.globalProxy?.password || ''}
                     onChange={(e) => updateProxy({ password: e.target.value })}
                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"

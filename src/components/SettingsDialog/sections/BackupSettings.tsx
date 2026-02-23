@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { PasswordInput } from '../../ui/PasswordInput';
 import { useTranslation } from "react-i18next";
 import {
   Archive,
@@ -681,8 +682,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
                   <Key className="w-4 h-4 inline mr-2" />
                   Encryption Password
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={backup.encryptionPassword || ""}
                   onChange={(e) =>
                     updateBackup({ encryptionPassword: e.target.value })

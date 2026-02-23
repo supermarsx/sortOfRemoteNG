@@ -169,6 +169,31 @@ const defaultSettings: GlobalSettings = {
   sshTrustPolicy: 'tofu',
   showTrustIdentityInfo: true,
   certExpiryWarningDays: 5,
+  // CredSSP Remediation Defaults
+  credsspDefaults: {
+    oracleRemediation: 'mitigated',
+    allowHybridEx: false,
+    nlaFallbackToTls: true,
+    tlsMinVersion: '1.2',
+    ntlmEnabled: true,
+    kerberosEnabled: false,
+    pku2uEnabled: false,
+    restrictedAdmin: false,
+    remoteCredentialGuard: false,
+    enforceServerPublicKeyValidation: true,
+    credsspVersion: 6,
+    sspiPackageList: '',
+    nlaMode: 'required',
+    serverCertValidation: 'validate',
+  },
+  // Password Reveal
+  passwordReveal: {
+    enabled: true,
+    mode: 'toggle',
+    autoHideSeconds: 0,
+    showByDefault: false,
+    maskIcon: false,
+  },
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

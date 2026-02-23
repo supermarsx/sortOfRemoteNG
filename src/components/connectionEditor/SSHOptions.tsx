@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Key, Fingerprint, Trash2, Pencil } from 'lucide-react';
 import { readTextFile } from '@tauri-apps/plugin-fs';
+import { PasswordInput } from '../ui/PasswordInput';
 import { Connection } from '../../types/connection';
 import { SSHKeyManager } from '../SSHKeyManager';
 import { SSHTerminalOverrides } from './SSHTerminalOverrides';
@@ -214,8 +215,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
       {formData.authType === 'password' && (
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
-          <input
-            type="password"
+          <PasswordInput
             value={formData.password || ''}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -254,8 +254,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">Passphrase (optional)</label>
-            <input
-              type="password"
+            <PasswordInput
               value={formData.passphrase || ''}
               onChange={(e) => setFormData({ ...formData, passphrase: e.target.value })}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"

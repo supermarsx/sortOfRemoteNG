@@ -257,13 +257,16 @@ impl Sequence for ClientConnector {
                     // However, crucially, it’s not strictly required (not "MUST").
                     // In fact, we purposefully choose to not set `PROTOCOL_SSL` unless `enable_winlogon` is `true`.
                     // This tells the server that we are not going to accept downgrading NLA to TLS security.
-                    // NOTE: We intentionally do NOT request HYBRID_EX because many servers
-                    // (especially non-Microsoft or older ones) negotiate HYBRID_EX but then
-                    // close the connection instead of sending the 4-byte EarlyUserAuthResult
-                    // PDU, causing a spurious "[read frame by hint] custom error".  Without
-                    // HYBRID_EX the CredSSP sequence finishes immediately after the final
-                    // TSRequest and proceeds to BasicSettingsExchange.
                     security_protocol.insert(nego::SecurityProtocol::HYBRID);
+
+                    // Only request HYBRID_EX when explicitly allowed by the user.
+                    // Many servers (especially non-Microsoft or older ones) negotiate
+                    // HYBRID_EX but then close the connection instead of sending the
+                    // 4-byte EarlyUserAuthResult PDU, causing a spurious
+                    // "[read frame by hint] custom error".
+                    if self.config.allow_hybrid_ex {
+                        security_protocol.insert(nego::SecurityProtocol::HYBRID_EX);
+                    }
                 }
 
                 if security_protocol.is_standard_rdp_security() {

@@ -88,6 +88,7 @@ impl CredsspSequence {
         server_name: ServerName,
         server_public_key: Vec<u8>,
         kerberos_config: Option<KerberosConfig>,
+        sspi_package_list: Option<String>,
     ) -> ConnectorResult<(Self, credssp::TsRequest)> {
         let credentials: sspi::Credentials = match &credentials {
             Credentials::UsernamePassword { username, password } => {
@@ -146,7 +147,7 @@ impl CredsspSequence {
             credssp::CredSspMode::WithCredentials,
             credssp::ClientMode::Negotiate(sspi::NegotiateConfig {
                 protocol_config: credssp_config,
-                package_list: Some("!kerberos,!pku2u".to_string()),
+                package_list: sspi_package_list.or_else(|| Some("!kerberos,!pku2u".to_string())),
                 client_computer_name: server_name,
             }),
             service_principal_name,

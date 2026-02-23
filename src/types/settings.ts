@@ -274,6 +274,65 @@ export interface GlobalSettings {
 
   /** Ask for confirmation before deleting all bookmarks */
   confirmDeleteAllBookmarks: boolean;
+
+  // ─── CredSSP Remediation Defaults ──────────────────────────────
+  /**
+   * Global default CredSSP / NLA security policy applied to new connections
+   * and connections that don't override these per-connection.
+   */
+  credsspDefaults: CredsspDefaultsConfig;
+
+  // ─── Password Reveal ──────────────────────────────────────────
+  /**
+   * Controls the show/hide password eye icon on all password fields.
+   */
+  passwordReveal: PasswordRevealConfig;
+}
+
+/** Global default CredSSP remediation configuration */
+export interface CredsspDefaultsConfig {
+  /** Encryption Oracle Remediation policy */
+  oracleRemediation: 'force-updated' | 'mitigated' | 'vulnerable';
+  /** Allow HYBRID_EX protocol (Early User Auth Result) */
+  allowHybridEx: boolean;
+  /** Allow fallback from NLA to TLS when NLA negotiation fails */
+  nlaFallbackToTls: boolean;
+  /** Minimum TLS version for RDP connections */
+  tlsMinVersion: '1.0' | '1.1' | '1.2' | '1.3';
+  /** Enable NTLM authentication */
+  ntlmEnabled: boolean;
+  /** Enable Kerberos authentication */
+  kerberosEnabled: boolean;
+  /** Enable PKU2U authentication */
+  pku2uEnabled: boolean;
+  /** Restricted Admin mode (no credential delegation) */
+  restrictedAdmin: boolean;
+  /** Remote Credential Guard */
+  remoteCredentialGuard: boolean;
+  /** Enforce server public key validation during CredSSP */
+  enforceServerPublicKeyValidation: boolean;
+  /** CredSSP TSRequest version to advertise */
+  credsspVersion: 2 | 3 | 6;
+  /** Custom SSPI package list override (e.g. "!kerberos,!pku2u") */
+  sspiPackageList: string;
+  /** Default NLA mode for new connections */
+  nlaMode: 'required' | 'preferred' | 'disabled';
+  /** Default server cert validation mode */
+  serverCertValidation: 'validate' | 'warn' | 'ignore';
+}
+
+/** Password reveal (show/hide eye icon) configuration */
+export interface PasswordRevealConfig {
+  /** Whether the eye icon is shown on password fields at all */
+  enabled: boolean;
+  /** Interaction mode: 'toggle' = click to toggle, 'hold' = hold to reveal */
+  mode: 'toggle' | 'hold';
+  /** Auto-hide password after this many seconds (0 = never auto-hide) */
+  autoHideSeconds: number;
+  /** Show passwords by default when a password field is rendered */
+  showByDefault: boolean;
+  /** Whether to mask the password icon itself when hidden */
+  maskIcon: boolean;
 }
 
 // Backup scheduling frequency

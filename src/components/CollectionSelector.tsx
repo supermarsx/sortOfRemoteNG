@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { PasswordInput } from './ui/PasswordInput';
 import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload, X, Layers, Network, Link2, Copy, Search } from 'lucide-react';
 import { ConnectionCollection } from '../types/connection';
 import { SavedProxyProfile, SavedProxyChain } from '../types/settings';
@@ -627,8 +628,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       <label className="block text-sm font-medium text-gray-300 mb-2">
                         Password *
                       </label>
-                      <input
-                        type="password"
+                      <PasswordInput
                         value={newCollection.password}
                         onChange={(e) => setNewCollection({ ...newCollection, password: e.target.value })}
                         className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
@@ -640,8 +640,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       <label className="block text-sm font-medium text-gray-300 mb-2">
                         Confirm Password *
                       </label>
-                      <input
-                        type="password"
+                      <PasswordInput
                         value={newCollection.confirmPassword}
                         onChange={(e) => setNewCollection({ ...newCollection, confirmPassword: e.target.value })}
                         className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"

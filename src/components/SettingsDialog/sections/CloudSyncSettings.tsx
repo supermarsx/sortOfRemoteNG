@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { PasswordInput } from '../../ui/PasswordInput';
 import { useTranslation } from "react-i18next";
 import {
   Cloud,
@@ -460,8 +461,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 {cloudSync.nextcloud.useAppPassword ? 'App Password' : 'Password'}
               </label>
-              <input
-                type="password"
+              <PasswordInput
                 value={cloudSync.nextcloud.useAppPassword ? cloudSync.nextcloud.appPassword || '' : cloudSync.nextcloud.password || ''}
                 onChange={(e) => updateCloudSync({ 
                   nextcloud: { 
@@ -534,8 +534,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                   Bearer Token
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={cloudSync.webdav.bearerToken || ''}
                   onChange={(e) => updateCloudSync({ 
                     webdav: { ...cloudSync.webdav, bearerToken: e.target.value } 
@@ -565,8 +564,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                   <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                     Password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={cloudSync.webdav.password || ''}
                     onChange={(e) => updateCloudSync({ 
                       webdav: { ...cloudSync.webdav, password: e.target.value } 
@@ -682,8 +680,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                   <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                     Passphrase (if encrypted)
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={cloudSync.sftp.passphrase || ''}
                     onChange={(e) => updateCloudSync({ 
                       sftp: { ...cloudSync.sftp, passphrase: e.target.value } 
@@ -698,8 +695,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                   Password
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={cloudSync.sftp.password || ''}
                   onChange={(e) => updateCloudSync({ 
                     sftp: { ...cloudSync.sftp, password: e.target.value } 
@@ -1034,8 +1030,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <Lock className="w-4 h-4 inline mr-1" />
               Encryption Password
             </label>
-            <input
-              type="password"
+            <PasswordInput
               value={cloudSync.syncEncryptionPassword || ''}
               onChange={(e) => updateCloudSync({ syncEncryptionPassword: e.target.value })}
               placeholder="Enter a strong password"
@@ -1239,8 +1234,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                   Access Token
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={authForm.accessToken}
                   onChange={(e) => setAuthForm({ ...authForm, accessToken: e.target.value })}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
@@ -1251,8 +1245,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                   Refresh Token (optional)
                 </label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={authForm.refreshToken}
                   onChange={(e) => setAuthForm({ ...authForm, refreshToken: e.target.value })}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"

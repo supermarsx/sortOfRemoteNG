@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { PasswordInput } from './ui/PasswordInput';
 import {
   X,
   Save,
@@ -263,8 +264,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                     <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                       Password
                     </label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       value={config.password || ''}
                       onChange={(e) => updateConfig({ password: e.target.value || undefined })}
                       placeholder="••••••••"
@@ -329,8 +329,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                   <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                     Key Passphrase (if encrypted)
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={config.sshKeyPassphrase || ''}
                     onChange={(e) => updateConfig({ sshKeyPassphrase: e.target.value || undefined })}
                     placeholder="••••••••"

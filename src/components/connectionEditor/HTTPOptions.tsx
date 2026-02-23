@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, AlertTriangle, Lock, Trash2, Pencil, Plus, GripVertical, Star, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
+import { PasswordInput } from '../ui/PasswordInput';
 import { Connection, HttpBookmarkItem } from '../../types/connection';
 import {
   getAllTrustRecords,
@@ -116,8 +117,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
 
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">Basic Auth Password</label>
-            <input
-              type="password"
+            <PasswordInput
               value={formData.basicAuthPassword || ''}
               onChange={(e) => setFormData({ ...formData, basicAuthPassword: e.target.value })}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"

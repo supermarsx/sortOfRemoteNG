@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PasswordInput } from './ui/PasswordInput';
 import { Clock, Play, Trash2, X, Zap } from 'lucide-react';
 import { QuickConnectHistoryEntry } from '../types/settings';
 
@@ -289,9 +290,8 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                 <label htmlFor="rdp-password" className="block text-sm font-medium text-gray-300 mb-2">
                   Password (optional)
                 </label>
-                <input
+                <PasswordInput
                   id="rdp-password"
-                  type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -349,9 +349,8 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   <label htmlFor="ssh-password" className="block text-sm font-medium text-gray-300 mb-2">
                     Password
                   </label>
-                  <input
+                  <PasswordInput
                     id="ssh-password"
-                    type="password"
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -378,9 +377,8 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                     <label htmlFor="ssh-passphrase" className="block text-sm font-medium text-gray-300 mb-2">
                       Passphrase (optional)
                     </label>
-                    <input
+                    <PasswordInput
                       id="ssh-passphrase"
-                      type="password"
                       value={passphrase}
                       onChange={(e) => setPassphrase(e.target.value)}
                       className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -397,9 +395,8 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
               <label htmlFor="vnc-password" className="block text-sm font-medium text-gray-300 mb-2">
                 Password (optional)
               </label>
-              <input
+              <PasswordInput
                 id="vnc-password"
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -427,9 +424,8 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                 <label htmlFor="http-password" className="block text-sm font-medium text-gray-300 mb-2">
                   Basic Auth Password (optional)
                 </label>
-                <input
+                <PasswordInput
                   id="http-password"
-                  type="password"
                   value={basicAuthPassword}
                   onChange={(e) => setBasicAuthPassword(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -473,9 +469,8 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                 <label htmlFor="telnet-password" className="block text-sm font-medium text-gray-300 mb-2">
                   Password (optional)
                 </label>
-                <input
+                <PasswordInput
                   id="telnet-password"
-                  type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"

@@ -181,6 +181,21 @@ pub struct RdpSecurityPayload {
     pub auto_logon: Option<bool>,
     pub enable_server_pointer: Option<bool>,
     pub pointer_software_rendering: Option<bool>,
+
+    // CredSSP remediation fields
+    pub credssp_oracle_remediation: Option<String>,    // "force-updated" | "mitigated" | "vulnerable"
+    pub allow_hybrid_ex: Option<bool>,
+    pub nla_fallback_to_tls: Option<bool>,
+    pub tls_min_version: Option<String>,               // "1.0" | "1.1" | "1.2" | "1.3"
+    pub ntlm_enabled: Option<bool>,
+    pub kerberos_enabled: Option<bool>,
+    pub pku2u_enabled: Option<bool>,
+    pub restricted_admin: Option<bool>,
+    pub remote_credential_guard: Option<bool>,
+    pub enforce_server_public_key_validation: Option<bool>,
+    pub credssp_version: Option<u32>,                  // 2 | 3 | 6
+    pub sspi_package_list: Option<String>,
+    pub server_cert_validation: Option<String>,        // "validate" | "warn" | "ignore"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -258,6 +273,15 @@ struct ResolvedSettings {
     client_build: u32,
     enable_server_pointer: bool,
     pointer_software_rendering: bool,
+    // CredSSP remediation
+    allow_hybrid_ex: bool,
+    _nla_fallback_to_tls: bool,
+    ntlm_enabled: bool,
+    kerberos_enabled: bool,
+    pku2u_enabled: bool,
+    _restricted_admin: bool,
+    sspi_package_list: String,
+    _server_cert_validation: String,
     performance_flags: PerformanceFlags,
     // Frame delivery
     frame_batching: bool,
@@ -302,7 +326,7 @@ impl ResolvedSettings {
             lossy_compression: display.and_then(|d| d.lossy_compression).unwrap_or(true),
             enable_tls: sec.and_then(|s| s.enable_tls).unwrap_or(true),
             enable_credssp: sec.and_then(|s| s.enable_nla).unwrap_or(true),
-            autologon: sec.and_then(|s| s.auto_logon).unwrap_or(false),
+            autologon: sec.and_then(|s| s.auto_logon).unwrap_or(true),
             enable_audio_playback: payload
                 .audio
                 .as_ref()
@@ -329,6 +353,19 @@ impl ResolvedSettings {
             pointer_software_rendering: sec
                 .and_then(|s| s.pointer_software_rendering)
                 .unwrap_or(true),
+            // CredSSP remediation
+            allow_hybrid_ex: sec.and_then(|s| s.allow_hybrid_ex).unwrap_or(false),
+            _nla_fallback_to_tls: sec.and_then(|s| s.nla_fallback_to_tls).unwrap_or(true),
+            ntlm_enabled: sec.and_then(|s| s.ntlm_enabled).unwrap_or(true),
+            kerberos_enabled: sec.and_then(|s| s.kerberos_enabled).unwrap_or(false),
+            pku2u_enabled: sec.and_then(|s| s.pku2u_enabled).unwrap_or(false),
+            _restricted_admin: sec.and_then(|s| s.restricted_admin).unwrap_or(false),
+            sspi_package_list: sec
+                .and_then(|s| s.sspi_package_list.clone())
+                .unwrap_or_default(),
+            _server_cert_validation: sec
+                .and_then(|s| s.server_cert_validation.clone())
+                .unwrap_or_else(|| "validate".to_string()),
             performance_flags,
             frame_batching: perf.and_then(|p| p.frame_batching).unwrap_or(true),
             frame_batch_interval: Duration::from_millis(batch_ms),
@@ -1038,12 +1075,38 @@ fn run_rdp_session_inner(
 
     stats.set_phase("configuring");
 
+    // Normalise domain / username.  The user may type "DOMAIN\user",
+    // "user@domain.com", or just "user" with the domain in a separate
+    // field.  We need:
+    //   • `actual_user`   – the bare account name (no domain prefix/suffix)
+    //   • `actual_domain` – the NetBIOS or DNS domain, or None
+    let (actual_user, actual_domain): (String, Option<String>) = if domain.is_some() {
+        // Domain was provided explicitly — use as-is
+        (username.to_string(), domain.map(String::from))
+    } else if let Some((d, u)) = username.split_once('\\') {
+        // Down-level logon name: DOMAIN\user
+        (u.to_string(), Some(d.to_string()))
+    } else if let Some((u, d)) = username.rsplit_once('@') {
+        // UPN: user@domain.com
+        (u.to_string(), Some(d.to_string()))
+    } else {
+        // No domain anywhere — try the target hostname as a last resort.
+        // For a domain-joined server the user MUST provide a domain, but
+        // for a standalone/workgroup server the hostname usually works.
+        (username.to_string(), None)
+    };
+
+    log::info!(
+        "RDP session {session_id}: resolved credentials user={:?} domain={:?} (original: {:?}/{:?})",
+        actual_user, actual_domain, username, domain
+    );
+
     let config = connector::Config {
         credentials: Credentials::UsernamePassword {
-            username: username.to_string(),
+            username: actual_user,
             password: password.to_string(),
         },
-        domain: domain.map(String::from),
+        domain: actual_domain,
         enable_tls: settings.enable_tls,
         enable_credssp: settings.enable_credssp,
         keyboard_type: settings.keyboard_type,
@@ -1075,6 +1138,31 @@ fn run_rdp_session_inner(
         timezone_info: Default::default(),
         enable_server_pointer: settings.enable_server_pointer,
         pointer_software_rendering: settings.pointer_software_rendering,
+        allow_hybrid_ex: settings.allow_hybrid_ex,
+        sspi_package_list: {
+            // Build SSPI package list from individual flags, or use explicit override
+            let explicit = &settings.sspi_package_list;
+            if explicit.is_empty() {
+                // Derive from enable flags
+                let mut excludes = Vec::new();
+                if !settings.ntlm_enabled {
+                    excludes.push("!ntlm");
+                }
+                if !settings.kerberos_enabled {
+                    excludes.push("!kerberos");
+                }
+                if !settings.pku2u_enabled {
+                    excludes.push("!pku2u");
+                }
+                if excludes.is_empty() {
+                    None // no restrictions
+                } else {
+                    Some(excludes.join(","))
+                }
+            } else {
+                Some(explicit.clone())
+            }
+        },
     };
 
     let server_socket_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
@@ -1100,6 +1188,11 @@ fn run_rdp_session_inner(
     let (mut tls_framed, server_public_key) = tls_upgrade(tcp_stream, host, leftover, cached_tls_connector)?;
     let tls_ms = t_tls.elapsed().as_millis();
     log::info!("RDP session {session_id}: TLS upgrade took {tls_ms}ms");
+    log::info!(
+        "RDP session {session_id}: server public key: {} bytes, first 16: {:02x?}",
+        server_public_key.len(),
+        &server_public_key[..server_public_key.len().min(16)]
+    );
 
     // Extract and emit server certificate fingerprint
     {
@@ -1156,6 +1249,17 @@ fn run_rdp_session_inner(
         while let Some(cause) = source {
             msg.push_str(&format!(", caused by: {cause}"));
             source = std::error::Error::source(cause);
+        }
+        // Detect the very common "server closed after CredSSP" pattern and
+        // provide actionable guidance.
+        if msg.contains("10054") || msg.contains("forcibly closed") {
+            msg.push_str(
+                ".  NOTE: the server closed the connection after NLA/CredSSP authentication. \
+                 Common causes: (1) incorrect credentials or domain, \
+                 (2) the user account lacks 'Allow log on through Remote Desktop Services' right, \
+                 (3) the account is locked/disabled, \
+                 (4) CredSSP Encryption Oracle Remediation policy ('Force Updated Clients') on the server."
+            );
         }
         msg
     })?;
@@ -1794,7 +1898,7 @@ pub async fn connect_rdp(
         );
     });
 
-    let connection = RdpActiveConnection {
+    let connection = RdpActiveConnection {de vez e
         session,
         cmd_tx,
         stats,

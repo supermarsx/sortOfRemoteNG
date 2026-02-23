@@ -235,6 +235,13 @@ pub struct Config {
     // FIXME(@CBenoit): these are client-only options, not part of the connector.
     pub enable_server_pointer: bool,
     pub pointer_software_rendering: bool,
+
+    // ─── CredSSP remediation configuration ──────────────────────
+    /// Allow HYBRID_EX protocol negotiation (when false, only HYBRID is used)
+    pub allow_hybrid_ex: bool,
+    /// SSPI package list override for NegotiateConfig (e.g. "!kerberos,!pku2u")
+    /// When empty, defaults are derived from the ntlm/kerberos/pku2u flags.
+    pub sspi_package_list: Option<String>,
 }
 
 ironrdp_core::assert_impl!(Config: Send, Sync);

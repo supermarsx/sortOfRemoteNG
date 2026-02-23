@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PasswordInput } from './ui/PasswordInput';
 import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile, exists, mkdir, readDir, remove } from '@tauri-apps/plugin-fs';
@@ -455,8 +456,7 @@ export const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({
                   <label className="block text-sm font-medium mb-1">
                     {t('sshKeyManager.passphrase', 'Passphrase (Optional)')}
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={newKeyPassphrase}
                     onChange={(e) => setNewKeyPassphrase(e.target.value)}
                     placeholder="Optional passphrase"
@@ -468,8 +468,7 @@ export const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({
                     <label className="block text-sm font-medium mb-1">
                       {t('sshKeyManager.confirmPassphrase', 'Confirm Passphrase')}
                     </label>
-                    <input
-                      type="password"
+                    <PasswordInput
                       value={confirmPassphrase}
                       onChange={(e) => setConfirmPassphrase(e.target.value)}
                       placeholder="Confirm passphrase"

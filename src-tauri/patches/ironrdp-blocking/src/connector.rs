@@ -146,6 +146,7 @@ where
         server_name,
         server_public_key,
         kerberos_config,
+        connector.config.sspi_package_list.clone(),
     )?;
 
     loop {

@@ -1,4 +1,5 @@
 import React from 'react';
+import { PasswordInput } from '../ui/PasswordInput';
 import { Connection } from '../../types/connection';
 
 interface CloudProviderOptionsProps {
@@ -118,8 +119,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Client Secret</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={cloudProvider.clientSecret || ''}
                 onChange={(e) => updateCloudProvider({ clientSecret: e.target.value })}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -143,8 +143,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">API Key</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={cloudProvider.apiKey || ''}
                 onChange={(e) => updateCloudProvider({ apiKey: e.target.value })}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -168,8 +167,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">API Key</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={cloudProvider.apiKey || ''}
                 onChange={(e) => updateCloudProvider({ apiKey: e.target.value })}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -203,8 +201,7 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
           <>
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">API Key</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={cloudProvider.apiKey || ''}
                 onChange={(e) => updateCloudProvider({ apiKey: e.target.value })}
                 className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"

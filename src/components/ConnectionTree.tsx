@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { PasswordInput } from './ui/PasswordInput';
 import {
   ChevronRight,
   ChevronDown,
@@ -1271,8 +1272,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                       <label className="block text-sm font-medium text-gray-300 mb-2">
                         Password
                       </label>
-                      <input
-                        type="password"
+                      <PasswordInput
                         value={connectOptionsData.password}
                         onChange={(e) =>
                           setConnectOptionsData({
@@ -1305,8 +1305,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                         <label className="block text-sm font-medium text-gray-300 mb-2">
                           Passphrase (optional)
                         </label>
-                        <input
-                          type="password"
+                        <PasswordInput
                           value={connectOptionsData.passphrase}
                           onChange={(e) =>
                             setConnectOptionsData({
@@ -1325,8 +1324,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                   <label className="block text-sm font-medium text-gray-300 mb-2">
                     Password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={connectOptionsData.password}
                     onChange={(e) =>
                       setConnectOptionsData({

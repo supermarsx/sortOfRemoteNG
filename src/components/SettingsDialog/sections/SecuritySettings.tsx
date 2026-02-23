@@ -13,12 +13,15 @@ import {
   Gauge,
   Clock,
   ShieldCheck,
+  ShieldAlert,
   Loader2,
   FileKey,
   Download,
   CheckCircle,
   Database,
   Copy,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface SecuritySettingsProps {
@@ -553,6 +556,408 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* ─── CredSSP Remediation Defaults ─────────────────────────── */}
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div>
+          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-400" />
+            CredSSP Remediation Defaults
+          </h4>
+          <p className="text-xs text-gray-500 mt-1">
+            Global defaults for RDP CredSSP / NLA behaviour. Individual connections can override these.
+          </p>
+        </div>
+
+        {/* Oracle Remediation Policy */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Encryption Oracle Remediation Policy</label>
+          <select
+            value={settings.credsspDefaults?.oracleRemediation ?? 'mitigated'}
+            onChange={(e) =>
+              updateSettings({
+                credsspDefaults: {
+                  ...settings.credsspDefaults,
+                  oracleRemediation: e.target.value as 'force-updated' | 'mitigated' | 'vulnerable',
+                },
+              })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+          >
+            <option value="force-updated">Force Updated Clients</option>
+            <option value="mitigated">Mitigated (recommended)</option>
+            <option value="vulnerable">Vulnerable (allow all)</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            {settings.credsspDefaults?.oracleRemediation === 'force-updated'
+              ? 'Both client and server must be patched for CVE-2018-0886.'
+              : settings.credsspDefaults?.oracleRemediation === 'vulnerable'
+                ? 'Warning: Allows connections regardless of patch status. Security risk.'
+                : 'Blocks connections to vulnerable servers but permits all others.'}
+          </p>
+        </div>
+
+        {/* NLA Mode */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Default NLA Mode</label>
+          <select
+            value={settings.credsspDefaults?.nlaMode ?? 'required'}
+            onChange={(e) =>
+              updateSettings({
+                credsspDefaults: {
+                  ...settings.credsspDefaults,
+                  nlaMode: e.target.value as 'required' | 'preferred' | 'disabled',
+                },
+              })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+          >
+            <option value="required">Required (reject if NLA unavailable)</option>
+            <option value="preferred">Preferred (fallback to TLS)</option>
+            <option value="disabled">Disabled (TLS only)</option>
+          </select>
+        </div>
+
+        {/* Minimum TLS Version */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Minimum TLS Version</label>
+          <select
+            value={settings.credsspDefaults?.tlsMinVersion ?? '1.2'}
+            onChange={(e) =>
+              updateSettings({
+                credsspDefaults: {
+                  ...settings.credsspDefaults,
+                  tlsMinVersion: e.target.value as '1.0' | '1.1' | '1.2' | '1.3',
+                },
+              })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+          >
+            <option value="1.0">TLS 1.0 (legacy, insecure)</option>
+            <option value="1.1">TLS 1.1 (deprecated)</option>
+            <option value="1.2">TLS 1.2 (recommended)</option>
+            <option value="1.3">TLS 1.3 (strictest)</option>
+          </select>
+        </div>
+
+        {/* CredSSP Version */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">CredSSP TSRequest Version</label>
+          <select
+            value={String(settings.credsspDefaults?.credsspVersion ?? 6)}
+            onChange={(e) =>
+              updateSettings({
+                credsspDefaults: {
+                  ...settings.credsspDefaults,
+                  credsspVersion: parseInt(e.target.value) as 2 | 3 | 6,
+                },
+              })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+          >
+            <option value="2">Version 2 (legacy)</option>
+            <option value="3">Version 3 (with client nonce)</option>
+            <option value="6">Version 6 (latest, with nonce binding)</option>
+          </select>
+        </div>
+
+        {/* Server Cert Validation */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Server Certificate Validation</label>
+          <select
+            value={settings.credsspDefaults?.serverCertValidation ?? 'validate'}
+            onChange={(e) =>
+              updateSettings({
+                credsspDefaults: {
+                  ...settings.credsspDefaults,
+                  serverCertValidation: e.target.value as 'validate' | 'warn' | 'ignore',
+                },
+              })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+          >
+            <option value="validate">Validate (reject untrusted)</option>
+            <option value="warn">Warn (prompt on untrusted)</option>
+            <option value="ignore">Ignore (accept all certificates)</option>
+          </select>
+        </div>
+
+        {/* Boolean toggles */}
+        <div className="space-y-3">
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.credsspDefaults?.allowHybridEx ?? false}
+              onChange={(e) =>
+                updateSettings({
+                  credsspDefaults: { ...settings.credsspDefaults, allowHybridEx: e.target.checked },
+                })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            />
+            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              Allow HYBRID_EX protocol (Early User Auth Result)
+            </span>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.credsspDefaults?.nlaFallbackToTls ?? true}
+              onChange={(e) =>
+                updateSettings({
+                  credsspDefaults: { ...settings.credsspDefaults, nlaFallbackToTls: e.target.checked },
+                })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            />
+            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              Allow NLA fallback to TLS on failure
+            </span>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.credsspDefaults?.enforceServerPublicKeyValidation ?? true}
+              onChange={(e) =>
+                updateSettings({
+                  credsspDefaults: {
+                    ...settings.credsspDefaults,
+                    enforceServerPublicKeyValidation: e.target.checked,
+                  },
+                })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            />
+            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              Enforce server public key validation during CredSSP
+            </span>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.credsspDefaults?.restrictedAdmin ?? false}
+              onChange={(e) =>
+                updateSettings({
+                  credsspDefaults: { ...settings.credsspDefaults, restrictedAdmin: e.target.checked },
+                })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            />
+            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              Restricted Admin mode (no credential delegation)
+            </span>
+          </label>
+
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.credsspDefaults?.remoteCredentialGuard ?? false}
+              onChange={(e) =>
+                updateSettings({
+                  credsspDefaults: {
+                    ...settings.credsspDefaults,
+                    remoteCredentialGuard: e.target.checked,
+                  },
+                })
+              }
+              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            />
+            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              Remote Credential Guard (Kerberos delegation)
+            </span>
+          </label>
+        </div>
+
+        {/* Authentication packages */}
+        <div className="space-y-2">
+          <label className="block text-sm text-gray-400">Authentication Packages</label>
+          <div className="space-y-2 pl-1">
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={settings.credsspDefaults?.ntlmEnabled ?? true}
+                onChange={(e) =>
+                  updateSettings({
+                    credsspDefaults: { ...settings.credsspDefaults, ntlmEnabled: e.target.checked },
+                  })
+                }
+                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              />
+              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                NTLM
+              </span>
+            </label>
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={settings.credsspDefaults?.kerberosEnabled ?? false}
+                onChange={(e) =>
+                  updateSettings({
+                    credsspDefaults: { ...settings.credsspDefaults, kerberosEnabled: e.target.checked },
+                  })
+                }
+                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              />
+              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                Kerberos
+              </span>
+            </label>
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={settings.credsspDefaults?.pku2uEnabled ?? false}
+                onChange={(e) =>
+                  updateSettings({
+                    credsspDefaults: { ...settings.credsspDefaults, pku2uEnabled: e.target.checked },
+                  })
+                }
+                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              />
+              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                PKU2U
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* SSPI Override */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">SSPI Package List Override</label>
+          <input
+            type="text"
+            value={settings.credsspDefaults?.sspiPackageList ?? ''}
+            onChange={(e) =>
+              updateSettings({
+                credsspDefaults: { ...settings.credsspDefaults, sspiPackageList: e.target.value },
+              })
+            }
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            placeholder="e.g. !kerberos,!pku2u (leave empty for auto)"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Advanced: Overrides the auth package checkboxes above. Prefix with ! to exclude.
+          </p>
+        </div>
+      </div>
+
+      {/* ─── Password Reveal Settings ─────────────────────────────── */}
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div>
+          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Eye className="w-4 h-4 text-blue-400" />
+            Password Reveal
+          </h4>
+          <p className="text-xs text-gray-500 mt-1">
+            Controls the show/hide eye icon on all password fields throughout the application.
+          </p>
+        </div>
+
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={settings.passwordReveal?.enabled ?? true}
+            onChange={(e) =>
+              updateSettings({
+                passwordReveal: { ...settings.passwordReveal, enabled: e.target.checked },
+              })
+            }
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            Enable password reveal icon on all password fields
+          </span>
+        </label>
+
+        {(settings.passwordReveal?.enabled ?? true) && (
+          <>
+            {/* Mode */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Reveal Mode</label>
+              <select
+                value={settings.passwordReveal?.mode ?? 'toggle'}
+                onChange={(e) =>
+                  updateSettings({
+                    passwordReveal: {
+                      ...settings.passwordReveal,
+                      mode: e.target.value as 'toggle' | 'hold',
+                    },
+                  })
+                }
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+              >
+                <option value="toggle">Toggle (click to show/hide)</option>
+                <option value="hold">Hold (hold mouse to reveal)</option>
+              </select>
+            </div>
+
+            {/* Auto-hide */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">
+                Auto-hide after (seconds): {settings.passwordReveal?.autoHideSeconds ?? 0}
+                {(settings.passwordReveal?.autoHideSeconds ?? 0) === 0 && ' (disabled)'}
+              </label>
+              <input
+                type="range"
+                min={0}
+                max={60}
+                step={1}
+                value={settings.passwordReveal?.autoHideSeconds ?? 0}
+                onChange={(e) =>
+                  updateSettings({
+                    passwordReveal: {
+                      ...settings.passwordReveal,
+                      autoHideSeconds: parseInt(e.target.value),
+                    },
+                  })
+                }
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>Off</span>
+                <span>60s</span>
+              </div>
+            </div>
+
+            {/* Show by default */}
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={settings.passwordReveal?.showByDefault ?? false}
+                onChange={(e) =>
+                  updateSettings({
+                    passwordReveal: { ...settings.passwordReveal, showByDefault: e.target.checked },
+                  })
+                }
+                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              />
+              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                Show passwords by default (not recommended)
+              </span>
+            </label>
+
+            {/* Mask icon */}
+            <label className="flex items-center space-x-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={settings.passwordReveal?.maskIcon ?? false}
+                onChange={(e) =>
+                  updateSettings({
+                    passwordReveal: { ...settings.passwordReveal, maskIcon: e.target.checked },
+                  })
+                }
+                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              />
+              <span className="text-sm text-gray-300 group-hover:text-white transition-colors flex items-center gap-2">
+                Dim eye icon when password is hidden
+                <EyeOff className="w-3.5 h-3.5 opacity-40" />
+              </span>
+            </label>
+          </>
+        )}
       </div>
     </div>
   );

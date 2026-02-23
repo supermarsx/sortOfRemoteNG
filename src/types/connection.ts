@@ -317,6 +317,28 @@ export interface RdpPerformanceSettings {
   frameBatchIntervalMs?: number;
 }
 
+// ─── CredSSP Oracle Remediation Policy ─────────────────────────────
+/** Maps to Windows Group Policy "Encryption Oracle Remediation" */
+export const CredsspOracleRemediationPolicies = [
+  'force-updated',
+  'mitigated',
+  'vulnerable',
+] as const;
+export type CredsspOracleRemediationPolicy =
+  (typeof CredsspOracleRemediationPolicies)[number];
+
+/** NLA negotiation enforcement level */
+export const NlaModes = ['required', 'preferred', 'disabled'] as const;
+export type NlaMode = (typeof NlaModes)[number];
+
+/** Minimum TLS version */
+export const TlsVersions = ['1.0', '1.1', '1.2', '1.3'] as const;
+export type TlsVersion = (typeof TlsVersions)[number];
+
+/** CredSSP TSRequest version to advertise */
+export const CredsspVersions = [2, 3, 6] as const;
+export type CredsspVersion = (typeof CredsspVersions)[number];
+
 export interface RdpSecuritySettings {
   /** Enable TLS security protocol (legacy graphical logon) */
   enableTls?: boolean;
@@ -328,6 +350,51 @@ export interface RdpSecuritySettings {
   enableServerPointer?: boolean;
   /** Use software rendering for server pointers */
   pointerSoftwareRendering?: boolean;
+
+  // ─── CredSSP Remediation Configuration ──────────────────────────
+
+  /** Encryption Oracle Remediation policy (CVE-2018-0886).
+   *  - force-updated: Requires both client and server to be patched
+   *  - mitigated: Blocks connections to vulnerable servers (default)
+   *  - vulnerable: Allows all connections regardless of patch status */
+  credsspOracleRemediation?: CredsspOracleRemediationPolicy;
+
+  /** Allow HYBRID_EX protocol negotiation (Early User Auth Result).
+   *  When disabled, only HYBRID is requested. Some servers break with HYBRID_EX. */
+  allowHybridEx?: boolean;
+
+  /** Allow automatic fallback from NLA/CredSSP to TLS when NLA fails */
+  nlaFallbackToTls?: boolean;
+
+  /** Minimum TLS version for the connection */
+  tlsMinVersion?: TlsVersion;
+
+  /** Enable NTLM authentication in CredSSP SSPI negotiation */
+  ntlmEnabled?: boolean;
+
+  /** Enable Kerberos authentication in CredSSP SSPI negotiation */
+  kerberosEnabled?: boolean;
+
+  /** Enable PKU2U authentication in CredSSP SSPI negotiation */
+  pku2uEnabled?: boolean;
+
+  /** Enable Restricted Admin mode (credentials are not sent to the server) */
+  restrictedAdmin?: boolean;
+
+  /** Enable Remote Credential Guard (credentials proxied via Kerberos) */
+  remoteCredentialGuard?: boolean;
+
+  /** Require server public key validation during CredSSP nonce binding */
+  enforceServerPublicKeyValidation?: boolean;
+
+  /** CredSSP TSRequest version to advertise (2, 3, or 6) */
+  credsspVersion?: CredsspVersion;
+
+  /** Custom SSPI package list override (e.g. "!kerberos,!pku2u") */
+  sspiPackageList?: string;
+
+  /** Server certificate validation mode for the RDP TLS handshake */
+  serverCertValidation?: 'validate' | 'warn' | 'ignore';
 }
 
 export interface RdpAdvancedSettings {

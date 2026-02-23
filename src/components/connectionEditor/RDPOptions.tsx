@@ -6,6 +6,7 @@ import {
   HardDrive,
   Gauge,
   Shield,
+  ShieldAlert,
   Settings2,
   ChevronDown,
   ChevronRight,
@@ -16,6 +17,12 @@ import {
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { Connection, DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../../types/connection';
+import {
+  CredsspOracleRemediationPolicies,
+  NlaModes,
+  TlsVersions,
+  CredsspVersions,
+} from '../../types/connection';
 import {
   getAllTrustRecords,
   removeIdentity,
@@ -800,6 +807,236 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
           />
           <span>Software pointer rendering</span>
         </label>
+
+        {/* ─── CredSSP Remediation ───────────────────────────────── */}
+        <div className="pt-3 mt-2 border-t border-gray-700/60">
+          <div className="flex items-center gap-2 mb-3 text-sm text-gray-300">
+            <ShieldAlert size={14} className="text-amber-400" />
+            <span className="font-medium">CredSSP Remediation</span>
+            <span className="text-xs text-gray-500 ml-1">(CVE-2018-0886)</span>
+          </div>
+
+          <div className="space-y-3">
+            {/* Oracle Remediation Policy */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">
+                Encryption Oracle Remediation Policy
+              </label>
+              <select
+                value={rdp.security?.credsspOracleRemediation ?? ''}
+                onChange={(e) =>
+                  updateRdp('security', {
+                    credsspOracleRemediation:
+                      e.target.value === '' ? undefined : (e.target.value as typeof CredsspOracleRemediationPolicies[number]),
+                  })
+                }
+                className={selectClass}
+              >
+                <option value="">Use global default</option>
+                {CredsspOracleRemediationPolicies.map((p) => (
+                  <option key={p} value={p}>
+                    {p === 'force-updated'
+                      ? 'Force Updated Clients'
+                      : p === 'mitigated'
+                        ? 'Mitigated (recommended)'
+                        : 'Vulnerable (allow all)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* NLA Mode */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">NLA Mode</label>
+              <select
+                value={rdp.security?.enableNla === false ? 'disabled' : ''}
+                onChange={(e) => {
+                  const v = e.target.value as typeof NlaModes[number] | '';
+                  if (v === '') {
+                    // Use global default
+                    updateRdp('security', { enableNla: undefined });
+                  } else {
+                    updateRdp('security', { enableNla: v !== 'disabled' });
+                  }
+                }}
+                className={selectClass}
+              >
+                <option value="">Use global default</option>
+                {NlaModes.map((m) => (
+                  <option key={m} value={m}>
+                    {m === 'required'
+                      ? 'Required (reject if NLA unavailable)'
+                      : m === 'preferred'
+                        ? 'Preferred (fallback to TLS)'
+                        : 'Disabled (TLS only)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Allow HYBRID_EX */}
+            <label className={labelClass}>
+              <input
+                type="checkbox"
+                checked={rdp.security?.allowHybridEx ?? false}
+                onChange={(e) => updateRdp('security', { allowHybridEx: e.target.checked })}
+                className={checkboxClass}
+              />
+              <span>Allow HYBRID_EX protocol (Early User Auth Result)</span>
+            </label>
+
+            {/* NLA fallback to TLS */}
+            <label className={labelClass}>
+              <input
+                type="checkbox"
+                checked={rdp.security?.nlaFallbackToTls ?? true}
+                onChange={(e) => updateRdp('security', { nlaFallbackToTls: e.target.checked })}
+                className={checkboxClass}
+              />
+              <span>Allow NLA fallback to TLS on failure</span>
+            </label>
+
+            {/* TLS Min Version */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Minimum TLS Version</label>
+              <select
+                value={rdp.security?.tlsMinVersion ?? ''}
+                onChange={(e) =>
+                  updateRdp('security', {
+                    tlsMinVersion: e.target.value === '' ? undefined : (e.target.value as typeof TlsVersions[number]),
+                  })
+                }
+                className={selectClass}
+              >
+                <option value="">Use global default</option>
+                {TlsVersions.map((v) => (
+                  <option key={v} value={v}>
+                    TLS {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Authentication Packages */}
+            <div className="space-y-1">
+              <span className="block text-xs text-gray-400">Authentication Packages</span>
+              <label className={labelClass}>
+                <input
+                  type="checkbox"
+                  checked={rdp.security?.ntlmEnabled ?? true}
+                  onChange={(e) => updateRdp('security', { ntlmEnabled: e.target.checked })}
+                  className={checkboxClass}
+                />
+                <span>NTLM</span>
+              </label>
+              <label className={labelClass}>
+                <input
+                  type="checkbox"
+                  checked={rdp.security?.kerberosEnabled ?? false}
+                  onChange={(e) => updateRdp('security', { kerberosEnabled: e.target.checked })}
+                  className={checkboxClass}
+                />
+                <span>Kerberos</span>
+              </label>
+              <label className={labelClass}>
+                <input
+                  type="checkbox"
+                  checked={rdp.security?.pku2uEnabled ?? false}
+                  onChange={(e) => updateRdp('security', { pku2uEnabled: e.target.checked })}
+                  className={checkboxClass}
+                />
+                <span>PKU2U</span>
+              </label>
+            </div>
+
+            {/* Restricted Admin / Remote Guard */}
+            <label className={labelClass}>
+              <input
+                type="checkbox"
+                checked={rdp.security?.restrictedAdmin ?? false}
+                onChange={(e) => updateRdp('security', { restrictedAdmin: e.target.checked })}
+                className={checkboxClass}
+              />
+              <span>Restricted Admin (no credential delegation)</span>
+            </label>
+
+            <label className={labelClass}>
+              <input
+                type="checkbox"
+                checked={rdp.security?.remoteCredentialGuard ?? false}
+                onChange={(e) => updateRdp('security', { remoteCredentialGuard: e.target.checked })}
+                className={checkboxClass}
+              />
+              <span>Remote Credential Guard</span>
+            </label>
+
+            {/* Server Public Key Validation */}
+            <label className={labelClass}>
+              <input
+                type="checkbox"
+                checked={rdp.security?.enforceServerPublicKeyValidation ?? true}
+                onChange={(e) => updateRdp('security', { enforceServerPublicKeyValidation: e.target.checked })}
+                className={checkboxClass}
+              />
+              <span>Enforce server public key validation</span>
+            </label>
+
+            {/* CredSSP Version */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">CredSSP Version</label>
+              <select
+                value={rdp.security?.credsspVersion?.toString() ?? ''}
+                onChange={(e) =>
+                  updateRdp('security', {
+                    credsspVersion: e.target.value === '' ? undefined : (parseInt(e.target.value) as typeof CredsspVersions[number]),
+                  })
+                }
+                className={selectClass}
+              >
+                <option value="">Use global default</option>
+                {CredsspVersions.map((v) => (
+                  <option key={v} value={v.toString()}>
+                    TSRequest v{v} {v === 6 ? '(latest, with nonce)' : v === 3 ? '(with client nonce)' : '(legacy)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Server Cert Validation */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Server Certificate Validation</label>
+              <select
+                value={rdp.security?.serverCertValidation ?? ''}
+                onChange={(e) =>
+                  updateRdp('security', {
+                    serverCertValidation:
+                      e.target.value === '' ? undefined : (e.target.value as 'validate' | 'warn' | 'ignore'),
+                  })
+                }
+                className={selectClass}
+              >
+                <option value="">Use global default</option>
+                <option value="validate">Validate (reject untrusted)</option>
+                <option value="warn">Warn (prompt on untrusted)</option>
+                <option value="ignore">Ignore (accept all)</option>
+              </select>
+            </div>
+
+            {/* SSPI Package List Override */}
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">
+                SSPI Package List Override
+              </label>
+              <input
+                type="text"
+                value={rdp.security?.sspiPackageList ?? ''}
+                onChange={(e) => updateRdp('security', { sspiPackageList: e.target.value || undefined })}
+                className={inputClass}
+                placeholder="e.g. !kerberos,!pku2u (leave empty for auto)"
+              />
+            </div>
+          </div>
+        </div>
 
         <div className="pt-2">
           <label className="block text-xs text-gray-400 mb-1">
