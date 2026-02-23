@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io;
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -477,12 +477,41 @@ struct RdpActiveConnection {
 
 pub struct RdpService {
     connections: HashMap<String, RdpActiveConnection>,
+    /// Cached TLS connector – built once, reused for every connection.
+    /// Building a TLS connector loads the system root certificate store which
+    /// is very expensive on Windows (200-500 ms).  Caching it avoids paying that
+    /// cost on every connection.
+    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    /// Cached reqwest blocking client for CredSSP/Kerberos HTTP requests.
+    /// Has a short connect + request timeout so it doesn't hang waiting for an
+    /// unreachable KDC.
+    cached_http_client: Option<Arc<reqwest::blocking::Client>>,
 }
 
 impl RdpService {
     pub fn new() -> RdpServiceState {
+        // Pre-build the TLS connector and HTTP client eagerly so the first
+        // connection doesn't pay the initialisation cost.
+        let tls_connector = native_tls::TlsConnector::builder()
+            .danger_accept_invalid_certs(true)
+            .use_sni(false)
+            .build()
+            .ok()
+            .map(Arc::new);
+
+        let http_client = reqwest::blocking::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(5))
+            .pool_max_idle_per_host(2)
+            .build()
+            .ok()
+            .map(Arc::new);
+
         Arc::new(Mutex::new(RdpService {
             connections: HashMap::new(),
+            cached_tls_connector: tls_connector,
+            cached_http_client: http_client,
         }))
     }
 }
@@ -490,18 +519,24 @@ impl RdpService {
 // ─── Network client for CredSSP HTTP requests ──────────────────────────────
 
 struct BlockingNetworkClient {
-    client: reqwest::blocking::Client,
+    client: Arc<reqwest::blocking::Client>,
 }
 
 impl BlockingNetworkClient {
-    fn new() -> Self {
-        Self {
-            client: reqwest::blocking::Client::builder()
-                .danger_accept_invalid_certs(true)
-                .timeout(Duration::from_secs(30))
-                .build()
-                .unwrap_or_else(|_| reqwest::blocking::Client::new()),
-        }
+    /// Create from a pre-built (cached) client.  Falls back to building a
+    /// new one with aggressive timeouts if no cached client is supplied.
+    fn new(cached: Option<Arc<reqwest::blocking::Client>>) -> Self {
+        let client = cached.unwrap_or_else(|| {
+            Arc::new(
+                reqwest::blocking::Client::builder()
+                    .danger_accept_invalid_certs(true)
+                    .connect_timeout(Duration::from_secs(3))
+                    .timeout(Duration::from_secs(5))
+                    .build()
+                    .unwrap_or_else(|_| reqwest::blocking::Client::new()),
+            )
+        });
+        Self { client }
     }
 }
 
@@ -555,13 +590,23 @@ fn tls_upgrade(
     stream: TcpStream,
     server_name: &str,
     leftover: ::bytes::BytesMut,
+    cached_connector: Option<Arc<native_tls::TlsConnector>>,
 ) -> Result<(Framed<native_tls::TlsStream<TcpStream>>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>>
 {
-    let tls_connector = native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .use_sni(false)
-        .build()
-        .map_err(|e| format!("TLS connector build error: {e}"))?;
+    // Re-use the cached TLS connector when available – building one from
+    // scratch loads the system certificate store which is very slow on Windows.
+    let owned_connector;
+    let tls_connector: &native_tls::TlsConnector = match &cached_connector {
+        Some(arc) => arc.as_ref(),
+        None => {
+            owned_connector = native_tls::TlsConnector::builder()
+                .danger_accept_invalid_certs(true)
+                .use_sni(false)
+                .build()
+                .map_err(|e| format!("TLS connector build error: {e}"))?;
+            &owned_connector
+        }
+    };
 
     let tls_stream = tls_connector
         .connect(server_name, stream)
@@ -816,6 +861,8 @@ fn run_rdp_session(
     app_handle: AppHandle,
     mut cmd_rx: mpsc::UnboundedReceiver<RdpCommand>,
     stats: Arc<RdpSessionStats>,
+    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_http_client: Option<Arc<reqwest::blocking::Client>>,
 ) {
     let result = run_rdp_session_inner(
         &session_id,
@@ -828,6 +875,8 @@ fn run_rdp_session(
         &app_handle,
         &mut cmd_rx,
         &stats,
+        cached_tls_connector,
+        cached_http_client,
     );
 
     stats.alive.store(false, Ordering::Relaxed);
@@ -879,8 +928,12 @@ fn run_rdp_session_inner(
     app_handle: &AppHandle,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
     stats: &Arc<RdpSessionStats>,
+    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_http_client: Option<Arc<reqwest::blocking::Client>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // ── 1. TCP connect ──────────────────────────────────────────────────
+    let conn_start = Instant::now();
+
+    // ── 1. TCP connect (with hostname DNS resolution support) ───────────
 
     let addr = format!("{host}:{port}");
     log::info!("RDP session {session_id}: connecting to {addr}");
@@ -897,11 +950,31 @@ fn run_rdp_session_inner(
         },
     );
 
-    let socket_addr: std::net::SocketAddr = addr
-        .parse()
-        .map_err(|e| format!("Invalid address: {e}"))?;
-    let tcp_stream = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(15))?;
+    // Resolve address – supports both raw IPs and hostnames.
+    let t_resolve = Instant::now();
+    let socket_addr = addr
+        .to_socket_addrs()
+        .map_err(|e| format!("DNS resolution failed for {addr}: {e}"))?
+        .next()
+        .ok_or_else(|| format!("DNS returned no addresses for {addr}"))?;
+    let dns_ms = t_resolve.elapsed().as_millis();
+    log::info!("RDP session {session_id}: DNS resolved in {dns_ms}ms → {socket_addr}");
+
+    let t_tcp = Instant::now();
+    let tcp_stream = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(10))?;
     tcp_stream.set_nodelay(true)?;
+
+    // Enlarge socket buffers for faster handshake throughput
+    {
+        use socket2::Socket;
+        let sock = Socket::from(tcp_stream.try_clone()?);
+        let _ = sock.set_recv_buffer_size(256 * 1024);
+        let _ = sock.set_send_buffer_size(256 * 1024);
+        // Detach without closing – the TcpStream still owns the fd
+        std::mem::forget(sock);
+    }
+    let tcp_ms = t_tcp.elapsed().as_millis();
+    log::info!("RDP session {session_id}: TCP connected in {tcp_ms}ms");
 
     let mut framed = Framed::new(tcp_stream);
 
@@ -955,16 +1028,22 @@ fn run_rdp_session_inner(
 
     stats.set_phase("negotiating");
     log::info!("RDP session {session_id}: starting connection sequence");
+    let t_negotiate = Instant::now();
     let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut connector)
         .map_err(|e| format!("connect_begin failed: {e}"))?;
+    let negotiate_ms = t_negotiate.elapsed().as_millis();
+    log::info!("RDP session {session_id}: X.224/MCS negotiation took {negotiate_ms}ms");
 
     // ── 4. TLS upgrade ──────────────────────────────────────────────────
 
     stats.set_phase("tls_upgrade");
     log::info!("RDP session {session_id}: upgrading to TLS");
+    let t_tls = Instant::now();
 
     let (tcp_stream, leftover) = framed.into_inner();
-    let (mut tls_framed, server_public_key) = tls_upgrade(tcp_stream, host, leftover)?;
+    let (mut tls_framed, server_public_key) = tls_upgrade(tcp_stream, host, leftover, cached_tls_connector)?;
+    let tls_ms = t_tls.elapsed().as_millis();
+    log::info!("RDP session {session_id}: TLS upgrade took {tls_ms}ms");
 
     // Extract and emit server certificate fingerprint
     {
@@ -1000,7 +1079,8 @@ fn run_rdp_session_inner(
         },
     );
 
-    let mut network_client = BlockingNetworkClient::new();
+    let t_auth = Instant::now();
+    let mut network_client = BlockingNetworkClient::new(cached_http_client);
     let server_name = ironrdp::connector::ServerName::new(host);
 
     let connection_result: ConnectionResult = ironrdp_blocking::connect_finalize(
@@ -1013,6 +1093,27 @@ fn run_rdp_session_inner(
         None,
     )
     .map_err(|e| format!("connect_finalize failed: {e}"))?;
+    let auth_ms = t_auth.elapsed().as_millis();
+    let total_ms = conn_start.elapsed().as_millis();
+    log::info!(
+        "RDP session {session_id}: authentication took {auth_ms}ms  \
+         (total connect: {total_ms}ms  DNS:{dns_ms}ms TCP:{tcp_ms}ms \
+         negotiate:{negotiate_ms}ms TLS:{tls_ms}ms auth:{auth_ms}ms)"
+    );
+
+    // Emit timing event to frontend for visibility
+    let _ = app_handle.emit(
+        "rdp://timing",
+        serde_json::json!({
+            "session_id": session_id,
+            "dns_ms": dns_ms,
+            "tcp_ms": tcp_ms,
+            "negotiate_ms": negotiate_ms,
+            "tls_ms": tls_ms,
+            "auth_ms": auth_ms,
+            "total_ms": total_ms,
+        }),
+    );
 
     // ── 6. Enter active session ─────────────────────────────────────────
 
@@ -1558,6 +1659,13 @@ pub async fn connect_rdp(
     let d = domain.clone();
     let ah = app_handle.clone();
 
+    // Clone cached TLS connector & HTTP client from the service so the
+    // blocking thread can use them without holding the service lock.
+    let service = state.lock().await;
+    let tls_conn = service.cached_tls_connector.clone();
+    let http_client = service.cached_http_client.clone();
+    drop(service);
+
     // Use spawn_blocking to run the entire RDP session on a dedicated OS thread
     let handle = tokio::task::spawn_blocking(move || {
         run_rdp_session(
@@ -1571,6 +1679,8 @@ pub async fn connect_rdp(
             ah,
             cmd_rx,
             stats_clone,
+            tls_conn,
+            http_client,
         );
     });
 
