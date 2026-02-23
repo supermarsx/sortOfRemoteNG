@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{self, Read, Write};
+use std::io::{self};
 use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::Duration;
@@ -243,7 +243,7 @@ fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
             button,
             pressed,
         } => {
-            let (is_extended, flags) = match button {
+            let (_is_extended, flags) = match button {
                 0 => (false, PointerFlags::LEFT_BUTTON),
                 1 => (false, PointerFlags::MIDDLE_BUTTON_OR_WHEEL),
                 2 => (false, PointerFlags::RIGHT_BUTTON),
@@ -663,26 +663,17 @@ fn run_rdp_session_inner(
                             log::info!(
                                 "RDP session {session_id}: deactivate-all received"
                             );
-                            // DeactivateAll carries a Box<ConnectionActivationSequence>,
-                            // not a new ConnectionResult. We'd need to re-run the activation
-                            // sequence to get a new ConnectionResult. For now, just continue
-                            // with the current session state.
-                            let new_w = desktop_width;
-                            let new_h = desktop_height;
-                            // Don't reinitialize — continue with existing session
-
                             let _ = app_handle.emit(
                                 "rdp://status",
                                 RdpStatusEvent {
                                     session_id: session_id.to_string(),
                                     status: "connected".to_string(),
-                                    message: format!("Deactivate-all received ({new_w}x{new_h})"),
-                                    desktop_width: Some(new_w),
-                                    desktop_height: Some(new_h),
+                                    message: format!("Deactivate-all received ({desktop_width}x{desktop_height})"),
+                                    desktop_width: Some(desktop_width),
+                                    desktop_height: Some(desktop_height),
                                 },
                             );
                         }
-                        _ => {}
                     }
                 }
             }

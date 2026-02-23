@@ -202,6 +202,10 @@ describe("RDPClient", () => {
     it("should toggle fullscreen mode", async () => {
       renderWithProviders(mockSession);
 
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith('connect_rdp', expect.any(Object));
+      });
+
       emitStatus('connected', 'Connected', 'rdp-session-123', 1920, 1080);
 
       await waitFor(() => {
@@ -216,13 +220,15 @@ describe("RDPClient", () => {
   });
 
   describe("Settings", () => {
-    it("should toggle settings panel", () => {
+    it("should toggle settings panel", async () => {
       renderWithProviders(mockSession);
 
       const settingsButton = screen.getByRole('button', { name: /settings/i });
       settingsButton.click();
 
-      expect(screen.getByText("Resolution")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText("Resolution")).toBeInTheDocument();
+      });
     });
   });
 

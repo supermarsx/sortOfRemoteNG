@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import {
   drawDesktopIcon,
   drawSimulatedDesktop,
@@ -6,6 +6,22 @@ import {
   decodeBase64Rgba,
   clearCanvas,
 } from '../src/components/rdpCanvas';
+
+// Polyfill ImageData for jsdom (not available in test environment)
+beforeAll(() => {
+  if (typeof globalThis.ImageData === 'undefined') {
+    (globalThis as Record<string, unknown>).ImageData = class ImageData {
+      data: Uint8ClampedArray;
+      width: number;
+      height: number;
+      constructor(data: Uint8ClampedArray, width: number, height?: number) {
+        this.data = data;
+        this.width = width;
+        this.height = height ?? (data.length / (4 * width));
+      }
+    };
+  }
+});
 
 type MockCtx = Pick<CanvasRenderingContext2D,
   'fillRect' | 'strokeRect' | 'fillText' | 'createLinearGradient' | 'putImageData'> & {
