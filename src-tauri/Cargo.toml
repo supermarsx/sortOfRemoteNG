@@ -30,8 +30,9 @@ bcrypt = "0.15"
 jsonwebtoken = "9"
 tokio = { version = "1", features = ["full"] }
 ssh2 = "0.9"
-ironrdp = { version = "0.14", features = ["connector", "session", "graphics", "input"] }
+ironrdp = { version = "0.14", features = ["connector", "session", "graphics", "input", "core"] }
 ironrdp-blocking = "0.8"
+ironrdp-svc = "0.6"
 bytes = "1"
 x509-cert = { version = "0.2", features = ["std"] }
 vnc-rs = "0.5"

@@ -13,7 +13,9 @@ import {
   Volume2,
   VolumeX,
   Copy,
-  Clipboard
+  Clipboard,
+  Activity,
+  X
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -45,6 +47,38 @@ interface RdpPointerEvent {
   pointer_type: string;
   x?: number;
   y?: number;
+}
+
+interface RdpStatsEvent {
+  session_id: string;
+  uptime_secs: number;
+  bytes_received: number;
+  bytes_sent: number;
+  pdus_received: number;
+  pdus_sent: number;
+  frame_count: number;
+  fps: number;
+  input_events: number;
+  errors_recovered: number;
+  reactivations: number;
+  phase: string;
+  last_error: string | null;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatUptime(secs: number): string {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
 // Convert JS mouse button index to backend button code
@@ -117,6 +151,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const [rdpSessionId, setRdpSessionId] = useState<string | null>(null);
   const [desktopSize, setDesktopSize] = useState({ width: 1920, height: 1080 });
   const [pointerStyle, setPointerStyle] = useState<string>('default');
+  const [showInternals, setShowInternals] = useState(false);
+  const [stats, setStats] = useState<RdpStatsEvent | null>(null);
   const [settings, setSettings] = useState({
     resolution: '1920x1080',
     colorDepth: 32,
@@ -282,6 +318,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       }
     }).then(fn => unlisteners.push(fn));
 
+    // Listen for session statistics
+    listen<RdpStatsEvent>('rdp://stats', (event) => {
+      const s = event.payload;
+      if (s.session_id !== sessionIdRef.current) return;
+      setStats(s);
+    }).then(fn => unlisteners.push(fn));
+
     return () => {
       unlisteners.forEach(fn => fn());
     };
@@ -418,6 +461,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           </div>
           
           <button
+            onClick={() => setShowInternals(!showInternals)}
+            className={`p-1 hover:bg-gray-700 rounded transition-colors ${showInternals ? 'text-green-400 bg-gray-700' : 'text-gray-400 hover:text-white'}`}
+            title="RDP Internals"
+          >
+            <Activity size={14} />
+          </button>
+          
+          <button
             onClick={() => setShowSettings(!showSettings)}
             className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
             title="RDP Settings"
@@ -491,6 +542,87 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         </div>
       )}
 
+      {/* RDP Internals Panel */}
+      {showInternals && (
+        <div className="bg-gray-800 border-b border-gray-700 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+              <Activity size={14} className="text-green-400" />
+              RDP Session Internals
+            </h3>
+            <button onClick={() => setShowInternals(false)} className="text-gray-400 hover:text-white">
+              <X size={14} />
+            </button>
+          </div>
+          {stats ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Phase</div>
+                <div className="text-white font-mono capitalize">{stats.phase}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Uptime</div>
+                <div className="text-white font-mono">{formatUptime(stats.uptime_secs)}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">FPS</div>
+                <div className={`font-mono font-bold ${stats.fps >= 20 ? 'text-green-400' : stats.fps >= 10 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {stats.fps.toFixed(1)}
+                </div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Frames</div>
+                <div className="text-white font-mono">{stats.frame_count.toLocaleString()}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Received</div>
+                <div className="text-cyan-400 font-mono">{formatBytes(stats.bytes_received)}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Sent</div>
+                <div className="text-orange-400 font-mono">{formatBytes(stats.bytes_sent)}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">PDUs In</div>
+                <div className="text-white font-mono">{stats.pdus_received.toLocaleString()}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">PDUs Out</div>
+                <div className="text-white font-mono">{stats.pdus_sent.toLocaleString()}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Input Events</div>
+                <div className="text-white font-mono">{stats.input_events.toLocaleString()}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Reactivations</div>
+                <div className="text-white font-mono">{stats.reactivations}</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Errors (Recovered)</div>
+                <div className={`font-mono ${stats.errors_recovered > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+                  {stats.errors_recovered}
+                </div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Bandwidth</div>
+                <div className="text-white font-mono">
+                  {stats.uptime_secs > 0 ? formatBytes(Math.round(stats.bytes_received / stats.uptime_secs)) : '0 B'}/s
+                </div>
+              </div>
+              {stats.last_error && (
+                <div className="bg-gray-900 rounded p-2 col-span-2 md:col-span-4 lg:col-span-6">
+                  <div className="text-gray-500 mb-1">Last Error</div>
+                  <div className="text-red-400 font-mono truncate" title={stats.last_error}>{stats.last_error}</div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-xs">Waiting for session statistics...</p>
+          )}
+        </div>
+      )}
+
       {/* RDP Canvas */}
       <div className="flex-1 flex items-center justify-center bg-black p-1 relative">
         <canvas
@@ -550,6 +682,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             <>
               <span>Desktop: {desktopSize.width}x{desktopSize.height}</span>
               <span>Encryption: TLS/NLA</span>
+              {stats && (
+                <>
+                  <span className="text-green-400">{stats.fps.toFixed(0)} FPS</span>
+                  <span>↓{formatBytes(stats.bytes_received)}</span>
+                  <span>↑{formatBytes(stats.bytes_sent)}</span>
+                </>
+              )}
             </>
           )}
         </div>

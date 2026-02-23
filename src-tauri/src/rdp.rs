@@ -1,20 +1,24 @@
 use std::collections::HashMap;
-use std::io::{self};
+use std::io;
 use std::net::TcpStream;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
-use ironrdp::connector::{self, ClientConnector, ConnectionResult, Credentials};
+use ironrdp::connector::connection_activation::ConnectionActivationState;
+use ironrdp::connector::{self, ClientConnector, ConnectionResult, Credentials, Sequence, State as _};
 use ironrdp::graphics::image_processing::PixelFormat;
 use ironrdp::pdu::input::fast_path::FastPathInputEvent;
-use ironrdp::session::image::DecodedImage;
-use ironrdp::session::{ActiveStage, ActiveStageOutput};
-use ironrdp_blocking::{self, Framed};
+use ironrdp_blocking::Framed;
+use ironrdp::core::WriteBuf;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
+
+use ironrdp::session::image::DecodedImage;
+use ironrdp::session::{ActiveStage, ActiveStageOutput};
 
 pub type RdpServiceState = Arc<Mutex<RdpService>>;
 
@@ -52,6 +56,23 @@ pub struct RdpPointerEvent {
     pub y: Option<u16>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct RdpStatsEvent {
+    pub session_id: String,
+    pub uptime_secs: u64,
+    pub bytes_received: u64,
+    pub bytes_sent: u64,
+    pub pdus_received: u64,
+    pub pdus_sent: u64,
+    pub frame_count: u64,
+    pub fps: f64,
+    pub input_events: u64,
+    pub errors_recovered: u64,
+    pub reactivations: u64,
+    pub phase: String,
+    pub last_error: Option<String>,
+}
+
 // ─── Input events from the frontend ────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -62,6 +83,105 @@ pub enum RdpInputAction {
     KeyboardKey { scancode: u16, pressed: bool, extended: bool },
     Wheel { x: u16, y: u16, delta: i16, horizontal: bool },
     Unicode { code: u16, pressed: bool },
+}
+
+// ─── Session statistics (shared between session thread and main) ───────────
+
+#[derive(Debug)]
+pub struct RdpSessionStats {
+    pub connected_at: Instant,
+    pub bytes_received: AtomicU64,
+    pub bytes_sent: AtomicU64,
+    pub pdus_received: AtomicU64,
+    pub pdus_sent: AtomicU64,
+    pub frame_count: AtomicU64,
+    pub input_events: AtomicU64,
+    pub errors_recovered: AtomicU64,
+    pub reactivations: AtomicU64,
+    pub phase: std::sync::Mutex<String>,
+    pub last_error: std::sync::Mutex<Option<String>>,
+    /// Timestamps of recent frames for FPS calculation
+    pub fps_frame_timestamps: std::sync::Mutex<Vec<Instant>>,
+    pub alive: AtomicBool,
+}
+
+impl RdpSessionStats {
+    fn new() -> Self {
+        Self {
+            connected_at: Instant::now(),
+            bytes_received: AtomicU64::new(0),
+            bytes_sent: AtomicU64::new(0),
+            pdus_received: AtomicU64::new(0),
+            pdus_sent: AtomicU64::new(0),
+            frame_count: AtomicU64::new(0),
+            input_events: AtomicU64::new(0),
+            errors_recovered: AtomicU64::new(0),
+            reactivations: AtomicU64::new(0),
+            phase: std::sync::Mutex::new("initializing".to_string()),
+            last_error: std::sync::Mutex::new(None),
+            fps_frame_timestamps: std::sync::Mutex::new(Vec::new()),
+            alive: AtomicBool::new(true),
+        }
+    }
+
+    fn set_phase(&self, phase: &str) {
+        if let Ok(mut p) = self.phase.lock() {
+            *p = phase.to_string();
+        }
+    }
+
+    fn get_phase(&self) -> String {
+        self.phase.lock().map(|p| p.clone()).unwrap_or_default()
+    }
+
+    fn set_last_error(&self, err: &str) {
+        if let Ok(mut e) = self.last_error.lock() {
+            *e = Some(err.to_string());
+        }
+    }
+
+    fn record_frame(&self) {
+        self.frame_count.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut timestamps) = self.fps_frame_timestamps.lock() {
+            let now = Instant::now();
+            timestamps.push(now);
+            // Keep only last 2 seconds of timestamps
+            let cutoff = now - Duration::from_secs(2);
+            timestamps.retain(|t| *t > cutoff);
+        }
+    }
+
+    fn current_fps(&self) -> f64 {
+        if let Ok(timestamps) = self.fps_frame_timestamps.lock() {
+            if timestamps.len() < 2 {
+                return 0.0;
+            }
+            let now = Instant::now();
+            let one_sec_ago = now - Duration::from_secs(1);
+            let recent = timestamps.iter().filter(|t| **t > one_sec_ago).count();
+            recent as f64
+        } else {
+            0.0
+        }
+    }
+
+    fn to_event(&self, session_id: &str) -> RdpStatsEvent {
+        RdpStatsEvent {
+            session_id: session_id.to_string(),
+            uptime_secs: self.connected_at.elapsed().as_secs(),
+            bytes_received: self.bytes_received.load(Ordering::Relaxed),
+            bytes_sent: self.bytes_sent.load(Ordering::Relaxed),
+            pdus_received: self.pdus_received.load(Ordering::Relaxed),
+            pdus_sent: self.pdus_sent.load(Ordering::Relaxed),
+            frame_count: self.frame_count.load(Ordering::Relaxed),
+            fps: self.current_fps(),
+            input_events: self.input_events.load(Ordering::Relaxed),
+            errors_recovered: self.errors_recovered.load(Ordering::Relaxed),
+            reactivations: self.reactivations.load(Ordering::Relaxed),
+            phase: self.get_phase(),
+            last_error: self.last_error.lock().ok().and_then(|e| e.clone()),
+        }
+    }
 }
 
 // ─── Session and service types ─────────────────────────────────────────────
@@ -85,6 +205,7 @@ enum RdpCommand {
 struct RdpActiveConnection {
     session: RdpSession,
     cmd_tx: mpsc::UnboundedSender<RdpCommand>,
+    stats: Arc<RdpSessionStats>,
     _handle: tokio::task::JoinHandle<()>,
 }
 
@@ -102,8 +223,6 @@ impl RdpService {
 
 // ─── Network client for CredSSP HTTP requests ──────────────────────────────
 
-/// A minimal blocking NetworkClient using reqwest for CredSSP/Kerberos KDC
-/// communication during NLA authentication.
 struct BlockingNetworkClient {
     client: reqwest::blocking::Client,
 }
@@ -132,7 +251,9 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
 
         let response_bytes = match request.protocol {
             NetworkProtocol::Http | NetworkProtocol::Https => {
-                let resp = self.client.post(&url)
+                let resp = self
+                    .client
+                    .post(&url)
                     .body(data)
                     .send()
                     .map_err(|e| {
@@ -164,16 +285,12 @@ impl ironrdp::connector::sspi::network_client::NetworkClient for BlockingNetwork
 
 // ─── TLS upgrade helper ────────────────────────────────────────────────────
 
-/// Performs TLS upgrade on a TCP stream and extracts the server public key
-/// from the peer certificate (needed for CredSSP/NLA authentication).
 fn tls_upgrade(
     stream: TcpStream,
     server_name: &str,
     leftover: ::bytes::BytesMut,
-) -> Result<
-    (Framed<native_tls::TlsStream<TcpStream>>, Vec<u8>),
-    Box<dyn std::error::Error + Send + Sync>,
-> {
+) -> Result<(Framed<native_tls::TlsStream<TcpStream>>, Vec<u8>), Box<dyn std::error::Error + Send + Sync>>
+{
     let tls_connector = native_tls::TlsConnector::builder()
         .danger_accept_invalid_certs(true)
         .use_sni(false)
@@ -184,14 +301,11 @@ fn tls_upgrade(
         .connect(server_name, stream)
         .map_err(|e| format!("TLS handshake failed: {e}"))?;
 
-    // Extract server public key from peer certificate
     let server_public_key = extract_server_public_key(&tls_stream)?;
-
     let framed = Framed::new_with_leftover(tls_stream, leftover);
     Ok((framed, server_public_key))
 }
 
-/// Extracts the SubjectPublicKeyInfo from the peer certificate.
 fn extract_server_public_key(
     tls_stream: &native_tls::TlsStream<TcpStream>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
@@ -247,19 +361,35 @@ fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
                 0 => (false, PointerFlags::LEFT_BUTTON),
                 1 => (false, PointerFlags::MIDDLE_BUTTON_OR_WHEEL),
                 2 => (false, PointerFlags::RIGHT_BUTTON),
-                3 => return vec![FastPathInputEvent::MouseEventEx(MouseXPdu {
-                    flags: if *pressed { PointerXFlags::DOWN | PointerXFlags::BUTTON1 } else { PointerXFlags::BUTTON1 },
-                    x_position: *x,
-                    y_position: *y,
-                })],
-                4 => return vec![FastPathInputEvent::MouseEventEx(MouseXPdu {
-                    flags: if *pressed { PointerXFlags::DOWN | PointerXFlags::BUTTON2 } else { PointerXFlags::BUTTON2 },
-                    x_position: *x,
-                    y_position: *y,
-                })],
+                3 => {
+                    return vec![FastPathInputEvent::MouseEventEx(MouseXPdu {
+                        flags: if *pressed {
+                            PointerXFlags::DOWN | PointerXFlags::BUTTON1
+                        } else {
+                            PointerXFlags::BUTTON1
+                        },
+                        x_position: *x,
+                        y_position: *y,
+                    })]
+                }
+                4 => {
+                    return vec![FastPathInputEvent::MouseEventEx(MouseXPdu {
+                        flags: if *pressed {
+                            PointerXFlags::DOWN | PointerXFlags::BUTTON2
+                        } else {
+                            PointerXFlags::BUTTON2
+                        },
+                        x_position: *x,
+                        y_position: *y,
+                    })]
+                }
                 _ => (false, PointerFlags::LEFT_BUTTON),
             };
-            let mouse_flags = if *pressed { PointerFlags::DOWN | flags } else { flags };
+            let mouse_flags = if *pressed {
+                PointerFlags::DOWN | flags
+            } else {
+                flags
+            };
             vec![FastPathInputEvent::MouseEvent(MousePdu {
                 flags: mouse_flags,
                 number_of_wheel_rotation_units: 0,
@@ -268,10 +398,7 @@ fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
             })]
         }
         RdpInputAction::Wheel {
-            x: _,
-            y: _,
-            delta,
-            horizontal,
+            delta, horizontal, ..
         } => {
             let flags = if *horizontal {
                 PointerFlags::HORIZONTAL_WHEEL
@@ -311,10 +438,94 @@ fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
     }
 }
 
+// ─── Deactivation-Reactivation Sequence handler ────────────────────────────
+
+/// Drives a ConnectionActivationSequence to completion after receiving
+/// DeactivateAll.  This re-runs the Capability Exchange and Connection
+/// Finalization phases so the server can transition from the login screen
+/// to the user desktop (MS-RDPBCGR section 1.3.1.3).
+fn handle_reactivation<S: std::io::Read + std::io::Write>(
+    mut cas: Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>,
+    tls_framed: &mut Framed<S>,
+    stats: &RdpSessionStats,
+) -> Result<ConnectionResult, Box<dyn std::error::Error + Send + Sync>> {
+    let mut buf = WriteBuf::new();
+
+    log::info!("Driving deactivation-reactivation sequence");
+    stats.set_phase("reactivating");
+
+    loop {
+        // Check if we have reached a terminal (Finalized) state
+        if cas.state().is_terminal() {
+            break;
+        }
+
+        let hint = cas.next_pdu_hint();
+        if hint.is_none() {
+            break;
+        }
+        let pdu_hint = hint.unwrap();
+
+        let pdu = tls_framed
+            .read_by_hint(pdu_hint)
+            .map_err(|e| format!("Reactivation read error: {e}"))?;
+
+        stats
+            .bytes_received
+            .fetch_add(pdu.len() as u64, Ordering::Relaxed);
+
+        buf.clear();
+        let written = cas
+            .step(&pdu, &mut buf)
+            .map_err(|e| format!("Reactivation step error: {e}"))?;
+
+        if let Some(response_len) = written.size() {
+            let response = buf.filled()[..response_len].to_vec();
+            tls_framed
+                .write_all(&response)
+                .map_err(|e| format!("Reactivation write error: {e}"))?;
+            stats
+                .bytes_sent
+                .fetch_add(response_len as u64, Ordering::Relaxed);
+        }
+    }
+
+    // Extract the finalized result
+    match cas.connection_activation_state() {
+        ConnectionActivationState::Finalized {
+            io_channel_id,
+            user_channel_id,
+            desktop_size,
+            enable_server_pointer,
+            pointer_software_rendering,
+        } => {
+            log::info!(
+                "Reactivation complete: {}x{} (io={}, user={})",
+                desktop_size.width,
+                desktop_size.height,
+                io_channel_id,
+                user_channel_id,
+            );
+            Ok(ConnectionResult {
+                io_channel_id,
+                user_channel_id,
+                static_channels: ironrdp_svc::StaticChannelSet::new(),
+                desktop_size,
+                enable_server_pointer,
+                pointer_software_rendering,
+                connection_activation: *cas,
+            })
+        }
+        other => Err(format!(
+            "Reactivation did not reach Finalized state, got: {}",
+            other.name()
+        )
+        .into()),
+    }
+}
+
 // ─── Blocking RDP session runner ───────────────────────────────────────────
 
-/// Runs the entire RDP session lifecycle on a blocking thread:
-/// TCP → TLS → IronRDP Connector → Active Session with frame streaming.
 fn run_rdp_session(
     session_id: String,
     host: String,
@@ -326,6 +537,7 @@ fn run_rdp_session(
     height: u16,
     app_handle: AppHandle,
     mut cmd_rx: mpsc::UnboundedReceiver<RdpCommand>,
+    stats: Arc<RdpSessionStats>,
 ) {
     let result = run_rdp_session_inner(
         &session_id,
@@ -338,20 +550,27 @@ fn run_rdp_session(
         height,
         &app_handle,
         &mut cmd_rx,
+        &stats,
     );
+
+    stats.alive.store(false, Ordering::Relaxed);
 
     match result {
         Ok(()) => {
             log::info!("RDP session {session_id} ended normally");
+            stats.set_phase("disconnected");
         }
         Err(e) => {
-            log::error!("RDP session {session_id} error: {e}");
+            let err_msg = format!("{e}");
+            log::error!("RDP session {session_id} error: {err_msg}");
+            stats.set_phase("error");
+            stats.set_last_error(&err_msg);
             let _ = app_handle.emit(
                 "rdp://status",
                 RdpStatusEvent {
                     session_id: session_id.clone(),
                     status: "error".to_string(),
-                    message: format!("{e}"),
+                    message: err_msg,
                     desktop_width: None,
                     desktop_height: None,
                 },
@@ -371,6 +590,7 @@ fn run_rdp_session(
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_rdp_session_inner(
     session_id: &str,
     host: &str,
@@ -382,11 +602,13 @@ fn run_rdp_session_inner(
     height: u16,
     app_handle: &AppHandle,
     cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    stats: &Arc<RdpSessionStats>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // ── 1. TCP connect ──────────────────────────────────────────────────
 
     let addr = format!("{host}:{port}");
     log::info!("RDP session {session_id}: connecting to {addr}");
+    stats.set_phase("tcp_connect");
 
     let _ = app_handle.emit(
         "rdp://status",
@@ -399,15 +621,17 @@ fn run_rdp_session_inner(
         },
     );
 
-    let tcp_stream = TcpStream::connect_timeout(
-        &addr.parse().map_err(|e| format!("Invalid address: {e}"))?,
-        Duration::from_secs(15),
-    )?;
+    let socket_addr: std::net::SocketAddr = addr
+        .parse()
+        .map_err(|e| format!("Invalid address: {e}"))?;
+    let tcp_stream = TcpStream::connect_timeout(&socket_addr, Duration::from_secs(15))?;
     tcp_stream.set_nodelay(true)?;
 
     let mut framed = Framed::new(tcp_stream);
 
     // ── 2. Build IronRDP connector config ───────────────────────────────
+
+    stats.set_phase("configuring");
 
     let config = connector::Config {
         credentials: Credentials::UsernamePassword {
@@ -420,7 +644,7 @@ fn run_rdp_session_inner(
         keyboard_type: ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
         keyboard_subtype: 0,
         keyboard_functional_keys_count: 12,
-        keyboard_layout: 0x0409, // US English
+        keyboard_layout: 0x0409,
         ime_file_name: String::new(),
         dig_product_id: String::new(),
         desktop_size: connector::DesktopSize { width, height },
@@ -445,33 +669,28 @@ fn run_rdp_session_inner(
         pointer_software_rendering: true,
     };
 
-    let server_addr = std::net::SocketAddr::new(
-        addr.parse::<std::net::SocketAddr>()
-            .map(|a| a.ip())
-            .unwrap_or_else(|_| std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED)),
-        port,
-    );
-
-    let mut connector = ClientConnector::new(config, server_addr);
+    let server_socket_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
+    let mut connector = ClientConnector::new(config, server_socket_addr);
 
     // ── 3. Connection begin (pre-TLS phase) ─────────────────────────────
 
+    stats.set_phase("negotiating");
     log::info!("RDP session {session_id}: starting connection sequence");
     let should_upgrade = ironrdp_blocking::connect_begin(&mut framed, &mut connector)
         .map_err(|e| format!("connect_begin failed: {e}"))?;
 
     // ── 4. TLS upgrade ──────────────────────────────────────────────────
 
+    stats.set_phase("tls_upgrade");
     log::info!("RDP session {session_id}: upgrading to TLS");
 
     let (tcp_stream, leftover) = framed.into_inner();
-
     let (mut tls_framed, server_public_key) = tls_upgrade(tcp_stream, host, leftover)?;
-
     let upgraded = ironrdp_blocking::mark_as_upgraded(should_upgrade, &mut connector);
 
     // ── 5. Finalize connection (CredSSP / NLA + remaining handshake) ────
 
+    stats.set_phase("authenticating");
     log::info!("RDP session {session_id}: finalizing connection (CredSSP/NLA)");
 
     let _ = app_handle.emit(
@@ -495,18 +714,17 @@ fn run_rdp_session_inner(
         &mut network_client,
         server_name,
         server_public_key,
-        None, // kerberos_config
+        None,
     )
     .map_err(|e| format!("connect_finalize failed: {e}"))?;
 
     // ── 6. Enter active session ─────────────────────────────────────────
 
-    let desktop_width = connection_result.desktop_size.width;
-    let desktop_height = connection_result.desktop_size.height;
+    let mut desktop_width = connection_result.desktop_size.width;
+    let mut desktop_height = connection_result.desktop_size.height;
 
-    log::info!(
-        "RDP session {session_id}: connected! Desktop: {desktop_width}x{desktop_height}"
-    );
+    stats.set_phase("active");
+    log::info!("RDP session {session_id}: connected! Desktop: {desktop_width}x{desktop_height}");
 
     let _ = app_handle.emit(
         "rdp://status",
@@ -523,38 +741,52 @@ fn run_rdp_session_inner(
     let mut active_stage = ActiveStage::new(connection_result);
 
     // Set a short read timeout so we can interleave input handling
-    if let Some(inner_stream) = get_inner_tcp(&tls_framed) {
-        let _ = inner_stream.set_read_timeout(Some(Duration::from_millis(50)));
-    }
+    set_read_timeout_on_framed(&tls_framed, Some(Duration::from_millis(50)));
 
     // ── 7. Main session loop ────────────────────────────────────────────
 
     let b64 = base64::engine::general_purpose::STANDARD;
-    let mut frame_counter: u64 = 0;
+    let mut last_stats_emit = Instant::now();
+    let stats_interval = Duration::from_secs(1);
+    #[allow(unused_assignments)]
+    let mut consecutive_errors: u32 = 0;
+    const MAX_CONSECUTIVE_ERRORS: u32 = 50;
 
     loop {
-        // Check for commands from the frontend (non-blocking)
+        // ─ Check for shutdown / input commands ─────────────────────────
         match cmd_rx.try_recv() {
             Ok(RdpCommand::Shutdown) => {
                 log::info!("RDP session {session_id}: shutdown requested");
+                // Attempt graceful shutdown
+                if let Ok(outputs) = active_stage.graceful_shutdown() {
+                    for output in outputs {
+                        if let ActiveStageOutput::ResponseFrame(data) = output {
+                            stats
+                                .bytes_sent
+                                .fetch_add(data.len() as u64, Ordering::Relaxed);
+                            let _ = tls_framed.write_all(&data);
+                        }
+                    }
+                }
                 break;
             }
             Ok(RdpCommand::Input(events)) => {
-                // Process input and send to server
+                stats
+                    .input_events
+                    .fetch_add(events.len() as u64, Ordering::Relaxed);
                 match active_stage.process_fastpath_input(&mut image, &events) {
                     Ok(outputs) => {
-                        for output in outputs {
-                            match output {
-                                ActiveStageOutput::ResponseFrame(data) => {
-                                    if let Err(e) = tls_framed.write_all(&data) {
-                                        log::error!("RDP {session_id}: failed to send input: {e}");
-                                        break;
-                                    }
-                                }
-                                ActiveStageOutput::GraphicsUpdate(_) => {}
-                                _ => {}
-                            }
-                        }
+                        process_outputs(
+                            session_id,
+                            &outputs,
+                            &mut tls_framed,
+                            &image,
+                            desktop_width,
+                            desktop_height,
+                            app_handle,
+                            stats,
+                            &b64,
+                        )?;
                     }
                     Err(e) => {
                         log::warn!("RDP {session_id}: input processing error: {e}");
@@ -568,122 +800,230 @@ fn run_rdp_session_inner(
             }
         }
 
-        // Try to read an RDP PDU
-        let pdu_result = tls_framed.read_pdu();
-        match pdu_result {
+        // ─ Emit periodic stats ─────────────────────────────────────────
+        if last_stats_emit.elapsed() >= stats_interval {
+            let _ = app_handle.emit("rdp://stats", stats.to_event(session_id));
+            last_stats_emit = Instant::now();
+        }
+
+        // ─ Read and process PDUs ───────────────────────────────────────
+        match tls_framed.read_pdu() {
             Ok((action, payload)) => {
-                // Process PDU through the active stage
-                let outputs = active_stage
-                    .process(&mut image, action, payload.as_ref())
-                    .map_err(|e| format!("Session process error: {e}"))?;
+                consecutive_errors = 0;
+                let payload_len = payload.len() as u64;
+                stats
+                    .bytes_received
+                    .fetch_add(payload_len, Ordering::Relaxed);
+                stats.pdus_received.fetch_add(1, Ordering::Relaxed);
 
-                for output in outputs {
-                    match output {
-                        ActiveStageOutput::ResponseFrame(data) => {
-                            tls_framed
-                                .write_all(&data)
-                                .map_err(|e| format!("Failed to send response frame: {e}"))?;
-                        }
-                        ActiveStageOutput::GraphicsUpdate(region) => {
-                            frame_counter += 1;
-                            // Extract the dirty region pixel data from the framebuffer
-                            let region_data = extract_region_rgba(
-                                image.data(),
-                                desktop_width,
-                                &region,
-                            );
+                match active_stage.process(&mut image, action, payload.as_ref()) {
+                    Ok(outputs) => {
+                        let mut should_reactivate = None;
+                        let mut should_terminate = false;
 
-                            let encoded = b64.encode(&region_data);
-
-                            let _ = app_handle.emit(
-                                "rdp://frame",
-                                RdpFrameEvent {
-                                    session_id: session_id.to_string(),
-                                    x: region.left,
-                                    y: region.top,
-                                    width: region.right.saturating_sub(region.left) + 1,
-                                    height: region.bottom.saturating_sub(region.top) + 1,
-                                    data: encoded,
-                                },
-                            );
-
-                            // Send full frame periodically for sync
-                            if frame_counter % 120 == 0 {
-                                send_full_frame(
-                                    session_id,
-                                    &image,
-                                    desktop_width,
-                                    desktop_height,
-                                    app_handle,
-                                    &b64,
-                                );
+                        for output in &outputs {
+                            match output {
+                                ActiveStageOutput::Terminate(_) => {
+                                    should_terminate = true;
+                                }
+                                ActiveStageOutput::DeactivateAll(_) => {
+                                    // We'll handle this after collecting all outputs
+                                }
+                                _ => {}
                             }
                         }
-                        ActiveStageOutput::PointerDefault => {
-                            let _ = app_handle.emit(
-                                "rdp://pointer",
-                                RdpPointerEvent {
-                                    session_id: session_id.to_string(),
-                                    pointer_type: "default".to_string(),
-                                    x: None,
-                                    y: None,
-                                },
-                            );
+
+                        // Process all outputs (send frames, emit graphics, etc.)
+                        for output in outputs {
+                            match output {
+                                ActiveStageOutput::ResponseFrame(data) => {
+                                    stats
+                                        .bytes_sent
+                                        .fetch_add(data.len() as u64, Ordering::Relaxed);
+                                    stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
+                                    if let Err(e) = tls_framed.write_all(&data) {
+                                        return Err(
+                                            format!("Failed to send response frame: {e}").into()
+                                        );
+                                    }
+                                }
+                                ActiveStageOutput::GraphicsUpdate(region) => {
+                                    stats.record_frame();
+                                    emit_region(
+                                        session_id,
+                                        &image,
+                                        desktop_width,
+                                        &region,
+                                        app_handle,
+                                        &b64,
+                                    );
+
+                                    // Periodic full-frame sync
+                                    let fc = stats.frame_count.load(Ordering::Relaxed);
+                                    if fc % 120 == 0 {
+                                        send_full_frame(
+                                            session_id,
+                                            &image,
+                                            desktop_width,
+                                            desktop_height,
+                                            app_handle,
+                                            &b64,
+                                        );
+                                    }
+                                }
+                                ActiveStageOutput::PointerDefault => {
+                                    let _ = app_handle.emit(
+                                        "rdp://pointer",
+                                        RdpPointerEvent {
+                                            session_id: session_id.to_string(),
+                                            pointer_type: "default".to_string(),
+                                            x: None,
+                                            y: None,
+                                        },
+                                    );
+                                }
+                                ActiveStageOutput::PointerHidden => {
+                                    let _ = app_handle.emit(
+                                        "rdp://pointer",
+                                        RdpPointerEvent {
+                                            session_id: session_id.to_string(),
+                                            pointer_type: "hidden".to_string(),
+                                            x: None,
+                                            y: None,
+                                        },
+                                    );
+                                }
+                                ActiveStageOutput::PointerPosition { x, y } => {
+                                    let _ = app_handle.emit(
+                                        "rdp://pointer",
+                                        RdpPointerEvent {
+                                            session_id: session_id.to_string(),
+                                            pointer_type: "position".to_string(),
+                                            x: Some(x),
+                                            y: Some(y),
+                                        },
+                                    );
+                                }
+                                ActiveStageOutput::PointerBitmap(_bitmap) => {
+                                    // TODO: send custom cursor bitmap to frontend
+                                }
+                                ActiveStageOutput::Terminate(reason) => {
+                                    log::info!(
+                                        "RDP session {session_id}: server terminated: {reason:?}"
+                                    );
+                                    stats.set_phase("terminated");
+                                    return Ok(());
+                                }
+                                ActiveStageOutput::DeactivateAll(cas) => {
+                                    should_reactivate = Some(cas);
+                                }
+                            }
                         }
-                        ActiveStageOutput::PointerHidden => {
-                            let _ = app_handle.emit(
-                                "rdp://pointer",
-                                RdpPointerEvent {
-                                    session_id: session_id.to_string(),
-                                    pointer_type: "hidden".to_string(),
-                                    x: None,
-                                    y: None,
-                                },
-                            );
+
+                        if should_terminate {
+                            return Ok(());
                         }
-                        ActiveStageOutput::PointerPosition { x, y } => {
-                            let _ = app_handle.emit(
-                                "rdp://pointer",
-                                RdpPointerEvent {
-                                    session_id: session_id.to_string(),
-                                    pointer_type: "position".to_string(),
-                                    x: Some(x),
-                                    y: Some(y),
-                                },
-                            );
-                        }
-                        ActiveStageOutput::PointerBitmap(_bitmap) => {
-                            // TODO: send custom cursor bitmap to frontend
-                        }
-                        ActiveStageOutput::Terminate(reason) => {
-                            log::info!("RDP session {session_id}: server terminated session: {reason}");
-                            break;
-                        }
-                        ActiveStageOutput::DeactivateAll(_connection_activation) => {
+
+                        // Handle reactivation AFTER processing all other outputs
+                        if let Some(cas) = should_reactivate {
                             log::info!(
-                                "RDP session {session_id}: deactivate-all received"
+                                "RDP session {session_id}: DeactivateAll received, running reactivation"
                             );
+                            stats.reactivations.fetch_add(1, Ordering::Relaxed);
+
                             let _ = app_handle.emit(
                                 "rdp://status",
                                 RdpStatusEvent {
                                     session_id: session_id.to_string(),
-                                    status: "connected".to_string(),
-                                    message: format!("Deactivate-all received ({desktop_width}x{desktop_height})"),
-                                    desktop_width: Some(desktop_width),
-                                    desktop_height: Some(desktop_height),
+                                    status: "connecting".to_string(),
+                                    message: "Reactivating session...".to_string(),
+                                    desktop_width: None,
+                                    desktop_height: None,
                                 },
                             );
+
+                            // Remove read timeout for reactivation (needs reliable full PDU reads)
+                            set_read_timeout_on_framed(&tls_framed, None);
+
+                            match handle_reactivation(cas, &mut tls_framed, stats) {
+                                Ok(new_result) => {
+                                    desktop_width = new_result.desktop_size.width;
+                                    desktop_height = new_result.desktop_size.height;
+                                    image = DecodedImage::new(
+                                        PixelFormat::RgbA32,
+                                        desktop_width,
+                                        desktop_height,
+                                    );
+                                    active_stage = ActiveStage::new(new_result);
+                                    stats.set_phase("active");
+
+                                    log::info!(
+                                        "RDP session {session_id}: reactivated at {desktop_width}x{desktop_height}"
+                                    );
+
+                                    let _ = app_handle.emit(
+                                        "rdp://status",
+                                        RdpStatusEvent {
+                                            session_id: session_id.to_string(),
+                                            status: "connected".to_string(),
+                                            message: format!(
+                                                "Reconnected ({desktop_width}x{desktop_height})"
+                                            ),
+                                            desktop_width: Some(desktop_width),
+                                            desktop_height: Some(desktop_height),
+                                        },
+                                    );
+
+                                    // Restore read timeout for normal operation
+                                    set_read_timeout_on_framed(
+                                        &tls_framed,
+                                        Some(Duration::from_millis(50)),
+                                    );
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "RDP session {session_id}: reactivation failed: {e}"
+                                    );
+                                    return Err(format!("Reactivation failed: {e}").into());
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        // Non-fatal PDU processing error — log and continue.
+                        // IronRDP's x224 processor returns errors for unhandled
+                        // PDU types that real servers commonly send, so we must
+                        // not kill the session on every process() error.
+                        let err_str = format!("{e}");
+                        log::warn!(
+                            "RDP session {session_id}: PDU processing error (recovering): {err_str}"
+                        );
+                        stats.errors_recovered.fetch_add(1, Ordering::Relaxed);
+                        stats.set_last_error(&err_str);
+                        consecutive_errors += 1;
+
+                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                            return Err(format!(
+                                "Too many consecutive errors ({consecutive_errors}), last: {err_str}"
+                            )
+                            .into());
                         }
                     }
                 }
             }
             Err(e) if is_timeout_error(&e) => {
-                // Read timeout — no data available, loop around to handle input
+                // Read timeout — no data available, loop back for input handling
                 continue;
             }
             Err(e) => {
-                log::error!("RDP session {session_id}: read error: {e}");
-                break;
+                let err_str = format!("{e}");
+                // Distinguish EOF (clean disconnect) from real errors
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    log::info!("RDP session {session_id}: server closed connection (EOF)");
+                    return Ok(());
+                }
+                log::error!("RDP session {session_id}: read error: {err_str}");
+                return Err(format!("Read error: {err_str}").into());
             }
         }
     }
@@ -700,14 +1040,82 @@ fn is_timeout_error(e: &io::Error) -> bool {
     )
 }
 
-/// Extracts RGBA pixel data for a rectangular region from the full framebuffer.
-/// The DecodedImage stores pixel data as u32 (RGBA packed).
+/// Helper to write response frames and emit graphics/pointer events from
+/// `process_fastpath_input` outputs.  Returns `Err` only on fatal write errors.
+#[allow(clippy::too_many_arguments)]
+fn process_outputs(
+    session_id: &str,
+    outputs: &[ActiveStageOutput],
+    tls_framed: &mut Framed<native_tls::TlsStream<TcpStream>>,
+    image: &DecodedImage,
+    desktop_width: u16,
+    desktop_height: u16,
+    app_handle: &AppHandle,
+    stats: &RdpSessionStats,
+    b64: &base64::engine::GeneralPurpose,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    for output in outputs {
+        match output {
+            ActiveStageOutput::ResponseFrame(data) => {
+                stats
+                    .bytes_sent
+                    .fetch_add(data.len() as u64, Ordering::Relaxed);
+                stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
+                if let Err(e) = tls_framed.write_all(data) {
+                    return Err(format!("Write failed: {e}").into());
+                }
+            }
+            ActiveStageOutput::GraphicsUpdate(region) => {
+                stats.record_frame();
+                emit_region(session_id, image, desktop_width, region, app_handle, b64);
+                let fc = stats.frame_count.load(Ordering::Relaxed);
+                if fc % 120 == 0 {
+                    send_full_frame(
+                        session_id,
+                        image,
+                        desktop_width,
+                        desktop_height,
+                        app_handle,
+                        b64,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn emit_region(
+    session_id: &str,
+    image: &DecodedImage,
+    fb_width: u16,
+    region: &ironrdp::pdu::geometry::InclusiveRectangle,
+    app_handle: &AppHandle,
+    b64: &base64::engine::GeneralPurpose,
+) {
+    let region_data = extract_region_rgba(image.data(), fb_width, region);
+    let encoded = b64.encode(&region_data);
+
+    let _ = app_handle.emit(
+        "rdp://frame",
+        RdpFrameEvent {
+            session_id: session_id.to_string(),
+            x: region.left,
+            y: region.top,
+            width: region.right.saturating_sub(region.left) + 1,
+            height: region.bottom.saturating_sub(region.top) + 1,
+            data: encoded,
+        },
+    );
+}
+
 fn extract_region_rgba(
     framebuffer: &[u8],
     fb_width: u16,
     region: &ironrdp::pdu::geometry::InclusiveRectangle,
 ) -> Vec<u8> {
-    let bytes_per_pixel = 4usize; // RGBA32
+    let bytes_per_pixel = 4usize;
     let stride = fb_width as usize * bytes_per_pixel;
     let left = region.left as usize;
     let top = region.top as usize;
@@ -753,13 +1161,13 @@ fn send_full_frame(
     );
 }
 
-/// Helper to access the underlying TcpStream inside the TLS wrapper
-/// for setting socket options (like read timeout).
-fn get_inner_tcp(
+fn set_read_timeout_on_framed(
     framed: &Framed<native_tls::TlsStream<TcpStream>>,
-) -> Option<&TcpStream> {
+    timeout: Option<Duration>,
+) {
     let (tls_stream, _) = framed.get_inner();
-    Some(tls_stream.get_ref())
+    let tcp = tls_stream.get_ref();
+    let _ = tcp.set_read_timeout(timeout);
 }
 
 // ─── Tauri commands ────────────────────────────────────────────────────────
@@ -792,6 +1200,9 @@ pub async fn connect_rdp(
         desktop_height: requested_height,
     };
 
+    let stats = Arc::new(RdpSessionStats::new());
+    let stats_clone = Arc::clone(&stats);
+
     let sid = session_id.clone();
     let h = host.clone();
     let u = username.clone();
@@ -799,6 +1210,7 @@ pub async fn connect_rdp(
     let d = domain.clone();
     let ah = app_handle.clone();
 
+    // Use spawn_blocking to run the entire RDP session on a dedicated OS thread
     let handle = tokio::task::spawn_blocking(move || {
         run_rdp_session(
             sid,
@@ -811,12 +1223,14 @@ pub async fn connect_rdp(
             requested_height,
             ah,
             cmd_rx,
+            stats_clone,
         );
     });
 
     let connection = RdpActiveConnection {
         session,
         cmd_tx,
+        stats,
         _handle: handle,
     };
 
@@ -834,7 +1248,6 @@ pub async fn disconnect_rdp(
     let mut service = state.lock().await;
     if let Some(conn) = service.connections.remove(&session_id) {
         let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
-        // Give the session thread a moment to clean up
         tokio::time::sleep(Duration::from_millis(200)).await;
         Ok(())
     } else {
@@ -850,8 +1263,7 @@ pub async fn rdp_send_input(
 ) -> Result<(), String> {
     let service = state.lock().await;
     if let Some(conn) = service.connections.get(&session_id) {
-        let fp_events: Vec<FastPathInputEvent> =
-            events.iter().flat_map(convert_input).collect();
+        let fp_events: Vec<FastPathInputEvent> = events.iter().flat_map(convert_input).collect();
         conn.cmd_tx
             .send(RdpCommand::Input(fp_events))
             .map_err(|_| "Session command channel closed".to_string())?;
@@ -884,4 +1296,17 @@ pub async fn list_rdp_sessions(
         .values()
         .map(|c| c.session.clone())
         .collect())
+}
+
+#[tauri::command]
+pub async fn get_rdp_stats(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+) -> Result<RdpStatsEvent, String> {
+    let service = state.lock().await;
+    if let Some(conn) = service.connections.get(&session_id) {
+        Ok(conn.stats.to_event(&session_id))
+    } else {
+        Err(format!("RDP session {session_id} not found"))
+    }
 }

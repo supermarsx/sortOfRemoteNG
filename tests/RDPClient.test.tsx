@@ -232,6 +232,62 @@ describe("RDPClient", () => {
     });
   });
 
+  describe("RDP Internals", () => {
+    it("should toggle internals panel", async () => {
+      renderWithProviders(mockSession);
+
+      const internalsButton = screen.getByRole('button', { name: /rdp internals/i });
+      internalsButton.click();
+
+      await waitFor(() => {
+        expect(screen.getByText("RDP Session Internals")).toBeInTheDocument();
+        expect(screen.getByText("Waiting for session statistics...")).toBeInTheDocument();
+      });
+    });
+
+    it("should display stats when rdp://stats event is received", async () => {
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(mockInvoke).toHaveBeenCalledWith('connect_rdp', expect.any(Object));
+      });
+
+      emitStatus('connected', 'Connected', 'rdp-session-123', 1920, 1080);
+
+      // Open internals panel
+      const internalsButton = screen.getByRole('button', { name: /rdp internals/i });
+      internalsButton.click();
+
+      // Simulate stats event
+      const statsHandler = mockListeners['rdp://stats'];
+      if (statsHandler) {
+        statsHandler({
+          payload: {
+            session_id: 'rdp-session-123',
+            uptime_secs: 42,
+            bytes_received: 1048576, // 1MB
+            bytes_sent: 65536, // 64KB
+            pdus_received: 500,
+            pdus_sent: 100,
+            frame_count: 300,
+            fps: 25.0,
+            input_events: 150,
+            errors_recovered: 2,
+            reactivations: 1,
+            phase: 'active',
+            last_error: null,
+          }
+        });
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText("active")).toBeInTheDocument();
+        expect(screen.getByText("25.0")).toBeInTheDocument();
+        expect(screen.getByText("300")).toBeInTheDocument();
+      });
+    });
+  });
+
   describe("Connection Status Icons", () => {
     it("should show correct icon for connected status", async () => {
       renderWithProviders(mockSession);

@@ -197,6 +197,7 @@ dependencies = [
  "image",
  "ironrdp",
  "ironrdp-blocking",
+ "ironrdp-svc",
  "jsonwebtoken",
  "lazy_static",
  "log",

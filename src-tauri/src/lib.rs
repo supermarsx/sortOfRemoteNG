@@ -519,6 +519,7 @@ pub fn run() {
         rdp::rdp_send_input,
         rdp::get_rdp_session_info,
         rdp::list_rdp_sessions,
+        rdp::get_rdp_stats,
         vnc::connect_vnc,
         vnc::disconnect_vnc,
         vnc::get_vnc_session_info,
