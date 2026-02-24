@@ -41,6 +41,7 @@ vi.mock('../src/components/rdpCanvas', () => ({
     applyRegion() { this.hasPainted = true; }
     resize() {}
     blitTo() {}
+    blitFull() {}
   },
 }));
 

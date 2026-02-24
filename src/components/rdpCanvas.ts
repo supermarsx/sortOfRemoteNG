@@ -67,28 +67,30 @@ export class FrameBuffer {
   ctx: OffscreenCanvasRenderingContext2D;
   /** Whether at least one frame has been painted (used to gate blits). */
   hasPainted = false;
-  /**
-   * Pixel-area threshold: regions with area >= this use the async
-   * createImageBitmap + drawImage path (GPU-accelerated).  Smaller
-   * regions use the sync putImageData path (lower per-call overhead).
-   */
-  private static readonly BITMAP_THRESHOLD = 4096; // 64×64
+
+  // ── Dirty bounding box ───────────────────────────────────────────
+  // Tracks the rectangular area that changed since the last blitTo()
+  // so we only copy the actually-dirty portion to the visible canvas
+  // instead of the full 1920×1080 every vsync.
+  private dirtyMinX = 0;
+  private dirtyMinY = 0;
+  private dirtyMaxX = 0;
+  private dirtyMaxY = 0;
+  private hasDirtyRect = false;
 
   constructor(width: number, height: number) {
     this.offscreen = new OffscreenCanvas(width, height);
-    // Do NOT pass `willReadFrequently` — lets the browser use GPU-backed
-    // storage for the OffscreenCanvas, making drawImage blits faster.
-    const ctx = this.offscreen.getContext('2d');
+    // CPU-backed canvas: putImageData is very fast (CPU→CPU copy).
+    // The single drawImage blit per rAF tick is the only CPU→GPU upload.
+    const ctx = this.offscreen.getContext('2d', { willReadFrequently: true });
     if (!ctx) throw new Error('Failed to get OffscreenCanvas 2D context');
     this.ctx = ctx;
   }
 
   /**
    * Apply a dirty-region update (decoded RGBA bytes).
-   *
-   * For large regions, uses `createImageBitmap` + `drawImage` which is
-   * hardware-accelerated (GPU texture upload).  For small regions, falls
-   * back to synchronous `putImageData` to avoid the Promise overhead.
+   * Synchronous putImageData — correct ordering, fast on CPU-backed canvas,
+   * no async Promise overhead.
    */
   applyRegion(
     x: number,
@@ -99,18 +101,20 @@ export class FrameBuffer {
   ): void {
     if (width <= 0 || height <= 0 || rgba.length < width * height * 4) return;
     const imgData = new ImageData(rgba, width, height);
-    const area = width * height;
-    if (area >= FrameBuffer.BITMAP_THRESHOLD) {
-      // GPU-accelerated path: async bitmap upload + drawImage
-      createImageBitmap(imgData).then((bitmap) => {
-        this.ctx.drawImage(bitmap, x, y);
-        bitmap.close();
-        this.hasPainted = true;
-      });
+    this.ctx.putImageData(imgData, x, y);
+    this.hasPainted = true;
+    // Expand dirty bounding box
+    if (this.hasDirtyRect) {
+      this.dirtyMinX = Math.min(this.dirtyMinX, x);
+      this.dirtyMinY = Math.min(this.dirtyMinY, y);
+      this.dirtyMaxX = Math.max(this.dirtyMaxX, x + width);
+      this.dirtyMaxY = Math.max(this.dirtyMaxY, y + height);
     } else {
-      // Sync path for tiny regions (cursor updates, small UI changes)
-      this.ctx.putImageData(imgData, x, y);
-      this.hasPainted = true;
+      this.dirtyMinX = x;
+      this.dirtyMinY = y;
+      this.dirtyMaxX = x + width;
+      this.dirtyMaxY = y + height;
+      this.hasDirtyRect = true;
     }
   }
 
@@ -151,12 +155,30 @@ export class FrameBuffer {
     this.offscreen.height = newHeight;
   }
 
-  /** Blit the offscreen buffer onto the visible canvas. */
+  /** Blit only the dirty region of the offscreen buffer onto the visible canvas. */
   blitTo(visible: HTMLCanvasElement): void {
     if (!this.hasPainted) return;
     const ctx = visible.getContext('2d');
     if (!ctx) return;
+    if (this.hasDirtyRect) {
+      const sx = this.dirtyMinX;
+      const sy = this.dirtyMinY;
+      const sw = this.dirtyMaxX - this.dirtyMinX;
+      const sh = this.dirtyMaxY - this.dirtyMinY;
+      if (sw > 0 && sh > 0) {
+        ctx.drawImage(this.offscreen, sx, sy, sw, sh, sx, sy, sw, sh);
+      }
+      this.hasDirtyRect = false;
+    }
+  }
+
+  /** Blit the entire offscreen buffer (used after resize). */
+  blitFull(visible: HTMLCanvasElement): void {
+    if (!this.hasPainted) return;
+    const ctx = visible.getContext('2d');
+    if (!ctx) return;
     ctx.drawImage(this.offscreen, 0, 0);
+    this.hasDirtyRect = false;
   }
 }
 

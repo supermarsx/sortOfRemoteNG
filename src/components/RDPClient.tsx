@@ -170,8 +170,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const frameBufferRef = useRef<FrameBuffer | null>(null);
   /** rAF handle for the blit loop */
   const rafIdRef = useRef<number>(0);
-  /** Whether new frame data has been painted to the offscreen buffer since the last blit */
-  const frameDirtyRef = useRef(false);
+  /**
+   * Incoming frame queue: Channel pushes raw ArrayBuffer messages here.
+   * The rAF loop drains the queue, applies all pending paints, and blits
+   * once per vsync.  This ensures perfectly smooth frame pacing —
+   * no matter how bursty the incoming updates are, the user sees exactly
+   * one evenly-timed render per display refresh.
+   */
+  const frameQueueRef = useRef<ArrayBuffer[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [statusMessage, setStatusMessage] = useState('');
@@ -227,21 +233,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         width: resW,
         height: resH,
         rdpSettings: rdpSettings,
-        // Push-based frame channel: Rust streams binary RGBA directly here —
-        // no event+invoke round-trip, no base64, no JSON serialization.
+        // Push-based frame channel: Rust streams binary RGBA directly here.
+        // We queue the raw ArrayBuffers and drain them in the rAF blit loop
+        // for perfectly smooth frame pacing (one render per vsync).
         frameChannel: new Channel<ArrayBuffer>((data: ArrayBuffer) => {
-          const fb = frameBufferRef.current;
-          if (!fb || data.byteLength < 8) return;
-          // Binary protocol: 8-byte header [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
-          // followed by w*h*4 raw RGBA bytes.
-          const view = new DataView(data);
-          const x = view.getUint16(0, true);
-          const y = view.getUint16(2, true);
-          const w = view.getUint16(4, true);
-          const h = view.getUint16(6, true);
-          const rgba = new Uint8ClampedArray(data, 8);
-          fb.applyRegion(x, y, w, h, rgba);
-          frameDirtyRef.current = true;
+          if (data.byteLength >= 8) {
+            frameQueueRef.current.push(data);
+          }
         }),
       };
 
@@ -438,29 +436,45 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     };
   }, [session, initializeRDPConnection, cleanup]);
 
-  // ─── rAF blit loop ────────────────────────────────────────────────
-  // Instead of painting directly to the visible canvas on every frame
-  // event (which can cause partial-paint flicker and blocks the main
-  // thread), we accumulate updates in the FrameBuffer offscreen canvas
-  // and blit once per vsync via requestAnimationFrame.
+  // ─── rAF render loop ───────────────────────────────────────────────
+  // Drain the frame queue, apply all pending paints to the OffscreenCanvas,
+  // then blit only the dirty region to the visible canvas.  This runs
+  // exactly once per vsync — no matter how many (or few) updates arrived
+  // since the last tick, the user sees a single, evenly-timed render.
 
   useEffect(() => {
     let running = true;
 
-    const blitLoop = () => {
+    const renderLoop = () => {
       if (!running) return;
-      if (frameDirtyRef.current) {
-        frameDirtyRef.current = false;
-        const canvas = canvasRef.current;
-        const fb = frameBufferRef.current;
-        if (canvas && fb) {
+      const queue = frameQueueRef.current;
+      const fb = frameBufferRef.current;
+      const canvas = canvasRef.current;
+
+      // Drain all queued frame messages
+      if (queue.length > 0 && fb) {
+        for (let i = 0; i < queue.length; i++) {
+          const data = queue[i];
+          // Binary protocol: 8-byte header  [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
+          const view = new DataView(data);
+          const x = view.getUint16(0, true);
+          const y = view.getUint16(2, true);
+          const w = view.getUint16(4, true);
+          const h = view.getUint16(6, true);
+          const rgba = new Uint8ClampedArray(data, 8);
+          fb.applyRegion(x, y, w, h, rgba);
+        }
+        queue.length = 0; // clear without re-allocating
+        // Blit only the dirty bounding box to the visible canvas
+        if (canvas) {
           fb.blitTo(canvas);
         }
       }
-      rafIdRef.current = requestAnimationFrame(blitLoop);
+
+      rafIdRef.current = requestAnimationFrame(renderLoop);
     };
 
-    rafIdRef.current = requestAnimationFrame(blitLoop);
+    rafIdRef.current = requestAnimationFrame(renderLoop);
 
     return () => {
       running = false;

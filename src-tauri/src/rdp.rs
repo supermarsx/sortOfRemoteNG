@@ -590,7 +590,7 @@ impl ResolvedSettings {
                 .unwrap_or_default(),
             use_routing_token: nego.and_then(|n| n.use_routing_token).unwrap_or(false),
             // Frame delivery
-            frame_batching: perf.and_then(|p| p.frame_batching).unwrap_or(true),
+            frame_batching: perf.and_then(|p| p.frame_batching).unwrap_or(false),
             frame_batch_interval: Duration::from_millis(batch_ms),
             full_frame_sync_interval: adv
                 .and_then(|a| a.full_frame_sync_interval)
