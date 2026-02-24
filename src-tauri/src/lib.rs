@@ -44,6 +44,7 @@ pub mod auth;
 pub mod storage;
 pub mod ssh;
 pub mod rdp;
+pub mod native_renderer;
 pub mod vnc;
 pub mod db;
 pub mod ftp;
@@ -528,6 +529,7 @@ pub fn run() {
         rdp::get_rdp_stats,
         rdp::detect_keyboard_layout,
         rdp::diagnose_rdp_connection,
+        rdp::native_renderer_reposition,
         vnc::connect_vnc,
         vnc::disconnect_vnc,
         vnc::get_vnc_session_info,

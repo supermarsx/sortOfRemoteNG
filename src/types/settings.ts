@@ -425,6 +425,16 @@ export interface RdpGlobalDefaultsConfig {
   remoteFxEnabled: boolean;
   /** RemoteFX entropy algorithm */
   remoteFxEntropy: 'rlgr1' | 'rlgr3';
+
+  // ─── Render Backend default ────────────────────────────────
+  /**
+   * Default rendering backend for RDP frame display.
+   * - `webview` — Tauri Channel → JS canvas (default, most compatible)
+   * - `softbuffer` — CPU blit to native Win32 child window (zero JS overhead)
+   * - `wgpu` — GPU texture upload + present to native child window
+   * - `auto` — try wgpu → softbuffer → webview
+   */
+  renderBackend: 'auto' | 'softbuffer' | 'wgpu' | 'webview';
 }
 
 // Backup scheduling frequency

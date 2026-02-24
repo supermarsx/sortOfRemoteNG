@@ -234,6 +234,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const [certIdentity, setCertIdentity] = useState<CertIdentity | null>(null);
   const [trustPrompt, setTrustPrompt] = useState<TrustVerifyResult | null>(null);
   const [connectTiming, setConnectTiming] = useState<RdpTimingEvent | null>(null);
+  /** Which render backend the session is actually using (set from Rust event). */
+  const [activeRenderBackend, setActiveRenderBackend] = useState<string>('webview');
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
@@ -266,6 +268,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         targetFps: global.targetFps ?? base.performance?.targetFps,
         frameBatching: global.frameBatching ?? base.performance?.frameBatching,
         frameBatchIntervalMs: global.frameBatchIntervalMs ?? base.performance?.frameBatchIntervalMs,
+        renderBackend: global.renderBackend ?? base.performance?.renderBackend,
         codecs: {
           ...base.performance?.codecs,
           enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
@@ -587,6 +590,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setConnectTiming(t);
     }).then(fn => unlisteners.push(fn));
 
+    // Listen for render backend selection (native renderers)
+    listen<{ session_id: string; backend: string }>('rdp://render-backend', (event) => {
+      const rb = event.payload;
+      if (rb.session_id !== sessionIdRef.current) return;
+      setActiveRenderBackend(rb.backend);
+      debugLog(`Render backend: ${rb.backend}`);
+    }).then(fn => unlisteners.push(fn));
+
     return () => {
       unlisteners.forEach(fn => fn());
     };
@@ -611,6 +622,47 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       }
     };
   }, []);
+
+  // ─── Native renderer reposition ────────────────────────────────────
+  // When using softbuffer/wgpu, the native child window needs to be
+  // positioned over the canvas area in the webview.  We observe the
+  // container and send physical-pixel coordinates to the Rust side.
+
+  useEffect(() => {
+    const isNative = activeRenderBackend !== 'webview' && rdpSessionId;
+    if (!isNative) return;
+
+    const sendReposition = () => {
+      const el = containerRef.current;
+      if (!el || !rdpSessionId) return;
+      const rect = el.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      invoke('native_renderer_reposition', {
+        sessionId: rdpSessionId,
+        x: Math.round(rect.left * dpr),
+        y: Math.round(rect.top * dpr),
+        width: Math.round(rect.width * dpr),
+        height: Math.round(rect.height * dpr),
+      }).catch(() => { /* session may have ended */ });
+    };
+
+    // Initial positioning
+    sendReposition();
+
+    // Reposition on resize
+    const observer = new ResizeObserver(() => sendReposition());
+    if (containerRef.current) observer.observe(containerRef.current);
+
+    // Reposition on scroll / window move
+    window.addEventListener('resize', sendReposition);
+    window.addEventListener('scroll', sendReposition);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', sendReposition);
+      window.removeEventListener('scroll', sendReposition);
+    };
+  }, [activeRenderBackend, rdpSessionId]);
 
   // ─── Resize to window support ──────────────────────────────────────
   // Debounced ResizeObserver: on resize, immediately scale the cached
@@ -1139,6 +1191,15 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
               <div className="bg-gray-900 rounded p-2">
                 <div className="text-gray-500 mb-1">Sync Interval</div>
                 <div className="text-white font-mono">every {rdpSettings.advanced?.fullFrameSyncInterval ?? 300} frames</div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Render Backend</div>
+                <div className={`font-mono font-bold ${
+                  activeRenderBackend === 'wgpu' ? 'text-purple-400' :
+                  activeRenderBackend === 'softbuffer' ? 'text-blue-400' : 'text-gray-300'
+                }`}>
+                  {activeRenderBackend}
+                </div>
               </div>
               {stats.last_error && (
                 <div className="bg-gray-900 rounded p-2 col-span-2 md:col-span-4 lg:col-span-6">

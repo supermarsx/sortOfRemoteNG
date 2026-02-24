@@ -718,6 +718,24 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
           <span>Enable desktop composition (Aero)</span>
         </label>
 
+        <div className="text-xs text-gray-500 font-medium pt-2">Render Backend</div>
+        <p className="text-xs text-gray-500 mb-1">
+          Controls how decoded RDP frames are displayed. Native renderers bypass JS entirely for lowest latency.
+        </p>
+
+        <div>
+          <select
+            value={rdp.performance?.renderBackend ?? 'softbuffer'}
+            onChange={(e) => updateRdp('performance', { renderBackend: e.target.value as 'auto' | 'softbuffer' | 'wgpu' | 'webview' })}
+            className={selectClass}
+          >
+            <option value="webview">Webview (JS Canvas) — default, most compatible</option>
+            <option value="softbuffer">Softbuffer (CPU) — native Win32 child window, zero JS</option>
+            <option value="wgpu">Wgpu (GPU) — DX12/Vulkan texture, best throughput</option>
+            <option value="auto">Auto — try GPU → CPU → Webview</option>
+          </select>
+        </div>
+
         <div className="text-xs text-gray-500 font-medium pt-2">Frame Delivery</div>
 
         <div>

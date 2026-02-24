@@ -286,6 +286,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     tcpKeepAliveIntervalSecs: 60,
     tcpRecvBufferSize: 262144,
     tcpSendBufferSize: 262144,
+    renderBackend: 'softbuffer',
   },
 };
 

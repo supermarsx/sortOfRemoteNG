@@ -14,12 +14,14 @@ use ironrdp_blocking::Framed;
 use ironrdp::core::WriteBuf;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
+
+use crate::native_renderer::{self, NativeRenderer, RenderBackend};
 
 pub type RdpServiceState = Arc<Mutex<RdpService>>;
 
@@ -283,6 +285,7 @@ pub struct RdpPerformancePayload {
     pub frame_batching: Option<bool>,
     pub frame_batch_interval_ms: Option<u64>,
     pub codecs: Option<RdpCodecPayload>,
+    pub render_backend: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -518,6 +521,8 @@ struct ResolvedSettings {
     frame_batching: bool,
     frame_batch_interval: Duration,
     full_frame_sync_interval: u64,
+    // Render backend
+    render_backend: String,
     // Bitmap codecs
     codecs_enabled: bool,
     remotefx_enabled: bool,
@@ -650,6 +655,10 @@ impl ResolvedSettings {
             full_frame_sync_interval: adv
                 .and_then(|a| a.full_frame_sync_interval)
                 .unwrap_or(1000),
+            // Render backend
+            render_backend: perf
+                .and_then(|p| p.render_backend.clone())
+                .unwrap_or_else(|| "softbuffer".to_string()),
             // Bitmap codecs
             codecs_enabled: perf
                 .and_then(|p| p.codecs.as_ref())
@@ -833,6 +842,7 @@ pub struct RdpSession {
 enum RdpCommand {
     Input(Vec<FastPathInputEvent>),
     Shutdown,
+    RepositionNativeWindow { x: i32, y: i32, width: u32, height: u32 },
 }
 
 struct RdpActiveConnection {
@@ -1288,6 +1298,7 @@ fn run_rdp_session(
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: SharedFrameStoreState,
     frame_channel: Channel<InvokeResponseBody>,
+    parent_hwnd: isize,
 ) {
     let result = if settings.auto_detect {
         // ── Auto-detect negotiation: try different protocol combos ───
@@ -1306,6 +1317,7 @@ fn run_rdp_session(
             cached_http_client,
             &frame_store,
             &frame_channel,
+            parent_hwnd,
         )
     } else {
         run_rdp_session_inner(
@@ -1323,6 +1335,7 @@ fn run_rdp_session(
             cached_http_client,
             &frame_store,
             &frame_channel,
+            parent_hwnd,
         )
     };
 
@@ -1448,6 +1461,7 @@ fn run_rdp_session_auto_detect(
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &Channel<InvokeResponseBody>,
+    parent_hwnd: isize,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
     let max_attempts = (settings.max_retries as usize + 1).min(combos.len());
@@ -1508,6 +1522,7 @@ fn run_rdp_session_auto_detect(
             cached_http_client.clone(),
             frame_store,
             frame_channel,
+            parent_hwnd,
         );
 
         match result {
@@ -1635,6 +1650,7 @@ fn run_rdp_session_auto_detect(
                     cached_http_client.clone(),
                     frame_store,
                     frame_channel,
+                    parent_hwnd,
                 );
 
                 match result {
@@ -1703,6 +1719,7 @@ fn run_rdp_session_inner(
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &Channel<InvokeResponseBody>,
+    parent_hwnd: isize,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conn_start = Instant::now();
 
@@ -2087,6 +2104,50 @@ fn run_rdp_session_inner(
     // Initialize the shared framebuffer slot for this session
     frame_store.init(session_id, desktop_width, desktop_height);
 
+    // ── 6b. Create native renderer (if requested) ───────────────────────
+    let render_backend = RenderBackend::from_str(&settings.render_backend);
+    let mut native_renderer: Option<Box<dyn NativeRenderer>> = None;
+    let mut active_render_backend = "softbuffer".to_string();
+
+    if render_backend.is_native() && parent_hwnd != 0 {
+        match native_renderer::create_renderer(
+            &render_backend,
+            parent_hwnd,
+            0,
+            0,
+            desktop_width,
+            desktop_height,
+        ) {
+            Ok((renderer, backend_name)) => {
+                log::info!(
+                    "RDP session {session_id}: native renderer '{backend_name}' created for {desktop_width}×{desktop_height}"
+                );
+                active_render_backend = backend_name;
+                native_renderer = Some(renderer);
+            }
+            Err(e) => {
+                log::warn!(
+                    "RDP session {session_id}: native renderer failed ({e}), falling back to webview"
+                );
+                active_render_backend = "webview".to_string();
+            }
+        }
+    }
+
+    // Notify the frontend which render backend is actually active
+    let _ = app_handle.emit(
+        "rdp://render-backend",
+        serde_json::json!({
+            "session_id": session_id,
+            "backend": active_render_backend,
+        }),
+    );
+
+    // Show the native window (starts hidden, frontend will reposition it)
+    if let Some(ref mut renderer) = native_renderer {
+        renderer.show();
+    }
+
     // Set a short read timeout so we can interleave input handling
     set_read_timeout_on_framed(&tls_framed, Some(settings.read_timeout));
 
@@ -2119,6 +2180,15 @@ fn run_rdp_session_inner(
     let mut current_timeout = timeout_active;
 
     loop {
+        // ─ Pump Win32 messages for native renderer child windows ───────
+        // The session runs on a blocking thread that owns the child HWND.
+        // Without pumping, wgpu/DX12/Vulkan swap-chain present deadlocks
+        // and softbuffer may miss WM_PAINT / WM_SIZE messages.
+        #[cfg(target_os = "windows")]
+        if native_renderer.is_some() {
+            native_renderer::platform::pump_messages();
+        }
+
         // ─ Drain ALL pending commands (input coalescing) ───────────────
         // Reading only one command per iteration adds up to read_timeout
         // latency per buffered event.  Draining all pending commands and
@@ -2144,6 +2214,11 @@ fn run_rdp_session_inner(
                 }
                 Ok(RdpCommand::Input(events)) => {
                     merged_inputs.extend(events);
+                }
+                Ok(RdpCommand::RepositionNativeWindow { x, y, width, height }) => {
+                    if let Some(ref mut renderer) = native_renderer {
+                        renderer.reposition(x, y, width, height);
+                    }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
@@ -2194,15 +2269,25 @@ fn run_rdp_session_inner(
         // instead of merging into one huge bounding box (which wastes bandwidth
         // when two small rects are far apart).
         if frame_batching && !dirty_regions.is_empty() && last_frame_emit.elapsed() >= batch_interval {
-            for &(x, y, w, h) in &dirty_regions {
-                if w > 0 && h > 0 {
-                    let region = ironrdp::pdu::geometry::InclusiveRectangle {
-                        left: x,
-                        top: y,
-                        right: x.saturating_add(w).saturating_sub(1),
-                        bottom: y.saturating_add(h).saturating_sub(1),
-                    };
-                    push_frame_via_channel(image.data(), desktop_width, &region, frame_channel);
+            if let Some(ref mut renderer) = native_renderer {
+                // Native renderer: update each dirty region and present once
+                for &(x, y, w, h) in &dirty_regions {
+                    if w > 0 && h > 0 {
+                        renderer.update_region(image.data(), desktop_width, x, y, w, h);
+                    }
+                }
+                let _ = renderer.present();
+            } else {
+                for &(x, y, w, h) in &dirty_regions {
+                    if w > 0 && h > 0 {
+                        let region = ironrdp::pdu::geometry::InclusiveRectangle {
+                            left: x,
+                            top: y,
+                            right: x.saturating_add(w).saturating_sub(1),
+                            bottom: y.saturating_add(h).saturating_sub(1),
+                        };
+                        push_frame_via_channel(image.data(), desktop_width, &region, frame_channel);
+                    }
                 }
             }
             dirty_regions.clear();
@@ -2263,10 +2348,21 @@ fn run_rdp_session_inner(
                                     let rh = region.bottom.saturating_sub(region.top) + 1;
 
                                     if frame_batching {
-                                        // Accumulate dirty region for batched channel push
+                                        // Accumulate dirty region for batched push
                                         dirty_regions.push((region.left, region.top, rw, rh));
+                                    } else if let Some(ref mut renderer) = native_renderer {
+                                        // Native renderer: immediate update + present
+                                        renderer.update_region(
+                                            image.data(),
+                                            desktop_width,
+                                            region.left,
+                                            region.top,
+                                            rw,
+                                            rh,
+                                        );
+                                        let _ = renderer.present();
                                     } else {
-                                        // Immediate push through Channel (no batching)
+                                        // Webview: immediate push through Channel (no batching)
                                         push_frame_via_channel(
                                             image.data(),
                                             desktop_width,
@@ -2278,14 +2374,43 @@ fn run_rdp_session_inner(
                                     // Periodic full-frame sync (updates fallback store too)
                                     let fc = stats.frame_count.load(Ordering::Relaxed);
                                     if fc > 0 && fc % full_frame_sync_interval == 0 {
-                                        send_full_frame_via_channel(
+                                        // Always update the frame store (used by rdp_get_frame_data fallback)
+                                        frame_store.update_region(
                                             session_id,
-                                            &image,
+                                            image.data(),
                                             desktop_width,
-                                            desktop_height,
-                                            frame_channel,
-                                            frame_store,
+                                            &ironrdp::pdu::geometry::InclusiveRectangle {
+                                                left: 0,
+                                                top: 0,
+                                                right: desktop_width.saturating_sub(1),
+                                                bottom: desktop_height.saturating_sub(1),
+                                            },
                                         );
+                                        // For webview mode, also push the full frame through the channel
+                                        if native_renderer.is_none() {
+                                            push_frame_via_channel(
+                                                image.data(),
+                                                desktop_width,
+                                                &ironrdp::pdu::geometry::InclusiveRectangle {
+                                                    left: 0,
+                                                    top: 0,
+                                                    right: desktop_width.saturating_sub(1),
+                                                    bottom: desktop_height.saturating_sub(1),
+                                                },
+                                                frame_channel,
+                                            );
+                                        } else if let Some(ref mut renderer) = native_renderer {
+                                            // For native renderer, push a full re-render
+                                            renderer.update_region(
+                                                image.data(),
+                                                desktop_width,
+                                                0,
+                                                0,
+                                                desktop_width,
+                                                desktop_height,
+                                            );
+                                            let _ = renderer.present();
+                                        }
                                     }
                                 }
                                 ActiveStageOutput::PointerDefault => {
@@ -2450,6 +2575,12 @@ fn run_rdp_session_inner(
                 return Err(format!("Read error: {err_str}").into());
             }
         }
+    }
+
+    // Destroy native renderer on session end
+    if let Some(ref mut renderer) = native_renderer {
+        log::info!("RDP session {session_id}: destroying native renderer '{}'", renderer.name());
+        renderer.destroy();
     }
 
     Ok(())
@@ -2743,6 +2874,28 @@ pub async fn connect_rdp(
 
     let fs = Arc::clone(&*frame_store);
 
+    // Extract the parent window handle for native renderers.
+    // On Windows, this is the Tauri main window's HWND.
+    let parent_hwnd: isize = {
+        #[cfg(target_os = "windows")]
+        {
+            use raw_window_handle::HasWindowHandle;
+            app_handle
+                .get_webview_window("main")
+                .and_then(|w| {
+                    let wh = w.window_handle().ok()?;
+                    if let raw_window_handle::RawWindowHandle::Win32(h) = wh.as_raw() {
+                        Some(h.hwnd.get())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or(0)
+        }
+        #[cfg(not(target_os = "windows"))]
+        { 0 }
+    };
+
     // Use spawn_blocking to run the entire RDP session on a dedicated OS thread
     let handle = tokio::task::spawn_blocking(move || {
         run_rdp_session(
@@ -2760,6 +2913,7 @@ pub async fn connect_rdp(
             http_client,
             fs,
             frame_channel,
+            parent_hwnd,
         );
     });
 
@@ -2812,6 +2966,29 @@ pub async fn disconnect_rdp(
 
     // Nothing to disconnect — this is not an error (the session may
     // have already been evicted by a racing connect_rdp call).
+    Ok(())
+}
+
+/// Reposition the native renderer child window for an active RDP session.
+/// Coordinates are in physical pixels relative to the Tauri window's client area.
+#[tauri::command]
+pub async fn native_renderer_reposition(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let service = state.lock().await;
+    if let Some(conn) = service.connections.get(&session_id) {
+        let _ = conn.cmd_tx.send(RdpCommand::RepositionNativeWindow {
+            x,
+            y,
+            width,
+            height,
+        });
+    }
     Ok(())
 }
 

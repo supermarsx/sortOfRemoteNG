@@ -329,6 +329,16 @@ export interface RdpPerformanceSettings {
   // ─── Bitmap Codec Negotiation ─────────────────────────────────────
   /** Codec negotiation settings */
   codecs?: RdpCodecSettings;
+
+  // ─── Render Backend ────────────────────────────────────────────────
+  /**
+   * Which rendering backend to use for frame display.
+   * - `webview` — stream frames via Tauri Channel to a JS <canvas> (default)
+   * - `softbuffer` — CPU blit to a native Win32 child window (zero JS overhead)
+   * - `wgpu` — GPU texture upload + present to a native child window
+   * - `auto` — try wgpu → softbuffer → webview
+   */
+  renderBackend?: 'auto' | 'softbuffer' | 'wgpu' | 'webview';
 }
 
 // ─── Bitmap Codec Negotiation ──────────────────────────────────────
@@ -600,6 +610,7 @@ export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
       remoteFx: true,
       remoteFxEntropy: 'rlgr3',
     },
+    renderBackend: 'softbuffer',
   },
   security: {
     enableTls: true,

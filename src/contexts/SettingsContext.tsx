@@ -231,6 +231,8 @@ const defaultSettings: GlobalSettings = {
     codecsEnabled: true,
     remoteFxEnabled: true,
     remoteFxEntropy: 'rlgr3' as const,
+    // Render Backend
+    renderBackend: 'softbuffer' as const,
   },
 };
 

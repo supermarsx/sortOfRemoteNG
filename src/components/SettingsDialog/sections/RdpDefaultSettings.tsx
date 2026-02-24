@@ -473,6 +473,36 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         </div>
       </div>
 
+      {/* ─── Render Backend Defaults ─────────────────────────── */}
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+          <Monitor className="w-4 h-4 text-cyan-400" />
+          Render Backend Default
+        </h4>
+        <p className="text-xs text-gray-500 -mt-2">
+          Controls how decoded RDP frames are displayed.  Native renderers bypass JS entirely by
+          blitting pixels straight to a Win32 child window — zero IPC, zero canvas overhead.
+        </p>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Default Render Backend</label>
+          <select
+            value={rdp.renderBackend ?? 'softbuffer'}
+            onChange={(e) => update({ renderBackend: e.target.value as 'auto' | 'softbuffer' | 'wgpu' | 'webview' })}
+            className={selectClass}
+          >
+            <option value="webview">Webview (JS Canvas) — most compatible</option>
+            <option value="softbuffer">Softbuffer (CPU) — native Win32, zero JS overhead</option>
+            <option value="wgpu">Wgpu (GPU) — DX12/Vulkan, best throughput at high res</option>
+            <option value="auto">Auto — try GPU → CPU → Webview</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Per-connection settings override this default.  &ldquo;Auto&rdquo; tries wgpu first, then
+            falls back to softbuffer, then webview.
+          </p>
+        </div>
+      </div>
+
       {/* ─── Performance / Frame Delivery Defaults ─────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
         <h4 className="text-sm font-semibold text-white flex items-center gap-2">
