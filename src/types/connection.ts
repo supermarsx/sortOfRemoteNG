@@ -323,6 +323,28 @@ export interface RdpPerformanceSettings {
   frameBatching?: boolean;
   /** Frame batch interval in ms (16 = ~60fps, 33 = ~30fps) */
   frameBatchIntervalMs?: number;
+
+  // ─── Bitmap Codec Negotiation ─────────────────────────────────────
+  /** Codec negotiation settings */
+  codecs?: RdpCodecSettings;
+}
+
+// ─── Bitmap Codec Negotiation ──────────────────────────────────────
+
+/** Available RDP bitmap codec identifiers */
+export const RdpBitmapCodecs = [
+  'remotefx',    // Microsoft RemoteFX (RFX) — DWT + RLGR entropy coding
+  'nscodec',     // NSCodec — simple wavelet compression
+] as const;
+export type RdpBitmapCodec = (typeof RdpBitmapCodecs)[number];
+
+export interface RdpCodecSettings {
+  /** Enable bitmap codec negotiation (when false, only raw/RLE bitmaps are used) */
+  enableCodecs?: boolean;
+  /** Enable RemoteFX (RFX) codec — best quality + compression ratio */
+  remoteFx?: boolean;
+  /** RemoteFX entropy algorithm: RLGR1 (faster) or RLGR3 (better compression) */
+  remoteFxEntropy?: 'rlgr1' | 'rlgr3';
 }
 
 // ─── CredSSP Oracle Remediation Policy ─────────────────────────────
@@ -568,8 +590,13 @@ export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
     persistentBitmapCaching: false,
     connectionSpeed: 'broadband-high',
     targetFps: 30,
-    frameBatching: true,
+    frameBatching: false,
     frameBatchIntervalMs: 33,
+    codecs: {
+      enableCodecs: true,
+      remoteFx: true,
+      remoteFxEntropy: 'rlgr3',
+    },
   },
   security: {
     enableTls: true,

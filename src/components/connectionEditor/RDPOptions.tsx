@@ -763,6 +763,58 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
           />
           <span>Persistent bitmap caching</span>
         </label>
+
+        {/* ─── Bitmap Codec Negotiation ─────────────────────────── */}
+        <div className="text-xs text-gray-500 font-medium pt-2">Bitmap Codec Negotiation</div>
+        <p className="text-xs text-gray-500 mb-1">
+          Controls which bitmap compression codecs are advertised to the server during capability negotiation.
+          When disabled, only raw/RLE bitmaps are used (higher bandwidth, lower CPU).
+        </p>
+
+        <label className={labelClass}>
+          <input
+            type="checkbox"
+            checked={rdp.performance?.codecs?.enableCodecs ?? true}
+            onChange={(e) => updateRdp('performance', {
+              codecs: { ...rdp.performance?.codecs, enableCodecs: e.target.checked },
+            })}
+            className={checkboxClass}
+          />
+          <span className="font-medium">Enable bitmap codec negotiation</span>
+        </label>
+
+        {(rdp.performance?.codecs?.enableCodecs ?? true) && (
+          <>
+            <label className={`${labelClass} ml-4`}>
+              <input
+                type="checkbox"
+                checked={rdp.performance?.codecs?.remoteFx ?? true}
+                onChange={(e) => updateRdp('performance', {
+                  codecs: { ...rdp.performance?.codecs, remoteFx: e.target.checked },
+                })}
+                className={checkboxClass}
+              />
+              <span>RemoteFX (RFX)</span>
+              <span className="text-xs text-gray-500 ml-1">— DWT + RLGR entropy, best quality/compression</span>
+            </label>
+
+            {(rdp.performance?.codecs?.remoteFx ?? true) && (
+              <div className="ml-8 flex items-center gap-2">
+                <span className="text-xs text-gray-400">Entropy:</span>
+                <select
+                  value={rdp.performance?.codecs?.remoteFxEntropy ?? 'rlgr3'}
+                  onChange={(e) => updateRdp('performance', {
+                    codecs: { ...rdp.performance?.codecs, remoteFxEntropy: e.target.value as 'rlgr1' | 'rlgr3' },
+                  })}
+                  className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs text-gray-200"
+                >
+                  <option value="rlgr1">RLGR1 (faster decoding)</option>
+                  <option value="rlgr3">RLGR3 (better compression)</option>
+                </select>
+              </div>
+            )}
+          </>
+        )}
       </Section>
 
       {/* ─── Security ────────────────────────────────────────────── */}

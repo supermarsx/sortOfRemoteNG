@@ -282,6 +282,18 @@ pub struct RdpPerformancePayload {
     pub target_fps: Option<u32>,
     pub frame_batching: Option<bool>,
     pub frame_batch_interval_ms: Option<u64>,
+    pub codecs: Option<RdpCodecPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpCodecPayload {
+    /// Enable bitmap codec negotiation (when false, only raw/RLE bitmaps)
+    pub enable_codecs: Option<bool>,
+    /// Enable RemoteFX (RFX) codec
+    pub remote_fx: Option<bool>,
+    /// RemoteFX entropy algorithm: "rlgr1" or "rlgr3"
+    pub remote_fx_entropy: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -398,6 +410,45 @@ fn build_performance_flags(perf: &RdpPerformancePayload) -> PerformanceFlags {
     flags
 }
 
+/// Build IronRDP BitmapCodecs from resolved settings.
+/// When codecs are disabled, returns an empty list (raw/RLE only).
+/// When enabled, constructs the negotiation list based on individual codec toggles.
+fn build_bitmap_codecs(settings: &ResolvedSettings) -> ironrdp::pdu::rdp::capability_sets::BitmapCodecs {
+    use ironrdp::pdu::rdp::capability_sets::{
+        BitmapCodecs, CaptureFlags, Codec, CodecProperty, EntropyBits,
+        RemoteFxContainer, RfxCaps, RfxCapset, RfxClientCapsContainer,
+        RfxICap, RfxICapFlags,
+    };
+
+    if !settings.codecs_enabled {
+        return BitmapCodecs(Vec::new());
+    }
+
+    let mut codecs = Vec::new();
+
+    // RemoteFX (RFX) — DWT + RLGR entropy coding
+    if settings.remotefx_enabled {
+        let entropy = match settings.remotefx_entropy.as_str() {
+            "rlgr1" => EntropyBits::Rlgr1,
+            _ => EntropyBits::Rlgr3,
+        };
+        codecs.push(Codec {
+            id: 3, // CODEC_ID_REMOTEFX
+            property: CodecProperty::RemoteFx(RemoteFxContainer::ClientContainer(
+                RfxClientCapsContainer {
+                    capture_flags: CaptureFlags::empty(),
+                    caps_data: RfxCaps(RfxCapset(vec![RfxICap {
+                        flags: RfxICapFlags::empty(),
+                        entropy_bits: entropy,
+                    }])),
+                },
+            )),
+        });
+    }
+
+    BitmapCodecs(codecs)
+}
+
 /// Map frontend keyboard type string to IronRDP enum
 fn parse_keyboard_type(s: &str) -> ironrdp::pdu::gcc::KeyboardType {
     match s {
@@ -467,6 +518,10 @@ struct ResolvedSettings {
     frame_batching: bool,
     frame_batch_interval: Duration,
     full_frame_sync_interval: u64,
+    // Bitmap codecs
+    codecs_enabled: bool,
+    remotefx_enabled: bool,
+    remotefx_entropy: String,
     // Session behaviour
     read_timeout: Duration,
     max_consecutive_errors: u32,
@@ -595,6 +650,19 @@ impl ResolvedSettings {
             full_frame_sync_interval: adv
                 .and_then(|a| a.full_frame_sync_interval)
                 .unwrap_or(300),
+            // Bitmap codecs
+            codecs_enabled: perf
+                .and_then(|p| p.codecs.as_ref())
+                .and_then(|c| c.enable_codecs)
+                .unwrap_or(true),
+            remotefx_enabled: perf
+                .and_then(|p| p.codecs.as_ref())
+                .and_then(|c| c.remote_fx)
+                .unwrap_or(true),
+            remotefx_entropy: perf
+                .and_then(|p| p.codecs.as_ref())
+                .and_then(|c| c.remote_fx_entropy.clone())
+                .unwrap_or_else(|| "rlgr3".to_string()),
             read_timeout: Duration::from_millis(
                 adv.and_then(|a| a.read_timeout_ms).unwrap_or(16),
             ),
@@ -1744,7 +1812,7 @@ fn run_rdp_session_inner(
         bitmap: Some(connector::BitmapConfig {
             lossy_compression: settings.lossy_compression,
             color_depth: settings.color_depth,
-            codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
+            codecs: build_bitmap_codecs(&settings),
         }),
         client_build: settings.client_build,
         client_name: settings.client_name.clone(),

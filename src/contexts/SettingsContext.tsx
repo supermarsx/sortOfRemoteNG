@@ -221,6 +221,16 @@ const defaultSettings: GlobalSettings = {
     tcpKeepAliveIntervalSecs: 60,
     tcpRecvBufferSize: 262144,
     tcpSendBufferSize: 262144,
+    // Performance / Frame Delivery
+    targetFps: 30,
+    frameBatching: false,
+    frameBatchIntervalMs: 33,
+    fullFrameSyncInterval: 300,
+    readTimeoutMs: 16,
+    // Bitmap Codecs
+    codecsEnabled: true,
+    remoteFxEnabled: true,
+    remoteFxEntropy: 'rlgr3' as const,
   },
 };
 

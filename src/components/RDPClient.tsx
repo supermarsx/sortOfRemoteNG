@@ -200,7 +200,100 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
-  const rdpSettings: RdpConnectionSettings = connection?.rdpSettings ?? DEFAULT_RDP_SETTINGS;
+
+  // Deep-merge: global rdpDefaults → compile-time defaults → per-connection overrides.
+  // This ensures global settings from the Settings dialog are used as a baseline, 
+  // while per-connection settings can override any individual field.
+  const rdpSettings: RdpConnectionSettings = React.useMemo(() => {
+    const base = DEFAULT_RDP_SETTINGS;
+    const conn = connection?.rdpSettings;
+    const global = settings.rdpDefaults;
+    // Apply global defaults onto the compile-time defaults, then per-connection on top
+    return {
+      display: {
+        ...base.display,
+        width: global.defaultWidth ?? base.display?.width,
+        height: global.defaultHeight ?? base.display?.height,
+        colorDepth: global.defaultColorDepth ?? base.display?.colorDepth,
+        smartSizing: global.smartSizing ?? base.display?.smartSizing,
+        ...conn?.display,
+      },
+      audio: { ...base.audio, ...conn?.audio },
+      input: { ...base.input, ...conn?.input },
+      deviceRedirection: { ...base.deviceRedirection, ...conn?.deviceRedirection },
+      performance: {
+        ...base.performance,
+        targetFps: global.targetFps ?? base.performance?.targetFps,
+        frameBatching: global.frameBatching ?? base.performance?.frameBatching,
+        frameBatchIntervalMs: global.frameBatchIntervalMs ?? base.performance?.frameBatchIntervalMs,
+        codecs: {
+          ...base.performance?.codecs,
+          enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
+          remoteFx: global.remoteFxEnabled ?? base.performance?.codecs?.remoteFx,
+          remoteFxEntropy: global.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
+          ...conn?.performance?.codecs,
+        },
+        ...conn?.performance,
+        // Re-apply codecs after conn spread so nested codec merge isn't overwritten
+        ...(conn?.performance ? {
+          codecs: {
+            ...base.performance?.codecs,
+            enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
+            remoteFx: global.remoteFxEnabled ?? base.performance?.codecs?.remoteFx,
+            remoteFxEntropy: global.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
+            ...conn?.performance?.codecs,
+          },
+        } : {}),
+      },
+      security: {
+        ...base.security,
+        useCredSsp: global.useCredSsp ?? base.security?.useCredSsp,
+        enableTls: global.enableTls ?? base.security?.enableTls,
+        enableNla: global.enableNla ?? base.security?.enableNla,
+        autoLogon: global.autoLogon ?? base.security?.autoLogon,
+        ...conn?.security,
+      },
+      gateway: {
+        ...base.gateway,
+        enabled: global.gatewayEnabled ?? base.gateway?.enabled,
+        hostname: global.gatewayHostname || base.gateway?.hostname,
+        port: global.gatewayPort ?? base.gateway?.port,
+        authMethod: global.gatewayAuthMethod ?? base.gateway?.authMethod,
+        transportMode: global.gatewayTransportMode ?? base.gateway?.transportMode,
+        bypassForLocal: global.gatewayBypassLocal ?? base.gateway?.bypassForLocal,
+        ...conn?.gateway,
+      },
+      hyperv: {
+        ...base.hyperv,
+        enhancedSessionMode: global.enhancedSessionMode ?? base.hyperv?.enhancedSessionMode,
+        ...conn?.hyperv,
+      },
+      negotiation: {
+        ...base.negotiation,
+        autoDetect: global.autoDetect ?? base.negotiation?.autoDetect,
+        strategy: global.negotiationStrategy ?? base.negotiation?.strategy,
+        maxRetries: global.maxRetries ?? base.negotiation?.maxRetries,
+        retryDelayMs: global.retryDelayMs ?? base.negotiation?.retryDelayMs,
+        ...conn?.negotiation,
+      },
+      advanced: {
+        ...base.advanced,
+        fullFrameSyncInterval: global.fullFrameSyncInterval ?? base.advanced?.fullFrameSyncInterval,
+        readTimeoutMs: global.readTimeoutMs ?? base.advanced?.readTimeoutMs,
+        ...conn?.advanced,
+      },
+      tcp: {
+        ...base.tcp,
+        connectTimeoutSecs: global.tcpConnectTimeoutSecs ?? base.tcp?.connectTimeoutSecs,
+        nodelay: global.tcpNodelay ?? base.tcp?.nodelay,
+        keepAlive: global.tcpKeepAlive ?? base.tcp?.keepAlive,
+        keepAliveIntervalSecs: global.tcpKeepAliveIntervalSecs ?? base.tcp?.keepAliveIntervalSecs,
+        recvBufferSize: global.tcpRecvBufferSize ?? base.tcp?.recvBufferSize,
+        sendBufferSize: global.tcpSendBufferSize ?? base.tcp?.sendBufferSize,
+        ...conn?.tcp,
+      },
+    };
+  }, [connection?.rdpSettings, settings.rdpDefaults]);
   const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
   const magnifierZoom = rdpSettings.display?.magnifierZoom ?? 3;
 

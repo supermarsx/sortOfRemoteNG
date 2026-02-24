@@ -472,6 +472,171 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ─── Performance / Frame Delivery Defaults ─────────────── */}
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+          <Zap className="w-4 h-4 text-yellow-400" />
+          Performance / Frame Delivery Defaults
+        </h4>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">
+            Target FPS: {rdp.targetFps ?? 30}
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={60}
+            step={1}
+            value={rdp.targetFps ?? 30}
+            onChange={(e) => update({ targetFps: parseInt(e.target.value) })}
+            className="w-full"
+          />
+          <div className="flex justify-between text-xs text-gray-600">
+            <span>0 (unlimited)</span>
+            <span>60</span>
+          </div>
+        </div>
+
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={rdp.frameBatching ?? true}
+            onChange={(e) => update({ frameBatching: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            Frame Batching (accumulate dirty regions)
+          </span>
+        </label>
+        <p className="text-xs text-gray-500 ml-7 -mt-2">
+          When enabled, dirty regions are accumulated on the Rust side and emitted in batches.
+          When disabled, each region is pushed immediately (lower latency, JS rAF handles pacing).
+        </p>
+
+        {(rdp.frameBatching ?? true) && (
+          <div className="ml-7">
+            <label className="block text-sm text-gray-400 mb-1">
+              Batch Interval: {rdp.frameBatchIntervalMs ?? 33}ms
+              ({Math.round(1000 / (rdp.frameBatchIntervalMs || 33))} fps max)
+            </label>
+            <input
+              type="range"
+              min={8}
+              max={100}
+              step={1}
+              value={rdp.frameBatchIntervalMs ?? 33}
+              onChange={(e) => update({ frameBatchIntervalMs: parseInt(e.target.value) })}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-gray-600">
+              <span>8ms (~120fps)</span>
+              <span>100ms (~10fps)</span>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">
+            Full-Frame Sync Interval: every {rdp.fullFrameSyncInterval ?? 300} frames
+          </label>
+          <input
+            type="range"
+            min={50}
+            max={1000}
+            step={50}
+            value={rdp.fullFrameSyncInterval ?? 300}
+            onChange={(e) => update({ fullFrameSyncInterval: parseInt(e.target.value) })}
+            className="w-full"
+          />
+          <div className="flex justify-between text-xs text-gray-600">
+            <span>50</span>
+            <span>1000</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Periodically resends the entire framebuffer to fix any accumulated rendering errors.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">
+            PDU Read Timeout: {rdp.readTimeoutMs ?? 16}ms
+          </label>
+          <input
+            type="range"
+            min={1}
+            max={50}
+            step={1}
+            value={rdp.readTimeoutMs ?? 16}
+            onChange={(e) => update({ readTimeoutMs: parseInt(e.target.value) })}
+            className="w-full"
+          />
+          <div className="flex justify-between text-xs text-gray-600">
+            <span>1ms</span>
+            <span>50ms</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            Lower = more responsive but higher CPU. 16ms ≈ 60hz poll rate.
+          </p>
+        </div>
+      </div>
+
+      {/* ─── Bitmap Codec Defaults ─────────────────────────────── */}
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+          <Monitor className="w-4 h-4 text-purple-400" />
+          Bitmap Codec Negotiation Defaults
+        </h4>
+        <p className="text-xs text-gray-500 -mt-2">
+          Controls which bitmap compression codecs are advertised to the server. When disabled,
+          only raw/RLE bitmaps are used (higher bandwidth, lower CPU).
+        </p>
+
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={rdp.codecsEnabled ?? true}
+            onChange={(e) => update({ codecsEnabled: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-sm text-gray-300 group-hover:text-white transition-colors font-medium">
+            Enable Bitmap Codec Negotiation
+          </span>
+        </label>
+
+        {(rdp.codecsEnabled ?? true) && (
+          <>
+            <label className="flex items-center space-x-3 cursor-pointer group ml-4">
+              <input
+                type="checkbox"
+                checked={rdp.remoteFxEnabled ?? true}
+                onChange={(e) => update({ remoteFxEnabled: e.target.checked })}
+                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              />
+              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                RemoteFX (RFX)
+              </span>
+              <span className="text-xs text-gray-500">— DWT + RLGR entropy, best quality/compression</span>
+            </label>
+
+            {(rdp.remoteFxEnabled ?? true) && (
+              <div className="ml-11 flex items-center gap-2">
+                <span className="text-sm text-gray-400">Entropy Algorithm:</span>
+                <select
+                  value={rdp.remoteFxEntropy ?? 'rlgr3'}
+                  onChange={(e) => update({ remoteFxEntropy: e.target.value as 'rlgr1' | 'rlgr3' })}
+                  className={selectClass}
+                  style={{ width: 'auto' }}
+                >
+                  <option value="rlgr1">RLGR1 (faster decoding)</option>
+                  <option value="rlgr3">RLGR3 (better compression)</option>
+                </select>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 };

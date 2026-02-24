@@ -405,6 +405,26 @@ export interface RdpGlobalDefaultsConfig {
   tcpRecvBufferSize: number;
   /** Socket send buffer size in bytes */
   tcpSendBufferSize: number;
+
+  // ─── Performance / Frame Delivery defaults ─────────────────
+  /** Target frame rate limit (0 = unlimited) */
+  targetFps: number;
+  /** Frame batching: accumulate dirty regions and emit combined updates */
+  frameBatching: boolean;
+  /** Frame batch interval in ms (16 = ~60fps, 33 = ~30fps) */
+  frameBatchIntervalMs: number;
+  /** Full-frame sync interval (emit complete framebuffer every N frames) */
+  fullFrameSyncInterval: number;
+  /** Read timeout in ms for the PDU read loop */
+  readTimeoutMs: number;
+
+  // ─── Bitmap Codec defaults ─────────────────────────────────
+  /** Enable bitmap codec negotiation (when false, only raw/RLE bitmaps) */
+  codecsEnabled: boolean;
+  /** Enable RemoteFX (RFX) codec */
+  remoteFxEnabled: boolean;
+  /** RemoteFX entropy algorithm */
+  remoteFxEntropy: 'rlgr1' | 'rlgr3';
 }
 
 // Backup scheduling frequency
