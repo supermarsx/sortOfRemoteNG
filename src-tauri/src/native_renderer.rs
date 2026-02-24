@@ -89,8 +89,9 @@ pub trait NativeRenderer: Send {
     /// The remote desktop was resized — recreate internal buffers.
     fn resize_desktop(&mut self, width: u16, height: u16) -> Result<(), String>;
 
-    /// Move / resize the child window (physical pixels relative to the
-    /// Tauri window's client area).
+    /// Move / resize the overlay window.  Coordinates are in physical
+    /// pixels relative to the **owner** window's client area — the
+    /// implementation converts to screen coordinates internally.
     fn reposition(&mut self, x: i32, y: i32, width: u32, height: u32);
 
     /// Make the child window visible.
@@ -109,7 +110,7 @@ pub trait NativeRenderer: Send {
 // ─── Win32 helpers (Windows-only) ────────────────────────────────────
 
 #[cfg(target_os = "windows")]
-pub(crate) mod platform {
+pub mod platform {
     use super::*;
     use raw_window_handle::{
         DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
@@ -197,10 +198,55 @@ pub(crate) mod platform {
 
     // ── Public helpers ───────────────────────────────────────────────
 
-    /// Create a WS_CHILD window as a child of `parent_hwnd`.
-    /// Returns the child HWND as isize.
-    pub fn create_child_window(
-        parent_hwnd: isize,
+    /// Convert client-area coordinates of `owner_hwnd` to screen
+    /// coordinates.  Used because overlay windows (WS_POPUP) need
+    /// screen-space positioning.
+    pub fn client_to_screen(owner_hwnd: isize, x: i32, y: i32) -> (i32, i32) {
+        unsafe {
+            // Get the owner window's position on screen, then offset.
+            // We use GetWindowRect on the owner and add the client-area
+            // offset (accounting for title bar / borders via the difference
+            // between window rect and client rect origin).
+            let mut window_rect: RECT = std::mem::zeroed();
+            let mut client_origin = POINT { x: 0, y: 0 };
+            let _ = GetWindowRect(HWND(owner_hwnd as *mut _), &mut window_rect);
+            // MapWindowPoints maps (0,0) in client area to screen coords.
+            // Fallback: we compute client origin = window_rect.left + border.
+            // Simplest approach: ScreenToClient is available, but we can
+            // use the Windows `MapWindowPoints` trick — or just compute
+            // from the difference between window rect and client rect.
+            // Actually the simplest is to get client rect and compute offset.
+            let mut client_rect: RECT = std::mem::zeroed();
+            let _ = GetClientRect(HWND(owner_hwnd as *mut _), &mut client_rect);
+            // The client area starts at (window_left + border_width, window_top + title_height).
+            // border_width = (window_width - client_width) / 2  (symmetric)
+            // title_height = window_height - client_height - border_width
+            let ww = window_rect.right - window_rect.left;
+            let wh = window_rect.bottom - window_rect.top;
+            let cw = client_rect.right; // client_rect.left is always 0
+            let ch = client_rect.bottom;
+            let border_x = (ww - cw) / 2;
+            let border_top = wh - ch - border_x; // title bar + top border
+            client_origin.x = window_rect.left + border_x;
+            client_origin.y = window_rect.top + border_top;
+            (client_origin.x + x, client_origin.y + y)
+        }
+    }
+
+    /// Create a `WS_POPUP` overlay window **owned** by `owner_hwnd`.
+    ///
+    /// Unlike `WS_CHILD`, a popup window lives on its own thread with
+    /// no parent–child message dependency — this eliminates the
+    /// cross-thread `SendMessage` deadlock that occurs when the UI
+    /// thread sends messages to a child window whose owning thread
+    /// is blocked on a TCP read.
+    ///
+    /// `(x, y)` are in client-area coordinates of the owner; they are
+    /// converted to screen coordinates internally.
+    ///
+    /// Returns the overlay HWND as `isize`.
+    pub fn create_overlay_window(
+        owner_hwnd: isize,
         x: i32,
         y: i32,
         width: i32,
@@ -212,16 +258,22 @@ pub(crate) mod platform {
                 CLASS_NAME.encode_utf16().chain(std::iter::once(0)).collect();
             let hinstance = GetModuleHandleW(PCWSTR::null())
                 .map_err(|e| format!("GetModuleHandle: {e}"))?;
+
+            // Convert from owner's client-area coords to screen coords.
+            let (sx, sy) = client_to_screen(owner_hwnd, x, y);
+
             let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE::default(), // no WS_EX_TRANSPARENT — we use HTTRANSPARENT in WndProc
+                // WS_EX_TOOLWINDOW  – no taskbar entry
+                // WS_EX_NOACTIVATE  – never steal focus from the main window
+                WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
                 PCWSTR(class_wide.as_ptr()),
                 PCWSTR::null(),
-                WS_CHILD | WS_CLIPSIBLINGS, // start hidden; show() makes it visible
-                x,
-                y,
+                WS_POPUP | WS_CLIPSIBLINGS, // start hidden; show() makes it visible
+                sx,
+                sy,
                 width,
                 height,
-                Some(HWND(parent_hwnd as *mut _)),
+                Some(HWND(owner_hwnd as *mut _)), // owner (keeps popup above)
                 None,
                 Some(hinstance.into()),
                 None,
@@ -243,7 +295,17 @@ pub(crate) mod platform {
         }
     }
 
-    pub fn move_window(hwnd: isize, x: i32, y: i32, w: u32, h: u32) {
+    /// Move a popup overlay.  `(x, y)` are in client-area coords of
+    /// `owner_hwnd`; converted to screen coords internally.
+    pub fn move_window(hwnd: isize, owner_hwnd: isize, x: i32, y: i32, w: u32, h: u32) {
+        unsafe {
+            let (sx, sy) = client_to_screen(owner_hwnd, x, y);
+            let _ = MoveWindow(HWND(hwnd as *mut _), sx, sy, w as i32, h as i32, true);
+        }
+    }
+
+    /// Move a popup overlay using **screen** coordinates directly.
+    pub fn move_window_screen(hwnd: isize, x: i32, y: i32, w: u32, h: u32) {
         unsafe {
             let _ = MoveWindow(HWND(hwnd as *mut _), x, y, w as i32, h as i32, true);
         }
@@ -298,6 +360,7 @@ pub(crate) mod platform {
 #[cfg(target_os = "windows")]
 pub struct SoftbufferRenderer {
     hwnd: isize,
+    owner_hwnd: isize,
     _context: softbuffer::Context<platform::NativeWindowHandle>,
     surface: softbuffer::Surface<platform::NativeWindowHandle, platform::NativeWindowHandle>,
     /// Shadow buffer at desktop resolution (each u32 = 0x00RRGGBB).
@@ -319,11 +382,11 @@ impl SoftbufferRenderer {
         let w = desktop_width as u32;
         let h = desktop_height as u32;
 
-        let child_hwnd =
-            platform::create_child_window(parent_hwnd, x, y, w as i32, h as i32)?;
+        let overlay_hwnd =
+            platform::create_overlay_window(parent_hwnd, x, y, w as i32, h as i32)?;
 
-        let display_handle = platform::NativeWindowHandle { hwnd_isize: child_hwnd };
-        let window_handle = platform::NativeWindowHandle { hwnd_isize: child_hwnd };
+        let display_handle = platform::NativeWindowHandle { hwnd_isize: overlay_hwnd };
+        let window_handle = platform::NativeWindowHandle { hwnd_isize: overlay_hwnd };
 
         let context = softbuffer::Context::new(display_handle)
             .map_err(|e| format!("softbuffer::Context: {e}"))?;
@@ -340,11 +403,12 @@ impl SoftbufferRenderer {
         let shadow = vec![0u32; (w * h) as usize];
 
         log::info!(
-            "SoftbufferRenderer: created {w}×{h} child window (parent=0x{parent_hwnd:X})"
+            "SoftbufferRenderer: created {w}×{h} overlay window (owner=0x{parent_hwnd:X})"
         );
 
         Ok(Self {
-            hwnd: child_hwnd,
+            hwnd: overlay_hwnd,
+            owner_hwnd: parent_hwnd,
             _context: context,
             surface,
             shadow,
@@ -434,14 +498,14 @@ impl NativeRenderer for SoftbufferRenderer {
         self.desk_w = w;
         self.desk_h = h;
 
-        platform::move_window(self.hwnd, 0, 0, w, h);
+        platform::move_window(self.hwnd, self.owner_hwnd, 0, 0, w, h);
 
         log::info!("SoftbufferRenderer: resized to {w}×{h}");
         Ok(())
     }
 
     fn reposition(&mut self, x: i32, y: i32, width: u32, height: u32) {
-        platform::move_window(self.hwnd, x, y, width, height);
+        platform::move_window(self.hwnd, self.owner_hwnd, x, y, width, height);
         platform::bring_to_top(self.hwnd);
     }
 
@@ -471,6 +535,7 @@ impl NativeRenderer for SoftbufferRenderer {
 #[cfg(target_os = "windows")]
 pub struct WgpuRenderer {
     hwnd: isize,
+    owner_hwnd: isize,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface: wgpu::Surface<'static>,
@@ -495,10 +560,8 @@ impl WgpuRenderer {
         let w = desktop_width as u32;
         let h = desktop_height as u32;
 
-        let child_hwnd =
-            platform::create_child_window(parent_hwnd, x, y, w as i32, h as i32)?;
-
-        let _handle = platform::NativeWindowHandle { hwnd_isize: child_hwnd };
+        let overlay_hwnd =
+            platform::create_overlay_window(parent_hwnd, x, y, w as i32, h as i32)?;
 
         // ── Create wgpu instance + surface (unsafe: we guarantee HWND lifetime) ──
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -511,7 +574,7 @@ impl WgpuRenderer {
         );
         let raw_window = {
             let mut wh = raw_window_handle::Win32WindowHandle::new(
-                std::num::NonZeroIsize::new(child_hwnd).expect("HWND must be non-null"),
+                std::num::NonZeroIsize::new(overlay_hwnd).expect("HWND must be non-null"),
             );
             let hinstance = unsafe {
                 windows::Win32::System::LibraryLoader::GetModuleHandleW(
@@ -532,6 +595,10 @@ impl WgpuRenderer {
                 })
                 .map_err(|e| format!("wgpu create_surface: {e}"))?
         };
+
+        // Pump messages after surface creation — the Vulkan/DX12 loader
+        // may post messages to the window during setup.
+        platform::pump_messages();
 
         // ── Adapter + Device ─────────────────────────────────────────
         let adapter = futures::executor::block_on(instance.request_adapter(
@@ -696,12 +763,13 @@ impl WgpuRenderer {
         });
 
         log::info!(
-            "WgpuRenderer: created {w}×{h} child window, adapter={}, format={surface_format:?}, present={present_mode:?}",
+            "WgpuRenderer: created {w}×{h} overlay window, adapter={}, format={surface_format:?}, present={present_mode:?}",
             adapter.get_info().name
         );
 
         Ok(Self {
-            hwnd: child_hwnd,
+            hwnd: overlay_hwnd,
+            owner_hwnd: parent_hwnd,
             device,
             queue,
             surface,
@@ -883,14 +951,14 @@ impl NativeRenderer for WgpuRenderer {
         self.desk_w = w;
         self.desk_h = h;
 
-        platform::move_window(self.hwnd, 0, 0, w, h);
+        platform::move_window(self.hwnd, self.owner_hwnd, 0, 0, w, h);
 
         log::info!("WgpuRenderer: resized to {w}×{h}");
         Ok(())
     }
 
     fn reposition(&mut self, x: i32, y: i32, width: u32, height: u32) {
-        platform::move_window(self.hwnd, x, y, width, height);
+        platform::move_window(self.hwnd, self.owner_hwnd, x, y, width, height);
         platform::bring_to_top(self.hwnd);
 
         // If window size changed, reconfigure the surface

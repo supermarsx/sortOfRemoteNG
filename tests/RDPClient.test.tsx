@@ -7,6 +7,7 @@ import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 // Mock Tauri invoke + Channel
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
+  SERIALIZE_TO_IPC_FN: '__TAURI_TO_IPC_KEY__',
   Channel: class {
     id = 0;
     onmessage: ((data: unknown) => void) | null = null;
@@ -24,6 +25,15 @@ vi.mock('@tauri-apps/api/event', () => ({
     mockListeners[eventName] = handler;
     return Promise.resolve(() => { delete mockListeners[eventName]; });
   })
+}));
+
+// Mock Tauri window API (getCurrentWindow)
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: vi.fn(() => ({
+    onMoved: vi.fn(() => Promise.resolve(() => {})),
+    onResized: vi.fn(() => Promise.resolve(() => {})),
+    onCloseRequested: vi.fn(() => Promise.resolve(() => {})),
+  })),
 }));
 
 // Mock rdpCanvas (FrameBuffer class used by the live frame listener)

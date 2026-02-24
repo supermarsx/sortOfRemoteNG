@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useConnections } from '../contexts/useConnections';
 import RdpErrorScreen from './RdpErrorScreen';
 import { useSettings } from '../contexts/SettingsContext';
@@ -624,9 +625,10 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   }, []);
 
   // ─── Native renderer reposition ────────────────────────────────────
-  // When using softbuffer/wgpu, the native child window needs to be
-  // positioned over the canvas area in the webview.  We observe the
-  // container and send physical-pixel coordinates to the Rust side.
+  // When using softbuffer/wgpu, the native overlay window needs to be
+  // positioned over the canvas area.  Because overlay windows use screen
+  // coordinates (WS_POPUP, not WS_CHILD), we must also reposition when
+  // the Tauri window itself moves.
 
   useEffect(() => {
     const isNative = activeRenderBackend !== 'webview' && rdpSessionId;
@@ -653,14 +655,23 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     const observer = new ResizeObserver(() => sendReposition());
     if (containerRef.current) observer.observe(containerRef.current);
 
-    // Reposition on scroll / window move
+    // Reposition on scroll / window resize
     window.addEventListener('resize', sendReposition);
     window.addEventListener('scroll', sendReposition);
+
+    // Reposition when the Tauri window moves (popup windows need this
+    // because they use screen coordinates, not parent-relative coords)
+    let unlistenMoved: (() => void) | null = null;
+    const tauriWindow = getCurrentWindow();
+    tauriWindow.onMoved(() => sendReposition()).then(fn => {
+      unlistenMoved = fn;
+    });
 
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', sendReposition);
       window.removeEventListener('scroll', sendReposition);
+      if (unlistenMoved) unlistenMoved();
     };
   }, [activeRenderBackend, rdpSessionId]);
 
