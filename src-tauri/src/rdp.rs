@@ -13,6 +13,7 @@ use ironrdp::pdu::rdp::client_info::PerformanceFlags;
 use ironrdp_blocking::Framed;
 use ironrdp::core::WriteBuf;
 use serde::{Deserialize, Serialize};
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
@@ -135,19 +136,8 @@ impl SharedFrameStore {
 }
 
 // ─── Events emitted to the frontend ────────────────────────────────────────
-
-/// Lightweight frame signal — no pixel data.  The frontend fetches raw
-/// binary RGBA bytes via the `rdp_get_frame_data` command instead.
-#[derive(Clone, Serialize)]
-pub struct RdpFrameSignal {
-    pub session_id: String,
-    pub x: u16,
-    pub y: u16,
-    pub width: u16,
-    pub height: u16,
-}
-
-
+// Frame pixel data is now pushed via Tauri Channel (binary ArrayBuffer) —
+// no JSON event for frames.  Status/pointer/stats still use emit().
 
 #[derive(Clone, Serialize)]
 pub struct RdpStatusEvent {
@@ -1207,6 +1197,7 @@ fn run_rdp_session(
     cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: SharedFrameStoreState,
+    frame_channel: Channel<InvokeResponseBody>,
 ) {
     let result = if settings.auto_detect {
         // ── Auto-detect negotiation: try different protocol combos ───
@@ -1224,6 +1215,7 @@ fn run_rdp_session(
             cached_tls_connector,
             cached_http_client,
             &frame_store,
+            &frame_channel,
         )
     } else {
         run_rdp_session_inner(
@@ -1240,6 +1232,7 @@ fn run_rdp_session(
             cached_tls_connector,
             cached_http_client,
             &frame_store,
+            &frame_channel,
         )
     };
 
@@ -1364,6 +1357,7 @@ fn run_rdp_session_auto_detect(
     cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
+    frame_channel: &Channel<InvokeResponseBody>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
     let max_attempts = (settings.max_retries as usize + 1).min(combos.len());
@@ -1423,6 +1417,7 @@ fn run_rdp_session_auto_detect(
             cached_tls_connector.clone(),
             cached_http_client.clone(),
             frame_store,
+            frame_channel,
         );
 
         match result {
@@ -1549,6 +1544,7 @@ fn run_rdp_session_auto_detect(
                     cached_tls_connector.clone(),
                     cached_http_client.clone(),
                     frame_store,
+                    frame_channel,
                 );
 
                 match result {
@@ -1616,6 +1612,7 @@ fn run_rdp_session_inner(
     cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
+    frame_channel: &Channel<InvokeResponseBody>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conn_start = Instant::now();
 
@@ -2074,6 +2071,7 @@ fn run_rdp_session_inner(
                         stats,
                         full_frame_sync_interval,
                         frame_store,
+                        frame_channel,
                     )?;
                 }
                 Err(e) => {
@@ -2089,31 +2087,20 @@ fn run_rdp_session_inner(
         }
 
         // ─ Flush batched frame updates ─────────────────────────────────
+        // Push each accumulated dirty rect individually through the Channel
+        // instead of merging into one huge bounding box (which wastes bandwidth
+        // when two small rects are far apart).
         if frame_batching && !dirty_regions.is_empty() && last_frame_emit.elapsed() >= batch_interval {
-            // Compute bounding box of all dirty regions
-            let mut min_x = u16::MAX;
-            let mut min_y = u16::MAX;
-            let mut max_x = 0u16;
-            let mut max_y = 0u16;
             for &(x, y, w, h) in &dirty_regions {
-                min_x = min_x.min(x);
-                min_y = min_y.min(y);
-                max_x = max_x.max(x.saturating_add(w));
-                max_y = max_y.max(y.saturating_add(h));
-            }
-            let merged_w = max_x.saturating_sub(min_x);
-            let merged_h = max_y.saturating_sub(min_y);
-            if merged_w > 0 && merged_h > 0 {
-                let region = ironrdp::pdu::geometry::InclusiveRectangle {
-                    left: min_x,
-                    top: min_y,
-                    right: max_x.saturating_sub(1),
-                    bottom: max_y.saturating_sub(1),
-                };
-                // The shared framebuffer was already updated when each individual
-                // dirty region arrived in the GraphicsUpdate handler below.
-                // We just emit the merged bounding-box signal.
-                emit_frame_signal(session_id, &region, app_handle);
+                if w > 0 && h > 0 {
+                    let region = ironrdp::pdu::geometry::InclusiveRectangle {
+                        left: x,
+                        top: y,
+                        right: x.saturating_add(w).saturating_sub(1),
+                        bottom: y.saturating_add(h).saturating_sub(1),
+                    };
+                    push_frame_via_channel(image.data(), desktop_width, &region, frame_channel);
+                }
             }
             dirty_regions.clear();
             last_frame_emit = Instant::now();
@@ -2166,30 +2153,28 @@ fn run_rdp_session_inner(
                                     let rw = region.right.saturating_sub(region.left) + 1;
                                     let rh = region.bottom.saturating_sub(region.top) + 1;
 
-                                    // Always mirror dirty region into the shared framebuffer
-                                    frame_store.update_region(session_id, image.data(), desktop_width, &region);
-
                                     if frame_batching {
-                                        // Accumulate dirty region for batched signal emission
+                                        // Accumulate dirty region for batched channel push
                                         dirty_regions.push((region.left, region.top, rw, rh));
                                     } else {
-                                        // Immediate signal emission (no batching)
-                                        emit_frame_signal(
-                                            session_id,
+                                        // Immediate push through Channel (no batching)
+                                        push_frame_via_channel(
+                                            image.data(),
+                                            desktop_width,
                                             &region,
-                                            app_handle,
+                                            frame_channel,
                                         );
                                     }
 
-                                    // Periodic full-frame sync
+                                    // Periodic full-frame sync (updates fallback store too)
                                     let fc = stats.frame_count.load(Ordering::Relaxed);
                                     if fc > 0 && fc % full_frame_sync_interval == 0 {
-                                        send_full_frame_signal(
+                                        send_full_frame_via_channel(
                                             session_id,
                                             &image,
                                             desktop_width,
                                             desktop_height,
-                                            app_handle,
+                                            frame_channel,
                                             frame_store,
                                         );
                                     }
@@ -2375,10 +2360,11 @@ fn process_outputs(
     image: &DecodedImage,
     desktop_width: u16,
     desktop_height: u16,
-    app_handle: &AppHandle,
+    _app_handle: &AppHandle,
     stats: &RdpSessionStats,
     full_frame_sync_interval: u64,
     frame_store: &SharedFrameStore,
+    frame_channel: &Channel<InvokeResponseBody>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for output in outputs {
         match output {
@@ -2393,17 +2379,16 @@ fn process_outputs(
             }
             ActiveStageOutput::GraphicsUpdate(region) => {
                 stats.record_frame();
-                // Update shared framebuffer + emit lightweight signal
-                frame_store.update_region(session_id, image.data(), desktop_width, region);
-                emit_frame_signal(session_id, region, app_handle);
+                // Push dirty region directly through the Channel (no event+invoke round-trip)
+                push_frame_via_channel(image.data(), desktop_width, region, frame_channel);
                 let fc = stats.frame_count.load(Ordering::Relaxed);
                 if fc > 0 && fc % full_frame_sync_interval == 0 {
-                    send_full_frame_signal(
+                    send_full_frame_via_channel(
                         session_id,
                         image,
                         desktop_width,
                         desktop_height,
-                        app_handle,
+                        frame_channel,
                         frame_store,
                     );
                 }
@@ -2414,26 +2399,71 @@ fn process_outputs(
     Ok(())
 }
 
-/// Emit a lightweight metadata-only frame signal (no pixel data).
-/// The frontend fetches raw binary from `rdp_get_frame_data` instead.
-fn emit_frame_signal(
-    session_id: &str,
+/// Push a dirty region's pixel data directly through the Tauri Channel.
+///
+/// Binary protocol: 8-byte header [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
+/// followed by w*h*4 raw RGBA bytes.  The JS side receives this as a
+/// single ArrayBuffer — zero JSON, zero base64, zero invoke round-trips.
+fn push_frame_via_channel(
+    image_data: &[u8],
+    fb_width: u16,
     region: &ironrdp::pdu::geometry::InclusiveRectangle,
-    app_handle: &AppHandle,
+    frame_channel: &Channel<InvokeResponseBody>,
 ) {
-    let _ = app_handle.emit(
-        "rdp://frame",
-        RdpFrameSignal {
-            session_id: session_id.to_string(),
-            x: region.left,
-            y: region.top,
-            width: region.right.saturating_sub(region.left) + 1,
-            height: region.bottom.saturating_sub(region.top) + 1,
-        },
-    );
+    let bpp = 4usize;
+    let stride = fb_width as usize * bpp;
+    let left = region.left as usize;
+    let top = region.top as usize;
+    let right = region.right as usize;
+    let bottom = region.bottom as usize;
+    let rw = right.saturating_sub(left) + 1;
+    let rh = bottom.saturating_sub(top) + 1;
+
+    let pixel_bytes = rw * rh * bpp;
+    let mut payload = Vec::with_capacity(8 + pixel_bytes);
+
+    // 8-byte header: x, y, w, h as little-endian u16
+    payload.extend_from_slice(&(region.left).to_le_bytes());
+    payload.extend_from_slice(&(region.top).to_le_bytes());
+    payload.extend_from_slice(&(rw as u16).to_le_bytes());
+    payload.extend_from_slice(&(rh as u16).to_le_bytes());
+
+    // RGBA pixel data — row-by-row copy from the framebuffer
+    for row in top..=bottom {
+        let row_start = row * stride + left * bpp;
+        let row_end = row_start + rw * bpp;
+        if row_end <= image_data.len() {
+            payload.extend_from_slice(&image_data[row_start..row_end]);
+        }
+    }
+
+    let _ = frame_channel.send(InvokeResponseBody::Raw(payload));
 }
 
-#[allow(dead_code)]
+/// Push the entire desktop as a single full-frame through the channel
+/// and update the SharedFrameStore (for the rdp_get_frame_data fallback).
+fn send_full_frame_via_channel(
+    session_id: &str,
+    image: &DecodedImage,
+    width: u16,
+    height: u16,
+    frame_channel: &Channel<InvokeResponseBody>,
+    frame_store: &SharedFrameStore,
+) {
+    let region = ironrdp::pdu::geometry::InclusiveRectangle {
+        left: 0,
+        top: 0,
+        right: width.saturating_sub(1),
+        bottom: height.saturating_sub(1),
+    };
+    // Update fallback store (periodic, not on hot path)
+    frame_store.update_region(session_id, image.data(), width, &region);
+    // Push full frame through channel
+    push_frame_via_channel(image.data(), width, &region, frame_channel);
+}
+
+/// Legacy: extract a rectangular region as a contiguous RGBA byte vec.
+/// Used only by the `rdp_get_frame_data` fallback command.
 fn extract_region_rgba(
     framebuffer: &[u8],
     fb_width: u16,
@@ -2460,36 +2490,6 @@ fn extract_region_rgba(
     }
 
     rgba
-}
-
-/// Full-frame sync: update the entire shared framebuffer and signal the
-/// frontend to fetch the complete frame.
-fn send_full_frame_signal(
-    session_id: &str,
-    image: &DecodedImage,
-    width: u16,
-    height: u16,
-    app_handle: &AppHandle,
-    frame_store: &SharedFrameStore,
-) {
-    // Update the full shared buffer from the DecodedImage
-    let region = ironrdp::pdu::geometry::InclusiveRectangle {
-        left: 0,
-        top: 0,
-        right: width.saturating_sub(1),
-        bottom: height.saturating_sub(1),
-    };
-    frame_store.update_region(session_id, image.data(), width, &region);
-    let _ = app_handle.emit(
-        "rdp://frame",
-        RdpFrameSignal {
-            session_id: session_id.to_string(),
-            x: 0,
-            y: 0,
-            width,
-            height,
-        },
-    );
 }
 
 fn set_read_timeout_on_framed(
@@ -2548,6 +2548,9 @@ pub async fn connect_rdp(
     // Stable frontend connection slot ID.  When provided the backend
     // automatically evicts any prior session occupying the same slot.
     connection_id: Option<String>,
+    // Channel for push-based frame delivery (binary RGBA streamed directly
+    // from the session thread to JS — no base64, no event+invoke round-trip).
+    frame_channel: Channel<InvokeResponseBody>,
 ) -> Result<String, String> {
     // ── Evict any previous session for this connection slot ──────────────
     {
@@ -2641,6 +2644,7 @@ pub async fn connect_rdp(
             tls_conn,
             http_client,
             fs,
+            frame_channel,
         );
     });
 

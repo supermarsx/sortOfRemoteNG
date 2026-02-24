@@ -19,7 +19,7 @@ import {
   Search,
   ZoomIn,
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useConnections } from '../contexts/useConnections';
 import RdpErrorScreen from './RdpErrorScreen';
@@ -36,14 +36,6 @@ import { FrameBuffer } from './rdpCanvas';
 
 interface RDPClientProps {
   session: ConnectionSession;
-}
-
-interface RdpFrameSignal {
-  session_id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
 }
 
 interface RdpStatusEvent {
@@ -235,6 +227,22 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         width: resW,
         height: resH,
         rdpSettings: rdpSettings,
+        // Push-based frame channel: Rust streams binary RGBA directly here —
+        // no event+invoke round-trip, no base64, no JSON serialization.
+        frameChannel: new Channel<ArrayBuffer>((data: ArrayBuffer) => {
+          const fb = frameBufferRef.current;
+          if (!fb || data.byteLength < 8) return;
+          // Binary protocol: 8-byte header [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
+          // followed by w*h*4 raw RGBA bytes.
+          const view = new DataView(data);
+          const x = view.getUint16(0, true);
+          const y = view.getUint16(2, true);
+          const w = view.getUint16(4, true);
+          const h = view.getUint16(6, true);
+          const rgba = new Uint8ClampedArray(data, 8);
+          fb.applyRegion(x, y, w, h, rgba);
+          frameDirtyRef.current = true;
+        }),
       };
 
       debugLog(`Attempting RDP connection to ${connectionDetails.host}:${connectionDetails.port}`);
@@ -303,35 +311,10 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     cleanup();
   }, [cleanup]);
 
-  // ─── Event listeners for RDP frames/status/pointer ─────────────────
+  // ─── Event listeners for RDP status/pointer (frames come via Channel) ──
 
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
-
-    // Listen for frame signals → fetch raw binary RGBA from Rust, paint to offscreen buffer
-    listen<RdpFrameSignal>('rdp://frame', (event) => {
-      const frame = event.payload;
-      if (frame.session_id !== sessionIdRef.current) return;
-
-      const fb = frameBufferRef.current;
-      if (!fb) return;
-
-      // Fetch raw binary RGBA from the shared framebuffer in Rust.
-      // This returns an ArrayBuffer — no base64 encode/decode overhead.
-      invoke('rdp_get_frame_data', {
-        sessionId: frame.session_id,
-        x: frame.x,
-        y: frame.y,
-        width: frame.width,
-        height: frame.height,
-      }).then((buffer) => {
-        const bytes = new Uint8ClampedArray(buffer as ArrayBuffer);
-        fb.applyRegion(frame.x, frame.y, frame.width, frame.height, bytes);
-        frameDirtyRef.current = true;
-      }).catch((e) => {
-        debugLog(`Frame fetch error: ${e}`);
-      });
-    }).then(fn => unlisteners.push(fn));
 
     // Listen for status updates
     listen<RdpStatusEvent>('rdp://status', (event) => {

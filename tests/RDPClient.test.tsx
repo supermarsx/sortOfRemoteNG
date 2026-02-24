@@ -4,9 +4,17 @@ import RDPClient from "../src/components/RDPClient";
 import { ConnectionSession } from "../src/types/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
-// Mock Tauri invoke
+// Mock Tauri invoke + Channel
 vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn()
+  invoke: vi.fn(),
+  Channel: class {
+    id = 0;
+    onmessage: ((data: unknown) => void) | null = null;
+    constructor(handler?: (data: unknown) => void) {
+      if (handler) this.onmessage = handler;
+    }
+    toJSON() { return `__CHANNEL__:${this.id}`; }
+  },
 }));
 
 // Mock Tauri event API

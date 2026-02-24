@@ -67,15 +67,29 @@ export class FrameBuffer {
   ctx: OffscreenCanvasRenderingContext2D;
   /** Whether at least one frame has been painted (used to gate blits). */
   hasPainted = false;
+  /**
+   * Pixel-area threshold: regions with area >= this use the async
+   * createImageBitmap + drawImage path (GPU-accelerated).  Smaller
+   * regions use the sync putImageData path (lower per-call overhead).
+   */
+  private static readonly BITMAP_THRESHOLD = 4096; // 64×64
 
   constructor(width: number, height: number) {
     this.offscreen = new OffscreenCanvas(width, height);
-    const ctx = this.offscreen.getContext('2d', { willReadFrequently: true });
+    // Do NOT pass `willReadFrequently` — lets the browser use GPU-backed
+    // storage for the OffscreenCanvas, making drawImage blits faster.
+    const ctx = this.offscreen.getContext('2d');
     if (!ctx) throw new Error('Failed to get OffscreenCanvas 2D context');
     this.ctx = ctx;
   }
 
-  /** Apply a dirty-region update (decoded RGBA bytes). */
+  /**
+   * Apply a dirty-region update (decoded RGBA bytes).
+   *
+   * For large regions, uses `createImageBitmap` + `drawImage` which is
+   * hardware-accelerated (GPU texture upload).  For small regions, falls
+   * back to synchronous `putImageData` to avoid the Promise overhead.
+   */
   applyRegion(
     x: number,
     y: number,
@@ -85,8 +99,19 @@ export class FrameBuffer {
   ): void {
     if (width <= 0 || height <= 0 || rgba.length < width * height * 4) return;
     const imgData = new ImageData(rgba, width, height);
-    this.ctx.putImageData(imgData, x, y);
-    this.hasPainted = true;
+    const area = width * height;
+    if (area >= FrameBuffer.BITMAP_THRESHOLD) {
+      // GPU-accelerated path: async bitmap upload + drawImage
+      createImageBitmap(imgData).then((bitmap) => {
+        this.ctx.drawImage(bitmap, x, y);
+        bitmap.close();
+        this.hasPainted = true;
+      });
+    } else {
+      // Sync path for tiny regions (cursor updates, small UI changes)
+      this.ctx.putImageData(imgData, x, y);
+      this.hasPainted = true;
+    }
   }
 
   /**
