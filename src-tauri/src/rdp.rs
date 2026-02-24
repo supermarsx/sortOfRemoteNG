@@ -649,7 +649,7 @@ impl ResolvedSettings {
             frame_batch_interval: Duration::from_millis(batch_ms),
             full_frame_sync_interval: adv
                 .and_then(|a| a.full_frame_sync_interval)
-                .unwrap_or(300),
+                .unwrap_or(1000),
             // Bitmap codecs
             codecs_enabled: perf
                 .and_then(|p| p.codecs.as_ref())
@@ -702,8 +702,11 @@ pub struct RdpSessionStats {
     pub reactivations: AtomicU64,
     pub phase: std::sync::Mutex<String>,
     pub last_error: std::sync::Mutex<Option<String>>,
-    /// Timestamps of recent frames for FPS calculation
-    pub fps_frame_timestamps: std::sync::Mutex<Vec<Instant>>,
+    /// Lock-free FPS tracking: frame count snapshot and timestamp for
+    /// computing frames-per-second without any Mutex on the hot path.
+    fps_snapshot_count: AtomicU64,
+    fps_snapshot_time: std::sync::Mutex<Instant>,
+    fps_cached: std::sync::Mutex<f64>,
     pub alive: AtomicBool,
 }
 
@@ -721,7 +724,9 @@ impl RdpSessionStats {
             reactivations: AtomicU64::new(0),
             phase: std::sync::Mutex::new("initializing".to_string()),
             last_error: std::sync::Mutex::new(None),
-            fps_frame_timestamps: std::sync::Mutex::new(Vec::new()),
+            fps_snapshot_count: AtomicU64::new(0),
+            fps_snapshot_time: std::sync::Mutex::new(Instant::now()),
+            fps_cached: std::sync::Mutex::new(0.0),
             alive: AtomicBool::new(true),
         }
     }
@@ -742,29 +747,46 @@ impl RdpSessionStats {
         }
     }
 
+    /// Record a frame.  Lock-free: just an atomic increment.
+    #[inline]
     fn record_frame(&self) {
         self.frame_count.fetch_add(1, Ordering::Relaxed);
-        if let Ok(mut timestamps) = self.fps_frame_timestamps.lock() {
-            let now = Instant::now();
-            timestamps.push(now);
-            // Keep only last 2 seconds of timestamps
-            let cutoff = now - Duration::from_secs(2);
-            timestamps.retain(|t| *t > cutoff);
-        }
     }
 
+    /// Compute approximate FPS from the delta between the current
+    /// frame count and a snapshot taken ~1 s ago.  Only the periodic
+    /// stats emitter calls this (once per second), so the two Mutex
+    /// locks are completely off the hot path.
     fn current_fps(&self) -> f64 {
-        if let Ok(timestamps) = self.fps_frame_timestamps.lock() {
-            if timestamps.len() < 2 {
-                return 0.0;
+        let current = self.frame_count.load(Ordering::Relaxed);
+        let now = Instant::now();
+        let (fps, should_rotate) = {
+            let prev_count = self.fps_snapshot_count.load(Ordering::Relaxed);
+            if let Ok(prev_time) = self.fps_snapshot_time.lock() {
+                let elapsed = now.duration_since(*prev_time).as_secs_f64();
+                if elapsed >= 0.9 {
+                    let delta = current.saturating_sub(prev_count) as f64;
+                    let fps = if elapsed > 0.0 { delta / elapsed } else { 0.0 };
+                    (fps, true)
+                } else {
+                    // Not enough time elapsed — return cached value
+                    let cached = self.fps_cached.lock().map(|c| *c).unwrap_or(0.0);
+                    (cached, false)
+                }
+            } else {
+                (0.0, false)
             }
-            let now = Instant::now();
-            let one_sec_ago = now - Duration::from_secs(1);
-            let recent = timestamps.iter().filter(|t| **t > one_sec_ago).count();
-            recent as f64
-        } else {
-            0.0
+        };
+        if should_rotate {
+            self.fps_snapshot_count.store(current, Ordering::Relaxed);
+            if let Ok(mut t) = self.fps_snapshot_time.lock() {
+                *t = now;
+            }
+            if let Ok(mut c) = self.fps_cached.lock() {
+                *c = fps;
+            }
         }
+        fps
     }
 
     fn to_event(&self, session_id: &str) -> RdpStatsEvent {
@@ -2083,12 +2105,25 @@ fn run_rdp_session_inner(
     let mut dirty_regions: Vec<(u16, u16, u16, u16)> = Vec::new(); // (x, y, w, h)
     let mut last_frame_emit = Instant::now();
 
+    // ── Reusable buffers (avoid per-iteration allocations) ─────────────
+    let mut merged_inputs: Vec<FastPathInputEvent> = Vec::new();
+
+    // ── Adaptive read timeout ─────────────────────────────────────────
+    // When frames are actively streaming the server sends data frequently,
+    // so we only need a short timeout to interleave input handling (16 ms).
+    // When idle for a while we scale up to 50 ms to cut wakeups by ~3×.
+    let timeout_active = Duration::from_millis(16);
+    let timeout_idle = Duration::from_millis(50);
+    let idle_threshold = Duration::from_millis(500);
+    let mut last_data_received = Instant::now();
+    let mut current_timeout = timeout_active;
+
     loop {
         // ─ Drain ALL pending commands (input coalescing) ───────────────
         // Reading only one command per iteration adds up to read_timeout
         // latency per buffered event.  Draining all pending commands and
         // merging input events keeps the cursor responsive.
-        let mut merged_inputs: Vec<FastPathInputEvent> = Vec::new();
+        merged_inputs.clear();
         let mut should_break = false;
         loop {
             match cmd_rx.try_recv() {
@@ -2178,6 +2213,12 @@ fn run_rdp_session_inner(
         match tls_framed.read_pdu() {
             Ok((action, payload)) => {
                 consecutive_errors = 0;
+                last_data_received = Instant::now();
+                // Switch to fast timeout while actively receiving
+                if current_timeout != timeout_active {
+                    current_timeout = timeout_active;
+                    set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
+                }
                 let payload_len = payload.len() as u64;
                 stats
                     .bytes_received
@@ -2390,7 +2431,12 @@ fn run_rdp_session_inner(
                 }
             }
             Err(e) if is_timeout_error(&e) => {
-                // Read timeout — no data available, loop back for input handling
+                // Read timeout — no data available, loop back for input handling.
+                // Switch to slower polling when idle to reduce CPU wakeups.
+                if current_timeout == timeout_active && last_data_received.elapsed() >= idle_threshold {
+                    current_timeout = timeout_idle;
+                    set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
+                }
                 continue;
             }
             Err(e) => {
@@ -2472,6 +2518,7 @@ fn process_outputs(
 /// Binary protocol: 8-byte header [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
 /// followed by w*h*4 raw RGBA bytes.  The JS side receives this as a
 /// single ArrayBuffer — zero JSON, zero base64, zero invoke round-trips.
+#[inline]
 fn push_frame_via_channel(
     image_data: &[u8],
     fb_width: u16,

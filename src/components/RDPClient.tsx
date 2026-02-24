@@ -170,6 +170,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const frameBufferRef = useRef<FrameBuffer | null>(null);
   /** rAF handle for the blit loop */
   const rafIdRef = useRef<number>(0);
+  /** Whether a rAF callback is already scheduled (avoids redundant requests). */
+  const rafPendingRef = useRef(false);
   /**
    * Incoming frame queue: Channel pushes raw ArrayBuffer messages here.
    * The rAF loop drains the queue, applies all pending paints, and blits
@@ -178,6 +180,41 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
    * one evenly-timed render per display refresh.
    */
   const frameQueueRef = useRef<ArrayBuffer[]>([]);
+
+  // ── Demand-driven rAF render callback ──────────────────────────────
+  // This is called only when there are frames in the queue.  The Channel
+  // callback schedules a rAF; this drains the queue and paints directly
+  // to the visible canvas.  Zero CPU when idle.
+  /** Cached visible-canvas 2D context (set on first render). */
+  const visCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+
+  /** Stable render function — never changes identity so the Channel closure
+   *  (created once during connect) can safely reference it. */
+  const renderFrames = useCallback(() => {
+    rafPendingRef.current = false;
+    const queue = frameQueueRef.current;
+    const fb = frameBufferRef.current;
+    const canvas = canvasRef.current;
+
+    if (queue.length > 0 && fb && canvas) {
+      if (!visCtxRef.current) visCtxRef.current = canvas.getContext('2d');
+      const ctx = visCtxRef.current;
+      if (ctx) {
+        for (let i = 0; i < queue.length; i++) {
+          const data = queue[i];
+          const view = new DataView(data);
+          const x = view.getUint16(0, true);
+          const y = view.getUint16(2, true);
+          const w = view.getUint16(4, true);
+          const h = view.getUint16(6, true);
+          const rgba = new Uint8ClampedArray(data, 8);
+          fb.paintDirect(ctx, x, y, w, h, rgba);
+        }
+      }
+      queue.length = 0;
+    }
+  }, []);
+
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   const [statusMessage, setStatusMessage] = useState('');
@@ -345,11 +382,16 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         height: resH,
         rdpSettings: effectiveSettings,
         // Push-based frame channel: Rust streams binary RGBA directly here.
-        // We queue the raw ArrayBuffers and drain them in the rAF blit loop
-        // for perfectly smooth frame pacing (one render per vsync).
+        // We queue the raw ArrayBuffers and schedule a rAF paint only when
+        // frames are actually pending — zero CPU when idle.
         frameChannel: new Channel<ArrayBuffer>((data: ArrayBuffer) => {
           if (data.byteLength >= 8) {
             frameQueueRef.current.push(data);
+            // Schedule a render if one isn't already pending
+            if (!rafPendingRef.current) {
+              rafPendingRef.current = true;
+              rafIdRef.current = requestAnimationFrame(renderFrames);
+            }
           }
         }),
       };
@@ -384,7 +426,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setStatusMessage(`Connection failed: ${error}`);
       console.error('RDP initialization failed:', error);
     }
-  }, [session, connection, rdpSettings]);
+  }, [session, connection, rdpSettings, renderFrames]);
 
   // ─── Disconnect ────────────────────────────────────────────────────
 
@@ -393,6 +435,12 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     setIsConnected(false);
     setConnectionStatus('disconnected');
     setRdpSessionId(null);
+    // Cancel any pending rAF
+    if (rafPendingRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafPendingRef.current = false;
+    }
+    visCtxRef.current = null;
     // Disconnect by connectionId — the backend figures out which session
     // to tear down, even if our invoke('connect_rdp') hasn't resolved yet.
     if (connection) {
@@ -549,50 +597,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     };
   }, [session, initializeRDPConnection, cleanup]);
 
-  // ─── rAF render loop ───────────────────────────────────────────────
-  // Drain the frame queue and paint every dirty region directly onto the
-  // visible canvas.  No intermediate offscreen copy — each putImageData
-  // goes straight to the GPU-backed canvas.  The browser composites all
-  // writes within the same rAF callback into a single on-screen frame.
+  // ─── Cleanup: cancel any pending rAF on unmount ─────────────────────
 
   useEffect(() => {
-    let running = true;
-    /** Cached 2D context of the visible canvas. */
-    let visCtx: CanvasRenderingContext2D | null = null;
-
-    const renderLoop = () => {
-      if (!running) return;
-      const queue = frameQueueRef.current;
-      const fb = frameBufferRef.current;
-      const canvas = canvasRef.current;
-
-      // Drain all queued frame messages
-      if (queue.length > 0 && fb && canvas) {
-        if (!visCtx) visCtx = canvas.getContext('2d');
-        if (visCtx) {
-          for (let i = 0; i < queue.length; i++) {
-            const data = queue[i];
-            // Binary protocol: 8-byte header  [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
-            const view = new DataView(data);
-            const x = view.getUint16(0, true);
-            const y = view.getUint16(2, true);
-            const w = view.getUint16(4, true);
-            const h = view.getUint16(6, true);
-            const rgba = new Uint8ClampedArray(data, 8);
-            fb.paintDirect(visCtx, x, y, w, h, rgba);
-          }
-        }
-        queue.length = 0; // clear without re-allocating
-      }
-
-      rafIdRef.current = requestAnimationFrame(renderLoop);
-    };
-
-    rafIdRef.current = requestAnimationFrame(renderLoop);
-
     return () => {
-      running = false;
-      cancelAnimationFrame(rafIdRef.current);
+      if (rafPendingRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafPendingRef.current = false;
+      }
     };
   }, []);
 
