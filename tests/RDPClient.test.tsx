@@ -38,6 +38,8 @@ vi.mock('../src/components/rdpCanvas', () => ({
     offscreen = { width: 1920, height: 1080 };
     ctx = {};
     hasPainted = false;
+    paintDirect() { this.hasPainted = true; }
+    syncFromVisible() {}
     applyRegion() { this.hasPainted = true; }
     resize() {}
     blitTo() {}
@@ -176,7 +178,10 @@ describe("RDPClient", () => {
     });
 
     it("should display error when connect_rdp command fails", async () => {
-      mockInvoke.mockRejectedValueOnce(new Error('RDP connection failed'));
+      // The first invoke is detect_keyboard_layout (auto-detect), the second is connect_rdp.
+      // Let detect_keyboard_layout succeed, then reject connect_rdp.
+      mockInvoke.mockResolvedValueOnce(0x0409); // detect_keyboard_layout
+      mockInvoke.mockRejectedValueOnce(new Error('RDP connection failed')); // connect_rdp
 
       renderWithProviders(mockSession);
 

@@ -256,6 +256,8 @@ export interface RdpInputSettings {
   imeFileName?: string;
   /** Enable Unicode keyboard events (for characters without scancodes) */
   enableUnicodeInput?: boolean;
+  /** Auto-detect keyboard layout from the OS at connection time */
+  autoDetectLayout?: boolean;
   /** Input event priority: 'realtime' sends immediately, 'batched' groups events */
   inputPriority?: 'realtime' | 'batched';
   /** Batch interval in ms when inputPriority is 'batched' */
@@ -564,6 +566,7 @@ export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
     keyboardFunctionKeys: 12,
     imeFileName: '',
     enableUnicodeInput: true,
+    autoDetectLayout: true,
     inputPriority: 'realtime',
     batchIntervalMs: 16,
   },

@@ -402,13 +402,26 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
           </select>
         </div>
 
+        <label className={labelClass}>
+          <input
+            type="checkbox"
+            checked={rdp.input?.autoDetectLayout !== false}
+            onChange={(e) => updateRdp('input', { autoDetectLayout: e.target.checked })}
+            className={checkboxClass}
+          />
+          <span>Auto-detect keyboard layout on connect</span>
+        </label>
+
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Keyboard Layout</label>
+          <label className="block text-xs text-gray-400 mb-1">
+            Keyboard Layout {rdp.input?.autoDetectLayout !== false && <span className="text-blue-400">(overridden by auto-detect)</span>}
+          </label>
           <div className="flex gap-2">
             <select
               value={rdp.input?.keyboardLayout ?? 0x0409}
               onChange={(e) => updateRdp('input', { keyboardLayout: parseInt(e.target.value) })}
-              className={selectClass + ' flex-1'}
+              disabled={rdp.input?.autoDetectLayout !== false}
+              className={selectClass + ' flex-1' + (rdp.input?.autoDetectLayout !== false ? ' opacity-50' : '')}
             >
               {KEYBOARD_LAYOUTS.map((kl) => (
                 <option key={kl.value} value={kl.value}>

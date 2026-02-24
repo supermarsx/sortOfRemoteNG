@@ -53,25 +53,32 @@ export function clearCanvas(
 // ─── Offscreen double-buffer / frame-cache manager ─────────────────────────
 
 /**
- * FrameBuffer manages an offscreen canvas that serves as both:
- *  1. A double-buffer — frame updates are painted here first, then
- *     blitted to the visible canvas once per animation frame.
- *  2. A wallpaper / framebuffer cache — on resize the last full
- *     frame is instantly scaled to the new dimensions so the user
- *     sees immediate visual feedback instead of a blank canvas.
+ * FrameBuffer manages rendering of RDP dirty-region updates.
+ *
+ * **Primary path (paintDirect)**: putImageData straight to the visible
+ * canvas — zero intermediate copies, minimal latency, no bounding-box
+ * merge waste.
+ *
+ * An OffscreenCanvas is kept *only* as a resize cache so that we can
+ * instantly scale the last known frame into a new resolution without
+ * waiting for the server.  It is lazily synced from the visible canvas
+ * (via `syncFromVisible()`) right before a resize needs it.
  */
 export class FrameBuffer {
-  /** Offscreen canvas that accumulates all dirty-region paints. */
+  /** Offscreen canvas kept as a resize cache. */
   offscreen: OffscreenCanvas;
   /** 2D context of the offscreen canvas. */
   ctx: OffscreenCanvasRenderingContext2D;
   /** Whether at least one frame has been painted (used to gate blits). */
   hasPainted = false;
 
-  // ── Dirty bounding box ───────────────────────────────────────────
-  // Tracks the rectangular area that changed since the last blitTo()
-  // so we only copy the actually-dirty portion to the visible canvas
-  // instead of the full 1920×1080 every vsync.
+  /**
+   * True when the visible canvas has newer content than the offscreen
+   * cache.  Reset after `syncFromVisible()`.
+   */
+  private offscreenStale = false;
+
+  // ── Dirty bounding box (kept for legacy blitTo callers) ──────────
   private dirtyMinX = 0;
   private dirtyMinY = 0;
   private dirtyMaxX = 0;
@@ -80,17 +87,50 @@ export class FrameBuffer {
 
   constructor(width: number, height: number) {
     this.offscreen = new OffscreenCanvas(width, height);
-    // CPU-backed canvas: putImageData is very fast (CPU→CPU copy).
-    // The single drawImage blit per rAF tick is the only CPU→GPU upload.
-    const ctx = this.offscreen.getContext('2d', { willReadFrequently: true });
+    const ctx = this.offscreen.getContext('2d');
     if (!ctx) throw new Error('Failed to get OffscreenCanvas 2D context');
     this.ctx = ctx;
   }
 
+  // ── Primary path: paint directly to the visible canvas ───────────
+
   /**
-   * Apply a dirty-region update (decoded RGBA bytes).
-   * Synchronous putImageData — correct ordering, fast on CPU-backed canvas,
-   * no async Promise overhead.
+   * Paint a dirty region directly onto the visible canvas context.
+   *
+   * This is the hot-path renderer: one `putImageData` per region with
+   * **no** intermediate copy.  The browser composites all updates
+   * within the same rAF callback into a single on-screen frame.
+   */
+  paintDirect(
+    visibleCtx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    rgba: Uint8ClampedArray,
+  ): void {
+    if (width <= 0 || height <= 0 || rgba.length < width * height * 4) return;
+    const imgData = new ImageData(rgba, width, height);
+    visibleCtx.putImageData(imgData, x, y);
+    this.hasPainted = true;
+    this.offscreenStale = true;
+  }
+
+  /**
+   * Sync the offscreen cache from the visible canvas.  Called lazily
+   * only when the offscreen content is actually needed (i.e. resize).
+   */
+  syncFromVisible(visible: HTMLCanvasElement): void {
+    if (!this.offscreenStale || !this.hasPainted) return;
+    this.ctx.drawImage(visible, 0, 0);
+    this.offscreenStale = false;
+  }
+
+  // ── Legacy path (kept for backward compatibility / tests) ────────
+
+  /**
+   * Apply a dirty-region update to the *offscreen* canvas.
+   * @deprecated Prefer `paintDirect()` for the live render path.
    */
   applyRegion(
     x: number,
@@ -122,35 +162,39 @@ export class FrameBuffer {
    * Resize the offscreen canvas.  The previous content is scaled into the
    * new dimensions so there is no visual gap while waiting for the server
    * to send fresh frames at the new size.
+   *
+   * @param newWidth  New canvas width.
+   * @param newHeight New canvas height.
+   * @param visible   Optional visible canvas — when provided, the offscreen
+   *                  cache is synced from it first (needed for the direct
+   *                  paint path where offscreen may be stale).
    */
-  resize(newWidth: number, newHeight: number): void {
+  resize(newWidth: number, newHeight: number, visible?: HTMLCanvasElement): void {
     if (
       newWidth === this.offscreen.width &&
       newHeight === this.offscreen.height
     )
       return;
 
+    // Sync offscreen from visible canvas if stale (direct-paint path)
+    if (visible) this.syncFromVisible(visible);
+
     // Capture current content as a bitmap before resizing.
-    let snapshot: ImageBitmap | null = null;
     if (this.hasPainted) {
-      // createImageBitmap from OffscreenCanvas is synchronous-ish in the
-      // same-origin case; but since we might be in a tight path and the
-      // API returns a Promise we fall back to drawImage from a temp canvas.
       const tmp = new OffscreenCanvas(this.offscreen.width, this.offscreen.height);
       const tmpCtx = tmp.getContext('2d');
       if (tmpCtx) {
         tmpCtx.drawImage(this.offscreen, 0, 0);
-        snapshot = null; // we'll use `tmp` directly
         // Resize then scale the old content into the new dimensions.
         this.offscreen.width = newWidth;
         this.offscreen.height = newHeight;
         this.ctx.drawImage(tmp, 0, 0, tmp.width, tmp.height, 0, 0, newWidth, newHeight);
+        this.offscreenStale = false;
         return;
       }
     }
 
     // No prior content or fallback: just resize.
-    void snapshot; // keep TS happy
     this.offscreen.width = newWidth;
     this.offscreen.height = newHeight;
   }

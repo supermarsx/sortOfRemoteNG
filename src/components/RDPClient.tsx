@@ -312,7 +312,25 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setConnectionStatus('connecting');
       setStatusMessage('Initiating connection...');
 
-      const display = rdpSettings.display ?? DEFAULT_RDP_SETTINGS.display;
+      // Auto-detect keyboard layout from the OS if configured
+      let effectiveSettings = rdpSettings;
+      if (rdpSettings.input?.autoDetectLayout !== false) {
+        try {
+          const detectedLayout = await invoke<number>('detect_keyboard_layout');
+          const langId = detectedLayout & 0xFFFF;
+          if (langId && langId !== 0) {
+            effectiveSettings = {
+              ...rdpSettings,
+              input: { ...rdpSettings.input, keyboardLayout: langId },
+            };
+            debugLog(`Auto-detected keyboard layout: 0x${langId.toString(16).padStart(4, '0')}`);
+          }
+        } catch {
+          // Detection not available — use configured layout
+        }
+      }
+
+      const display = effectiveSettings.display ?? DEFAULT_RDP_SETTINGS.display;
       const resW = display?.width ?? 1920;
       const resH = display?.height ?? 1080;
 
@@ -325,7 +343,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         domain: (connection as Record<string, unknown>).domain as string | undefined,
         width: resW,
         height: resH,
-        rdpSettings: rdpSettings,
+        rdpSettings: effectiveSettings,
         // Push-based frame channel: Rust streams binary RGBA directly here.
         // We queue the raw ArrayBuffers and drain them in the rAF blit loop
         // for perfectly smooth frame pacing (one render per vsync).
@@ -424,6 +442,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             if (canvas) {
               canvas.width = status.desktop_width;
               canvas.height = status.desktop_height;
+              // Auto-focus canvas so keyboard/mouse events are captured immediately
+              canvas.focus();
             }
             // Initialize (or reinitialize) the offscreen frame buffer
             frameBufferRef.current = new FrameBuffer(status.desktop_width, status.desktop_height);
@@ -530,13 +550,15 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   }, [session, initializeRDPConnection, cleanup]);
 
   // ─── rAF render loop ───────────────────────────────────────────────
-  // Drain the frame queue, apply all pending paints to the OffscreenCanvas,
-  // then blit only the dirty region to the visible canvas.  This runs
-  // exactly once per vsync — no matter how many (or few) updates arrived
-  // since the last tick, the user sees a single, evenly-timed render.
+  // Drain the frame queue and paint every dirty region directly onto the
+  // visible canvas.  No intermediate offscreen copy — each putImageData
+  // goes straight to the GPU-backed canvas.  The browser composites all
+  // writes within the same rAF callback into a single on-screen frame.
 
   useEffect(() => {
     let running = true;
+    /** Cached 2D context of the visible canvas. */
+    let visCtx: CanvasRenderingContext2D | null = null;
 
     const renderLoop = () => {
       if (!running) return;
@@ -545,23 +567,22 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       const canvas = canvasRef.current;
 
       // Drain all queued frame messages
-      if (queue.length > 0 && fb) {
-        for (let i = 0; i < queue.length; i++) {
-          const data = queue[i];
-          // Binary protocol: 8-byte header  [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
-          const view = new DataView(data);
-          const x = view.getUint16(0, true);
-          const y = view.getUint16(2, true);
-          const w = view.getUint16(4, true);
-          const h = view.getUint16(6, true);
-          const rgba = new Uint8ClampedArray(data, 8);
-          fb.applyRegion(x, y, w, h, rgba);
+      if (queue.length > 0 && fb && canvas) {
+        if (!visCtx) visCtx = canvas.getContext('2d');
+        if (visCtx) {
+          for (let i = 0; i < queue.length; i++) {
+            const data = queue[i];
+            // Binary protocol: 8-byte header  [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
+            const view = new DataView(data);
+            const x = view.getUint16(0, true);
+            const y = view.getUint16(2, true);
+            const w = view.getUint16(4, true);
+            const h = view.getUint16(6, true);
+            const rgba = new Uint8ClampedArray(data, 8);
+            fb.paintDirect(visCtx, x, y, w, h, rgba);
+          }
         }
         queue.length = 0; // clear without re-allocating
-        // Blit only the dirty bounding box to the visible canvas
-        if (canvas) {
-          fb.blitTo(canvas);
-        }
       }
 
       rafIdRef.current = requestAnimationFrame(renderLoop);
@@ -600,6 +621,9 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       const canvas = canvasRef.current;
       const fb = frameBufferRef.current;
       if (canvas && fb && fb.hasPainted) {
+        // Sync the offscreen cache from the visible canvas first
+        // (direct-paint path means offscreen may be stale)
+        fb.syncFromVisible(canvas);
         canvas.width = w;
         canvas.height = h;
         const ctx = canvas.getContext('2d');
@@ -619,9 +643,9 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         }
         // Resize the offscreen buffer (scales cached content)
         if (frameBufferRef.current) {
-          frameBufferRef.current.resize(w, h);
+          frameBufferRef.current.resize(w, h, c || undefined);
           // Blit the scaled cache to visible canvas immediately
-          frameBufferRef.current.blitTo(c!);
+          if (c) frameBufferRef.current.blitFull(c);
         }
       }, 150);
     });
@@ -791,6 +815,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isConnected) return;
     e.preventDefault();
+    // Ensure the canvas has keyboard focus (e.g. after clicking toolbar)
+    (e.target as HTMLCanvasElement).focus();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: true }], true);
   }, [isConnected, scaleCoords, sendInput]);
