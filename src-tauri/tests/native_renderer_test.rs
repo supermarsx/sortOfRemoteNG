@@ -249,7 +249,7 @@ mod win32_tests {
         );
         assert!(result.is_ok(), "softbuffer renderer should be created");
 
-        let (mut renderer, name) = result.unwrap();
+        let (mut renderer, name): (Box<dyn NativeRenderer>, String) = result.unwrap();
         assert_eq!(name, "softbuffer");
         assert_eq!(renderer.name(), "softbuffer");
 
@@ -586,10 +586,21 @@ mod win32_tests {
             frames
         });
 
-        // Main thread: wait for the overlay HWND, then bombardit with messages.
-        let overlay_hwnd = hwnd_rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("should receive overlay HWND from background thread");
+        // Main thread: pump messages while waiting for background to create
+        // the overlay.  CreateWindowExW with a cross-thread owner sends
+        // messages to the owner's thread, so we must pump here.
+        let overlay_hwnd = loop {
+            platform::pump_messages();
+            match hwnd_rx.try_recv() {
+                Ok(hwnd) => break hwnd,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    panic!("background thread died before sending HWND");
+                }
+            }
+        };
         assert_ne!(overlay_hwnd, 0);
 
         let start = std::time::Instant::now();
@@ -628,8 +639,9 @@ mod win32_tests {
     /// a hang when the other thread sends messages.
     ///
     /// This is the most direct reproduction of the original bug:
-    /// - Thread A owns the overlay (and is blocked on a "TCP read").
-    /// - Thread B sends a message to the overlay.
+    /// - Thread A creates both the owner AND overlay, then blocks
+    ///   (simulating the spawn_blocking thread running read_pdu).
+    /// - Thread B (main) sends a message to the overlay.
     /// - With WS_CHILD: Thread B's SendMessage blocks forever.
     /// - With WS_POPUP: Thread B's SendMessageTimeoutW returns (with
     ///   timeout or success).
@@ -640,23 +652,26 @@ mod win32_tests {
         use windows::Win32::Foundation::{HWND, WPARAM, LPARAM};
         use windows::Win32::UI::WindowsAndMessaging::*;
 
-        let owner = create_test_owner();
-
         let barrier = Arc::new(Barrier::new(2));
         let barrier2 = barrier.clone();
 
-        let (overlay_tx, overlay_rx) = mpsc::channel::<isize>();
+        let (overlay_tx, overlay_rx) = mpsc::channel::<(isize, isize)>();
         let block_barrier = Arc::new(Barrier::new(2));
         let block_barrier2 = block_barrier.clone();
 
-        // Thread A: creates overlay, signals ready, then BLOCKS
-        // (simulating read_pdu() TCP wait).
+        // Thread A: creates BOTH owner and overlay on the same thread
+        // (matching the real scenario where spawn_blocking creates the
+        // overlay; even though in the real app the Tauri window is on
+        // the UI thread, here we keep them co-located to avoid
+        // CreateWindowExW cross-thread owner messages).
+        // Then thread A BLOCKS — simulating read_pdu() TCP wait.
         let thread_a = std::thread::spawn(move || {
+            let owner = create_test_owner();
             let overlay = platform::create_overlay_window(owner, 0, 0, 100, 80)
                 .expect("create_overlay_window");
             platform::show_window(overlay);
             platform::pump_messages();
-            overlay_tx.send(overlay).unwrap();
+            overlay_tx.send((owner, overlay)).unwrap();
 
             // Signal ready, then BLOCK
             barrier2.wait();
@@ -664,9 +679,10 @@ mod win32_tests {
 
             platform::pump_messages();
             platform::destroy_window(overlay);
+            destroy_test_owner(owner);
         });
 
-        let overlay_hwnd = overlay_rx
+        let (_owner, overlay_hwnd) = overlay_rx
             .recv_timeout(Duration::from_secs(3))
             .expect("should receive overlay HWND");
 
@@ -675,8 +691,9 @@ mod win32_tests {
         std::thread::sleep(Duration::from_millis(100));
 
         // Thread B (this thread): send WM_NULL to the overlay.
-        // With WS_CHILD this would block forever.
-        // With WS_POPUP this returns within the timeout.
+        // Thread A is blocked (not pumping).  With WS_CHILD, this
+        // SendMessage would block forever.  With WS_POPUP, it returns
+        // within the timeout.
         let send_start = std::time::Instant::now();
         unsafe {
             let mut lresult: usize = 0;
@@ -705,7 +722,5 @@ mod win32_tests {
         // Unblock thread A
         block_barrier.wait();
         thread_a.join().expect("thread A should not panic");
-
-        destroy_test_owner(owner);
     }
 }

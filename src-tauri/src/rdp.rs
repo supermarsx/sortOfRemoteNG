@@ -2143,10 +2143,10 @@ fn run_rdp_session_inner(
         }),
     );
 
-    // Show the native window (starts hidden, frontend will reposition it)
-    if let Some(ref mut renderer) = native_renderer {
-        renderer.show();
-    }
+    // The native overlay starts hidden — it will be shown after the
+    // first RepositionNativeWindow command arrives from the frontend,
+    // so the user never sees a full-desktop-sized flash.
+    let mut native_renderer_visible = false;
 
     // Set a short read timeout so we can interleave input handling
     set_read_timeout_on_framed(&tls_framed, Some(settings.read_timeout));
@@ -2218,6 +2218,13 @@ fn run_rdp_session_inner(
                 Ok(RdpCommand::RepositionNativeWindow { x, y, width, height }) => {
                     if let Some(ref mut renderer) = native_renderer {
                         renderer.reposition(x, y, width, height);
+                        if !native_renderer_visible {
+                            renderer.show();
+                            native_renderer_visible = true;
+                            log::info!(
+                                "RDP session {session_id}: native overlay shown after first reposition ({x},{y} {width}×{height})"
+                            );
+                        }
                     }
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
