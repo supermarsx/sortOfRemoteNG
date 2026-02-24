@@ -105,6 +105,9 @@ pub trait NativeRenderer: Send {
 
     /// Human-readable name of this backend (for logging / status events).
     fn name(&self) -> &'static str;
+
+    /// Return the raw HWND (as isize) of the overlay window.
+    fn hwnd(&self) -> isize;
 }
 
 // ─── Win32 helpers (Windows-only) ────────────────────────────────────
@@ -525,6 +528,10 @@ impl NativeRenderer for SoftbufferRenderer {
 
     fn name(&self) -> &'static str {
         "softbuffer"
+    }
+
+    fn hwnd(&self) -> isize {
+        self.hwnd
     }
 }
 
@@ -987,6 +994,10 @@ impl NativeRenderer for WgpuRenderer {
 
     fn name(&self) -> &'static str {
         "wgpu"
+    }
+
+    fn hwnd(&self) -> isize {
+        self.hwnd
     }
 }
 
