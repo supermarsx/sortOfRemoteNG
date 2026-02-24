@@ -188,9 +188,10 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   /** Cached visible-canvas 2D context (set on first render). */
   const visCtxRef = useRef<CanvasRenderingContext2D | null>(null);
 
-  /** Stable render function — never changes identity so the Channel closure
-   *  (created once during connect) can safely reference it. */
-  const renderFrames = useCallback(() => {
+  /** Render callback stored in a ref so the Channel closure (created once
+   *  during connect) can always reach it via stable indirection. */
+  const renderFramesRef = useRef<() => void>(() => {});
+  renderFramesRef.current = () => {
     rafPendingRef.current = false;
     const queue = frameQueueRef.current;
     const fb = frameBufferRef.current;
@@ -213,7 +214,9 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       }
       queue.length = 0;
     }
-  }, []);
+  };
+  /** Stable wrapper that never changes identity — safe to pass to rAF. */
+  const renderFrames = useCallback(() => renderFramesRef.current(), []);
 
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
@@ -426,7 +429,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setStatusMessage(`Connection failed: ${error}`);
       console.error('RDP initialization failed:', error);
     }
-  }, [session, connection, rdpSettings, renderFrames]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- renderFrames is ref-stable
+  }, [session, connection, rdpSettings]);
 
   // ─── Disconnect ────────────────────────────────────────────────────
 
