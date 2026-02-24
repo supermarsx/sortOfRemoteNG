@@ -18,7 +18,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   })
 }));
 
-// Mock rdpCanvas (legacy helpers – not imported by new component but kept in module graph)
+// Mock rdpCanvas (FrameBuffer class used by the live frame listener)
 vi.mock('../src/components/rdpCanvas', () => ({
   drawSimulatedDesktop: vi.fn(),
   drawDesktopIcon: vi.fn(),

@@ -2,10 +2,9 @@ use std::collections::HashMap;
 use std::io;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use base64::Engine as _;
 use ironrdp::connector::connection_activation::ConnectionActivationState;
 use ironrdp::connector::{self, ClientConnector, ConnectionResult, Credentials, Sequence, State as _};
 use ironrdp::graphics::image_processing::PixelFormat;
@@ -23,18 +22,132 @@ use ironrdp::session::{ActiveStage, ActiveStageOutput};
 
 pub type RdpServiceState = Arc<Mutex<RdpService>>;
 
+// ─── Shared framebuffer store ──────────────────────────────────────────────
+//
+// The RDP session thread writes decoded framebuffer data here on every
+// GraphicsUpdate.  The `rdp_get_frame_data` Tauri command reads from it
+// to return raw binary RGBA bytes to the frontend — completely avoiding
+// the base64 encode/decode overhead that plagued the old event-based
+// frame pipeline.
+
+/// Per-session framebuffer slot.
+#[allow(dead_code)]
+struct FrameSlot {
+    data: Vec<u8>,
+    width: u16,
+    height: u16,
+}
+
+/// Thread-safe store of framebuffers for all active RDP sessions.
+pub struct SharedFrameStore {
+    slots: RwLock<HashMap<String, FrameSlot>>,
+}
+
+pub type SharedFrameStoreState = Arc<SharedFrameStore>;
+
+impl SharedFrameStore {
+    pub fn new() -> SharedFrameStoreState {
+        Arc::new(SharedFrameStore {
+            slots: RwLock::new(HashMap::new()),
+        })
+    }
+
+    /// Create or reset a slot for the given session.
+    fn init(&self, session_id: &str, width: u16, height: u16) {
+        let size = width as usize * height as usize * 4;
+        let mut slots = self.slots.write().unwrap();
+        slots.insert(
+            session_id.to_string(),
+            FrameSlot {
+                data: vec![0u8; size],
+                width,
+                height,
+            },
+        );
+    }
+
+    /// Copy a dirty region from the IronRDP DecodedImage framebuffer into
+    /// the shared slot.  This is a fast row-by-row memcpy — much cheaper
+    /// than the old base64 encoding path.
+    fn update_region(
+        &self,
+        session_id: &str,
+        source: &[u8],
+        fb_width: u16,
+        region: &ironrdp::pdu::geometry::InclusiveRectangle,
+    ) {
+        let mut slots = self.slots.write().unwrap();
+        if let Some(slot) = slots.get_mut(session_id) {
+            let bpp = 4usize;
+            let stride = fb_width as usize * bpp;
+            let left = region.left as usize;
+            let right = region.right as usize;
+            let top = region.top as usize;
+            let bottom = region.bottom as usize;
+            let row_bytes = (right - left + 1) * bpp;
+
+            for row in top..=bottom {
+                let offset = row * stride + left * bpp;
+                let end = offset + row_bytes;
+                if end <= source.len() && end <= slot.data.len() {
+                    slot.data[offset..end].copy_from_slice(&source[offset..end]);
+                }
+            }
+        }
+    }
+
+    /// Extract a rectangular region as a contiguous RGBA byte vec.
+    /// Called by the `rdp_get_frame_data` command.
+    fn extract_region(
+        &self,
+        session_id: &str,
+        x: u16,
+        y: u16,
+        w: u16,
+        h: u16,
+    ) -> Option<Vec<u8>> {
+        let slots = self.slots.read().unwrap();
+        let slot = slots.get(session_id)?;
+        let bpp = 4usize;
+        let stride = slot.width as usize * bpp;
+        let mut rgba = Vec::with_capacity(w as usize * h as usize * bpp);
+
+        for row in y as usize..(y + h) as usize {
+            let start = row * stride + x as usize * bpp;
+            let end = start + w as usize * bpp;
+            if end <= slot.data.len() {
+                rgba.extend_from_slice(&slot.data[start..end]);
+            }
+        }
+        Some(rgba)
+    }
+
+    /// Reset slot dimensions (e.g. after reactivation at a new desktop size).
+    fn reinit(&self, session_id: &str, width: u16, height: u16) {
+        self.init(session_id, width, height);
+    }
+
+    /// Remove the slot when the session ends.
+    fn remove(&self, session_id: &str) {
+        let mut slots = self.slots.write().unwrap();
+        slots.remove(session_id);
+    }
+}
+
 // ─── Events emitted to the frontend ────────────────────────────────────────
 
+/// Lightweight frame signal — no pixel data.  The frontend fetches raw
+/// binary RGBA bytes via the `rdp_get_frame_data` command instead.
 #[derive(Clone, Serialize)]
-pub struct RdpFrameEvent {
+pub struct RdpFrameSignal {
     pub session_id: String,
     pub x: u16,
     pub y: u16,
     pub width: u16,
     pub height: u16,
-    /// Base64-encoded RGBA pixel data for the dirty region
-    pub data: String,
 }
+
+
 
 #[derive(Clone, Serialize)]
 pub struct RdpStatusEvent {
@@ -1093,6 +1206,7 @@ fn run_rdp_session(
     stats: Arc<RdpSessionStats>,
     cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
+    frame_store: SharedFrameStoreState,
 ) {
     let result = if settings.auto_detect {
         // ── Auto-detect negotiation: try different protocol combos ───
@@ -1109,6 +1223,7 @@ fn run_rdp_session(
             &stats,
             cached_tls_connector,
             cached_http_client,
+            &frame_store,
         )
     } else {
         run_rdp_session_inner(
@@ -1124,8 +1239,12 @@ fn run_rdp_session(
             &stats,
             cached_tls_connector,
             cached_http_client,
+            &frame_store,
         )
     };
+
+    // Clean up the shared framebuffer slot when the session ends
+    frame_store.remove(&session_id);
 
     stats.alive.store(false, Ordering::Relaxed);
 
@@ -1244,6 +1363,7 @@ fn run_rdp_session_auto_detect(
     stats: &Arc<RdpSessionStats>,
     cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
+    frame_store: &SharedFrameStoreState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
     let max_attempts = (settings.max_retries as usize + 1).min(combos.len());
@@ -1302,6 +1422,7 @@ fn run_rdp_session_auto_detect(
             stats,
             cached_tls_connector.clone(),
             cached_http_client.clone(),
+            frame_store,
         );
 
         match result {
@@ -1427,6 +1548,7 @@ fn run_rdp_session_auto_detect(
                     stats,
                     cached_tls_connector.clone(),
                     cached_http_client.clone(),
+                    frame_store,
                 );
 
                 match result {
@@ -1493,6 +1615,7 @@ fn run_rdp_session_inner(
     stats: &Arc<RdpSessionStats>,
     cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
+    frame_store: &SharedFrameStoreState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conn_start = Instant::now();
 
@@ -1874,12 +1997,14 @@ fn run_rdp_session_inner(
     let mut image = DecodedImage::new(PixelFormat::RgbA32, desktop_width, desktop_height);
     let mut active_stage = ActiveStage::new(connection_result);
 
+    // Initialize the shared framebuffer slot for this session
+    frame_store.init(session_id, desktop_width, desktop_height);
+
     // Set a short read timeout so we can interleave input handling
     set_read_timeout_on_framed(&tls_framed, Some(settings.read_timeout));
 
     // ── 7. Main session loop ────────────────────────────────────────────
 
-    let b64 = base64::engine::general_purpose::STANDARD;
     let mut last_stats_emit = Instant::now();
     let stats_interval = settings.stats_interval;
     #[allow(unused_assignments)]
@@ -1947,8 +2072,8 @@ fn run_rdp_session_inner(
                         desktop_height,
                         app_handle,
                         stats,
-                        &b64,
                         full_frame_sync_interval,
+                        frame_store,
                     )?;
                 }
                 Err(e) => {
@@ -1985,7 +2110,10 @@ fn run_rdp_session_inner(
                     right: max_x.saturating_sub(1),
                     bottom: max_y.saturating_sub(1),
                 };
-                emit_region(session_id, &image, desktop_width, &region, app_handle, &b64);
+                // The shared framebuffer was already updated when each individual
+                // dirty region arrived in the GraphicsUpdate handler below.
+                // We just emit the merged bounding-box signal.
+                emit_frame_signal(session_id, &region, app_handle);
             }
             dirty_regions.clear();
             last_frame_emit = Instant::now();
@@ -2038,31 +2166,31 @@ fn run_rdp_session_inner(
                                     let rw = region.right.saturating_sub(region.left) + 1;
                                     let rh = region.bottom.saturating_sub(region.top) + 1;
 
+                                    // Always mirror dirty region into the shared framebuffer
+                                    frame_store.update_region(session_id, image.data(), desktop_width, &region);
+
                                     if frame_batching {
-                                        // Accumulate dirty region for batched emission
+                                        // Accumulate dirty region for batched signal emission
                                         dirty_regions.push((region.left, region.top, rw, rh));
                                     } else {
-                                        // Immediate emission (no batching)
-                                        emit_region(
+                                        // Immediate signal emission (no batching)
+                                        emit_frame_signal(
                                             session_id,
-                                            &image,
-                                            desktop_width,
                                             &region,
                                             app_handle,
-                                            &b64,
                                         );
                                     }
 
                                     // Periodic full-frame sync
                                     let fc = stats.frame_count.load(Ordering::Relaxed);
                                     if fc > 0 && fc % full_frame_sync_interval == 0 {
-                                        send_full_frame(
+                                        send_full_frame_signal(
                                             session_id,
                                             &image,
                                             desktop_width,
                                             desktop_height,
                                             app_handle,
-                                            &b64,
+                                            frame_store,
                                         );
                                     }
                                 }
@@ -2150,6 +2278,8 @@ fn run_rdp_session_inner(
                                         desktop_height,
                                     );
                                     active_stage = ActiveStage::new(new_result);
+                                    // Reinitialize shared framebuffer at new dimensions
+                                    frame_store.reinit(session_id, desktop_width, desktop_height);
                                     stats.set_phase("active");
 
                                     log::info!(
@@ -2247,8 +2377,8 @@ fn process_outputs(
     desktop_height: u16,
     app_handle: &AppHandle,
     stats: &RdpSessionStats,
-    b64: &base64::engine::GeneralPurpose,
     full_frame_sync_interval: u64,
+    frame_store: &SharedFrameStore,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     for output in outputs {
         match output {
@@ -2263,16 +2393,18 @@ fn process_outputs(
             }
             ActiveStageOutput::GraphicsUpdate(region) => {
                 stats.record_frame();
-                emit_region(session_id, image, desktop_width, region, app_handle, b64);
+                // Update shared framebuffer + emit lightweight signal
+                frame_store.update_region(session_id, image.data(), desktop_width, region);
+                emit_frame_signal(session_id, region, app_handle);
                 let fc = stats.frame_count.load(Ordering::Relaxed);
                 if fc > 0 && fc % full_frame_sync_interval == 0 {
-                    send_full_frame(
+                    send_full_frame_signal(
                         session_id,
                         image,
                         desktop_width,
                         desktop_height,
                         app_handle,
-                        b64,
+                        frame_store,
                     );
                 }
             }
@@ -2282,30 +2414,26 @@ fn process_outputs(
     Ok(())
 }
 
-fn emit_region(
+/// Emit a lightweight metadata-only frame signal (no pixel data).
+/// The frontend fetches raw binary from `rdp_get_frame_data` instead.
+fn emit_frame_signal(
     session_id: &str,
-    image: &DecodedImage,
-    fb_width: u16,
     region: &ironrdp::pdu::geometry::InclusiveRectangle,
     app_handle: &AppHandle,
-    b64: &base64::engine::GeneralPurpose,
 ) {
-    let region_data = extract_region_rgba(image.data(), fb_width, region);
-    let encoded = b64.encode(&region_data);
-
     let _ = app_handle.emit(
         "rdp://frame",
-        RdpFrameEvent {
+        RdpFrameSignal {
             session_id: session_id.to_string(),
             x: region.left,
             y: region.top,
             width: region.right.saturating_sub(region.left) + 1,
             height: region.bottom.saturating_sub(region.top) + 1,
-            data: encoded,
         },
     );
 }
 
+#[allow(dead_code)]
 fn extract_region_rgba(
     framebuffer: &[u8],
     fb_width: u16,
@@ -2334,25 +2462,32 @@ fn extract_region_rgba(
     rgba
 }
 
-fn send_full_frame(
+/// Full-frame sync: update the entire shared framebuffer and signal the
+/// frontend to fetch the complete frame.
+fn send_full_frame_signal(
     session_id: &str,
     image: &DecodedImage,
     width: u16,
     height: u16,
     app_handle: &AppHandle,
-    b64: &base64::engine::GeneralPurpose,
+    frame_store: &SharedFrameStore,
 ) {
-    let data = image.data();
-    let encoded = b64.encode(data);
+    // Update the full shared buffer from the DecodedImage
+    let region = ironrdp::pdu::geometry::InclusiveRectangle {
+        left: 0,
+        top: 0,
+        right: width.saturating_sub(1),
+        bottom: height.saturating_sub(1),
+    };
+    frame_store.update_region(session_id, image.data(), width, &region);
     let _ = app_handle.emit(
         "rdp://frame",
-        RdpFrameEvent {
+        RdpFrameSignal {
             session_id: session_id.to_string(),
             x: 0,
             y: 0,
             width,
             height,
-            data: encoded,
         },
     );
 }
@@ -2400,6 +2535,7 @@ pub fn detect_keyboard_layout() -> Result<u32, String> {
 #[tauri::command]
 pub async fn connect_rdp(
     state: tauri::State<'_, RdpServiceState>,
+    frame_store: tauri::State<'_, SharedFrameStoreState>,
     app_handle: AppHandle,
     host: String,
     port: u16,
@@ -2487,6 +2623,8 @@ pub async fn connect_rdp(
     let http_client = service.cached_http_client.clone();
     drop(service);
 
+    let fs = Arc::clone(&*frame_store);
+
     // Use spawn_blocking to run the entire RDP session on a dedicated OS thread
     let handle = tokio::task::spawn_blocking(move || {
         run_rdp_session(
@@ -2502,6 +2640,7 @@ pub async fn connect_rdp(
             stats_clone,
             tls_conn,
             http_client,
+            fs,
         );
     });
 
@@ -2573,6 +2712,24 @@ pub async fn rdp_send_input(
     } else {
         Err(format!("RDP session {session_id} not found"))
     }
+}
+
+/// Fetch raw RGBA pixel data for a rectangular region of the RDP session's
+/// framebuffer.  Returns an `ArrayBuffer` on the JS side — no base64
+/// encoding or JSON serialisation of pixel data.
+#[tauri::command]
+pub fn rdp_get_frame_data(
+    frame_store: tauri::State<'_, SharedFrameStoreState>,
+    session_id: String,
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+) -> Result<tauri::ipc::Response, String> {
+    let bytes = frame_store
+        .extract_region(&session_id, x, y, width, height)
+        .ok_or_else(|| format!("No framebuffer for session {session_id}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]

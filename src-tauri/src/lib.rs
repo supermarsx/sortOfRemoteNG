@@ -249,6 +249,10 @@ pub fn run() {
       let rdp_service = RdpService::new();
       app.manage(rdp_service);
 
+      // Initialize shared RDP framebuffer store (raw binary frame delivery)
+      let frame_store = rdp::SharedFrameStore::new();
+      app.manage(frame_store);
+
       // Initialize VNC service
       let vnc_service = VncService::new();
       app.manage(vnc_service);
@@ -518,6 +522,7 @@ pub fn run() {
         rdp::connect_rdp,
         rdp::disconnect_rdp,
         rdp::rdp_send_input,
+        rdp::rdp_get_frame_data,
         rdp::get_rdp_session_info,
         rdp::list_rdp_sessions,
         rdp::get_rdp_stats,

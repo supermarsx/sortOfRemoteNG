@@ -32,19 +32,18 @@ import {
   type TrustVerifyResult,
 } from '../utils/trustStore';
 import { TrustWarningDialog } from './TrustWarningDialog';
-import { FrameBuffer, decodeBase64Rgba } from './rdpCanvas';
+import { FrameBuffer } from './rdpCanvas';
 
 interface RDPClientProps {
   session: ConnectionSession;
 }
 
-interface RdpFrameEvent {
+interface RdpFrameSignal {
   session_id: string;
   x: number;
   y: number;
   width: number;
   height: number;
-  data: string; // base64 RGBA
 }
 
 interface RdpStatusEvent {
@@ -309,21 +308,29 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
 
-    // Listen for frame updates → paint to offscreen buffer (rAF blits to visible)
-    listen<RdpFrameEvent>('rdp://frame', (event) => {
+    // Listen for frame signals → fetch raw binary RGBA from Rust, paint to offscreen buffer
+    listen<RdpFrameSignal>('rdp://frame', (event) => {
       const frame = event.payload;
       if (frame.session_id !== sessionIdRef.current) return;
 
       const fb = frameBufferRef.current;
       if (!fb) return;
 
-      try {
-        const bytes = decodeBase64Rgba(frame.data);
+      // Fetch raw binary RGBA from the shared framebuffer in Rust.
+      // This returns an ArrayBuffer — no base64 encode/decode overhead.
+      invoke('rdp_get_frame_data', {
+        sessionId: frame.session_id,
+        x: frame.x,
+        y: frame.y,
+        width: frame.width,
+        height: frame.height,
+      }).then((buffer) => {
+        const bytes = new Uint8ClampedArray(buffer as ArrayBuffer);
         fb.applyRegion(frame.x, frame.y, frame.width, frame.height, bytes);
         frameDirtyRef.current = true;
-      } catch (e) {
-        debugLog(`Frame decode error: ${e}`);
-      }
+      }).catch((e) => {
+        debugLog(`Frame fetch error: ${e}`);
+      });
     }).then(fn => unlisteners.push(fn));
 
     // Listen for status updates
