@@ -255,7 +255,7 @@ impl DbService {
     }
 
     pub async fn import_csv(&self, database: String, table: String, csv_content: String, has_header: bool) -> Result<u64, String> {
-        if let Some(pool) = &self.pool {
+        if let Some(_pool) = &self.pool {
             let mut lines: Vec<&str> = csv_content.lines().collect();
             
             if lines.is_empty() {

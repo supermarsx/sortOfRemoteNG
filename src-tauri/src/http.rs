@@ -84,6 +84,7 @@ pub struct HttpResponse {
 /// HTTP Service for managing HTTP connections
 #[derive(Clone)]
 pub struct HttpService {
+    #[allow(dead_code)]
     client: reqwest::Client,
 }
 

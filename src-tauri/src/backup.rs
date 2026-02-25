@@ -158,6 +158,7 @@ pub struct BackupListItem {
 pub struct BackupService {
     config: BackupConfig,
     status: BackupStatus,
+    #[allow(dead_code)]
     data_path: String,
 }
 

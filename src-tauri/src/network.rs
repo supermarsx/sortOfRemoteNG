@@ -284,8 +284,8 @@ pub struct PingResult {
 pub async fn ping_host_detailed(
     state: tauri::State<'_, NetworkServiceState>, 
     host: String,
-    count: Option<u32>,
-    timeout_secs: Option<u64>,
+    _count: Option<u32>,
+    _timeout_secs: Option<u64>,
 ) -> Result<PingResult, String> {
     let network = state.lock().await;
     let start = std::time::Instant::now();

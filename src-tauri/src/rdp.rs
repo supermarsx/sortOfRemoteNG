@@ -14,7 +14,7 @@ use ironrdp_blocking::Framed;
 use ironrdp::core::WriteBuf;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
@@ -1462,6 +1462,7 @@ fn run_rdp_session_auto_detect(
     frame_store: &SharedFrameStoreState,
     frame_channel: &Channel<InvokeResponseBody>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
     let max_attempts = (settings.max_retries as usize + 1).min(combos.len());
 
     log::info!(
@@ -2754,6 +2755,7 @@ fn send_full_frame_via_channel(
 
 /// Legacy: extract a rectangular region as a contiguous RGBA byte vec.
 /// Used only by the `rdp_get_frame_data` fallback command.
+#[allow(dead_code)]
 fn extract_region_rgba(
     framebuffer: &[u8],
     fb_width: u16,

@@ -520,7 +520,7 @@ impl GpoService {
         };
 
         unsafe {
-            RegCloseKey(key);
+            let _ = RegCloseKey(key);
         }
 
         if status == ERROR_SUCCESS {
@@ -552,7 +552,7 @@ impl GpoService {
 
         let wide_value = Self::to_wide(value_name);
         let delete_status = unsafe { RegDeleteValueW(key, PCWSTR(wide_value.as_ptr())) };
-        unsafe { RegCloseKey(key) };
+        unsafe { let _ = RegCloseKey(key); };
 
         if delete_status == ERROR_SUCCESS || delete_status == ERROR_FILE_NOT_FOUND {
             Ok(())
