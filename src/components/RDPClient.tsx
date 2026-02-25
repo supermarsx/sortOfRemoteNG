@@ -207,6 +207,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     if (queue.length > 0 && fb && canvas) {
       if (renderer) {
         // GPU / Worker path — delegate to the pluggable renderer
+        const offCtx = fb.offscreen.getContext('2d');
         for (let i = 0; i < queue.length; i++) {
           const data = queue[i];
           const view = new DataView(data);
@@ -216,13 +217,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           const h = view.getUint16(6, true);
           const rgba = new Uint8ClampedArray(data, 8);
           renderer.paintRegion(x, y, w, h, rgba);
-          // Also update the offscreen cache so resize scaling works
-          const offCtx = fb.offscreen.getContext('2d');
-          if (offCtx) {
-            fb.paintDirect(
-              offCtx as unknown as CanvasRenderingContext2D,
-              x, y, w, h, rgba,
-            );
+          // Mirror into the offscreen cache for resize scaling / magnifier.
+          // Paint directly via putImageData instead of fb.paintDirect() to
+          // avoid setting offscreenStale (the offscreen IS the source of truth
+          // when a GPU renderer owns the visible canvas).
+          if (offCtx && w > 0 && h > 0 && rgba.length >= w * h * 4) {
+            const buf = new Uint8ClampedArray(rgba.buffer instanceof ArrayBuffer ? rgba : new Uint8ClampedArray(rgba));
+            offCtx.putImageData(new ImageData(buf, w, h), x, y);
+            fb.hasPainted = true;
           }
         }
         renderer.present();
@@ -513,15 +515,10 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       if (canvas) {
         canvas.width = resW;
         canvas.height = resH;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#1a1a2e';
-          ctx.fillRect(0, 0, resW, resH);
-          ctx.fillStyle = '#888';
-          ctx.font = '16px monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText('Connecting...', resW / 2, resH / 2);
-        }
+        // NOTE: We intentionally do NOT call canvas.getContext('2d') here.
+        // Doing so would permanently lock the canvas to a 2D context and
+        // prevent WebGL / WebGPU renderers from acquiring their own context
+        // later.  The "Connecting..." feedback is shown via a CSS overlay.
       }
     } catch (error) {
       setConnectionStatus('error');
@@ -753,14 +750,21 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       const canvas = canvasRef.current;
       const fb = frameBufferRef.current;
       if (canvas && fb && fb.hasPainted) {
-        // Sync the offscreen cache from the visible canvas first
-        // (direct-paint path means offscreen may be stale)
-        fb.syncFromVisible(canvas);
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(fb.offscreen, 0, 0, fb.offscreen.width, fb.offscreen.height, 0, 0, w, h);
+        if (rendererRef.current && rendererRef.current.type !== 'canvas2d') {
+          // GPU renderer owns the visible canvas context — we can't call
+          // getContext('2d') on it.  Just resize the canvas; the renderer's
+          // resize() + next present() will repaint from the GPU texture.
+          canvas.width = w;
+          canvas.height = h;
+        } else {
+          // Canvas 2D path — sync offscreen cache then scale to new size.
+          fb.syncFromVisible(canvas);
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(fb.offscreen, 0, 0, fb.offscreen.width, fb.offscreen.height, 0, 0, w, h);
+          }
         }
       }
 
@@ -871,9 +875,15 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     const magCanvas = magnifierCanvasRef.current;
     if (!canvas || !magCanvas) return;
 
-    const ctx = canvas.getContext('2d');
     const magCtx = magCanvas.getContext('2d');
-    if (!ctx || !magCtx) return;
+    if (!magCtx) return;
+
+    // Read from the offscreen FrameBuffer cache when a GPU renderer owns
+    // the visible canvas (getContext('2d') would return null on it).
+    const fb = frameBufferRef.current;
+    const source: CanvasImageSource = (rendererRef.current && rendererRef.current.type !== 'canvas2d' && fb)
+      ? fb.offscreen
+      : canvas;
 
     const magSize = 160;
     magCanvas.width = magSize;
@@ -897,7 +907,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     magCtx.clip();
 
     magCtx.drawImage(
-      canvas,
+      source,
       srcX - srcSize / 2,
       srcY - srcSize / 2,
       srcSize,
@@ -1335,6 +1345,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
       {/* RDP Canvas */}
       <div ref={containerRef} className="flex-1 flex items-center justify-center bg-black p-1 relative">
+        {/* "Connecting..." overlay — avoids calling getContext('2d') on
+            the canvas which would lock it and prevent GPU renderers. */}
+        {connectionStatus === 'connecting' && (
+          <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+            <span className="text-gray-400 font-mono text-base">Connecting...</span>
+          </div>
+        )}
+
         <canvas
           ref={canvasRef}
           className="border border-gray-600 max-w-full max-h-full"

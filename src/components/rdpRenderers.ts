@@ -359,11 +359,19 @@ class WebGPURenderer implements FrameRenderer {
   }
 
   private async initAsync(): Promise<void> {
+    if (!navigator.gpu) throw new Error('WebGPU: navigator.gpu not available');
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) throw new Error('WebGPU: no adapter');
     this.device = await adapter.requestDevice();
 
-    this.ctx = this.canvas.getContext('webgpu') as GPUCanvasContext;
+    const ctx = this.canvas.getContext('webgpu');
+    if (!ctx) {
+      throw new Error(
+        'WebGPU: getContext("webgpu") returned null — the canvas may already ' +
+        'have a different context type (e.g. "2d" or "webgl").',
+      );
+    }
+    this.ctx = ctx as GPUCanvasContext;
     const format = navigator.gpu.getPreferredCanvasFormat();
     this.ctx.configure({
       device: this.device,
