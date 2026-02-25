@@ -340,8 +340,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   }, [connection?.rdpSettings, settings.rdpDefaults]);
   const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
   const magnifierZoom = rdpSettings.display?.magnifierZoom ?? 3;
-  /** True when a native renderer (softbuffer/wgpu) is handling display & input. */
-  const isNativeRendering = activeRenderBackend !== 'webview';
 
   // Refs for values used inside stable event listeners (avoids stale closures)
   const connectionRef = useRef(connection);
@@ -357,6 +355,73 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     try {
       setConnectionStatus('connecting');
       setStatusMessage('Initiating connection...');
+
+      // Create the frame channel for receiving binary RGBA data
+      const frameChannel = new Channel<ArrayBuffer>((data: ArrayBuffer) => {
+        if (data.byteLength >= 8) {
+          frameQueueRef.current.push(data);
+          if (!rafPendingRef.current) {
+            rafPendingRef.current = true;
+            rafIdRef.current = requestAnimationFrame(renderFrames);
+          }
+        }
+      });
+
+      // Check if there is an existing backend session for this connection
+      // that we can re-attach to (session persistence).
+      try {
+        const existingSessions = await invoke<Array<{
+          id: string;
+          connection_id?: string;
+          host: string;
+          port: number;
+          connected: boolean;
+          desktop_width: number;
+          desktop_height: number;
+        }>>('list_rdp_sessions');
+
+        const existing = existingSessions.find(
+          s => s.connection_id === connection.id && s.connected
+        );
+
+        if (existing) {
+          debugLog(`Re-attaching to existing session ${existing.id} for ${connection.id}`);
+          setStatusMessage('Re-attaching to existing session...');
+
+          const sessionInfo = await invoke<{
+            id: string;
+            desktop_width: number;
+            desktop_height: number;
+          }>('attach_rdp_session', {
+            connectionId: connection.id,
+            frameChannel,
+          });
+
+          setRdpSessionId(sessionInfo.id);
+          sessionIdRef.current = sessionInfo.id;
+          setDesktopSize({
+            width: sessionInfo.desktop_width,
+            height: sessionInfo.desktop_height,
+          });
+
+          const canvas = canvasRef.current;
+          if (canvas) {
+            canvas.width = sessionInfo.desktop_width;
+            canvas.height = sessionInfo.desktop_height;
+            frameBufferRef.current = new FrameBuffer(
+              sessionInfo.desktop_width,
+              sessionInfo.desktop_height
+            );
+          }
+
+          setIsConnected(true);
+          setConnectionStatus('connected');
+          setStatusMessage(`Re-attached (${sessionInfo.desktop_width}x${sessionInfo.desktop_height})`);
+          return;
+        }
+      } catch {
+        // No existing session or list failed — proceed with new connection
+      }
 
       // Auto-detect keyboard layout from the OS if configured
       let effectiveSettings = rdpSettings;
@@ -390,19 +455,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         width: resW,
         height: resH,
         rdpSettings: effectiveSettings,
-        // Push-based frame channel: Rust streams binary RGBA directly here.
-        // We queue the raw ArrayBuffers and schedule a rAF paint only when
-        // frames are actually pending — zero CPU when idle.
-        frameChannel: new Channel<ArrayBuffer>((data: ArrayBuffer) => {
-          if (data.byteLength >= 8) {
-            frameQueueRef.current.push(data);
-            // Schedule a render if one isn't already pending
-            if (!rafPendingRef.current) {
-              rafPendingRef.current = true;
-              rafIdRef.current = requestAnimationFrame(renderFrames);
-            }
-          }
-        }),
+        frameChannel,
       };
 
       debugLog(`Attempting RDP connection to ${connectionDetails.host}:${connectionDetails.port}`);
@@ -451,13 +504,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       rafPendingRef.current = false;
     }
     visCtxRef.current = null;
-    // Disconnect by connectionId — the backend figures out which session
-    // to tear down, even if our invoke('connect_rdp') hasn't resolved yet.
+    // Detach the viewer — the backend session continues running headless.
+    // Use disconnect_rdp only for explicit user-initiated disconnects.
     if (connection) {
       try {
-        await invoke('disconnect_rdp', { connectionId: connection.id });
+        await invoke('detach_rdp_session', { connectionId: connection.id });
       } catch {
-        // ignore — session may already have been evicted by a new connect
+        // ignore — session may already have ended
       }
     }
   }, [connection]);
@@ -625,57 +678,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       }
     };
   }, []);
-
-  // ─── Native renderer reposition ────────────────────────────────────
-  // When using softbuffer/wgpu, the native overlay window needs to be
-  // positioned over the canvas area.  Because overlay windows use screen
-  // coordinates (WS_POPUP, not WS_CHILD), we must also reposition when
-  // the Tauri window itself moves.
-
-  useEffect(() => {
-    const isNative = activeRenderBackend !== 'webview' && rdpSessionId;
-    if (!isNative) return;
-
-    const sendReposition = () => {
-      const el = containerRef.current;
-      if (!el || !rdpSessionId) return;
-      const rect = el.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      invoke('native_renderer_reposition', {
-        sessionId: rdpSessionId,
-        x: Math.round(rect.left * dpr),
-        y: Math.round(rect.top * dpr),
-        width: Math.round(rect.width * dpr),
-        height: Math.round(rect.height * dpr),
-      }).catch(() => { /* session may have ended */ });
-    };
-
-    // Initial positioning
-    sendReposition();
-
-    // Reposition on resize
-    const observer = new ResizeObserver(() => sendReposition());
-    if (containerRef.current) observer.observe(containerRef.current);
-
-    // Reposition on scroll / window resize
-    window.addEventListener('resize', sendReposition);
-    window.addEventListener('scroll', sendReposition);
-
-    // Reposition when the Tauri window moves (popup windows need this
-    // because they use screen coordinates, not parent-relative coords)
-    let unlistenMoved: (() => void) | null = null;
-    const tauriWindow = getCurrentWindow();
-    tauriWindow.onMoved(() => sendReposition()).then(fn => {
-      unlistenMoved = fn;
-    });
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', sendReposition);
-      window.removeEventListener('scroll', sendReposition);
-      if (unlistenMoved) unlistenMoved();
-    };
-  }, [activeRenderBackend, rdpSessionId]);
 
   // ─── Resize to window support ──────────────────────────────────────
   // Debounced ResizeObserver: on resize, immediately scale the cached
@@ -875,7 +877,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   }, [magnifierZoom]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isConnected || isNativeRendering) return;
+    if (!isConnected) return;
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseMove', x, y }]);
 
@@ -891,50 +893,50 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         updateMagnifier(e.clientX - rect.left, e.clientY - rect.top);
       }
     }
-  }, [isConnected, isNativeRendering, scaleCoords, sendInput, magnifierEnabled, magnifierActive, updateMagnifier]);
+  }, [isConnected, scaleCoords, sendInput, magnifierEnabled, magnifierActive, updateMagnifier]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isConnected || isNativeRendering) return;
+    if (!isConnected) return;
     e.preventDefault();
     // Ensure the canvas has keyboard focus (e.g. after clicking toolbar)
     (e.target as HTMLCanvasElement).focus();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: true }], true);
-  }, [isConnected, isNativeRendering, scaleCoords, sendInput]);
+  }, [isConnected, scaleCoords, sendInput]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isConnected || isNativeRendering) return;
+    if (!isConnected) return;
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: false }], true);
-  }, [isConnected, isNativeRendering, scaleCoords, sendInput]);
+  }, [isConnected, scaleCoords, sendInput]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    if (!isConnected || isNativeRendering) return;
+    if (!isConnected) return;
     e.preventDefault();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     const delta = Math.sign(e.deltaY) * -120;
     sendInput([{ type: 'Wheel', x, y, delta, horizontal: e.shiftKey }], true);
-  }, [isConnected, isNativeRendering, scaleCoords, sendInput]);
+  }, [isConnected, scaleCoords, sendInput]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!isConnected || isNativeRendering) return;
+    if (!isConnected) return;
     e.preventDefault();
 
     const scan = keyToScancode(e.nativeEvent);
     if (scan) {
       sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: true, extended: scan.extended }], true);
     }
-  }, [isConnected, isNativeRendering, sendInput]);
+  }, [isConnected, sendInput]);
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
-    if (!isConnected || isNativeRendering) return;
+    if (!isConnected) return;
     e.preventDefault();
 
     const scan = keyToScancode(e.nativeEvent);
     if (scan) {
       sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: false, extended: scan.extended }], true);
     }
-  }, [isConnected, isNativeRendering, sendInput]);
+  }, [isConnected, sendInput]);
 
   // Prevent default context menu on right-click
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -1279,13 +1281,9 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             cursor: magnifierActive ? 'crosshair' : pointerStyle,
             imageRendering: 'auto',
             objectFit: 'contain',
-            // Hide canvas when native rendering is active — the Win32
-            // overlay window handles display and input directly.
-            display: isNativeRendering
-              ? 'none'
-              : connectionStatus !== 'disconnected'
-                ? 'block'
-                : 'none',
+            display: connectionStatus !== 'disconnected'
+              ? 'block'
+              : 'none',
           }}
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown}

@@ -21,7 +21,7 @@ use uuid::Uuid;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
 
-use crate::native_renderer::{self, NativeRenderer, OverlayInputEvent, RenderBackend};
+use crate::native_renderer::{self, FrameCompositor, RenderBackend};
 
 pub type RdpServiceState = Arc<Mutex<RdpService>>;
 
@@ -842,7 +842,10 @@ pub struct RdpSession {
 enum RdpCommand {
     Input(Vec<FastPathInputEvent>),
     Shutdown,
-    RepositionNativeWindow { x: i32, y: i32, width: u32, height: u32 },
+    /// Attach a new frame channel viewer (for session persistence).
+    AttachViewer(Channel<InvokeResponseBody>),
+    /// Detach the current viewer without killing the session.
+    DetachViewer,
 }
 
 struct RdpActiveConnection {
@@ -1298,7 +1301,6 @@ fn run_rdp_session(
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: SharedFrameStoreState,
     frame_channel: Channel<InvokeResponseBody>,
-    parent_hwnd: isize,
 ) {
     let result = if settings.auto_detect {
         // ── Auto-detect negotiation: try different protocol combos ───
@@ -1317,7 +1319,6 @@ fn run_rdp_session(
             cached_http_client,
             &frame_store,
             &frame_channel,
-            parent_hwnd,
         )
     } else {
         run_rdp_session_inner(
@@ -1335,7 +1336,6 @@ fn run_rdp_session(
             cached_http_client,
             &frame_store,
             &frame_channel,
-            parent_hwnd,
         )
     };
 
@@ -1461,9 +1461,7 @@ fn run_rdp_session_auto_detect(
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &Channel<InvokeResponseBody>,
-    parent_hwnd: isize,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let combos = build_negotiation_combos(&settings.negotiation_strategy, settings);
     let max_attempts = (settings.max_retries as usize + 1).min(combos.len());
 
     log::info!(
@@ -1522,7 +1520,6 @@ fn run_rdp_session_auto_detect(
             cached_http_client.clone(),
             frame_store,
             frame_channel,
-            parent_hwnd,
         );
 
         match result {
@@ -1650,7 +1647,6 @@ fn run_rdp_session_auto_detect(
                     cached_http_client.clone(),
                     frame_store,
                     frame_channel,
-                    parent_hwnd,
                 );
 
                 match result {
@@ -1719,7 +1715,6 @@ fn run_rdp_session_inner(
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
     frame_channel: &Channel<InvokeResponseBody>,
-    parent_hwnd: isize,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conn_start = Instant::now();
 
@@ -2104,49 +2099,38 @@ fn run_rdp_session_inner(
     // Initialize the shared framebuffer slot for this session
     frame_store.init(session_id, desktop_width, desktop_height);
 
-    // ── 6b. Create native renderer (if requested) ───────────────────────
+    // ── 6b. Create frame compositor (if requested) ────────────────────
     let render_backend = RenderBackend::from_str(&settings.render_backend);
-    let mut native_renderer: Option<Box<dyn NativeRenderer>> = None;
-    let mut active_render_backend = "softbuffer".to_string();
+    let mut compositor: Option<Box<dyn FrameCompositor>> = None;
+    let mut active_render_backend = "webview".to_string();
 
-    if render_backend.is_native() && parent_hwnd != 0 {
-        match native_renderer::create_renderer(
+    if render_backend.is_composited() {
+        match native_renderer::create_compositor(
             &render_backend,
-            parent_hwnd,
-            0,
-            0,
             desktop_width,
             desktop_height,
         ) {
-            Ok((renderer, backend_name)) => {
+            Some((comp, backend_name)) => {
                 log::info!(
-                    "RDP session {session_id}: native renderer '{backend_name}' created for {desktop_width}×{desktop_height}"
+                    "RDP session {session_id}: compositor '{backend_name}' created for {desktop_width}×{desktop_height}"
                 );
                 active_render_backend = backend_name;
-                native_renderer = Some(renderer);
+                compositor = Some(comp);
             }
-            Err(e) => {
-                log::warn!(
-                    "RDP session {session_id}: native renderer failed ({e}), falling back to webview"
+            None => {
+                log::info!(
+                    "RDP session {session_id}: no compositor needed (webview direct streaming)"
                 );
-                active_render_backend = "webview".to_string();
             }
         }
     }
 
-    // ── 6c. Attach overlay input channel ──────────────────────────────
-    // Mouse and keyboard events captured by the overlay WndProc are
-    // forwarded through this channel, bypassing the webview entirely.
-    let (overlay_input_tx, mut overlay_input_rx) =
-        tokio::sync::mpsc::unbounded_channel::<OverlayInputEvent>();
-
-    if let Some(ref mut renderer) = native_renderer {
-        renderer.set_input_sender(
-            overlay_input_tx.clone(),
-            desktop_width,
-            desktop_height,
-        );
-    }
+    // Viewer channel management for session persistence.
+    // Initially we use the channel provided at connect time.  AttachViewer
+    // replaces it with a new channel (viewer reconnection).  DetachViewer
+    // disables frame streaming (session continues headless).
+    let mut viewer_detached = false;
+    let mut attached_channel: Option<Channel<InvokeResponseBody>> = None;
 
     // Notify the frontend which render backend is actually active
     let _ = app_handle.emit(
@@ -2156,11 +2140,6 @@ fn run_rdp_session_inner(
             "backend": active_render_backend,
         }),
     );
-
-    // The native overlay starts hidden — it will be shown after the
-    // first RepositionNativeWindow command arrives from the frontend,
-    // so the user never sees a full-desktop-sized flash.
-    let mut native_renderer_visible = false;
 
     // Set a short read timeout so we can interleave input handling
     set_read_timeout_on_framed(&tls_framed, Some(settings.read_timeout));
@@ -2194,15 +2173,6 @@ fn run_rdp_session_inner(
     let mut current_timeout = timeout_active;
 
     loop {
-        // ─ Pump Win32 messages for native renderer child windows ───────
-        // The session runs on a blocking thread that owns the child HWND.
-        // Without pumping, wgpu/DX12/Vulkan swap-chain present deadlocks
-        // and softbuffer may miss WM_PAINT / WM_SIZE messages.
-        #[cfg(target_os = "windows")]
-        if native_renderer.is_some() {
-            native_renderer::platform::pump_messages();
-        }
-
         // ─ Drain ALL pending commands (input coalescing) ───────────────
         // Reading only one command per iteration adds up to read_timeout
         // latency per buffered event.  Draining all pending commands and
@@ -2229,93 +2199,22 @@ fn run_rdp_session_inner(
                 Ok(RdpCommand::Input(events)) => {
                     merged_inputs.extend(events);
                 }
-                Ok(RdpCommand::RepositionNativeWindow { x, y, width, height }) => {
-                    if let Some(ref mut renderer) = native_renderer {
-                        renderer.reposition(x, y, width, height);
-                        if !native_renderer_visible {
-                            renderer.show();
-                            native_renderer_visible = true;
-                            log::info!(
-                                "RDP session {session_id}: native overlay shown after first reposition ({x},{y} {width}×{height})"
-                            );
-                        }
-                    }
+                Ok(RdpCommand::AttachViewer(new_channel)) => {
+                    log::info!(
+                        "RDP session {session_id}: viewer attached (new frame channel)"
+                    );
+                    attached_channel = Some(new_channel);
+                    viewer_detached = false;
+                }
+                Ok(RdpCommand::DetachViewer) => {
+                    log::info!("RDP session {session_id}: viewer detached");
+                    viewer_detached = true;
                 }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     log::info!("RDP session {session_id}: command channel closed");
                     should_break = true;
                     break;
-                }
-            }
-        }
-
-        // ─ Drain overlay input events (mouse/keyboard from WndProc) ────
-        {
-            use ironrdp::pdu::input::fast_path::KeyboardFlags;
-            use ironrdp::pdu::input::mouse::PointerFlags;
-            use ironrdp::pdu::input::MousePdu;
-
-            while let Ok(evt) = overlay_input_rx.try_recv() {
-                match evt {
-                    OverlayInputEvent::MouseMove { x, y } => {
-                        merged_inputs.push(FastPathInputEvent::MouseEvent(MousePdu {
-                            flags: PointerFlags::MOVE,
-                            number_of_wheel_rotation_units: 0,
-                            x_position: x,
-                            y_position: y,
-                        }));
-                    }
-                    OverlayInputEvent::MouseButton { x, y, button, pressed } => {
-                        let btn_flag = match button {
-                            0 => PointerFlags::LEFT_BUTTON,
-                            1 => PointerFlags::MIDDLE_BUTTON_OR_WHEEL,
-                            2 => PointerFlags::RIGHT_BUTTON,
-                            _ => PointerFlags::LEFT_BUTTON,
-                        };
-                        let flags = if pressed {
-                            PointerFlags::DOWN | btn_flag
-                        } else {
-                            btn_flag
-                        };
-                        merged_inputs.push(FastPathInputEvent::MouseEvent(MousePdu {
-                            flags,
-                            number_of_wheel_rotation_units: 0,
-                            x_position: x,
-                            y_position: y,
-                        }));
-                    }
-                    OverlayInputEvent::MouseWheel { x, y, delta, horizontal } => {
-                        let flags = if horizontal {
-                            PointerFlags::HORIZONTAL_WHEEL
-                        } else {
-                            PointerFlags::VERTICAL_WHEEL
-                        };
-                        merged_inputs.push(FastPathInputEvent::MouseEvent(MousePdu {
-                            flags,
-                            number_of_wheel_rotation_units: delta,
-                            x_position: x,
-                            y_position: y,
-                        }));
-                    }
-                    OverlayInputEvent::KeyDown { scancode, extended } => {
-                        let mut flags = KeyboardFlags::empty();
-                        if extended {
-                            flags |= KeyboardFlags::EXTENDED;
-                        }
-                        merged_inputs.push(FastPathInputEvent::KeyboardEvent(
-                            flags, scancode,
-                        ));
-                    }
-                    OverlayInputEvent::KeyUp { scancode, extended } => {
-                        let mut flags = KeyboardFlags::RELEASE;
-                        if extended {
-                            flags |= KeyboardFlags::EXTENDED;
-                        }
-                        merged_inputs.push(FastPathInputEvent::KeyboardEvent(
-                            flags, scancode,
-                        ));
-                    }
                 }
             }
         }
@@ -2328,21 +2227,41 @@ fn run_rdp_session_inner(
             stats
                 .input_events
                 .fetch_add(merged_inputs.len() as u64, Ordering::Relaxed);
+            let active_ch = if !viewer_detached {
+                attached_channel.as_ref().unwrap_or(frame_channel)
+            } else {
+                frame_channel // will fail silently on send
+            };
             match active_stage.process_fastpath_input(&mut image, &merged_inputs) {
                 Ok(outputs) => {
-                    process_outputs(
-                        session_id,
-                        &outputs,
-                        &mut tls_framed,
-                        &image,
-                        desktop_width,
-                        desktop_height,
-                        app_handle,
-                        stats,
-                        full_frame_sync_interval,
-                        frame_store,
-                        frame_channel,
-                    )?;
+                    if !viewer_detached {
+                        process_outputs(
+                            session_id,
+                            &outputs,
+                            &mut tls_framed,
+                            &image,
+                            desktop_width,
+                            desktop_height,
+                            app_handle,
+                            stats,
+                            full_frame_sync_interval,
+                            frame_store,
+                            active_ch,
+                        )?;
+                    } else {
+                        // Still need to send ResponseFrames even when viewer is detached
+                        for output in &outputs {
+                            if let ActiveStageOutput::ResponseFrame(data) = output {
+                                stats
+                                    .bytes_sent
+                                    .fetch_add(data.len() as u64, Ordering::Relaxed);
+                                stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
+                                if let Err(e) = tls_framed.write_all(data) {
+                                    return Err(format!("Write failed: {e}").into());
+                                }
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     log::warn!("RDP {session_id}: input processing error: {e}");
@@ -2357,28 +2276,31 @@ fn run_rdp_session_inner(
         }
 
         // ─ Flush batched frame updates ─────────────────────────────────
-        // Push each accumulated dirty rect individually through the Channel
-        // instead of merging into one huge bounding box (which wastes bandwidth
-        // when two small rects are far apart).
         if frame_batching && !dirty_regions.is_empty() && last_frame_emit.elapsed() >= batch_interval {
-            if let Some(ref mut renderer) = native_renderer {
-                // Native renderer: update each dirty region and present once
-                for &(x, y, w, h) in &dirty_regions {
-                    if w > 0 && h > 0 {
-                        renderer.update_region(image.data(), desktop_width, x, y, w, h);
+            if !viewer_detached {
+                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
+                if let Some(ref mut comp) = compositor {
+                    // Compositor: update regions and flush composed frame
+                    for &(x, y, w, h) in &dirty_regions {
+                        if w > 0 && h > 0 {
+                            comp.update_region(image.data(), desktop_width, x, y, w, h);
+                        }
                     }
-                }
-                let _ = renderer.present();
-            } else {
-                for &(x, y, w, h) in &dirty_regions {
-                    if w > 0 && h > 0 {
-                        let region = ironrdp::pdu::geometry::InclusiveRectangle {
-                            left: x,
-                            top: y,
-                            right: x.saturating_add(w).saturating_sub(1),
-                            bottom: y.saturating_add(h).saturating_sub(1),
-                        };
-                        push_frame_via_channel(image.data(), desktop_width, &region, frame_channel);
+                    if let Some(frame) = comp.flush() {
+                        push_compositor_frame_via_channel(&frame, active_ch);
+                    }
+                } else {
+                    // Direct streaming: push each dirty rect via Channel
+                    for &(x, y, w, h) in &dirty_regions {
+                        if w > 0 && h > 0 {
+                            let region = ironrdp::pdu::geometry::InclusiveRectangle {
+                                left: x,
+                                top: y,
+                                right: x.saturating_add(w).saturating_sub(1),
+                                bottom: y.saturating_add(h).saturating_sub(1),
+                            };
+                            push_frame_via_channel(image.data(), desktop_width, &region, active_ch);
+                        }
                     }
                 }
             }
@@ -2442,9 +2364,9 @@ fn run_rdp_session_inner(
                                     if frame_batching {
                                         // Accumulate dirty region for batched push
                                         dirty_regions.push((region.left, region.top, rw, rh));
-                                    } else if let Some(ref mut renderer) = native_renderer {
-                                        // Native renderer: immediate update + present
-                                        renderer.update_region(
+                                    } else if let Some(ref mut comp) = compositor {
+                                        // Compositor: immediate update + flush
+                                        comp.update_region(
                                             image.data(),
                                             desktop_width,
                                             region.left,
@@ -2452,14 +2374,20 @@ fn run_rdp_session_inner(
                                             rw,
                                             rh,
                                         );
-                                        let _ = renderer.present();
-                                    } else {
-                                        // Webview: immediate push through Channel (no batching)
+                                        if !viewer_detached {
+                                            if let Some(frame) = comp.flush() {
+                                                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
+                                                push_compositor_frame_via_channel(&frame, active_ch);
+                                            }
+                                        }
+                                    } else if !viewer_detached {
+                                        // Direct streaming: immediate push through Channel
+                                        let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                                         push_frame_via_channel(
                                             image.data(),
                                             desktop_width,
                                             &region,
-                                            frame_channel,
+                                            active_ch,
                                         );
                                     }
 
@@ -2478,30 +2406,33 @@ fn run_rdp_session_inner(
                                                 bottom: desktop_height.saturating_sub(1),
                                             },
                                         );
-                                        // For webview mode, also push the full frame through the channel
-                                        if native_renderer.is_none() {
-                                            push_frame_via_channel(
-                                                image.data(),
-                                                desktop_width,
-                                                &ironrdp::pdu::geometry::InclusiveRectangle {
-                                                    left: 0,
-                                                    top: 0,
-                                                    right: desktop_width.saturating_sub(1),
-                                                    bottom: desktop_height.saturating_sub(1),
-                                                },
-                                                frame_channel,
-                                            );
-                                        } else if let Some(ref mut renderer) = native_renderer {
-                                            // For native renderer, push a full re-render
-                                            renderer.update_region(
-                                                image.data(),
-                                                desktop_width,
-                                                0,
-                                                0,
-                                                desktop_width,
-                                                desktop_height,
-                                            );
-                                            let _ = renderer.present();
+                                        if !viewer_detached {
+                                            let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
+                                            if let Some(ref mut comp) = compositor {
+                                                comp.update_region(
+                                                    image.data(),
+                                                    desktop_width,
+                                                    0,
+                                                    0,
+                                                    desktop_width,
+                                                    desktop_height,
+                                                );
+                                                if let Some(frame) = comp.flush() {
+                                                    push_compositor_frame_via_channel(&frame, active_ch);
+                                                }
+                                            } else {
+                                                push_frame_via_channel(
+                                                    image.data(),
+                                                    desktop_width,
+                                                    &ironrdp::pdu::geometry::InclusiveRectangle {
+                                                        left: 0,
+                                                        top: 0,
+                                                        right: desktop_width.saturating_sub(1),
+                                                        bottom: desktop_height.saturating_sub(1),
+                                                    },
+                                                    active_ch,
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -2669,11 +2600,11 @@ fn run_rdp_session_inner(
         }
     }
 
-    // Destroy native renderer on session end
-    if let Some(ref mut renderer) = native_renderer {
-        log::info!("RDP session {session_id}: destroying native renderer '{}'", renderer.name());
-        renderer.destroy();
+    // Drop compositor on session end
+    if let Some(ref comp) = compositor {
+        log::info!("RDP session {session_id}: dropping compositor '{}'", comp.name());
     }
+    drop(compositor);
 
     Ok(())
 }
@@ -2774,6 +2705,27 @@ fn push_frame_via_channel(
             payload.extend_from_slice(&image_data[row_start..row_end]);
         }
     }
+
+    let _ = frame_channel.send(InvokeResponseBody::Raw(payload));
+}
+
+/// Push a composed frame from the compositor through the Channel.
+/// Uses the same binary protocol as `push_frame_via_channel`.
+#[inline]
+fn push_compositor_frame_via_channel(
+    frame: &native_renderer::CompositorFrame,
+    frame_channel: &Channel<InvokeResponseBody>,
+) {
+    let mut payload = Vec::with_capacity(8 + frame.rgba.len());
+
+    // 8-byte header: x, y, w, h as little-endian u16
+    payload.extend_from_slice(&frame.x.to_le_bytes());
+    payload.extend_from_slice(&frame.y.to_le_bytes());
+    payload.extend_from_slice(&frame.width.to_le_bytes());
+    payload.extend_from_slice(&frame.height.to_le_bytes());
+
+    // RGBA pixel data from compositor
+    payload.extend_from_slice(&frame.rgba);
 
     let _ = frame_channel.send(InvokeResponseBody::Raw(payload));
 }
@@ -2966,28 +2918,6 @@ pub async fn connect_rdp(
 
     let fs = Arc::clone(&*frame_store);
 
-    // Extract the parent window handle for native renderers.
-    // On Windows, this is the Tauri main window's HWND.
-    let parent_hwnd: isize = {
-        #[cfg(target_os = "windows")]
-        {
-            use raw_window_handle::HasWindowHandle;
-            app_handle
-                .get_webview_window("main")
-                .and_then(|w| {
-                    let wh = w.window_handle().ok()?;
-                    if let raw_window_handle::RawWindowHandle::Win32(h) = wh.as_raw() {
-                        Some(h.hwnd.get())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(0)
-        }
-        #[cfg(not(target_os = "windows"))]
-        { 0 }
-    };
-
     // Use spawn_blocking to run the entire RDP session on a dedicated OS thread
     let handle = tokio::task::spawn_blocking(move || {
         run_rdp_session(
@@ -3005,7 +2935,6 @@ pub async fn connect_rdp(
             http_client,
             fs,
             frame_channel,
-            parent_hwnd,
         );
     });
 
@@ -3061,27 +2990,70 @@ pub async fn disconnect_rdp(
     Ok(())
 }
 
-/// Reposition the native renderer child window for an active RDP session.
-/// Coordinates are in physical pixels relative to the Tauri window's client area.
+/// Detach the viewer from an active RDP session without killing it.
+/// The session continues running headless (no frame streaming).
 #[tauri::command]
-pub async fn native_renderer_reposition(
+pub async fn detach_rdp_session(
     state: tauri::State<'_, RdpServiceState>,
-    session_id: String,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
+    session_id: Option<String>,
+    connection_id: Option<String>,
 ) -> Result<(), String> {
     let service = state.lock().await;
-    if let Some(conn) = service.connections.get(&session_id) {
-        let _ = conn.cmd_tx.send(RdpCommand::RepositionNativeWindow {
-            x,
-            y,
-            width,
-            height,
-        });
+
+    let target_id = if let Some(ref sid) = session_id {
+        Some(sid.clone())
+    } else if let Some(ref cid) = connection_id {
+        service
+            .connections
+            .values()
+            .find(|c| c.session.connection_id.as_deref() == Some(cid.as_str()))
+            .map(|c| c.session.id.clone())
+    } else {
+        None
+    };
+
+    if let Some(id) = target_id {
+        if let Some(conn) = service.connections.get(&id) {
+            let _ = conn.cmd_tx.send(RdpCommand::DetachViewer);
+        }
     }
     Ok(())
+}
+
+/// Attach a new frame channel viewer to an existing RDP session.
+/// Returns the session info so the frontend can restore its state.
+#[tauri::command]
+pub async fn attach_rdp_session(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: Option<String>,
+    connection_id: Option<String>,
+    frame_channel: Channel<InvokeResponseBody>,
+) -> Result<RdpSession, String> {
+    let service = state.lock().await;
+
+    let target_id = if let Some(ref sid) = session_id {
+        Some(sid.clone())
+    } else if let Some(ref cid) = connection_id {
+        service
+            .connections
+            .values()
+            .find(|c| c.session.connection_id.as_deref() == Some(cid.as_str()))
+            .map(|c| c.session.id.clone())
+    } else {
+        None
+    };
+
+    let id = target_id.ok_or("No session_id or connection_id provided")?;
+    let conn = service
+        .connections
+        .get(&id)
+        .ok_or_else(|| format!("Session {id} not found"))?;
+
+    conn.cmd_tx
+        .send(RdpCommand::AttachViewer(frame_channel))
+        .map_err(|_| "Session command channel closed".to_string())?;
+
+    Ok(conn.session.clone())
 }
 
 #[tauri::command]
