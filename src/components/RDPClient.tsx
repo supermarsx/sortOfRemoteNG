@@ -340,6 +340,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   }, [connection?.rdpSettings, settings.rdpDefaults]);
   const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
   const magnifierZoom = rdpSettings.display?.magnifierZoom ?? 3;
+  /** True when a native renderer (softbuffer/wgpu) is handling display & input. */
+  const isNativeRendering = activeRenderBackend !== 'webview';
 
   // Refs for values used inside stable event listeners (avoids stale closures)
   const connectionRef = useRef(connection);
@@ -873,7 +875,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   }, [magnifierZoom]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isConnected) return;
+    if (!isConnected || isNativeRendering) return;
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseMove', x, y }]);
 
@@ -889,50 +891,50 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         updateMagnifier(e.clientX - rect.left, e.clientY - rect.top);
       }
     }
-  }, [isConnected, scaleCoords, sendInput, magnifierEnabled, magnifierActive, updateMagnifier]);
+  }, [isConnected, isNativeRendering, scaleCoords, sendInput, magnifierEnabled, magnifierActive, updateMagnifier]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isConnected) return;
+    if (!isConnected || isNativeRendering) return;
     e.preventDefault();
     // Ensure the canvas has keyboard focus (e.g. after clicking toolbar)
     (e.target as HTMLCanvasElement).focus();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: true }], true);
-  }, [isConnected, scaleCoords, sendInput]);
+  }, [isConnected, isNativeRendering, scaleCoords, sendInput]);
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isConnected) return;
+    if (!isConnected || isNativeRendering) return;
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseButton', x, y, button: mouseButtonCode(e.button), pressed: false }], true);
-  }, [isConnected, scaleCoords, sendInput]);
+  }, [isConnected, isNativeRendering, scaleCoords, sendInput]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
-    if (!isConnected) return;
+    if (!isConnected || isNativeRendering) return;
     e.preventDefault();
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     const delta = Math.sign(e.deltaY) * -120;
     sendInput([{ type: 'Wheel', x, y, delta, horizontal: e.shiftKey }], true);
-  }, [isConnected, scaleCoords, sendInput]);
+  }, [isConnected, isNativeRendering, scaleCoords, sendInput]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (!isConnected) return;
+    if (!isConnected || isNativeRendering) return;
     e.preventDefault();
 
     const scan = keyToScancode(e.nativeEvent);
     if (scan) {
       sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: true, extended: scan.extended }], true);
     }
-  }, [isConnected, sendInput]);
+  }, [isConnected, isNativeRendering, sendInput]);
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
-    if (!isConnected) return;
+    if (!isConnected || isNativeRendering) return;
     e.preventDefault();
 
     const scan = keyToScancode(e.nativeEvent);
     if (scan) {
       sendInput([{ type: 'KeyboardKey', scancode: scan.scancode, pressed: false, extended: scan.extended }], true);
     }
-  }, [isConnected, sendInput]);
+  }, [isConnected, isNativeRendering, sendInput]);
 
   // Prevent default context menu on right-click
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -1277,7 +1279,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             cursor: magnifierActive ? 'crosshair' : pointerStyle,
             imageRendering: 'auto',
             objectFit: 'contain',
-            display: connectionStatus !== 'disconnected' ? 'block' : 'none'
+            // Hide canvas when native rendering is active — the Win32
+            // overlay window handles display and input directly.
+            display: isNativeRendering
+              ? 'none'
+              : connectionStatus !== 'disconnected'
+                ? 'block'
+                : 'none',
           }}
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown}

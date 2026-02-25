@@ -21,7 +21,7 @@ use uuid::Uuid;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
 
-use crate::native_renderer::{self, NativeRenderer, RenderBackend};
+use crate::native_renderer::{self, NativeRenderer, OverlayInputEvent, RenderBackend};
 
 pub type RdpServiceState = Arc<Mutex<RdpService>>;
 
@@ -2134,6 +2134,20 @@ fn run_rdp_session_inner(
         }
     }
 
+    // ── 6c. Attach overlay input channel ──────────────────────────────
+    // Mouse and keyboard events captured by the overlay WndProc are
+    // forwarded through this channel, bypassing the webview entirely.
+    let (overlay_input_tx, mut overlay_input_rx) =
+        tokio::sync::mpsc::unbounded_channel::<OverlayInputEvent>();
+
+    if let Some(ref mut renderer) = native_renderer {
+        renderer.set_input_sender(
+            overlay_input_tx.clone(),
+            desktop_width,
+            desktop_height,
+        );
+    }
+
     // Notify the frontend which render backend is actually active
     let _ = app_handle.emit(
         "rdp://render-backend",
@@ -2235,6 +2249,77 @@ fn run_rdp_session_inner(
                 }
             }
         }
+
+        // ─ Drain overlay input events (mouse/keyboard from WndProc) ────
+        {
+            use ironrdp::pdu::input::fast_path::KeyboardFlags;
+            use ironrdp::pdu::input::mouse::PointerFlags;
+            use ironrdp::pdu::input::MousePdu;
+
+            while let Ok(evt) = overlay_input_rx.try_recv() {
+                match evt {
+                    OverlayInputEvent::MouseMove { x, y } => {
+                        merged_inputs.push(FastPathInputEvent::MouseEvent(MousePdu {
+                            flags: PointerFlags::MOVE,
+                            number_of_wheel_rotation_units: 0,
+                            x_position: x,
+                            y_position: y,
+                        }));
+                    }
+                    OverlayInputEvent::MouseButton { x, y, button, pressed } => {
+                        let btn_flag = match button {
+                            0 => PointerFlags::LEFT_BUTTON,
+                            1 => PointerFlags::MIDDLE_BUTTON_OR_WHEEL,
+                            2 => PointerFlags::RIGHT_BUTTON,
+                            _ => PointerFlags::LEFT_BUTTON,
+                        };
+                        let flags = if pressed {
+                            PointerFlags::DOWN | btn_flag
+                        } else {
+                            btn_flag
+                        };
+                        merged_inputs.push(FastPathInputEvent::MouseEvent(MousePdu {
+                            flags,
+                            number_of_wheel_rotation_units: 0,
+                            x_position: x,
+                            y_position: y,
+                        }));
+                    }
+                    OverlayInputEvent::MouseWheel { x, y, delta, horizontal } => {
+                        let flags = if horizontal {
+                            PointerFlags::HORIZONTAL_WHEEL
+                        } else {
+                            PointerFlags::VERTICAL_WHEEL
+                        };
+                        merged_inputs.push(FastPathInputEvent::MouseEvent(MousePdu {
+                            flags,
+                            number_of_wheel_rotation_units: delta,
+                            x_position: x,
+                            y_position: y,
+                        }));
+                    }
+                    OverlayInputEvent::KeyDown { scancode, extended } => {
+                        let mut flags = KeyboardFlags::empty();
+                        if extended {
+                            flags |= KeyboardFlags::EXTENDED;
+                        }
+                        merged_inputs.push(FastPathInputEvent::KeyboardEvent(
+                            flags, scancode,
+                        ));
+                    }
+                    OverlayInputEvent::KeyUp { scancode, extended } => {
+                        let mut flags = KeyboardFlags::RELEASE;
+                        if extended {
+                            flags |= KeyboardFlags::EXTENDED;
+                        }
+                        merged_inputs.push(FastPathInputEvent::KeyboardEvent(
+                            flags, scancode,
+                        ));
+                    }
+                }
+            }
+        }
+
         if should_break {
             break;
         }

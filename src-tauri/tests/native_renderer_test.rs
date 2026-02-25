@@ -325,10 +325,12 @@ mod win32_tests {
                 ex_style & WS_EX_TOOLWINDOW.0, 0,
                 "overlay should have WS_EX_TOOLWINDOW (was 0x{ex_style:08X})"
             );
-            // Must have WS_EX_NOACTIVATE (never steal focus)
-            assert_ne!(
+            // WS_EX_NOACTIVATE is intentionally NOT set — the overlay
+            // captures keyboard focus so input goes directly to the
+            // RDP session via its WndProc.
+            assert_eq!(
                 ex_style & WS_EX_NOACTIVATE.0, 0,
-                "overlay should have WS_EX_NOACTIVATE (was 0x{ex_style:08X})"
+                "overlay should NOT have WS_EX_NOACTIVATE so it can receive keyboard input (was 0x{ex_style:08X})"
             );
         }
 
