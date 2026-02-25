@@ -27,6 +27,7 @@ import {
   FileCode,
   ScreenShare,
   ArrowUpDown,
+  Cpu,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
@@ -70,6 +71,7 @@ import { ConnectionDiagnostics } from "./components/ConnectionDiagnostics";
 import { BulkSSHCommander } from "./components/BulkSSHCommander";
 import { ScriptManager } from "./components/ScriptManager";
 import { InternalProxyManager } from "./components/InternalProxyManager";
+import { RdpSessionManager } from "./components/RdpSessionManager";
 import { SyncBackupStatusBar } from "./components/SyncBackupStatusBar";
 import { BackupStatusPopup } from "./components/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "./components/CloudSyncStatusPopup";
@@ -102,6 +104,7 @@ const AppContent: React.FC = () => {
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showProxyMenu, setShowProxyMenu] = useState(false);
   const [showInternalProxyManager, setShowInternalProxyManager] = useState(false);
+  const [showRdpSessions, setShowRdpSessions] = useState(false);
   const [showWol, setShowWol] = useState(false);
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -1799,6 +1802,13 @@ const AppContent: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-1">
+          <button
+            onClick={() => setShowRdpSessions(true)}
+            className="app-bar-button p-2"
+            title="RDP Sessions"
+          >
+            <Cpu size={14} />
+          </button>
           {appSettings.showInternalProxyIcon && (
             <button
               onClick={() => setShowInternalProxyManager(true)}
@@ -2123,6 +2133,11 @@ const AppContent: React.FC = () => {
       <InternalProxyManager
         isOpen={showInternalProxyManager}
         onClose={() => setShowInternalProxyManager(false)}
+      />
+
+      <RdpSessionManager
+        isOpen={showRdpSessions}
+        onClose={() => setShowRdpSessions(false)}
       />
 
       <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />

@@ -123,7 +123,13 @@ describe("RDPClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     Object.keys(mockListeners).forEach(k => delete mockListeners[k]);
-    mockInvoke.mockResolvedValue('rdp-session-123');
+    // Default mock: list_rdp_sessions returns empty array (no existing session),
+    // then connect_rdp returns a session ID.
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'list_rdp_sessions') return [];
+      if (cmd === 'detect_keyboard_layout') return 0x0409;
+      return 'rdp-session-123';
+    });
     
     // Mock canvas getContext to return a mock context
     HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
@@ -188,10 +194,14 @@ describe("RDPClient", () => {
     });
 
     it("should display error when connect_rdp command fails", async () => {
-      // The first invoke is detect_keyboard_layout (auto-detect), the second is connect_rdp.
-      // Let detect_keyboard_layout succeed, then reject connect_rdp.
-      mockInvoke.mockResolvedValueOnce(0x0409); // detect_keyboard_layout
-      mockInvoke.mockRejectedValueOnce(new Error('RDP connection failed')); // connect_rdp
+      // list_rdp_sessions returns empty (no existing session),
+      // detect_keyboard_layout succeeds, then connect_rdp rejects.
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === 'list_rdp_sessions') return [];
+        if (cmd === 'detect_keyboard_layout') return 0x0409;
+        if (cmd === 'connect_rdp') throw new Error('RDP connection failed');
+        return 'rdp-session-123';
+      });
 
       renderWithProviders(mockSession);
 
@@ -372,7 +382,7 @@ describe("RDPClient", () => {
   });
 
   describe("Cleanup", () => {
-    it("should call disconnect_rdp on unmount", async () => {
+    it("should call detach_rdp_session on unmount", async () => {
       const { unmount } = renderWithProviders(mockSession);
 
       await waitFor(() => {
@@ -381,9 +391,10 @@ describe("RDPClient", () => {
 
       unmount();
 
-      // Should try to disconnect the session by connectionId
+      // Should detach (not disconnect) the session by connectionId,
+      // keeping the backend session alive for re-attachment.
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('disconnect_rdp', { connectionId: 'test-connection' });
+        expect(mockInvoke).toHaveBeenCalledWith('detach_rdp_session', { connectionId: 'test-connection' });
       });
     });
   });

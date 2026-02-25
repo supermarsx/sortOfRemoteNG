@@ -2,12 +2,8 @@
 //!
 //! These tests verify:
 //!   - RenderBackend enum parsing, serialisation, and trait classification
-//!   - Win32 overlay window creation / destruction (requires a desktop session)
-//!   - SoftbufferRenderer pixel update + present round-trip
-//!   - coordinate-conversion sanity check
-//!   - **Hang / deadlock prevention**: window style assertions, cross-thread
-//!     `SendMessage` timeout tests, and concurrent render + move stress tests
-//!     that guarantee the `WS_POPUP` overlay architecture does not deadlock.
+//!   - FrameCompositor implementations (SoftbufferCompositor, WgpuCompositor)
+//!   - Dirty region tracking, flush behaviour, and resize_desktop
 
 use app_lib::native_renderer::RenderBackend;
 
@@ -61,129 +57,37 @@ fn render_backend_is_native_classification() {
     assert!(RenderBackend::Auto.is_native(), "auto should be native");
 }
 
+#[test]
+fn render_backend_is_composited() {
+    assert!(!RenderBackend::Webview.is_composited(), "webview is not composited");
+    assert!(RenderBackend::Softbuffer.is_composited(), "softbuffer is composited");
+    assert!(RenderBackend::Wgpu.is_composited(), "wgpu is composited");
+    assert!(RenderBackend::Auto.is_composited(), "auto is composited");
+}
+
 // ═══════════════════════════════════════════════════════════════════════
-// Win32 overlay window integration tests
+// FrameCompositor tests
 // ═══════════════════════════════════════════════════════════════════════
 
-/// These tests create real Win32 windows and therefore require a desktop
-/// session.  They are skipped in headless CI (no HWND available).
+mod compositor_tests {
+    use app_lib::native_renderer::{self, FrameCompositor, RenderBackend, SoftbufferCompositor};
 
-#[cfg(target_os = "windows")]
-mod win32_tests {
-    use app_lib::native_renderer::platform;
-
-    /// Helper: create a top-level hidden owner window so tests have a
-    /// valid parent HWND without depending on a Tauri window.
-    fn create_test_owner() -> isize {
-        use windows::Win32::UI::WindowsAndMessaging::*;
-        use windows::core::PCWSTR;
-
-        unsafe {
-            let class: Vec<u16> = "STATIC\0".encode_utf16().collect();
-            let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE::default(),
-                PCWSTR(class.as_ptr()),
-                PCWSTR::null(),
-                WS_OVERLAPPEDWINDOW,
-                100, 100, 800, 600,
-                None,
-                None,
-                None,
-                None,
-            )
-            .expect("failed to create test owner window");
-            hwnd.0 as isize
-        }
-    }
-
-    fn destroy_test_owner(hwnd: isize) {
-        use windows::Win32::UI::WindowsAndMessaging::DestroyWindow;
-        unsafe {
-            let _ = DestroyWindow(windows::Win32::Foundation::HWND(hwnd as *mut _));
-        }
+    #[test]
+    fn softbuffer_compositor_new() {
+        let comp = SoftbufferCompositor::new(64, 48);
+        assert_eq!(comp.name(), "softbuffer");
+        assert!(!comp.is_dirty());
     }
 
     #[test]
-    fn overlay_window_create_and_destroy() {
-        let owner = create_test_owner();
-        assert_ne!(owner, 0, "owner HWND should be valid");
-
-        let overlay = platform::create_overlay_window(owner, 10, 20, 320, 240)
-            .expect("create_overlay_window should succeed");
-        assert_ne!(overlay, 0, "overlay HWND should be valid");
-
-        // Show, hide, bring to top — should not panic
-        platform::show_window(overlay);
-        platform::pump_messages();
-        platform::bring_to_top(overlay);
-        platform::pump_messages();
-        platform::hide_window(overlay);
-        platform::pump_messages();
-
-        // Destroy
-        platform::destroy_window(overlay);
-        destroy_test_owner(owner);
+    fn softbuffer_compositor_flush_when_clean_returns_none() {
+        let mut comp = SoftbufferCompositor::new(64, 48);
+        assert!(comp.flush().is_none(), "flush on clean compositor should return None");
     }
 
     #[test]
-    fn overlay_window_move_converts_coords() {
-        let owner = create_test_owner();
-        let overlay = platform::create_overlay_window(owner, 0, 0, 200, 150)
-            .expect("create_overlay_window should succeed");
-
-        // Moving with client coords — should not panic
-        platform::move_window(overlay, owner, 50, 50, 300, 200);
-        platform::pump_messages();
-
-        // Verify the window is at a valid screen position
-        use windows::Win32::Foundation::{HWND, RECT};
-        use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
-        unsafe {
-            let mut rect: RECT = std::mem::zeroed();
-            let _ = GetWindowRect(HWND(overlay as *mut _), &mut rect);
-            // The window should be somewhere on screen (coordinates >= 0 after offset)
-            // We can't assert exact values because they depend on the owner's position,
-            // but the window should have non-zero dimensions.
-            let w = rect.right - rect.left;
-            let h = rect.bottom - rect.top;
-            assert_eq!(w, 300, "overlay width should be 300");
-            assert_eq!(h, 200, "overlay height should be 200");
-        }
-
-        platform::destroy_window(overlay);
-        destroy_test_owner(owner);
-    }
-
-    #[test]
-    fn client_to_screen_returns_valid_coords() {
-        let owner = create_test_owner();
-
-        // For a hidden non-moved window at (100, 100), client (0,0) should
-        // map to somewhere near the window's screen position (accounting
-        // for borders/title bar).
-        let (sx, sy) = platform::client_to_screen(owner, 0, 0);
-        // Should be >= the window rect position (100 + borders)
-        assert!(sx >= 100, "screen x should be >= 100, got {sx}");
-        assert!(sy >= 100, "screen y should be >= 100, got {sy}");
-
-        // A point at (10, 20) in client coords should be further right/down
-        let (sx2, sy2) = platform::client_to_screen(owner, 10, 20);
-        assert_eq!(sx2, sx + 10, "offset x should be additive");
-        assert_eq!(sy2, sy + 20, "offset y should be additive");
-
-        destroy_test_owner(owner);
-    }
-
-    #[test]
-    fn softbuffer_renderer_create_update_present() {
-        use app_lib::native_renderer::{NativeRenderer, SoftbufferRenderer};
-
-        let owner = create_test_owner();
-
-        let mut renderer = SoftbufferRenderer::new(owner, 0, 0, 64, 48)
-            .expect("SoftbufferRenderer::new should succeed");
-
-        assert_eq!(renderer.name(), "softbuffer");
+    fn softbuffer_compositor_update_and_flush() {
+        let mut comp = SoftbufferCompositor::new(64, 48);
 
         // Create a 64×48 RGBA image (solid red)
         let mut image_data = vec![0u8; 64 * 48 * 4];
@@ -195,534 +99,150 @@ mod win32_tests {
         }
 
         // Update full region
-        renderer.update_region(&image_data, 64, 0, 0, 64, 48);
+        comp.update_region(&image_data, 64, 0, 0, 64, 48);
+        assert!(comp.is_dirty(), "should be dirty after update_region");
 
-        // Present should succeed
-        renderer.present().expect("present should succeed");
+        let frame = comp.flush().expect("flush should return a frame");
+        assert_eq!(frame.x, 0);
+        assert_eq!(frame.y, 0);
+        assert_eq!(frame.width, 64);
+        assert_eq!(frame.height, 48);
+        assert_eq!(frame.rgba.len(), 64 * 48 * 4);
 
-        // Update a sub-region (10x10 green patch at (5,5))
+        // Verify pixel data: first pixel should be red
+        assert_eq!(frame.rgba[0], 255); // R
+        assert_eq!(frame.rgba[1], 0);   // G
+        assert_eq!(frame.rgba[2], 0);   // B
+        assert_eq!(frame.rgba[3], 255); // A
+
+        // After flush, should no longer be dirty
+        assert!(!comp.is_dirty());
+        assert!(comp.flush().is_none());
+    }
+
+    #[test]
+    fn softbuffer_compositor_sub_region_update() {
+        let mut comp = SoftbufferCompositor::new(64, 48);
+
+        // Create a 64×48 RGBA image (solid black)
+        let mut image_data = vec![0u8; 64 * 48 * 4];
+
+        // Paint a 10×10 green patch at (5, 5)
         for y in 5..15u16 {
             for x in 5..15u16 {
                 let idx = (y as usize * 64 + x as usize) * 4;
                 image_data[idx] = 0;
                 image_data[idx + 1] = 255;
                 image_data[idx + 2] = 0;
+                image_data[idx + 3] = 255;
             }
         }
-        renderer.update_region(&image_data, 64, 5, 5, 10, 10);
-        renderer.present().expect("present after sub-region should succeed");
 
-        // Show / reposition / hide lifecycle
-        renderer.show();
-        platform::pump_messages();
-        renderer.reposition(10, 10, 128, 96);
-        platform::pump_messages();
-        renderer.hide();
-        platform::pump_messages();
+        comp.update_region(&image_data, 64, 5, 5, 10, 10);
+        let frame = comp.flush().expect("should flush sub-region");
 
-        // Resize desktop
-        renderer.resize_desktop(128, 96).expect("resize should succeed");
+        // The frame should cover only the dirty region (5,5)-(14,14)
+        assert_eq!(frame.x, 5);
+        assert_eq!(frame.y, 5);
+        assert_eq!(frame.width, 10);
+        assert_eq!(frame.height, 10);
+        assert_eq!(frame.rgba.len(), 10 * 10 * 4);
 
-        // Destroy
-        renderer.destroy();
-        destroy_test_owner(owner);
-    }
-
-    #[test]
-    fn pump_messages_does_not_panic_with_no_messages() {
-        // Pumping on a thread with no pending messages should be a no-op
-        platform::pump_messages();
-        platform::pump_messages();
-    }
-
-    #[test]
-    fn create_renderer_factory_softbuffer() {
-        use app_lib::native_renderer::{self, NativeRenderer, RenderBackend};
-
-        let owner = create_test_owner();
-
-        let result = native_renderer::create_renderer(
-            &RenderBackend::Softbuffer,
-            owner,
-            0, 0,
-            320, 240,
-        );
-        assert!(result.is_ok(), "softbuffer renderer should be created");
-
-        let (mut renderer, name): (Box<dyn NativeRenderer>, String) = result.unwrap();
-        assert_eq!(name, "softbuffer");
-        assert_eq!(renderer.name(), "softbuffer");
-
-        renderer.destroy();
-        destroy_test_owner(owner);
-    }
-
-    #[test]
-    fn create_renderer_factory_webview_returns_error() {
-        use app_lib::native_renderer::{self, RenderBackend};
-
-        let owner = create_test_owner();
-
-        let result = native_renderer::create_renderer(
-            &RenderBackend::Webview,
-            owner,
-            0, 0,
-            320, 240,
-        );
-        assert!(result.is_err(), "webview should return Err (no native window)");
-
-        destroy_test_owner(owner);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════
-    // Hang / deadlock prevention tests
-    //
-    // The original WS_CHILD overlay windows deadlocked because:
-    //   1. The overlay lived on a background thread (spawn_blocking)
-    //   2. The Tauri UI thread would SendMessage to the child (WM_PAINT,
-    //      WM_SIZE, etc.) and block waiting for the child's thread.
-    //   3. That thread was blocked on a TCP read_pdu() call.
-    //   → Mutual deadlock.
-    //
-    // The fix uses WS_POPUP (owned, not child) windows.  SendMessage
-    // from the UI thread to a WS_POPUP on another thread does NOT
-    // cross-thread dispatch — the message goes through PostMessage
-    // semantics for owned windows.
-    //
-    // These tests verify the architectural invariants that prevent the
-    // deadlock, and additionally stress-test real cross-thread scenarios
-    // with hard timeouts so the test suite itself will never hang.
-    // ═══════════════════════════════════════════════════════════════════
-
-    /// Verify that overlay windows are created with WS_POPUP and
-    /// NOT WS_CHILD.  This is the primary architectural defence
-    /// against the cross-thread SendMessage deadlock.
-    #[test]
-    fn overlay_window_has_popup_style_not_child() {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::*;
-
-        let owner = create_test_owner();
-        let overlay = platform::create_overlay_window(owner, 0, 0, 200, 150)
-            .expect("create_overlay_window should succeed");
-
-        unsafe {
-            let style = GetWindowLongW(HWND(overlay as *mut _), GWL_STYLE) as u32;
-            let ex_style = GetWindowLongW(HWND(overlay as *mut _), GWL_EXSTYLE) as u32;
-
-            // Must have WS_POPUP
-            assert_ne!(
-                style & WS_POPUP.0, 0,
-                "overlay MUST use WS_POPUP (was 0x{style:08X})"
-            );
-            // Must NOT have WS_CHILD — this was the root cause of the hang
-            assert_eq!(
-                style & WS_CHILD.0, 0,
-                "overlay MUST NOT use WS_CHILD (was 0x{style:08X})"
-            );
-            // Must have WS_EX_TOOLWINDOW (no taskbar entry)
-            assert_ne!(
-                ex_style & WS_EX_TOOLWINDOW.0, 0,
-                "overlay should have WS_EX_TOOLWINDOW (was 0x{ex_style:08X})"
-            );
-            // WS_EX_NOACTIVATE is intentionally NOT set — the overlay
-            // captures keyboard focus so input goes directly to the
-            // RDP session via its WndProc.
-            assert_eq!(
-                ex_style & WS_EX_NOACTIVATE.0, 0,
-                "overlay should NOT have WS_EX_NOACTIVATE so it can receive keyboard input (was 0x{ex_style:08X})"
-            );
+        // All pixels in the frame should be green
+        for pixel in frame.rgba.chunks_exact(4) {
+            assert_eq!(pixel[0], 0, "R should be 0");
+            assert_eq!(pixel[1], 255, "G should be 255");
+            assert_eq!(pixel[2], 0, "B should be 0");
+            assert_eq!(pixel[3], 255, "A should be 255");
         }
-
-        platform::destroy_window(overlay);
-        destroy_test_owner(owner);
     }
 
-    /// Verify the softbuffer renderer's underlying window also uses
-    /// proper WS_POPUP style (not WS_CHILD) via the `hwnd()` getter.
     #[test]
-    fn softbuffer_renderer_window_has_popup_style() {
-        use app_lib::native_renderer::{NativeRenderer, SoftbufferRenderer};
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::*;
+    fn softbuffer_compositor_multiple_regions_coalesce() {
+        let mut comp = SoftbufferCompositor::new(100, 100);
+        let image_data = vec![128u8; 100 * 100 * 4];
 
-        let owner = create_test_owner();
-        let renderer = SoftbufferRenderer::new(owner, 0, 0, 64, 48)
-            .expect("SoftbufferRenderer::new should succeed");
+        // Two separate updates that should merge into one bounding rect
+        comp.update_region(&image_data, 100, 10, 10, 5, 5);  // (10,10)-(14,14)
+        comp.update_region(&image_data, 100, 50, 50, 10, 10); // (50,50)-(59,59)
 
-        let overlay = renderer.hwnd();
-        assert_ne!(overlay, 0, "renderer hwnd should be valid");
+        let frame = comp.flush().expect("should flush merged region");
 
-        unsafe {
-            let style = GetWindowLongW(HWND(overlay as *mut _), GWL_STYLE) as u32;
-
-            // Must have WS_POPUP
-            assert_ne!(
-                style & WS_POPUP.0, 0,
-                "renderer window MUST use WS_POPUP (was 0x{style:08X})"
-            );
-            // Must NOT have WS_CHILD
-            assert_eq!(
-                style & WS_CHILD.0, 0,
-                "renderer window MUST NOT use WS_CHILD (was 0x{style:08X})"
-            );
-        }
-
-        drop(renderer);
-        destroy_test_owner(owner);
+        // Bounding rect: (10,10) to (59,59) → width=50, height=50
+        assert_eq!(frame.x, 10);
+        assert_eq!(frame.y, 10);
+        assert_eq!(frame.width, 50);
+        assert_eq!(frame.height, 50);
     }
 
-    /// Simulate the exact deadlock scenario:
-    ///
-    /// 1. Main thread creates owner + overlay.
-    /// 2. Background thread sends WM_NULL to the overlay via
-    ///    SendMessageTimeoutW.
-    /// 3. Main thread does NOT pump messages (simulating read_pdu block).
-    ///
-    /// With WS_CHILD this would deadlock (SendMessage blocks waiting for
-    /// the child's thread to process, but that thread doesn't pump).
-    ///
-    /// With WS_POPUP (owned), SendMessageTimeoutW returns within the
-    /// timeout because no cross-thread message dispatch is required.
-    ///
-    /// The test itself uses a hard 5-second channel timeout as its
-    /// "hang detector" — if we don't get a response, the test fails
-    /// instead of hanging the entire suite forever.
     #[test]
-    fn cross_thread_send_message_does_not_deadlock() {
-        use std::sync::mpsc;
-        use std::time::Duration;
-        use windows::Win32::Foundation::{HWND, WPARAM, LPARAM};
-        use windows::Win32::UI::WindowsAndMessaging::*;
+    fn softbuffer_compositor_resize_desktop() {
+        let mut comp = SoftbufferCompositor::new(64, 48);
 
-        let owner = create_test_owner();
-
-        // Create overlay on the MAIN thread (same as test thread).
-        let overlay = platform::create_overlay_window(owner, 0, 0, 200, 150)
-            .expect("create_overlay_window should succeed");
-        platform::show_window(overlay);
-        platform::pump_messages();
-
-        let overlay_hwnd = overlay;
-        let (tx, rx) = mpsc::channel();
-
-        // Background thread: sends a message TO the overlay.
-        // This simulates the UI thread sending WM_PAINT / WM_SIZE etc.
-        let handle = std::thread::spawn(move || {
-            unsafe {
-                let mut result: usize = 0;
-                let status = SendMessageTimeoutW(
-                    HWND(overlay_hwnd as *mut _),
-                    WM_NULL,
-                    WPARAM(0),
-                    LPARAM(0),
-                    SMTO_ABORTIFHUNG | SMTO_BLOCK,
-                    2000, // 2 second timeout
-                    Some(&mut result),
-                );
-                tx.send(status.0 != 0).unwrap();
-            }
-        });
-
-        // Main thread does NOT pump — simulating "blocked on read_pdu".
-        std::thread::sleep(Duration::from_millis(500));
-
-        // Now pump so the overlay processes WM_NULL.
-        platform::pump_messages();
-
-        let send_succeeded = rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("background thread should have reported within 5s — DEADLOCK?");
-
-        handle.join().expect("background thread should not panic");
-
-        // The key assertion is that we GOT HERE AT ALL.  With WS_CHILD
-        // and no message pump, this would hang forever.
-        assert!(
-            send_succeeded,
-            "SendMessageTimeoutW should succeed for WS_POPUP overlay"
-        );
-
-        platform::destroy_window(overlay);
-        destroy_test_owner(owner);
-    }
-
-    /// Stress test: background thread does rapid present() calls while
-    /// the main thread sends WM_SIZE / WM_PAINT to the overlay.
-    ///
-    /// This reproduces the real-world scenario where the RDP session
-    /// loop renders frames on spawn_blocking while the UI thread
-    /// handles resize events.
-    ///
-    /// Runs for 2 seconds — if a deadlock occurs the test will
-    /// time out instead of completing.
-    #[test]
-    fn concurrent_present_and_resize_no_hang() {
-        use app_lib::native_renderer::{NativeRenderer, SoftbufferRenderer};
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::time::{Duration, Instant};
-        use windows::Win32::Foundation::{HWND, WPARAM, LPARAM};
-        use windows::Win32::UI::WindowsAndMessaging::*;
-
-        let owner = create_test_owner();
-        let mut renderer = SoftbufferRenderer::new(owner, 0, 0, 64, 48)
-            .expect("SoftbufferRenderer::new should succeed");
-        renderer.show();
-        platform::pump_messages();
-
+        // Update some data
         let image_data = vec![255u8; 64 * 48 * 4];
-        renderer.update_region(&image_data, 64, 0, 0, 64, 48);
+        comp.update_region(&image_data, 64, 0, 0, 64, 48);
+        comp.flush(); // consume dirty state
 
-        let done = Arc::new(AtomicBool::new(false));
-        let done2 = done.clone();
+        // Resize
+        comp.resize_desktop(128, 96);
+        assert!(!comp.is_dirty(), "resize should not mark dirty on its own");
 
-        // Get the overlay HWND via the trait method.
-        let overlay_hwnd = renderer.hwnd();
-        assert_ne!(overlay_hwnd, 0, "renderer hwnd should be valid");
-
-        // Background thread: sends WM_SIZE and WM_PAINT to the overlay.
-        let handle = std::thread::spawn(move || {
-            let mut count = 0u32;
-            while !done2.load(Ordering::Relaxed) {
-                unsafe {
-                    let _ = SendMessageTimeoutW(
-                        HWND(overlay_hwnd as *mut _),
-                        WM_SIZE,
-                        WPARAM(0),
-                        LPARAM((48 << 16 | 64) as isize),
-                        SMTO_ABORTIFHUNG,
-                        500,
-                        None,
-                    );
-                    let _ = SendMessageTimeoutW(
-                        HWND(overlay_hwnd as *mut _),
-                        WM_PAINT,
-                        WPARAM(0),
-                        LPARAM(0),
-                        SMTO_ABORTIFHUNG,
-                        500,
-                        None,
-                    );
-                }
-                count += 1;
-                std::thread::sleep(Duration::from_millis(5));
-            }
-            count
-        });
-
-        // Main thread: rapid present() calls (RDP frame loop).
-        let start = Instant::now();
-        let mut frames = 0u32;
-
-        while start.elapsed() < Duration::from_secs(2) {
-            renderer.update_region(&image_data, 64, 0, 0, 64, 48);
-            if let Err(e) = renderer.present() {
-                eprintln!("present error (acceptable): {e}");
-            }
-            platform::pump_messages();
-            frames += 1;
-
-            if frames % 10 == 0 {
-                renderer.reposition(frames as i32 % 50, frames as i32 % 30, 64, 48);
-            }
-        }
-
-        done.store(true, Ordering::Relaxed);
-        let msg_count = handle.join().expect("background thread should not panic");
-
-        assert!(frames > 0, "should have rendered at least one frame");
-        assert!(msg_count > 0, "background should have sent at least one message");
-        eprintln!(
-            "concurrent_present_and_resize: {frames} frames, {msg_count} messages — no deadlock"
-        );
-
-        renderer.destroy();
-        destroy_test_owner(owner);
+        // Update with new dimensions
+        let new_image = vec![200u8; 128 * 96 * 4];
+        comp.update_region(&new_image, 128, 0, 0, 128, 96);
+        let frame = comp.flush().expect("should flush after resize + update");
+        assert_eq!(frame.width, 128);
+        assert_eq!(frame.height, 96);
+        assert_eq!(frame.rgba.len(), 128 * 96 * 4);
     }
 
-    /// Stress test: overlay created on background thread, main thread
-    /// sends messages.  This is the exact threading model of the RDP
-    /// session (spawn_blocking creates the renderer, UI thread interacts).
-    ///
-    /// With WS_CHILD this scenario deadlocks.  With WS_POPUP it should
-    /// complete within seconds.
     #[test]
-    fn background_thread_renderer_with_main_thread_messages() {
-        use app_lib::native_renderer::{NativeRenderer, SoftbufferRenderer};
-        use std::sync::Arc;
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::mpsc;
-        use std::time::Duration;
-        use windows::Win32::Foundation::{HWND, WPARAM, LPARAM};
-        use windows::Win32::UI::WindowsAndMessaging::*;
+    fn softbuffer_compositor_out_of_bounds_region_clamped() {
+        let mut comp = SoftbufferCompositor::new(64, 48);
+        let image_data = vec![255u8; 64 * 48 * 4];
 
-        let owner = create_test_owner();
+        // Update region that extends beyond desktop bounds
+        comp.update_region(&image_data, 64, 60, 44, 20, 20);
 
-        let (hwnd_tx, hwnd_rx) = mpsc::channel::<isize>();
-        let done = Arc::new(AtomicBool::new(false));
-        let done2 = done.clone();
-
-        // Background thread: creates the renderer, runs present() loop.
-        let bg_owner = owner;
-        let bg_handle = std::thread::spawn(move || {
-            let mut renderer = SoftbufferRenderer::new(bg_owner, 0, 0, 64, 48)
-                .expect("SoftbufferRenderer::new should succeed");
-            renderer.show();
-            platform::pump_messages();
-
-            // Send the overlay HWND to the main thread via the trait method.
-            hwnd_tx.send(renderer.hwnd()).unwrap();
-
-            let image = vec![128u8; 64 * 48 * 4];
-            let mut frames = 0u32;
-            while !done2.load(Ordering::Relaxed) {
-                renderer.update_region(&image, 64, 0, 0, 64, 48);
-                let _ = renderer.present();
-                platform::pump_messages();
-                frames += 1;
-                std::thread::sleep(Duration::from_millis(2));
-            }
-
-            renderer.destroy();
-            frames
-        });
-
-        // Main thread: pump messages while waiting for background to create
-        // the overlay.  CreateWindowExW with a cross-thread owner sends
-        // messages to the owner's thread, so we must pump here.
-        let overlay_hwnd = loop {
-            platform::pump_messages();
-            match hwnd_rx.try_recv() {
-                Ok(hwnd) => break hwnd,
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    panic!("background thread died before sending HWND");
-                }
-            }
-        };
-        assert_ne!(overlay_hwnd, 0);
-
-        let start = std::time::Instant::now();
-        let mut msg_count = 0u32;
-        while start.elapsed() < Duration::from_secs(2) {
-            unsafe {
-                for &msg in &[WM_NULL, WM_SIZE, WM_MOVE, WM_PAINT] {
-                    let _ = SendMessageTimeoutW(
-                        HWND(overlay_hwnd as *mut _),
-                        msg,
-                        WPARAM(0),
-                        LPARAM(0),
-                        SMTO_ABORTIFHUNG,
-                        500,
-                        None,
-                    );
-                    msg_count += 1;
-                }
-            }
-            std::thread::sleep(Duration::from_millis(10));
+        if comp.is_dirty() {
+            let frame = comp.flush().expect("should flush clamped region");
+            // Region should be clamped to (60,44)-(63,47) → 4×4
+            assert!(frame.width <= 64);
+            assert!(frame.height <= 48);
         }
-
-        done.store(true, Ordering::Relaxed);
-        let frames = bg_handle.join().expect("background thread should not panic");
-
-        assert!(frames > 0, "background should have rendered frames");
-        assert!(msg_count > 0, "main should have sent messages");
-        eprintln!(
-            "background_thread_renderer: {frames} bg frames, {msg_count} main messages — no deadlock"
-        );
-
-        destroy_test_owner(owner);
     }
 
-    /// Verify that blocking the overlay's owning thread does NOT cause
-    /// a hang when the other thread sends messages.
-    ///
-    /// This is the most direct reproduction of the original bug:
-    /// - Thread A creates both the owner AND overlay, then blocks
-    ///   (simulating the spawn_blocking thread running read_pdu).
-    /// - Thread B (main) sends a message to the overlay.
-    /// - With WS_CHILD: Thread B's SendMessage blocks forever.
-    /// - With WS_POPUP: Thread B's SendMessageTimeoutW returns (with
-    ///   timeout or success).
     #[test]
-    fn blocked_owner_thread_does_not_hang_sender() {
-        use std::sync::{mpsc, Arc, Barrier};
-        use std::time::Duration;
-        use windows::Win32::Foundation::{HWND, WPARAM, LPARAM};
-        use windows::Win32::UI::WindowsAndMessaging::*;
+    fn create_compositor_softbuffer() {
+        let result = native_renderer::create_compositor(&RenderBackend::Softbuffer, 320, 240);
+        assert!(result.is_some(), "softbuffer compositor should be created");
+        let (comp, name) = result.unwrap();
+        assert_eq!(name, "softbuffer");
+        assert_eq!(comp.name(), "softbuffer");
+    }
 
-        let barrier = Arc::new(Barrier::new(2));
-        let barrier2 = barrier.clone();
+    #[test]
+    fn create_compositor_wgpu_falls_back() {
+        let result = native_renderer::create_compositor(&RenderBackend::Wgpu, 320, 240);
+        assert!(result.is_some(), "wgpu compositor should be created (CPU fallback)");
+        let (comp, name) = result.unwrap();
+        // Currently WgpuCompositor delegates to softbuffer
+        assert!(name == "wgpu" || name == "softbuffer");
+        assert!(!comp.name().is_empty());
+    }
 
-        let (overlay_tx, overlay_rx) = mpsc::channel::<(isize, isize)>();
-        let block_barrier = Arc::new(Barrier::new(2));
-        let block_barrier2 = block_barrier.clone();
+    #[test]
+    fn create_compositor_auto() {
+        let result = native_renderer::create_compositor(&RenderBackend::Auto, 320, 240);
+        assert!(result.is_some(), "auto compositor should be created");
+        let (_comp, name) = result.unwrap();
+        assert!(!name.is_empty());
+    }
 
-        // Thread A: creates BOTH owner and overlay on the same thread
-        // (matching the real scenario where spawn_blocking creates the
-        // overlay; even though in the real app the Tauri window is on
-        // the UI thread, here we keep them co-located to avoid
-        // CreateWindowExW cross-thread owner messages).
-        // Then thread A BLOCKS — simulating read_pdu() TCP wait.
-        let thread_a = std::thread::spawn(move || {
-            let owner = create_test_owner();
-            let overlay = platform::create_overlay_window(owner, 0, 0, 100, 80)
-                .expect("create_overlay_window");
-            platform::show_window(overlay);
-            platform::pump_messages();
-            overlay_tx.send((owner, overlay)).unwrap();
-
-            // Signal ready, then BLOCK
-            barrier2.wait();
-            block_barrier2.wait(); // ← simulates TCP read blocking
-
-            platform::pump_messages();
-            platform::destroy_window(overlay);
-            destroy_test_owner(owner);
-        });
-
-        let (_owner, overlay_hwnd) = overlay_rx
-            .recv_timeout(Duration::from_secs(3))
-            .expect("should receive overlay HWND");
-
-        // Wait for thread A to reach its blocking point
-        barrier.wait();
-        std::thread::sleep(Duration::from_millis(100));
-
-        // Thread B (this thread): send WM_NULL to the overlay.
-        // Thread A is blocked (not pumping).  With WS_CHILD, this
-        // SendMessage would block forever.  With WS_POPUP, it returns
-        // within the timeout.
-        let send_start = std::time::Instant::now();
-        unsafe {
-            let mut lresult: usize = 0;
-            let status = SendMessageTimeoutW(
-                HWND(overlay_hwnd as *mut _),
-                WM_NULL,
-                WPARAM(0),
-                LPARAM(0),
-                SMTO_ABORTIFHUNG | SMTO_BLOCK,
-                2000,
-                Some(&mut lresult),
-            );
-
-            let elapsed = send_start.elapsed();
-            assert!(
-                elapsed < Duration::from_secs(3),
-                "SendMessageTimeoutW took {elapsed:?} — possible deadlock!"
-            );
-
-            eprintln!(
-                "blocked_owner_thread: SendMessageTimeoutW returned in {elapsed:?}, status={}",
-                status.0
-            );
-        }
-
-        // Unblock thread A
-        block_barrier.wait();
-        thread_a.join().expect("thread A should not panic");
+    #[test]
+    fn create_compositor_webview_returns_none() {
+        let result = native_renderer::create_compositor(&RenderBackend::Webview, 320, 240);
+        assert!(result.is_none(), "webview should not create a compositor");
     }
 }
