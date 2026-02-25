@@ -34,6 +34,7 @@ import {
 } from '../utils/trustStore';
 import { TrustWarningDialog } from './TrustWarningDialog';
 import { FrameBuffer } from './rdpCanvas';
+import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from './rdpRenderers';
 
 interface RDPClientProps {
   session: ConnectionSession;
@@ -169,6 +170,10 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   /** Offscreen double-buffer / wallpaper cache */
   const frameBufferRef = useRef<FrameBuffer | null>(null);
+  /** Pluggable GPU/CPU frame renderer (Canvas 2D, WebGL, WebGPU, Worker). */
+  const rendererRef = useRef<FrameRenderer | null>(null);
+  /** Stable ref for the configured renderer type (avoids stale closure in event listeners). */
+  const frontendRendererTypeRef = useRef<FrontendRendererType>('auto');
   /** rAF handle for the blit loop */
   const rafIdRef = useRef<number>(0);
   /** Whether a rAF callback is already scheduled (avoids redundant requests). */
@@ -197,11 +202,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     const queue = frameQueueRef.current;
     const fb = frameBufferRef.current;
     const canvas = canvasRef.current;
+    const renderer = rendererRef.current;
 
     if (queue.length > 0 && fb && canvas) {
-      if (!visCtxRef.current) visCtxRef.current = canvas.getContext('2d');
-      const ctx = visCtxRef.current;
-      if (ctx) {
+      if (renderer) {
+        // GPU / Worker path — delegate to the pluggable renderer
         for (let i = 0; i < queue.length; i++) {
           const data = queue[i];
           const view = new DataView(data);
@@ -210,7 +215,32 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           const w = view.getUint16(4, true);
           const h = view.getUint16(6, true);
           const rgba = new Uint8ClampedArray(data, 8);
-          fb.paintDirect(ctx, x, y, w, h, rgba);
+          renderer.paintRegion(x, y, w, h, rgba);
+          // Also update the offscreen cache so resize scaling works
+          const offCtx = fb.offscreen.getContext('2d');
+          if (offCtx) {
+            fb.paintDirect(
+              offCtx as unknown as CanvasRenderingContext2D,
+              x, y, w, h, rgba,
+            );
+          }
+        }
+        renderer.present();
+      } else {
+        // Fallback: direct Canvas 2D (should not normally be reached)
+        if (!visCtxRef.current) visCtxRef.current = canvas.getContext('2d');
+        const ctx = visCtxRef.current;
+        if (ctx) {
+          for (let i = 0; i < queue.length; i++) {
+            const data = queue[i];
+            const view = new DataView(data);
+            const x = view.getUint16(0, true);
+            const y = view.getUint16(2, true);
+            const w = view.getUint16(4, true);
+            const h = view.getUint16(6, true);
+            const rgba = new Uint8ClampedArray(data, 8);
+            fb.paintDirect(ctx, x, y, w, h, rgba);
+          }
         }
       }
       queue.length = 0;
@@ -237,6 +267,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const [connectTiming, setConnectTiming] = useState<RdpTimingEvent | null>(null);
   /** Which render backend the session is actually using (set from Rust event). */
   const [activeRenderBackend, setActiveRenderBackend] = useState<string>('webview');
+  /** Which frontend renderer is actually active (may differ from config if fallback). */
+  const [activeFrontendRenderer, setActiveFrontendRenderer] = useState<string>('canvas2d');
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
@@ -270,6 +302,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         frameBatching: global.frameBatching ?? base.performance?.frameBatching,
         frameBatchIntervalMs: global.frameBatchIntervalMs ?? base.performance?.frameBatchIntervalMs,
         renderBackend: global.renderBackend ?? base.performance?.renderBackend,
+        frontendRenderer: (global.frontendRenderer ?? base.performance?.frontendRenderer ?? 'auto') as FrontendRendererType,
         codecs: {
           ...base.performance?.codecs,
           enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
@@ -346,6 +379,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   connectionRef.current = connection;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  // Keep the renderer type ref in sync with the resolved settings
+  frontendRendererTypeRef.current = (rdpSettings.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
 
   // ─── Initialize RDP connection ─────────────────────────────────────
 
@@ -412,6 +447,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
               sessionInfo.desktop_width,
               sessionInfo.desktop_height
             );
+            // Create the pluggable renderer for the visible canvas
+            const rendererType = (rdpSettings.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
+            rendererRef.current?.destroy();
+            rendererRef.current = createFrameRenderer(rendererType, canvas);
+            setActiveFrontendRenderer(rendererRef.current.name);
           }
 
           setIsConnected(true);
@@ -451,7 +491,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         port: connection.port || 3389,
         username: connection.username || '',
         password: connection.password || '',
-        domain: (connection as Record<string, unknown>).domain as string | undefined,
+        domain: connection.domain,
         width: resW,
         height: resH,
         rdpSettings: effectiveSettings,
@@ -504,6 +544,9 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       rafPendingRef.current = false;
     }
     visCtxRef.current = null;
+    // Release GPU / Worker resources
+    rendererRef.current?.destroy();
+    rendererRef.current = null;
     // Detach the viewer — the backend session continues running headless.
     // Use disconnect_rdp only for explicit user-initiated disconnects.
     if (connection) {
@@ -558,6 +601,12 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             }
             // Initialize (or reinitialize) the offscreen frame buffer
             frameBufferRef.current = new FrameBuffer(status.desktop_width, status.desktop_height);
+            // Create (or recreate) the pluggable renderer
+            rendererRef.current?.destroy();
+            if (canvas) {
+              rendererRef.current = createFrameRenderer(frontendRendererTypeRef.current, canvas);
+              setActiveFrontendRenderer(rendererRef.current.name);
+            }
           }
           break;
         case 'connecting':
@@ -730,6 +779,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           // Blit the scaled cache to visible canvas immediately
           if (c) frameBufferRef.current.blitFull(c);
         }
+        // Resize the pluggable renderer surface
+        rendererRef.current?.resize(w, h);
       }, 150);
     });
 
@@ -1214,6 +1265,16 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
                   activeRenderBackend === 'softbuffer' ? 'text-blue-400' : 'text-gray-300'
                 }`}>
                   {activeRenderBackend}
+                </div>
+              </div>
+              <div className="bg-gray-900 rounded p-2">
+                <div className="text-gray-500 mb-1">Frontend Renderer</div>
+                <div className={`font-mono font-bold ${
+                  activeFrontendRenderer.includes('WebGPU') ? 'text-purple-400' :
+                  activeFrontendRenderer.includes('WebGL') ? 'text-green-400' :
+                  activeFrontendRenderer.includes('Worker') ? 'text-cyan-400' : 'text-blue-400'
+                }`}>
+                  {activeFrontendRenderer}
                 </div>
               </div>
               {stats.last_error && (

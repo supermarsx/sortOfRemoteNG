@@ -426,15 +426,26 @@ export interface RdpGlobalDefaultsConfig {
   /** RemoteFX entropy algorithm */
   remoteFxEntropy: 'rlgr1' | 'rlgr3';
 
-  // ─── Render Backend default ────────────────────────────────
+  // ─── Server-side Compositor default ────────────────────────
   /**
-   * Default rendering backend for RDP frame display.
-   * - `webview` — Tauri Channel → JS canvas (default, most compatible)
-   * - `softbuffer` — CPU blit to native Win32 child window (zero JS overhead)
-   * - `wgpu` — GPU texture upload + present to native child window
+   * Default server-side compositor for RDP frame accumulation.
+   * - `webview` — no compositor, direct per-region streaming
+   * - `softbuffer` — CPU shadow buffer compositor
+   * - `wgpu` — GPU compositor (CPU fallback currently)
    * - `auto` — try wgpu → softbuffer → webview
    */
   renderBackend: 'auto' | 'softbuffer' | 'wgpu' | 'webview';
+
+  // ─── Client-side Renderer default ──────────────────────────
+  /**
+   * Default frontend canvas renderer for painting received frames.
+   * - `auto` — best available (WebGPU → WebGL → Canvas 2D)
+   * - `canvas2d` — Canvas 2D putImageData (baseline)
+   * - `webgl` — WebGL texSubImage2D (GPU texture upload)
+   * - `webgpu` — WebGPU writeTexture (latest GPU API)
+   * - `offscreen-worker` — OffscreenCanvas in a Worker
+   */
+  frontendRenderer: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker';
 }
 
 // Backup scheduling frequency

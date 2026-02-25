@@ -501,6 +501,26 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             falls back to softbuffer, then webview.
           </p>
         </div>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Default Frontend Renderer</label>
+          <select
+            value={rdp.frontendRenderer ?? 'auto'}
+            onChange={(e) => update({ frontendRenderer: e.target.value as 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' })}
+            className={selectClass}
+          >
+            <option value="auto">Auto — best available (WebGPU → WebGL → Canvas 2D)</option>
+            <option value="canvas2d">Canvas 2D — putImageData (baseline, always works)</option>
+            <option value="webgl">WebGL — texSubImage2D (GPU texture upload)</option>
+            <option value="webgpu">WebGPU — writeTexture (modern GPU API)</option>
+            <option value="offscreen-worker">OffscreenCanvas Worker — off-main-thread rendering</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Controls how RGBA frames are painted onto the canvas.  WebGL and WebGPU upload textures to
+            the GPU for lower latency.  OffscreenCanvas Worker moves all rendering off the main thread
+            but takes exclusive ownership of the canvas.
+          </p>
+        </div>
       </div>
 
       {/* ─── Performance / Frame Delivery Defaults ─────────────── */}

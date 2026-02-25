@@ -287,6 +287,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     tcpRecvBufferSize: 262144,
     tcpSendBufferSize: 262144,
     renderBackend: 'softbuffer',
+    frontendRenderer: 'auto',
   },
 };
 

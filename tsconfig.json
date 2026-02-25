@@ -6,6 +6,7 @@
       "dom.iterable",
       "ES6"
     ],
+    "types": ["@webgpu/types"],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,

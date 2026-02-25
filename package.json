@@ -79,6 +79,7 @@
     "@types/ssh2-sftp-client": "^9.0.6",
     "@vitejs/plugin-react": "^5.1.2",
     "@vitest/coverage-v8": "^1.6.1",
+    "@webgpu/types": "^0.1.69",
     "autoprefixer": "^10.4.18",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.0.0",

@@ -330,15 +330,26 @@ export interface RdpPerformanceSettings {
   /** Codec negotiation settings */
   codecs?: RdpCodecSettings;
 
-  // ─── Render Backend ────────────────────────────────────────────────
+  // ─── Server-side Compositor (Rust backend) ────────────────────────
   /**
-   * Which rendering backend to use for frame display.
-   * - `webview` — stream frames via Tauri Channel to a JS <canvas> (default)
-   * - `softbuffer` — CPU blit to a native Win32 child window (zero JS overhead)
-   * - `wgpu` — GPU texture upload + present to a native child window
+   * Which server-side compositor to use for frame accumulation.
+   * - `webview` — no compositor, stream each dirty region directly
+   * - `softbuffer` — CPU shadow buffer, batch dirty regions
+   * - `wgpu` — GPU compositor (CPU fallback currently)
    * - `auto` — try wgpu → softbuffer → webview
    */
   renderBackend?: 'auto' | 'softbuffer' | 'wgpu' | 'webview';
+
+  // ─── Client-side Renderer (JS frontend) ───────────────────────────
+  /**
+   * Which frontend canvas renderer to paint received frames.
+   * - `auto` — best available (WebGPU → WebGL → Canvas 2D)
+   * - `canvas2d` — Canvas 2D putImageData (baseline, always works)
+   * - `webgl` — WebGL texSubImage2D (GPU texture upload)
+   * - `webgpu` — WebGPU writeTexture (latest GPU API)
+   * - `offscreen-worker` — OffscreenCanvas in a Worker (off-main-thread)
+   */
+  frontendRenderer?: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker';
 }
 
 // ─── Bitmap Codec Negotiation ──────────────────────────────────────
@@ -611,6 +622,7 @@ export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
       remoteFxEntropy: 'rlgr3',
     },
     renderBackend: 'softbuffer',
+    frontendRenderer: 'auto',
   },
   security: {
     enableTls: true,

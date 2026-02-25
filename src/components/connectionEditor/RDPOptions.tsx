@@ -736,6 +736,25 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
           </select>
         </div>
 
+        <div className="text-xs text-gray-500 font-medium pt-2">Frontend Renderer</div>
+        <p className="text-xs text-gray-500 mb-1">
+          Controls how RGBA frames are painted onto the canvas. WebGL/WebGPU use GPU texture upload for lower latency; OffscreenCanvas Worker moves rendering off the main thread.
+        </p>
+
+        <div>
+          <select
+            value={rdp.performance?.frontendRenderer ?? 'auto'}
+            onChange={(e) => updateRdp('performance', { frontendRenderer: e.target.value as 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' })}
+            className={selectClass}
+          >
+            <option value="auto">Auto — best available (WebGPU → WebGL → Canvas 2D)</option>
+            <option value="canvas2d">Canvas 2D — putImageData (baseline, always works)</option>
+            <option value="webgl">WebGL — texSubImage2D (GPU texture upload)</option>
+            <option value="webgpu">WebGPU — writeTexture (modern GPU API)</option>
+            <option value="offscreen-worker">OffscreenCanvas Worker — off-main-thread rendering</option>
+          </select>
+        </div>
+
         <div className="text-xs text-gray-500 font-medium pt-2">Frame Delivery</div>
 
         <div>
