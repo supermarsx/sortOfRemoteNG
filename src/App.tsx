@@ -5,36 +5,10 @@ import React, {
   useMemo,
   useRef,
 } from "react";
-import {
-  Monitor,
-  Zap,
-  Terminal,
-  Minus,
-  Square,
-  X,
-  Pin,
-  Settings,
-  Database,
-  BarChart3,
-  ScrollText,
-  Shield,
-  Droplet,
-  Keyboard,
-  Network,
-  Power,
-  Bug,
-  Plus,
-  FileCode,
-  ScreenShare,
-  ArrowUpDown,
-  Cpu,
-} from "lucide-react";
+import { Monitor, Zap, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { getAllWindows, getCurrentWindow, availableMonitors, currentMonitor } from "@tauri-apps/api/window";
+import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { listen, emit } from "@tauri-apps/api/event";
-import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Connection, ConnectionSession, TabLayout } from "./types/connection";
 import { CloudSyncProvider, GlobalSettings, defaultCloudSyncConfig } from "./types/settings";
 import { SettingsManager } from "./utils/settingsManager";
@@ -48,39 +22,22 @@ import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { ToastProvider } from "./contexts/ToastContext";
 import { Sidebar } from "./components/Sidebar";
-import { ConnectionEditor } from "./components/ConnectionEditor";
 import { SessionTabs } from "./components/SessionTabs";
 import { SessionViewer } from "./components/SessionViewer";
 import { TabLayoutManager } from "./components/TabLayoutManager";
-import { QuickConnect } from "./components/QuickConnect";
-import { PasswordDialog } from "./components/PasswordDialog";
-import { CollectionSelector } from "./components/CollectionSelector";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { ConfirmDialog } from "./components/ConfirmDialog";
-import { SettingsDialog } from "./components/SettingsDialog";
-import { PerformanceMonitor } from "./components/PerformanceMonitor";
-import { ActionLogViewer } from "./components/ActionLogViewer";
-import { ImportExport } from "./components/ImportExport";
-import { AutoLockManager } from "./components/AutoLockManager";
-import { ShortcutManagerDialog } from "./components/ShortcutManagerDialog";
-import { ProxyChainMenu } from "./components/ProxyChainMenu";
-import { WOLQuickTool } from "./components/WOLQuickTool";
 import { SplashScreen } from "./components/SplashScreen";
-import { ErrorLogBar } from "./components/ErrorLogBar";
-import { ConnectionDiagnostics } from "./components/ConnectionDiagnostics";
-import { BulkSSHCommander } from "./components/BulkSSHCommander";
-import { ScriptManager } from "./components/ScriptManager";
-import { InternalProxyManager } from "./components/InternalProxyManager";
 import { RdpSessionPanel } from "./components/RdpSessionPanel";
 import { generateId } from "./utils/id";
-import { SyncBackupStatusBar } from "./components/SyncBackupStatusBar";
-import { BackupStatusPopup } from "./components/BackupStatusPopup";
-import { CloudSyncStatusPopup } from "./components/CloudSyncStatusPopup";
-import {
-  repatriateWindow,
-  checkWindowNeedsRepatriation,
-  validateSavedPosition,
-} from "./utils/windowRepatriation";
+import { useTooltipSystem } from "./hooks/useTooltipSystem";
+import { useWindowControls } from "./hooks/useWindowControls";
+import { useWindowTheme } from "./hooks/useWindowTheme";
+import { useWindowPersistence } from "./hooks/useWindowPersistence";
+import { useDetachedSessionEvents } from "./hooks/useDetachedSessionEvents";
+import { AppToolbar } from "./components/AppToolbar";
+import { AppDialogs } from "./components/AppDialogs";
+import { useResizeHandlers } from "./hooks/useResizeHandlers";
+import { useSessionDetach } from "./hooks/useSessionDetach";
 
 /**
  * Core application component responsible for rendering the main layout and
@@ -107,7 +64,7 @@ const AppContent: React.FC = () => {
   const [showInternalProxyManager, setShowInternalProxyManager] = useState(false);
   const [rdpPanelOpen, setRdpPanelOpen] = useState(false);
   const [rdpPanelWidth, setRdpPanelWidth] = useState(380);
-  const [isRdpPanelResizing, setIsRdpPanelResizing] = useState(false);
+  // isRdpPanelResizing is in useResizeHandlers hook
   const [showWol, setShowWol] = useState(false);
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -126,7 +83,7 @@ const AppContent: React.FC = () => {
   >("setup"); // current mode for password dialog
   const [passwordError, setPasswordError] = useState(""); // password dialog error message
   const [sidebarWidth, setSidebarWidth] = useState(320); // sidebar width in pixels
-  const [isResizing, setIsResizing] = useState(false); // whether sidebar is being resized
+  // isResizing state is in useResizeHandlers hook
   const [sidebarPosition, setSidebarPosition] = useState<"left" | "right">(
     "left",
   ); // sidebar position
@@ -144,15 +101,12 @@ const AppContent: React.FC = () => {
   const [appSettings, setAppSettings] = useState(() =>
     settingsManager.getSettings(),
   );
-  const windowSaveTimeout = useRef<NodeJS.Timeout | null>(null);
-  const sidebarSaveTimeout = useRef<NodeJS.Timeout | null>(null);
+  // windowSaveTimeout and sidebarSaveTimeout are in useWindowPersistence hook
   const lastWorkAtRef = useRef<number>(Date.now());
   const hasUnsavedWorkRef = useRef(false);
   const [hasStoragePassword, setHasStoragePassword] = useState(false);
-  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
   const [appReady, setAppReady] = useState(false);
-  const tooltipRef = useRef<HTMLDivElement | null>(null);
   const closingMainRef = useRef(false);
   const pendingCloseRef = useRef<(() => void) | null>(null);
   const awaitingCloseConfirmRef = useRef(false);
@@ -177,6 +131,24 @@ const AppContent: React.FC = () => {
     setShowPasswordDialog,
     setPasswordDialogMode,
   });
+
+  // Extracted hooks
+  const {
+    isAlwaysOnTop, isWindowPermissionError,
+    handleMinimize, handleToggleTransparency, handleToggleAlwaysOnTop,
+    handleRepatriateWindow, handleMaximize, handleOpenDevtools, handleClose,
+  } = useWindowControls(appSettings, settingsManager);
+  useTooltipSystem();
+  useWindowTheme(appSettings, isWindowPermissionError);
+  useWindowPersistence(
+    appSettings, settingsManager, isInitialized, isWindowPermissionError,
+    sidebarWidth, setSidebarWidth, sidebarPosition, setSidebarPosition,
+    state.sidebarCollapsed, dispatch,
+  );
+  useDetachedSessionEvents(handleSessionClose, state.sessions, dispatch, setActiveSessionId);
+  const { handleMouseDown, handleRdpPanelMouseDown } = useResizeHandlers(
+    sidebarPosition, setSidebarWidth, setRdpPanelWidth, layoutRef,
+  );
 
   // Show window immediately so splash screen is visible
   useEffect(() => {
@@ -342,6 +314,11 @@ const AppContent: React.FC = () => {
   const visibleSessions = useMemo(
     () => state.sessions.filter((session) => !session.layout?.isDetached),
     [state.sessions],
+  );
+
+  const { handleSessionDetach, handleReattachRdpSession } = useSessionDetach(
+    state.sessions, state.connections, visibleSessions,
+    activeSessionId, dispatch, setActiveSessionId,
   );
 
   /** Backend RDP session IDs that have an active frontend viewer tab. */
@@ -551,191 +528,7 @@ const AppContent: React.FC = () => {
     [handleSessionClose, state.sessions],
   );
 
-  const handleSessionDetach = useCallback(
-    async (sessionId: string) => {
-      const session = state.sessions.find((item) => item.id === sessionId);
-      if (!session) return;
-      const connection = state.connections.find(
-        (item) => item.id === session.connectionId,
-      );
-      const windowLabel = `detached-${session.id}`;
-
-      // Request terminal buffer before detaching
-      let terminalBuffer = "";
-      try {
-        const bufferPromise = new Promise<string>((resolve) => {
-          const timeout = setTimeout(() => {
-            console.log("Buffer request timed out for detach");
-            resolve("");
-          }, 1000); // Increased timeout
-          
-          listen<{ sessionId: string; buffer: string }>("terminal-buffer-response", (event) => {
-            if (event.payload.sessionId === sessionId) {
-              clearTimeout(timeout);
-              console.log("Received buffer for detach:", event.payload.buffer?.length || 0, "chars");
-              resolve(event.payload.buffer);
-            }
-          }).then(unlisten => {
-            setTimeout(() => unlisten(), 1200);
-          });
-        });
-        
-        console.log("Requesting terminal buffer for detach:", sessionId);
-        await emit("request-terminal-buffer", { sessionId });
-        terminalBuffer = await bufferPromise;
-        console.log("Got terminal buffer for detach:", terminalBuffer?.length || 0, "chars");
-      } catch (error) {
-        console.warn("Failed to get terminal buffer:", error);
-      }
-
-      try {
-        const sessionWithBuffer = {
-          ...session,
-          terminalBuffer,
-        };
-        const payload = {
-          session: sessionWithBuffer,
-          connection: connection || null,
-          savedAt: Date.now(),
-        };
-        localStorage.setItem(
-          `detached-session-${session.id}`,
-          JSON.stringify(payload),
-        );
-      } catch (error) {
-        console.error("Failed to persist detached session payload:", error);
-      }
-
-      const url = `/detached?sessionId=${session.id}`;
-      const windowTitle = session.name || "Detached Session";
-      const isTauri =
-        typeof window !== "undefined" &&
-        Boolean(
-          (window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__,
-        );
-
-      if (isTauri) {
-        try {
-          const existingWindow = await WebviewWindow.getByLabel(windowLabel);
-          if (existingWindow) {
-            existingWindow.setFocus().catch(() => undefined);
-          } else {
-            // Multi-monitor: detect secondary monitor and position window there
-            let winWidth = 1200;
-            let winHeight = 800;
-            let winX: number | undefined;
-            let winY: number | undefined;
-            try {
-              const monitors = await availableMonitors();
-              const current = await currentMonitor();
-              const secondary = monitors.find(m =>
-                m.name !== current?.name ||
-                m.position.x !== current?.position.x
-              );
-              if (secondary) {
-                winX = secondary.position.x + 50;
-                winY = secondary.position.y + 50;
-                winWidth = Math.min(1600, secondary.size.width - 100);
-                winHeight = Math.min(900, secondary.size.height - 100);
-              }
-            } catch {
-              // Fallback to defaults
-            }
-            const newWindow = new WebviewWindow(windowLabel, {
-              url,
-              title: windowTitle,
-              width: winWidth,
-              height: winHeight,
-              x: winX,
-              y: winY,
-              resizable: true,
-              decorations: false,
-            });
-            // Focus the new window once it's created
-            newWindow.once("tauri://created", () => {
-              newWindow.setFocus().catch(() => undefined);
-            });
-          }
-        } catch (error) {
-          console.error("Failed to detach session window:", error);
-        }
-      } else {
-        window.open(url, "_blank", "noopener,noreferrer");
-      }
-
-      dispatch({
-        type: "UPDATE_SESSION",
-        payload: {
-          ...session,
-          layout: {
-            x: session.layout?.x ?? 0,
-            y: session.layout?.y ?? 0,
-            width: session.layout?.width ?? 100,
-            height: session.layout?.height ?? 100,
-            zIndex: session.layout?.zIndex ?? 1,
-            isDetached: true,
-            windowId: windowLabel,
-          },
-        },
-      });
-
-      if (activeSessionId === sessionId) {
-        const remaining = visibleSessions.filter(
-          (item) => item.id !== sessionId,
-        );
-        setActiveSessionId(remaining[0]?.id);
-      }
-    },
-    [
-      activeSessionId,
-      dispatch,
-      setActiveSessionId,
-      state.connections,
-      state.sessions,
-      visibleSessions,
-    ],
-  );
-
-  /**
-   * Reattach to a running backend RDP session by creating a new frontend tab.
-   * The RDPClient component auto-detects the existing backend session and
-   * calls attach_rdp_session instead of connect_rdp.
-   */
-  const handleReattachRdpSession = useCallback(
-    (backendSessionId: string, connectionId?: string) => {
-      // Find the connection to pull name/hostname from
-      const connection = connectionId
-        ? state.connections.find((c) => c.id === connectionId)
-        : undefined;
-
-      // Check if a frontend session already exists for this backend session
-      const existing = state.sessions.find(
-        (s) => s.backendSessionId === backendSessionId ||
-          (connectionId && s.connectionId === connectionId && s.protocol === 'rdp')
-      );
-      if (existing) {
-        // Just focus the existing tab
-        setActiveSessionId(existing.id);
-        return;
-      }
-
-      const newSession: ConnectionSession = {
-        id: generateId(),
-        connectionId: connectionId || backendSessionId,
-        name: connection?.name || connectionId || backendSessionId.slice(0, 8),
-        status: 'connecting',
-        startTime: new Date(),
-        protocol: 'rdp',
-        hostname: connection?.hostname || '',
-        reconnectAttempts: 0,
-        maxReconnectAttempts: 3,
-      };
-
-      dispatch({ type: 'ADD_SESSION', payload: newSession });
-      setActiveSessionId(newSession.id);
-    },
-    [state.connections, state.sessions, dispatch, setActiveSessionId],
-  );
+  // handleSessionDetach and handleReattachRdpSession are in useSessionDetach hook
 
   /**
    * Process a submitted password for unlocking or securing data storage.
@@ -816,14 +609,7 @@ const AppContent: React.FC = () => {
     });
   };
 
-  const isWindowPermissionError = useCallback((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    return (
-      message.includes("not allowed") ||
-      message.includes("allow-set-size") ||
-      message.includes("allow-set-position")
-    );
-  }, []);
+  // isWindowPermissionError is in useWindowControls hook
 
   const closeConfirmDialog = () => {
     setDialogState((prev) => ({ ...prev, isOpen: false }));
@@ -833,92 +619,7 @@ const AppContent: React.FC = () => {
     setSidebarPosition((prev) => (prev === "left" ? "right" : "left"));
   };
 
-  // Sidebar resize handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsResizing(true);
-    e.preventDefault();
-  };
-
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isResizing) return;
-      const layoutRect = layoutRef.current?.getBoundingClientRect();
-      const layoutLeft = layoutRect?.left ?? 0;
-      const layoutWidth = layoutRect?.width ?? window.innerWidth;
-      const newWidth =
-        sidebarPosition === "left"
-          ? Math.max(200, Math.min(600, e.clientX - layoutLeft))
-          : Math.max(200, Math.min(600, layoutLeft + layoutWidth - e.clientX));
-      setSidebarWidth(newWidth);
-    },
-    [isResizing, sidebarPosition],
-  );
-
-  const handleMouseUp = useCallback(() => {
-    setIsResizing(false);
-  }, []);
-
-  useEffect(() => {
-    if (isResizing) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    } else {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    }
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [isResizing, handleMouseMove, handleMouseUp]);
-
-  // RDP panel resize handlers
-  const handleRdpPanelMouseDown = (e: React.MouseEvent) => {
-    setIsRdpPanelResizing(true);
-    e.preventDefault();
-  };
-
-  const handleRdpPanelMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isRdpPanelResizing) return;
-      const layoutRect = layoutRef.current?.getBoundingClientRect();
-      const layoutRight = (layoutRect?.left ?? 0) + (layoutRect?.width ?? window.innerWidth);
-      const newWidth = Math.max(280, Math.min(600, layoutRight - e.clientX));
-      setRdpPanelWidth(newWidth);
-    },
-    [isRdpPanelResizing],
-  );
-
-  const handleRdpPanelMouseUp = useCallback(() => {
-    setIsRdpPanelResizing(false);
-  }, []);
-
-  useEffect(() => {
-    if (isRdpPanelResizing) {
-      document.addEventListener("mousemove", handleRdpPanelMouseMove);
-      document.addEventListener("mouseup", handleRdpPanelMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    } else {
-      document.removeEventListener("mousemove", handleRdpPanelMouseMove);
-      document.removeEventListener("mouseup", handleRdpPanelMouseUp);
-      if (!isResizing) {
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      }
-    }
-    return () => {
-      document.removeEventListener("mousemove", handleRdpPanelMouseMove);
-      document.removeEventListener("mouseup", handleRdpPanelMouseUp);
-    };
-  }, [isRdpPanelResizing, handleRdpPanelMouseMove, handleRdpPanelMouseUp, isResizing]);
+  // Sidebar + RDP panel resize handlers are in useResizeHandlers hook
 
   useEffect(() => {
     let isMounted = true;
@@ -1078,122 +779,9 @@ const AppContent: React.FC = () => {
     appSettings.colorScheme,
   ]);
 
-  useEffect(() => {
-    const tooltip = document.createElement("div");
-    tooltip.className = "app-tooltip";
-    tooltip.style.display = "none";
-    document.body.appendChild(tooltip);
-    tooltipRef.current = tooltip;
+  // Tooltip system is in useTooltipSystem hook
 
-    let activeTarget: HTMLElement | null = null;
-
-    const positionTooltip = (target: HTMLElement) => {
-      const tooltipEl = tooltipRef.current;
-      if (!tooltipEl) return;
-      const rect = target.getBoundingClientRect();
-      const tooltipRect = tooltipEl.getBoundingClientRect();
-      const spacing = 8;
-
-      let top = rect.top - tooltipRect.height - spacing;
-      let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
-
-      if (top < spacing) {
-        top = rect.bottom + spacing;
-      }
-      left = Math.min(
-        Math.max(spacing, left),
-        window.innerWidth - tooltipRect.width - spacing,
-      );
-      top = Math.min(
-        Math.max(spacing, top),
-        window.innerHeight - tooltipRect.height - spacing,
-      );
-
-      tooltipEl.style.left = `${left}px`;
-      tooltipEl.style.top = `${top}px`;
-    };
-
-    const showTooltip = (target: HTMLElement) => {
-      const tooltipEl = tooltipRef.current;
-      if (!tooltipEl) return;
-      const text = target.getAttribute("data-tooltip");
-      if (!text) return;
-      tooltipEl.textContent = text;
-      tooltipEl.classList.add("is-visible");
-      tooltipEl.style.display = "block";
-      positionTooltip(target);
-    };
-
-    const hideTooltip = () => {
-      const tooltipEl = tooltipRef.current;
-      if (!tooltipEl) return;
-      tooltipEl.classList.remove("is-visible");
-      tooltipEl.style.display = "none";
-    };
-
-    const handlePointerOver = (event: MouseEvent) => {
-      const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(
-        "[data-tooltip]",
-      );
-      if (!target) return;
-      if (activeTarget === target) return;
-      activeTarget = target;
-      showTooltip(target);
-    };
-
-    const handlePointerOut = (event: MouseEvent) => {
-      if (!activeTarget) return;
-      const related = event.relatedTarget as HTMLElement | null;
-      if (related && activeTarget.contains(related)) {
-        return;
-      }
-      activeTarget = null;
-      hideTooltip();
-    };
-
-    const handleFocusIn = (event: FocusEvent) => {
-      const target = (event.target as HTMLElement | null)?.closest<HTMLElement>(
-        "[data-tooltip]",
-      );
-      if (!target) return;
-      activeTarget = target;
-      showTooltip(target);
-    };
-
-    const handleFocusOut = () => {
-      activeTarget = null;
-      hideTooltip();
-    };
-
-    const handleWindowChange = () => {
-      if (activeTarget) {
-        positionTooltip(activeTarget);
-      }
-    };
-
-    document.addEventListener("mouseover", handlePointerOver);
-    document.addEventListener("mouseout", handlePointerOut);
-    document.addEventListener("focusin", handleFocusIn);
-    document.addEventListener("focusout", handleFocusOut);
-    window.addEventListener("resize", handleWindowChange);
-    window.addEventListener("scroll", handleWindowChange, true);
-
-    return () => {
-      document.removeEventListener("mouseover", handlePointerOver);
-      document.removeEventListener("mouseout", handlePointerOut);
-      document.removeEventListener("focusin", handleFocusIn);
-      document.removeEventListener("focusout", handleFocusOut);
-      window.removeEventListener("resize", handleWindowChange);
-      window.removeEventListener("scroll", handleWindowChange, true);
-      tooltipRef.current?.remove();
-      tooltipRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const window = getCurrentWindow();
-    window.isAlwaysOnTop().then(setIsAlwaysOnTop).catch(console.error);
-  }, []);
+  // Always-on-top check is in useWindowControls hook
 
   useEffect(() => {
     if (!isInitialized || launchArgsHandledRef.current) return;
@@ -1235,177 +823,8 @@ const AppContent: React.FC = () => {
     setPendingLaunchConnectionId(null);
   }, [handleConnect, pendingLaunchConnectionId, state.connections]);
 
-  useEffect(() => {
-    const isTauri =
-      typeof window !== "undefined" &&
-      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
-    if (!isTauri) return;
-
-    let isCancelled = false;
-    let unlistenFn: (() => void) | null = null;
-    
-    listen<{ sessionId?: string }>("detached-session-closed", (event) => {
-      const sessionId = event.payload?.sessionId;
-      if (!sessionId) return;
-      handleSessionClose(sessionId).catch(console.error);
-    })
-      .then((stop) => {
-        if (typeof stop === 'function') {
-          if (isCancelled) {
-            try { Promise.resolve(stop()).catch(() => {}); } catch { /* ignore */ }
-          } else {
-            unlistenFn = stop;
-          }
-        }
-      })
-      .catch(console.error);
-
-    return () => {
-      isCancelled = true;
-      try { Promise.resolve(unlistenFn?.()).catch(() => {}); } catch { /* ignore */ }
-    };
-  }, [handleSessionClose]);
-
-  useEffect(() => {
-    const isTauri =
-      typeof window !== "undefined" &&
-      Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
-    if (!isTauri) return;
-
-    let isCancelled = false;
-    let unlistenFn: (() => void) | null = null;
-    
-    listen<{ sessionId?: string; terminalBuffer?: string }>("detached-session-reattach", (event) => {
-      const sessionId = event.payload?.sessionId;
-      if (!sessionId) return;
-      const session = state.sessions.find((item) => item.id === sessionId);
-      if (!session) return;
-      dispatch({
-        type: "UPDATE_SESSION",
-        payload: {
-          ...session,
-          terminalBuffer: event.payload.terminalBuffer || session.terminalBuffer,
-          layout: {
-            x: session.layout?.x ?? 0,
-            y: session.layout?.y ?? 0,
-            width: session.layout?.width ?? 800,
-            height: session.layout?.height ?? 600,
-            zIndex: session.layout?.zIndex ?? 1,
-            isDetached: false,
-            windowId: session.layout?.windowId,
-          },
-        },
-      });
-      setActiveSessionId(sessionId);
-    })
-      .then((stop) => {
-        if (typeof stop === 'function') {
-          if (isCancelled) {
-            try { Promise.resolve(stop()).catch(() => {}); } catch { /* ignore */ }
-          } else {
-            unlistenFn = stop;
-          }
-        }
-      })
-      .catch(console.error);
-
-    return () => {
-      isCancelled = true;
-      try { Promise.resolve(unlistenFn?.()).catch(() => {}); } catch { /* ignore */ }
-    };
-  }, [dispatch, setActiveSessionId, state.sessions]);
-
-  useEffect(() => {
-    if (!appSettings) return;
-    const window = getCurrentWindow();
-    const targetOpacity = appSettings.windowTransparencyEnabled
-      ? Math.min(1, Math.max(0, appSettings.windowTransparencyOpacity || 1))
-      : 1;
-    const root = document.documentElement;
-    
-    // Get the current theme colors from CSS variables (set by ThemeManager)
-    const computedStyle = getComputedStyle(root);
-    const background = computedStyle.getPropertyValue('--color-background').trim() || '#111827';
-    const surface = computedStyle.getPropertyValue('--color-surface').trim() || '#1f2937';
-    const border = computedStyle.getPropertyValue('--color-border').trim() || '#374151';
-    
-    // Helper to convert hex to rgba
-    const hexToRgba = (hex: string, alpha: number): string => {
-      const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-      if (result) {
-        const r = parseInt(result[1], 16);
-        const g = parseInt(result[2], 16);
-        const b = parseInt(result[3], 16);
-        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-      }
-      return hex;
-    };
-    
-    // Helper to extract RGB values from color
-    const extractRgb = (color: string): { r: number; g: number; b: number } => {
-      const hex = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color);
-      if (hex) {
-        return {
-          r: parseInt(hex[1], 16),
-          g: parseInt(hex[2], 16),
-          b: parseInt(hex[3], 16),
-        };
-      }
-      const rgb = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-      if (rgb) {
-        return {
-          r: parseInt(rgb[1]),
-          g: parseInt(rgb[2]),
-          b: parseInt(rgb[3]),
-        };
-      }
-      return { r: 17, g: 24, b: 39 };
-    };
-    
-    const alpha = appSettings.windowTransparencyEnabled ? targetOpacity : 1;
-    
-    // Apply transparency to theme-derived colors
-    const bgRgb = extractRgb(background);
-    const surfaceRgb = extractRgb(surface);
-    const borderRgb = extractRgb(border);
-    
-    // Create shades based on theme background color
-    root.style.setProperty("--app-surface-900", `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${alpha})`);
-    root.style.setProperty("--app-surface-800", `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, ${alpha})`);
-    root.style.setProperty("--app-surface-700", `rgba(${borderRgb.r}, ${borderRgb.g}, ${borderRgb.b}, ${alpha})`);
-    
-    // Lighter shades (derived from surface color)
-    root.style.setProperty("--app-surface-600", `rgba(${Math.min(255, surfaceRgb.r + 20)}, ${Math.min(255, surfaceRgb.g + 20)}, ${Math.min(255, surfaceRgb.b + 20)}, ${alpha})`);
-    root.style.setProperty("--app-surface-500", `rgba(${Math.min(255, surfaceRgb.r + 40)}, ${Math.min(255, surfaceRgb.g + 40)}, ${Math.min(255, surfaceRgb.b + 40)}, ${alpha})`);
-    
-    // Darker shades (derived from background color)
-    root.style.setProperty("--app-slate-950", `rgba(${Math.max(0, bgRgb.r - 15)}, ${Math.max(0, bgRgb.g - 18)}, ${Math.max(0, bgRgb.b - 16)}, ${alpha})`);
-    root.style.setProperty("--app-slate-900", `rgba(${bgRgb.r}, ${bgRgb.g}, ${bgRgb.b}, ${alpha})`);
-    root.style.setProperty("--app-slate-800", `rgba(${surfaceRgb.r}, ${surfaceRgb.g}, ${surfaceRgb.b}, ${alpha})`);
-    root.style.setProperty("--app-slate-700", `rgba(${borderRgb.r}, ${borderRgb.g}, ${borderRgb.b}, ${alpha})`);
-    
-    document.documentElement.style.backgroundColor =
-      appSettings.windowTransparencyEnabled ? "transparent" : "";
-    document.body.style.backgroundColor = appSettings.windowTransparencyEnabled
-      ? "transparent"
-      : "";
-    const setBackgroundColor = window.setBackgroundColor;
-    if (typeof setBackgroundColor === "function") {
-      const alpha = Math.round(255 * targetOpacity);
-      setBackgroundColor([bgRgb.r, bgRgb.g, bgRgb.b, alpha]).catch((error) => {
-        if (!isWindowPermissionError(error)) {
-          console.error("Failed to set window background color:", error);
-        }
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    appSettings?.windowTransparencyEnabled,
-    appSettings?.windowTransparencyOpacity,
-    appSettings?.theme,
-    appSettings?.colorScheme,
-    isWindowPermissionError,
-  ]);
+  // Detached session events are in useDetachedSessionEvents hook
+  // Window theme/transparency effect is in useWindowTheme hook
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1507,305 +926,8 @@ const AppContent: React.FC = () => {
     state.sessions.length,
   ]);
 
-  useEffect(() => {
-    if (!appSettings) return;
-
-    if (appSettings.persistSidebarWidth && appSettings.sidebarWidth) {
-      setSidebarWidth(appSettings.sidebarWidth);
-    }
-
-    if (appSettings.persistSidebarPosition && appSettings.sidebarPosition) {
-      setSidebarPosition(appSettings.sidebarPosition);
-    }
-
-    if (
-      appSettings.persistSidebarCollapsed &&
-      typeof appSettings.sidebarCollapsed === "boolean"
-    ) {
-      dispatch({
-        type: "SET_SIDEBAR_COLLAPSED",
-        payload: appSettings.sidebarCollapsed,
-      });
-    }
-  }, [appSettings, dispatch]);
-
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    const window = getCurrentWindow();
-
-    // Minimum window size constraints
-    const MIN_WIDTH = 800;
-    const MIN_HEIGHT = 600;
-
-    const savedWidth = appSettings.windowSize?.width || MIN_WIDTH;
-    const savedHeight = appSettings.windowSize?.height || MIN_HEIGHT;
-
-    if (appSettings.persistWindowSize && appSettings.windowSize) {
-      const { width, height } = appSettings.windowSize;
-      // Validate and enforce minimum size
-      const validWidth = Math.max(width || MIN_WIDTH, MIN_WIDTH);
-      const validHeight = Math.max(height || MIN_HEIGHT, MIN_HEIGHT);
-      window.setSize(new LogicalSize(validWidth, validHeight)).catch((error) => {
-        if (!isWindowPermissionError(error)) {
-          console.error(error);
-        }
-      });
-    }
-
-    if (appSettings.persistWindowPosition && appSettings.windowPosition) {
-      const { x, y } = appSettings.windowPosition;
-      // Validate position is on a visible screen if auto-repatriate is enabled
-      if (appSettings.autoRepatriateWindow) {
-        validateSavedPosition(
-          { x: x ?? 0, y: y ?? 0 },
-          { width: savedWidth, height: savedHeight }
-        )
-          .then((result) => {
-            if (result) {
-              window.setPosition(new LogicalPosition(result.position.x, result.position.y)).catch((error) => {
-                if (!isWindowPermissionError(error)) {
-                  console.error(error);
-                }
-              });
-              if (result.adjusted) {
-                console.log("Window position adjusted: saved position was off-screen");
-              }
-            } else {
-              // Fallback: center the window
-              window.center().catch(console.error);
-            }
-          })
-          .catch((error) => {
-            console.error("Failed to validate window position:", error);
-            // Fallback to saved position
-            window.setPosition(new LogicalPosition(x ?? 0, y ?? 0)).catch(console.error);
-          });
-      } else {
-        // Allow negative coordinates for multi-monitor setups without validation
-        const validX = x ?? 0;
-        const validY = y ?? 0;
-        window.setPosition(new LogicalPosition(validX, validY)).catch((error) => {
-          if (!isWindowPermissionError(error)) {
-            console.error(error);
-          }
-        });
-      }
-    }
-  }, [
-    appSettings.persistWindowSize,
-    appSettings.persistWindowPosition,
-    appSettings.autoRepatriateWindow,
-    appSettings.windowSize,
-    appSettings.windowPosition,
-    isInitialized,
-    isWindowPermissionError,
-  ]);
-
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    const window = getCurrentWindow();
-    let unlistenResize: (() => void) | undefined;
-    let unlistenMove: (() => void) | undefined;
-
-    const saveWindowState = async () => {
-      try {
-        const [size, position, scaleFactor] = await Promise.all([
-          window.innerSize(),
-          window.outerPosition(),
-          window.scaleFactor(),
-        ]);
-
-        const updates: Partial<GlobalSettings> = {};
-        const isMaximized = await window.isMaximized();
-        if (isMaximized) {
-          return;
-        }
-        if (appSettings.persistWindowSize) {
-          const logicalSize = size.toLogical(scaleFactor);
-          updates.windowSize = {
-            width: logicalSize.width,
-            height: logicalSize.height,
-          };
-        }
-        if (appSettings.persistWindowPosition) {
-          const logicalPosition = position.toLogical(scaleFactor);
-          updates.windowPosition = {
-            x: logicalPosition.x,
-            y: logicalPosition.y,
-          };
-        }
-
-        if (Object.keys(updates).length > 0) {
-          await settingsManager.saveSettings(updates, { silent: true });
-        }
-      } catch (error) {
-        console.error("Failed to persist window state:", error);
-      }
-    };
-
-    const queueSave = () => {
-      if (windowSaveTimeout.current) {
-        clearTimeout(windowSaveTimeout.current);
-      }
-      windowSaveTimeout.current = setTimeout(() => {
-        saveWindowState().catch(console.error);
-      }, 500);
-    };
-
-    if (appSettings.persistWindowSize && (window as any).onResized) {
-      window
-        .onResized(() => {
-          queueSave();
-        })
-        .then((unlisten) => {
-          unlistenResize = unlisten;
-        })
-        .catch(console.error);
-    }
-
-    if (appSettings.persistWindowPosition && (window as any).onMoved) {
-      window
-        .onMoved(() => {
-          queueSave();
-        })
-        .then((unlisten) => {
-          unlistenMove = unlisten;
-        })
-        .catch(console.error);
-    }
-
-    return () => {
-      if (windowSaveTimeout.current) {
-        clearTimeout(windowSaveTimeout.current);
-      }
-      if (unlistenResize) {
-        unlistenResize();
-      }
-      if (unlistenMove) {
-        unlistenMove();
-      }
-    };
-  }, [
-    appSettings.persistWindowSize,
-    appSettings.persistWindowPosition,
-    isInitialized,
-    settingsManager,
-  ]);
-
-  useEffect(() => {
-    if (!appSettings) return;
-
-    if (
-      !appSettings.persistSidebarWidth &&
-      !appSettings.persistSidebarPosition &&
-      !appSettings.persistSidebarCollapsed
-    ) {
-      return;
-    }
-
-    if (sidebarSaveTimeout.current) {
-      clearTimeout(sidebarSaveTimeout.current);
-    }
-
-    sidebarSaveTimeout.current = setTimeout(() => {
-      const updates: Partial<GlobalSettings> = {};
-      if (appSettings.persistSidebarWidth) {
-        updates.sidebarWidth = sidebarWidth;
-      }
-      if (appSettings.persistSidebarPosition) {
-        updates.sidebarPosition = sidebarPosition;
-      }
-      if (appSettings.persistSidebarCollapsed) {
-        updates.sidebarCollapsed = state.sidebarCollapsed;
-      }
-
-      if (Object.keys(updates).length > 0) {
-        settingsManager.saveSettings(updates, { silent: true }).catch(console.error);
-      }
-    }, 300);
-
-    return () => {
-      if (sidebarSaveTimeout.current) {
-        clearTimeout(sidebarSaveTimeout.current);
-      }
-    };
-  }, [
-    appSettings,
-    sidebarWidth,
-    sidebarPosition,
-    state.sidebarCollapsed,
-    settingsManager,
-  ]);
-
-  const handleMinimize = async () => {
-    const window = getCurrentWindow();
-    await window.minimize();
-  };
-
-  const handleToggleTransparency = async () => {
-    const nextValue = !appSettings.windowTransparencyEnabled;
-    await settingsManager.saveSettings({
-      windowTransparencyEnabled: nextValue,
-    }, { silent: true });
-  };
-
-  const handleToggleAlwaysOnTop = async () => {
-    const window = getCurrentWindow();
-    const nextValue = !isAlwaysOnTop;
-    await window.setAlwaysOnTop(nextValue);
-    setIsAlwaysOnTop(nextValue);
-  };
-
-  const handleRepatriateWindow = async () => {
-    try {
-      const result = await repatriateWindow(true);
-      if (result.wasOffScreen) {
-        console.log(
-          `Window repatriated from (${result.previousPosition.x}, ${result.previousPosition.y}) ` +
-            `to (${result.newPosition.x}, ${result.newPosition.y})` +
-            (result.targetMonitor ? ` on ${result.targetMonitor}` : "")
-        );
-      } else {
-        // Window is already on screen, just center it
-        const window = getCurrentWindow();
-        await window.center();
-      }
-    } catch (error) {
-      console.error("Failed to repatriate window:", error);
-      // Fallback: center the window
-      try {
-        const window = getCurrentWindow();
-        await window.center();
-      } catch {
-        // Ignore
-      }
-    }
-  };
-
-  const handleMaximize = async () => {
-    const window = getCurrentWindow();
-    const isMaximized = await window.isMaximized();
-    if (isMaximized) {
-      await window.unmaximize();
-      if (appSettings.persistWindowSize && appSettings.windowSize) {
-        const { width, height } = appSettings.windowSize;
-        await window.setSize(new LogicalSize(width, height));
-      }
-      return;
-    }
-    await window.maximize();
-  };
-
-  const handleOpenDevtools = async () => {
-    await invoke("open_devtools");
-  };
-
-  const handleClose = async () => {
-    const window = getCurrentWindow();
-    await window.close();
-  };
+  // Window/sidebar persistence is in useWindowPersistence hook
+  // Window control handlers are in useWindowControls hook
 
   const renderSidebar = (position: "left" | "right") => {
     if (sidebarPosition !== position) return null;
@@ -1867,282 +989,36 @@ const AppContent: React.FC = () => {
           onLoadComplete={() => setShowSplash(false)}
         />
       )}
-      {/* Top bar */}
-      <div
-        className="h-12 app-bar border-b flex items-center justify-between px-4 select-none"
-        data-tauri-drag-region
-      >
-        <div className="flex items-center gap-3">
-          <Monitor size={18} className="text-blue-400" />
-          <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight">
-              {t("app.title")}
-            </div>
-            <div className="text-[10px] text-gray-500 uppercase">
-              {t("app.subtitle")}
-            </div>
-          </div>
-          {collectionManager.getCurrentCollection() && (
-            <span className="text-[10px] text-blue-300 bg-blue-900/30 px-2 py-1 rounded">
-              {collectionManager.getCurrentCollection()?.name}
-            </span>
-          )}
-        </div>
-
-        {/* Window Controls */}
-        <div className="flex items-center space-x-1">
-          {(appSettings.showTransparencyToggle ?? true) && (
-            <button
-              onClick={handleToggleTransparency}
-              className="app-bar-button p-2"
-              data-tooltip={
-                appSettings.windowTransparencyEnabled
-                  ? "Disable transparency"
-                  : "Enable transparency"
-              }
-            >
-              {appSettings.windowTransparencyEnabled ? (
-                <Droplet size={14} />
-              ) : (
-                <Droplet size={14} className="opacity-40" />
-              )}
-            </button>
-          )}
-          <button
-            onClick={handleToggleAlwaysOnTop}
-            className="app-bar-button p-2"
-            title={isAlwaysOnTop ? "Unpin window" : "Pin window"}
-          >
-            <Pin
-              size={14}
-              className={isAlwaysOnTop ? "rotate-45 text-blue-400" : ""}
-            />
-          </button>
-          <button
-            onClick={handleRepatriateWindow}
-            className="app-bar-button p-2"
-            title="Center window on screen"
-          >
-            <ScreenShare size={14} />
-          </button>
-          <button
-            onClick={handleMinimize}
-            className="app-bar-button p-2"
-            title="Minimize"
-          >
-            <Minus size={14} />
-          </button>
-          <button
-            onClick={handleMaximize}
-            className="app-bar-button p-2"
-            title="Maximize"
-          >
-            <Square size={12} />
-          </button>
-          <button
-            onClick={handleClose}
-            className="app-bar-button app-bar-button-danger p-2"
-            title="Close"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      </div>
-
-      {/* Secondary actions bar */}
-      <div className="h-9 app-bar-secondary border-b flex items-center justify-between px-3 select-none">
-        <div className="flex items-center space-x-1">
-          {appSettings.showQuickConnectIcon && (
-            <button
-              onClick={() => setShowQuickConnect(true)}
-              className="app-bar-button p-2"
-              title={t("connections.quickConnect")}
-            >
-              <Zap size={14} />
-            </button>
-          )}
-          {appSettings.showCollectionSwitcherIcon && (
-            <button
-              onClick={() => setShowCollectionSelector(true)}
-              className="app-bar-button p-2"
-              title="Switch Collection"
-            >
-              <Database size={14} />
-            </button>
-          )}
-          {appSettings.showSettingsIcon && (
-            <button
-              onClick={() => setShowSettings(true)}
-              className="app-bar-button p-2"
-              title="Settings"
-            >
-              <Settings size={14} />
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center space-x-1">
-          <button
-            onClick={() => setRdpPanelOpen(prev => !prev)}
-            className={`app-bar-button p-2 ${rdpPanelOpen ? 'text-indigo-400' : ''}`}
-            title="RDP Sessions Panel"
-          >
-            <Cpu size={14} />
-          </button>
-          {appSettings.showInternalProxyIcon && (
-            <button
-              onClick={() => setShowInternalProxyManager(true)}
-              className="app-bar-button p-2"
-              title="Internal Proxy Manager"
-            >
-              <ArrowUpDown size={14} />
-            </button>
-          )}
-          {appSettings.showProxyMenuIcon && (
-            <button
-              onClick={() => setShowProxyMenu(true)}
-              className="app-bar-button p-2"
-              title="Proxy & VPN"
-            >
-              <Network size={14} />
-            </button>
-          )}
-          {appSettings.showShortcutManagerIcon && (
-            <button
-              onClick={() => setShowShortcutManager(true)}
-              className="app-bar-button p-2"
-              title="Shortcut Manager"
-            >
-              <Keyboard size={14} />
-            </button>
-          )}
-          {appSettings.showWolIcon && (
-            <button
-              onClick={() => setShowWol(true)}
-              className="app-bar-button p-2"
-              title="Wake-on-LAN"
-            >
-              <Power size={14} />
-            </button>
-          )}
-          {appSettings.showBulkSSHIcon && (
-            <button
-              onClick={() => setShowBulkSSH(true)}
-              className="app-bar-button p-2"
-              title={t('bulkSsh.title', 'Bulk SSH Commander')}
-            >
-              <Terminal size={14} />
-            </button>
-          )}
-          {appSettings.showScriptManagerIcon && (
-            <button
-              onClick={() => setShowScriptManager(true)}
-              className="app-bar-button p-2"
-              title={t('scriptManager.title', 'Script Manager')}
-            >
-              <FileCode size={14} />
-            </button>
-          )}
-          {appSettings.showPerformanceMonitorIcon && (
-            <button
-              onClick={() => setShowPerformanceMonitor(true)}
-              className="app-bar-button p-2"
-              title="Performance Monitor"
-            >
-              <BarChart3 size={14} />
-            </button>
-          )}
-          {appSettings.showActionLogIcon && (
-            <button
-              onClick={() => setShowActionLog(true)}
-              className="app-bar-button p-2"
-              title="Action Log"
-            >
-              <ScrollText size={14} />
-            </button>
-          )}
-          {appSettings.showErrorLogBar && (
-            <button
-              onClick={() => setShowErrorLog(!showErrorLog)}
-              className={`app-bar-button p-2 ${showErrorLog ? "text-red-400" : ""}`}
-              title="Toggle Error Log"
-            >
-              <Bug size={14} />
-            </button>
-          )}
-          {appSettings.showDevtoolsIcon && (
-            <button
-              onClick={handleOpenDevtools}
-              className="app-bar-button p-2"
-              title="Open dev console"
-            >
-              <Terminal size={14} />
-            </button>
-          )}
-          {appSettings.showSecurityIcon && (
-            <button
-              onClick={handleShowPasswordDialog}
-              className="app-bar-button p-2"
-              title="Security"
-            >
-              <Shield size={14} />
-            </button>
-          )}
-          {/* Separate Backup Status Icon */}
-          {appSettings.showBackupStatusIcon && (
-            <BackupStatusPopup
-              onBackupNow={async () => {
-                const connections = state.connections;
-                const data = {
-                  connections,
-                  settings: appSettings,
-                  timestamp: Date.now(),
-                };
-                await invoke('backup_run_now', { 
-                  backupType: 'manual',
-                  data
-                });
-              }}
-              onOpenSettings={() => setShowSettings(true)}
-            />
-          )}
-          {/* Separate Cloud Sync Status Icon */}
-          {appSettings.showCloudSyncStatusIcon && (
-            <CloudSyncStatusPopup
-              cloudSyncConfig={appSettings.cloudSync}
-              onSyncNow={performCloudSync}
-              onOpenSettings={() => setShowSettings(true)}
-            />
-          )}
-          {/* Legacy combined Sync & Backup icon (hidden by default) */}
-          {appSettings.showSyncBackupStatusIcon && (
-            <SyncBackupStatusBar
-              cloudSyncConfig={appSettings.cloudSync}
-              onSyncNow={() => {
-                void performCloudSync();
-              }}
-              onBackupNow={async () => {
-                // Trigger backup via Rust backend
-                try {
-                  const connections = state.connections;
-                  const data = {
-                    connections,
-                    settings: appSettings,
-                    timestamp: Date.now(),
-                  };
-                  await invoke('backup_run_now', { 
-                    backupType: 'manual',
-                    data
-                  });
-                } catch (error) {
-                  console.error('Backup failed:', error);
-                }
-              }}
-              onOpenSettings={() => setShowSettings(true)}
-            />
-          )}
-        </div>
-      </div>
+      <AppToolbar
+        appSettings={appSettings}
+        isAlwaysOnTop={isAlwaysOnTop}
+        rdpPanelOpen={rdpPanelOpen}
+        showErrorLog={showErrorLog}
+        collectionManager={collectionManager}
+        connections={state.connections}
+        setShowQuickConnect={setShowQuickConnect}
+        setShowCollectionSelector={setShowCollectionSelector}
+        setShowSettings={setShowSettings}
+        setRdpPanelOpen={setRdpPanelOpen}
+        setShowInternalProxyManager={setShowInternalProxyManager}
+        setShowProxyMenu={setShowProxyMenu}
+        setShowShortcutManager={setShowShortcutManager}
+        setShowWol={setShowWol}
+        setShowBulkSSH={setShowBulkSSH}
+        setShowScriptManager={setShowScriptManager}
+        setShowPerformanceMonitor={setShowPerformanceMonitor}
+        setShowActionLog={setShowActionLog}
+        setShowErrorLog={setShowErrorLog}
+        handleToggleTransparency={handleToggleTransparency}
+        handleToggleAlwaysOnTop={handleToggleAlwaysOnTop}
+        handleRepatriateWindow={handleRepatriateWindow}
+        handleMinimize={handleMinimize}
+        handleMaximize={handleMaximize}
+        handleClose={handleClose}
+        handleOpenDevtools={handleOpenDevtools}
+        handleShowPasswordDialog={handleShowPasswordDialog}
+        performCloudSync={performCloudSync}
+      />
 
       <div className="flex flex-1 overflow-hidden" ref={layoutRef}>
         {renderSidebar("left")}
@@ -2244,167 +1120,63 @@ const AppContent: React.FC = () => {
         {renderSidebar("right")}
       </div>
 
-      {appSettings.autoLock.enabled && hasStoragePassword && (
-        <AutoLockManager
-          config={appSettings.autoLock}
-          onConfigChange={(config) =>
-            settingsManager
-              .saveSettings({ autoLock: config }, { silent: true })
-              .catch(console.error)
-          }
-          onLock={() => {
-            settingsManager.logAction(
-              "info",
-              "Auto lock",
-              undefined,
-              "Session locked due to inactivity",
-            );
-          }}
-        />
-      )}
-
-      {/* Dialogs */}
-      <CollectionSelector
-        isOpen={showCollectionSelector}
-        onCollectionSelect={handleCollectionSelect}
-        onClose={() => setShowCollectionSelector(false)}
-      />
-
-      <ConnectionEditor
-        connection={editingConnection}
-        isOpen={showConnectionEditor}
-        onClose={() => setShowConnectionEditor(false)}
-      />
-
-      <QuickConnect
-        isOpen={showQuickConnect}
-        onClose={() => setShowQuickConnect(false)}
-        historyEnabled={appSettings.quickConnectHistoryEnabled}
-        history={appSettings.quickConnectHistory ?? []}
-        onClearHistory={clearQuickConnectHistory}
-        onConnect={handleQuickConnectWithHistory}
-      />
-
-      <PasswordDialog
-        isOpen={showPasswordDialog}
-        mode={passwordDialogMode}
-        onSubmit={handlePasswordSubmit}
-        onCancel={handlePasswordCancel}
-        error={passwordError}
-        noCollectionSelected={!collectionManager.getCurrentCollection()}
-      />
-
-      <ConfirmDialog
-        isOpen={dialogState.isOpen}
-        message={dialogState.message}
-        onConfirm={() => {
-          dialogState.onConfirm();
-          closeConfirmDialog();
-        }}
-        onCancel={
-          dialogState.onCancel
-            ? () => {
-                dialogState.onCancel!();
-                closeConfirmDialog();
-              }
-            : closeConfirmDialog
-        }
-      />
-
-      {/* Session manager confirm dialog (RDP close policy, etc.) */}
-      {confirmDialog}
-
-      <SettingsDialog
-        isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-      />
-
-      <ImportExport
-        isOpen={showImportExport}
-        onClose={() => setShowImportExport(false)}
-        initialTab={importExportInitialTab}
-      />
-
-      <PerformanceMonitor
-        isOpen={showPerformanceMonitor}
-        onClose={() => setShowPerformanceMonitor(false)}
-      />
-
-      <ActionLogViewer
-        isOpen={showActionLog}
-        onClose={() => setShowActionLog(false)}
-      />
-
-      <ShortcutManagerDialog
-        isOpen={showShortcutManager}
-        onClose={() => setShowShortcutManager(false)}
-      />
-
-      <ProxyChainMenu
-        isOpen={showProxyMenu}
-        onClose={() => setShowProxyMenu(false)}
-      />
-
-      <InternalProxyManager
-        isOpen={showInternalProxyManager}
-        onClose={() => setShowInternalProxyManager(false)}
-      />
-
-      {/* RDP Session Manager - popup mode */}
-      {rdpPanelOpen && appSettings.rdpSessionDisplayMode === 'popup' && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setRdpPanelOpen(false); }}
-        >
-          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl h-[90vh] flex flex-col overflow-hidden">
-            <RdpSessionPanel
-              isVisible={rdpPanelOpen}
-              connections={state.connections}
-              activeBackendSessionIds={activeRdpBackendIds}
-              onClose={() => setRdpPanelOpen(false)}
-              onReattachSession={handleReattachRdpSession}
-              onDetachToWindow={(sessionId) => {
-                const frontendSession = state.sessions.find(
-                  s => s.backendSessionId === sessionId || s.id === sessionId
-                );
-                if (frontendSession) {
-                  handleSessionDetach(frontendSession.id);
-                }
-              }}
-              thumbnailsEnabled={appSettings.rdpSessionThumbnailsEnabled}
-              thumbnailPolicy={appSettings.rdpSessionThumbnailPolicy}
-              thumbnailInterval={appSettings.rdpSessionThumbnailInterval}
-            />
-          </div>
-        </div>
-      )}
-
-      <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
-
-      <BulkSSHCommander
-        isOpen={showBulkSSH}
-        onClose={() => setShowBulkSSH(false)}
-      />
-
-      <ScriptManager
-        isOpen={showScriptManager}
-        onClose={() => setShowScriptManager(false)}
-      />
-
-      {showDiagnostics && diagnosticsConnection && (
-        <ConnectionDiagnostics
-          connection={diagnosticsConnection}
-          onClose={() => {
-            setShowDiagnostics(false);
-            setDiagnosticsConnection(null);
-          }}
-        />
-      )}
-
-      {/* Error Log Bar - togglable console error catcher */}
-      <ErrorLogBar
-        isVisible={showErrorLog || appSettings.showErrorLogBar}
-        onToggle={() => setShowErrorLog(!showErrorLog)}
+      <AppDialogs
+        appSettings={appSettings}
+        showCollectionSelector={showCollectionSelector}
+        showConnectionEditor={showConnectionEditor}
+        showQuickConnect={showQuickConnect}
+        showPasswordDialog={showPasswordDialog}
+        showSettings={showSettings}
+        showImportExport={showImportExport}
+        showPerformanceMonitor={showPerformanceMonitor}
+        showActionLog={showActionLog}
+        showShortcutManager={showShortcutManager}
+        showProxyMenu={showProxyMenu}
+        showInternalProxyManager={showInternalProxyManager}
+        showWol={showWol}
+        showBulkSSH={showBulkSSH}
+        showScriptManager={showScriptManager}
+        showDiagnostics={showDiagnostics}
+        showErrorLog={showErrorLog}
+        rdpPanelOpen={rdpPanelOpen}
+        setShowCollectionSelector={setShowCollectionSelector}
+        setShowConnectionEditor={setShowConnectionEditor}
+        setShowQuickConnect={setShowQuickConnect}
+        setShowSettings={setShowSettings}
+        setShowImportExport={setShowImportExport}
+        setShowPerformanceMonitor={setShowPerformanceMonitor}
+        setShowActionLog={setShowActionLog}
+        setShowShortcutManager={setShowShortcutManager}
+        setShowProxyMenu={setShowProxyMenu}
+        setShowInternalProxyManager={setShowInternalProxyManager}
+        setShowWol={setShowWol}
+        setShowBulkSSH={setShowBulkSSH}
+        setShowScriptManager={setShowScriptManager}
+        setShowDiagnostics={setShowDiagnostics}
+        setShowErrorLog={setShowErrorLog}
+        setRdpPanelOpen={setRdpPanelOpen}
+        editingConnection={editingConnection}
+        passwordDialogMode={passwordDialogMode}
+        passwordError={passwordError}
+        importExportInitialTab={importExportInitialTab}
+        diagnosticsConnection={diagnosticsConnection}
+        setDiagnosticsConnection={setDiagnosticsConnection}
+        hasStoragePassword={hasStoragePassword}
+        dialogState={dialogState}
+        closeConfirmDialog={closeConfirmDialog}
+        confirmDialog={confirmDialog}
+        handlePasswordSubmit={handlePasswordSubmit}
+        handlePasswordCancel={handlePasswordCancel}
+        handleQuickConnectWithHistory={handleQuickConnectWithHistory}
+        clearQuickConnectHistory={clearQuickConnectHistory}
+        handleCollectionSelect={handleCollectionSelect}
+        handleReattachRdpSession={handleReattachRdpSession}
+        handleSessionDetach={handleSessionDetach}
+        sessions={state.sessions}
+        connections={state.connections}
+        activeRdpBackendIds={activeRdpBackendIds}
+        settingsManager={settingsManager}
+        collectionManager={collectionManager}
       />
     </div>
   );

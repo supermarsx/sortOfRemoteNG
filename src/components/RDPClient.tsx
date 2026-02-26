@@ -44,132 +44,16 @@ import { TrustWarningDialog } from './TrustWarningDialog';
 import { FrameBuffer } from './rdpCanvas';
 import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from './rdpRenderers';
 import { useSessionRecorder, formatDuration } from '../hooks/useSessionRecorder';
+import { RDPInternalsPanel } from './rdp/RDPInternalsPanel';
+import { RDPStatusBar } from './rdp/RDPStatusBar';
 
 interface RDPClientProps {
   session: ConnectionSession;
 }
 
-interface RdpStatusEvent {
-  session_id: string;
-  status: string;
-  message: string;
-  desktop_width?: number;
-  desktop_height?: number;
-}
-
-interface RdpPointerEvent {
-  session_id: string;
-  pointer_type: string;
-  x?: number;
-  y?: number;
-}
-
-interface RdpStatsEvent {
-  session_id: string;
-  uptime_secs: number;
-  bytes_received: number;
-  bytes_sent: number;
-  pdus_received: number;
-  pdus_sent: number;
-  frame_count: number;
-  fps: number;
-  input_events: number;
-  errors_recovered: number;
-  reactivations: number;
-  phase: string;
-  last_error: string | null;
-}
-
-interface RdpCertFingerprintEvent {
-  session_id: string;
-  fingerprint: string;
-  host: string;
-  port: number;
-}
-
-interface RdpTimingEvent {
-  session_id: string;
-  dns_ms: number;
-  tcp_ms: number;
-  negotiate_ms: number;
-  tls_ms: number;
-  auth_ms: number;
-  total_ms: number;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function formatUptime(secs: number): string {
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
-  const s = secs % 60;
-  if (h > 0) return `${h}h ${m}m ${s}s`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-// Convert JS mouse button index to backend button code
-function mouseButtonCode(jsButton: number): number {
-  switch (jsButton) {
-    case 0: return 0; // Left
-    case 1: return 1; // Middle
-    case 2: return 2; // Right
-    case 3: return 3; // X1
-    case 4: return 4; // X2
-    default: return 0;
-  }
-}
-
-// Map JS keyboard event to scancode + extended flag
-function keyToScancode(e: KeyboardEvent): { scancode: number; extended: boolean } | null {
-  const map: Record<string, [number, boolean]> = {
-    Escape: [0x01, false], Digit1: [0x02, false], Digit2: [0x03, false],
-    Digit3: [0x04, false], Digit4: [0x05, false], Digit5: [0x06, false],
-    Digit6: [0x07, false], Digit7: [0x08, false], Digit8: [0x09, false],
-    Digit9: [0x0A, false], Digit0: [0x0B, false], Minus: [0x0C, false],
-    Equal: [0x0D, false], Backspace: [0x0E, false], Tab: [0x0F, false],
-    KeyQ: [0x10, false], KeyW: [0x11, false], KeyE: [0x12, false],
-    KeyR: [0x13, false], KeyT: [0x14, false], KeyY: [0x15, false],
-    KeyU: [0x16, false], KeyI: [0x17, false], KeyO: [0x18, false],
-    KeyP: [0x19, false], BracketLeft: [0x1A, false], BracketRight: [0x1B, false],
-    Enter: [0x1C, false], ControlLeft: [0x1D, false], KeyA: [0x1E, false],
-    KeyS: [0x1F, false], KeyD: [0x20, false], KeyF: [0x21, false],
-    KeyG: [0x22, false], KeyH: [0x23, false], KeyJ: [0x24, false],
-    KeyK: [0x25, false], KeyL: [0x26, false], Semicolon: [0x27, false],
-    Quote: [0x28, false], Backquote: [0x29, false], ShiftLeft: [0x2A, false],
-    Backslash: [0x2B, false], KeyZ: [0x2C, false], KeyX: [0x2D, false],
-    KeyC: [0x2E, false], KeyV: [0x2F, false], KeyB: [0x30, false],
-    KeyN: [0x31, false], KeyM: [0x32, false], Comma: [0x33, false],
-    Period: [0x34, false], Slash: [0x35, false], ShiftRight: [0x36, false],
-    NumpadMultiply: [0x37, false], AltLeft: [0x38, false], Space: [0x39, false],
-    CapsLock: [0x3A, false], F1: [0x3B, false], F2: [0x3C, false],
-    F3: [0x3D, false], F4: [0x3E, false], F5: [0x3F, false],
-    F6: [0x40, false], F7: [0x41, false], F8: [0x42, false],
-    F9: [0x43, false], F10: [0x44, false], NumLock: [0x45, false],
-    ScrollLock: [0x46, false], Numpad7: [0x47, false], Numpad8: [0x48, false],
-    Numpad9: [0x49, false], NumpadSubtract: [0x4A, false],
-    Numpad4: [0x4B, false], Numpad5: [0x4C, false], Numpad6: [0x4D, false],
-    NumpadAdd: [0x4E, false], Numpad1: [0x4F, false], Numpad2: [0x50, false],
-    Numpad3: [0x51, false], Numpad0: [0x52, false], NumpadDecimal: [0x53, false],
-    F11: [0x57, false], F12: [0x58, false],
-    // Extended keys
-    NumpadEnter: [0x1C, true], ControlRight: [0x1D, true], NumpadDivide: [0x35, true],
-    PrintScreen: [0x37, true], AltRight: [0x38, true], Home: [0x47, true],
-    ArrowUp: [0x48, true], PageUp: [0x49, true], ArrowLeft: [0x4B, true],
-    ArrowRight: [0x4D, true], End: [0x4F, true], ArrowDown: [0x50, true],
-    PageDown: [0x51, true], Insert: [0x52, true], Delete: [0x53, true],
-    MetaLeft: [0x5B, true], MetaRight: [0x5C, true], ContextMenu: [0x5D, true],
-  };
-
-  const entry = map[e.code];
-  if (!entry) return null;
-  return { scancode: entry[0], extended: entry[1] };
-}
+import type { RdpStatusEvent, RdpPointerEvent, RdpStatsEvent, RdpCertFingerprintEvent, RdpTimingEvent } from '../types/rdpEvents';
+import { formatBytes, formatUptime } from '../utils/rdpFormatters';
+import { mouseButtonCode, keyToScancode } from '../utils/rdpKeyboard';
 
 const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const { state } = useConnections();
@@ -1385,176 +1269,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
       {/* RDP Internals Panel */}
       {showInternals && (
-        <div className="bg-gray-800 border-b border-gray-700 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
-              <Activity size={14} className="text-green-400" />
-              RDP Session Internals
-            </h3>
-            <button onClick={() => setShowInternals(false)} className="text-gray-400 hover:text-white">
-              <X size={14} />
-            </button>
-          </div>
-          {stats ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Phase</div>
-                <div className="text-white font-mono capitalize">{stats.phase}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Uptime</div>
-                <div className="text-white font-mono">{formatUptime(stats.uptime_secs)}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">FPS</div>
-                <div className={`font-mono font-bold ${stats.fps >= 20 ? 'text-green-400' : stats.fps >= 10 ? 'text-yellow-400' : 'text-red-400'}`}>
-                  {stats.fps.toFixed(1)}
-                </div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Frames</div>
-                <div className="text-white font-mono">{stats.frame_count.toLocaleString()}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Received</div>
-                <div className="text-cyan-400 font-mono">{formatBytes(stats.bytes_received)}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Sent</div>
-                <div className="text-orange-400 font-mono">{formatBytes(stats.bytes_sent)}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">PDUs In</div>
-                <div className="text-white font-mono">{stats.pdus_received.toLocaleString()}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">PDUs Out</div>
-                <div className="text-white font-mono">{stats.pdus_sent.toLocaleString()}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Input Events</div>
-                <div className="text-white font-mono">{stats.input_events.toLocaleString()}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Reactivations</div>
-                <div className="text-white font-mono">{stats.reactivations}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Errors (Recovered)</div>
-                <div className={`font-mono ${stats.errors_recovered > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                  {stats.errors_recovered}
-                </div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Bandwidth</div>
-                <div className="text-white font-mono">
-                  {stats.uptime_secs > 0 ? formatBytes(Math.round(stats.bytes_received / stats.uptime_secs)) : '0 B'}/s
-                </div>
-              </div>
-              {/* Extended internals */}
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Avg Frame Size</div>
-                <div className="text-white font-mono">
-                  {stats.frame_count > 0 ? formatBytes(Math.round(stats.bytes_received / stats.frame_count)) : '–'}
-                </div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">PDU Rate</div>
-                <div className="text-white font-mono">
-                  {stats.uptime_secs > 0 ? `${(stats.pdus_received / stats.uptime_secs).toFixed(0)}/s` : '–'}
-                </div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Frame Batching</div>
-                <div className={`font-mono ${rdpSettings.performance?.frameBatching ? 'text-green-400' : 'text-yellow-400'}`}>
-                  {rdpSettings.performance?.frameBatching ? `On @ ${rdpSettings.performance?.frameBatchIntervalMs ?? 33}ms` : 'Off'}
-                </div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Read Timeout</div>
-                <div className="text-white font-mono">{rdpSettings.advanced?.readTimeoutMs ?? 16}ms</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Target FPS</div>
-                <div className="text-white font-mono">{rdpSettings.performance?.targetFps ?? 30}</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Sync Interval</div>
-                <div className="text-white font-mono">every {rdpSettings.advanced?.fullFrameSyncInterval ?? 300} frames</div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Render Backend</div>
-                <div className={`font-mono font-bold ${
-                  activeRenderBackend === 'wgpu' ? 'text-purple-400' :
-                  activeRenderBackend === 'softbuffer' ? 'text-blue-400' : 'text-gray-300'
-                }`}>
-                  {activeRenderBackend}
-                </div>
-              </div>
-              <div className="bg-gray-900 rounded p-2">
-                <div className="text-gray-500 mb-1">Frontend Renderer</div>
-                <div className={`font-mono font-bold ${
-                  activeFrontendRenderer.includes('WebGPU') ? 'text-purple-400' :
-                  activeFrontendRenderer.includes('WebGL') ? 'text-green-400' :
-                  activeFrontendRenderer.includes('Worker') ? 'text-cyan-400' : 'text-blue-400'
-                }`}>
-                  {activeFrontendRenderer}
-                </div>
-              </div>
-              {stats.last_error && (
-                <div className="bg-gray-900 rounded p-2 col-span-2 md:col-span-4 lg:col-span-6">
-                  <div className="text-gray-500 mb-1">Last Error</div>
-                  <div className="text-red-400 font-mono truncate" title={stats.last_error}>{stats.last_error}</div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-gray-500 text-xs">Waiting for session statistics...</p>
-          )}
-
-          {/* Connection timing breakdown */}
-          {connectTiming && (
-            <div className="mt-3 border-t border-gray-700 pt-3">
-              <h4 className="text-xs font-semibold text-gray-300 mb-2">Connection Timing</h4>
-              <div className="flex items-center gap-1 text-xs h-6">
-                {[
-                  { label: 'DNS', ms: connectTiming.dns_ms, color: 'bg-purple-500' },
-                  { label: 'TCP', ms: connectTiming.tcp_ms, color: 'bg-blue-500' },
-                  { label: 'Negotiate', ms: connectTiming.negotiate_ms, color: 'bg-cyan-500' },
-                  { label: 'TLS', ms: connectTiming.tls_ms, color: 'bg-green-500' },
-                  { label: 'Auth', ms: connectTiming.auth_ms, color: 'bg-orange-500' },
-                ].map((phase) => {
-                  const pct = connectTiming.total_ms > 0 ? Math.max((phase.ms / connectTiming.total_ms) * 100, 4) : 20;
-                  return (
-                    <div
-                      key={phase.label}
-                      className={`${phase.color} rounded h-full flex items-center justify-center text-white font-mono`}
-                      style={{ width: `${pct}%`, minWidth: '40px' }}
-                      title={`${phase.label}: ${phase.ms}ms`}
-                    >
-                      {phase.ms}ms
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                {[
-                  { label: 'DNS', color: 'bg-purple-500' },
-                  { label: 'TCP', color: 'bg-blue-500' },
-                  { label: 'Negotiate', color: 'bg-cyan-500' },
-                  { label: 'TLS', color: 'bg-green-500' },
-                  { label: 'Auth', color: 'bg-orange-500' },
-                ].map((l) => (
-                  <span key={l.label} className="flex items-center gap-1">
-                    <span className={`inline-block w-2 h-2 rounded-sm ${l.color}`} />
-                    {l.label}
-                  </span>
-                ))}
-                <span className="ml-auto font-mono text-gray-400">Total: {connectTiming.total_ms}ms</span>
-              </div>
-            </div>
-          )}
-        </div>
+        <RDPInternalsPanel
+          stats={stats}
+          connectTiming={connectTiming}
+          rdpSettings={rdpSettings}
+          activeRenderBackend={activeRenderBackend}
+          activeFrontendRenderer={activeFrontendRenderer}
+          onClose={() => setShowInternals(false)}
+        />
       )}
 
       {/* RDP Canvas */}
@@ -1651,38 +1373,17 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       </div>
 
       {/* Status Bar */}
-      <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between text-xs text-gray-400">
-        <div className="flex items-center space-x-4">
-          <span>Session: {(rdpSessionId || session.id).slice(0, 8)}</span>
-          <span>Protocol: RDP</span>
-          {isConnected && (
-            <>
-              <span>Desktop: {desktopSize.width}x{desktopSize.height}</span>
-              <span>Encryption: TLS/NLA</span>
-              {stats && (
-                <>
-                  <span className="text-green-400">{stats.fps.toFixed(0)} FPS</span>
-                  <span>↓{formatBytes(stats.bytes_received)}</span>
-                  <span>↑{formatBytes(stats.bytes_sent)}</span>
-                </>
-              )}
-              {certFingerprint && (
-                <span className="text-cyan-400" title={`SHA256:${certFingerprint}`}>
-                  Cert: {certFingerprint.slice(0, 11)}…
-                </span>
-              )}
-            </>
-          )}
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <MousePointer size={12} />
-          <Keyboard size={12} />
-          {audioEnabled && <Volume2 size={12} />}
-          {clipboardEnabled && <Copy size={12} />}
-          {magnifierActive && <Search size={12} className="text-blue-400" />}
-        </div>
-      </div>
+      <RDPStatusBar
+        rdpSessionId={rdpSessionId}
+        sessionId={session.id}
+        isConnected={isConnected}
+        desktopSize={desktopSize}
+        stats={stats}
+        certFingerprint={certFingerprint}
+        audioEnabled={audioEnabled}
+        clipboardEnabled={clipboardEnabled}
+        magnifierActive={magnifierActive}
+      />
 
       {/* Trust Warning Dialog */}
       {trustPrompt && certIdentity && (
