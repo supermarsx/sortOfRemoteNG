@@ -119,7 +119,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
             value={sessionIdFilter}
             onChange={e => setSessionIdFilter(e.target.value)}
             className="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-white focus:outline-none focus:border-indigo-500 max-w-[80px]"
-            title="Filter by session"
+            data-tooltip="Filter by session"
           >
             <option value="all">All sessions</option>
             {sessionIds.map(sid => (
@@ -130,7 +130,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
         <button
           onClick={() => setAutoScroll(!autoScroll)}
           className={`p-1 rounded transition-colors ${autoScroll ? 'text-indigo-400 bg-indigo-900/30' : 'text-gray-500 hover:text-gray-300'}`}
-          title={autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
+          data-tooltip={autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
         >
           <ArrowDown size={12} />
         </button>
