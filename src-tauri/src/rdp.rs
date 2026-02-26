@@ -2202,7 +2202,7 @@ fn run_rdp_session_inner(
     // When frames are actively streaming the server sends data frequently,
     // so we only need a short timeout to interleave input handling (16 ms).
     // When idle for a while we scale up to 50 ms to cut wakeups by ~3×.
-    let timeout_active = Duration::from_millis(16);
+    let timeout_active = Duration::from_millis(4);
     let timeout_idle = Duration::from_millis(50);
     let idle_threshold = Duration::from_millis(500);
     let mut last_data_received = Instant::now();
@@ -2327,18 +2327,9 @@ fn run_rdp_session_inner(
                         push_compositor_frame_via_channel(&frame, active_ch);
                     }
                 } else {
-                    // Direct streaming: push each dirty rect via Channel
-                    for &(x, y, w, h) in &dirty_regions {
-                        if w > 0 && h > 0 {
-                            let region = ironrdp::pdu::geometry::InclusiveRectangle {
-                                left: x,
-                                top: y,
-                                right: x.saturating_add(w).saturating_sub(1),
-                                bottom: y.saturating_add(h).saturating_sub(1),
-                            };
-                            push_frame_via_channel(image.data(), desktop_width, &region, active_ch);
-                        }
-                    }
+                    push_multi_rect_via_channel(
+                        image.data(), desktop_width, &dirty_regions, active_ch,
+                    );
                 }
             }
             dirty_regions.clear();
@@ -2529,16 +2520,12 @@ fn run_rdp_session_inner(
             } else if !batch_dirty_rects.is_empty() && !viewer_detached {
                 merge_dirty_regions(&mut batch_dirty_rects);
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                for &(x, y, w, h) in &batch_dirty_rects {
-                    if w > 0 && h > 0 {
-                        let region = ironrdp::pdu::geometry::InclusiveRectangle {
-                            left: x, top: y,
-                            right: x.saturating_add(w).saturating_sub(1),
-                            bottom: y.saturating_add(h).saturating_sub(1),
-                        };
-                        push_frame_via_channel(image.data(), desktop_width, &region, active_ch);
-                    }
-                }
+                // Send ALL rects in a single Channel message to reduce IPC
+                // overhead — one send() instead of N, one ArrayBuffer instead
+                // of N on the JS side.
+                push_multi_rect_via_channel(
+                    image.data(), desktop_width, &batch_dirty_rects, active_ch,
+                );
             }
 
             let fc = stats.frame_count.load(Ordering::Relaxed);
@@ -2733,6 +2720,88 @@ fn merge_dirty_regions(regions: &mut Vec<(u16, u16, u16, u16)>) {
     // (e.g. 1920×800 = 6 MB), amplifying data by 15×.  Just send the
     // individually merged rects; Channel overhead per rect is negligible.
     *regions = merged;
+}
+
+/// Push multiple dirty regions in a single Channel message.
+///
+/// Binary protocol: concatenated `[header][pixels][header][pixels]...`
+/// where each header is 8 bytes `[x:u16LE, y:u16LE, w:u16LE, h:u16LE]`.
+/// JS walks the buffer with an offset, parsing rects until exhausted.
+///
+/// This reduces IPC overhead dramatically — one `Channel.send()` and one
+/// `ArrayBuffer` allocation instead of N.
+#[inline]
+fn push_multi_rect_via_channel(
+    image_data: &[u8],
+    fb_width: u16,
+    rects: &[(u16, u16, u16, u16)],
+    frame_channel: &Channel<InvokeResponseBody>,
+) {
+    if rects.is_empty() {
+        return;
+    }
+
+    let bpp = 4usize;
+    let stride = fb_width as usize * bpp;
+
+    // Pre-calculate total size for a single allocation.
+    let total: usize = rects
+        .iter()
+        .filter(|&&(_, _, w, h)| w > 0 && h > 0)
+        .map(|&(_, _, w, h)| 8 + w as usize * h as usize * bpp)
+        .sum();
+    if total == 0 {
+        return;
+    }
+
+    let mut payload = Vec::with_capacity(total);
+    for &(x, y, w, h) in rects {
+        if w == 0 || h == 0 {
+            continue;
+        }
+        let left = x as usize;
+        let top = y as usize;
+        let rw = w as usize;
+        let rh = h as usize;
+        let bottom = top + rh - 1;
+        let row_bytes = rw * bpp;
+
+        // 8-byte header
+        let header: [u8; 8] = {
+            let mut hdr = [0u8; 8];
+            hdr[0..2].copy_from_slice(&x.to_le_bytes());
+            hdr[2..4].copy_from_slice(&y.to_le_bytes());
+            hdr[4..6].copy_from_slice(&w.to_le_bytes());
+            hdr[6..8].copy_from_slice(&h.to_le_bytes());
+            hdr
+        };
+        payload.extend_from_slice(&header);
+
+        // Pixel data
+        let last_row_end = bottom * stride + left * bpp + row_bytes;
+        if last_row_end <= image_data.len() {
+            if left == 0 && rw == fb_width as usize {
+                let start = top * stride;
+                let end = (bottom + 1) * stride;
+                payload.extend_from_slice(&image_data[start..end]);
+            } else {
+                for row in top..=bottom {
+                    let row_start = row * stride + left * bpp;
+                    payload.extend_from_slice(&image_data[row_start..row_start + row_bytes]);
+                }
+            }
+        } else {
+            for row in top..=bottom {
+                let row_start = row * stride + left * bpp;
+                let row_end = row_start + row_bytes;
+                if row_end <= image_data.len() {
+                    payload.extend_from_slice(&image_data[row_start..row_end]);
+                }
+            }
+        }
+    }
+
+    let _ = frame_channel.send(InvokeResponseBody::Raw(payload));
 }
 
 /// Push a dirty region's pixel data directly through the Tauri Channel.

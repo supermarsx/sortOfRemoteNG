@@ -207,53 +207,58 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     const renderer = rendererRef.current;
 
     if (queue.length > 0 && fb && canvas) {
-      // Frame skip: if rendering falls behind, drop all but the last 2 frames.
-      // The most recent frames contain the latest visual state.
-      if (queue.length > 3) {
-        queue.splice(0, queue.length - 2);
-      }
+      // Parse multi-rect messages: each ArrayBuffer may contain multiple
+      // concatenated rects [hdr0][pixels0][hdr1][pixels1]...
+      // This replaces the old 1-message-per-rect protocol.
       if (renderer) {
-        // GPU / Worker path — delegate to the pluggable renderer.
-        // Only mirror to offscreen when magnifier is active (saves a
-        // full CPU putImageData per region on every frame).
         const needsOffscreen = magnifierActiveRef.current;
         const offCtx = needsOffscreen ? fb.offscreen.getContext('2d') : null;
         for (let i = 0; i < queue.length; i++) {
           const data = queue[i];
           const view = new DataView(data);
-          const x = view.getUint16(0, true);
-          const y = view.getUint16(2, true);
-          const w = view.getUint16(4, true);
-          const h = view.getUint16(6, true);
-          const rgba = new Uint8ClampedArray(data, 8);
-          renderer.paintRegion(x, y, w, h, rgba);
-          // Mirror into the offscreen cache only when magnifier needs it.
-          if (offCtx && w > 0 && h > 0 && rgba.length >= w * h * 4) {
-            let cache = offImgCacheRef.current;
-            if (!cache || cache.w !== w || cache.h !== h) {
-              cache = { img: new ImageData(w, h), w, h };
-              offImgCacheRef.current = cache;
+          let offset = 0;
+          while (offset + 8 <= data.byteLength) {
+            const x = view.getUint16(offset, true);
+            const y = view.getUint16(offset + 2, true);
+            const w = view.getUint16(offset + 4, true);
+            const h = view.getUint16(offset + 6, true);
+            const pixelBytes = w * h * 4;
+            if (offset + 8 + pixelBytes > data.byteLength) break;
+            const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
+            renderer.paintRegion(x, y, w, h, rgba);
+            if (offCtx && w > 0 && h > 0) {
+              let cache = offImgCacheRef.current;
+              if (!cache || cache.w !== w || cache.h !== h) {
+                cache = { img: new ImageData(w, h), w, h };
+                offImgCacheRef.current = cache;
+              }
+              cache.img.data.set(rgba);
+              offCtx.putImageData(cache.img, x, y);
+              fb.hasPainted = true;
             }
-            cache.img.data.set(rgba.subarray(0, w * h * 4));
-            offCtx.putImageData(cache.img, x, y);
-            fb.hasPainted = true;
+            offset += 8 + pixelBytes;
           }
         }
         renderer.present();
       } else {
-        // Fallback: direct Canvas 2D (should not normally be reached)
         if (!visCtxRef.current) visCtxRef.current = canvas.getContext('2d');
         const ctx = visCtxRef.current;
         if (ctx) {
           for (let i = 0; i < queue.length; i++) {
             const data = queue[i];
             const view = new DataView(data);
-            const x = view.getUint16(0, true);
-            const y = view.getUint16(2, true);
-            const w = view.getUint16(4, true);
-            const h = view.getUint16(6, true);
-            const rgba = new Uint8ClampedArray(data, 8);
-            fb.paintDirect(ctx, x, y, w, h, rgba);
+            let offset = 0;
+            while (offset + 8 <= data.byteLength) {
+              const x = view.getUint16(offset, true);
+              const y = view.getUint16(offset + 2, true);
+              const w = view.getUint16(offset + 4, true);
+              const h = view.getUint16(offset + 6, true);
+              const pixelBytes = w * h * 4;
+              if (offset + 8 + pixelBytes > data.byteLength) break;
+              const rgba = new Uint8ClampedArray(data, offset + 8, pixelBytes);
+              fb.paintDirect(ctx, x, y, w, h, rgba);
+              offset += 8 + pixelBytes;
+            }
           }
         }
       }
