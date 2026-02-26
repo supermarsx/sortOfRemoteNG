@@ -1447,8 +1447,8 @@ const AppContent: React.FC = () => {
         // Check if we should warn the user
         const settings = settingsManager.getSettings();
         const hasActiveSessions = state.sessions.length > 0;
-        
-        if (settings.warnOnClose && hasActiveSessions) {
+
+        if ((settings.warnOnClose || settings.warnOnExit) && hasActiveSessions) {
           // Prevent close and show confirmation dialog
           event.preventDefault();
           awaitingCloseConfirmRef.current = true;

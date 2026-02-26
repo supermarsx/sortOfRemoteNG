@@ -400,6 +400,15 @@ export class SettingsManager {
   }
 
   /**
+   * Update the in-memory settings without persisting to disk.
+   * Used by the Settings dialog so that `getSettings()` always reflects
+   * the latest toggle state even before the debounced save fires.
+   */
+  applyInMemory(settings: Partial<GlobalSettings>): void {
+    this.settings = { ...this.settings, ...settings };
+  }
+
+  /**
    * Provides access to the currently loaded settings.
    * @returns {GlobalSettings} The in-memory settings object.
    */

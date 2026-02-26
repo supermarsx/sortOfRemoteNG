@@ -382,8 +382,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     };
   }, [settingsManager]);
 
-  /** Schedule a debounced persist of settings (1.5 s after last change). */
+  /** Schedule a debounced persist of settings (1.5 s after last change).
+   *  The in-memory singleton is updated *immediately* so that other code
+   *  (e.g. the window-close handler) always reads the latest values.
+   *  Only the IndexedDB write is debounced. */
   const scheduleSave = useCallback((newSettings: GlobalSettings) => {
+    // Immediately update the in-memory singleton so getSettings() is never stale
+    settingsManager.applyInMemory(newSettings);
+
     pendingSettingsRef.current = newSettings;
     if (debounceSaveRef.current) {
       clearTimeout(debounceSaveRef.current);
