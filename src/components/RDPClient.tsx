@@ -843,24 +843,21 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   //   • Priority events (clicks, keys, wheel) flush the buffer
   //     immediately so they are never delayed.
   const inputBufferRef = useRef<Record<string, unknown>[]>([]);
+  /** Index of the current MouseMove event in the buffer (-1 = none).
+   *  Overwrites in-place so flush never needs Array.filter(). */
+  const pendingMoveIdxRef = useRef(-1);
   /** Boolean flag for queueMicrotask scheduling (not cancelable like setTimeout). */
   const flushScheduledRef = useRef(false);
 
   const flushInputBuffer = useCallback(() => {
     flushScheduledRef.current = false;
     const sid = sessionIdRef.current;
-    if (!sid || inputBufferRef.current.length === 0) return;
-    // Coalesce: drop all but the last MouseMove in the batch
-    const raw = inputBufferRef.current;
+    const buf = inputBufferRef.current;
+    if (!sid || buf.length === 0) return;
+    // Buffer already coalesced — at most one MouseMove at pendingMoveIdx.
     inputBufferRef.current = [];
-    let lastMoveIdx = -1;
-    for (let i = raw.length - 1; i >= 0; i--) {
-      if (raw[i].type === 'MouseMove') { lastMoveIdx = i; break; }
-    }
-    const batch = lastMoveIdx <= 0
-      ? raw
-      : raw.filter((ev, i) => ev.type !== 'MouseMove' || i === lastMoveIdx);
-    invoke('rdp_send_input', { sessionId: sid, events: batch }).catch(e => {
+    pendingMoveIdxRef.current = -1;
+    invoke('rdp_send_input', { sessionId: sid, events: buf }).catch(e => {
       debugLog(`Input send error: ${e}`);
     });
   }, []);
@@ -870,17 +867,40 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     if (immediate) {
       // Mark flush as not scheduled so the microtask (if queued) is a no-op.
       flushScheduledRef.current = false;
-      const buffered = inputBufferRef.current;
+      const buf = inputBufferRef.current;
       inputBufferRef.current = [];
+      pendingMoveIdxRef.current = -1;
       const sid = sessionIdRef.current;
-      const all = buffered.length > 0 ? [...buffered, ...events] : events;
-      invoke('rdp_send_input', { sessionId: sid!, events: all }).catch(e => {
-        debugLog(`Input send error: ${e}`);
-      });
+      // Append immediate events to any buffered ones — reuse buf to avoid spread allocation.
+      if (buf.length > 0) {
+        for (let i = 0; i < events.length; i++) buf.push(events[i]);
+        invoke('rdp_send_input', { sessionId: sid!, events: buf }).catch(e => {
+          debugLog(`Input send error: ${e}`);
+        });
+      } else {
+        invoke('rdp_send_input', { sessionId: sid!, events }).catch(e => {
+          debugLog(`Input send error: ${e}`);
+        });
+      }
       return;
     }
-    // Buffer the events and schedule a flush via queueMicrotask (sub-0.1ms vs setTimeout's 1-4ms).
-    inputBufferRef.current.push(...events);
+    // Buffer events.  MouseMove is overwritten in-place (last-write-wins)
+    // so flush never needs to filter — zero allocation coalescing.
+    const buf = inputBufferRef.current;
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      if (ev.type === 'MouseMove') {
+        const idx = pendingMoveIdxRef.current;
+        if (idx >= 0) {
+          buf[idx] = ev; // overwrite previous MouseMove
+        } else {
+          pendingMoveIdxRef.current = buf.length;
+          buf.push(ev);
+        }
+      } else {
+        buf.push(ev);
+      }
+    }
     if (!flushScheduledRef.current) {
       flushScheduledRef.current = true;
       queueMicrotask(flushInputBuffer);
@@ -980,16 +1000,21 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     const { x, y } = scaleCoords(e.clientX, e.clientY);
     sendInput([{ type: 'MouseMove', x, y }]);
 
-    // Update magnifier position
+    // Update magnifier position (use cached rect to avoid forced reflow at 200 Hz)
     if (magnifierEnabled && magnifierActive) {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const rect = canvas.getBoundingClientRect();
-        setMagnifierPos({
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        });
-        updateMagnifier(e.clientX - rect.left, e.clientY - rect.top);
+      let rect = cachedRectRef.current;
+      if (!rect) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          rect = canvas.getBoundingClientRect();
+          cachedRectRef.current = rect;
+        }
+      }
+      if (rect) {
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        setMagnifierPos({ x: mx, y: my });
+        updateMagnifier(mx, my);
       }
     }
   }, [isConnected, scaleCoords, sendInput, magnifierEnabled, magnifierActive, updateMagnifier]);

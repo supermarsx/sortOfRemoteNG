@@ -2197,6 +2197,8 @@ fn run_rdp_session_inner(
 
     // ── Reusable buffers (avoid per-iteration allocations) ─────────────
     let mut merged_inputs: Vec<FastPathInputEvent> = Vec::new();
+    let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
+    let mut gfx_frames: Vec<crate::gfx::processor::GfxFrame> = Vec::new();
 
     // ── Adaptive read timeout ─────────────────────────────────────────
     // When frames are actively streaming the server sends data frequently,
@@ -2324,7 +2326,7 @@ fn run_rdp_session_inner(
                         }
                     }
                     if let Some(frame) = comp.flush() {
-                        push_compositor_frame_via_channel(&frame, active_ch);
+                        push_compositor_frame_via_channel(frame, active_ch);
                     }
                 } else {
                     push_multi_rect_via_channel(
@@ -2339,7 +2341,7 @@ fn run_rdp_session_inner(
         // ─ Drain GFX decoded frames (H.264 via RDPGFX DVC) ──────────
         if let Some(ref gfx_rx) = gfx_frame_rx {
             // Collect all pending frames, then apply frame-skip if too many.
-            let mut gfx_frames: Vec<crate::gfx::processor::GfxFrame> = Vec::new();
+            gfx_frames.clear();
             while let Ok(gfx_frame) = gfx_rx.try_recv() {
                 gfx_frames.push(gfx_frame);
             }
@@ -2348,23 +2350,29 @@ fn run_rdp_session_inner(
                 let skip = gfx_frames.len() - 2;
                 gfx_frames.drain(..skip);
             }
-            for gfx_frame in gfx_frames {
+            for gfx_frame in gfx_frames.drain(..) {
                 stats.record_frame();
                 if viewer_detached {
                     continue;
                 }
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                let mut payload = Vec::with_capacity(8 + gfx_frame.rgba.len());
-                let header: [u8; 8] = {
-                    let mut h = [0u8; 8];
-                    h[0..2].copy_from_slice(&gfx_frame.screen_x.to_le_bytes());
-                    h[2..4].copy_from_slice(&gfx_frame.screen_y.to_le_bytes());
-                    h[4..6].copy_from_slice(&gfx_frame.width.to_le_bytes());
-                    h[6..8].copy_from_slice(&gfx_frame.height.to_le_bytes());
-                    h
-                };
-                payload.extend_from_slice(&header);
-                payload.extend_from_slice(&gfx_frame.rgba);
+                // Prepend 8-byte header in-place instead of copying the entire
+                // RGBA buffer (~8 MB at 1080p) into a new allocation.
+                let mut payload = gfx_frame.rgba;
+                payload.reserve(8); // may no-op if spare capacity exists
+                // Shift existing data right by 8 bytes to make room for header.
+                let len = payload.len();
+                // SAFETY: we just reserved 8 extra bytes; the copy stays within
+                // the allocated region.  set_len is safe because all bytes in
+                // [0..len] were valid and [len..len+8] are now written below.
+                unsafe {
+                    payload.set_len(len + 8);
+                    std::ptr::copy(payload.as_ptr(), payload.as_mut_ptr().add(8), len);
+                }
+                payload[0..2].copy_from_slice(&gfx_frame.screen_x.to_le_bytes());
+                payload[2..4].copy_from_slice(&gfx_frame.screen_y.to_le_bytes());
+                payload[4..6].copy_from_slice(&gfx_frame.width.to_le_bytes());
+                payload[6..8].copy_from_slice(&gfx_frame.height.to_le_bytes());
                 let _ = active_ch.send(InvokeResponseBody::Raw(payload));
             }
         }
@@ -2374,7 +2382,7 @@ fn run_rdp_session_inner(
         // first blocking read.  No timeout toggling, no input interleaving
         // inside the loop — keep it simple and fast.  Input is handled at
         // the top of the outer loop (every ~16ms).
-        let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
+        batch_dirty_rects.clear();
         let mut batch_had_graphics = false;
         let mut batch_should_reactivate: Option<Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>> = None;
         let mut batch_should_terminate = false;
@@ -2514,7 +2522,7 @@ fn run_rdp_session_inner(
                 if !viewer_detached {
                     if let Some(frame) = comp.flush() {
                         let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                        push_compositor_frame_via_channel(&frame, active_ch);
+                        push_compositor_frame_via_channel(frame, active_ch);
                     }
                 }
             } else if !batch_dirty_rects.is_empty() && !viewer_detached {
@@ -2873,22 +2881,18 @@ fn push_frame_via_channel(
 /// Uses the same binary protocol as `push_frame_via_channel`.
 #[inline]
 fn push_compositor_frame_via_channel(
-    frame: &native_renderer::CompositorFrame,
+    frame: native_renderer::CompositorFrame,
     frame_channel: &Channel<InvokeResponseBody>,
 ) {
-    let mut payload = Vec::with_capacity(8 + frame.rgba.len());
-
-    // 8-byte header as a single write
-    let header: [u8; 8] = {
-        let mut h = [0u8; 8];
-        h[0..2].copy_from_slice(&frame.x.to_le_bytes());
-        h[2..4].copy_from_slice(&frame.y.to_le_bytes());
-        h[4..6].copy_from_slice(&frame.width.to_le_bytes());
-        h[6..8].copy_from_slice(&frame.height.to_le_bytes());
-        h
-    };
-    payload.extend_from_slice(&header);
-    payload.extend_from_slice(&frame.rgba);
+    // The compositor's flush() pre-reserves 8 leading bytes (zeroed) in
+    // frame.rgba.  Write the header in-place — zero extra allocation,
+    // zero extra memcpy.
+    let mut payload = frame.rgba;
+    debug_assert!(payload.len() >= 8, "CompositorFrame rgba too short for header");
+    payload[0..2].copy_from_slice(&frame.x.to_le_bytes());
+    payload[2..4].copy_from_slice(&frame.y.to_le_bytes());
+    payload[4..6].copy_from_slice(&frame.width.to_le_bytes());
+    payload[6..8].copy_from_slice(&frame.height.to_le_bytes());
 
     let _ = frame_channel.send(InvokeResponseBody::Raw(payload));
 }

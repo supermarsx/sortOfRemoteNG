@@ -227,9 +227,12 @@ impl FrameCompositor for SoftbufferCompositor {
         let row_bytes = w as usize * bpp;
         let total = row_bytes * h as usize;
 
-        // Reuse the flush buffer to avoid per-flush allocation.
+        // Reserve 8 leading bytes for the IPC header (x, y, w, h as u16LE)
+        // so push_compositor_frame_via_channel can write it in-place without
+        // a second allocation + full-buffer copy.
         self.flush_buffer.clear();
-        self.flush_buffer.reserve(total);
+        self.flush_buffer.reserve(8 + total);
+        self.flush_buffer.extend_from_slice(&[0u8; 8]); // placeholder header
 
         for row in 0..h as usize {
             let src_y = y as usize + row;
@@ -237,7 +240,10 @@ impl FrameCompositor for SoftbufferCompositor {
             self.flush_buffer.extend_from_slice(&self.shadow[start..start + row_bytes]);
         }
 
-        // Swap out the buffer contents — next flush reuses the same allocation.
+        // Move the buffer out.  Channel::send() takes ownership, so the
+        // allocation is freed after send — unavoidable without changing
+        // Channel semantics.  But we save the SECOND allocation that
+        // push_compositor_frame used to do.
         let rgba = std::mem::take(&mut self.flush_buffer);
 
         // Reset dirty state
