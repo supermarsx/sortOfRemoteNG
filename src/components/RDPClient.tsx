@@ -4,26 +4,10 @@ import { ConnectionSession } from '../types/connection';
 import { DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../types/connection';
 import {
   Monitor,
-  Maximize2,
-  Minimize2,
   Settings,
   Wifi,
   WifiOff,
-  MousePointer,
-  Keyboard,
-  Volume2,
-  VolumeX,
-  Copy,
-  Activity,
-  X,
-  Search,
   ZoomIn,
-  Camera,
-  ClipboardCopy,
-  Circle,
-  Square,
-  Pause,
-  Play,
 } from 'lucide-react';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -43,9 +27,11 @@ import {
 import { TrustWarningDialog } from './TrustWarningDialog';
 import { FrameBuffer } from './rdpCanvas';
 import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from './rdpRenderers';
-import { useSessionRecorder, formatDuration } from '../hooks/useSessionRecorder';
+import { useSessionRecorder } from '../hooks/useSessionRecorder';
 import { RDPInternalsPanel } from './rdp/RDPInternalsPanel';
 import { RDPStatusBar } from './rdp/RDPStatusBar';
+import { RDPClientHeader } from './rdp/RDPClientHeader';
+import { RDPSettingsPanel } from './rdp/RDPSettingsPanel';
 
 interface RDPClientProps {
   session: ConnectionSession;
@@ -1072,199 +1058,43 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
   return (
     <div className={`flex flex-col bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full overflow-hidden'}`}>
-      {/* RDP Header */}
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Monitor size={16} className="text-blue-400" />
-          <span className="text-sm text-gray-300">
-            RDP - {session.name !== session.hostname ? `${session.name} (${session.hostname})` : session.hostname}
-          </span>
-          <div className={`flex items-center space-x-1 ${getStatusColor()}`}>
-            {getStatusIcon()}
-            <span className="text-xs capitalize">{connectionStatus}</span>
-          </div>
-          {statusMessage && (
-            <span className="text-xs text-gray-500 ml-2 truncate max-w-xs">{statusMessage}</span>
-          )}
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <div className="flex items-center space-x-1 text-xs text-gray-400">
-            <span>{desktopSize.width}x{desktopSize.height}</span>
-            <span>•</span>
-            <span>{colorDepth}-bit</span>
-            <span>•</span>
-            <span className="capitalize">{perfLabel}</span>
-          </div>
+      <RDPClientHeader
+        sessionName={session.name}
+        sessionHostname={session.hostname}
+        connectionStatus={connectionStatus}
+        statusMessage={statusMessage}
+        desktopSize={desktopSize}
+        colorDepth={colorDepth}
+        perfLabel={perfLabel}
+        magnifierEnabled={magnifierEnabled}
+        magnifierActive={magnifierActive}
+        showInternals={showInternals}
+        showSettings={showSettings}
+        isFullscreen={isFullscreen}
+        recState={recState}
+        getStatusColor={getStatusColor}
+        getStatusIcon={getStatusIcon}
+        setMagnifierActive={setMagnifierActive}
+        setShowInternals={setShowInternals}
+        setShowSettings={setShowSettings}
+        handleScreenshot={handleScreenshot}
+        handleScreenshotToClipboard={handleScreenshotToClipboard}
+        handleStopRecording={handleStopRecording}
+        toggleFullscreen={toggleFullscreen}
+        startRecording={startRecording}
+        pauseRecording={pauseRecording}
+        resumeRecording={resumeRecording}
+      />
 
-          {magnifierEnabled && (
-            <button
-              onClick={() => setMagnifierActive(!magnifierActive)}
-              className={`p-1 hover:bg-gray-700 rounded transition-colors ${magnifierActive ? 'text-blue-400 bg-gray-700' : 'text-gray-400 hover:text-white'}`}
-              title="Magnifier Glass"
-            >
-              <Search size={14} />
-            </button>
-          )}
-          
-          <button
-            onClick={() => setShowInternals(!showInternals)}
-            className={`p-1 hover:bg-gray-700 rounded transition-colors ${showInternals ? 'text-green-400 bg-gray-700' : 'text-gray-400 hover:text-white'}`}
-            title="RDP Internals"
-          >
-            <Activity size={14} />
-          </button>
-          
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title="RDP Settings"
-          >
-            <Settings size={14} />
-          </button>
-          
-          {/* Screenshot to file */}
-          <button
-            onClick={handleScreenshot}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title="Save screenshot to file"
-          >
-            <Camera size={14} />
-          </button>
-          {/* Screenshot to clipboard */}
-          <button
-            onClick={handleScreenshotToClipboard}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title="Copy screenshot to clipboard"
-          >
-            <ClipboardCopy size={14} />
-          </button>
-
-          {/* Recording */}
-          {!recState.isRecording ? (
-            <button
-              onClick={() => startRecording('webm')}
-              className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-red-400"
-              title="Start recording"
-            >
-              <Circle size={14} className="fill-current" />
-            </button>
-          ) : (
-            <div className="flex items-center space-x-1">
-              <span className="text-[10px] text-red-400 animate-pulse font-mono">
-                REC {formatDuration(recState.duration)}
-              </span>
-              {recState.isPaused ? (
-                <button
-                  onClick={resumeRecording}
-                  className="p-1 hover:bg-gray-700 rounded text-yellow-400"
-                  title="Resume recording"
-                >
-                  <Play size={12} />
-                </button>
-              ) : (
-                <button
-                  onClick={pauseRecording}
-                  className="p-1 hover:bg-gray-700 rounded text-yellow-400"
-                  title="Pause recording"
-                >
-                  <Pause size={12} />
-                </button>
-              )}
-              <button
-                onClick={handleStopRecording}
-                className="p-1 hover:bg-gray-700 rounded text-red-400"
-                title="Stop and save recording"
-              >
-                <Square size={12} className="fill-current" />
-              </button>
-            </div>
-          )}
-
-          <button
-            onClick={toggleFullscreen}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-          >
-            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </button>
-        </div>
-      </div>
-
-      {/* Settings Panel */}
       {showSettings && (
-        <div className="bg-gray-800 border-b border-gray-700 p-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Resolution</div>
-              <div className="text-white text-xs font-mono">{rdpSettings.display?.width ?? 1920}x{rdpSettings.display?.height ?? 1080}</div>
-            </div>
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Color Depth</div>
-              <div className="text-white text-xs font-mono">{colorDepth}-bit</div>
-            </div>
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Audio</div>
-              <div className="text-white text-xs font-mono flex items-center gap-1">
-                {audioEnabled ? <Volume2 size={12} className="text-green-400" /> : <VolumeX size={12} className="text-gray-600" />}
-                {rdpSettings.audio?.playbackMode ?? 'local'}
-              </div>
-            </div>
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Clipboard</div>
-              <div className={`text-xs font-mono ${clipboardEnabled ? 'text-green-400' : 'text-gray-600'}`}>
-                {clipboardEnabled ? 'Enabled' : 'Disabled'}
-              </div>
-            </div>
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Speed Preset</div>
-              <div className="text-white text-xs font-mono capitalize">{perfLabel}</div>
-            </div>
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Frame Batching</div>
-              <div className={`text-xs font-mono ${rdpSettings.performance?.frameBatching ? 'text-green-400' : 'text-yellow-400'}`}>
-                {rdpSettings.performance?.frameBatching ? `On (${rdpSettings.performance?.frameBatchIntervalMs ?? 33}ms)` : 'Off'}
-              </div>
-            </div>
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Security</div>
-              <div className="text-white text-xs font-mono">
-                {rdpSettings.security?.enableNla ? 'NLA' : ''}{rdpSettings.security?.enableTls ? '+TLS' : ''}
-              </div>
-            </div>
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Keyboard</div>
-              <div className="text-white text-xs font-mono">
-                0x{(rdpSettings.input?.keyboardLayout ?? 0x0409).toString(16).padStart(4, '0')}
-              </div>
-            </div>
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Mouse Mode</div>
-              <div className="text-white text-xs font-mono capitalize">{rdpSettings.input?.mouseMode ?? 'absolute'}</div>
-            </div>
-            <div className="bg-gray-900 rounded p-2">
-              <div className="text-gray-500 text-xs mb-1">Perf Flags</div>
-              <div className="text-white text-xs font-mono">
-                {[
-                  rdpSettings.performance?.disableWallpaper && 'noWP',
-                  rdpSettings.performance?.disableFullWindowDrag && 'noDrag',
-                  rdpSettings.performance?.disableMenuAnimations && 'noAnim',
-                  rdpSettings.performance?.disableTheming && 'noTheme',
-                  rdpSettings.performance?.enableFontSmoothing && 'CT',
-                  rdpSettings.performance?.enableDesktopComposition && 'Aero',
-                ].filter(Boolean).join(' ')}
-              </div>
-            </div>
-            {certFingerprint && (
-              <div className="bg-gray-900 rounded p-2 col-span-2">
-                <div className="text-gray-500 text-xs mb-1">Server Certificate</div>
-                <div className="text-cyan-400 text-xs font-mono truncate" title={certFingerprint}>
-                  SHA256:{certFingerprint.slice(0, 23)}…
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <RDPSettingsPanel
+          rdpSettings={rdpSettings}
+          colorDepth={colorDepth}
+          audioEnabled={audioEnabled}
+          clipboardEnabled={clipboardEnabled}
+          perfLabel={perfLabel}
+          certFingerprint={certFingerprint}
+        />
       )}
 
       {/* RDP Internals Panel */}
