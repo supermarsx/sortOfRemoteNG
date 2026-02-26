@@ -2415,6 +2415,7 @@ fn run_rdp_session_inner(
                         // this PDU, then flush once at the end (avoids per-rect
                         // compositor flush and reduces Channel messages).
                         let mut had_graphics = false;
+                        let mut pdu_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
                         for output in outputs {
                             match output {
                                 ActiveStageOutput::ResponseFrame(data) => {
@@ -2436,7 +2437,7 @@ fn run_rdp_session_inner(
                                     let rh = region.bottom.saturating_sub(region.top) + 1;
 
                                     if frame_batching {
-                                        // Accumulate dirty region for batched push
+                                        // Accumulate dirty region for time-based batched push
                                         dirty_regions.push((region.left, region.top, rw, rh));
                                     } else if let Some(ref mut comp) = compositor {
                                         // Compositor: accumulate into shadow buffer (flush after loop)
@@ -2448,15 +2449,9 @@ fn run_rdp_session_inner(
                                             rw,
                                             rh,
                                         );
-                                    } else if !viewer_detached {
-                                        // Direct streaming: immediate push through Channel
-                                        let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                                        push_frame_via_channel(
-                                            image.data(),
-                                            desktop_width,
-                                            &region,
-                                            active_ch,
-                                        );
+                                    } else {
+                                        // Direct streaming: accumulate rects for merge+send after loop
+                                        pdu_dirty_rects.push((region.left, region.top, rw, rh));
                                     }
                                 }
                                 ActiveStageOutput::PointerDefault => {
@@ -2512,10 +2507,27 @@ fn run_rdp_session_inner(
                         // the compositor once (instead of per-region).
                         if had_graphics && !frame_batching {
                             if let Some(ref mut comp) = compositor {
+                                // Compositor: single flush for all rects from this PDU.
                                 if !viewer_detached {
                                     if let Some(frame) = comp.flush() {
                                         let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                                         push_compositor_frame_via_channel(&frame, active_ch);
+                                    }
+                                }
+                            } else if !pdu_dirty_rects.is_empty() && !viewer_detached {
+                                // Direct streaming: merge rects from this PDU, then
+                                // send as few Channel messages as possible.
+                                merge_dirty_regions(&mut pdu_dirty_rects);
+                                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
+                                for &(x, y, w, h) in &pdu_dirty_rects {
+                                    if w > 0 && h > 0 {
+                                        let region = ironrdp::pdu::geometry::InclusiveRectangle {
+                                            left: x,
+                                            top: y,
+                                            right: x.saturating_add(w).saturating_sub(1),
+                                            bottom: y.saturating_add(h).saturating_sub(1),
+                                        };
+                                        push_frame_via_channel(image.data(), desktop_width, &region, active_ch);
                                     }
                                 }
                             }
