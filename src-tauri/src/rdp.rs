@@ -665,7 +665,7 @@ impl ResolvedSettings {
             // Render backend
             render_backend: perf
                 .and_then(|p| p.render_backend.clone())
-                .unwrap_or_else(|| "softbuffer".to_string()),
+                .unwrap_or_else(|| "webview".to_string()),
             // Bitmap codecs
             codecs_enabled: perf
                 .and_then(|p| p.codecs.as_ref())
@@ -2347,13 +2347,22 @@ fn run_rdp_session_inner(
 
         // ─ Drain GFX decoded frames (H.264 via RDPGFX DVC) ──────────
         if let Some(ref gfx_rx) = gfx_frame_rx {
+            // Collect all pending frames, then apply frame-skip if too many.
+            let mut gfx_frames: Vec<crate::gfx::processor::GfxFrame> = Vec::new();
             while let Ok(gfx_frame) = gfx_rx.try_recv() {
+                gfx_frames.push(gfx_frame);
+            }
+            // Frame skip: if decoder is faster than frontend, keep only the last 2.
+            if gfx_frames.len() > 4 {
+                let skip = gfx_frames.len() - 2;
+                gfx_frames.drain(..skip);
+            }
+            for gfx_frame in gfx_frames {
                 stats.record_frame();
                 if viewer_detached {
                     continue;
                 }
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                // Same binary protocol: 8-byte header [x:u16LE, y:u16LE, w:u16LE, h:u16LE] + RGBA
                 let mut payload = Vec::with_capacity(8 + gfx_frame.rgba.len());
                 let header: [u8; 8] = {
                     let mut h = [0u8; 8];

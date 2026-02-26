@@ -99,6 +99,10 @@ class Canvas2DRenderer implements FrameRenderer {
   readonly name = 'Canvas 2D';
   readonly type: FrontendRendererType = 'canvas2d';
   private ctx: CanvasRenderingContext2D;
+  /** Cached ImageData to avoid per-frame allocation. Reused when (w,h) matches. */
+  private cachedImg: ImageData | null = null;
+  private cachedW = 0;
+  private cachedH = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d', { desynchronized: true });
@@ -114,10 +118,14 @@ class Canvas2DRenderer implements FrameRenderer {
     rgba: Uint8ClampedArray,
   ): void {
     if (w <= 0 || h <= 0 || rgba.length < w * h * 4) return;
-    // Ensure a proper ArrayBuffer (not SharedArrayBuffer) for ImageData.
-    const buf = new Uint8ClampedArray(rgba.buffer instanceof ArrayBuffer ? rgba : new Uint8ClampedArray(rgba));
-    const img = new ImageData(buf, w, h);
-    this.ctx.putImageData(img, x, y);
+    // Reuse cached ImageData when dimensions match (avoids allocation per frame).
+    if (!this.cachedImg || this.cachedW !== w || this.cachedH !== h) {
+      this.cachedImg = new ImageData(w, h);
+      this.cachedW = w;
+      this.cachedH = h;
+    }
+    this.cachedImg.data.set(rgba.subarray(0, w * h * 4));
+    this.ctx.putImageData(this.cachedImg, x, y);
   }
 
   resize(width: number, height: number): void {
@@ -451,6 +459,10 @@ class WebGPURenderer implements FrameRenderer {
   ): void {
     if (w <= 0 || h <= 0 || rgba.length < w * h * 4) return;
     if (!this.ready) {
+      // Backpressure: cap pending queue to 2 entries (keep most recent frames).
+      if (this.pendingPaints.length >= 2) {
+        this.pendingPaints.shift();
+      }
       this.pendingPaints.push({ x, y, w, h, rgba: new Uint8ClampedArray(rgba) });
       return;
     }

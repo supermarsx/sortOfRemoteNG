@@ -234,7 +234,7 @@ const defaultSettings: GlobalSettings = {
     gfxEnabled: false,
     h264Decoder: 'auto' as const,
     // Render Backend
-    renderBackend: 'softbuffer' as const,
+    renderBackend: 'webview' as const,
     frontendRenderer: 'auto' as const,
   },
 };

@@ -725,7 +725,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
         <div>
           <select
-            value={rdp.performance?.renderBackend ?? 'softbuffer'}
+            value={rdp.performance?.renderBackend ?? 'webview'}
             onChange={(e) => updateRdp('performance', { renderBackend: e.target.value as 'auto' | 'softbuffer' | 'wgpu' | 'webview' })}
             className={selectClass}
           >

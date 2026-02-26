@@ -627,7 +627,7 @@ export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
       enableGfx: false,
       h264Decoder: 'auto',
     },
-    renderBackend: 'softbuffer',
+    renderBackend: 'webview',
     frontendRenderer: 'auto',
   },
   security: {

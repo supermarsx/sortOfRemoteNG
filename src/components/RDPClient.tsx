@@ -193,6 +193,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   // to the visible canvas.  Zero CPU when idle.
   /** Cached visible-canvas 2D context (set on first render). */
   const visCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  /** Cached ImageData for offscreen mirror (avoids per-frame allocation). */
+  const offImgCacheRef = useRef<{ img: ImageData; w: number; h: number } | null>(null);
 
   /** Render callback stored in a ref so the Channel closure (created once
    *  during connect) can always reach it via stable indirection. */
@@ -205,6 +207,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     const renderer = rendererRef.current;
 
     if (queue.length > 0 && fb && canvas) {
+      // Frame skip: if rendering falls behind, drop all but the last 2 frames.
+      // The most recent frames contain the latest visual state.
+      if (queue.length > 3) {
+        queue.splice(0, queue.length - 2);
+      }
       if (renderer) {
         // GPU / Worker path — delegate to the pluggable renderer
         const offCtx = fb.offscreen.getContext('2d');
@@ -218,12 +225,15 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           const rgba = new Uint8ClampedArray(data, 8);
           renderer.paintRegion(x, y, w, h, rgba);
           // Mirror into the offscreen cache for resize scaling / magnifier.
-          // Paint directly via putImageData instead of fb.paintDirect() to
-          // avoid setting offscreenStale (the offscreen IS the source of truth
-          // when a GPU renderer owns the visible canvas).
           if (offCtx && w > 0 && h > 0 && rgba.length >= w * h * 4) {
-            const buf = new Uint8ClampedArray(rgba.buffer instanceof ArrayBuffer ? rgba : new Uint8ClampedArray(rgba));
-            offCtx.putImageData(new ImageData(buf, w, h), x, y);
+            // Reuse cached ImageData when dimensions match.
+            let cache = offImgCacheRef.current;
+            if (!cache || cache.w !== w || cache.h !== h) {
+              cache = { img: new ImageData(w, h), w, h };
+              offImgCacheRef.current = cache;
+            }
+            cache.img.data.set(rgba.subarray(0, w * h * 4));
+            offCtx.putImageData(cache.img, x, y);
             fb.hasPainted = true;
           }
         }
@@ -742,6 +752,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
     const observer = new ResizeObserver((entries) => {
+      // Invalidate cached bounding rect on resize.
+      cachedRectRef.current = null;
       const entry = entries[0];
       if (!entry || !isConnected) return;
       const { width, height } = entry.contentRect;
@@ -793,8 +805,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     });
 
     observer.observe(container);
+
+    // Invalidate cached bounding rect on scroll (affects canvas position).
+    const invalidateRect = () => { cachedRectRef.current = null; };
+    window.addEventListener('scroll', invalidateRect, { passive: true });
+
     return () => {
       observer.disconnect();
+      window.removeEventListener('scroll', invalidateRect);
       if (resizeTimer) clearTimeout(resizeTimer);
     };
   }, [isConnected, rdpSettings.display?.resizeToWindow]);
@@ -815,10 +833,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   //   • Priority events (clicks, keys, wheel) flush the buffer
   //     immediately so they are never delayed.
   const inputBufferRef = useRef<Record<string, unknown>[]>([]);
-  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Boolean flag for queueMicrotask scheduling (not cancelable like setTimeout). */
+  const flushScheduledRef = useRef(false);
 
   const flushInputBuffer = useCallback(() => {
-    flushTimerRef.current = null;
+    flushScheduledRef.current = false;
     const sid = sessionIdRef.current;
     if (!sid || inputBufferRef.current.length === 0) return;
     // Coalesce: drop all but the last MouseMove in the batch
@@ -839,11 +858,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const sendInput = useCallback((events: Record<string, unknown>[], immediate = false) => {
     if (!isConnected || !sessionIdRef.current) return;
     if (immediate) {
-      // Cancel pending flush timer, merge buffer + priority events
-      if (flushTimerRef.current !== null) {
-        clearTimeout(flushTimerRef.current);
-        flushTimerRef.current = null;
-      }
+      // Mark flush as not scheduled so the microtask (if queued) is a no-op.
+      flushScheduledRef.current = false;
       const buffered = inputBufferRef.current;
       inputBufferRef.current = [];
       const sid = sessionIdRef.current;
@@ -853,17 +869,25 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       });
       return;
     }
-    // Buffer the events and schedule a flush via setTimeout(0) (~4ms)
+    // Buffer the events and schedule a flush via queueMicrotask (sub-0.1ms vs setTimeout's 1-4ms).
     inputBufferRef.current.push(...events);
-    if (flushTimerRef.current === null) {
-      flushTimerRef.current = setTimeout(flushInputBuffer, 0);
+    if (!flushScheduledRef.current) {
+      flushScheduledRef.current = true;
+      queueMicrotask(flushInputBuffer);
     }
   }, [isConnected, flushInputBuffer]);
 
+  /** Cached canvas bounding rect — invalidated on resize/scroll. */
+  const cachedRectRef = useRef<DOMRect | null>(null);
   const scaleCoords = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
+    // Use cached rect (invalidated by ResizeObserver + scroll listener).
+    let rect = cachedRectRef.current;
+    if (!rect) {
+      rect = canvas.getBoundingClientRect();
+      cachedRectRef.current = rect;
+    }
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
     return {

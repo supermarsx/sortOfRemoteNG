@@ -487,7 +487,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         <div>
           <label className="block text-sm text-gray-400 mb-1">Default Render Backend</label>
           <select
-            value={rdp.renderBackend ?? 'softbuffer'}
+            value={rdp.renderBackend ?? 'webview'}
             onChange={(e) => update({ renderBackend: e.target.value as 'auto' | 'softbuffer' | 'wgpu' | 'webview' })}
             className={selectClass}
           >
