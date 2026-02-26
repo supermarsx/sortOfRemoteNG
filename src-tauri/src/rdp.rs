@@ -2378,27 +2378,33 @@ fn run_rdp_session_inner(
             }
         }
 
-        // ─ Read and process PDUs (multi-PDU batch drain) ───────────────
-        // Instead of reading one PDU, flushing, then looping back, we drain
-        // ALL immediately-available PDUs and accumulate their dirty rects.
-        // This means a burst of 20 small rects from a window drag becomes a
-        // single merged Channel send instead of 20 separate ones.
+        // ─ Read and process PDUs ─────────────────────────────────────────
+        // Process PDUs that are already buffered (zero I/O cost) plus the
+        // first blocking read.  No timeout toggling, no input interleaving
+        // inside the loop — keep it simple and fast.  Input is handled at
+        // the top of the outer loop (every ~16ms).
         let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
         let mut batch_had_graphics = false;
         let mut batch_should_reactivate: Option<Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>> = None;
         let mut batch_should_terminate = false;
         let mut pdus_this_batch: u32 = 0;
-        let mut switched_to_drain_timeout = false;
 
         loop {
-            // Inner PDU drain loop
+            // Inner PDU drain loop — only continues when the internal BytesMut
+            // buffer already contains data (no I/O, sub-microsecond per call).
+            // The first iteration uses the normal read timeout; subsequent
+            // iterations skip entirely if the buffer is empty.
+            if pdus_this_batch > 0 && tls_framed.peek().is_empty() {
+                break; // No buffered data → flush and return to outer loop
+            }
+
             match tls_framed.read_pdu() {
                 Ok((action, payload)) => {
                     consecutive_errors = 0;
                     last_data_received = Instant::now();
-                    // Mark that we should use the active (fast) timeout
                     if current_timeout != timeout_active {
                         current_timeout = timeout_active;
+                        set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
                     }
                     let payload_len = payload.len() as u64;
                     stats
@@ -2411,7 +2417,6 @@ fn run_rdp_session_inner(
                             for output in outputs {
                                 match output {
                                     ActiveStageOutput::ResponseFrame(data) => {
-                                        // ResponseFrames must be sent immediately (server ACKs)
                                         stats
                                             .bytes_sent
                                             .fetch_add(data.len() as u64, Ordering::Relaxed);
@@ -2426,69 +2431,41 @@ fn run_rdp_session_inner(
                                     ActiveStageOutput::GraphicsUpdate(region) => {
                                         stats.record_frame();
                                         batch_had_graphics = true;
-
-                                        let rw =
-                                            region.right.saturating_sub(region.left) + 1;
-                                        let rh =
-                                            region.bottom.saturating_sub(region.top) + 1;
-
+                                        let rw = region.right.saturating_sub(region.left) + 1;
+                                        let rh = region.bottom.saturating_sub(region.top) + 1;
                                         if frame_batching {
-                                            dirty_regions
-                                                .push((region.left, region.top, rw, rh));
+                                            dirty_regions.push((region.left, region.top, rw, rh));
                                         } else if let Some(ref mut comp) = compositor {
                                             comp.update_region(
-                                                image.data(),
-                                                desktop_width,
-                                                region.left,
-                                                region.top,
-                                                rw,
-                                                rh,
+                                                image.data(), desktop_width,
+                                                region.left, region.top, rw, rh,
                                             );
                                         } else {
-                                            batch_dirty_rects
-                                                .push((region.left, region.top, rw, rh));
+                                            batch_dirty_rects.push((region.left, region.top, rw, rh));
                                         }
                                     }
                                     ActiveStageOutput::PointerDefault => {
-                                        let _ = app_handle.emit(
-                                            "rdp://pointer",
-                                            RdpPointerEvent {
-                                                session_id: session_id.to_string(),
-                                                pointer_type: "default".to_string(),
-                                                x: None,
-                                                y: None,
-                                            },
-                                        );
+                                        let _ = app_handle.emit("rdp://pointer", RdpPointerEvent {
+                                            session_id: session_id.to_string(),
+                                            pointer_type: "default".to_string(), x: None, y: None,
+                                        });
                                     }
                                     ActiveStageOutput::PointerHidden => {
-                                        let _ = app_handle.emit(
-                                            "rdp://pointer",
-                                            RdpPointerEvent {
-                                                session_id: session_id.to_string(),
-                                                pointer_type: "hidden".to_string(),
-                                                x: None,
-                                                y: None,
-                                            },
-                                        );
+                                        let _ = app_handle.emit("rdp://pointer", RdpPointerEvent {
+                                            session_id: session_id.to_string(),
+                                            pointer_type: "hidden".to_string(), x: None, y: None,
+                                        });
                                     }
                                     ActiveStageOutput::PointerPosition { x, y } => {
-                                        let _ = app_handle.emit(
-                                            "rdp://pointer",
-                                            RdpPointerEvent {
-                                                session_id: session_id.to_string(),
-                                                pointer_type: "position".to_string(),
-                                                x: Some(x),
-                                                y: Some(y),
-                                            },
-                                        );
+                                        let _ = app_handle.emit("rdp://pointer", RdpPointerEvent {
+                                            session_id: session_id.to_string(),
+                                            pointer_type: "position".to_string(),
+                                            x: Some(x), y: Some(y),
+                                        });
                                     }
-                                    ActiveStageOutput::PointerBitmap(_bitmap) => {
-                                        // TODO: send custom cursor bitmap to frontend
-                                    }
+                                    ActiveStageOutput::PointerBitmap(_bitmap) => {}
                                     ActiveStageOutput::Terminate(reason) => {
-                                        log::info!(
-                                            "RDP session {session_id}: server terminated: {reason:?}"
-                                        );
+                                        log::info!("RDP session {session_id}: server terminated: {reason:?}");
                                         stats.set_phase("terminated");
                                         batch_should_terminate = true;
                                     }
@@ -2500,148 +2477,37 @@ fn run_rdp_session_inner(
                         }
                         Err(e) => {
                             let err_str = format!("{e}");
-                            log::warn!(
-                                "RDP session {session_id}: PDU processing error (recovering): {err_str}"
-                            );
+                            log::warn!("RDP session {session_id}: PDU processing error (recovering): {err_str}");
                             stats.errors_recovered.fetch_add(1, Ordering::Relaxed);
                             stats.set_last_error(&err_str);
                             consecutive_errors += 1;
-
                             if consecutive_errors >= max_consecutive_errors {
                                 return Err(format!(
                                     "Too many consecutive errors ({consecutive_errors}), last: {err_str}"
-                                )
-                                .into());
+                                ).into());
                             }
                         }
                     }
 
                     pdus_this_batch += 1;
-
-                    // Stop draining if session state is changing
                     if batch_should_reactivate.is_some() || batch_should_terminate {
-                        break;
-                    }
-
-                    // ── Interleave input handling for responsiveness ──────
-                    // After each PDU, check for pending mouse/keyboard events
-                    // and send them to the server immediately.  This ensures
-                    // input reaches the server with minimal latency even
-                    // during heavy graphics bursts (e.g. window dragging).
-                    // try_recv() is essentially free when the channel is empty
-                    // (single atomic load), so this adds zero overhead.
-                    merged_inputs.clear();
-                    loop {
-                        match cmd_rx.try_recv() {
-                            Ok(RdpCommand::Shutdown) => {
-                                log::info!("RDP session {session_id}: shutdown requested (during drain)");
-                                if let Ok(outputs) = active_stage.graceful_shutdown() {
-                                    for output in outputs {
-                                        if let ActiveStageOutput::ResponseFrame(data) = output {
-                                            stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
-                                            let _ = tls_framed.write_all(&data);
-                                        }
-                                    }
-                                }
-                                should_break = true;
-                                break;
-                            }
-                            Ok(RdpCommand::Input(events)) => {
-                                merged_inputs.extend(events);
-                            }
-                            Ok(RdpCommand::AttachViewer(new_channel)) => {
-                                attached_channel = Some(new_channel);
-                                viewer_detached = false;
-                            }
-                            Ok(RdpCommand::DetachViewer) => {
-                                viewer_detached = true;
-                            }
-                            Err(mpsc::error::TryRecvError::Empty) => break,
-                            Err(mpsc::error::TryRecvError::Disconnected) => {
-                                should_break = true;
-                                break;
-                            }
-                        }
-                    }
-                    if should_break {
-                        break;
-                    }
-                    if !merged_inputs.is_empty() {
-                        stats.input_events.fetch_add(merged_inputs.len() as u64, Ordering::Relaxed);
-                        match active_stage.process_fastpath_input(&mut image, &merged_inputs) {
-                            Ok(outputs) => {
-                                for output in outputs {
-                                    match output {
-                                        ActiveStageOutput::ResponseFrame(data) => {
-                                            stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
-                                            stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
-                                            if let Err(e) = tls_framed.write_all(&data) {
-                                                return Err(format!("Failed to send input response: {e}").into());
-                                            }
-                                        }
-                                        ActiveStageOutput::GraphicsUpdate(region) => {
-                                            // Accumulate into the same batch
-                                            stats.record_frame();
-                                            batch_had_graphics = true;
-                                            let rw = region.right.saturating_sub(region.left) + 1;
-                                            let rh = region.bottom.saturating_sub(region.top) + 1;
-                                            if frame_batching {
-                                                dirty_regions.push((region.left, region.top, rw, rh));
-                                            } else if let Some(ref mut comp) = compositor {
-                                                comp.update_region(image.data(), desktop_width, region.left, region.top, rw, rh);
-                                            } else {
-                                                batch_dirty_rects.push((region.left, region.top, rw, rh));
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                log::warn!("RDP {session_id}: input processing error (drain): {e}");
-                            }
-                        }
-                    }
-
-                    // After first PDU, switch to 1ms timeout to drain remaining
-                    // buffered data without blocking. read_pdu() checks its internal
-                    // BytesMut first (zero-cost for already-buffered PDUs) and only
-                    // hits the socket if needed (where the 1ms timeout applies).
-                    if !switched_to_drain_timeout {
-                        set_read_timeout_on_framed(
-                            &tls_framed,
-                            Some(Duration::from_millis(1)),
-                        );
-                        switched_to_drain_timeout = true;
-                    }
-
-                    // Safety cap (very generous — input is interleaved above
-                    // so this only guards against pathological PDU floods)
-                    if pdus_this_batch >= 100 {
                         break;
                     }
                 }
                 Err(e) if is_timeout_error(&e) => {
-                    // No more data available — stop draining.
                     if pdus_this_batch == 0 {
-                        // No PDUs at all this iteration — handle idle timeout.
                         if current_timeout == timeout_active
                             && last_data_received.elapsed() >= idle_threshold
                         {
                             current_timeout = timeout_idle;
-                            set_read_timeout_on_framed(
-                                &tls_framed,
-                                Some(current_timeout),
-                            );
+                            set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
                         }
                     }
                     break;
                 }
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
-                        log::info!(
-                            "RDP session {session_id}: server closed connection (EOF)"
-                        );
+                        log::info!("RDP session {session_id}: server closed connection (EOF)");
                         return Ok(());
                     }
                     let err_str = format!("{e}");
@@ -2651,60 +2517,36 @@ fn run_rdp_session_inner(
             }
         } // end inner PDU drain loop
 
-        // Restore proper read timeout after drain phase
-        if switched_to_drain_timeout {
-            set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
-        }
-
-        // Shutdown/disconnect detected during PDU drain
-        if should_break {
-            break;
-        }
-
-        // Flush ALL accumulated dirty rects from the entire batch at once.
-        // A window drag producing 20 PDUs with small rects now results in a
-        // single merged Channel send instead of 20 separate ones.
+        // Flush accumulated dirty rects from this batch.
         if batch_had_graphics && !frame_batching {
             if let Some(ref mut comp) = compositor {
                 if !viewer_detached {
                     if let Some(frame) = comp.flush() {
-                        let active_ch =
-                            attached_channel.as_ref().unwrap_or(frame_channel);
+                        let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                         push_compositor_frame_via_channel(&frame, active_ch);
                     }
                 }
             } else if !batch_dirty_rects.is_empty() && !viewer_detached {
                 merge_dirty_regions(&mut batch_dirty_rects);
-                let active_ch =
-                    attached_channel.as_ref().unwrap_or(frame_channel);
+                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                 for &(x, y, w, h) in &batch_dirty_rects {
                     if w > 0 && h > 0 {
                         let region = ironrdp::pdu::geometry::InclusiveRectangle {
-                            left: x,
-                            top: y,
+                            left: x, top: y,
                             right: x.saturating_add(w).saturating_sub(1),
                             bottom: y.saturating_add(h).saturating_sub(1),
                         };
-                        push_frame_via_channel(
-                            image.data(),
-                            desktop_width,
-                            &region,
-                            active_ch,
-                        );
+                        push_frame_via_channel(image.data(), desktop_width, &region, active_ch);
                     }
                 }
             }
 
-            // Periodic full-frame sync — update frame_store only
             let fc = stats.frame_count.load(Ordering::Relaxed);
             if fc > 0 && fc % full_frame_sync_interval == 0 {
                 frame_store.update_region(
-                    session_id,
-                    image.data(),
-                    desktop_width,
+                    session_id, image.data(), desktop_width,
                     &ironrdp::pdu::geometry::InclusiveRectangle {
-                        left: 0,
-                        top: 0,
+                        left: 0, top: 0,
                         right: desktop_width.saturating_sub(1),
                         bottom: desktop_height.saturating_sub(1),
                     },
@@ -2716,7 +2558,6 @@ fn run_rdp_session_inner(
             return Ok(());
         }
 
-        // Handle reactivation AFTER flushing all graphics
         if let Some(cas) = batch_should_reactivate {
             log::info!(
                 "RDP session {session_id}: DeactivateAll received, running reactivation"
@@ -2887,23 +2728,10 @@ fn merge_dirty_regions(regions: &mut Vec<(u16, u16, u16, u16)>) {
         }
     }
 
-    // If still too many, collapse to one bounding rect.
-    const MAX_REGIONS: usize = 8;
-    if merged.len() > MAX_REGIONS {
-        let mut min_x = u16::MAX;
-        let mut min_y = u16::MAX;
-        let mut max_right: u16 = 0;
-        let mut max_bottom: u16 = 0;
-        for &(x, y, w, h) in &merged {
-            min_x = min_x.min(x);
-            min_y = min_y.min(y);
-            max_right = max_right.max(x.saturating_add(w));
-            max_bottom = max_bottom.max(y.saturating_add(h));
-        }
-        merged.clear();
-        merged.push((min_x, min_y, max_right - min_x, max_bottom - min_y));
-    }
-
+    // Don't collapse to a single bounding rect — scattered small rects
+    // (e.g. 10 × 100×100 = 400 KB) would expand into one huge rect
+    // (e.g. 1920×800 = 6 MB), amplifying data by 15×.  Just send the
+    // individually merged rects; Channel overhead per rect is negligible.
     *regions = merged;
 }
 
@@ -2943,16 +2771,23 @@ fn push_frame_via_channel(
     };
     payload.extend_from_slice(&header);
 
-    // RGBA pixel data — row-by-row copy from the framebuffer.
-    // Pre-validate that all rows fit to skip per-row bounds checks.
+    // RGBA pixel data from the framebuffer.
     let last_row_end = bottom * stride + left * bpp + row_bytes;
     if last_row_end <= image_data.len() {
-        for row in top..=bottom {
-            let row_start = row * stride + left * bpp;
-            payload.extend_from_slice(&image_data[row_start..row_start + row_bytes]);
+        if left == 0 && rw == fb_width as usize {
+            // Full-width region — rows are contiguous in memory.
+            // Single memcpy instead of one per row (e.g. 1 call vs 1080).
+            let start = top * stride;
+            let end = (bottom + 1) * stride;
+            payload.extend_from_slice(&image_data[start..end]);
+        } else {
+            // Partial-width — must copy row by row.
+            for row in top..=bottom {
+                let row_start = row * stride + left * bpp;
+                payload.extend_from_slice(&image_data[row_start..row_start + row_bytes]);
+            }
         }
     } else {
-        // Fallback: per-row bounds check (shouldn't normally happen)
         for row in top..=bottom {
             let row_start = row * stride + left * bpp;
             let row_end = row_start + row_bytes;
