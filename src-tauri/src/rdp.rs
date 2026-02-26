@@ -2523,6 +2523,86 @@ fn run_rdp_session_inner(
                         break;
                     }
 
+                    // ── Interleave input handling for responsiveness ──────
+                    // After each PDU, check for pending mouse/keyboard events
+                    // and send them to the server immediately.  This ensures
+                    // input reaches the server with minimal latency even
+                    // during heavy graphics bursts (e.g. window dragging).
+                    // try_recv() is essentially free when the channel is empty
+                    // (single atomic load), so this adds zero overhead.
+                    merged_inputs.clear();
+                    loop {
+                        match cmd_rx.try_recv() {
+                            Ok(RdpCommand::Shutdown) => {
+                                log::info!("RDP session {session_id}: shutdown requested (during drain)");
+                                if let Ok(outputs) = active_stage.graceful_shutdown() {
+                                    for output in outputs {
+                                        if let ActiveStageOutput::ResponseFrame(data) = output {
+                                            stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                                            let _ = tls_framed.write_all(&data);
+                                        }
+                                    }
+                                }
+                                should_break = true;
+                                break;
+                            }
+                            Ok(RdpCommand::Input(events)) => {
+                                merged_inputs.extend(events);
+                            }
+                            Ok(RdpCommand::AttachViewer(new_channel)) => {
+                                attached_channel = Some(new_channel);
+                                viewer_detached = false;
+                            }
+                            Ok(RdpCommand::DetachViewer) => {
+                                viewer_detached = true;
+                            }
+                            Err(mpsc::error::TryRecvError::Empty) => break,
+                            Err(mpsc::error::TryRecvError::Disconnected) => {
+                                should_break = true;
+                                break;
+                            }
+                        }
+                    }
+                    if should_break {
+                        break;
+                    }
+                    if !merged_inputs.is_empty() {
+                        stats.input_events.fetch_add(merged_inputs.len() as u64, Ordering::Relaxed);
+                        match active_stage.process_fastpath_input(&mut image, &merged_inputs) {
+                            Ok(outputs) => {
+                                for output in outputs {
+                                    match output {
+                                        ActiveStageOutput::ResponseFrame(data) => {
+                                            stats.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
+                                            stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
+                                            if let Err(e) = tls_framed.write_all(&data) {
+                                                return Err(format!("Failed to send input response: {e}").into());
+                                            }
+                                        }
+                                        ActiveStageOutput::GraphicsUpdate(region) => {
+                                            // Accumulate into the same batch
+                                            stats.record_frame();
+                                            batch_had_graphics = true;
+                                            let rw = region.right.saturating_sub(region.left) + 1;
+                                            let rh = region.bottom.saturating_sub(region.top) + 1;
+                                            if frame_batching {
+                                                dirty_regions.push((region.left, region.top, rw, rh));
+                                            } else if let Some(ref mut comp) = compositor {
+                                                comp.update_region(image.data(), desktop_width, region.left, region.top, rw, rh);
+                                            } else {
+                                                batch_dirty_rects.push((region.left, region.top, rw, rh));
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("RDP {session_id}: input processing error (drain): {e}");
+                            }
+                        }
+                    }
+
                     // After first PDU, switch to 1ms timeout to drain remaining
                     // buffered data without blocking. read_pdu() checks its internal
                     // BytesMut first (zero-cost for already-buffered PDUs) and only
@@ -2535,8 +2615,9 @@ fn run_rdp_session_inner(
                         switched_to_drain_timeout = true;
                     }
 
-                    // Safety cap: don't starve input handling
-                    if pdus_this_batch >= 50 {
+                    // Safety cap (very generous — input is interleaved above
+                    // so this only guards against pathological PDU floods)
+                    if pdus_this_batch >= 100 {
                         break;
                     }
                 }
@@ -2573,6 +2654,11 @@ fn run_rdp_session_inner(
         // Restore proper read timeout after drain phase
         if switched_to_drain_timeout {
             set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
+        }
+
+        // Shutdown/disconnect detected during PDU drain
+        if should_break {
+            break;
         }
 
         // Flush ALL accumulated dirty rects from the entire batch at once.
