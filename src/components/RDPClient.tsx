@@ -19,6 +19,7 @@ import {
   Search,
   ZoomIn,
   Camera,
+  ClipboardCopy,
   Circle,
   Square,
   Pause,
@@ -326,6 +327,24 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       console.error('Screenshot failed:', error);
     }
   }, [session, rdpSessionId, desktopSize]);
+
+  // Screenshot to clipboard handler
+  const handleScreenshotToClipboard = useCallback(async () => {
+    const canvas = canvasRef.current;
+    if (!canvas || desktopSize.width === 0) return;
+    try {
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/png')
+      );
+      if (blob) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob }),
+        ]);
+      }
+    } catch (error) {
+      console.error('Screenshot to clipboard failed:', error);
+    }
+  }, [desktopSize]);
 
   // Recording save handler
   const handleStopRecording = useCallback(async () => {
@@ -1148,13 +1167,13 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const colorDepth = rdpSettings.display?.colorDepth ?? 32;
 
   return (
-    <div className={`flex flex-col bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
+    <div className={`flex flex-col bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full overflow-hidden'}`}>
       {/* RDP Header */}
       <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Monitor size={16} className="text-blue-400" />
           <span className="text-sm text-gray-300">
-            RDP - {session.hostname}
+            RDP - {session.name !== session.hostname ? `${session.name} (${session.hostname})` : session.hostname}
           </span>
           <div className={`flex items-center space-x-1 ${getStatusColor()}`}>
             {getStatusIcon()}
@@ -1200,13 +1219,21 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             <Settings size={14} />
           </button>
           
-          {/* Screenshot */}
+          {/* Screenshot to file */}
           <button
             onClick={handleScreenshot}
             className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
-            title="Capture screenshot"
+            title="Save screenshot to file"
           >
             <Camera size={14} />
+          </button>
+          {/* Screenshot to clipboard */}
+          <button
+            onClick={handleScreenshotToClipboard}
+            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title="Copy screenshot to clipboard"
+          >
+            <ClipboardCopy size={14} />
           </button>
 
           {/* Recording */}
@@ -1511,7 +1538,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       )}
 
       {/* RDP Canvas */}
-      <div ref={containerRef} className="flex-1 flex items-center justify-center bg-black p-1 relative">
+      <div ref={containerRef} className="flex-1 flex items-center justify-center bg-black p-1 relative min-h-0 overflow-hidden">
         {/* "Connecting..." overlay — avoids calling getContext('2d') on
             the canvas which would lock it and prevent GPU renderers. */}
         {connectionStatus === 'connecting' && (

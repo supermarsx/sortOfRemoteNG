@@ -312,178 +312,166 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                   return (
                     <div
                       key={session.id}
-                      className="bg-gray-800/60 border border-gray-700 rounded-lg p-3 overflow-hidden"
+                      className="bg-gray-800/60 border border-gray-700 rounded-lg p-2.5 overflow-hidden"
                     >
                       <div className="flex gap-2.5">
-                        {/* Thumbnail - small on the left */}
+                        {/* Thumbnail column - small on the left */}
                         {thumbnailsEnabled && (
-                          <div className="flex-shrink-0 w-[80px] h-[45px] rounded overflow-hidden bg-gray-900">
+                          <div className="flex-shrink-0 w-[80px] rounded overflow-hidden bg-gray-900">
                             {thumbnails[session.id] ? (
                               <img
                                 src={thumbnails[session.id]}
                                 alt="Session preview"
-                                className="w-full h-full object-cover"
+                                className="w-full h-auto object-cover rounded"
                                 draggable={false}
                               />
                             ) : session.connected ? (
-                              <div className="w-full h-full flex items-center justify-center">
+                              <div className="w-full h-[45px] flex items-center justify-center">
                                 <Monitor size={14} className="text-gray-700" />
                               </div>
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center">
+                              <div className="w-full h-[45px] flex items-center justify-center">
                                 <Monitor size={14} className="text-gray-600 opacity-50" />
                               </div>
                             )}
                           </div>
                         )}
 
-                        {/* Session header + actions */}
+                        {/* Right column - all session info */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-center space-x-1.5 min-w-0">
-                              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                session.connected
-                                  ? isDetached ? 'bg-yellow-400' : 'bg-green-400'
-                                  : 'bg-red-400'
-                              }`} />
-                              <div className="min-w-0">
-                                <span className="text-xs font-medium text-white block truncate">
-                                  {display.name}
+                          {/* Title row */}
+                          <div className="flex items-center space-x-1.5 min-w-0">
+                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                              session.connected
+                                ? isDetached ? 'bg-yellow-400' : 'bg-green-400'
+                                : 'bg-red-400'
+                            }`} />
+                            <div className="min-w-0">
+                              <span className="text-xs font-medium text-white block truncate">
+                                {display.name}
+                              </span>
+                              {display.subtitle && (
+                                <span className="text-[10px] text-gray-500 block truncate">
+                                  {display.subtitle}{session.username && display.subtitle !== session.username ? ` (${session.username})` : ''}
                                 </span>
-                                {display.subtitle && (
-                                  <span className="text-[10px] text-gray-500 block truncate">
-                                    {display.subtitle}{session.username && display.subtitle !== session.username ? ` (${session.username})` : ''}
-                                  </span>
-                                )}
-                              </div>
+                              )}
                             </div>
                           </div>
-                        </div>
-                      </div>
 
-                      {/* Action buttons - below header row */}
-                      <div className="flex items-center justify-end space-x-0.5 mt-1.5">
-                          {/* Reattach - only when detached */}
-                          {isDetached && onReattachSession && (
+                          {/* Action buttons */}
+                          <div className="flex items-center space-x-0.5 mt-1">
+                            {isDetached && onReattachSession && (
+                              <button
+                                onClick={() => onReattachSession(session.id, session.connection_id)}
+                                className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-green-400 transition-colors"
+                                title="Reattach viewer"
+                              >
+                                <PlugZap size={12} />
+                              </button>
+                            )}
+                            {onDetachToWindow && (
+                              <button
+                                onClick={() => onDetachToWindow(session.id)}
+                                className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-blue-400 transition-colors"
+                                title="Open in separate window"
+                              >
+                                <ExternalLink size={12} />
+                              </button>
+                            )}
                             <button
-                              onClick={() => onReattachSession(session.id, session.connection_id)}
-                              className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-green-400 transition-colors"
-                              title="Reattach viewer"
+                              onClick={() => handleDetach(session.id)}
+                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-yellow-400 transition-colors"
+                              title="Detach viewer (keep session running)"
                             >
-                              <PlugZap size={13} />
+                              <Unplug size={12} />
                             </button>
-                          )}
-                          {/* Expand to window */}
-                          {onDetachToWindow && (
                             <button
-                              onClick={() => onDetachToWindow(session.id)}
-                              className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-blue-400 transition-colors"
-                              title="Open in separate window"
+                              onClick={() => handleSignOut(session.id)}
+                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-blue-400 transition-colors"
+                              title="Sign out remote session"
                             >
-                              <ExternalLink size={13} />
+                              <LogOut size={12} />
                             </button>
+                            <button
+                              onClick={() => setRebootConfirmSessionId(session.id)}
+                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
+                              title="Force reboot remote machine"
+                            >
+                              <RotateCcw size={12} />
+                            </button>
+                            <button
+                              onClick={() => handleDisconnect(session.id)}
+                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
+                              title="Disconnect session"
+                            >
+                              <PowerOff size={12} />
+                            </button>
+                          </div>
+
+                          {/* Info grid */}
+                          <div className="grid grid-cols-2 gap-1 mt-1.5 text-[10px]">
+                            <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                              <span className="text-gray-500">Res </span>
+                              <span className="text-gray-300 font-mono">
+                                {session.desktop_width}&times;{session.desktop_height}
+                              </span>
+                            </div>
+                            <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                              <span className="text-gray-500">ID </span>
+                              <span className="text-gray-300 font-mono truncate" title={session.id}>
+                                {session.id.slice(0, 8)}
+                              </span>
+                            </div>
+                            {stats && (
+                              <>
+                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                  <span className="text-gray-500">Up </span>
+                                  <span className="text-gray-300 font-mono">
+                                    {formatUptime(stats.uptime_secs)}
+                                  </span>
+                                </div>
+                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                  <span className="text-gray-500">FPS </span>
+                                  <span className="text-gray-300 font-mono">
+                                    {stats.fps.toFixed(1)}
+                                  </span>
+                                </div>
+                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                  <span className="text-gray-500">Rx </span>
+                                  <span className="text-gray-300 font-mono">
+                                    {formatBytes(stats.bytes_received)}
+                                  </span>
+                                </div>
+                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                  <span className="text-gray-500">Tx </span>
+                                  <span className="text-gray-300 font-mono">
+                                    {formatBytes(stats.bytes_sent)}
+                                  </span>
+                                </div>
+                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                  <span className="text-gray-500">Frames </span>
+                                  <span className="text-gray-300 font-mono">
+                                    {stats.frame_count.toLocaleString()}
+                                  </span>
+                                </div>
+                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                  <span className={`font-mono ${stats.phase === 'active' ? 'text-green-400' : 'text-yellow-400'}`}>
+                                    {stats.phase}
+                                  </span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          {/* Error indicator */}
+                          {stats?.last_error && (
+                            <div className="mt-1 px-1.5 py-0.5 bg-red-900/20 border border-red-800/50 rounded text-[10px] text-red-400 flex items-center gap-1">
+                              <AlertCircle size={10} />
+                              <span className="truncate">{stats.last_error}</span>
+                            </div>
                           )}
-                          {/* Detach viewer */}
-                          <button
-                            onClick={() => handleDetach(session.id)}
-                            className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-yellow-400 transition-colors"
-                            title="Detach viewer (keep session running)"
-                          >
-                            <Unplug size={13} />
-                          </button>
-                          {/* Sign out */}
-                          <button
-                            onClick={() => handleSignOut(session.id)}
-                            className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-blue-400 transition-colors"
-                            title="Sign out remote session"
-                          >
-                            <LogOut size={13} />
-                          </button>
-                          {/* Force reboot */}
-                          <button
-                            onClick={() => setRebootConfirmSessionId(session.id)}
-                            className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
-                            title="Force reboot remote machine"
-                          >
-                            <RotateCcw size={13} />
-                          </button>
-                          {/* Disconnect */}
-                          <button
-                            onClick={() => handleDisconnect(session.id)}
-                            className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
-                            title="Disconnect session"
-                          >
-                            <PowerOff size={13} />
-                          </button>
+                        </div>
                       </div>
-
-                      {/* Info grid */}
-                      <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                        <div className="bg-gray-900/50 rounded px-2 py-1">
-                          <span className="text-gray-500 block">Resolution</span>
-                          <span className="text-gray-300 font-mono">
-                            {session.desktop_width}&times;{session.desktop_height}
-                          </span>
-                        </div>
-                        <div className="bg-gray-900/50 rounded px-2 py-1">
-                          <span className="text-gray-500 block">Session ID</span>
-                          <span className="text-gray-300 font-mono truncate block" title={session.id}>
-                            {session.id.slice(0, 8)}
-                          </span>
-                        </div>
-                        {stats && (
-                          <>
-                            <div className="bg-gray-900/50 rounded px-2 py-1">
-                              <span className="text-gray-500 flex items-center gap-1">
-                                <Clock size={8} /> Uptime
-                              </span>
-                              <span className="text-gray-300 font-mono">
-                                {formatUptime(stats.uptime_secs)}
-                              </span>
-                            </div>
-                            <div className="bg-gray-900/50 rounded px-2 py-1">
-                              <span className="text-gray-500 flex items-center gap-1">
-                                <Activity size={8} /> FPS
-                              </span>
-                              <span className="text-gray-300 font-mono">
-                                {stats.fps.toFixed(1)}
-                              </span>
-                            </div>
-                            <div className="bg-gray-900/50 rounded px-2 py-1">
-                              <span className="text-gray-500 block">Received</span>
-                              <span className="text-gray-300 font-mono">
-                                {formatBytes(stats.bytes_received)}
-                              </span>
-                            </div>
-                            <div className="bg-gray-900/50 rounded px-2 py-1">
-                              <span className="text-gray-500 block">Sent</span>
-                              <span className="text-gray-300 font-mono">
-                                {formatBytes(stats.bytes_sent)}
-                              </span>
-                            </div>
-                            <div className="bg-gray-900/50 rounded px-2 py-1">
-                              <span className="text-gray-500 block">Frames</span>
-                              <span className="text-gray-300 font-mono">
-                                {stats.frame_count.toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="bg-gray-900/50 rounded px-2 py-1">
-                              <span className="text-gray-500 block">Phase</span>
-                              <span className={`font-mono ${stats.phase === 'active' ? 'text-green-400' : 'text-yellow-400'}`}>
-                                {stats.phase}
-                              </span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Error indicator */}
-                      {stats?.last_error && (
-                        <div className="mt-1.5 px-2 py-1 bg-red-900/20 border border-red-800/50 rounded text-[10px] text-red-400 flex items-center gap-1">
-                          <AlertCircle size={10} />
-                          <span className="truncate">{stats.last_error}</span>
-                        </div>
-                      )}
                     </div>
                   );
                 })

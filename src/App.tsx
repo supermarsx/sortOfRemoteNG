@@ -2033,7 +2033,7 @@ const AppContent: React.FC = () => {
       <div className="flex flex-1 overflow-hidden" ref={layoutRef}>
         {renderSidebar("left")}
 
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <SessionTabs
             activeSessionId={activeSessionId}
             onSessionSelect={setActiveSessionId}
@@ -2098,7 +2098,7 @@ const AppContent: React.FC = () => {
         {/* RDP Sessions Panel (right side) - only in panel mode */}
         {rdpPanelOpen && appSettings.rdpSessionDisplayMode === 'panel' && (
           <div
-            className="relative flex-shrink-0 z-10"
+            className="relative flex-shrink-0 z-10 h-full overflow-hidden"
             style={{ width: `${rdpPanelWidth}px` }}
           >
             <RdpSessionPanel
