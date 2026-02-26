@@ -288,6 +288,16 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     tcpSendBufferSize: 262144,
     renderBackend: 'softbuffer',
     frontendRenderer: 'auto',
+    targetFps: 30,
+    frameBatching: false,
+    frameBatchIntervalMs: 33,
+    fullFrameSyncInterval: 300,
+    readTimeoutMs: 16,
+    codecsEnabled: true,
+    remoteFxEnabled: true,
+    remoteFxEntropy: 'rlgr3' as const,
+    gfxEnabled: false,
+    h264Decoder: 'auto' as const,
   },
 };
 

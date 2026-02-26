@@ -231,8 +231,11 @@ const defaultSettings: GlobalSettings = {
     codecsEnabled: true,
     remoteFxEnabled: true,
     remoteFxEntropy: 'rlgr3' as const,
+    gfxEnabled: false,
+    h264Decoder: 'auto' as const,
     // Render Backend
     renderBackend: 'softbuffer' as const,
+    frontendRenderer: 'auto' as const,
   },
 };
 

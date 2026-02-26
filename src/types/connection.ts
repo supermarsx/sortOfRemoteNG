@@ -368,6 +368,10 @@ export interface RdpCodecSettings {
   remoteFx?: boolean;
   /** RemoteFX entropy algorithm: RLGR1 (faster) or RLGR3 (better compression) */
   remoteFxEntropy?: 'rlgr1' | 'rlgr3';
+  /** Enable RDPGFX Dynamic Virtual Channel for H.264 hardware-accelerated decode */
+  enableGfx?: boolean;
+  /** H.264 decoder preference: auto tries MF hardware first, then openh264 software */
+  h264Decoder?: 'auto' | 'media-foundation' | 'openh264';
 }
 
 // ─── CredSSP Oracle Remediation Policy ─────────────────────────────
@@ -620,6 +624,8 @@ export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
       enableCodecs: true,
       remoteFx: true,
       remoteFxEntropy: 'rlgr3',
+      enableGfx: false,
+      h264Decoder: 'auto',
     },
     renderBackend: 'softbuffer',
     frontendRenderer: 'auto',

@@ -297,6 +297,10 @@ pub struct RdpCodecPayload {
     pub remote_fx: Option<bool>,
     /// RemoteFX entropy algorithm: "rlgr1" or "rlgr3"
     pub remote_fx_entropy: Option<String>,
+    /// Enable RDPGFX (H.264 hardware decode) via Dynamic Virtual Channel
+    pub enable_gfx: Option<bool>,
+    /// H.264 decoder preference: "auto" | "media-foundation" | "openh264"
+    pub h264_decoder: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -527,6 +531,9 @@ struct ResolvedSettings {
     codecs_enabled: bool,
     remotefx_enabled: bool,
     remotefx_entropy: String,
+    // RDPGFX / H.264
+    gfx_enabled: bool,
+    h264_decoder_preference: crate::h264::H264DecoderPreference,
     // Session behaviour
     read_timeout: Duration,
     max_consecutive_errors: u32,
@@ -672,6 +679,18 @@ impl ResolvedSettings {
                 .and_then(|p| p.codecs.as_ref())
                 .and_then(|c| c.remote_fx_entropy.clone())
                 .unwrap_or_else(|| "rlgr3".to_string()),
+            gfx_enabled: perf
+                .and_then(|p| p.codecs.as_ref())
+                .and_then(|c| c.enable_gfx)
+                .unwrap_or(false),
+            h264_decoder_preference: match perf
+                .and_then(|p| p.codecs.as_ref())
+                .and_then(|c| c.h264_decoder.as_deref())
+            {
+                Some("media-foundation") => crate::h264::H264DecoderPreference::MediaFoundation,
+                Some("openh264") => crate::h264::H264DecoderPreference::OpenH264,
+                _ => crate::h264::H264DecoderPreference::Auto,
+            },
             read_timeout: Duration::from_millis(
                 adv.and_then(|a| a.read_timeout_ms).unwrap_or(16),
             ),
@@ -1911,6 +1930,22 @@ fn run_rdp_session_inner(
     let server_socket_addr = std::net::SocketAddr::new(socket_addr.ip(), port);
     let mut connector = ClientConnector::new(config, server_socket_addr);
 
+    // ── Register RDPGFX Dynamic Virtual Channel (H.264 hardware decode) ──
+    let gfx_frame_rx = if settings.gfx_enabled {
+        let (gfx_tx, gfx_rx) = std::sync::mpsc::channel::<crate::gfx::processor::GfxFrame>();
+        let gfx_proc = crate::gfx::processor::GfxProcessor::new(
+            settings.h264_decoder_preference,
+            gfx_tx,
+        );
+        let drdynvc = ironrdp_dvc::DrdynvcClient::new()
+            .with_dynamic_channel(gfx_proc);
+        connector.attach_static_channel(drdynvc);
+        log::info!("RDP session {session_id}: RDPGFX DVC registered (H.264 decode enabled)");
+        Some(gfx_rx)
+    } else {
+        None
+    };
+
     // Log gateway / Hyper-V / negotiation settings
     if settings.gateway_enabled {
         log::info!(
@@ -2307,6 +2342,25 @@ fn run_rdp_session_inner(
             }
             dirty_regions.clear();
             last_frame_emit = Instant::now();
+        }
+
+        // ─ Drain GFX decoded frames (H.264 via RDPGFX DVC) ──────────
+        if let Some(ref gfx_rx) = gfx_frame_rx {
+            while let Ok(gfx_frame) = gfx_rx.try_recv() {
+                stats.record_frame();
+                if viewer_detached {
+                    continue;
+                }
+                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
+                // Same binary protocol: 8-byte header [x:u16LE, y:u16LE, w:u16LE, h:u16LE] + RGBA
+                let mut payload = Vec::with_capacity(8 + gfx_frame.rgba.len());
+                payload.extend_from_slice(&gfx_frame.screen_x.to_le_bytes());
+                payload.extend_from_slice(&gfx_frame.screen_y.to_le_bytes());
+                payload.extend_from_slice(&gfx_frame.width.to_le_bytes());
+                payload.extend_from_slice(&gfx_frame.height.to_le_bytes());
+                payload.extend_from_slice(&gfx_frame.rgba);
+                let _ = active_ch.send(InvokeResponseBody::Raw(payload));
+            }
         }
 
         // ─ Read and process PDUs ───────────────────────────────────────

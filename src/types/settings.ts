@@ -425,6 +425,10 @@ export interface RdpGlobalDefaultsConfig {
   remoteFxEnabled: boolean;
   /** RemoteFX entropy algorithm */
   remoteFxEntropy: 'rlgr1' | 'rlgr3';
+  /** Enable RDPGFX (H.264 hardware decode) via Dynamic Virtual Channel */
+  gfxEnabled: boolean;
+  /** H.264 decoder preference */
+  h264Decoder: 'auto' | 'media-foundation' | 'openh264';
 
   // ─── Server-side Compositor default ────────────────────────
   /**

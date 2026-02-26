@@ -684,6 +684,37 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
                 </select>
               </div>
             )}
+
+            <div className="border-t border-gray-700 pt-3 mt-3">
+              <label className="flex items-center space-x-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={rdp.gfxEnabled ?? false}
+                  onChange={(e) => update({ gfxEnabled: e.target.checked })}
+                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                />
+                <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                  RDPGFX (H.264 Hardware Decode)
+                </span>
+                <span className="text-xs text-gray-500">— lowest bandwidth &amp; CPU via GPU decode</span>
+              </label>
+
+              {(rdp.gfxEnabled ?? false) && (
+                <div className="ml-11 flex items-center gap-2 mt-2">
+                  <span className="text-sm text-gray-400">H.264 Decoder:</span>
+                  <select
+                    value={rdp.h264Decoder ?? 'auto'}
+                    onChange={(e) => update({ h264Decoder: e.target.value as 'auto' | 'media-foundation' | 'openh264' })}
+                    className={selectClass}
+                    style={{ width: 'auto' }}
+                  >
+                    <option value="auto">Auto (MF hardware → openh264 fallback)</option>
+                    <option value="media-foundation">Media Foundation (GPU hardware)</option>
+                    <option value="openh264">openh264 (software)</option>
+                  </select>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>

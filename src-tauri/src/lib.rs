@@ -93,6 +93,8 @@ pub mod http;
 pub mod passkey;
 pub mod ssh3;
 pub mod diagnostics;
+pub mod h264;
+pub mod gfx;
 
 #[cfg(test)]
 mod tests {

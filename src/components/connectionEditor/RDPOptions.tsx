@@ -863,6 +863,38 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
                 </select>
               </div>
             )}
+
+            <div className="border-t border-gray-700/50 pt-2 mt-2">
+              <label className={`${labelClass}`}>
+                <input
+                  type="checkbox"
+                  checked={rdp.performance?.codecs?.enableGfx ?? false}
+                  onChange={(e) => updateRdp('performance', {
+                    codecs: { ...rdp.performance?.codecs, enableGfx: e.target.checked },
+                  })}
+                  className={checkboxClass}
+                />
+                <span>RDPGFX (H.264 Hardware Decode)</span>
+                <span className="text-xs text-gray-500 ml-1">— lowest bandwidth &amp; CPU via GPU decode</span>
+              </label>
+
+              {(rdp.performance?.codecs?.enableGfx ?? false) && (
+                <div className="ml-8 flex items-center gap-2 mt-1">
+                  <span className="text-xs text-gray-400">H.264 Decoder:</span>
+                  <select
+                    value={rdp.performance?.codecs?.h264Decoder ?? 'auto'}
+                    onChange={(e) => updateRdp('performance', {
+                      codecs: { ...rdp.performance?.codecs, h264Decoder: e.target.value as 'auto' | 'media-foundation' | 'openh264' },
+                    })}
+                    className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs text-gray-200"
+                  >
+                    <option value="auto">Auto (MF hardware → openh264 fallback)</option>
+                    <option value="media-foundation">Media Foundation (GPU hardware)</option>
+                    <option value="openh264">openh264 (software)</option>
+                  </select>
+                </div>
+              )}
+            </div>
           </>
         )}
       </Section>
