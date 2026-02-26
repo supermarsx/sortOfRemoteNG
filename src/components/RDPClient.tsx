@@ -213,8 +213,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         queue.splice(0, queue.length - 2);
       }
       if (renderer) {
-        // GPU / Worker path — delegate to the pluggable renderer
-        const offCtx = fb.offscreen.getContext('2d');
+        // GPU / Worker path — delegate to the pluggable renderer.
+        // Only mirror to offscreen when magnifier is active (saves a
+        // full CPU putImageData per region on every frame).
+        const needsOffscreen = magnifierActiveRef.current;
+        const offCtx = needsOffscreen ? fb.offscreen.getContext('2d') : null;
         for (let i = 0; i < queue.length; i++) {
           const data = queue[i];
           const view = new DataView(data);
@@ -224,9 +227,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           const h = view.getUint16(6, true);
           const rgba = new Uint8ClampedArray(data, 8);
           renderer.paintRegion(x, y, w, h, rgba);
-          // Mirror into the offscreen cache for resize scaling / magnifier.
+          // Mirror into the offscreen cache only when magnifier needs it.
           if (offCtx && w > 0 && h > 0 && rgba.length >= w * h * 4) {
-            // Reuse cached ImageData when dimensions match.
             let cache = offImgCacheRef.current;
             if (!cache || cache.w !== w || cache.h !== h) {
               cache = { img: new ImageData(w, h), w, h };
@@ -272,6 +274,9 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const [showInternals, setShowInternals] = useState(false);
   const [stats, setStats] = useState<RdpStatsEvent | null>(null);
   const [magnifierActive, setMagnifierActive] = useState(false);
+  /** Ref mirror of magnifierActive — accessible in the render callback closure. */
+  const magnifierActiveRef = useRef(false);
+  magnifierActiveRef.current = magnifierActive;
   const [magnifierPos, setMagnifierPos] = useState({ x: 0, y: 0 });
   const [certFingerprint, setCertFingerprint] = useState<string | null>(null);
   const [certIdentity, setCertIdentity] = useState<CertIdentity | null>(null);

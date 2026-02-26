@@ -2411,7 +2411,10 @@ fn run_rdp_session_inner(
                             }
                         }
 
-                        // Process all outputs (send frames, emit graphics, etc.)
+                        // Process all outputs — accumulate graphics updates from
+                        // this PDU, then flush once at the end (avoids per-rect
+                        // compositor flush and reduces Channel messages).
+                        let mut had_graphics = false;
                         for output in outputs {
                             match output {
                                 ActiveStageOutput::ResponseFrame(data) => {
@@ -2427,6 +2430,7 @@ fn run_rdp_session_inner(
                                 }
                                 ActiveStageOutput::GraphicsUpdate(region) => {
                                     stats.record_frame();
+                                    had_graphics = true;
 
                                     let rw = region.right.saturating_sub(region.left) + 1;
                                     let rh = region.bottom.saturating_sub(region.top) + 1;
@@ -2435,7 +2439,7 @@ fn run_rdp_session_inner(
                                         // Accumulate dirty region for batched push
                                         dirty_regions.push((region.left, region.top, rw, rh));
                                     } else if let Some(ref mut comp) = compositor {
-                                        // Compositor: immediate update + flush
+                                        // Compositor: accumulate into shadow buffer (flush after loop)
                                         comp.update_region(
                                             image.data(),
                                             desktop_width,
@@ -2444,12 +2448,6 @@ fn run_rdp_session_inner(
                                             rw,
                                             rh,
                                         );
-                                        if !viewer_detached {
-                                            if let Some(frame) = comp.flush() {
-                                                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                                                push_compositor_frame_via_channel(&frame, active_ch);
-                                            }
-                                        }
                                     } else if !viewer_detached {
                                         // Direct streaming: immediate push through Channel
                                         let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
@@ -2459,51 +2457,6 @@ fn run_rdp_session_inner(
                                             &region,
                                             active_ch,
                                         );
-                                    }
-
-                                    // Periodic full-frame sync (updates fallback store too)
-                                    let fc = stats.frame_count.load(Ordering::Relaxed);
-                                    if fc > 0 && fc % full_frame_sync_interval == 0 {
-                                        // Always update the frame store (used by rdp_get_frame_data fallback)
-                                        frame_store.update_region(
-                                            session_id,
-                                            image.data(),
-                                            desktop_width,
-                                            &ironrdp::pdu::geometry::InclusiveRectangle {
-                                                left: 0,
-                                                top: 0,
-                                                right: desktop_width.saturating_sub(1),
-                                                bottom: desktop_height.saturating_sub(1),
-                                            },
-                                        );
-                                        if !viewer_detached {
-                                            let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                                            if let Some(ref mut comp) = compositor {
-                                                comp.update_region(
-                                                    image.data(),
-                                                    desktop_width,
-                                                    0,
-                                                    0,
-                                                    desktop_width,
-                                                    desktop_height,
-                                                );
-                                                if let Some(frame) = comp.flush() {
-                                                    push_compositor_frame_via_channel(&frame, active_ch);
-                                                }
-                                            } else {
-                                                push_frame_via_channel(
-                                                    image.data(),
-                                                    desktop_width,
-                                                    &ironrdp::pdu::geometry::InclusiveRectangle {
-                                                        left: 0,
-                                                        top: 0,
-                                                        right: desktop_width.saturating_sub(1),
-                                                        bottom: desktop_height.saturating_sub(1),
-                                                    },
-                                                    active_ch,
-                                                );
-                                            }
-                                        }
                                     }
                                 }
                                 ActiveStageOutput::PointerDefault => {
@@ -2552,6 +2505,37 @@ fn run_rdp_session_inner(
                                 ActiveStageOutput::DeactivateAll(cas) => {
                                     should_reactivate = Some(cas);
                                 }
+                            }
+                        }
+
+                        // After processing all outputs from this PDU, flush
+                        // the compositor once (instead of per-region).
+                        if had_graphics && !frame_batching {
+                            if let Some(ref mut comp) = compositor {
+                                if !viewer_detached {
+                                    if let Some(frame) = comp.flush() {
+                                        let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
+                                        push_compositor_frame_via_channel(&frame, active_ch);
+                                    }
+                                }
+                            }
+
+                            // Periodic full-frame sync — only update the
+                            // fallback frame_store (no Channel push; all
+                            // updates are already streamed).
+                            let fc = stats.frame_count.load(Ordering::Relaxed);
+                            if fc > 0 && fc % full_frame_sync_interval == 0 {
+                                frame_store.update_region(
+                                    session_id,
+                                    image.data(),
+                                    desktop_width,
+                                    &ironrdp::pdu::geometry::InclusiveRectangle {
+                                        left: 0,
+                                        top: 0,
+                                        right: desktop_width.saturating_sub(1),
+                                        bottom: desktop_height.saturating_sub(1),
+                                    },
+                                );
                             }
                         }
 
