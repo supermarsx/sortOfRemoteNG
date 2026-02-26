@@ -1,4 +1,4 @@
-import { ProxyConfig, SSHTerminalConfig, SSHConnectionConfig } from "./settings";
+import { ProxyConfig, SSHTerminalConfig, SSHConnectionConfig, TOTPConfig } from "./settings";
 import type { TrustPolicy } from "../utils/trustStore";
 
 /** A single bookmark or a folder containing bookmarks. */
@@ -41,6 +41,7 @@ export interface Connection {
   privateKey?: string;
   passphrase?: string;
   totpSecret?: string;
+  totpConfigs?: TOTPConfig[];  // Multiple TOTP configs per connection
   ignoreSshSecurityErrors?: boolean;
   sshConnectTimeout?: number;
   sshKeepAliveInterval?: number;

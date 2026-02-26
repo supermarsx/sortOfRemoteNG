@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { ConnectionSession } from '../types/connection';
-import { DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../types/connection';
+import { RdpConnectionSettings, DEFAULT_RDP_SETTINGS } from '../types/connection';
+import { mergeRdpSettings } from '../utils/rdpSettingsMerge';
 import {
   Monitor,
   Settings,
@@ -17,6 +18,7 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { useConnections } from '../contexts/useConnections';
 import RdpErrorScreen from './RdpErrorScreen';
 import { useSettings } from '../contexts/SettingsContext';
+import { useToastContext } from '../contexts/ToastContext';
 import {
   verifyIdentity,
   trustIdentity,
@@ -30,7 +32,7 @@ import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } fr
 import { useSessionRecorder } from '../hooks/useSessionRecorder';
 import { RDPInternalsPanel } from './rdp/RDPInternalsPanel';
 import { RDPStatusBar } from './rdp/RDPStatusBar';
-import { RDPClientHeader } from './rdp/RDPClientHeader';
+import RDPClientHeader from './rdp/RDPClientHeader';
 import { RDPSettingsPanel } from './rdp/RDPSettingsPanel';
 
 interface RDPClientProps {
@@ -42,8 +44,9 @@ import { formatBytes, formatUptime } from '../utils/rdpFormatters';
 import { mouseButtonCode, keyToScancode } from '../utils/rdpKeyboard';
 
 const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
-  const { state } = useConnections();
+  const { state, dispatch } = useConnections();
   const { settings } = useSettings();
+  const { toast } = useToastContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -192,29 +195,59 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       });
       if (filePath) {
         await invoke('rdp_save_screenshot', { sessionId: sid, filePath });
+        toast.success('Screenshot saved to file');
       }
     } catch (error) {
       console.error('Screenshot failed:', error);
+      toast.error(`Screenshot failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [session, rdpSessionId, desktopSize]);
+  }, [session, rdpSessionId, desktopSize, toast]);
 
   // Screenshot to clipboard handler
+  // When using GPU renderers (WebGL/WebGPU) the visible canvas has
+  // preserveDrawingBuffer=false, so toBlob() returns a blank image.
+  // We work around this by compositing from the offscreen framebuffer
+  // (which always keeps the latest content) onto a temporary canvas.
   const handleScreenshotToClipboard = useCallback(async () => {
-    const canvas = canvasRef.current;
-    if (!canvas || desktopSize.width === 0) return;
+    if (desktopSize.width === 0) return;
     try {
+      const fb = frameBufferRef.current;
+      const canvas = canvasRef.current;
+
+      // Build a temporary canvas with the current frame content
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = desktopSize.width;
+      tmpCanvas.height = desktopSize.height;
+      const tmpCtx = tmpCanvas.getContext('2d');
+      if (!tmpCtx) return;
+
+      if (fb && fb.hasPainted && canvas) {
+        // Sync offscreen cache from the visible canvas first (captures GPU-rendered content)
+        fb.syncFromVisible(canvas);
+        tmpCtx.drawImage(fb.offscreen, 0, 0);
+      } else if (canvas) {
+        // Fallback: try direct canvas copy (works for Canvas2D renderer)
+        tmpCtx.drawImage(canvas, 0, 0);
+      } else {
+        return;
+      }
+
       const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, 'image/png')
+        tmpCanvas.toBlob(resolve, 'image/png')
       );
       if (blob) {
         await navigator.clipboard.write([
           new ClipboardItem({ 'image/png': blob }),
         ]);
+        toast.success('Screenshot copied to clipboard');
+      } else {
+        toast.error('Screenshot failed: could not capture canvas');
       }
     } catch (error) {
       console.error('Screenshot to clipboard failed:', error);
+      toast.error(`Screenshot to clipboard failed: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [desktopSize]);
+  }, [desktopSize, toast]);
 
   // Recording save handler
   const handleStopRecording = useCallback(async () => {
@@ -238,108 +271,110 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     }
   }, [stopRecording, recState.format, session]);
 
+  // ─── Disconnect handler ───────────────────────────────────────────
+  const handleDisconnect = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    try {
+      await invoke('disconnect_rdp', { sessionId: sid });
+    } catch (e) {
+      debugLog(`Disconnect error: ${e}`);
+    }
+    sessionIdRef.current = null;
+    setRdpSessionId(null);
+    setIsConnected(false);
+    setConnectionStatus('disconnected');
+    setStatusMessage('Disconnected by user');
+    // Release GPU / Worker resources
+    if (rafPendingRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafPendingRef.current = false;
+    }
+    visCtxRef.current = null;
+    rendererRef.current?.destroy();
+    rendererRef.current = null;
+  }, []);
+
+  // ─── Copy to clipboard (text from clipboard redirection) ──────────
+  const handleCopyToClipboard = useCallback(async () => {
+    // Copy the current screen as an image (same as screenshot to clipboard)
+    await handleScreenshotToClipboard();
+  }, [handleScreenshotToClipboard]);
+
+  // ─── Paste from clipboard ─────────────────────────────────────────
+  const handlePasteFromClipboard = useCallback(async () => {
+    if (!isConnected || !sessionIdRef.current) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      // Send each character as Unicode input events
+      const events: Record<string, unknown>[] = [];
+      for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        events.push({ type: 'UnicodeKey', code, pressed: true });
+        events.push({ type: 'UnicodeKey', code, pressed: false });
+      }
+      if (events.length > 0) {
+        await invoke('rdp_send_input', { sessionId: sessionIdRef.current, events });
+      }
+    } catch (e) {
+      console.error('Paste from clipboard failed:', e);
+    }
+  }, [isConnected]);
+
+  // ─── Send special key combos ──────────────────────────────────────
+  const handleSendKeys = useCallback((combo: string) => {
+    if (!isConnected || !sessionIdRef.current) return;
+    // Define key combo sequences as scancode press/release pairs
+    const combos: Record<string, { scancode: number; extended: boolean }[]> = {
+      'ctrl-alt-del': [
+        { scancode: 0x1D, extended: false },  // Ctrl down
+        { scancode: 0x38, extended: false },  // Alt down
+        { scancode: 0x53, extended: true },   // Delete down
+      ],
+      'alt-tab': [
+        { scancode: 0x38, extended: false },  // Alt down
+        { scancode: 0x0F, extended: false },  // Tab down
+      ],
+      'win': [
+        { scancode: 0x5B, extended: true },   // Win down
+      ],
+      'alt-f4': [
+        { scancode: 0x38, extended: false },  // Alt down
+        { scancode: 0x3E, extended: false },  // F4 down
+      ],
+      'print-screen': [
+        { scancode: 0x37, extended: true },   // PrintScreen down
+      ],
+    };
+
+    const keys = combos[combo];
+    if (!keys) return;
+
+    // Press all keys, then release in reverse order
+    const events: Record<string, unknown>[] = [];
+    for (const k of keys) {
+      events.push({ type: 'KeyboardKey', scancode: k.scancode, pressed: true, extended: k.extended });
+    }
+    for (let i = keys.length - 1; i >= 0; i--) {
+      events.push({ type: 'KeyboardKey', scancode: keys[i].scancode, pressed: false, extended: keys[i].extended });
+    }
+
+    invoke('rdp_send_input', { sessionId: sessionIdRef.current, events }).catch(e => {
+      debugLog(`Send keys error: ${e}`);
+    });
+  }, [isConnected]);
+
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
 
   // Deep-merge: global rdpDefaults → compile-time defaults → per-connection overrides.
   // This ensures global settings from the Settings dialog are used as a baseline, 
   // while per-connection settings can override any individual field.
-  const rdpSettings: RdpConnectionSettings = React.useMemo(() => {
-    const base = DEFAULT_RDP_SETTINGS;
-    const conn = connection?.rdpSettings;
-    const global = settings.rdpDefaults;
-    // Apply global defaults onto the compile-time defaults, then per-connection on top
-    return {
-      display: {
-        ...base.display,
-        width: global.defaultWidth ?? base.display?.width,
-        height: global.defaultHeight ?? base.display?.height,
-        colorDepth: global.defaultColorDepth ?? base.display?.colorDepth,
-        smartSizing: global.smartSizing ?? base.display?.smartSizing,
-        ...conn?.display,
-      },
-      audio: { ...base.audio, ...conn?.audio },
-      input: { ...base.input, ...conn?.input },
-      deviceRedirection: { ...base.deviceRedirection, ...conn?.deviceRedirection },
-      performance: {
-        ...base.performance,
-        targetFps: global.targetFps ?? base.performance?.targetFps,
-        frameBatching: global.frameBatching ?? base.performance?.frameBatching,
-        frameBatchIntervalMs: global.frameBatchIntervalMs ?? base.performance?.frameBatchIntervalMs,
-        renderBackend: global.renderBackend ?? base.performance?.renderBackend,
-        frontendRenderer: (global.frontendRenderer ?? base.performance?.frontendRenderer ?? 'auto') as FrontendRendererType,
-        codecs: {
-          ...base.performance?.codecs,
-          enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
-          remoteFx: global.remoteFxEnabled ?? base.performance?.codecs?.remoteFx,
-          remoteFxEntropy: global.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
-          enableGfx: global.gfxEnabled ?? base.performance?.codecs?.enableGfx,
-          h264Decoder: global.h264Decoder ?? base.performance?.codecs?.h264Decoder,
-          ...conn?.performance?.codecs,
-        },
-        ...conn?.performance,
-        // Re-apply codecs after conn spread so nested codec merge isn't overwritten
-        ...(conn?.performance ? {
-          codecs: {
-            ...base.performance?.codecs,
-            enableCodecs: global.codecsEnabled ?? base.performance?.codecs?.enableCodecs,
-            remoteFx: global.remoteFxEnabled ?? base.performance?.codecs?.remoteFx,
-            remoteFxEntropy: global.remoteFxEntropy ?? base.performance?.codecs?.remoteFxEntropy,
-            enableGfx: global.gfxEnabled ?? base.performance?.codecs?.enableGfx,
-            h264Decoder: global.h264Decoder ?? base.performance?.codecs?.h264Decoder,
-            ...conn?.performance?.codecs,
-          },
-        } : {}),
-      },
-      security: {
-        ...base.security,
-        useCredSsp: global.useCredSsp ?? base.security?.useCredSsp,
-        enableTls: global.enableTls ?? base.security?.enableTls,
-        enableNla: global.enableNla ?? base.security?.enableNla,
-        autoLogon: global.autoLogon ?? base.security?.autoLogon,
-        ...conn?.security,
-      },
-      gateway: {
-        ...base.gateway,
-        enabled: global.gatewayEnabled ?? base.gateway?.enabled,
-        hostname: global.gatewayHostname || base.gateway?.hostname,
-        port: global.gatewayPort ?? base.gateway?.port,
-        authMethod: global.gatewayAuthMethod ?? base.gateway?.authMethod,
-        transportMode: global.gatewayTransportMode ?? base.gateway?.transportMode,
-        bypassForLocal: global.gatewayBypassLocal ?? base.gateway?.bypassForLocal,
-        ...conn?.gateway,
-      },
-      hyperv: {
-        ...base.hyperv,
-        enhancedSessionMode: global.enhancedSessionMode ?? base.hyperv?.enhancedSessionMode,
-        ...conn?.hyperv,
-      },
-      negotiation: {
-        ...base.negotiation,
-        autoDetect: global.autoDetect ?? base.negotiation?.autoDetect,
-        strategy: global.negotiationStrategy ?? base.negotiation?.strategy,
-        maxRetries: global.maxRetries ?? base.negotiation?.maxRetries,
-        retryDelayMs: global.retryDelayMs ?? base.negotiation?.retryDelayMs,
-        ...conn?.negotiation,
-      },
-      advanced: {
-        ...base.advanced,
-        fullFrameSyncInterval: global.fullFrameSyncInterval ?? base.advanced?.fullFrameSyncInterval,
-        readTimeoutMs: global.readTimeoutMs ?? base.advanced?.readTimeoutMs,
-        ...conn?.advanced,
-      },
-      tcp: {
-        ...base.tcp,
-        connectTimeoutSecs: global.tcpConnectTimeoutSecs ?? base.tcp?.connectTimeoutSecs,
-        nodelay: global.tcpNodelay ?? base.tcp?.nodelay,
-        keepAlive: global.tcpKeepAlive ?? base.tcp?.keepAlive,
-        keepAliveIntervalSecs: global.tcpKeepAliveIntervalSecs ?? base.tcp?.keepAliveIntervalSecs,
-        recvBufferSize: global.tcpRecvBufferSize ?? base.tcp?.recvBufferSize,
-        sendBufferSize: global.tcpSendBufferSize ?? base.tcp?.sendBufferSize,
-        ...conn?.tcp,
-      },
-    };
-  }, [connection?.rdpSettings, settings.rdpDefaults]);
+  const rdpSettings: RdpConnectionSettings = React.useMemo(
+    () => mergeRdpSettings(connection?.rdpSettings, settings.rdpDefaults),
+    [connection?.rdpSettings, settings.rdpDefaults],
+  );
   const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
   const magnifierZoom = rdpSettings.display?.magnifierZoom ?? 3;
 
@@ -506,6 +541,26 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- all mutable values read from refs
   }, []);
+
+  // ─── Reconnect handler ────────────────────────────────────────────
+  const handleReconnect = useCallback(async () => {
+    // Disconnect first if still connected
+    const sid = sessionIdRef.current;
+    if (sid) {
+      try {
+        await invoke('disconnect_rdp', { sessionId: sid });
+      } catch { /* ignore */ }
+      sessionIdRef.current = null;
+      setRdpSessionId(null);
+      rendererRef.current?.destroy();
+      rendererRef.current = null;
+      visCtxRef.current = null;
+    }
+    setConnectionStatus('connecting');
+    setStatusMessage('Reconnecting...');
+    // Re-run the full connection flow
+    initializeRDPConnection();
+  }, [initializeRDPConnection]);
 
   // ─── Disconnect ────────────────────────────────────────────────────
 
@@ -1084,6 +1139,19 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         startRecording={startRecording}
         pauseRecording={pauseRecording}
         resumeRecording={resumeRecording}
+        handleReconnect={handleReconnect}
+        handleDisconnect={handleDisconnect}
+        handleCopyToClipboard={handleCopyToClipboard}
+        handlePasteFromClipboard={handlePasteFromClipboard}
+        handleSendKeys={handleSendKeys}
+        connectionId={session.connectionId}
+        certFingerprint={certFingerprint ?? ''}
+        totpConfigs={connection?.totpConfigs}
+        onUpdateTotpConfigs={(configs) => {
+          if (connection) {
+            dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, totpConfigs: configs } });
+          }
+        }}
       />
 
       {showSettings && (

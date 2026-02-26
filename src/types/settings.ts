@@ -324,6 +324,9 @@ export interface GlobalSettings {
   rdpSessionThumbnailInterval: number;
   /** What happens when an RDP tab is closed: 'disconnect' fully ends the session, 'detach' keeps it running in background */
   rdpSessionClosePolicy: 'disconnect' | 'detach' | 'ask';
+
+  // ─── Backend / Tauri Runtime Settings ────────────────────────
+  backendConfig: BackendConfig;
 }
 
 /** Global default CredSSP remediation configuration */
@@ -572,6 +575,28 @@ export interface TOTPConfig {
   digits: number;
   period: number;
   algorithm: "sha1" | "sha256" | "sha512";
+}
+
+export interface BackendConfig {
+  logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error';
+  maxConcurrentRdpSessions: number;
+  rdpServerRenderer: 'auto' | 'softbuffer' | 'wgpu' | 'webview';
+  rdpCodecPreference: 'auto' | 'remotefx' | 'gfx' | 'h264' | 'bitmap';
+  tcpDefaultBufferSize: number;
+  tcpKeepAliveSeconds: number;
+  connectionTimeoutSeconds: number;
+  tempFileCleanupEnabled: boolean;
+  tempFileCleanupIntervalMinutes: number;
+  cacheSizeMb: number;
+  tlsMinVersion: '1.2' | '1.3';
+  certValidationMode: 'strict' | 'tofu' | 'permissive';
+  allowedCipherSuites: string[];
+  enableInternalApi: boolean;
+  internalApiPort: number;
+  internalApiAuth: boolean;
+  internalApiCors: boolean;
+  internalApiRateLimit: number;
+  internalApiSsl: boolean;
 }
 
 export interface ThemeConfig {

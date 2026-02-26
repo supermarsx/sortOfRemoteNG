@@ -306,6 +306,27 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   rdpSessionThumbnailPolicy: 'realtime' as const,
   rdpSessionThumbnailInterval: 5,
   rdpSessionClosePolicy: 'ask' as const,
+  backendConfig: {
+    logLevel: 'info' as const,
+    maxConcurrentRdpSessions: 10,
+    rdpServerRenderer: 'auto' as const,
+    rdpCodecPreference: 'auto' as const,
+    tcpDefaultBufferSize: 65536,
+    tcpKeepAliveSeconds: 30,
+    connectionTimeoutSeconds: 15,
+    tempFileCleanupEnabled: true,
+    tempFileCleanupIntervalMinutes: 60,
+    cacheSizeMb: 256,
+    tlsMinVersion: '1.2' as const,
+    certValidationMode: 'tofu' as const,
+    allowedCipherSuites: [],
+    enableInternalApi: false,
+    internalApiPort: 9876,
+    internalApiAuth: true,
+    internalApiCors: false,
+    internalApiRateLimit: 100,
+    internalApiSsl: false,
+  },
 };
 
 /**

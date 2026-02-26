@@ -22,6 +22,7 @@ import {
   Fingerprint,
   Globe,
   MonitorDot,
+  Cpu,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig, defaultSSHTerminalConfig } from '../../types/settings';
@@ -42,6 +43,7 @@ import CloudSyncSettings from './sections/CloudSyncSettings';
 import { TrustVerificationSettings } from './sections/TrustVerificationSettings';
 import WebBrowserSettings from './sections/WebBrowserSettings';
 import RdpDefaultSettings from './sections/RdpDefaultSettings';
+import BackendSettings from './sections/BackendSettings';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
@@ -102,6 +104,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'wolBroadcastAddress', 'enableActionLog', 'logLevel', 'maxLogEntries',
     'exportEncryption',
   ],
+  backend: ['backendConfig'],
   sshTerminal: ['sshTerminal'],
   webBrowser: [
     'proxyKeepaliveEnabled', 'proxyKeepaliveIntervalSeconds',
@@ -470,6 +473,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     { id: 'proxy', label: 'Proxy', icon: Wifi },
     { id: 'sshTerminal', label: t('settings.sshTerminal.tab', 'SSH Terminal'), icon: Terminal },
     { id: 'webBrowser', label: 'Web Browser', icon: Globe },
+    { id: 'backend', label: 'Backend', icon: Cpu },
     { id: 'api', label: 'API Server', icon: Server },
     { id: 'advanced', label: t('settings.advanced'), icon: Code },
     { id: 'recovery', label: 'Recovery', icon: RotateCcw },
@@ -609,6 +613,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
               {activeTab === 'webBrowser' && (
                 <WebBrowserSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'backend' && (
+                <BackendSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'api' && (
