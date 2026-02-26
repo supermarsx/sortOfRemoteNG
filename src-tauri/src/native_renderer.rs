@@ -158,17 +158,24 @@ impl FrameCompositor for SoftbufferCompositor {
         let src_stride = fb_width as usize * bpp;
         let dst_stride = self.desk_w as usize * bpp;
 
-        for row in 0..h as usize {
+        // Clamp region to fit within both source and shadow buffer.
+        let max_w = (self.desk_w.saturating_sub(x)) as usize;
+        let max_h = (self.desk_h.saturating_sub(y)) as usize;
+        let cw = (w as usize).min(max_w);
+        let ch = (h as usize).min(max_h);
+        let len = cw * bpp;
+
+        for row in 0..ch {
             let src_y = y as usize + row;
             let dst_y = y as usize + row;
             let src_start = src_y * src_stride + x as usize * bpp;
             let dst_start = dst_y * dst_stride + x as usize * bpp;
-            let len = w as usize * bpp;
 
-            if src_start + len <= image_data.len() && dst_start + len <= self.shadow.len() {
-                self.shadow[dst_start..dst_start + len]
-                    .copy_from_slice(&image_data[src_start..src_start + len]);
+            if src_start + len > image_data.len() {
+                break;
             }
+            self.shadow[dst_start..dst_start + len]
+                .copy_from_slice(&image_data[src_start..src_start + len]);
         }
 
         // Expand bounding dirty rect
@@ -220,10 +227,7 @@ impl FrameCompositor for SoftbufferCompositor {
         for row in 0..h as usize {
             let src_y = y as usize + row;
             let start = src_y * stride + x as usize * bpp;
-            let end = start + row_bytes;
-            if end <= self.shadow.len() {
-                rgba.extend_from_slice(&self.shadow[start..end]);
-            }
+            rgba.extend_from_slice(&self.shadow[start..start + row_bytes]);
         }
 
         // Reset dirty state
