@@ -2378,290 +2378,320 @@ fn run_rdp_session_inner(
             }
         }
 
-        // ─ Read and process PDUs ───────────────────────────────────────
-        match tls_framed.read_pdu() {
-            Ok((action, payload)) => {
-                consecutive_errors = 0;
-                last_data_received = Instant::now();
-                // Switch to fast timeout while actively receiving
-                if current_timeout != timeout_active {
-                    current_timeout = timeout_active;
-                    set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
-                }
-                let payload_len = payload.len() as u64;
-                stats
-                    .bytes_received
-                    .fetch_add(payload_len, Ordering::Relaxed);
-                stats.pdus_received.fetch_add(1, Ordering::Relaxed);
+        // ─ Read and process PDUs (multi-PDU batch drain) ───────────────
+        // Instead of reading one PDU, flushing, then looping back, we drain
+        // ALL immediately-available PDUs and accumulate their dirty rects.
+        // This means a burst of 20 small rects from a window drag becomes a
+        // single merged Channel send instead of 20 separate ones.
+        let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
+        let mut batch_had_graphics = false;
+        let mut batch_should_reactivate: Option<Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>> = None;
+        let mut batch_should_terminate = false;
+        let mut pdus_this_batch: u32 = 0;
+        let mut switched_to_drain_timeout = false;
 
-                match active_stage.process(&mut image, action, payload.as_ref()) {
-                    Ok(outputs) => {
-                        let mut should_reactivate = None;
-                        let mut should_terminate = false;
+        loop {
+            // Inner PDU drain loop
+            match tls_framed.read_pdu() {
+                Ok((action, payload)) => {
+                    consecutive_errors = 0;
+                    last_data_received = Instant::now();
+                    // Mark that we should use the active (fast) timeout
+                    if current_timeout != timeout_active {
+                        current_timeout = timeout_active;
+                    }
+                    let payload_len = payload.len() as u64;
+                    stats
+                        .bytes_received
+                        .fetch_add(payload_len, Ordering::Relaxed);
+                    stats.pdus_received.fetch_add(1, Ordering::Relaxed);
 
-                        for output in &outputs {
-                            match output {
-                                ActiveStageOutput::Terminate(_) => {
-                                    should_terminate = true;
-                                }
-                                ActiveStageOutput::DeactivateAll(_) => {
-                                    // We'll handle this after collecting all outputs
-                                }
-                                _ => {}
-                            }
-                        }
+                    match active_stage.process(&mut image, action, payload.as_ref()) {
+                        Ok(outputs) => {
+                            for output in outputs {
+                                match output {
+                                    ActiveStageOutput::ResponseFrame(data) => {
+                                        // ResponseFrames must be sent immediately (server ACKs)
+                                        stats
+                                            .bytes_sent
+                                            .fetch_add(data.len() as u64, Ordering::Relaxed);
+                                        stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
+                                        if let Err(e) = tls_framed.write_all(&data) {
+                                            return Err(
+                                                format!("Failed to send response frame: {e}")
+                                                    .into(),
+                                            );
+                                        }
+                                    }
+                                    ActiveStageOutput::GraphicsUpdate(region) => {
+                                        stats.record_frame();
+                                        batch_had_graphics = true;
 
-                        // Process all outputs — accumulate graphics updates from
-                        // this PDU, then flush once at the end (avoids per-rect
-                        // compositor flush and reduces Channel messages).
-                        let mut had_graphics = false;
-                        let mut pdu_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
-                        for output in outputs {
-                            match output {
-                                ActiveStageOutput::ResponseFrame(data) => {
-                                    stats
-                                        .bytes_sent
-                                        .fetch_add(data.len() as u64, Ordering::Relaxed);
-                                    stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
-                                    if let Err(e) = tls_framed.write_all(&data) {
-                                        return Err(
-                                            format!("Failed to send response frame: {e}").into()
+                                        let rw =
+                                            region.right.saturating_sub(region.left) + 1;
+                                        let rh =
+                                            region.bottom.saturating_sub(region.top) + 1;
+
+                                        if frame_batching {
+                                            dirty_regions
+                                                .push((region.left, region.top, rw, rh));
+                                        } else if let Some(ref mut comp) = compositor {
+                                            comp.update_region(
+                                                image.data(),
+                                                desktop_width,
+                                                region.left,
+                                                region.top,
+                                                rw,
+                                                rh,
+                                            );
+                                        } else {
+                                            batch_dirty_rects
+                                                .push((region.left, region.top, rw, rh));
+                                        }
+                                    }
+                                    ActiveStageOutput::PointerDefault => {
+                                        let _ = app_handle.emit(
+                                            "rdp://pointer",
+                                            RdpPointerEvent {
+                                                session_id: session_id.to_string(),
+                                                pointer_type: "default".to_string(),
+                                                x: None,
+                                                y: None,
+                                            },
                                         );
                                     }
-                                }
-                                ActiveStageOutput::GraphicsUpdate(region) => {
-                                    stats.record_frame();
-                                    had_graphics = true;
-
-                                    let rw = region.right.saturating_sub(region.left) + 1;
-                                    let rh = region.bottom.saturating_sub(region.top) + 1;
-
-                                    if frame_batching {
-                                        // Accumulate dirty region for time-based batched push
-                                        dirty_regions.push((region.left, region.top, rw, rh));
-                                    } else if let Some(ref mut comp) = compositor {
-                                        // Compositor: accumulate into shadow buffer (flush after loop)
-                                        comp.update_region(
-                                            image.data(),
-                                            desktop_width,
-                                            region.left,
-                                            region.top,
-                                            rw,
-                                            rh,
+                                    ActiveStageOutput::PointerHidden => {
+                                        let _ = app_handle.emit(
+                                            "rdp://pointer",
+                                            RdpPointerEvent {
+                                                session_id: session_id.to_string(),
+                                                pointer_type: "hidden".to_string(),
+                                                x: None,
+                                                y: None,
+                                            },
                                         );
-                                    } else {
-                                        // Direct streaming: accumulate rects for merge+send after loop
-                                        pdu_dirty_rects.push((region.left, region.top, rw, rh));
                                     }
-                                }
-                                ActiveStageOutput::PointerDefault => {
-                                    let _ = app_handle.emit(
-                                        "rdp://pointer",
-                                        RdpPointerEvent {
-                                            session_id: session_id.to_string(),
-                                            pointer_type: "default".to_string(),
-                                            x: None,
-                                            y: None,
-                                        },
-                                    );
-                                }
-                                ActiveStageOutput::PointerHidden => {
-                                    let _ = app_handle.emit(
-                                        "rdp://pointer",
-                                        RdpPointerEvent {
-                                            session_id: session_id.to_string(),
-                                            pointer_type: "hidden".to_string(),
-                                            x: None,
-                                            y: None,
-                                        },
-                                    );
-                                }
-                                ActiveStageOutput::PointerPosition { x, y } => {
-                                    let _ = app_handle.emit(
-                                        "rdp://pointer",
-                                        RdpPointerEvent {
-                                            session_id: session_id.to_string(),
-                                            pointer_type: "position".to_string(),
-                                            x: Some(x),
-                                            y: Some(y),
-                                        },
-                                    );
-                                }
-                                ActiveStageOutput::PointerBitmap(_bitmap) => {
-                                    // TODO: send custom cursor bitmap to frontend
-                                }
-                                ActiveStageOutput::Terminate(reason) => {
-                                    log::info!(
-                                        "RDP session {session_id}: server terminated: {reason:?}"
-                                    );
-                                    stats.set_phase("terminated");
-                                    return Ok(());
-                                }
-                                ActiveStageOutput::DeactivateAll(cas) => {
-                                    should_reactivate = Some(cas);
-                                }
-                            }
-                        }
-
-                        // After processing all outputs from this PDU, flush
-                        // the compositor once (instead of per-region).
-                        if had_graphics && !frame_batching {
-                            if let Some(ref mut comp) = compositor {
-                                // Compositor: single flush for all rects from this PDU.
-                                if !viewer_detached {
-                                    if let Some(frame) = comp.flush() {
-                                        let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                                        push_compositor_frame_via_channel(&frame, active_ch);
+                                    ActiveStageOutput::PointerPosition { x, y } => {
+                                        let _ = app_handle.emit(
+                                            "rdp://pointer",
+                                            RdpPointerEvent {
+                                                session_id: session_id.to_string(),
+                                                pointer_type: "position".to_string(),
+                                                x: Some(x),
+                                                y: Some(y),
+                                            },
+                                        );
                                     }
-                                }
-                            } else if !pdu_dirty_rects.is_empty() && !viewer_detached {
-                                // Direct streaming: merge rects from this PDU, then
-                                // send as few Channel messages as possible.
-                                merge_dirty_regions(&mut pdu_dirty_rects);
-                                let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                                for &(x, y, w, h) in &pdu_dirty_rects {
-                                    if w > 0 && h > 0 {
-                                        let region = ironrdp::pdu::geometry::InclusiveRectangle {
-                                            left: x,
-                                            top: y,
-                                            right: x.saturating_add(w).saturating_sub(1),
-                                            bottom: y.saturating_add(h).saturating_sub(1),
-                                        };
-                                        push_frame_via_channel(image.data(), desktop_width, &region, active_ch);
+                                    ActiveStageOutput::PointerBitmap(_bitmap) => {
+                                        // TODO: send custom cursor bitmap to frontend
+                                    }
+                                    ActiveStageOutput::Terminate(reason) => {
+                                        log::info!(
+                                            "RDP session {session_id}: server terminated: {reason:?}"
+                                        );
+                                        stats.set_phase("terminated");
+                                        batch_should_terminate = true;
+                                    }
+                                    ActiveStageOutput::DeactivateAll(cas) => {
+                                        batch_should_reactivate = Some(cas);
                                     }
                                 }
                             }
-
-                            // Periodic full-frame sync — only update the
-                            // fallback frame_store (no Channel push; all
-                            // updates are already streamed).
-                            let fc = stats.frame_count.load(Ordering::Relaxed);
-                            if fc > 0 && fc % full_frame_sync_interval == 0 {
-                                frame_store.update_region(
-                                    session_id,
-                                    image.data(),
-                                    desktop_width,
-                                    &ironrdp::pdu::geometry::InclusiveRectangle {
-                                        left: 0,
-                                        top: 0,
-                                        right: desktop_width.saturating_sub(1),
-                                        bottom: desktop_height.saturating_sub(1),
-                                    },
-                                );
-                            }
                         }
-
-                        if should_terminate {
-                            return Ok(());
-                        }
-
-                        // Handle reactivation AFTER processing all other outputs
-                        if let Some(cas) = should_reactivate {
-                            log::info!(
-                                "RDP session {session_id}: DeactivateAll received, running reactivation"
+                        Err(e) => {
+                            let err_str = format!("{e}");
+                            log::warn!(
+                                "RDP session {session_id}: PDU processing error (recovering): {err_str}"
                             );
-                            stats.reactivations.fetch_add(1, Ordering::Relaxed);
+                            stats.errors_recovered.fetch_add(1, Ordering::Relaxed);
+                            stats.set_last_error(&err_str);
+                            consecutive_errors += 1;
 
-                            let _ = app_handle.emit(
-                                "rdp://status",
-                                RdpStatusEvent {
-                                    session_id: session_id.to_string(),
-                                    status: "connecting".to_string(),
-                                    message: "Reactivating session...".to_string(),
-                                    desktop_width: None,
-                                    desktop_height: None,
-                                },
-                            );
-
-                            // Remove read timeout for reactivation (needs reliable full PDU reads)
-                            set_read_timeout_on_framed(&tls_framed, None);
-
-                            match handle_reactivation(cas, &mut tls_framed, stats) {
-                                Ok(new_result) => {
-                                    desktop_width = new_result.desktop_size.width;
-                                    desktop_height = new_result.desktop_size.height;
-                                    image = DecodedImage::new(
-                                        PixelFormat::RgbA32,
-                                        desktop_width,
-                                        desktop_height,
-                                    );
-                                    active_stage = ActiveStage::new(new_result);
-                                    // Reinitialize shared framebuffer at new dimensions
-                                    frame_store.reinit(session_id, desktop_width, desktop_height);
-                                    stats.set_phase("active");
-
-                                    log::info!(
-                                        "RDP session {session_id}: reactivated at {desktop_width}x{desktop_height}"
-                                    );
-
-                                    let _ = app_handle.emit(
-                                        "rdp://status",
-                                        RdpStatusEvent {
-                                            session_id: session_id.to_string(),
-                                            status: "connected".to_string(),
-                                            message: format!(
-                                                "Reconnected ({desktop_width}x{desktop_height})"
-                                            ),
-                                            desktop_width: Some(desktop_width),
-                                            desktop_height: Some(desktop_height),
-                                        },
-                                    );
-
-                                    // Restore read timeout for normal operation
-                                    set_read_timeout_on_framed(
-                                        &tls_framed,
-                                        Some(settings.read_timeout),
-                                    );
-                                }
-                                Err(e) => {
-                                    log::error!(
-                                        "RDP session {session_id}: reactivation failed: {e}"
-                                    );
-                                    return Err(format!("Reactivation failed: {e}").into());
-                                }
+                            if consecutive_errors >= max_consecutive_errors {
+                                return Err(format!(
+                                    "Too many consecutive errors ({consecutive_errors}), last: {err_str}"
+                                )
+                                .into());
                             }
                         }
                     }
-                    Err(e) => {
-                        // Non-fatal PDU processing error — log and continue.
-                        // IronRDP's x224 processor returns errors for unhandled
-                        // PDU types that real servers commonly send, so we must
-                        // not kill the session on every process() error.
-                        let err_str = format!("{e}");
-                        log::warn!(
-                            "RDP session {session_id}: PDU processing error (recovering): {err_str}"
+
+                    pdus_this_batch += 1;
+
+                    // Stop draining if session state is changing
+                    if batch_should_reactivate.is_some() || batch_should_terminate {
+                        break;
+                    }
+
+                    // After first PDU, switch to 1ms timeout to drain remaining
+                    // buffered data without blocking. read_pdu() checks its internal
+                    // BytesMut first (zero-cost for already-buffered PDUs) and only
+                    // hits the socket if needed (where the 1ms timeout applies).
+                    if !switched_to_drain_timeout {
+                        set_read_timeout_on_framed(
+                            &tls_framed,
+                            Some(Duration::from_millis(1)),
                         );
-                        stats.errors_recovered.fetch_add(1, Ordering::Relaxed);
-                        stats.set_last_error(&err_str);
-                        consecutive_errors += 1;
+                        switched_to_drain_timeout = true;
+                    }
 
-                        if consecutive_errors >= max_consecutive_errors {
-                            return Err(format!(
-                                "Too many consecutive errors ({consecutive_errors}), last: {err_str}"
-                            )
-                            .into());
+                    // Safety cap: don't starve input handling
+                    if pdus_this_batch >= 50 {
+                        break;
+                    }
+                }
+                Err(e) if is_timeout_error(&e) => {
+                    // No more data available — stop draining.
+                    if pdus_this_batch == 0 {
+                        // No PDUs at all this iteration — handle idle timeout.
+                        if current_timeout == timeout_active
+                            && last_data_received.elapsed() >= idle_threshold
+                        {
+                            current_timeout = timeout_idle;
+                            set_read_timeout_on_framed(
+                                &tls_framed,
+                                Some(current_timeout),
+                            );
                         }
+                    }
+                    break;
+                }
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::UnexpectedEof {
+                        log::info!(
+                            "RDP session {session_id}: server closed connection (EOF)"
+                        );
+                        return Ok(());
+                    }
+                    let err_str = format!("{e}");
+                    log::error!("RDP session {session_id}: read error: {err_str}");
+                    return Err(format!("Read error: {err_str}").into());
+                }
+            }
+        } // end inner PDU drain loop
+
+        // Restore proper read timeout after drain phase
+        if switched_to_drain_timeout {
+            set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
+        }
+
+        // Flush ALL accumulated dirty rects from the entire batch at once.
+        // A window drag producing 20 PDUs with small rects now results in a
+        // single merged Channel send instead of 20 separate ones.
+        if batch_had_graphics && !frame_batching {
+            if let Some(ref mut comp) = compositor {
+                if !viewer_detached {
+                    if let Some(frame) = comp.flush() {
+                        let active_ch =
+                            attached_channel.as_ref().unwrap_or(frame_channel);
+                        push_compositor_frame_via_channel(&frame, active_ch);
+                    }
+                }
+            } else if !batch_dirty_rects.is_empty() && !viewer_detached {
+                merge_dirty_regions(&mut batch_dirty_rects);
+                let active_ch =
+                    attached_channel.as_ref().unwrap_or(frame_channel);
+                for &(x, y, w, h) in &batch_dirty_rects {
+                    if w > 0 && h > 0 {
+                        let region = ironrdp::pdu::geometry::InclusiveRectangle {
+                            left: x,
+                            top: y,
+                            right: x.saturating_add(w).saturating_sub(1),
+                            bottom: y.saturating_add(h).saturating_sub(1),
+                        };
+                        push_frame_via_channel(
+                            image.data(),
+                            desktop_width,
+                            &region,
+                            active_ch,
+                        );
                     }
                 }
             }
-            Err(e) if is_timeout_error(&e) => {
-                // Read timeout — no data available, loop back for input handling.
-                // Switch to slower polling when idle to reduce CPU wakeups.
-                if current_timeout == timeout_active && last_data_received.elapsed() >= idle_threshold {
-                    current_timeout = timeout_idle;
-                    set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
-                }
-                continue;
+
+            // Periodic full-frame sync — update frame_store only
+            let fc = stats.frame_count.load(Ordering::Relaxed);
+            if fc > 0 && fc % full_frame_sync_interval == 0 {
+                frame_store.update_region(
+                    session_id,
+                    image.data(),
+                    desktop_width,
+                    &ironrdp::pdu::geometry::InclusiveRectangle {
+                        left: 0,
+                        top: 0,
+                        right: desktop_width.saturating_sub(1),
+                        bottom: desktop_height.saturating_sub(1),
+                    },
+                );
             }
-            Err(e) => {
-                let err_str = format!("{e}");
-                // Distinguish EOF (clean disconnect) from real errors
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    log::info!("RDP session {session_id}: server closed connection (EOF)");
-                    return Ok(());
+        }
+
+        if batch_should_terminate {
+            return Ok(());
+        }
+
+        // Handle reactivation AFTER flushing all graphics
+        if let Some(cas) = batch_should_reactivate {
+            log::info!(
+                "RDP session {session_id}: DeactivateAll received, running reactivation"
+            );
+            stats.reactivations.fetch_add(1, Ordering::Relaxed);
+
+            let _ = app_handle.emit(
+                "rdp://status",
+                RdpStatusEvent {
+                    session_id: session_id.to_string(),
+                    status: "connecting".to_string(),
+                    message: "Reactivating session...".to_string(),
+                    desktop_width: None,
+                    desktop_height: None,
+                },
+            );
+
+            // Remove read timeout for reactivation
+            set_read_timeout_on_framed(&tls_framed, None);
+
+            match handle_reactivation(cas, &mut tls_framed, stats) {
+                Ok(new_result) => {
+                    desktop_width = new_result.desktop_size.width;
+                    desktop_height = new_result.desktop_size.height;
+                    image = DecodedImage::new(
+                        PixelFormat::RgbA32,
+                        desktop_width,
+                        desktop_height,
+                    );
+                    active_stage = ActiveStage::new(new_result);
+                    frame_store.reinit(session_id, desktop_width, desktop_height);
+                    stats.set_phase("active");
+
+                    log::info!(
+                        "RDP session {session_id}: reactivated at {desktop_width}x{desktop_height}"
+                    );
+
+                    let _ = app_handle.emit(
+                        "rdp://status",
+                        RdpStatusEvent {
+                            session_id: session_id.to_string(),
+                            status: "connected".to_string(),
+                            message: format!(
+                                "Reconnected ({desktop_width}x{desktop_height})"
+                            ),
+                            desktop_width: Some(desktop_width),
+                            desktop_height: Some(desktop_height),
+                        },
+                    );
+
+                    set_read_timeout_on_framed(
+                        &tls_framed,
+                        Some(settings.read_timeout),
+                    );
                 }
-                log::error!("RDP session {session_id}: read error: {err_str}");
-                return Err(format!("Read error: {err_str}").into());
+                Err(e) => {
+                    log::error!(
+                        "RDP session {session_id}: reactivation failed: {e}"
+                    );
+                    return Err(format!("Reactivation failed: {e}").into());
+                }
             }
         }
     }
