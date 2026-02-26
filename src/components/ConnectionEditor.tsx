@@ -9,6 +9,7 @@ import SSHOptions from './connectionEditor/SSHOptions';
 import HTTPOptions from './connectionEditor/HTTPOptions';
 import CloudProviderOptions from './connectionEditor/CloudProviderOptions';
 import RDPOptions from './connectionEditor/RDPOptions';
+import TOTPOptions from './connectionEditor/TOTPOptions';
 import { useSettings } from '../contexts/SettingsContext';
 import { getConnectionDepth, getMaxDescendantDepth, MAX_NESTING_DEPTH } from '../utils/dragDropManager';
 
@@ -206,6 +207,8 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
       sshTrustPolicy: formData.sshTrustPolicy,
       rdpTrustPolicy: formData.rdpTrustPolicy,
       rdpSettings: formData.rdpSettings,
+      totpSecret: formData.totpSecret,
+      totpConfigs: formData.totpConfigs,
     };
   }, [formData, connection]);
 
@@ -588,6 +591,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                 <HTTPOptions formData={formData} setFormData={setFormData} />
                 <CloudProviderOptions formData={formData} setFormData={setFormData} />
                 <RDPOptions formData={formData} setFormData={setFormData} />
+                <TOTPOptions formData={formData} setFormData={setFormData} />
               </>
             )}
 

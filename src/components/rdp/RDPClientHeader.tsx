@@ -16,9 +16,13 @@ import {
   Minimize2,
   RefreshCw,
   Unplug,
-  KeyRound,
+  Keyboard,
   Shield,
   Fingerprint,
+  Info,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import { TOTPConfig } from '../../types/settings';
 import RDPTotpPanel from './RDPTotpPanel';
@@ -56,6 +60,8 @@ interface RDPClientHeaderProps {
   handleSendKeys: (combo: string) => void;
   connectionId: string;
   certFingerprint: string;
+  connectionName: string;
+  onRenameConnection: (name: string) => void;
   totpConfigs?: TOTPConfig[];
   onUpdateTotpConfigs: (configs: TOTPConfig[]) => void;
 }
@@ -103,13 +109,20 @@ export default function RDPClientHeader({
   handlePasteFromClipboard,
   handleSendKeys,
   certFingerprint,
+  connectionName,
+  onRenameConnection,
   totpConfigs,
   onUpdateTotpConfigs,
 }: RDPClientHeaderProps) {
-  const [showKeysMenu, setShowKeysMenu] = useState(false);
+  const [showSendKeys, setShowSendKeys] = useState(false);
+  const [showHostInfo, setShowHostInfo] = useState(false);
   const [showTotpPanel, setShowTotpPanel] = useState(false);
-  const keysMenuRef = useRef<HTMLDivElement>(null);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editName, setEditName] = useState(connectionName);
+  const sendKeysRef = useRef<HTMLDivElement>(null);
+  const hostInfoRef = useRef<HTMLDivElement>(null);
   const totpBtnRef = useRef<HTMLDivElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const isConnected = connectionStatus === 'connected';
   const canReconnect = connectionStatus === 'disconnected' || connectionStatus === 'error';
@@ -119,8 +132,11 @@ export default function RDPClientHeader({
   // Close menus on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (keysMenuRef.current && !keysMenuRef.current.contains(e.target as Node)) {
-        setShowKeysMenu(false);
+      if (sendKeysRef.current && !sendKeysRef.current.contains(e.target as Node)) {
+        setShowSendKeys(false);
+      }
+      if (hostInfoRef.current && !hostInfoRef.current.contains(e.target as Node)) {
+        setShowHostInfo(false);
       }
       if (totpBtnRef.current && !totpBtnRef.current.contains(e.target as Node)) {
         setShowTotpPanel(false);
@@ -129,6 +145,32 @@ export default function RDPClientHeader({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Focus name input when entering edit mode
+  useEffect(() => {
+    if (isEditingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [isEditingName]);
+
+  const startEditing = () => {
+    setEditName(connectionName);
+    setIsEditingName(true);
+  };
+
+  const confirmRename = () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== connectionName) {
+      onRenameConnection(trimmed);
+    }
+    setIsEditingName(false);
+  };
+
+  const cancelRename = () => {
+    setEditName(connectionName);
+    setIsEditingName(false);
+  };
 
   return (
     <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
@@ -197,22 +239,18 @@ export default function RDPClientHeader({
 
         <div className="w-px h-4 bg-gray-600 mx-1" />
 
-        {/* ── Host Keys / Send Keys ──────────────────────────── */}
-        <div ref={keysMenuRef} className="relative">
+        {/* ── Send Keys (separate button) ────────────────────── */}
+        <div ref={sendKeysRef} className="relative">
           <button
-            onClick={() => setShowKeysMenu(!showKeysMenu)}
-            className={showKeysMenu ? btnActive : btnDefault}
-            title="Host keys &amp; certificate info"
+            onClick={() => setShowSendKeys(!showSendKeys)}
+            className={showSendKeys ? btnActive : btnDefault}
+            title="Send key combination"
           >
-            <KeyRound size={14} />
+            <Keyboard size={14} />
           </button>
 
-          {showKeysMenu && (
-            <div className="absolute right-0 top-full mt-1 z-50 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden">
-              {/* Send Keys Section */}
-              <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-750">
-                Send Keys
-              </div>
+          {showSendKeys && (
+            <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden">
               {[
                 { id: 'ctrl-alt-del', label: 'Ctrl + Alt + Del' },
                 { id: 'alt-tab', label: 'Alt + Tab' },
@@ -224,7 +262,7 @@ export default function RDPClientHeader({
                   key={item.id}
                   onClick={() => {
                     handleSendKeys(item.id);
-                    setShowKeysMenu(false);
+                    setShowSendKeys(false);
                   }}
                   disabled={!isConnected}
                   className={`w-full text-left px-3 py-1.5 text-xs ${
@@ -236,26 +274,94 @@ export default function RDPClientHeader({
                   {item.label}
                 </button>
               ))}
+            </div>
+          )}
+        </div>
 
-              {/* Certificate Info Section */}
-              <div className="border-t border-gray-700">
-                <div className="px-3 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider bg-gray-750">
-                  Certificate Info
+        {/* ── Host Info (separate button) ────────────────────── */}
+        <div ref={hostInfoRef} className="relative">
+          <button
+            onClick={() => setShowHostInfo(!showHostInfo)}
+            className={showHostInfo ? btnActive : btnDefault}
+            title="Host info &amp; certificate"
+          >
+            <Info size={14} />
+          </button>
+
+          {showHostInfo && (
+            <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden">
+              {/* Friendly Name */}
+              <div className="px-3 py-2 border-b border-gray-700">
+                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Friendly Name
                 </div>
-                <div className="px-3 py-2 space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <Fingerprint size={12} className="text-gray-500 flex-shrink-0" />
-                    <div className="text-[10px] text-gray-400 min-w-0">
-                      <div className="text-gray-300 text-xs mb-0.5">SHA-256 Fingerprint</div>
-                      {certFingerprint ? (
-                        <span className="font-mono break-all">{certFingerprint}</span>
-                      ) : (
-                        <span className="italic">Not available</span>
-                      )}
-                    </div>
+                {isEditingName ? (
+                  <div className="flex items-center space-x-1">
+                    <input
+                      ref={nameInputRef}
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') confirmRename();
+                        if (e.key === 'Escape') cancelRename();
+                      }}
+                      className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+                    />
+                    <button
+                      onClick={confirmRename}
+                      className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                    >
+                      <Check size={12} />
+                    </button>
+                    <button
+                      onClick={cancelRename}
+                      className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                    >
+                      <X size={12} />
+                    </button>
                   </div>
-                  <div className="text-[10px] text-gray-500">
-                    Host: {sessionHostname}
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-300">{connectionName}</span>
+                    <button
+                      onClick={startEditing}
+                      className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                      title="Edit name"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Host Details */}
+              <div className="px-3 py-2 border-b border-gray-700 space-y-1">
+                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                  Host
+                </div>
+                <div className="text-xs text-gray-300">{sessionHostname}</div>
+                <div className="text-[10px] text-gray-500">
+                  Status: <span className="capitalize">{connectionStatus}</span>
+                </div>
+                <div className="text-[10px] text-gray-500">
+                  Resolution: {desktopSize.width}x{desktopSize.height} · {colorDepth}-bit
+                </div>
+              </div>
+
+              {/* Certificate Info */}
+              <div className="px-3 py-2 space-y-1">
+                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                  Certificate
+                </div>
+                <div className="flex items-start space-x-2">
+                  <Fingerprint size={12} className="text-gray-500 flex-shrink-0 mt-0.5" />
+                  <div className="text-[10px] text-gray-400 min-w-0">
+                    {certFingerprint ? (
+                      <span className="font-mono break-all">{certFingerprint}</span>
+                    ) : (
+                      <span className="italic">No certificate available</span>
+                    )}
                   </div>
                 </div>
               </div>

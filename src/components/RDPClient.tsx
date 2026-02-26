@@ -473,6 +473,18 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           setIsConnected(true);
           setConnectionStatus('connected');
           setStatusMessage(`Re-attached (${sessionInfo.desktop_width}x${sessionInfo.desktop_height})`);
+
+          // Update the session in context so tab title, backendSessionId, and
+          // status are all correct for other components.
+          dispatch({
+            type: 'UPDATE_SESSION',
+            payload: {
+              ...sess,
+              backendSessionId: sessionInfo.id,
+              name: conn.name || sess.name,
+              status: 'connected',
+            },
+          });
           return;
         }
       } catch {
@@ -523,6 +535,18 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       debugLog(`RDP session created: ${sessionId}`);
       setRdpSessionId(sessionId);
       sessionIdRef.current = sessionId;
+
+      // Persist the backend session ID and connection name into the context
+      // so tab titles, detach/reattach, and other components work correctly.
+      dispatch({
+        type: 'UPDATE_SESSION',
+        payload: {
+          ...sess,
+          backendSessionId: sessionId,
+          name: conn.name || sess.name,
+          status: 'connecting',
+        },
+      });
 
       // Set canvas to requested resolution initially
       const canvas = canvasRef.current;
@@ -1146,6 +1170,12 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         handleSendKeys={handleSendKeys}
         connectionId={session.connectionId}
         certFingerprint={certFingerprint ?? ''}
+        connectionName={connection?.name || session.name}
+        onRenameConnection={(name) => {
+          if (connection) {
+            dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, name } });
+          }
+        }}
         totpConfigs={connection?.totpConfigs}
         onUpdateTotpConfigs={(configs) => {
           if (connection) {
