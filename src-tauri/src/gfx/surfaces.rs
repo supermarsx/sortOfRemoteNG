@@ -78,18 +78,21 @@ impl SurfaceManager {
         let src_stride = src_width as usize * bpp;
         let dst_stride = surface.width as usize * bpp;
 
-        for row in 0..dest_height as usize {
+        // Clamp to fit within surface bounds.
+        let cw = (dest_width as usize).min(surface.width.saturating_sub(dest_left) as usize);
+        let ch = (dest_height as usize).min(surface.height.saturating_sub(dest_top) as usize);
+        let copy_len = cw * bpp;
+
+        for row in 0..ch {
             let src_offset = row * src_stride;
             let dst_offset =
                 (dest_top as usize + row) * dst_stride + dest_left as usize * bpp;
-            let copy_len = dest_width as usize * bpp;
 
-            if src_offset + copy_len <= src_data.len()
-                && dst_offset + copy_len <= surface.rgba.len()
-            {
-                surface.rgba[dst_offset..dst_offset + copy_len]
-                    .copy_from_slice(&src_data[src_offset..src_offset + copy_len]);
+            if src_offset + copy_len > src_data.len() {
+                break;
             }
+            surface.rgba[dst_offset..dst_offset + copy_len]
+                .copy_from_slice(&src_data[src_offset..src_offset + copy_len]);
         }
         true
     }

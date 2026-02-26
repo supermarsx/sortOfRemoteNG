@@ -118,6 +118,8 @@ pub struct SoftbufferCompositor {
     dirty_top: u16,
     dirty_right: u16,
     dirty_bottom: u16,
+    /// Reusable buffer for flush output (avoids per-flush allocation).
+    flush_buffer: Vec<u8>,
 }
 
 impl SoftbufferCompositor {
@@ -136,6 +138,7 @@ impl SoftbufferCompositor {
             dirty_top: height,
             dirty_right: 0,
             dirty_bottom: 0,
+            flush_buffer: Vec::new(),
         }
     }
 }
@@ -222,13 +225,20 @@ impl FrameCompositor for SoftbufferCompositor {
         let bpp = 4usize;
         let stride = self.desk_w as usize * bpp;
         let row_bytes = w as usize * bpp;
-        let mut rgba = Vec::with_capacity(row_bytes * h as usize);
+        let total = row_bytes * h as usize;
+
+        // Reuse the flush buffer to avoid per-flush allocation.
+        self.flush_buffer.clear();
+        self.flush_buffer.reserve(total);
 
         for row in 0..h as usize {
             let src_y = y as usize + row;
             let start = src_y * stride + x as usize * bpp;
-            rgba.extend_from_slice(&self.shadow[start..start + row_bytes]);
+            self.flush_buffer.extend_from_slice(&self.shadow[start..start + row_bytes]);
         }
+
+        // Swap out the buffer contents — next flush reuses the same allocation.
+        let rgba = std::mem::take(&mut self.flush_buffer);
 
         // Reset dirty state
         self.dirty = false;

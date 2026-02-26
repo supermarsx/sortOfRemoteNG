@@ -62,6 +62,46 @@ pub enum H264DecoderPreference {
     OpenH264,
 }
 
+/// Reusable buffer pool to avoid per-frame Vec allocations.
+///
+/// At 1080p 30fps, RGBA output = ~8 MB/frame = ~249 MB/s heap churn.
+/// This pool recycles up to `max_buffers` Vecs so the allocator only
+/// allocates once and subsequent frames reuse the same memory.
+pub struct FrameBufferPool {
+    buffers: Vec<Vec<u8>>,
+    max_buffers: usize,
+}
+
+impl FrameBufferPool {
+    pub fn new(max_buffers: usize) -> Self {
+        Self {
+            buffers: Vec::with_capacity(max_buffers),
+            max_buffers,
+        }
+    }
+
+    /// Acquire a buffer with at least `min_size` bytes capacity.
+    /// Reuses a pooled buffer if available, otherwise allocates.
+    pub fn acquire(&mut self, min_size: usize) -> Vec<u8> {
+        if let Some(mut buf) = self.buffers.pop() {
+            if buf.capacity() >= min_size {
+                buf.clear();
+                return buf;
+            }
+            // Buffer too small — drop it and allocate fresh.
+        }
+        Vec::with_capacity(min_size)
+    }
+
+    /// Return a buffer to the pool for reuse.
+    pub fn release(&mut self, buf: Vec<u8>) {
+        if self.buffers.len() < self.max_buffers {
+            self.buffers.push(buf);
+        }
+        // Otherwise drop it — pool is full.
+    }
+}
+
 /// Create an H.264 decoder based on preference.
 pub fn create_decoder(
     preference: H264DecoderPreference,

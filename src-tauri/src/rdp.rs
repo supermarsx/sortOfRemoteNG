@@ -2313,6 +2313,7 @@ fn run_rdp_session_inner(
 
         // ─ Flush batched frame updates ─────────────────────────────────
         if frame_batching && !dirty_regions.is_empty() && last_frame_emit.elapsed() >= batch_interval {
+            merge_dirty_regions(&mut dirty_regions);
             if !viewer_detached {
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                 if let Some(ref mut comp) = compositor {
@@ -2354,10 +2355,15 @@ fn run_rdp_session_inner(
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
                 // Same binary protocol: 8-byte header [x:u16LE, y:u16LE, w:u16LE, h:u16LE] + RGBA
                 let mut payload = Vec::with_capacity(8 + gfx_frame.rgba.len());
-                payload.extend_from_slice(&gfx_frame.screen_x.to_le_bytes());
-                payload.extend_from_slice(&gfx_frame.screen_y.to_le_bytes());
-                payload.extend_from_slice(&gfx_frame.width.to_le_bytes());
-                payload.extend_from_slice(&gfx_frame.height.to_le_bytes());
+                let header: [u8; 8] = {
+                    let mut h = [0u8; 8];
+                    h[0..2].copy_from_slice(&gfx_frame.screen_x.to_le_bytes());
+                    h[2..4].copy_from_slice(&gfx_frame.screen_y.to_le_bytes());
+                    h[4..6].copy_from_slice(&gfx_frame.width.to_le_bytes());
+                    h[6..8].copy_from_slice(&gfx_frame.height.to_le_bytes());
+                    h
+                };
+                payload.extend_from_slice(&header);
                 payload.extend_from_slice(&gfx_frame.rgba);
                 let _ = active_ch.send(InvokeResponseBody::Raw(payload));
             }
@@ -2722,6 +2728,64 @@ fn process_outputs(
     Ok(())
 }
 
+/// Merge overlapping/adjacent dirty regions to reduce Channel sends.
+///
+/// Sorts by (y, x) then greedily merges rects whose bounding boxes overlap.
+/// If the result still has more than `MAX_REGIONS` rects, collapses everything
+/// into a single bounding rect.
+fn merge_dirty_regions(regions: &mut Vec<(u16, u16, u16, u16)>) {
+    if regions.len() <= 1 {
+        return;
+    }
+
+    // Sort by top-left for spatial coherence.
+    regions.sort_unstable_by_key(|&(x, y, _, _)| (y, x));
+
+    let mut merged: Vec<(u16, u16, u16, u16)> = Vec::with_capacity(regions.len());
+    merged.push(regions[0]);
+
+    for &(rx, ry, rw, rh) in &regions[1..] {
+        let last = merged.last_mut().unwrap();
+        let (lx, ly, lw, lh) = *last;
+
+        // Check overlap: two rects overlap if neither is entirely left/right/above/below.
+        let l_right = lx.saturating_add(lw);
+        let l_bottom = ly.saturating_add(lh);
+        let r_right = rx.saturating_add(rw);
+        let r_bottom = ry.saturating_add(rh);
+
+        if rx <= l_right && lx <= r_right && ry <= l_bottom && ly <= r_bottom {
+            // Merge into bounding rect.
+            let new_x = lx.min(rx);
+            let new_y = ly.min(ry);
+            let new_right = l_right.max(r_right);
+            let new_bottom = l_bottom.max(r_bottom);
+            *last = (new_x, new_y, new_right - new_x, new_bottom - new_y);
+        } else {
+            merged.push((rx, ry, rw, rh));
+        }
+    }
+
+    // If still too many, collapse to one bounding rect.
+    const MAX_REGIONS: usize = 8;
+    if merged.len() > MAX_REGIONS {
+        let mut min_x = u16::MAX;
+        let mut min_y = u16::MAX;
+        let mut max_right: u16 = 0;
+        let mut max_bottom: u16 = 0;
+        for &(x, y, w, h) in &merged {
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_right = max_right.max(x.saturating_add(w));
+            max_bottom = max_bottom.max(y.saturating_add(h));
+        }
+        merged.clear();
+        merged.push((min_x, min_y, max_right - min_x, max_bottom - min_y));
+    }
+
+    *regions = merged;
+}
+
 /// Push a dirty region's pixel data directly through the Tauri Channel.
 ///
 /// Binary protocol: 8-byte header [x:u16LE, y:u16LE, w:u16LE, h:u16LE]
@@ -2743,21 +2807,37 @@ fn push_frame_via_channel(
     let rw = right.saturating_sub(left) + 1;
     let rh = bottom.saturating_sub(top) + 1;
 
-    let pixel_bytes = rw * rh * bpp;
-    let mut payload = Vec::with_capacity(8 + pixel_bytes);
+    let row_bytes = rw * bpp;
+    let total = 8 + rw * rh * bpp;
+    let mut payload = Vec::with_capacity(total);
 
-    // 8-byte header: x, y, w, h as little-endian u16
-    payload.extend_from_slice(&(region.left).to_le_bytes());
-    payload.extend_from_slice(&(region.top).to_le_bytes());
-    payload.extend_from_slice(&(rw as u16).to_le_bytes());
-    payload.extend_from_slice(&(rh as u16).to_le_bytes());
+    // 8-byte header as a single write
+    let header: [u8; 8] = {
+        let mut h = [0u8; 8];
+        h[0..2].copy_from_slice(&region.left.to_le_bytes());
+        h[2..4].copy_from_slice(&region.top.to_le_bytes());
+        h[4..6].copy_from_slice(&(rw as u16).to_le_bytes());
+        h[6..8].copy_from_slice(&(rh as u16).to_le_bytes());
+        h
+    };
+    payload.extend_from_slice(&header);
 
-    // RGBA pixel data — row-by-row copy from the framebuffer
-    for row in top..=bottom {
-        let row_start = row * stride + left * bpp;
-        let row_end = row_start + rw * bpp;
-        if row_end <= image_data.len() {
-            payload.extend_from_slice(&image_data[row_start..row_end]);
+    // RGBA pixel data — row-by-row copy from the framebuffer.
+    // Pre-validate that all rows fit to skip per-row bounds checks.
+    let last_row_end = bottom * stride + left * bpp + row_bytes;
+    if last_row_end <= image_data.len() {
+        for row in top..=bottom {
+            let row_start = row * stride + left * bpp;
+            payload.extend_from_slice(&image_data[row_start..row_start + row_bytes]);
+        }
+    } else {
+        // Fallback: per-row bounds check (shouldn't normally happen)
+        for row in top..=bottom {
+            let row_start = row * stride + left * bpp;
+            let row_end = row_start + row_bytes;
+            if row_end <= image_data.len() {
+                payload.extend_from_slice(&image_data[row_start..row_end]);
+            }
         }
     }
 
@@ -2773,13 +2853,16 @@ fn push_compositor_frame_via_channel(
 ) {
     let mut payload = Vec::with_capacity(8 + frame.rgba.len());
 
-    // 8-byte header: x, y, w, h as little-endian u16
-    payload.extend_from_slice(&frame.x.to_le_bytes());
-    payload.extend_from_slice(&frame.y.to_le_bytes());
-    payload.extend_from_slice(&frame.width.to_le_bytes());
-    payload.extend_from_slice(&frame.height.to_le_bytes());
-
-    // RGBA pixel data from compositor
+    // 8-byte header as a single write
+    let header: [u8; 8] = {
+        let mut h = [0u8; 8];
+        h[0..2].copy_from_slice(&frame.x.to_le_bytes());
+        h[2..4].copy_from_slice(&frame.y.to_le_bytes());
+        h[4..6].copy_from_slice(&frame.width.to_le_bytes());
+        h[6..8].copy_from_slice(&frame.height.to_le_bytes());
+        h
+    };
+    payload.extend_from_slice(&header);
     payload.extend_from_slice(&frame.rgba);
 
     let _ = frame_channel.send(InvokeResponseBody::Raw(payload));
