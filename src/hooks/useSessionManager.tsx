@@ -345,11 +345,39 @@ export const useSessionManager = () => {
     );
     const settings = settingsManager.getSettings();
 
-    const shouldWarn = connection?.warnOnClose || settings.warnOnClose;
-    if (shouldWarn) {
-      const confirmed = await showConfirm(t("dialogs.confirmClose"));
-      if (!confirmed) {
-        return;
+    // RDP sessions use their own close policy instead of the generic warnOnClose.
+    if (session.protocol === "rdp") {
+      const closePolicy = settings.rdpSessionClosePolicy || "ask";
+
+      if (closePolicy === "ask") {
+        // Single confirmation — OK closes tab (session stays running), Cancel aborts.
+        const confirmed = await showConfirm(
+          "Close this RDP tab? The session will keep running in the background — you can reattach later from the RDP Sessions panel.",
+        );
+        if (!confirmed) return;
+        // Tab closes, RDPClient unmount calls detach_rdp_session, backend stays alive
+      } else if (closePolicy === "disconnect") {
+        // Fully disconnect — ask for confirmation if warnOnClose is on
+        const shouldWarn = connection?.warnOnClose || settings.warnOnClose;
+        if (shouldWarn) {
+          const confirmed = await showConfirm(
+            "Disconnect this RDP session? The remote session will be ended.",
+          );
+          if (!confirmed) return;
+        }
+        try {
+          await invoke("disconnect_rdp", { connectionId: session.connectionId });
+        } catch (error) {
+          console.error("Failed to disconnect RDP session:", error);
+        }
+      }
+      // 'detach' policy: silently close the tab; RDPClient unmount calls detach_rdp_session
+    } else {
+      // Non-RDP protocols: original warnOnClose flow
+      const shouldWarn = connection?.warnOnClose || settings.warnOnClose;
+      if (shouldWarn) {
+        const confirmed = await showConfirm(t("dialogs.confirmClose"));
+        if (!confirmed) return;
       }
     }
 
@@ -370,30 +398,6 @@ export const useSessionManager = () => {
       } catch (error) {
         console.error("Failed to disconnect SSH session:", error);
       }
-    }
-
-    // RDP close policy: decide whether to keep the backend session running
-    if (session.protocol === "rdp") {
-      const closePolicy = settings.rdpSessionClosePolicy || "ask";
-      let shouldDisconnect = closePolicy === "disconnect";
-
-      if (closePolicy === "ask") {
-        // OK = keep running in background, Cancel = fully disconnect
-        const keepRunning = await showConfirm(
-          "Keep this RDP session running in the background? You can reattach later from the RDP Sessions panel.\n\nOK = Keep running  |  Cancel = Disconnect",
-        );
-        shouldDisconnect = !keepRunning;
-      }
-
-      if (shouldDisconnect) {
-        try {
-          await invoke("disconnect_rdp", { connectionId: session.connectionId });
-        } catch (error) {
-          console.error("Failed to disconnect RDP session:", error);
-        }
-      }
-      // If detach policy or user chose to keep running, the RDPClient unmount
-      // cleanup will call detach_rdp_session automatically, keeping the backend alive.
     }
 
     // Notify detached windows that this session has been closed from main window
