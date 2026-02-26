@@ -30,7 +30,7 @@ import {
   Cpu,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
+import { getAllWindows, getCurrentWindow, availableMonitors, currentMonitor } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
@@ -71,7 +71,7 @@ import { ConnectionDiagnostics } from "./components/ConnectionDiagnostics";
 import { BulkSSHCommander } from "./components/BulkSSHCommander";
 import { ScriptManager } from "./components/ScriptManager";
 import { InternalProxyManager } from "./components/InternalProxyManager";
-import { RdpSessionManager } from "./components/RdpSessionManager";
+import { RdpSessionPanel } from "./components/RdpSessionPanel";
 import { SyncBackupStatusBar } from "./components/SyncBackupStatusBar";
 import { BackupStatusPopup } from "./components/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "./components/CloudSyncStatusPopup";
@@ -104,7 +104,9 @@ const AppContent: React.FC = () => {
   const [showShortcutManager, setShowShortcutManager] = useState(false);
   const [showProxyMenu, setShowProxyMenu] = useState(false);
   const [showInternalProxyManager, setShowInternalProxyManager] = useState(false);
-  const [showRdpSessions, setShowRdpSessions] = useState(false);
+  const [rdpPanelOpen, setRdpPanelOpen] = useState(false);
+  const [rdpPanelWidth, setRdpPanelWidth] = useState(380);
+  const [isRdpPanelResizing, setIsRdpPanelResizing] = useState(false);
   const [showWol, setShowWol] = useState(false);
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
@@ -545,11 +547,34 @@ const AppContent: React.FC = () => {
           if (existingWindow) {
             existingWindow.setFocus().catch(() => undefined);
           } else {
+            // Multi-monitor: detect secondary monitor and position window there
+            let winWidth = 1200;
+            let winHeight = 800;
+            let winX: number | undefined;
+            let winY: number | undefined;
+            try {
+              const monitors = await availableMonitors();
+              const current = await currentMonitor();
+              const secondary = monitors.find(m =>
+                m.name !== current?.name ||
+                m.position.x !== current?.position.x
+              );
+              if (secondary) {
+                winX = secondary.position.x + 50;
+                winY = secondary.position.y + 50;
+                winWidth = Math.min(1600, secondary.size.width - 100);
+                winHeight = Math.min(900, secondary.size.height - 100);
+              }
+            } catch {
+              // Fallback to defaults
+            }
             const newWindow = new WebviewWindow(windowLabel, {
               url,
               title: windowTitle,
-              width: 1200,
-              height: 800,
+              width: winWidth,
+              height: winHeight,
+              x: winX,
+              y: winY,
               resizable: true,
               decorations: false,
             });
@@ -739,6 +764,47 @@ const AppContent: React.FC = () => {
       document.body.style.userSelect = "";
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
+
+  // RDP panel resize handlers
+  const handleRdpPanelMouseDown = (e: React.MouseEvent) => {
+    setIsRdpPanelResizing(true);
+    e.preventDefault();
+  };
+
+  const handleRdpPanelMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isRdpPanelResizing) return;
+      const layoutRect = layoutRef.current?.getBoundingClientRect();
+      const layoutRight = (layoutRect?.left ?? 0) + (layoutRect?.width ?? window.innerWidth);
+      const newWidth = Math.max(280, Math.min(600, layoutRight - e.clientX));
+      setRdpPanelWidth(newWidth);
+    },
+    [isRdpPanelResizing],
+  );
+
+  const handleRdpPanelMouseUp = useCallback(() => {
+    setIsRdpPanelResizing(false);
+  }, []);
+
+  useEffect(() => {
+    if (isRdpPanelResizing) {
+      document.addEventListener("mousemove", handleRdpPanelMouseMove);
+      document.addEventListener("mouseup", handleRdpPanelMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    } else {
+      document.removeEventListener("mousemove", handleRdpPanelMouseMove);
+      document.removeEventListener("mouseup", handleRdpPanelMouseUp);
+      if (!isResizing) {
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
+    }
+    return () => {
+      document.removeEventListener("mousemove", handleRdpPanelMouseMove);
+      document.removeEventListener("mouseup", handleRdpPanelMouseUp);
+    };
+  }, [isRdpPanelResizing, handleRdpPanelMouseMove, handleRdpPanelMouseUp, isResizing]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1803,9 +1869,9 @@ const AppContent: React.FC = () => {
 
         <div className="flex items-center space-x-1">
           <button
-            onClick={() => setShowRdpSessions(true)}
-            className="app-bar-button p-2"
-            title="RDP Sessions"
+            onClick={() => setRdpPanelOpen(prev => !prev)}
+            className={`app-bar-button p-2 ${rdpPanelOpen ? 'text-indigo-400' : ''}`}
+            title="RDP Sessions Panel"
           >
             <Cpu size={14} />
           </button>
@@ -2029,6 +2095,39 @@ const AppContent: React.FC = () => {
           </div>
         </div>
 
+        {/* RDP Sessions Panel (right side) - only in panel mode */}
+        {rdpPanelOpen && appSettings.rdpSessionDisplayMode === 'panel' && (
+          <div
+            className="relative flex-shrink-0 z-10"
+            style={{ width: `${rdpPanelWidth}px` }}
+          >
+            <RdpSessionPanel
+              isVisible={rdpPanelOpen}
+              connections={state.connections}
+              onClose={() => setRdpPanelOpen(false)}
+              onReattachSession={(sessionId, connectionId) => {
+                console.log('Reattach session:', sessionId, connectionId);
+              }}
+              onDetachToWindow={(sessionId) => {
+                const frontendSession = state.sessions.find(
+                  s => s.backendSessionId === sessionId || s.id === sessionId
+                );
+                if (frontendSession) {
+                  handleSessionDetach(frontendSession.id);
+                }
+              }}
+              thumbnailsEnabled={appSettings.rdpSessionThumbnailsEnabled}
+              thumbnailPolicy={appSettings.rdpSessionThumbnailPolicy}
+              thumbnailInterval={appSettings.rdpSessionThumbnailInterval}
+            />
+            {/* Resize handle on left edge */}
+            <div
+              className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:w-1.5 bg-gray-700/30 hover:bg-blue-500/60 transition-all duration-150"
+              onMouseDown={handleRdpPanelMouseDown}
+            />
+          </div>
+        )}
+
         {renderSidebar("right")}
       </div>
 
@@ -2135,10 +2234,35 @@ const AppContent: React.FC = () => {
         onClose={() => setShowInternalProxyManager(false)}
       />
 
-      <RdpSessionManager
-        isOpen={showRdpSessions}
-        onClose={() => setShowRdpSessions(false)}
-      />
+      {/* RDP Session Manager - popup mode */}
+      {rdpPanelOpen && appSettings.rdpSessionDisplayMode === 'popup' && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setRdpPanelOpen(false); }}
+        >
+          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl h-[90vh] flex flex-col overflow-hidden">
+            <RdpSessionPanel
+              isVisible={rdpPanelOpen}
+              connections={state.connections}
+              onClose={() => setRdpPanelOpen(false)}
+              onReattachSession={(sessionId, connectionId) => {
+                console.log('Reattach session:', sessionId, connectionId);
+              }}
+              onDetachToWindow={(sessionId) => {
+                const frontendSession = state.sessions.find(
+                  s => s.backendSessionId === sessionId || s.id === sessionId
+                );
+                if (frontendSession) {
+                  handleSessionDetach(frontendSession.id);
+                }
+              }}
+              thumbnailsEnabled={appSettings.rdpSessionThumbnailsEnabled}
+              thumbnailPolicy={appSettings.rdpSessionThumbnailPolicy}
+              thumbnailInterval={appSettings.rdpSessionThumbnailInterval}
+            />
+          </div>
+        </div>
+      )}
 
       <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
 

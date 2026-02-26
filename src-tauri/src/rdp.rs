@@ -856,6 +856,8 @@ pub struct RdpSession {
     /// SHA-256 fingerprint of the server's TLS certificate (hex)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_cert_fingerprint: Option<String>,
+    /// Whether a frontend viewer is currently attached (receiving frames).
+    pub viewer_attached: bool,
 }
 
 enum RdpCommand {
@@ -865,6 +867,10 @@ enum RdpCommand {
     AttachViewer(Channel<InvokeResponseBody>),
     /// Detach the current viewer without killing the session.
     DetachViewer,
+    /// Send a graceful sign-out / logoff to the remote session.
+    SignOut,
+    /// Force reboot the remote machine.
+    ForceReboot,
 }
 
 struct RdpActiveConnection {
@@ -872,6 +878,16 @@ struct RdpActiveConnection {
     cmd_tx: mpsc::UnboundedSender<RdpCommand>,
     stats: Arc<RdpSessionStats>,
     _handle: tokio::task::JoinHandle<()>,
+}
+
+/// A single RDP log entry stored in the ring buffer.
+#[derive(Clone, Serialize)]
+pub struct RdpLogEntry {
+    pub timestamp: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    pub level: String,
+    pub message: String,
 }
 
 pub struct RdpService {
@@ -885,6 +901,8 @@ pub struct RdpService {
     /// Has a short connect + request timeout so it doesn't hang waiting for an
     /// unreachable KDC.
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
+    /// Ring buffer of the last 1000 RDP log entries.
+    log_buffer: Vec<RdpLogEntry>,
 }
 
 impl RdpService {
@@ -911,7 +929,25 @@ impl RdpService {
             connections: HashMap::new(),
             cached_tls_connector: tls_connector,
             cached_http_client: http_client,
+            log_buffer: Vec::with_capacity(1024),
         }))
+    }
+
+    /// Push a log entry into the ring buffer (capped at 1000).
+    pub fn push_log(&mut self, level: &str, message: String, session_id: Option<String>) {
+        let entry = RdpLogEntry {
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            session_id,
+            level: level.to_string(),
+            message,
+        };
+        self.log_buffer.push(entry);
+        if self.log_buffer.len() > 1000 {
+            self.log_buffer.drain(..self.log_buffer.len() - 1000);
+        }
     }
 }
 
@@ -2248,6 +2284,46 @@ fn run_rdp_session_inner(
                     log::info!("RDP session {session_id}: viewer detached");
                     viewer_detached = true;
                 }
+                Ok(RdpCommand::SignOut) => {
+                    log::info!("RDP session {session_id}: sign-out requested");
+                    // Inject Ctrl+Alt+Del key sequence to invoke security screen,
+                    // then inject Enter to select "Sign Out" (the default action).
+                    // We use the RDP Shutdown Request PDU if possible, otherwise
+                    // inject the shutdown command via Win+R → "logoff" → Enter.
+                    use ironrdp::pdu::input::fast_path::KeyboardFlags;
+                    // Win+R to open Run dialog
+                    let win_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B); // Left Windows key
+                    let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13); // R key
+                    let r_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x13);
+                    let win_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE | KeyboardFlags::EXTENDED, 0x5B);
+                    merged_inputs.extend([win_press, r_press, r_release, win_release]);
+                    // Type "logoff" followed by Enter (queued as unicode events)
+                    for ch in "logoff".encode_utf16() {
+                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::empty(), ch));
+                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::RELEASE, ch));
+                    }
+                    // Small delay effect: input is batched and sent together, then Enter
+                    let enter_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x1C);
+                    let enter_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1C);
+                    merged_inputs.extend([enter_press, enter_release]);
+                }
+                Ok(RdpCommand::ForceReboot) => {
+                    log::info!("RDP session {session_id}: force reboot requested");
+                    // Inject Win+R → "shutdown /r /t 0 /f" → Enter
+                    use ironrdp::pdu::input::fast_path::KeyboardFlags;
+                    let win_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
+                    let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13);
+                    let r_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x13);
+                    let win_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE | KeyboardFlags::EXTENDED, 0x5B);
+                    merged_inputs.extend([win_press, r_press, r_release, win_release]);
+                    for ch in "shutdown /r /t 0 /f".encode_utf16() {
+                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::empty(), ch));
+                        merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::RELEASE, ch));
+                    }
+                    let enter_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x1C);
+                    let enter_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1C);
+                    merged_inputs.extend([enter_press, enter_release]);
+                }
                 Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     log::info!("RDP session {session_id}: command channel closed");
@@ -3065,6 +3141,7 @@ pub async fn connect_rdp(
         desktop_width: actual_width,
         desktop_height: actual_height,
         server_cert_fingerprint: None,
+        viewer_attached: true,
     };
 
     let stats = Arc::new(RdpSessionStats::new());
@@ -3114,6 +3191,11 @@ pub async fn connect_rdp(
     };
 
     let mut service = state.lock().await;
+    service.push_log(
+        "info",
+        format!("Connecting to {host}:{port} as {username} (session {session_id})"),
+        Some(session_id.clone()),
+    );
     service.connections.insert(session_id.clone(), connection);
 
     Ok(session_id)
@@ -3131,6 +3213,7 @@ pub async fn disconnect_rdp(
     // 1) Try by session_id first
     if let Some(ref sid) = session_id {
         if let Some(conn) = service.connections.remove(sid) {
+            service.push_log("info", format!("Disconnecting session {sid}"), Some(sid.clone()));
             let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
             tokio::time::sleep(Duration::from_millis(100)).await;
             return Ok(());
@@ -3146,6 +3229,7 @@ pub async fn disconnect_rdp(
             .map(|c| c.session.id.clone());
         if let Some(id) = old_id {
             if let Some(conn) = service.connections.remove(&id) {
+                service.push_log("info", format!("Disconnecting session {id} (connection_id={cid})"), Some(id.clone()));
                 let _ = conn.cmd_tx.send(RdpCommand::Shutdown);
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 return Ok(());
@@ -3166,7 +3250,7 @@ pub async fn detach_rdp_session(
     session_id: Option<String>,
     connection_id: Option<String>,
 ) -> Result<(), String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
 
     let target_id = if let Some(ref sid) = session_id {
         Some(sid.clone())
@@ -3180,10 +3264,16 @@ pub async fn detach_rdp_session(
         None
     };
 
+    let mut did_detach = None;
     if let Some(id) = target_id {
-        if let Some(conn) = service.connections.get(&id) {
+        if let Some(conn) = service.connections.get_mut(&id) {
             let _ = conn.cmd_tx.send(RdpCommand::DetachViewer);
+            conn.session.viewer_attached = false;
+            did_detach = Some(id);
         }
+    }
+    if let Some(id) = did_detach {
+        service.push_log("info", format!("Viewer detached from session {id}"), Some(id));
     }
     Ok(())
 }
@@ -3197,7 +3287,7 @@ pub async fn attach_rdp_session(
     connection_id: Option<String>,
     frame_channel: Channel<InvokeResponseBody>,
 ) -> Result<RdpSession, String> {
-    let service = state.lock().await;
+    let mut service = state.lock().await;
 
     let target_id = if let Some(ref sid) = session_id {
         Some(sid.clone())
@@ -3214,14 +3304,55 @@ pub async fn attach_rdp_session(
     let id = target_id.ok_or("No session_id or connection_id provided")?;
     let conn = service
         .connections
-        .get(&id)
+        .get_mut(&id)
         .ok_or_else(|| format!("Session {id} not found"))?;
 
     conn.cmd_tx
         .send(RdpCommand::AttachViewer(frame_channel))
         .map_err(|_| "Session command channel closed".to_string())?;
 
-    Ok(conn.session.clone())
+    conn.session.viewer_attached = true;
+    let session_clone = conn.session.clone();
+    service.push_log("info", format!("Viewer attached to session {id}"), Some(id));
+    Ok(session_clone)
+}
+
+/// Send a graceful sign-out command to the remote RDP session.
+/// Injects keystrokes to run "logoff" via the Run dialog.
+#[tauri::command]
+pub async fn rdp_sign_out(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+) -> Result<(), String> {
+    let mut service = state.lock().await;
+    let conn = service
+        .connections
+        .get(&session_id)
+        .ok_or_else(|| format!("Session {session_id} not found"))?;
+    conn.cmd_tx
+        .send(RdpCommand::SignOut)
+        .map_err(|_| "Session command channel closed".to_string())?;
+    service.push_log("info", format!("Sign-out requested for session {session_id}"), Some(session_id));
+    Ok(())
+}
+
+/// Force reboot the remote machine via "shutdown /r /t 0 /f".
+/// Injects keystrokes to run the command via the Run dialog.
+#[tauri::command]
+pub async fn rdp_force_reboot(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: String,
+) -> Result<(), String> {
+    let mut service = state.lock().await;
+    let conn = service
+        .connections
+        .get(&session_id)
+        .ok_or_else(|| format!("Session {session_id} not found"))?;
+    conn.cmd_tx
+        .send(RdpCommand::ForceReboot)
+        .map_err(|_| "Session command channel closed".to_string())?;
+    service.push_log("warn", format!("Force reboot requested for session {session_id}"), Some(session_id));
+    Ok(())
 }
 
 #[tauri::command]
@@ -3260,6 +3391,64 @@ pub fn rdp_get_frame_data(
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+/// Return a downscaled RGBA thumbnail of the full framebuffer.
+/// This avoids transferring multi-megabyte frames for preview purposes.
+#[tauri::command]
+pub fn rdp_get_thumbnail(
+    frame_store: tauri::State<'_, SharedFrameStoreState>,
+    session_id: String,
+    thumb_width: u32,
+    thumb_height: u32,
+) -> Result<tauri::ipc::Response, String> {
+    let slots = frame_store.slots.read().unwrap();
+    let slot = slots
+        .get(&session_id)
+        .ok_or_else(|| format!("No framebuffer for session {session_id}"))?;
+
+    let src_w = slot.width as u32;
+    let src_h = slot.height as u32;
+    if src_w == 0 || src_h == 0 {
+        return Err("Empty framebuffer".to_string());
+    }
+
+    let src = image::RgbaImage::from_raw(src_w, src_h, slot.data.clone())
+        .ok_or("Invalid framebuffer data")?;
+
+    let thumb = image::imageops::resize(
+        &src,
+        thumb_width,
+        thumb_height,
+        image::imageops::FilterType::Nearest,
+    );
+
+    Ok(tauri::ipc::Response::new(thumb.into_raw()))
+}
+
+/// Save a screenshot of the RDP session framebuffer to a file.
+#[tauri::command]
+pub fn rdp_save_screenshot(
+    frame_store: tauri::State<'_, SharedFrameStoreState>,
+    session_id: String,
+    file_path: String,
+) -> Result<(), String> {
+    let slots = frame_store.slots.read().unwrap();
+    let slot = slots
+        .get(&session_id)
+        .ok_or_else(|| format!("No framebuffer for session {session_id}"))?;
+
+    let src_w = slot.width as u32;
+    let src_h = slot.height as u32;
+    if src_w == 0 || src_h == 0 {
+        return Err("Empty framebuffer".to_string());
+    }
+
+    let img = image::RgbaImage::from_raw(src_w, src_h, slot.data.clone())
+        .ok_or("Invalid framebuffer data")?;
+
+    img.save(&file_path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn get_rdp_session_info(
     state: tauri::State<'_, RdpServiceState>,
@@ -3295,6 +3484,25 @@ pub async fn get_rdp_stats(
         Ok(conn.stats.to_event(&session_id))
     } else {
         Err(format!("RDP session {session_id} not found"))
+    }
+}
+
+/// Retrieve RDP log entries, optionally filtered by timestamp.
+#[tauri::command]
+pub async fn get_rdp_logs(
+    state: tauri::State<'_, RdpServiceState>,
+    since_timestamp: Option<u64>,
+) -> Result<Vec<RdpLogEntry>, String> {
+    let service = state.lock().await;
+    if let Some(since) = since_timestamp {
+        Ok(service
+            .log_buffer
+            .iter()
+            .filter(|e| e.timestamp > since)
+            .cloned()
+            .collect())
+    } else {
+        Ok(service.log_buffer.clone())
     }
 }
 

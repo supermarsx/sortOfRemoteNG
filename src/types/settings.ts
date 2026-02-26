@@ -294,6 +294,22 @@ export interface GlobalSettings {
    * Per-connection settings override these.
    */
   rdpDefaults: RdpGlobalDefaultsConfig;
+
+  // ─── RDP Session Panel Settings ─────────────────────────────
+  /** Display mode for the RDP session manager: 'panel' (right sidebar) or 'popup' (modal overlay) */
+  rdpSessionDisplayMode: 'panel' | 'popup';
+  /** Whether to show live thumbnails in the RDP session list */
+  rdpSessionThumbnailsEnabled: boolean;
+  /**
+   * When to capture thumbnails:
+   * - 'realtime': Periodically update while session is active (every 5s)
+   * - 'on-blur': Capture when the session tab loses focus / is switched away
+   * - 'on-detach': Capture only when the viewer is detached
+   * - 'manual': Only capture when the user explicitly requests
+   */
+  rdpSessionThumbnailPolicy: 'realtime' | 'on-blur' | 'on-detach' | 'manual';
+  /** Thumbnail refresh interval in seconds (only for 'realtime' policy) */
+  rdpSessionThumbnailInterval: number;
 }
 
 /** Global default CredSSP remediation configuration */

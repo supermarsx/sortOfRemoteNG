@@ -299,6 +299,12 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     gfxEnabled: false,
     h264Decoder: 'auto' as const,
   },
+
+  // RDP Session Panel Settings
+  rdpSessionDisplayMode: 'popup' as const,
+  rdpSessionThumbnailsEnabled: true,
+  rdpSessionThumbnailPolicy: 'realtime' as const,
+  rdpSessionThumbnailInterval: 5,
 };
 
 /**

@@ -237,6 +237,11 @@ const defaultSettings: GlobalSettings = {
     renderBackend: 'webview' as const,
     frontendRenderer: 'auto' as const,
   },
+  // RDP Session Panel Settings
+  rdpSessionDisplayMode: 'popup' as const,
+  rdpSessionThumbnailsEnabled: true,
+  rdpSessionThumbnailPolicy: 'realtime' as const,
+  rdpSessionThumbnailInterval: 5,
 };
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);

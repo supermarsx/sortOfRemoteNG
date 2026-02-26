@@ -2,12 +2,12 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { debugLog } from '../utils/debugLogger';
 import { ConnectionSession } from '../types/connection';
 import { DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../types/connection';
-import { 
-  Monitor, 
-  Maximize2, 
-  Minimize2, 
-  Settings, 
-  Wifi, 
+import {
+  Monitor,
+  Maximize2,
+  Minimize2,
+  Settings,
+  Wifi,
   WifiOff,
   MousePointer,
   Keyboard,
@@ -18,10 +18,17 @@ import {
   X,
   Search,
   ZoomIn,
+  Camera,
+  Circle,
+  Square,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { writeFile } from '@tauri-apps/plugin-fs';
 import { useConnections } from '../contexts/useConnections';
 import RdpErrorScreen from './RdpErrorScreen';
 import { useSettings } from '../contexts/SettingsContext';
@@ -35,6 +42,7 @@ import {
 import { TrustWarningDialog } from './TrustWarningDialog';
 import { FrameBuffer } from './rdpCanvas';
 import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from './rdpRenderers';
+import { useSessionRecorder, formatDuration } from '../hooks/useSessionRecorder';
 
 interface RDPClientProps {
   session: ConnectionSession;
@@ -294,6 +302,52 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
   // Track current session ID for event filtering
   const sessionIdRef = useRef<string | null>(null);
+
+  // Session recording
+  const { state: recState, startRecording, stopRecording, pauseRecording, resumeRecording } = useSessionRecorder(canvasRef);
+
+  // Screenshot handler
+  const handleScreenshot = useCallback(async () => {
+    const sid = session.backendSessionId || rdpSessionId;
+    if (!sid || desktopSize.width === 0) return;
+    try {
+      const filePath = await saveDialog({
+        defaultPath: `screenshot-${session.name || 'rdp'}-${Date.now()}.png`,
+        filters: [
+          { name: 'PNG Image', extensions: ['png'] },
+          { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] },
+          { name: 'BMP Image', extensions: ['bmp'] },
+        ],
+      });
+      if (filePath) {
+        await invoke('rdp_save_screenshot', { sessionId: sid, filePath });
+      }
+    } catch (error) {
+      console.error('Screenshot failed:', error);
+    }
+  }, [session, rdpSessionId, desktopSize]);
+
+  // Recording save handler
+  const handleStopRecording = useCallback(async () => {
+    const blob = await stopRecording();
+    if (!blob) return;
+    try {
+      const ext = recState.format || 'webm';
+      const filePath = await saveDialog({
+        defaultPath: `recording-${session.name || 'rdp'}-${Date.now()}.${ext}`,
+        filters: [
+          { name: 'WebM Video', extensions: ['webm'] },
+          { name: 'MP4 Video', extensions: ['mp4'] },
+        ],
+      });
+      if (filePath) {
+        const buffer = await blob.arrayBuffer();
+        await writeFile(filePath, new Uint8Array(buffer));
+      }
+    } catch (error) {
+      console.error('Recording save failed:', error);
+    }
+  }, [stopRecording, recState.format, session]);
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
@@ -1146,6 +1200,56 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             <Settings size={14} />
           </button>
           
+          {/* Screenshot */}
+          <button
+            onClick={handleScreenshot}
+            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            title="Capture screenshot"
+          >
+            <Camera size={14} />
+          </button>
+
+          {/* Recording */}
+          {!recState.isRecording ? (
+            <button
+              onClick={() => startRecording('webm')}
+              className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-red-400"
+              title="Start recording"
+            >
+              <Circle size={14} className="fill-current" />
+            </button>
+          ) : (
+            <div className="flex items-center space-x-1">
+              <span className="text-[10px] text-red-400 animate-pulse font-mono">
+                REC {formatDuration(recState.duration)}
+              </span>
+              {recState.isPaused ? (
+                <button
+                  onClick={resumeRecording}
+                  className="p-1 hover:bg-gray-700 rounded text-yellow-400"
+                  title="Resume recording"
+                >
+                  <Play size={12} />
+                </button>
+              ) : (
+                <button
+                  onClick={pauseRecording}
+                  className="p-1 hover:bg-gray-700 rounded text-yellow-400"
+                  title="Pause recording"
+                >
+                  <Pause size={12} />
+                </button>
+              )}
+              <button
+                onClick={handleStopRecording}
+                className="p-1 hover:bg-gray-700 rounded text-red-400"
+                title="Stop and save recording"
+              >
+                <Square size={12} className="fill-current" />
+              </button>
+            </div>
+          )}
+
           <button
             onClick={toggleFullscreen}
             className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
