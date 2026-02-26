@@ -114,13 +114,24 @@ where
 
     /// Reads from stream and fills internal buffer, returning how many bytes were read.
     fn read(&mut self) -> io::Result<usize> {
-        // FIXME(perf): use read_buf (https://doc.rust-lang.org/std/io/trait.Read.html#method.read_buf)
-        // once its stabilized. See tracking issue for RFC 2930: https://github.com/rust-lang/rust/issues/78485
-
-        let mut read_bytes = [0u8; 1024];
-        let len = self.stream.read(&mut read_bytes)?;
-        self.buf.extend_from_slice(&read_bytes[..len]);
-
+        // Read directly into the BytesMut spare capacity — avoids the
+        // intermediate stack buffer + extend_from_slice copy that the
+        // upstream code does with a 1024-byte array.  Also reads up to
+        // 64 KB at a time instead of 1 KB, which drastically reduces
+        // syscall and TLS decryption overhead for large bitmap PDUs
+        // (a 50 KB PDU goes from 50 read() calls down to 1).
+        const READ_BUF_SIZE: usize = 65536;
+        self.buf.reserve(READ_BUF_SIZE);
+        let spare = self.buf.spare_capacity_mut();
+        // SAFETY: we only advance the length by the number of bytes
+        // actually written by `read`, which is guaranteed ≤ spare.len().
+        let uninit_slice = unsafe {
+            std::slice::from_raw_parts_mut(spare.as_mut_ptr() as *mut u8, spare.len())
+        };
+        let len = self.stream.read(uninit_slice)?;
+        unsafe {
+            self.buf.set_len(self.buf.len() + len);
+        }
         Ok(len)
     }
 }
