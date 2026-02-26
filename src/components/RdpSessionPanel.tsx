@@ -255,14 +255,14 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
             <button
               onClick={handleRefresh}
               className={`p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-400 hover:text-white ${isLoading ? 'animate-spin' : ''}`}
-              title="Refresh"
+              data-tooltip="Refresh"
             >
               <RefreshCw size={12} />
             </button>
             <button
               onClick={onClose}
               className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-400 hover:text-white"
-              title="Close panel"
+              data-tooltip="Close panel"
             >
               <PanelRightClose size={14} />
             </button>
@@ -379,7 +379,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                               <button
                                 onClick={() => onReattachSession(session.id, session.connection_id)}
                                 className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-green-400 transition-colors"
-                                title="Reattach viewer"
+                                data-tooltip="Reattach viewer"
                               >
                                 <PlugZap size={12} />
                               </button>
@@ -388,7 +388,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                               <button
                                 onClick={() => onDetachToWindow(session.id)}
                                 className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-blue-400 transition-colors"
-                                title="Open in separate window"
+                                data-tooltip="Open in separate window"
                               >
                                 <ExternalLink size={12} />
                               </button>
@@ -396,21 +396,21 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                             <button
                               onClick={() => handleDetach(session.id)}
                               className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-yellow-400 transition-colors"
-                              title="Detach viewer (keep session running)"
+                              data-tooltip="Detach viewer (keep session running)"
                             >
                               <Unplug size={12} />
                             </button>
                             <button
                               onClick={() => handleSignOut(session.id)}
                               className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-blue-400 transition-colors"
-                              title="Sign out remote session"
+                              data-tooltip="Sign out remote session"
                             >
                               <LogOut size={12} />
                             </button>
                             <button
                               onClick={() => setRebootConfirmSessionId(session.id)}
                               className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
-                              title="Force reboot remote machine"
+                              data-tooltip="Force reboot remote machine"
                             >
                               <RotateCcw size={12} />
                             </button>
@@ -420,14 +420,14 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                                 setActiveTab('logs');
                               }}
                               className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-indigo-400 transition-colors"
-                              title="View logs for this session"
+                              data-tooltip="View logs for this session"
                             >
                               <ScrollText size={12} />
                             </button>
                             <button
                               onClick={() => handleDisconnect(session.id)}
                               className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
-                              title="Disconnect session"
+                              data-tooltip="Disconnect session"
                             >
                               <PowerOff size={12} />
                             </button>

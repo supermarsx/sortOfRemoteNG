@@ -2277,6 +2277,25 @@ fn run_rdp_session_inner(
                     log::info!(
                         "RDP session {session_id}: viewer attached (new frame channel)"
                     );
+                    // Send the full current framebuffer so the reattached viewer
+                    // immediately sees the screen instead of waiting for the next
+                    // incremental update.
+                    {
+                        let slots = frame_store.slots.read().unwrap();
+                        if let Some(slot) = slots.get(session_id) {
+                            let w = slot.width;
+                            let h = slot.height;
+                            let total = 8 + slot.data.len();
+                            let mut payload = Vec::with_capacity(total);
+                            // 8-byte header: x=0, y=0, w=desktop_width, h=desktop_height
+                            payload.extend_from_slice(&0u16.to_le_bytes());
+                            payload.extend_from_slice(&0u16.to_le_bytes());
+                            payload.extend_from_slice(&w.to_le_bytes());
+                            payload.extend_from_slice(&h.to_le_bytes());
+                            payload.extend_from_slice(&slot.data);
+                            let _ = new_channel.send(InvokeResponseBody::Raw(payload));
+                        }
+                    }
                     attached_channel = Some(new_channel);
                     viewer_detached = false;
                 }

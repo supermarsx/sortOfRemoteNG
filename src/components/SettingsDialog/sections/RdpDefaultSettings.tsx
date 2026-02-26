@@ -7,6 +7,7 @@ import {
   Zap,
   Monitor,
   Cable,
+  Layers,
 } from 'lucide-react';
 
 interface RdpDefaultSettingsProps {
@@ -37,6 +38,104 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
           Default configuration applied to all new RDP connections. Individual connections can
           override these settings.
         </p>
+      </div>
+
+      {/* ─── Session Management ─────────────────────────────────── */}
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+          <Layers className="w-4 h-4 text-indigo-400" />
+          Session Management
+        </h4>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Session Panel Display Mode</label>
+          <select
+            value={settings.rdpSessionDisplayMode ?? 'popup'}
+            onChange={(e) =>
+              updateSettings({ rdpSessionDisplayMode: e.target.value as 'panel' | 'popup' })
+            }
+            className={selectClass}
+          >
+            <option value="popup">Popup (modal overlay)</option>
+            <option value="panel">Panel (right sidebar)</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            How the RDP Sessions manager appears — as a floating popup or a docked side panel.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Tab Close Policy</label>
+          <select
+            value={settings.rdpSessionClosePolicy ?? 'ask'}
+            onChange={(e) =>
+              updateSettings({ rdpSessionClosePolicy: e.target.value as 'disconnect' | 'detach' | 'ask' })
+            }
+            className={selectClass}
+          >
+            <option value="ask">Ask every time</option>
+            <option value="detach">Keep session running in background (detach)</option>
+            <option value="disconnect">Fully disconnect the session</option>
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            What happens when you close an RDP tab. &ldquo;Detach&rdquo; keeps the remote session alive so you
+            can reattach later. &ldquo;Disconnect&rdquo; ends the session immediately.
+          </p>
+        </div>
+
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={settings.rdpSessionThumbnailsEnabled ?? true}
+            onChange={(e) => updateSettings({ rdpSessionThumbnailsEnabled: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            Show session thumbnails
+          </span>
+        </label>
+
+        {(settings.rdpSessionThumbnailsEnabled ?? true) && (
+          <div className="ml-7 space-y-3">
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Thumbnail Capture Policy</label>
+              <select
+                value={settings.rdpSessionThumbnailPolicy ?? 'realtime'}
+                onChange={(e) =>
+                  updateSettings({
+                    rdpSessionThumbnailPolicy: e.target.value as 'realtime' | 'on-blur' | 'on-detach' | 'manual',
+                  })
+                }
+                className={selectClass}
+              >
+                <option value="realtime">Realtime (periodic refresh)</option>
+                <option value="on-blur">On blur (when tab loses focus)</option>
+                <option value="on-detach">On detach (when viewer is detached)</option>
+                <option value="manual">Manual only</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">
+                Thumbnail Refresh Interval: {settings.rdpSessionThumbnailInterval ?? 5}s
+              </label>
+              <input
+                type="range"
+                min={1}
+                max={30}
+                step={1}
+                value={settings.rdpSessionThumbnailInterval ?? 5}
+                onChange={(e) =>
+                  updateSettings({ rdpSessionThumbnailInterval: parseInt(e.target.value) })
+                }
+                className="w-full"
+              />
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>1s</span>
+                <span>30s</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ─── Security Defaults ─────────────────────────────────── */}

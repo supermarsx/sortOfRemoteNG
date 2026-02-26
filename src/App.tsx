@@ -222,6 +222,69 @@ const AppContent: React.FC = () => {
     }
   }, [isInitialized, appReady]);
 
+  // Restore frontend tabs for backend RDP sessions that survived a reload.
+  // Runs once on startup — checks list_rdp_sessions for connected sessions
+  // that don't have a matching frontend tab, and creates them.
+  const rdpRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!appReady || rdpRestoredRef.current) return;
+    rdpRestoredRef.current = true;
+
+    (async () => {
+      try {
+        const backendSessions = await invoke<Array<{
+          id: string;
+          connection_id?: string;
+          host: string;
+          port: number;
+          connected: boolean;
+          desktop_width: number;
+          desktop_height: number;
+        }>>('list_rdp_sessions');
+
+        const connectedSessions = backendSessions.filter(s => s.connected);
+        if (connectedSessions.length === 0) return;
+
+        for (const bs of connectedSessions) {
+          // Skip if a frontend session already exists for this backend session
+          const existing = state.sessions.find(
+            s => s.protocol === 'rdp' && (
+              s.connectionId === bs.connection_id ||
+              s.backendSessionId === bs.id
+            )
+          );
+          if (existing) continue;
+
+          const connection = bs.connection_id
+            ? state.connections.find(c => c.id === bs.connection_id)
+            : state.connections.find(c =>
+                c.hostname === bs.host && (c.port || 3389) === bs.port && c.protocol === 'rdp'
+              );
+
+          const newSession: ConnectionSession = {
+            id: generateId(),
+            connectionId: connection?.id || bs.connection_id || bs.id,
+            name: connection?.name || `${bs.host}:${bs.port}`,
+            status: 'connected',
+            startTime: new Date(),
+            protocol: 'rdp',
+            hostname: bs.host,
+            reconnectAttempts: 0,
+            maxReconnectAttempts: 3,
+          };
+
+          dispatch({ type: 'ADD_SESSION', payload: newSession });
+          // RDPClient will mount and auto-detect the existing backend session
+          // via list_rdp_sessions → attach_rdp_session, receiving the full
+          // framebuffer immediately.
+        }
+      } catch {
+        // Backend may not be ready yet — not an error
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appReady]);
+
   const handleQuickConnectWithHistory = useCallback(
     (payload: {
       hostname: string;
@@ -2247,6 +2310,9 @@ const AppContent: React.FC = () => {
             : closeConfirmDialog
         }
       />
+
+      {/* Session manager confirm dialog (RDP close policy, etc.) */}
+      {confirmDialog}
 
       <SettingsDialog
         isOpen={showSettings}
