@@ -473,18 +473,30 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const magnifierEnabled = rdpSettings.display?.magnifierEnabled ?? false;
   const magnifierZoom = rdpSettings.display?.magnifierZoom ?? 3;
 
-  // Refs for values used inside stable event listeners (avoids stale closures)
+  // Refs for values used inside stable event listeners and the connection
+  // effect.  By reading from refs, the heavy connect/cleanup callbacks never
+  // need to list these objects as deps, which means React won't re-fire the
+  // connection effect when the parent re-renders with a new object reference.
   const connectionRef = useRef(connection);
   connectionRef.current = connection;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const rdpSettingsRef = useRef(rdpSettings);
+  rdpSettingsRef.current = rdpSettings;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   // Keep the renderer type ref in sync with the resolved settings
   frontendRendererTypeRef.current = (rdpSettings.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
 
   // ─── Initialize RDP connection ─────────────────────────────────────
+  // Reads all mutable values from refs so the callback identity is fully
+  // stable (no deps on session/connection/rdpSettings objects).
 
   const initializeRDPConnection = useCallback(async () => {
-    if (!connection) return;
+    const conn = connectionRef.current;
+    const sess = sessionRef.current;
+    const rdpCfg = rdpSettingsRef.current;
+    if (!conn) return;
 
     try {
       setConnectionStatus('connecting');
@@ -515,11 +527,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         }>>('list_rdp_sessions');
 
         const existing = existingSessions.find(
-          s => s.connection_id === connection.id && s.connected
+          s => s.connection_id === conn.id && s.connected
         );
 
         if (existing) {
-          debugLog(`Re-attaching to existing session ${existing.id} for ${connection.id}`);
+          debugLog(`Re-attaching to existing session ${existing.id} for ${conn.id}`);
           setStatusMessage('Re-attaching to existing session...');
 
           const sessionInfo = await invoke<{
@@ -527,7 +539,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             desktop_width: number;
             desktop_height: number;
           }>('attach_rdp_session', {
-            connectionId: connection.id,
+            connectionId: conn.id,
             frameChannel,
           });
 
@@ -547,7 +559,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
               sessionInfo.desktop_height
             );
             // Create the pluggable renderer for the visible canvas
-            const rendererType = (rdpSettings.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
+            const rendererType = (rdpCfg.performance?.frontendRenderer ?? 'auto') as FrontendRendererType;
             rendererRef.current?.destroy();
             rendererRef.current = createFrameRenderer(rendererType, canvas);
             setActiveFrontendRenderer(rendererRef.current.name);
@@ -563,15 +575,15 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       }
 
       // Auto-detect keyboard layout from the OS if configured
-      let effectiveSettings = rdpSettings;
-      if (rdpSettings.input?.autoDetectLayout !== false) {
+      let effectiveSettings = rdpCfg;
+      if (rdpCfg.input?.autoDetectLayout !== false) {
         try {
           const detectedLayout = await invoke<number>('detect_keyboard_layout');
           const langId = detectedLayout & 0xFFFF;
           if (langId && langId !== 0) {
             effectiveSettings = {
-              ...rdpSettings,
-              input: { ...rdpSettings.input, keyboardLayout: langId },
+              ...rdpCfg,
+              input: { ...rdpCfg.input, keyboardLayout: langId },
             };
             debugLog(`Auto-detected keyboard layout: 0x${langId.toString(16).padStart(4, '0')}`);
           }
@@ -585,12 +597,12 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       const resH = display?.height ?? 1080;
 
       const connectionDetails = {
-        connectionId: connection.id,
-        host: session.hostname,
-        port: connection.port || 3389,
-        username: connection.username || '',
-        password: connection.password || '',
-        domain: connection.domain,
+        connectionId: conn.id,
+        host: sess.hostname,
+        port: conn.port || 3389,
+        username: conn.username || '',
+        password: conn.password || '',
+        domain: conn.domain,
         width: resW,
         height: resH,
         rdpSettings: effectiveSettings,
@@ -622,8 +634,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       setStatusMessage(`Connection failed: ${error}`);
       console.error('RDP initialization failed:', error);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- renderFrames is ref-stable
-  }, [session, connection, rdpSettings]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- all mutable values read from refs
+  }, []);
 
   // ─── Disconnect ────────────────────────────────────────────────────
 
@@ -643,24 +655,28 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     rendererRef.current = null;
     // Detach the viewer — the backend session continues running headless.
     // Use disconnect_rdp only for explicit user-initiated disconnects.
-    if (connection) {
+    const conn = connectionRef.current;
+    if (conn) {
       try {
-        await invoke('detach_rdp_session', { connectionId: connection.id });
+        await invoke('detach_rdp_session', { connectionId: conn.id });
       } catch {
         // ignore — session may already have ended
       }
     }
-  }, [connection]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- reads connection from ref
+  }, []);
 
   // ─── Trust accept / reject ─────────────────────────────────────────
 
   const handleTrustAccept = useCallback(() => {
-    if (certIdentity && connection) {
-      const port = connection.port || 3389;
-      trustIdentity(session.hostname, port, 'tls', certIdentity, true, connection.id);
+    const conn = connectionRef.current;
+    const sess = sessionRef.current;
+    if (certIdentity && conn) {
+      const port = conn.port || 3389;
+      trustIdentity(sess.hostname, port, 'tls', certIdentity, true, conn.id);
     }
     setTrustPrompt(null);
-  }, [certIdentity, connection, session.hostname]);
+  }, [certIdentity]);
 
   const handleTrustReject = useCallback(() => {
     setTrustPrompt(null);
@@ -803,13 +819,17 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   }, []);
 
   // ─── Connect on mount, disconnect on unmount ───────────────────────
+  // Depends ONLY on session.id (a stable string primitive).
+  // initializeRDPConnection and cleanup are now stable (empty deps)
+  // so they won't cause spurious re-fires.
 
   useEffect(() => {
     initializeRDPConnection();
     return () => {
       cleanup();
     };
-  }, [session, initializeRDPConnection, cleanup]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- session.id is the only meaningful trigger
+  }, [session.id]);
 
   // ─── Cleanup: cancel any pending rAF on unmount ─────────────────────
 
