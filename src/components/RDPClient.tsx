@@ -1539,14 +1539,6 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
       {/* RDP Canvas */}
       <div ref={containerRef} className="flex-1 flex items-center justify-center bg-black p-1 relative min-h-0 overflow-hidden">
-        {/* "Connecting..." overlay — avoids calling getContext('2d') on
-            the canvas which would lock it and prevent GPU renderers. */}
-        {connectionStatus === 'connecting' && (
-          <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-            <span className="text-gray-400 font-mono text-base">Connecting...</span>
-          </div>
-        )}
-
         <canvas
           ref={canvasRef}
           className="border border-gray-600 max-w-full max-h-full"
@@ -1599,7 +1591,9 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
               <p className="text-gray-400">Connecting to RDP server...</p>
-              <p className="text-gray-500 text-sm mt-2">{session.hostname}</p>
+              <p className="text-gray-500 text-sm mt-2">
+                {session.name !== session.hostname ? `${session.name} (${session.hostname})` : session.hostname}
+              </p>
               {statusMessage && <p className="text-gray-600 text-xs mt-1">{statusMessage}</p>}
             </div>
           </div>

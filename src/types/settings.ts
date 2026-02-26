@@ -310,6 +310,8 @@ export interface GlobalSettings {
   rdpSessionThumbnailPolicy: 'realtime' | 'on-blur' | 'on-detach' | 'manual';
   /** Thumbnail refresh interval in seconds (only for 'realtime' policy) */
   rdpSessionThumbnailInterval: number;
+  /** What happens when an RDP tab is closed: 'disconnect' fully ends the session, 'detach' keeps it running in background */
+  rdpSessionClosePolicy: 'disconnect' | 'detach' | 'ask';
 }
 
 /** Global default CredSSP remediation configuration */

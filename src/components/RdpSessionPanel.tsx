@@ -16,6 +16,7 @@ import {
   LogOut,
   RotateCcw,
   ExternalLink,
+  ScrollText,
   PanelRightClose,
 } from 'lucide-react';
 import { Connection } from '../types/connection';
@@ -26,6 +27,8 @@ import { RdpLogViewer } from './RdpLogViewer';
 interface RdpSessionPanelProps {
   isVisible: boolean;
   connections: Connection[];
+  /** Backend session IDs that currently have an active frontend viewer tab/window. */
+  activeBackendSessionIds?: string[];
   onClose: () => void;
   onReattachSession?: (sessionId: string, connectionId?: string) => void;
   onDetachToWindow?: (sessionId: string) => void;
@@ -84,6 +87,7 @@ type PanelTab = 'sessions' | 'logs';
 export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
   isVisible,
   connections,
+  activeBackendSessionIds = [],
   onClose,
   onReattachSession,
   onDetachToWindow,
@@ -99,6 +103,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
   const autoRefreshRef = useRef(autoRefresh);
   const [activeTab, setActiveTab] = useState<PanelTab>('sessions');
   const [rebootConfirmSessionId, setRebootConfirmSessionId] = useState<string | null>(null);
+  const [logSessionFilter, setLogSessionFilter] = useState<string | null>(null);
 
   const thumbnails = useSessionThumbnails(
     sessions,
@@ -196,14 +201,22 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
   }, [sessions]);
 
   const getSessionDisplayName = useCallback((session: RdpSessionInfo): { name: string; subtitle: string } => {
-    if (session.connection_id) {
-      const conn = connections.find(c => c.id === session.connection_id);
-      if (conn) {
-        return {
-          name: conn.name,
-          subtitle: `${session.host}:${session.port}`,
-        };
-      }
+    // Try matching by connection_id first, then fall back to host+port matching
+    let conn = session.connection_id
+      ? connections.find(c => c.id === session.connection_id)
+      : undefined;
+    if (!conn) {
+      conn = connections.find(c =>
+        c.hostname === session.host &&
+        (c.port || 3389) === session.port &&
+        c.protocol === 'rdp'
+      );
+    }
+    if (conn) {
+      return {
+        name: conn.name,
+        subtitle: `${session.host}:${session.port}${session.username ? ` (${session.username})` : ''}`,
+      };
     }
     return {
       name: `${session.host}:${session.port}`,
@@ -259,7 +272,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
         {/* Internal tab bar */}
         <div className="flex border-b border-gray-700 flex-shrink-0">
           <button
-            onClick={() => setActiveTab('sessions')}
+            onClick={() => { setActiveTab('sessions'); setLogSessionFilter(null); }}
             className={`px-4 py-2 text-xs font-medium transition-colors ${
               activeTab === 'sessions'
                 ? 'text-white border-b-2 border-indigo-500'
@@ -308,7 +321,9 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                 sessions.map(session => {
                   const stats = statsMap[session.id];
                   const display = getSessionDisplayName(session);
-                  const isDetached = session.viewer_attached === false;
+                  const hasFrontendViewer = activeBackendSessionIds.includes(session.id)
+                    || (session.connection_id != null && activeBackendSessionIds.includes(session.connection_id));
+                  const isDetached = !hasFrontendViewer;
                   return (
                     <div
                       key={session.id}
@@ -317,21 +332,21 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                       <div className="flex gap-2.5">
                         {/* Thumbnail column - small on the left */}
                         {thumbnailsEnabled && (
-                          <div className="flex-shrink-0 w-[80px] rounded overflow-hidden bg-gray-900">
+                          <div className="flex-shrink-0 w-[120px] h-[68px] rounded overflow-hidden bg-gray-900">
                             {thumbnails[session.id] ? (
                               <img
                                 src={thumbnails[session.id]}
                                 alt="Session preview"
-                                className="w-full h-auto object-cover rounded"
+                                className="w-full h-full object-cover"
                                 draggable={false}
                               />
                             ) : session.connected ? (
-                              <div className="w-full h-[45px] flex items-center justify-center">
-                                <Monitor size={14} className="text-gray-700" />
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Monitor size={16} className="text-gray-700" />
                               </div>
                             ) : (
-                              <div className="w-full h-[45px] flex items-center justify-center">
-                                <Monitor size={14} className="text-gray-600 opacity-50" />
+                              <div className="w-full h-full flex items-center justify-center">
+                                <Monitor size={16} className="text-gray-600 opacity-50" />
                               </div>
                             )}
                           </div>
@@ -352,7 +367,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                               </span>
                               {display.subtitle && (
                                 <span className="text-[10px] text-gray-500 block truncate">
-                                  {display.subtitle}{session.username && display.subtitle !== session.username ? ` (${session.username})` : ''}
+                                  {display.subtitle}
                                 </span>
                               )}
                             </div>
@@ -400,6 +415,16 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                               <RotateCcw size={12} />
                             </button>
                             <button
+                              onClick={() => {
+                                setLogSessionFilter(session.id);
+                                setActiveTab('logs');
+                              }}
+                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-indigo-400 transition-colors"
+                              title="View logs for this session"
+                            >
+                              <ScrollText size={12} />
+                            </button>
+                            <button
                               onClick={() => handleDisconnect(session.id)}
                               className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
                               title="Disconnect session"
@@ -416,10 +441,10 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                                 {session.desktop_width}&times;{session.desktop_height}
                               </span>
                             </div>
-                            <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                            <div className="bg-gray-900/50 rounded px-1.5 py-0.5" title={session.id}>
                               <span className="text-gray-500">ID </span>
-                              <span className="text-gray-300 font-mono truncate" title={session.id}>
-                                {session.id.slice(0, 8)}
+                              <span className="text-gray-300 font-mono truncate">
+                                {display.name !== `${session.host}:${session.port}` ? display.name : session.id.slice(0, 8)}
                               </span>
                             </div>
                             {stats && (
@@ -498,7 +523,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
             )}
           </>
         ) : (
-          <RdpLogViewer isVisible={activeTab === 'logs'} />
+          <RdpLogViewer isVisible={activeTab === 'logs'} sessionFilter={logSessionFilter} />
         )}
       </div>
 

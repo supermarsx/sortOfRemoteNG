@@ -72,6 +72,7 @@ import { BulkSSHCommander } from "./components/BulkSSHCommander";
 import { ScriptManager } from "./components/ScriptManager";
 import { InternalProxyManager } from "./components/InternalProxyManager";
 import { RdpSessionPanel } from "./components/RdpSessionPanel";
+import { generateId } from "./utils/id";
 import { SyncBackupStatusBar } from "./components/SyncBackupStatusBar";
 import { BackupStatusPopup } from "./components/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "./components/CloudSyncStatusPopup";
@@ -277,6 +278,15 @@ const AppContent: React.FC = () => {
 
   const visibleSessions = useMemo(
     () => state.sessions.filter((session) => !session.layout?.isDetached),
+    [state.sessions],
+  );
+
+  /** Backend RDP session IDs that have an active frontend viewer tab. */
+  const activeRdpBackendIds = useMemo(
+    () => state.sessions
+      .filter((s) => s.protocol === 'rdp')
+      .map((s) => s.backendSessionId || s.connectionId)
+      .filter(Boolean) as string[],
     [state.sessions],
   );
 
@@ -621,6 +631,47 @@ const AppContent: React.FC = () => {
       state.sessions,
       visibleSessions,
     ],
+  );
+
+  /**
+   * Reattach to a running backend RDP session by creating a new frontend tab.
+   * The RDPClient component auto-detects the existing backend session and
+   * calls attach_rdp_session instead of connect_rdp.
+   */
+  const handleReattachRdpSession = useCallback(
+    (backendSessionId: string, connectionId?: string) => {
+      // Find the connection to pull name/hostname from
+      const connection = connectionId
+        ? state.connections.find((c) => c.id === connectionId)
+        : undefined;
+
+      // Check if a frontend session already exists for this backend session
+      const existing = state.sessions.find(
+        (s) => s.backendSessionId === backendSessionId ||
+          (connectionId && s.connectionId === connectionId && s.protocol === 'rdp')
+      );
+      if (existing) {
+        // Just focus the existing tab
+        setActiveSessionId(existing.id);
+        return;
+      }
+
+      const newSession: ConnectionSession = {
+        id: generateId(),
+        connectionId: connectionId || backendSessionId,
+        name: connection?.name || connectionId || backendSessionId.slice(0, 8),
+        status: 'connecting',
+        startTime: new Date(),
+        protocol: 'rdp',
+        hostname: connection?.hostname || '',
+        reconnectAttempts: 0,
+        maxReconnectAttempts: 3,
+      };
+
+      dispatch({ type: 'ADD_SESSION', payload: newSession });
+      setActiveSessionId(newSession.id);
+    },
+    [state.connections, state.sessions, dispatch, setActiveSessionId],
   );
 
   /**
@@ -2104,10 +2155,9 @@ const AppContent: React.FC = () => {
             <RdpSessionPanel
               isVisible={rdpPanelOpen}
               connections={state.connections}
+              activeBackendSessionIds={activeRdpBackendIds}
               onClose={() => setRdpPanelOpen(false)}
-              onReattachSession={(sessionId, connectionId) => {
-                console.log('Reattach session:', sessionId, connectionId);
-              }}
+              onReattachSession={handleReattachRdpSession}
               onDetachToWindow={(sessionId) => {
                 const frontendSession = state.sessions.find(
                   s => s.backendSessionId === sessionId || s.id === sessionId
@@ -2244,10 +2294,9 @@ const AppContent: React.FC = () => {
             <RdpSessionPanel
               isVisible={rdpPanelOpen}
               connections={state.connections}
+              activeBackendSessionIds={activeRdpBackendIds}
               onClose={() => setRdpPanelOpen(false)}
-              onReattachSession={(sessionId, connectionId) => {
-                console.log('Reattach session:', sessionId, connectionId);
-              }}
+              onReattachSession={handleReattachRdpSession}
               onDetachToWindow={(sessionId) => {
                 const frontendSession = state.sessions.find(
                   s => s.backendSessionId === sessionId || s.id === sessionId

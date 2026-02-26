@@ -305,6 +305,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   rdpSessionThumbnailsEnabled: true,
   rdpSessionThumbnailPolicy: 'realtime' as const,
   rdpSessionThumbnailInterval: 5,
+  rdpSessionClosePolicy: 'ask' as const,
 };
 
 /**

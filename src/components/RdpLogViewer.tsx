@@ -18,6 +18,8 @@ interface RdpLogEntry {
 
 interface RdpLogViewerProps {
   isVisible: boolean;
+  /** When set, pre-filters logs to this session ID */
+  sessionFilter?: string | null;
 }
 
 const LEVEL_CONFIG: Record<string, { icon: React.ElementType; color: string }> = {
@@ -32,10 +34,11 @@ function formatTimestamp(ms: number): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible }) => {
+export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFilter }) => {
   const [logs, setLogs] = useState<RdpLogEntry[]>([]);
   const [filter, setFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState<string>('all');
+  const [sessionIdFilter, setSessionIdFilter] = useState<string>('all');
   const [autoScroll, setAutoScroll] = useState(true);
   const lastTimestamp = useRef<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -70,8 +73,19 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible }) => {
     }
   }, [logs, autoScroll]);
 
+  // Apply sessionFilter prop when it changes
+  useEffect(() => {
+    if (sessionFilter) {
+      setSessionIdFilter(sessionFilter);
+    }
+  }, [sessionFilter]);
+
+  // Collect unique session IDs for the dropdown
+  const sessionIds = Array.from(new Set(logs.map(e => e.session_id).filter(Boolean))) as string[];
+
   const filteredLogs = logs.filter(entry => {
     if (levelFilter !== 'all' && entry.level !== levelFilter) return false;
+    if (sessionIdFilter !== 'all' && entry.session_id !== sessionIdFilter) return false;
     if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase())) return false;
     return true;
   });
@@ -100,6 +114,19 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible }) => {
           <option value="warn">Warn</option>
           <option value="error">Error</option>
         </select>
+        {sessionIds.length > 0 && (
+          <select
+            value={sessionIdFilter}
+            onChange={e => setSessionIdFilter(e.target.value)}
+            className="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-white focus:outline-none focus:border-indigo-500 max-w-[80px]"
+            title="Filter by session"
+          >
+            <option value="all">All sessions</option>
+            {sessionIds.map(sid => (
+              <option key={sid} value={sid}>{sid.slice(0, 8)}</option>
+            ))}
+          </select>
+        )}
         <button
           onClick={() => setAutoScroll(!autoScroll)}
           className={`p-1 rounded transition-colors ${autoScroll ? 'text-indigo-400 bg-indigo-900/30' : 'text-gray-500 hover:text-gray-300'}`}

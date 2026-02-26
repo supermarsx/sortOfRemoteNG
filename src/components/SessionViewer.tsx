@@ -12,6 +12,13 @@ interface SessionViewerProps {
 
 export const SessionViewer: React.FC<SessionViewerProps> = ({ session }) => {
   const renderContent = () => {
+    // RDP handles its own connection lifecycle internally — mount the
+    // client for both 'connecting' and 'connected' status so there is a
+    // single stable component instance (no unmount/remount on status change).
+    if (session.protocol === 'rdp' && (session.status === 'connecting' || session.status === 'connected')) {
+      return <RDPClient session={session} />;
+    }
+
     switch (session.status) {
       case 'connecting':
         return (
@@ -31,13 +38,10 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session }) => {
           case 'telnet':
           case 'rlogin':
             return <WebTerminal session={session} />;
-          
+
           case 'http':
           case 'https':
             return <WebBrowser session={session} />;
-          
-          case 'rdp':
-            return <RDPClient session={session} />;
           
           case 'anydesk':
             return <AnyDeskClient session={session} />;

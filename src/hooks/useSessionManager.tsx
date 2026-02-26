@@ -372,6 +372,30 @@ export const useSessionManager = () => {
       }
     }
 
+    // RDP close policy: decide whether to keep the backend session running
+    if (session.protocol === "rdp") {
+      const closePolicy = settings.rdpSessionClosePolicy || "ask";
+      let shouldDisconnect = closePolicy === "disconnect";
+
+      if (closePolicy === "ask") {
+        // OK = keep running in background, Cancel = fully disconnect
+        const keepRunning = await showConfirm(
+          "Keep this RDP session running in the background? You can reattach later from the RDP Sessions panel.\n\nOK = Keep running  |  Cancel = Disconnect",
+        );
+        shouldDisconnect = !keepRunning;
+      }
+
+      if (shouldDisconnect) {
+        try {
+          await invoke("disconnect_rdp", { connectionId: session.connectionId });
+        } catch (error) {
+          console.error("Failed to disconnect RDP session:", error);
+        }
+      }
+      // If detach policy or user chose to keep running, the RDPClient unmount
+      // cleanup will call detach_rdp_session automatically, keeping the backend alive.
+    }
+
     // Notify detached windows that this session has been closed from main window
     const isTauri = typeof window !== "undefined" && 
       Boolean((window as any).__TAURI__ || (window as any).__TAURI_INTERNALS__);
