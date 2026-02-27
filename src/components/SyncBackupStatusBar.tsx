@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Cloud,
   CloudOff,
@@ -18,6 +17,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { CloudSyncProvider, defaultCloudSyncConfig } from '../types/settings';
+import { PopoverSurface } from './ui/PopoverSurface';
 
 interface BackupStatus {
   isRunning: boolean;
@@ -102,19 +102,6 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const popupRef = useRef<HTMLDivElement | null>(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (dropdownRef.current?.contains(target)) return;
-      if (popupRef.current?.contains(target)) return;
-      setIsExpanded(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Fetch backup status from Rust backend
   useEffect(() => {
@@ -244,23 +231,15 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
         )}
       </button>
 
-      {/* Expanded Dropdown (portal) */}
-      {isExpanded && createPortal(
-        <div
-          ref={(el) => {
-            popupRef.current = el;
-            if (el && dropdownRef.current) {
-              const rect = dropdownRef.current.getBoundingClientRect();
-              const w = 320;
-              let left = rect.right - w;
-              if (left < 4) left = 4;
-              el.style.top = `${rect.bottom + 8}px`;
-              el.style.left = `${left}px`;
-            }
-          }}
-          className="fixed w-80 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl"
-          style={{ zIndex: 9999 }}
-        >
+      {/* Expanded Dropdown */}
+      <PopoverSurface
+        isOpen={isExpanded}
+        onClose={() => setIsExpanded(false)}
+        anchorRef={dropdownRef}
+        className="w-80 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl"
+        dataTestId="sync-backup-status-popover"
+      >
+        <div>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--color-border)]">
             <h3 className="font-semibold text-sm text-gray-200">
@@ -447,9 +426,8 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
               {t('syncBackup.openSettings', 'Open Sync & Backup Settings')}
             </button>
           </div>
-        </div>,
-        document.body,
-      )}
+        </div>
+      </PopoverSurface>
     </div>
   );
 };
