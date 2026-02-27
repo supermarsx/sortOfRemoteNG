@@ -65,6 +65,18 @@ const defaultSettings: GlobalSettings = {
   showWolIcon: true,
   showErrorLogBar: false,
   showRdpSessionsIcon: true,
+  recording: {
+    autoRecordSessions: false,
+    recordInput: false,
+    maxRecordingDurationMinutes: 0,
+    maxStoredRecordings: 50,
+    defaultExportFormat: 'asciicast' as const,
+  },
+  macros: {
+    defaultStepDelayMs: 200,
+    confirmBeforeReplay: true,
+    maxMacroSteps: 100,
+  },
   autoLock: {
     enabled: false,
     timeoutMinutes: 15,
@@ -167,6 +179,7 @@ const defaultSettings: GlobalSettings = {
   cloudSync: defaultCloudSyncConfig,
   showBulkSSHIcon: true,
   showScriptManagerIcon: true,
+  showMacroManagerIcon: true,
   showSyncBackupStatusIcon: false,     // Legacy combined - disabled by default
   showBackupStatusIcon: true,          // Separate backup icon
   showCloudSyncStatusIcon: true,       // Separate cloud sync icon

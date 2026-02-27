@@ -139,11 +139,16 @@ export interface GlobalSettings {
   showWolIcon: boolean;
   showBulkSSHIcon: boolean;
   showScriptManagerIcon: boolean;
+  showMacroManagerIcon: boolean;
   showSyncBackupStatusIcon: boolean;  // Legacy combined icon
   showBackupStatusIcon: boolean;      // Separate backup icon
   showCloudSyncStatusIcon: boolean;   // Separate cloud sync icon
   showErrorLogBar: boolean;
   showRdpSessionsIcon: boolean;
+
+  // Recording & Macros
+  recording: RecordingConfig;
+  macros: MacroConfig;
 
   // Auto Lock
   autoLock: AutoLockConfig;
@@ -626,6 +631,20 @@ export interface ThemeConfig {
     warning: string;
     error: string;
   };
+}
+
+export interface RecordingConfig {
+  autoRecordSessions: boolean;
+  recordInput: boolean;
+  maxRecordingDurationMinutes: number;
+  maxStoredRecordings: number;
+  defaultExportFormat: 'json' | 'asciicast' | 'script';
+}
+
+export interface MacroConfig {
+  defaultStepDelayMs: number;
+  confirmBeforeReplay: boolean;
+  maxMacroSteps: number;
 }
 
 export interface AutoLockConfig {

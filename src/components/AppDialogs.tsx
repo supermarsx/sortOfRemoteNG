@@ -19,6 +19,7 @@ import { RdpSessionPanel } from "./RdpSessionPanel";
 import { WOLQuickTool } from "./WOLQuickTool";
 import { BulkSSHCommander } from "./BulkSSHCommander";
 import { ScriptManager } from "./ScriptManager";
+import { MacroManager } from "./MacroManager";
 import { ConnectionDiagnostics } from "./ConnectionDiagnostics";
 import { ErrorLogBar } from "./ErrorLogBar";
 import { AutoLockManager } from "./AutoLockManager";
@@ -39,6 +40,7 @@ interface AppDialogsProps {
   showWol: boolean;
   showBulkSSH: boolean;
   showScriptManager: boolean;
+  showMacroManager: boolean;
   showDiagnostics: boolean;
   showErrorLog: boolean;
   rdpPanelOpen: boolean;
@@ -55,6 +57,7 @@ interface AppDialogsProps {
   setShowWol: (v: boolean) => void;
   setShowBulkSSH: (v: boolean) => void;
   setShowScriptManager: (v: boolean) => void;
+  setShowMacroManager: (v: boolean) => void;
   setShowDiagnostics: (v: boolean) => void;
   setShowErrorLog: React.Dispatch<React.SetStateAction<boolean>>;
   setRdpPanelOpen: (v: boolean) => void;
@@ -104,6 +107,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     showWol,
     showBulkSSH,
     showScriptManager,
+    showMacroManager,
     showDiagnostics,
     showErrorLog,
     rdpPanelOpen,
@@ -120,6 +124,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     setShowWol,
     setShowBulkSSH,
     setShowScriptManager,
+    setShowMacroManager,
     setShowDiagnostics,
     setShowErrorLog,
     setRdpPanelOpen,
@@ -291,6 +296,11 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
       <ScriptManager
         isOpen={showScriptManager}
         onClose={() => setShowScriptManager(false)}
+      />
+
+      <MacroManager
+        isOpen={showMacroManager}
+        onClose={() => setShowMacroManager(false)}
       />
 
       {showDiagnostics && diagnosticsConnection && (

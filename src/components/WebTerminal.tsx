@@ -3,9 +3,13 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
-import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search, Filter, Unplug, Fingerprint, Shield, ShieldCheck, ShieldAlert, Key } from "lucide-react";
+import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search, Filter, Unplug, Fingerprint, Shield, ShieldCheck, ShieldAlert, Key, Circle, CircleDot, PlayCircle, Square as SquareIcon } from "lucide-react";
 import { TOTPConfig } from '../types/settings';
 import RDPTotpPanel from './rdp/RDPTotpPanel';
+import { useTerminalRecorder } from '../hooks/useTerminalRecorder';
+import { useMacroRecorder } from '../hooks/useMacroRecorder';
+import { TerminalMacro, SavedRecording } from '../types/macroTypes';
+import * as macroService from '../utils/macroService';
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
@@ -84,6 +88,15 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const keyPopupRef = useRef<HTMLDivElement>(null);
   const totpBtnRef = useRef<HTMLDivElement>(null);
   const [showTotpPanel, setShowTotpPanel] = useState(false);
+
+  // ---- Session recording & macro state ----
+  const terminalRecorder = useTerminalRecorder();
+  const macroRecorder = useMacroRecorder();
+  const [showMacroList, setShowMacroList] = useState(false);
+  const [savedMacros, setSavedMacros] = useState<TerminalMacro[]>([]);
+  const [replayingMacro, setReplayingMacro] = useState(false);
+  const replayAbortRef = useRef<AbortController | null>(null);
+  const macroListRef = useRef<HTMLDivElement>(null);
 
   const sessionRef = useRef(session);
   const connectionRef = useRef(connection);
@@ -773,6 +786,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
 
       if (isSsh) {
         if (!sshSessionId.current || !isSshReady.current || isConnecting.current) return;
+        // Capture input for macro recording
+        if (macroRecorder.isRecording) macroRecorder.recordInput(data);
         try {
           await invoke("send_ssh_input", { sessionId: sshSessionId.current, data });
         } catch (err) {
@@ -1237,6 +1252,107 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     }
   }, [isSsh]);
 
+  // ---- Session Recording handlers ----
+  const handleStartRecording = useCallback(async () => {
+    if (!sshSessionId.current) return;
+    const fit = fitRef.current;
+    const cols = fit ? fit.proposeDimensions()?.cols ?? 80 : 80;
+    const rows = fit ? fit.proposeDimensions()?.rows ?? 24 : 24;
+    try {
+      await terminalRecorder.startRecording(
+        sshSessionId.current,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (settings as any).recording?.recordInput ?? false,
+        cols,
+        rows,
+      );
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+    }
+  }, [terminalRecorder, settings]);
+
+  const handleStopRecording = useCallback(async () => {
+    if (!sshSessionId.current) return;
+    const recording = await terminalRecorder.stopRecording(sshSessionId.current);
+    if (recording) {
+      const name = `${session.hostname} - ${new Date().toLocaleString()}`;
+      const saved: SavedRecording = {
+        id: crypto.randomUUID(),
+        name,
+        recording,
+        savedAt: new Date().toISOString(),
+        connectionId: session.connectionId,
+      };
+      await macroService.saveRecording(saved);
+    }
+  }, [terminalRecorder, session.hostname, session.connectionId]);
+
+  // ---- Macro handlers ----
+  const handleStartMacroRecording = useCallback(() => {
+    macroRecorder.startRecording();
+  }, [macroRecorder]);
+
+  const handleStopMacroRecording = useCallback(async () => {
+    const steps = macroRecorder.stopRecording();
+    if (steps.length > 0) {
+      const macro: TerminalMacro = {
+        id: crypto.randomUUID(),
+        name: `Macro - ${new Date().toLocaleString()}`,
+        steps,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      await macroService.saveMacro(macro);
+      setSavedMacros(await macroService.loadMacros());
+    }
+  }, [macroRecorder]);
+
+  const handleReplayMacro = useCallback(async (macro: TerminalMacro) => {
+    if (!sshSessionId.current || replayingMacro) return;
+    setShowMacroList(false);
+    setReplayingMacro(true);
+    const controller = new AbortController();
+    replayAbortRef.current = controller;
+    try {
+      await macroService.replayMacro(sshSessionId.current, macro, undefined, controller.signal);
+    } catch (err) {
+      console.error('Macro replay failed:', err);
+    } finally {
+      setReplayingMacro(false);
+      replayAbortRef.current = null;
+    }
+  }, [replayingMacro]);
+
+  const handleStopReplay = useCallback(() => {
+    replayAbortRef.current?.abort();
+  }, []);
+
+  // Load saved macros on mount + when macro list opens
+  useEffect(() => {
+    if (showMacroList) {
+      macroService.loadMacros().then(setSavedMacros);
+    }
+  }, [showMacroList]);
+
+  // Close macro list on click outside
+  useEffect(() => {
+    if (!showMacroList) return;
+    const handler = (e: MouseEvent) => {
+      if (macroListRef.current && !macroListRef.current.contains(e.target as Node)) {
+        setShowMacroList(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMacroList]);
+
+  const formatDuration = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
+
   const totpConfigs = connection?.totpConfigs ?? [];
   const handleUpdateTotpConfigs = useCallback((configs: TOTPConfig[]) => {
     if (connection) {
@@ -1327,6 +1443,93 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                 >
                   <RotateCcw size={14} />
                 </button>
+                {/* Session Recording */}
+                {!terminalRecorder.isRecording ? (
+                  <button
+                    onClick={handleStartRecording}
+                    className="app-bar-button p-2"
+                    data-tooltip="Record Session"
+                    aria-label="Record Session"
+                    disabled={status !== 'connected'}
+                  >
+                    <Circle size={14} className="text-red-400" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStopRecording}
+                    className="app-bar-button p-2 text-red-400"
+                    data-tooltip="Stop Recording"
+                    aria-label="Stop Recording"
+                  >
+                    <SquareIcon size={12} fill="currentColor" />
+                    <span className="ml-1 text-[10px] font-mono animate-pulse">
+                      REC {formatDuration(terminalRecorder.duration)}
+                    </span>
+                  </button>
+                )}
+                {/* Macro Record / Stop */}
+                {!macroRecorder.isRecording ? (
+                  <button
+                    onClick={handleStartMacroRecording}
+                    className="app-bar-button p-2"
+                    data-tooltip="Record Macro"
+                    aria-label="Record Macro"
+                    disabled={status !== 'connected'}
+                  >
+                    <CircleDot size={14} />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleStopMacroRecording}
+                    className="app-bar-button p-2 text-orange-400"
+                    data-tooltip="Stop Macro Recording"
+                    aria-label="Stop Macro Recording"
+                  >
+                    <SquareIcon size={12} fill="currentColor" />
+                    <span className="ml-1 text-[10px] font-mono animate-pulse">MACRO</span>
+                  </button>
+                )}
+                {/* Replay Macro */}
+                <div className="relative" ref={macroListRef}>
+                  {replayingMacro ? (
+                    <button
+                      onClick={handleStopReplay}
+                      className="app-bar-button p-2 text-orange-400"
+                      data-tooltip="Stop Replay"
+                      aria-label="Stop Replay"
+                    >
+                      <StopCircle size={14} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowMacroList(v => !v)}
+                      className={`app-bar-button p-2 ${showMacroList ? 'text-blue-400' : ''}`}
+                      data-tooltip="Replay Macro"
+                      aria-label="Replay Macro"
+                      disabled={status !== 'connected'}
+                    >
+                      <PlayCircle size={14} />
+                    </button>
+                  )}
+                  {showMacroList && (
+                    <div className="absolute right-0 top-full mt-1 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+                      {savedMacros.length === 0 ? (
+                        <div className="p-3 text-xs text-gray-400 text-center">No saved macros</div>
+                      ) : (
+                        savedMacros.map(m => (
+                          <button
+                            key={m.id}
+                            onClick={() => handleReplayMacro(m)}
+                            className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 border-b border-gray-700/50 last:border-b-0"
+                          >
+                            <div className="font-medium truncate">{m.name}</div>
+                            <div className="text-[10px] text-gray-400">{m.steps.length} steps</div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
                 <div className="relative" ref={keyPopupRef}>
                   <button
                     type="button"
@@ -1417,6 +1620,21 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
           {isSsh && (
             <span className="app-badge app-badge--info">
               SSH lib: Rust
+            </span>
+          )}
+          {terminalRecorder.isRecording && (
+            <span className="app-badge app-badge--error animate-pulse">
+              REC {formatDuration(terminalRecorder.duration)}
+            </span>
+          )}
+          {macroRecorder.isRecording && (
+            <span className="app-badge app-badge--warning animate-pulse">
+              MACRO ({macroRecorder.steps.length} steps)
+            </span>
+          )}
+          {replayingMacro && (
+            <span className="app-badge app-badge--info animate-pulse">
+              Replaying...
             </span>
           )}
           {isSsh && hostKeyIdentity && hostKeyIdentity.fingerprint && (() => {

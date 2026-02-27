@@ -70,6 +70,7 @@ const AppContent: React.FC = () => {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showBulkSSH, setShowBulkSSH] = useState(false);
   const [showScriptManager, setShowScriptManager] = useState(false);
+  const [showMacroManager, setShowMacroManager] = useState(false);
   const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
@@ -1006,6 +1007,7 @@ const AppContent: React.FC = () => {
         setShowWol={setShowWol}
         setShowBulkSSH={setShowBulkSSH}
         setShowScriptManager={setShowScriptManager}
+        setShowMacroManager={setShowMacroManager}
         setShowPerformanceMonitor={setShowPerformanceMonitor}
         setShowActionLog={setShowActionLog}
         setShowErrorLog={setShowErrorLog}
@@ -1136,6 +1138,7 @@ const AppContent: React.FC = () => {
         showWol={showWol}
         showBulkSSH={showBulkSSH}
         showScriptManager={showScriptManager}
+        showMacroManager={showMacroManager}
         showDiagnostics={showDiagnostics}
         showErrorLog={showErrorLog}
         rdpPanelOpen={rdpPanelOpen}
@@ -1152,6 +1155,7 @@ const AppContent: React.FC = () => {
         setShowWol={setShowWol}
         setShowBulkSSH={setShowBulkSSH}
         setShowScriptManager={setShowScriptManager}
+        setShowMacroManager={setShowMacroManager}
         setShowDiagnostics={setShowDiagnostics}
         setShowErrorLog={setShowErrorLog}
         setRdpPanelOpen={setRdpPanelOpen}

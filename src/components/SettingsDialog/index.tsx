@@ -80,6 +80,8 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'showImportExportIcon', 'showSettingsIcon', 'showProxyMenuIcon', 'showInternalProxyIcon',
     'showShortcutManagerIcon', 'showPerformanceMonitorIcon', 'showActionLogIcon',
     'showDevtoolsIcon', 'showSecurityIcon', 'showWolIcon',
+    'showBulkSSHIcon', 'showScriptManagerIcon', 'showMacroManagerIcon',
+    'showRdpSessionsIcon', 'showErrorLogBar',
   ],
   security: [
     'encryptionAlgorithm', 'blockCipherMode', 'keyDerivationIterations',
@@ -104,6 +106,8 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'wolBroadcastAddress', 'enableActionLog', 'logLevel', 'maxLogEntries',
     'exportEncryption',
   ],
+  recording: ['recording'],
+  macros: ['macros'],
   backend: ['backendConfig'],
   sshTerminal: ['sshTerminal'],
   webBrowser: [

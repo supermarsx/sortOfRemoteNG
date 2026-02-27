@@ -30,6 +30,7 @@ import {
   Cloud,
   RefreshCw,
   Cpu,
+  ListVideo,
 } from "lucide-react";
 
 interface LayoutSettingsProps {
@@ -317,6 +318,16 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             />
             <FileCode className="w-4 h-4 text-purple-500 group-hover:text-purple-400" />
             <span className="text-gray-300 group-hover:text-white">Script Manager</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showMacroManagerIcon}
+              onChange={(e) => updateSettings({ showMacroManagerIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <ListVideo className="w-4 h-4 text-orange-500 group-hover:text-orange-400" />
+            <span className="text-gray-300 group-hover:text-white">Macro & Recording Manager</span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
