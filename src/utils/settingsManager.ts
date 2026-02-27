@@ -411,6 +411,18 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   rdpSessionThumbnailPolicy: 'realtime' as const,
   rdpSessionThumbnailInterval: 5,
   rdpSessionClosePolicy: 'ask' as const,
+  toolDisplayModes: {
+    recordingManager: 'popup' as const,
+    macroManager: 'popup' as const,
+    scriptManager: 'popup' as const,
+    performanceMonitor: 'popup' as const,
+    actionLog: 'popup' as const,
+    shortcutManager: 'popup' as const,
+    bulkSsh: 'popup' as const,
+    internalProxy: 'popup' as const,
+    proxyChain: 'popup' as const,
+    wol: 'popup' as const,
+  },
   backendConfig: {
     logLevel: 'info' as const,
     maxConcurrentRdpSessions: 10,

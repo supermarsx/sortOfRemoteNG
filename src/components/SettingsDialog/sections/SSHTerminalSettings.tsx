@@ -187,19 +187,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
-          <Terminal className="w-5 h-5" />
-          SSH Terminal
-        </h3>
-        <button
-          onClick={resetToDefaults}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[var(--color-textSecondary)] hover:text-[var(--color-text)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-md transition-colors"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          {t('settings.resetDefaults', 'Reset to Defaults')}
-        </button>
-      </div>
+      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <Terminal className="w-5 h-5" />
+        SSH Terminal
+      </h3>
       <p className="text-xs text-gray-400 mb-4">
         Terminal line handling, bell, keyboard, font, colors, scrollback, and SSH protocol settings.
       </p>

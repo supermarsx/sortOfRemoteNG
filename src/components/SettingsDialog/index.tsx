@@ -78,6 +78,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'confirmDisconnect', 'confirmDeleteConnection', 'confirmBulkOperations', 'confirmImport',
     'enableFileDragDropToTerminal', 'dragSensitivityPx', 'showDropPreview',
     'terminalScrollSpeed', 'terminalSmoothScroll', 'treeRightClickAction', 'mouseBackAction', 'mouseForwardAction',
+    'toolDisplayModes',
   ],
   startup: [
     'startMinimized', 'startMaximized', 'startWithSystem', 'reconnectPreviousSessions',
@@ -641,21 +642,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto min-h-0">
-            <div className="p-6">
-              {/* Per-tab reset button */}
-              {activeTab !== 'recovery' && TAB_DEFAULTS[activeTab] && (
-                <div className="flex justify-end mb-4">
-                  <button
-                    onClick={handleReset}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
-                  >
-                    <RotateCcw size={12} />
-                    {t("settings.reset", "Reset to Defaults")}
-                  </button>
-                </div>
-              )}
-
+          <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
+            <div className="flex-1 p-6">
               {activeTab === 'general' && (
                 <GeneralSettings settings={settings} updateSettings={updateSettings} />
               )}
@@ -744,6 +732,19 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                 <RecoverySettings onClose={onClose} />
               )}
             </div>
+
+            {/* Per-tab reset footer */}
+            {activeTab !== 'recovery' && TAB_DEFAULTS[activeTab] && (
+              <div className="sticky bottom-0 flex justify-end px-6 py-2 border-t border-[var(--color-border)]/30 bg-[var(--color-surface)]/80 backdrop-blur-sm">
+                <button
+                  onClick={handleReset}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
+                >
+                  <RotateCcw size={12} />
+                  {t("settings.reset", "Reset to Defaults")}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -443,6 +443,10 @@ export interface GlobalSettings {
   /** What happens when an RDP tab is closed: 'disconnect' fully ends the session, 'detach' keeps it running in background */
   rdpSessionClosePolicy: 'disconnect' | 'detach' | 'ask';
 
+  // ─── Tool Display Modes ─────────────────────────────────────
+  /** How each tool/manager opens: 'popup' (modal overlay) or 'panel' (side panel) */
+  toolDisplayModes: ToolDisplayModes;
+
   // ─── Backend / Tauri Runtime Settings ────────────────────────
   backendConfig: BackendConfig;
 }
@@ -757,6 +761,21 @@ export interface MacroConfig {
   defaultStepDelayMs: number;
   confirmBeforeReplay: boolean;
   maxMacroSteps: number;
+}
+
+export type ToolDisplayMode = 'popup' | 'panel';
+
+export interface ToolDisplayModes {
+  recordingManager: ToolDisplayMode;
+  macroManager: ToolDisplayMode;
+  scriptManager: ToolDisplayMode;
+  performanceMonitor: ToolDisplayMode;
+  actionLog: ToolDisplayMode;
+  shortcutManager: ToolDisplayMode;
+  bulkSsh: ToolDisplayMode;
+  internalProxy: ToolDisplayMode;
+  proxyChain: ToolDisplayMode;
+  wol: ToolDisplayMode;
 }
 
 export interface SettingsDialogConfig {
