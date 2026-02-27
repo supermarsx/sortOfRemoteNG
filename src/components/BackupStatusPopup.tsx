@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import {
   HardDrive,
   RefreshCw,
@@ -25,6 +24,7 @@ import { useConnections } from '../contexts/useConnections';
 import { SettingsManager } from '../utils/settingsManager';
 import { Connection } from '../types/connection';
 import { GlobalSettings } from '../types/settings';
+import { PopoverSurface } from './ui/PopoverSurface';
 
 interface BackupStatus {
   isRunning: boolean;
@@ -105,19 +105,6 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showBackupList, setShowBackupList] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const popupRef = useRef<HTMLDivElement | null>(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (dropdownRef.current?.contains(target)) return;
-      if (popupRef.current?.contains(target)) return;
-      setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Fetch backup status from Rust backend
   useEffect(() => {
@@ -297,22 +284,15 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
         {getStatusIcon()}
       </button>
 
-      {/* Popup (portal) */}
-      {isOpen && createPortal(
-        <div
-          ref={(el) => {
-            popupRef.current = el;
-            if (el && dropdownRef.current) {
-              const rect = dropdownRef.current.getBoundingClientRect();
-              const w = 384;
-              let left = rect.right - w;
-              if (left < 4) left = 4;
-              el.style.top = `${rect.bottom + 8}px`;
-              el.style.left = `${left}px`;
-            }
-          }}
-          className="sor-toolbar-popup"
-        >
+      {/* Popup */}
+      <PopoverSurface
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        anchorRef={dropdownRef}
+        className="sor-toolbar-popup"
+        dataTestId="backup-status-popover"
+      >
+        <div>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
             <div className="flex items-center gap-2">
@@ -493,9 +473,8 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
               </div>
             )}
           </div>
-        </div>,
-        document.body,
-      )}
+        </div>
+      </PopoverSurface>
     </div>
   );
 };

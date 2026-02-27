@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Cloud,
   CloudOff,
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CloudSyncProvider } from '../types/settings';
+import { PopoverSurface } from './ui/PopoverSurface';
 
 interface ProviderStatus {
   enabled: boolean;
@@ -87,19 +87,6 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
   const [testingProvider, setTestingProvider] = useState<CloudSyncProvider | null>(null);
   const [testResults, setTestResults] = useState<SyncTestResult[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const popupRef = useRef<HTMLDivElement | null>(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (dropdownRef.current?.contains(target)) return;
-      if (popupRef.current?.contains(target)) return;
-      setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const config = cloudSyncConfig ?? {
     enabled: false,
@@ -253,22 +240,15 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
         {getOverallStatusIcon()}
       </button>
 
-      {/* Popup (portal) */}
-      {isOpen && createPortal(
-        <div
-          ref={(el) => {
-            popupRef.current = el;
-            if (el && dropdownRef.current) {
-              const rect = dropdownRef.current.getBoundingClientRect();
-              const w = 384;
-              let left = rect.right - w;
-              if (left < 4) left = 4;
-              el.style.top = `${rect.bottom + 8}px`;
-              el.style.left = `${left}px`;
-            }
-          }}
-          className="sor-toolbar-popup"
-        >
+      {/* Popup */}
+      <PopoverSurface
+        isOpen={isOpen}
+        onClose={() => setIsOpen(false)}
+        anchorRef={dropdownRef}
+        className="sor-toolbar-popup"
+        dataTestId="cloud-sync-status-popover"
+      >
+        <div>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
             <div className="flex items-center gap-2">
@@ -450,9 +430,8 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
               </>
             )}
           </div>
-        </div>,
-        document.body,
-      )}
+        </div>
+      </PopoverSurface>
     </div>
   );
 };
