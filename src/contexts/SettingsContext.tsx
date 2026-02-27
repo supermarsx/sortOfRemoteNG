@@ -128,6 +128,7 @@ const defaultSettings: GlobalSettings = {
   showErrorLogBar: false,
   showRdpSessionsIcon: true,
   recording: {
+    enabled: true,
     autoRecordSessions: false,
     recordInput: false,
     maxRecordingDurationMinutes: 0,
@@ -135,6 +136,7 @@ const defaultSettings: GlobalSettings = {
     defaultExportFormat: 'asciicast' as const,
   },
   rdpRecording: {
+    enabled: true,
     autoRecordRdpSessions: false,
     defaultVideoFormat: 'webm' as const,
     recordingFps: 30,
@@ -144,6 +146,7 @@ const defaultSettings: GlobalSettings = {
     autoSaveToLibrary: false,
   },
   webRecording: {
+    enabled: true,
     autoRecordWebSessions: false,
     recordHeaders: true,
     maxWebRecordingDurationMinutes: 0,
