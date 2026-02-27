@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import {
   Cloud,
   CloudOff,
@@ -12,18 +12,17 @@ import {
   Loader2,
   Archive,
   Timer,
-  X,
-} from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { invoke } from '@tauri-apps/api/core';
-import { CloudSyncProvider, defaultCloudSyncConfig } from '../types/settings';
-import { PopoverSurface } from './ui/PopoverSurface';
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
+import { CloudSyncProvider } from "../types/settings";
+import { ToolbarPopover, ToolbarPopoverHeader } from "./ui/ToolbarPopover";
 
 interface BackupStatus {
   isRunning: boolean;
   lastBackupTime?: number;
   lastBackupType?: string;
-  lastBackupStatus?: 'success' | 'failed' | 'partial';
+  lastBackupStatus?: "success" | "failed" | "partial";
   lastError?: string;
   nextScheduledTime?: number;
   backupCount: number;
@@ -33,7 +32,7 @@ interface BackupStatus {
 interface ProviderStatus {
   enabled: boolean;
   lastSyncTime?: number;
-  lastSyncStatus?: 'success' | 'failed' | 'partial' | 'conflict';
+  lastSyncStatus?: "success" | "failed" | "partial" | "conflict";
   lastSyncError?: string;
 }
 
@@ -50,28 +49,28 @@ interface SyncBackupStatusBarProps {
 }
 
 const PROVIDER_NAMES: Record<CloudSyncProvider, string> = {
-  none: 'None',
-  googleDrive: 'Google Drive',
-  oneDrive: 'OneDrive',
-  nextcloud: 'Nextcloud',
-  webdav: 'WebDAV',
-  sftp: 'SFTP',
+  none: "None",
+  googleDrive: "Google Drive",
+  oneDrive: "OneDrive",
+  nextcloud: "Nextcloud",
+  webdav: "WebDAV",
+  sftp: "SFTP",
 };
 
 const formatBytes = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
+  if (bytes === 0) return "0 B";
   const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 };
 
 const formatRelativeTime = (timestamp?: number): string => {
-  if (!timestamp) return 'Never';
+  if (!timestamp) return "Never";
   const now = Date.now() / 1000;
   const diff = now - timestamp;
-  
-  if (diff < 60) return 'Just now';
+
+  if (diff < 60) return "Just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
@@ -79,12 +78,12 @@ const formatRelativeTime = (timestamp?: number): string => {
 };
 
 const formatNextTime = (timestamp?: number): string => {
-  if (!timestamp) return 'Not scheduled';
+  if (!timestamp) return "Not scheduled";
   const now = Date.now() / 1000;
   const diff = timestamp - now;
-  
-  if (diff < 0) return 'Overdue';
-  if (diff < 60) return 'In < 1m';
+
+  if (diff < 0) return "Overdue";
+  if (diff < 60) return "In < 1m";
   if (diff < 3600) return `In ${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `In ${Math.floor(diff / 3600)}h`;
   return new Date(timestamp * 1000).toLocaleDateString();
@@ -107,10 +106,10 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
   useEffect(() => {
     const fetchBackupStatus = async () => {
       try {
-        const status = await invoke<BackupStatus>('backup_get_status');
+        const status = await invoke<BackupStatus>("backup_get_status");
         setBackupStatus(status);
       } catch (error) {
-        console.error('Failed to fetch backup status:', error);
+        console.error("Failed to fetch backup status:", error);
       }
     };
 
@@ -123,10 +122,10 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
     enabled: false,
     enabledProviders: [],
     providerStatus: {},
-    frequency: 'manual',
+    frequency: "manual",
   };
 
-  const enabledProviders = config.enabledProviders.filter(p => p !== 'none');
+  const enabledProviders = config.enabledProviders.filter((p) => p !== "none");
   const hasSync = config.enabled && enabledProviders.length > 0;
 
   // Compute overall sync status
@@ -139,14 +138,16 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
       return <CloudOff className="w-4 h-4 text-gray-500" />;
     }
 
-    const statuses = enabledProviders.map(p => config.providerStatus[p]?.lastSyncStatus);
-    if (statuses.some(s => s === 'failed')) {
+    const statuses = enabledProviders.map(
+      (p) => config.providerStatus[p]?.lastSyncStatus,
+    );
+    if (statuses.some((s) => s === "failed")) {
       return <AlertCircle className="w-4 h-4 text-red-400" />;
     }
-    if (statuses.some(s => s === 'conflict')) {
+    if (statuses.some((s) => s === "conflict")) {
       return <AlertCircle className="w-4 h-4 text-yellow-400" />;
     }
-    if (statuses.every(s => s === 'success')) {
+    if (statuses.every((s) => s === "success")) {
       return <CheckCircle className="w-4 h-4 text-green-400" />;
     }
     return <Cloud className="w-4 h-4 text-[var(--color-textSecondary)]" />;
@@ -162,10 +163,10 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
       return <Archive className="w-4 h-4 text-gray-500" />;
     }
 
-    if (backupStatus.lastBackupStatus === 'failed') {
+    if (backupStatus.lastBackupStatus === "failed") {
       return <AlertCircle className="w-4 h-4 text-red-400" />;
     }
-    if (backupStatus.lastBackupStatus === 'success') {
+    if (backupStatus.lastBackupStatus === "success") {
       return <CheckCircle className="w-4 h-4 text-green-400" />;
     }
     return <HardDrive className="w-4 h-4 text-[var(--color-textSecondary)]" />;
@@ -197,7 +198,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
     try {
       await onBackupNow();
       // Refresh status
-      const status = await invoke<BackupStatus>('backup_get_status');
+      const status = await invoke<BackupStatus>("backup_get_status");
       setBackupStatus(status);
     } finally {
       setIsBackingUp(false);
@@ -207,7 +208,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
   // Get last sync time across all providers
   const getLastSyncTime = (): number | undefined => {
     const times = enabledProviders
-      .map(p => config.providerStatus[p]?.lastSyncTime)
+      .map((p) => config.providerStatus[p]?.lastSyncTime)
       .filter((t): t is number => t !== undefined);
     return times.length > 0 ? Math.max(...times) : undefined;
   };
@@ -218,7 +219,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[var(--color-border)]/50 transition-colors"
-        title={t('syncBackup.statusBarTitle', 'Sync & Backup Status')}
+        title={t("syncBackup.statusBarTitle", "Sync & Backup Status")}
       >
         <div className="flex items-center gap-1">
           {getSyncStatusIcon()}
@@ -232,26 +233,19 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
       </button>
 
       {/* Expanded Dropdown */}
-      <PopoverSurface
+      <ToolbarPopover
         isOpen={isExpanded}
         onClose={() => setIsExpanded(false)}
         anchorRef={dropdownRef}
-        className="w-80 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl"
+        className="w-80"
         dataTestId="sync-backup-status-popover"
       >
         <div>
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--color-border)]">
-            <h3 className="font-semibold text-sm text-gray-200">
-              {t('syncBackup.title', 'Sync & Backup')}
-            </h3>
-            <button
-              onClick={() => setIsExpanded(false)}
-              className="p-1 rounded hover:bg-[var(--color-border)]"
-            >
-              <X className="w-4 h-4 text-[var(--color-textSecondary)]" />
-            </button>
-          </div>
+          <ToolbarPopoverHeader
+            title={t("syncBackup.title", "Sync & Backup")}
+            titleClassName="text-sm"
+            onClose={() => setIsExpanded(false)}
+          />
 
           {/* Cloud Sync Section */}
           <div className="p-4 border-b border-[var(--color-border)]">
@@ -259,7 +253,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
               <div className="flex items-center gap-2">
                 <Cloud className="w-4 h-4 text-blue-400" />
                 <span className="text-sm font-medium text-gray-200">
-                  {t('syncBackup.cloudSync', 'Cloud Sync')}
+                  {t("syncBackup.cloudSync", "Cloud Sync")}
                 </span>
               </div>
               {hasSync && (
@@ -273,32 +267,35 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
                   ) : (
                     <RefreshCw className="w-3 h-3" />
                   )}
-                  {t('syncBackup.syncAll', 'Sync All')}
+                  {t("syncBackup.syncAll", "Sync All")}
                 </button>
               )}
             </div>
 
             {!hasSync ? (
               <p className="text-xs text-gray-500">
-                {t('syncBackup.noSyncConfigured', 'No sync providers configured')}
+                {t(
+                  "syncBackup.noSyncConfigured",
+                  "No sync providers configured",
+                )}
               </p>
             ) : (
               <div className="space-y-2">
-                {enabledProviders.map(provider => {
+                {enabledProviders.map((provider) => {
                   const status = config.providerStatus[provider];
                   return (
                     <div
                       key={provider}
-                      className="flex items-center justify-between p-2 bg-gray-750 rounded"
+                      className="sor-status-item flex items-center justify-between p-2"
                     >
                       <div className="flex items-center gap-2">
-                        {status?.lastSyncStatus === 'success' && (
+                        {status?.lastSyncStatus === "success" && (
                           <CheckCircle className="w-3 h-3 text-green-400" />
                         )}
-                        {status?.lastSyncStatus === 'failed' && (
+                        {status?.lastSyncStatus === "failed" && (
                           <AlertCircle className="w-3 h-3 text-red-400" />
                         )}
-                        {status?.lastSyncStatus === 'conflict' && (
+                        {status?.lastSyncStatus === "conflict" && (
                           <AlertCircle className="w-3 h-3 text-yellow-400" />
                         )}
                         {!status?.lastSyncStatus && (
@@ -316,7 +313,11 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
                           onClick={() => handleSyncProvider(provider)}
                           disabled={isSyncing}
                           className="p-1 hover:bg-[var(--color-border)] rounded"
-                          title={t('syncBackup.syncProvider', 'Sync {{provider}}', { provider: PROVIDER_NAMES[provider] })}
+                          title={t(
+                            "syncBackup.syncProvider",
+                            "Sync {{provider}}",
+                            { provider: PROVIDER_NAMES[provider] },
+                          )}
                         >
                           <RefreshCw className="w-3 h-3 text-[var(--color-textSecondary)]" />
                         </button>
@@ -331,7 +332,8 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
               <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
                 <Clock className="w-3 h-3" />
                 <span>
-                  {t('syncBackup.lastSync', 'Last sync')}: {formatRelativeTime(getLastSyncTime())}
+                  {t("syncBackup.lastSync", "Last sync")}:{" "}
+                  {formatRelativeTime(getLastSyncTime())}
                 </span>
               </div>
             )}
@@ -343,7 +345,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
               <div className="flex items-center gap-2">
                 <HardDrive className="w-4 h-4 text-green-400" />
                 <span className="text-sm font-medium text-gray-200">
-                  {t('syncBackup.localBackup', 'Local Backup')}
+                  {t("syncBackup.localBackup", "Local Backup")}
                 </span>
               </div>
               <button
@@ -356,7 +358,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
                 ) : (
                   <Archive className="w-3 h-3" />
                 )}
-                {t('syncBackup.backupNow', 'Backup Now')}
+                {t("syncBackup.backupNow", "Backup Now")}
               </button>
             </div>
 
@@ -365,13 +367,13 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
                 {/* Last Backup */}
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-[var(--color-textSecondary)]">
-                    {t('syncBackup.lastBackup', 'Last backup')}:
+                    {t("syncBackup.lastBackup", "Last backup")}:
                   </span>
                   <div className="flex items-center gap-2">
-                    {backupStatus.lastBackupStatus === 'success' && (
+                    {backupStatus.lastBackupStatus === "success" && (
                       <CheckCircle className="w-3 h-3 text-green-400" />
                     )}
-                    {backupStatus.lastBackupStatus === 'failed' && (
+                    {backupStatus.lastBackupStatus === "failed" && (
                       <AlertCircle className="w-3 h-3 text-red-400" />
                     )}
                     <span className="text-[var(--color-textSecondary)]">
@@ -383,7 +385,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
                 {/* Next Scheduled */}
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-[var(--color-textSecondary)]">
-                    {t('syncBackup.nextBackup', 'Next backup')}:
+                    {t("syncBackup.nextBackup", "Next backup")}:
                   </span>
                   <div className="flex items-center gap-1 text-[var(--color-textSecondary)]">
                     <Timer className="w-3 h-3 text-gray-500" />
@@ -394,7 +396,8 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
                 {/* Stats */}
                 <div className="flex items-center justify-between text-xs pt-2 border-t border-[var(--color-border)]">
                   <span className="text-gray-500">
-                    {backupStatus.backupCount} {t('syncBackup.backups', 'backups')}
+                    {backupStatus.backupCount}{" "}
+                    {t("syncBackup.backups", "backups")}
                   </span>
                   <span className="text-gray-500">
                     {formatBytes(backupStatus.totalSizeBytes)}
@@ -412,7 +415,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
 
             {!backupStatus && (
               <p className="text-xs text-gray-500">
-                {t('syncBackup.noBackups', 'No backups yet')}
+                {t("syncBackup.noBackups", "No backups yet")}
               </p>
             )}
           </div>
@@ -423,11 +426,11 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
               onClick={onOpenSettings}
               className="w-full text-center text-xs text-blue-400 hover:text-blue-300"
             >
-              {t('syncBackup.openSettings', 'Open Sync & Backup Settings')}
+              {t("syncBackup.openSettings", "Open Sync & Backup Settings")}
             </button>
           </div>
         </div>
-      </PopoverSurface>
+      </ToolbarPopover>
     </div>
   );
 };
