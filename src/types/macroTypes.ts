@@ -50,6 +50,7 @@ export interface MacroStep {
 }
 
 export interface RecordingConfig {
+  enabled: boolean;
   autoRecordSessions: boolean;
   recordInput: boolean;
   maxRecordingDurationMinutes: number;
@@ -78,6 +79,8 @@ export interface SavedRdpRecording {
 }
 
 export interface RdpRecordingConfig {
+  /** Enable RDP recording globally */
+  enabled: boolean;
   /** Auto-record RDP sessions on connect */
   autoRecordRdpSessions: boolean;
   /** Default video format: 'webm' | 'mp4' | 'gif' */
@@ -161,6 +164,7 @@ export interface SavedWebVideoRecording {
 }
 
 export interface WebRecordingConfig {
+  enabled: boolean;
   autoRecordWebSessions: boolean;
   recordHeaders: boolean;
   maxWebRecordingDurationMinutes: number;

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { GlobalSettings, RecordingConfig } from "../../../types/settings";
-import { RdpRecordingConfig } from "../../../types/macroTypes";
+import { RdpRecordingConfig, WebRecordingConfig } from "../../../types/macroTypes";
 import {
   Circle, HardDrive, Clock, Download, Keyboard,
-  Monitor, Film, Gauge, Save, Terminal,
+  Monitor, Film, Gauge, Save, Terminal, Globe, FileText, Eye,
 } from "lucide-react";
 import * as macroService from "../../../utils/macroService";
 
@@ -18,9 +18,12 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
 }) => {
   const recording = settings.recording;
   const rdpRec = settings.rdpRecording;
+  const webRec = settings.webRecording;
   const [sshCount, setSshCount] = useState(0);
   const [rdpCount, setRdpCount] = useState(0);
   const [rdpSize, setRdpSize] = useState(0);
+  const [webCount, setWebCount] = useState(0);
+  const [webVideoCount, setWebVideoCount] = useState(0);
 
   useEffect(() => {
     macroService.loadRecordings().then((r) => setSshCount(r.length));
@@ -28,6 +31,8 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       setRdpCount(r.length);
       setRdpSize(r.reduce((s, rec) => s + rec.sizeBytes, 0));
     });
+    macroService.loadWebRecordings().then((r) => setWebCount(r.length));
+    macroService.loadWebVideoRecordings().then((r) => setWebVideoCount(r.length));
   }, []);
 
   const updateSsh = (patch: Partial<RecordingConfig>) => {
@@ -36,6 +41,10 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
 
   const updateRdp = (patch: Partial<RdpRecordingConfig>) => {
     updateSettings({ rdpRecording: { ...rdpRec, ...patch } });
+  };
+
+  const updateWeb = (patch: Partial<WebRecordingConfig>) => {
+    updateSettings({ webRecording: { ...webRec, ...patch } });
   };
 
   const formatBytes = (bytes: number): string => {
@@ -319,6 +328,115 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
               {formatBytes(rdpSize)}
             </span>
           )}
+        </div>
+      </div>
+
+      {/* ── Web Session Recording ──────────────────────── */}
+      <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2 pt-4">
+        <Globe className="w-4 h-4" />
+        Web Session Recording
+      </h4>
+
+      <div className="space-y-3">
+        <label data-setting-key="webRecording.autoRecordWebSessions" className="flex items-center justify-between cursor-pointer group">
+          <div className="flex items-center gap-3">
+            <Circle size={14} className="text-red-400" />
+            <div>
+              <span className="text-sm text-gray-300 group-hover:text-white">Auto-record web sessions</span>
+              <p className="text-[10px] text-gray-500">Automatically start HTTP traffic recording on web connect</p>
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={webRec.autoRecordWebSessions}
+            onChange={(e) => updateWeb({ autoRecordWebSessions: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+          />
+        </label>
+
+        <label data-setting-key="webRecording.recordHeaders" className="flex items-center justify-between cursor-pointer group">
+          <div className="flex items-center gap-3">
+            <Eye size={14} className="text-orange-400" />
+            <div>
+              <span className="text-sm text-gray-300 group-hover:text-white">Record HTTP headers</span>
+              <p className="text-[10px] text-gray-500">Include request and response headers in recordings</p>
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={webRec.recordHeaders}
+            onChange={(e) => updateWeb({ recordHeaders: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+          />
+        </label>
+      </div>
+
+      {/* Web Limits */}
+      <div className="space-y-3 pt-2 border-t border-gray-700">
+        <div data-setting-key="webRecording.maxWebRecordingDurationMinutes" className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Clock size={14} className="text-blue-400" />
+            <div>
+              <span className="text-sm text-gray-300">Max web recording duration</span>
+              <p className="text-[10px] text-gray-500">0 = unlimited</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={webRec.maxWebRecordingDurationMinutes}
+              onChange={(e) => updateWeb({ maxWebRecordingDurationMinutes: Math.max(0, Number(e.target.value)) })}
+              className="w-20 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white text-right outline-none focus:border-blue-500"
+              min={0}
+            />
+            <span className="text-xs text-gray-400">min</span>
+          </div>
+        </div>
+
+        <div data-setting-key="webRecording.maxStoredWebRecordings" className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <HardDrive size={14} className="text-green-400" />
+            <div>
+              <span className="text-sm text-gray-300">Max stored web recordings</span>
+              <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
+            </div>
+          </div>
+          <input
+            type="number"
+            value={webRec.maxStoredWebRecordings}
+            onChange={(e) => updateWeb({ maxStoredWebRecordings: Math.max(1, Number(e.target.value)) })}
+            className="w-20 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white text-right outline-none focus:border-blue-500"
+            min={1}
+          />
+        </div>
+
+        <div data-setting-key="webRecording.defaultExportFormat" className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <FileText size={14} className="text-purple-400" />
+            <span className="text-sm text-gray-300">Default export format</span>
+          </div>
+          <select
+            value={webRec.defaultExportFormat}
+            onChange={(e) => updateWeb({ defaultExportFormat: e.target.value as 'json' | 'har' })}
+            className="px-3 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white outline-none focus:border-blue-500"
+          >
+            <option value="har">HAR (HTTP Archive)</option>
+            <option value="json">JSON</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Web Storage info */}
+      <div className="pt-2 border-t border-gray-700">
+        <div className="flex items-center gap-4 text-xs text-gray-500">
+          <span className="flex items-center gap-1">
+            <Globe size={12} />
+            {webCount} HAR recording{webCount !== 1 ? 's' : ''} stored
+          </span>
+          <span className="flex items-center gap-1">
+            <Film size={12} />
+            {webVideoCount} video recording{webVideoCount !== 1 ? 's' : ''} stored
+          </span>
         </div>
       </div>
     </div>

@@ -156,6 +156,12 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'rdpRecording.maxRdpRecordingDurationMinutes', label: 'Max RDP Recording Duration', description: 'Maximum RDP recording duration', tags: ['rdp', 'duration', 'limit', 'time', 'recording'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'rdpRecording.maxStoredRdpRecordings', label: 'Max Stored RDP Recordings', description: 'Maximum stored RDP recordings', tags: ['rdp', 'storage', 'limit', 'count', 'recording'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'showRecordingManagerIcon', label: 'Recording Manager Icon', description: 'Show Recording Manager in toolbar', tags: ['toolbar', 'icon', 'recording', 'manager'], section: 'recording', sectionLabel: 'Recording' },
+  // Web Recording
+  { key: 'webRecording.autoRecordWebSessions', label: 'Auto Record Web Sessions', description: 'Automatically record HTTP traffic on web connect', tags: ['web', 'http', 'https', 'record', 'auto', 'har', 'browser'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'webRecording.recordHeaders', label: 'Record HTTP Headers', description: 'Include request and response headers in recordings', tags: ['web', 'http', 'headers', 'record', 'har'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'webRecording.maxWebRecordingDurationMinutes', label: 'Max Web Recording Duration', description: 'Maximum web recording duration', tags: ['web', 'duration', 'limit', 'time', 'recording'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'webRecording.maxStoredWebRecordings', label: 'Max Stored Web Recordings', description: 'Maximum stored web recordings', tags: ['web', 'storage', 'limit', 'count', 'recording'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'webRecording.defaultExportFormat', label: 'Web Export Format', description: 'Default web recording export format', tags: ['web', 'export', 'format', 'har', 'json', 'http'], section: 'recording', sectionLabel: 'Recording' },
 
   // ─── Macros ─────────────────────────────────────────────────────
   { key: 'macros.defaultStepDelayMs', label: 'Default Step Delay', description: 'Default delay between macro steps', tags: ['macro', 'delay', 'speed', 'replay'], section: 'macros', sectionLabel: 'Macros' },
