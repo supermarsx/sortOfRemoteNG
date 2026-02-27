@@ -742,6 +742,7 @@ export interface ThemeConfig {
 }
 
 export interface RecordingConfig {
+  enabled: boolean;
   autoRecordSessions: boolean;
   recordInput: boolean;
   maxRecordingDurationMinutes: number;

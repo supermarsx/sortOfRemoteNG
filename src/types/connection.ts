@@ -164,6 +164,13 @@ export interface Connection {
   // Recording Config Override (per-connection)
   recordingConfigOverride?: Partial<import('../types/settings').RecordingConfig>;
 
+  /** Disable SSH terminal recording for this connection */
+  disableSshRecording?: boolean;
+  /** Disable RDP screen recording for this connection */
+  disableRdpRecording?: boolean;
+  /** Disable web HAR/video recording for this connection */
+  disableWebRecording?: boolean;
+
   // SSH Connection Config Override (protocol-level settings)
   sshConnectionConfigOverride?: Partial<SSHConnectionConfig>;
 

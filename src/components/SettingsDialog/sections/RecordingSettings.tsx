@@ -3,7 +3,7 @@ import { GlobalSettings, RecordingConfig } from "../../../types/settings";
 import { RdpRecordingConfig, WebRecordingConfig } from "../../../types/macroTypes";
 import {
   Circle, HardDrive, Clock, Download, Keyboard,
-  Monitor, Film, Gauge, Save, Terminal, Globe, FileText, Eye,
+  Monitor, Film, Gauge, Save, Terminal, Globe, FileText, Eye, Power,
 } from "lucide-react";
 import * as macroService from "../../../utils/macroService";
 
@@ -74,6 +74,22 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </h4>
 
       <div className="space-y-3">
+        <label data-setting-key="recording.enabled" className="flex items-center justify-between cursor-pointer group">
+          <div className="flex items-center gap-3">
+            <Power size={14} className="text-green-400" />
+            <div>
+              <span className="text-sm text-gray-300 group-hover:text-white">Enable SSH recording</span>
+              <p className="text-[10px] text-gray-500">Allow SSH terminal sessions to be recorded</p>
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={recording.enabled}
+            onChange={(e) => updateSsh({ enabled: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+          />
+        </label>
+
         <label data-setting-key="recording.autoRecordSessions" className="flex items-center justify-between cursor-pointer group">
           <div className="flex items-center gap-3">
             <Circle size={14} className="text-red-400" />
@@ -87,6 +103,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             checked={recording.autoRecordSessions}
             onChange={(e) => updateSsh({ autoRecordSessions: e.target.checked })}
             className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            disabled={!recording.enabled}
           />
         </label>
 
@@ -179,6 +196,22 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </h4>
 
       <div className="space-y-3">
+        <label data-setting-key="rdpRecording.enabled" className="flex items-center justify-between cursor-pointer group">
+          <div className="flex items-center gap-3">
+            <Power size={14} className="text-green-400" />
+            <div>
+              <span className="text-sm text-gray-300 group-hover:text-white">Enable RDP recording</span>
+              <p className="text-[10px] text-gray-500">Allow RDP sessions to be screen-recorded</p>
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={rdpRec.enabled}
+            onChange={(e) => updateRdp({ enabled: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+          />
+        </label>
+
         <label data-setting-key="rdpRecording.autoRecordRdpSessions" className="flex items-center justify-between cursor-pointer group">
           <div className="flex items-center gap-3">
             <Circle size={14} className="text-red-400" />
@@ -192,6 +225,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             checked={rdpRec.autoRecordRdpSessions}
             onChange={(e) => updateRdp({ autoRecordRdpSessions: e.target.checked })}
             className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            disabled={!rdpRec.enabled}
           />
         </label>
 
@@ -338,6 +372,22 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </h4>
 
       <div className="space-y-3">
+        <label data-setting-key="webRecording.enabled" className="flex items-center justify-between cursor-pointer group">
+          <div className="flex items-center gap-3">
+            <Power size={14} className="text-green-400" />
+            <div>
+              <span className="text-sm text-gray-300 group-hover:text-white">Enable web recording</span>
+              <p className="text-[10px] text-gray-500">Allow web sessions to be recorded (HAR and video)</p>
+            </div>
+          </div>
+          <input
+            type="checkbox"
+            checked={webRec.enabled}
+            onChange={(e) => updateWeb({ enabled: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+          />
+        </label>
+
         <label data-setting-key="webRecording.autoRecordWebSessions" className="flex items-center justify-between cursor-pointer group">
           <div className="flex items-center gap-3">
             <Circle size={14} className="text-red-400" />
@@ -351,6 +401,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             checked={webRec.autoRecordWebSessions}
             onChange={(e) => updateWeb({ autoRecordWebSessions: e.target.checked })}
             className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            disabled={!webRec.enabled}
           />
         </label>
 

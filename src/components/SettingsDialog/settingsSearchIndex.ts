@@ -143,11 +143,13 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'globalProxy', label: 'Global Proxy', description: 'Global proxy settings', tags: ['proxy', 'socks', 'http proxy', 'tunnel'], section: 'proxy', sectionLabel: 'Proxy' },
 
   // ─── Recording ──────────────────────────────────────────────────
+  { key: 'recording.enabled', label: 'Enable SSH Recording', description: 'Allow SSH terminal sessions to be recorded', tags: ['record', 'enable', 'disable', 'ssh', 'toggle'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'recording.autoRecordSessions', label: 'Auto Record Sessions', description: 'Automatically record SSH sessions', tags: ['record', 'auto', 'capture', 'session'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'recording.recordInput', label: 'Record Input', description: 'Record keyboard input in sessions', tags: ['record', 'input', 'keystrokes', 'capture'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'recording.maxRecordingDurationMinutes', label: 'Max Recording Duration', description: 'Maximum recording duration in minutes', tags: ['recording', 'duration', 'limit', 'time'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'recording.maxStoredRecordings', label: 'Max Stored Recordings', description: 'Maximum number of stored recordings', tags: ['recording', 'storage', 'limit', 'count'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'recording.defaultExportFormat', label: 'Default Export Format', description: 'Default recording export format', tags: ['export', 'format', 'asciicast', 'script', 'json', 'gif', 'animated'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'rdpRecording.enabled', label: 'Enable RDP Recording', description: 'Allow RDP sessions to be screen-recorded', tags: ['rdp', 'record', 'enable', 'disable', 'toggle'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'rdpRecording.autoRecordRdpSessions', label: 'Auto Record RDP Sessions', description: 'Automatically record RDP screen sessions', tags: ['rdp', 'record', 'auto', 'video', 'screen'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'rdpRecording.autoSaveToLibrary', label: 'Auto Save to Library', description: 'Save RDP recordings to library instead of file dialog', tags: ['rdp', 'auto save', 'library', 'recording'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'rdpRecording.defaultVideoFormat', label: 'Video Format', description: 'Default RDP recording video format', tags: ['rdp', 'video', 'format', 'webm', 'mp4', 'gif', 'animated'], section: 'recording', sectionLabel: 'Recording' },
@@ -157,6 +159,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'rdpRecording.maxStoredRdpRecordings', label: 'Max Stored RDP Recordings', description: 'Maximum stored RDP recordings', tags: ['rdp', 'storage', 'limit', 'count', 'recording'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'showRecordingManagerIcon', label: 'Recording Manager Icon', description: 'Show Recording Manager in toolbar', tags: ['toolbar', 'icon', 'recording', 'manager'], section: 'recording', sectionLabel: 'Recording' },
   // Web Recording
+  { key: 'webRecording.enabled', label: 'Enable Web Recording', description: 'Allow web sessions to be recorded (HAR and video)', tags: ['web', 'http', 'record', 'enable', 'disable', 'toggle'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'webRecording.autoRecordWebSessions', label: 'Auto Record Web Sessions', description: 'Automatically record HTTP traffic on web connect', tags: ['web', 'http', 'https', 'record', 'auto', 'har', 'browser'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'webRecording.recordHeaders', label: 'Record HTTP Headers', description: 'Include request and response headers in recordings', tags: ['web', 'http', 'headers', 'record', 'har'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'webRecording.maxWebRecordingDurationMinutes', label: 'Max Web Recording Duration', description: 'Maximum web recording duration', tags: ['web', 'duration', 'limit', 'time', 'recording'], section: 'recording', sectionLabel: 'Recording' },
