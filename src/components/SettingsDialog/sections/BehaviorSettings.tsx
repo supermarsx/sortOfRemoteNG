@@ -157,6 +157,9 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
         <MousePointerClick className="w-5 h-5" />
         Behavior
       </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Click actions, tab behavior, clipboard, notifications, and reconnection settings.
+      </p>
 
       {/* ── 1. Click Actions ─────────────────────────────── */}
       <div className="space-y-4">

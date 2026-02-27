@@ -189,8 +189,8 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-white flex items-center gap-2">
-          <Terminal className="w-5 h-5 text-green-500" />
-          {t('settings.sshTerminal.title', 'SSH Terminal Settings')}
+          <Terminal className="w-5 h-5" />
+          SSH Terminal
         </h3>
         <button
           onClick={resetToDefaults}
@@ -200,6 +200,9 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
           {t('settings.resetDefaults', 'Reset to Defaults')}
         </button>
       </div>
+      <p className="text-xs text-gray-400 mb-4">
+        Terminal line handling, bell, keyboard, font, colors, scrollback, and SSH protocol settings.
+      </p>
 
       {/* Line Handling */}
       <CollapsibleSection

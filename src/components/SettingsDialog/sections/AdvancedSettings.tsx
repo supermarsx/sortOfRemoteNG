@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings } from '../../../types/settings';
 import {
-  Cog,
+  Code,
   Layers,
   FileText,
   Terminal,
@@ -37,9 +37,12 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white flex items-center gap-2">
-        <Cog className="w-5 h-5" />
-        {t('settings.advanced')}
+        <Code className="w-5 h-5" />
+        Advanced
       </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Tab grouping, logging level, tab naming, and diagnostics.
+      </p>
 
       {/* Tab Grouping Section */}
       <div className="space-y-4">

@@ -3,6 +3,7 @@ import { PasswordInput } from '../../ui/PasswordInput';
 import { useTranslation } from "react-i18next";
 import {
   Cloud,
+  CloudCog,
   CloudOff,
   RefreshCw,
   Settings,
@@ -733,7 +734,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-white flex items-center gap-2">
-          <FolderSync className="w-5 h-5" />
+          <CloudCog className="w-5 h-5" />
           Cloud Sync
         </h3>
         <button
@@ -745,6 +746,9 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           Sync All
         </button>
       </div>
+      <p className="text-xs text-gray-400 mb-4">
+        Synchronize connections and settings across devices using cloud storage providers.
+      </p>
 
       {/* Multi-Target Sync Status Overview */}
       {cloudSync.enabled && enabledProviders.length > 0 && (

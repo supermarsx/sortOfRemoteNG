@@ -58,10 +58,10 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-medium text-white flex items-center gap-2">
-          <Server className="w-5 h-5" />
+          <Cpu className="w-5 h-5" />
           Backend
         </h3>
-        <p className="text-sm text-gray-400">
+        <p className="text-xs text-gray-400 mb-4">
           Tauri runtime and backend service configuration. Changes may require an application restart.
         </p>
       </div>

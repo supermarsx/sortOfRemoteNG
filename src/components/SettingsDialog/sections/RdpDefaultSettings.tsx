@@ -6,6 +6,7 @@ import {
   Server,
   Zap,
   Monitor,
+  MonitorDot,
   Cable,
   Layers,
 } from 'lucide-react';
@@ -34,10 +35,10 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-medium text-white flex items-center gap-2">
-          <Monitor className="w-5 h-5" />
+          <MonitorDot className="w-5 h-5" />
           RDP
         </h3>
-        <p className="text-sm text-gray-400">
+        <p className="text-xs text-gray-400 mb-4">
           Default configuration applied to all new RDP connections. Individual connections can
           override these settings.
         </p>

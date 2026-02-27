@@ -181,10 +181,9 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white flex items-center gap-2">
         <RotateCcw className="w-5 h-5" />
-        Recovery & Reset
+        Recovery
       </h3>
-
-      <p className="text-sm text-gray-400">
+      <p className="text-xs text-gray-400 mb-4">
         Use these options to troubleshoot issues or reset the application to a clean state.
       </p>
 

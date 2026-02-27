@@ -1,8 +1,8 @@
 import React from "react";
 import { GlobalSettings } from "../../../types/settings";
-import { 
-  Layout, 
-  Maximize2, 
+import {
+  LayoutGrid,
+  Maximize2,
   Move, 
   PanelLeft, 
   ArrowLeftRight,
@@ -45,9 +45,12 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white flex items-center gap-2">
-        <Layout className="w-5 h-5" />
+        <LayoutGrid className="w-5 h-5" />
         Layout
       </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Window persistence, sidebar behavior, tab reordering, and secondary bar icon visibility.
+      </p>
 
       {/* Window Persistence Section */}
       <div className="space-y-4">

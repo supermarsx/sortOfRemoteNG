@@ -243,7 +243,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-white flex items-center gap-2">
           <Archive className="w-5 h-5" />
-          Backup & Scheduling
+          Backup
         </h3>
         <button
           onClick={handleRunBackupNow}
@@ -254,6 +254,9 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
           Backup Now
         </button>
       </div>
+      <p className="text-xs text-gray-400 mb-4">
+        Automatic and manual backup scheduling, encryption, destination, and retention settings.
+      </p>
 
       {/* Enable Backup */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-4">

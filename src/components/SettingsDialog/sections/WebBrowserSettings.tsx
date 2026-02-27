@@ -13,12 +13,20 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
 }) => {
   return (
     <div className="space-y-6">
+      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <Globe className="w-5 h-5" />
+        Web Browser
+      </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Internal proxy keepalive, bookmarks, and web browser connection settings.
+      </p>
+
       {/* ── Proxy Keepalive ── */}
       <section>
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
-          <Wifi className="w-5 h-5 text-blue-400" />
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Wifi className="w-4 h-4 text-blue-400" />
           Internal Proxy Keepalive
-        </h3>
+        </h4>
         <p className="text-sm text-gray-400 mb-4">
           When the web browser connects through an internal authentication proxy, these settings
           control how dead proxy sessions are detected and recovered.
@@ -115,10 +123,10 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
 
       {/* ── Bookmarks ── */}
       <section>
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
-          <Bookmark className="w-5 h-5 text-yellow-400" />
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Bookmark className="w-4 h-4 text-yellow-400" />
           Bookmarks
-        </h3>
+        </h4>
 
         <div className="space-y-4">
           {/* Confirm delete all */}

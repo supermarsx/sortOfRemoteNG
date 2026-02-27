@@ -97,8 +97,11 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white flex items-center gap-2">
         <Palette className="w-5 h-5" />
-        {t("settings.theme")}
+        Theme
       </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Color scheme, background glow, window transparency, animations, and custom CSS.
+      </p>
 
       {/* Theme & Color Scheme Section */}
       <div className="space-y-4">

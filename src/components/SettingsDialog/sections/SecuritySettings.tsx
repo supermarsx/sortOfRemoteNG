@@ -119,8 +119,11 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white flex items-center gap-2">
         <Shield className="w-5 h-5" />
-        {t('security.title')}
+        Security
       </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Encryption algorithms, key derivation, master password, and credential storage settings.
+      </p>
 
       {/* Encryption Algorithm Section */}
       <div className="space-y-4">

@@ -103,11 +103,8 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
         {t('settings.api.title', 'API Server')}
       </h3>
 
-      <p className="text-sm text-gray-400">
-        {t(
-          'settings.api.description',
-          'Configure the internal REST API server for remote control and automation.'
-        )}
+      <p className="text-xs text-gray-400 mb-4">
+        Configure the internal REST API server for remote control and automation.
       </p>
 
       {/* Enable API Server */}

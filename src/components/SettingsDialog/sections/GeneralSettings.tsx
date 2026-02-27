@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { GlobalSettings } from "../../../types/settings";
 import {
-  Settings,
+  Monitor,
   Globe,
   Clock,
   Save,
@@ -30,9 +30,12 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white flex items-center gap-2">
-        <Settings className="w-5 h-5" />
-        {t("settings.general")}
+        <Monitor className="w-5 h-5" />
+        General
       </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Language, autosave, connection timeouts, and general application preferences.
+      </p>
 
       {/* Basic Settings Section */}
       <div className="space-y-4">

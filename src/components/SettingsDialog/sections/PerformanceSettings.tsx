@@ -30,9 +30,12 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white flex items-center gap-2">
-        <Activity className="w-5 h-5" />
-        {t('performance.title')}
+        <Zap className="w-5 h-5" />
+        Performance
       </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Connection retry, performance monitoring, status checking, and action logging.
+      </p>
 
       {/* Retry Settings Section */}
       <div className="space-y-4">

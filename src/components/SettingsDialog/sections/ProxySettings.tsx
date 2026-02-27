@@ -9,7 +9,7 @@ import {
   Hash,
   User,
   Lock,
-  Network,
+  Wifi,
 } from 'lucide-react';
 
 interface ProxySettingsProps {
@@ -29,9 +29,12 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
   return (
     <div className="space-y-6">
       <h3 className="text-lg font-medium text-white flex items-center gap-2">
-        <Network className="w-5 h-5" />
-        Proxy Settings
+        <Wifi className="w-5 h-5" />
+        Proxy
       </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Configure a global proxy server for routing all connections.
+      </p>
 
       {/* Enable Global Proxy */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
