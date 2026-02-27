@@ -30,6 +30,7 @@ import { TOTPConfig } from "../../types/settings";
 import RDPTotpPanel from "./RDPTotpPanel";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { PopoverSurface } from "../ui/PopoverSurface";
+import { OptionGroup, OptionItemButton, OptionList } from "../ui/OptionList";
 
 interface RDPClientHeaderProps {
   sessionName: string;
@@ -87,6 +88,15 @@ const btnBase = "p-1 hover:bg-[var(--color-border)] rounded transition-colors";
 const btnDefault = `${btnBase} text-[var(--color-textSecondary)] hover:text-[var(--color-text)]`;
 const btnActive = `${btnBase} text-[var(--color-text)] bg-[var(--color-border)]`;
 const btnDisabled = `${btnBase} text-[var(--color-textSecondary)] cursor-not-allowed`;
+const SEND_KEY_OPTIONS = [
+  { id: "ctrl-alt-del", label: "Ctrl + Alt + Del" },
+  { id: "alt-tab", label: "Alt + Tab" },
+  { id: "win", label: "Windows Key" },
+  { id: "win-l", label: "Win + L (Lock)" },
+  { id: "win-r", label: "Win + R (Run)" },
+  { id: "alt-f4", label: "Alt + F4" },
+  { id: "print-screen", label: "Print Screen" },
+] as const;
 
 export default function RDPClientHeader({
   sessionName,
@@ -308,36 +318,26 @@ export default function RDPClientHeader({
             isOpen={showSendKeys}
             onClose={() => setShowSendKeys(false)}
             anchorRef={sendKeysRef}
-            className="sor-popover-surface w-48 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden"
+            className="sor-popover-panel w-48 overflow-hidden"
             dataTestId="rdp-send-keys-popover"
           >
-            <div className="sor-option-list">
-              {[
-                { id: "ctrl-alt-del", label: "Ctrl + Alt + Del" },
-                { id: "alt-tab", label: "Alt + Tab" },
-                { id: "win", label: "Windows Key" },
-                { id: "win-l", label: "Win + L (Lock)" },
-                { id: "win-r", label: "Win + R (Run)" },
-                { id: "alt-f4", label: "Alt + F4" },
-                { id: "print-screen", label: "Print Screen" },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    handleSendKeys(item.id);
-                    setShowSendKeys(false);
-                  }}
-                  disabled={!isConnected}
-                  className={`sor-option-item ${
-                    isConnected
-                      ? "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
-                      : "text-[var(--color-textSecondary)] cursor-not-allowed"
-                  } transition-colors`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
+            <OptionList>
+              <OptionGroup label="Send Key Sequence">
+                {SEND_KEY_OPTIONS.map((item) => (
+                  <OptionItemButton
+                    key={item.id}
+                    onClick={() => {
+                      handleSendKeys(item.id);
+                      setShowSendKeys(false);
+                    }}
+                    disabled={!isConnected}
+                    className="text-xs"
+                  >
+                    {item.label}
+                  </OptionItemButton>
+                ))}
+              </OptionGroup>
+            </OptionList>
           </PopoverSurface>
         </div>
 
@@ -355,7 +355,7 @@ export default function RDPClientHeader({
             isOpen={showHostInfo}
             onClose={() => setShowHostInfo(false)}
             anchorRef={hostInfoRef}
-            className="sor-popover-surface w-72 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden"
+            className="sor-popover-panel w-72 overflow-hidden"
             dataTestId="rdp-host-info-popover"
           >
             <div>

@@ -110,7 +110,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
       anchorRef={triggerRef}
       align="start"
       offset={4}
-      className="sor-popover-surface z-[99999] w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-2xl overflow-y-auto"
+      className="sor-popover-panel sor-popover-panel-strong z-[99999] w-96 overflow-y-auto"
       style={{ maxHeight: "calc(100vh - 60px)" }}
       dataTestId="certificate-info-popover"
     >

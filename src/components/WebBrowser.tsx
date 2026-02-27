@@ -51,6 +51,11 @@ import { InputDialog } from "./InputDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { MenuSurface } from "./ui/MenuSurface";
 import { PopoverSurface } from "./ui/PopoverSurface";
+import {
+  OptionEmptyState,
+  OptionItemButton,
+  OptionList,
+} from "./ui/OptionList";
 import { useWebRecorder } from "../hooks/useWebRecorder";
 import { useDisplayRecorder } from "../hooks/useDisplayRecorder";
 import * as macroService from "../utils/macroService";
@@ -1504,21 +1509,21 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                     anchorRef={{ current: folderButtonRefs.current[idx] }}
                     align="start"
                     offset={2}
-                    className="min-w-[140px] rounded border border-[var(--color-border)] bg-[var(--color-surface)] py-0.5 shadow-xl"
+                    className="sor-popover-panel min-w-[140px] py-0.5"
                     dataTestId={`web-browser-folder-popover-${idx}`}
                   >
-                    <div className="sor-option-list">
+                    <OptionList>
                       {bm.children.length === 0 && (
-                        <span className="block select-none px-3 py-1 text-xs italic text-[var(--color-textMuted,var(--color-textSecondary))]">
+                        <OptionEmptyState className="italic text-[var(--color-textMuted,var(--color-textSecondary))]">
                           Empty folder
-                        </span>
+                        </OptionEmptyState>
                       )}
                       {bm.children.map((child, cIdx) => {
                         if (child.isFolder) return null; // no nested folders rendered
                         const childUrl = baseUrl + child.path;
                         const isActive = child.path === currentPath;
                         return (
-                          <button
+                          <OptionItemButton
                             key={cIdx}
                             onClick={() => {
                               setCurrentUrl(childUrl);
@@ -1537,11 +1542,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                                 folderPath: [cIdx],
                               });
                             }}
-                            className={`sor-option-item whitespace-nowrap py-1 text-xs hover:bg-[var(--color-surfaceHover)] ${
-                              isActive
-                                ? "font-semibold text-yellow-400"
-                                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                            }`}
+                            compact
+                            selected={isActive}
+                            className="whitespace-nowrap text-xs"
                             title={child.path}
                           >
                             <span className="flex items-center gap-1">
@@ -1550,10 +1553,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                               )}
                               {child.name}
                             </span>
-                          </button>
+                          </OptionItemButton>
                         );
                       })}
-                    </div>
+                    </OptionList>
                   </PopoverSurface>
                 )}
               </div>

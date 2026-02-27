@@ -65,6 +65,11 @@ import {
 } from "../utils/trustStore";
 import { Modal } from "./ui/Modal";
 import { PopoverSurface } from "./ui/PopoverSurface";
+import {
+  OptionEmptyState,
+  OptionItemButton,
+  OptionList,
+} from "./ui/OptionList";
 
 interface WebTerminalProps {
   session: ConnectionSession;
@@ -1769,29 +1774,28 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({
                     isOpen={showMacroList}
                     onClose={() => setShowMacroList(false)}
                     anchorRef={macroListRef}
-                    className="sor-popover-surface w-64 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl max-h-64 overflow-y-auto"
+                    className="sor-popover-panel w-64 max-h-64 overflow-y-auto"
                     dataTestId="web-terminal-macro-popover"
                   >
-                    <div className="sor-option-list">
+                    <OptionList>
                       {savedMacros.length === 0 ? (
-                        <div className="p-3 text-xs text-[var(--color-textSecondary)] text-center">
-                          No saved macros
-                        </div>
+                        <OptionEmptyState>No saved macros</OptionEmptyState>
                       ) : (
                         savedMacros.map((m) => (
-                          <button
+                          <OptionItemButton
                             key={m.id}
                             onClick={() => handleReplayMacro(m)}
-                            className="sor-option-item border-b border-[var(--color-border)]/50 last:border-b-0 text-sm text-gray-200 hover:bg-[var(--color-border)]"
+                            divider
+                            className="text-sm"
                           >
                             <div className="font-medium truncate">{m.name}</div>
                             <div className="text-[10px] text-[var(--color-textSecondary)]">
                               {m.steps.length} steps
                             </div>
-                          </button>
+                          </OptionItemButton>
                         ))
                       )}
-                    </div>
+                    </OptionList>
                   </PopoverSurface>
                 </div>
                 <div className="relative" ref={keyPopupRef}>

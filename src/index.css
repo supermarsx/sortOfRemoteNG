@@ -518,9 +518,40 @@ body {
   min-width: 10rem;
 }
 
+.sor-popover-panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.sor-popover-panel-strong {
+  box-shadow: 0 20px 48px rgb(0 0 0 / 0.45);
+}
+
 .sor-option-list {
   display: flex;
   flex-direction: column;
+}
+
+.sor-option-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.sor-option-group + .sor-option-group {
+  border-top: 1px solid var(--color-border);
+}
+
+.sor-option-group-label {
+  padding: 0.5rem 0.75rem 0.375rem;
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-textSecondary);
+  font-weight: 600;
 }
 
 .sor-option-item {
@@ -531,6 +562,51 @@ body {
   gap: 0.125rem;
   padding: 0.5rem 0.75rem;
   text-align: left;
+}
+
+.sor-option-item-interactive {
+  color: var(--color-textSecondary);
+  background: transparent;
+  border: 0;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.sor-option-item-interactive:hover {
+  background: var(--color-surfaceHover);
+  color: var(--color-text);
+}
+
+.sor-option-item-selected {
+  color: #facc15;
+  font-weight: 600;
+}
+
+.sor-option-item-compact {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.sor-option-item-divider {
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.sor-option-item-divider:last-child {
+  border-bottom: 0;
+}
+
+.sor-option-item-disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.sor-option-empty {
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--color-textSecondary);
 }
 
 .sor-manager-panel {

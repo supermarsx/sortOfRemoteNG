@@ -57,6 +57,7 @@ describe("RDPClientHeader", () => {
 
     fireEvent.click(screen.getByTitle("Send key combination"));
     expect(screen.getByTestId("rdp-send-keys-popover")).toBeInTheDocument();
+    expect(screen.getByText("Send Key Sequence")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Ctrl + Alt + Del"));
     expect(handleSendKeys).toHaveBeenCalledWith("ctrl-alt-del");
