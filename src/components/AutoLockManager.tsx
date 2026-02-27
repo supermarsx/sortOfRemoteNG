@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Lock, Clock, Shield, Eye, EyeOff } from 'lucide-react';
-import { AutoLockConfig } from '../types/settings';
-import { SecureStorage } from '../utils/storage';
+import React, { useState, useEffect, useCallback } from "react";
+import { Lock, Clock, Eye, EyeOff } from "lucide-react";
+import { AutoLockConfig } from "../types/settings";
+import { SecureStorage } from "../utils/storage";
+import { Modal } from "./ui/Modal";
 
 interface AutoLockManagerProps {
   config: AutoLockConfig;
@@ -17,7 +18,7 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [timeRemaining, setTimeRemaining] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   const handleAutoLock = useCallback(() => {
@@ -33,8 +34,14 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
     };
 
     // Listen for user activity
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
-    events.forEach(event => {
+    const events = [
+      "mousedown",
+      "mousemove",
+      "keypress",
+      "scroll",
+      "touchstart",
+    ];
+    events.forEach((event) => {
       document.addEventListener(event, handleActivity, true);
     });
 
@@ -66,19 +73,22 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
         }
       };
 
-      document.addEventListener('visibilitychange', handleVisibilityChange);
+      document.addEventListener("visibilitychange", handleVisibilityChange);
 
       return () => {
-        events.forEach(event => {
+        events.forEach((event) => {
           document.removeEventListener(event, handleActivity, true);
         });
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
+        );
         clearInterval(interval);
       };
     }
 
     return () => {
-      events.forEach(event => {
+      events.forEach((event) => {
         document.removeEventListener(event, handleActivity, true);
       });
       clearInterval(interval);
@@ -89,10 +99,10 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
     if (config.requirePassword) {
       if (SecureStorage.verifyPassword(password)) {
         setIsLocked(false);
-        setPassword('');
+        setPassword("");
         setLastActivity(Date.now());
       } else {
-        alert('Invalid password');
+        alert("Invalid password");
       }
     } else {
       setIsLocked(false);
@@ -103,15 +113,24 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
   const formatTime = (ms: number): string => {
     const minutes = Math.floor(ms / 60000);
     const seconds = Math.floor((ms % 60000) / 1000);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
   if (isLocked) {
     return (
-      <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
-        <div className="bg-[var(--color-surface)] rounded-lg p-8 w-96 text-center">
+      <Modal
+        isOpen={isLocked}
+        closeOnBackdrop={false}
+        closeOnEscape={false}
+        backdropClassName="bg-black/90"
+        panelClassName="max-w-md mx-4"
+        dataTestId="auto-lock-modal"
+      >
+        <div className="bg-[var(--color-surface)] rounded-lg p-8 w-full text-center">
           <Lock size={64} className="mx-auto mb-6 text-blue-400" />
-          <h2 className="text-2xl font-semibold text-[var(--color-text)] mb-4">Session Locked</h2>
+          <h2 className="text-2xl font-semibold text-[var(--color-text)] mb-4">
+            Session Locked
+          </h2>
           <p className="text-[var(--color-textSecondary)] mb-6">
             Your session has been locked due to inactivity.
           </p>
@@ -120,10 +139,10 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
             <div className="space-y-4">
               <div className="relative">
                 <input
-                  type={showPassword ? 'text' : 'password'}
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleUnlock()}
+                  onKeyPress={(e) => e.key === "Enter" && handleUnlock()}
                   className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter password to unlock"
                   autoFocus
@@ -151,7 +170,7 @@ export const AutoLockManager: React.FC<AutoLockManagerProps> = ({
             </button>
           )}
         </div>
-      </div>
+      </Modal>
     );
   }
 

@@ -5,29 +5,29 @@ import { ConnectionSession } from "../src/types/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 const mockConnection = {
-  id: 'test-connection',
-  name: 'Test SSH Server',
-  protocol: 'ssh' as const,
-  hostname: '192.168.1.100',
+  id: "test-connection",
+  name: "Test SSH Server",
+  protocol: "ssh" as const,
+  hostname: "192.168.1.100",
   port: 22,
-  username: 'testuser',
-  password: 'testpass',
+  username: "testuser",
+  password: "testpass",
   privateKey: null,
   passphrase: null,
   createdAt: new Date(),
   updatedAt: new Date(),
-  isGroup: false
+  isGroup: false,
 };
 
 const mockDispatch = vi.fn();
 
 // Mock Tauri invoke
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn()
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn().mockResolvedValue(() => {})
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
 }));
 
 // Mock xterm.js
@@ -52,58 +52,58 @@ const mockTerminal = {
         css: {
           cell: {
             width: 9,
-            height: 17
-          }
-        }
-      }
-    }
-  }
+            height: 17,
+          },
+        },
+      },
+    },
+  },
 };
 
-vi.mock('@xterm/xterm', () => ({
-  Terminal: vi.fn().mockImplementation(() => mockTerminal)
+vi.mock("@xterm/xterm", () => ({
+  Terminal: vi.fn().mockImplementation(() => mockTerminal),
 }));
 
-vi.mock('@xterm/addon-fit', () => ({
+vi.mock("@xterm/addon-fit", () => ({
   FitAddon: vi.fn().mockImplementation(() => ({
-    fit: vi.fn()
-  }))
+    fit: vi.fn(),
+  })),
 }));
 
-vi.mock('@xterm/addon-web-links', () => ({
-  WebLinksAddon: vi.fn()
+vi.mock("@xterm/addon-web-links", () => ({
+  WebLinksAddon: vi.fn(),
 }));
 
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 
 const mockInvoke = vi.mocked(tauriInvoke);
 
 // Mock useConnections hook
-vi.mock('../src/contexts/useConnections', () => ({
+vi.mock("../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: {
       connections: [mockConnection],
-      sessions: []
+      sessions: [],
     },
-    dispatch: mockDispatch
-  })
+    dispatch: mockDispatch,
+  }),
 }));
 
 const mockSession: ConnectionSession = {
-  id: 'test-session',
-  connectionId: 'test-connection',
-  name: 'Test Session',
-  protocol: 'ssh',
-  hostname: '192.168.1.100',
-  status: 'connecting',
-  startTime: new Date()
+  id: "test-session",
+  connectionId: "test-connection",
+  name: "Test Session",
+  protocol: "ssh",
+  hostname: "192.168.1.100",
+  status: "connecting",
+  startTime: new Date(),
 };
 
 const renderWithProviders = (session: ConnectionSession) => {
   return render(
     <ConnectionProvider>
       <WebTerminal session={session} />
-    </ConnectionProvider>
+    </ConnectionProvider>,
   );
 };
 
@@ -111,36 +111,44 @@ describe("WebTerminal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDispatch.mockClear();
-    mockInvoke.mockResolvedValue('test-session-id');
+    mockInvoke.mockResolvedValue("test-session-id");
   });
 
   describe("SSH Connection", () => {
     it("should display connection details during SSH connection", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[36mConnecting to SSH server...\x1b[0m');
+        expect(mockTerminal.writeln).toHaveBeenCalledWith(
+          "\x1b[36mConnecting to SSH server...\x1b[0m",
+        );
       });
 
-      expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[90mHost: 192.168.1.100\x1b[0m');
-      expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[90mPort: 22\x1b[0m');
-      expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[90mUser: testuser\x1b[0m');
+      expect(mockTerminal.writeln).toHaveBeenCalledWith(
+        "\x1b[90mHost: 192.168.1.100\x1b[0m",
+      );
+      expect(mockTerminal.writeln).toHaveBeenCalledWith(
+        "\x1b[90mPort: 22\x1b[0m",
+      );
+      expect(mockTerminal.writeln).toHaveBeenCalledWith(
+        "\x1b[90mUser: testuser\x1b[0m",
+      );
     });
 
     it("should call connect_ssh with correct parameters", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('connect_ssh', {
+        expect(mockInvoke).toHaveBeenCalledWith("connect_ssh", {
           config: expect.objectContaining({
-            host: '192.168.1.100',
+            host: "192.168.1.100",
             port: 22,
-            username: 'testuser',
-            password: 'testpass',
+            username: "testuser",
+            password: "testpass",
             private_key_path: null,
             private_key_passphrase: null,
             jump_hosts: [],
@@ -152,58 +160,66 @@ describe("WebTerminal", () => {
             strict_host_key_checking: false,
             known_hosts_path: null,
             tcp_no_delay: true,
-            tcp_keepalive: true
-          })
+            tcp_keepalive: true,
+          }),
         });
       });
     });
 
     it("should handle authentication failure", async () => {
-      const authError = new Error('Authentication failed');
+      const authError = new Error("Authentication failed");
       mockInvoke.mockRejectedValueOnce(authError);
 
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[31mAuthentication failed - please check your credentials\x1b[0m');
+        expect(mockTerminal.writeln).toHaveBeenCalledWith(
+          "\x1b[31mAuthentication failed - please check your credentials\x1b[0m",
+        );
       });
     });
 
     it("should handle connection refused", async () => {
-      const connError = new Error('Connection refused');
+      const connError = new Error("Connection refused");
       mockInvoke.mockRejectedValueOnce(connError);
 
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[31mConnection refused - please check the host and port\x1b[0m');
+        expect(mockTerminal.writeln).toHaveBeenCalledWith(
+          "\x1b[31mConnection refused - please check the host and port\x1b[0m",
+        );
       });
     });
 
     it("should handle connection timeout", async () => {
-      const timeoutError = new Error('timeout');
+      const timeoutError = new Error("timeout");
       mockInvoke.mockRejectedValueOnce(timeoutError);
 
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[31mConnection timeout - please check network connectivity\x1b[0m');
+        expect(mockTerminal.writeln).toHaveBeenCalledWith(
+          "\x1b[31mConnection timeout - please check network connectivity\x1b[0m",
+        );
       });
     });
 
     it("should handle host key verification failure", async () => {
-      const hostKeyError = new Error('Host key verification failed');
+      const hostKeyError = new Error("Host key verification failed");
       mockInvoke.mockRejectedValueOnce(hostKeyError);
 
       renderWithProviders(mockSession);
 
       await waitFor(() => {
-        expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[31mHost key verification failed - server may have changed\x1b[0m');
+        expect(mockTerminal.writeln).toHaveBeenCalledWith(
+          "\x1b[31mHost key verification failed - server may have changed\x1b[0m",
+        );
       });
     });
 
     it("should display success message when connected", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -218,13 +234,17 @@ describe("WebTerminal", () => {
     it("should display terminal ready message for non-SSH protocols", () => {
       const telnetSession: ConnectionSession = {
         ...mockSession,
-        protocol: 'telnet'
+        protocol: "telnet",
       };
 
       renderWithProviders(telnetSession);
 
-      expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[32mTerminal ready for TELNET session\x1b[0m');
-      expect(mockTerminal.writeln).toHaveBeenCalledWith('\x1b[36mConnected to: 192.168.1.100\x1b[0m');
+      expect(mockTerminal.writeln).toHaveBeenCalledWith(
+        "\x1b[32mTerminal ready for TELNET session\x1b[0m",
+      );
+      expect(mockTerminal.writeln).toHaveBeenCalledWith(
+        "\x1b[36mConnected to: 192.168.1.100\x1b[0m",
+      );
     });
   });
 
@@ -237,9 +257,9 @@ describe("WebTerminal", () => {
       });
 
       mockInvoke
-        .mockResolvedValueOnce('ssh-session-123') // connect_ssh
+        .mockResolvedValueOnce("ssh-session-123") // connect_ssh
         .mockResolvedValueOnce(undefined) // start_shell
-        .mockResolvedValueOnce('ls output'); // execute_command
+        .mockResolvedValueOnce("ls output"); // execute_command
 
       renderWithProviders(mockSession);
 
@@ -249,21 +269,21 @@ describe("WebTerminal", () => {
       });
 
       // Simulate typing 'ls' and pressing Enter by calling the onData callback
-      onDataCallback('l');
-      onDataCallback('s');
-      onDataCallback('\r'); // Enter key
+      onDataCallback("l");
+      onDataCallback("s");
+      onDataCallback("\r"); // Enter key
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('execute_command', {
-          sessionId: 'ssh-session-123',
-          command: 'ls',
-          timeout: 30000
+        expect(mockInvoke).toHaveBeenCalledWith("execute_command", {
+          sessionId: "ssh-session-123",
+          command: "ls",
+          timeout: 30000,
         });
       });
     });
 
     it("should handle backspace correctly", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -279,7 +299,7 @@ describe("WebTerminal", () => {
 
   describe("Fullscreen Toggle", () => {
     it("should toggle fullscreen mode", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -287,7 +307,9 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const fullscreenButton = screen.getByRole('button', { name: /fullscreen/i });
+      const fullscreenButton = screen.getByRole("button", {
+        name: /fullscreen/i,
+      });
       fireEvent.click(fullscreenButton);
 
       // Component should still be rendered
@@ -297,7 +319,7 @@ describe("WebTerminal", () => {
 
   describe("Connection Cleanup", () => {
     it("should keep SSH session alive on unmount", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       const { unmount } = renderWithProviders(mockSession);
 
@@ -307,21 +329,21 @@ describe("WebTerminal", () => {
 
       unmount();
 
-      expect(mockInvoke).not.toHaveBeenCalledWith('disconnect_ssh', {
-        sessionId: 'ssh-session-123'
+      expect(mockInvoke).not.toHaveBeenCalledWith("disconnect_ssh", {
+        sessionId: "ssh-session-123",
       });
     });
   });
 
   describe("Script Selector Modal", () => {
-    const SCRIPTS_STORAGE_KEY = 'managedScripts';
-    
+    const SCRIPTS_STORAGE_KEY = "managedScripts";
+
     beforeEach(() => {
       localStorage.clear();
     });
 
     it("should show Run Script button for SSH sessions", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -329,12 +351,14 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      const runScriptButton = screen.getByRole("button", {
+        name: /run script/i,
+      });
       expect(runScriptButton).toBeInTheDocument();
     });
 
     it("should open script selector modal when Run Script clicked", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -342,7 +366,9 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      const runScriptButton = screen.getByRole("button", {
+        name: /run script/i,
+      });
       fireEvent.click(runScriptButton);
 
       await waitFor(() => {
@@ -353,7 +379,7 @@ describe("WebTerminal", () => {
     });
 
     it("should have search input in script selector", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -361,16 +387,20 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      const runScriptButton = screen.getByRole("button", {
+        name: /run script/i,
+      });
       fireEvent.click(runScriptButton);
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/Search scripts/i)).toBeInTheDocument();
+        expect(
+          screen.getByPlaceholderText(/Search scripts/i),
+        ).toBeInTheDocument();
       });
     });
 
     it("should have filter dropdowns in script selector", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -378,7 +408,9 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      const runScriptButton = screen.getByRole("button", {
+        name: /run script/i,
+      });
       fireEvent.click(runScriptButton);
 
       await waitFor(() => {
@@ -389,7 +421,7 @@ describe("WebTerminal", () => {
     });
 
     it("should filter scripts by OS tag in selector", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -397,7 +429,9 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      const runScriptButton = screen.getByRole("button", {
+        name: /run script/i,
+      });
       fireEvent.click(runScriptButton);
 
       await waitFor(() => {
@@ -405,18 +439,20 @@ describe("WebTerminal", () => {
       });
 
       // Find OS tag filter (third select)
-      const selects = screen.getAllByRole('combobox');
+      const selects = screen.getAllByRole("combobox");
       const osTagSelect = selects[2];
-      fireEvent.change(osTagSelect, { target: { value: 'windows' } });
+      fireEvent.change(osTagSelect, { target: { value: "windows" } });
 
       await waitFor(() => {
         expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
-        expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+        expect(
+          screen.queryByText("System Info (Linux)"),
+        ).not.toBeInTheDocument();
       });
     });
 
     it("should display OS tag icons next to script names", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -424,14 +460,16 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      const runScriptButton = screen.getByRole("button", {
+        name: /run script/i,
+      });
       fireEvent.click(runScriptButton);
 
       await waitFor(() => {
         // Linux scripts should show penguin emoji
         const penguins = screen.getAllByText("🐧");
         expect(penguins.length).toBeGreaterThan(0);
-        
+
         // Windows scripts should show windows emoji
         const windows = screen.getAllByText("🪟");
         expect(windows.length).toBeGreaterThan(0);
@@ -439,7 +477,7 @@ describe("WebTerminal", () => {
     });
 
     it("should close script selector when X clicked", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -447,7 +485,9 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      const runScriptButton = screen.getByRole("button", {
+        name: /run script/i,
+      });
       fireEvent.click(runScriptButton);
 
       await waitFor(() => {
@@ -455,9 +495,11 @@ describe("WebTerminal", () => {
       });
 
       // Find close button in modal header
-      const closeButtons = screen.getAllByRole('button');
-      const closeButton = closeButtons.find(btn => btn.querySelector('svg[class*="lucide-x"]'));
-      
+      const closeButtons = screen.getAllByRole("button");
+      const closeButton = closeButtons.find((btn) =>
+        btn.querySelector('svg[class*="lucide-x"]'),
+      );
+
       if (closeButton) {
         fireEvent.click(closeButton);
       }
@@ -467,8 +509,8 @@ describe("WebTerminal", () => {
       });
     });
 
-    it("should have Clear button when filters are active", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+    it("should close script selector when Escape is pressed", async () => {
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -476,7 +518,61 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      fireEvent.click(screen.getByRole("button", { name: /run script/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("web-terminal-script-selector-modal"),
+        ).toBeInTheDocument();
+      });
+
+      fireEvent.keyDown(document, { key: "Escape" });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByTestId("web-terminal-script-selector-modal"),
+        ).not.toBeInTheDocument();
+      });
+    });
+
+    it("should close script selector on backdrop click", async () => {
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /run script/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("web-terminal-script-selector-modal"),
+        ).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId("web-terminal-script-selector-modal"));
+
+      await waitFor(() => {
+        expect(
+          screen.queryByTestId("web-terminal-script-selector-modal"),
+        ).not.toBeInTheDocument();
+      });
+    });
+
+    it("should have Clear button when filters are active", async () => {
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      const runScriptButton = screen.getByRole("button", {
+        name: /run script/i,
+      });
       fireEvent.click(runScriptButton);
 
       await waitFor(() => {
@@ -484,8 +580,8 @@ describe("WebTerminal", () => {
       });
 
       // Apply a filter
-      const selects = screen.getAllByRole('combobox');
-      fireEvent.change(selects[0], { target: { value: 'System' } });
+      const selects = screen.getAllByRole("combobox");
+      fireEvent.change(selects[0], { target: { value: "System" } });
 
       await waitFor(() => {
         expect(screen.getByText("Clear")).toBeInTheDocument();
@@ -493,7 +589,7 @@ describe("WebTerminal", () => {
     });
 
     it("should reset filters when Clear clicked", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -501,7 +597,9 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const runScriptButton = screen.getByRole('button', { name: /run script/i });
+      const runScriptButton = screen.getByRole("button", {
+        name: /run script/i,
+      });
       fireEvent.click(runScriptButton);
 
       await waitFor(() => {
@@ -509,11 +607,13 @@ describe("WebTerminal", () => {
       });
 
       // Apply OS tag filter
-      const selects = screen.getAllByRole('combobox');
-      fireEvent.change(selects[2], { target: { value: 'windows' } });
+      const selects = screen.getAllByRole("combobox");
+      fireEvent.change(selects[2], { target: { value: "windows" } });
 
       await waitFor(() => {
-        expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+        expect(
+          screen.queryByText("System Info (Linux)"),
+        ).not.toBeInTheDocument();
       });
 
       // Click Clear
@@ -529,7 +629,7 @@ describe("WebTerminal", () => {
 
   describe("Send Ctrl+C Button", () => {
     it("should have Send Ctrl+C button for SSH sessions", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -537,12 +637,12 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const ctrlCButton = screen.getByRole('button', { name: /send ctrl\+c/i });
+      const ctrlCButton = screen.getByRole("button", { name: /send ctrl\+c/i });
       expect(ctrlCButton).toBeInTheDocument();
     });
 
     it("should call send_ssh_input with Ctrl+C when button clicked", async () => {
-      mockInvoke.mockResolvedValueOnce('ssh-session-123');
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
 
       renderWithProviders(mockSession);
 
@@ -550,13 +650,13 @@ describe("WebTerminal", () => {
         expect(screen.getByText("Connected")).toBeInTheDocument();
       });
 
-      const ctrlCButton = screen.getByRole('button', { name: /send ctrl\+c/i });
+      const ctrlCButton = screen.getByRole("button", { name: /send ctrl\+c/i });
       fireEvent.click(ctrlCButton);
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('send_ssh_input', {
-          sessionId: 'ssh-session-123',
-          data: '\x03'
+        expect(mockInvoke).toHaveBeenCalledWith("send_ssh_input", {
+          sessionId: "ssh-session-123",
+          data: "\x03",
         });
       });
     });

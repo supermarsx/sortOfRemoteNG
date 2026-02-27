@@ -13,6 +13,7 @@ Consolidate reusable UI structure and CSS for:
 
 - Shared primitives in active use:
   - `src/components/ui/Modal.tsx`
+  - `src/components/ui/MenuSurface.tsx`
   - `src/components/ui/SettingsPrimitives.tsx`
   - shared CSS primitives in `src/index.css`
 - Major popup/dialog surfaces already migrated to `Modal`.
@@ -53,6 +54,16 @@ Consolidate reusable UI structure and CSS for:
   - `connectionEditor/HTTPOptions` (bookmark/header dialogs)
   - `BulkSSHCommander`
   - `AppDialogs` (RDP popup wrapper)
+  - `WebTerminal` (script selector modal)
+  - `AutoLockManager` (locked overlay shell via non-dismissible modal)
+
+### Menu/Popover Centralization
+
+- New shared primitive:
+  - `src/components/ui/MenuSurface.tsx`
+- Migrated context/action menus:
+  - `ConnectionTree` (item menu + panel menu)
+  - `WebBrowser` (bookmark item menu + bookmark bar menu)
 
 ### CSS Primitive Expansion
 
@@ -60,6 +71,7 @@ Consolidate reusable UI structure and CSS for:
   - option styles: `.sor-option-chip`, `.sor-option-chip-active`, `.sor-option-card`
   - chip groups: `.sor-chip-list`, `.sor-chip-button`
   - selection rows: `.sor-selection-list`, `.sor-selection-row`, `.sor-selection-row-selected`, `.sor-selection-row-hover-action`
+  - menu shell/items: `.sor-menu-surface`, `.sor-menu-item`, `.sor-menu-item-danger`, `.sor-menu-divider`
 - Migrated components adopted these classes where behavior/style stacks were duplicated.
 
 ### Test Coverage Added/Updated
@@ -67,27 +79,29 @@ Consolidate reusable UI structure and CSS for:
 - New:
   - `tests/HTTPOptions.test.tsx`
   - `tests/AppDialogs.test.tsx`
+  - `tests/AutoLockManager.test.tsx`
   - `tests/ColorTagManager.test.tsx`
+  - `tests/MenuSurface.test.tsx`
   - `tests/ProxyChainEditor.test.tsx`
   - `tests/ProxyProfileEditor.test.tsx`
   - `tests/SSHTunnelDialog.test.tsx`
   - `tests/TrustWarningDialog.test.tsx`
 - Updated:
   - `tests/BulkSSHCommander.test.tsx`
+  - `tests/ConnectionTree.test.tsx`
   - `tests/SettingsDialog.test.tsx`
+  - `tests/WebTerminal.test.tsx`
 
 ## Remaining Scope
 
 ### Non-Modal Overlays To Triage
 
-- `WebTerminal` script overlay (candidate for `Modal`)
-- `AutoLockManager` lock overlay (special security UX; evaluate separately)
 - fullscreen client containers and splash screen are intentionally not modal migrations
 
 ### Context/Action Menus (Different Primitive)
 
-- `ConnectionTree` and `WebBrowser` still use ad-hoc fixed/absolute menu shells.
-- Next centralization target should be a shared menu/popover primitive instead of forcing these into `Modal`.
+- `WebBrowser` folder dropdown (`absolute`) is still custom and can move to a shared anchored popover if needed.
+- Any future right-click menus should use `MenuSurface` by default.
 
 ### CSS Consolidation Follow-Up
 
@@ -97,11 +111,10 @@ Consolidate reusable UI structure and CSS for:
 
 ## Execution Plan (Next Steps)
 
-1. Create shared `MenuSurface` primitive for context menus/popovers and migrate `ConnectionTree` + `WebBrowser`.
-2. Migrate `WebTerminal` script modal overlay to `Modal` with current close semantics preserved.
-3. Decide whether `AutoLockManager` should remain a dedicated hard lock overlay or adopt a locked-down `Modal` variant.
-4. Sweep duplicated list/chip styles and replace with existing `.sor-*` utilities.
-5. Run lint + targeted tests after each batch, then full suite pass.
+1. Sweep remaining ad-hoc list/chip class stacks and replace with `.sor-*` primitives.
+2. Evaluate a shared anchored popover for non-context-menu dropdowns (e.g., bookmark folder dropdown).
+3. Continue reducing duplicated utility class combinations in managers/editors.
+4. Run lint + targeted tests after each batch, then full suite pass.
 
 ## Guardrails
 

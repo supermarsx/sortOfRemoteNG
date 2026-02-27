@@ -43,6 +43,7 @@ import { generateId } from "../utils/id";
 import { ScriptEngine } from "../utils/scriptEngine";
 import { canMoveToParent } from "../utils/dragDropManager";
 import { Modal, ModalHeader } from "./ui/Modal";
+import { MenuSurface } from "./ui/MenuSurface";
 
 /**
  * Maps a connection protocol to a Lucide icon component.
@@ -195,7 +196,6 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
     x: number;
     y: number;
   } | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [isExpanded, setIsExpanded] = useState(connection.expanded || false);
 
@@ -254,18 +254,6 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
     setMenuPosition({ x: e.clientX, y: e.clientY });
     setShowMenu(true);
   };
-
-  useEffect(() => {
-    if (!showMenu) return;
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (menuRef.current?.contains(target || null)) return;
-      if (triggerRef.current?.contains(target || null)) return;
-      setShowMenu(false);
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [showMenu]);
 
   return (
     <div className="relative">
@@ -450,15 +438,13 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         </div>
 
         {showMenu && (
-          <div
-            ref={menuRef}
-            className="fixed bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md shadow-lg z-[9999] min-w-[140px]"
-            style={
-              menuPosition
-                ? { left: menuPosition.x, top: menuPosition.y }
-                : undefined
-            }
-            onClick={(e) => e.stopPropagation()}
+          <MenuSurface
+            isOpen={showMenu}
+            onClose={() => setShowMenu(false)}
+            position={menuPosition}
+            ignoreRefs={[triggerRef]}
+            className="min-w-[140px]"
+            dataTestId="connection-tree-item-menu"
           >
             {!connection.isGroup && (
               <button
@@ -471,7 +457,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                   }
                   setShowMenu(false);
                 }}
-                className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+                className="sor-menu-item"
               >
                 {activeSession ? (
                   <Power size={14} className="mr-2" />
@@ -489,7 +475,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                     onConnectWithOptions(connection);
                     setShowMenu(false);
                   }}
-                  className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+                  className="sor-menu-item"
                 >
                   <SlidersHorizontal size={14} className="mr-2" />
                   Connect with options
@@ -500,7 +486,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                     onConnectWithoutCredentials(connection);
                     setShowMenu(false);
                   }}
-                  className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+                  className="sor-menu-item"
                 >
                   <UserX size={14} className="mr-2" />
                   Connect without credentials
@@ -511,7 +497,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                     onExecuteScripts(connection, activeSession?.id);
                     setShowMenu(false);
                   }}
-                  className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+                  className="sor-menu-item"
                 >
                   <Play size={14} className="mr-2" />
                   Execute scripts
@@ -522,7 +508,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                     onDiagnostics(connection);
                     setShowMenu(false);
                   }}
-                  className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+                  className="sor-menu-item"
                 >
                   <Activity size={14} className="mr-2" />
                   Diagnostics
@@ -534,7 +520,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                       onDetachSession(activeSession.id);
                       setShowMenu(false);
                     }}
-                    className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+                    className="sor-menu-item"
                   >
                     <ExternalLink size={14} className="mr-2" />
                     Detach window
@@ -542,16 +528,14 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 )}
               </>
             )}
-            {!connection.isGroup && (
-              <hr className="border-[var(--color-border)]" />
-            )}
+            {!connection.isGroup && <div className="sor-menu-divider" />}
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onEdit(connection);
                 setShowMenu(false);
               }}
-              className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+              className="sor-menu-item"
             >
               <Edit size={14} className="mr-2" />
               Edit
@@ -562,7 +546,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 onRename(connection);
                 setShowMenu(false);
               }}
-              className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+              className="sor-menu-item"
             >
               <Edit size={14} className="mr-2" />
               Rename
@@ -577,7 +561,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                   });
                   setShowMenu(false);
                 }}
-                className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+                className="sor-menu-item"
               >
                 <Star
                   size={12}
@@ -594,7 +578,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                   onCopyHostname(connection);
                   setShowMenu(false);
                 }}
-                className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+                className="sor-menu-item"
               >
                 <Copy size={14} className="mr-2" />
                 Copy hostname
@@ -607,7 +591,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                   onExport(connection);
                   setShowMenu(false);
                 }}
-                className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+                className="sor-menu-item"
               >
                 <FileDown size={14} className="mr-2" />
                 Export to file
@@ -624,24 +608,24 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 dispatch({ type: "ADD_CONNECTION", payload: newConnection });
                 setShowMenu(false);
               }}
-              className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
+              className="sor-menu-item"
             >
               <Copy size={14} className="mr-2" />
               Duplicate
             </button>
-            <hr className="border-[var(--color-border)]" />
+            <div className="sor-menu-divider" />
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(connection);
                 setShowMenu(false);
               }}
-              className="flex items-center w-full px-3 py-2 text-sm text-red-400 hover:bg-[var(--color-border)] transition-colors"
+              className="sor-menu-item sor-menu-item-danger"
             >
               <Trash2 size={14} className="mr-2" />
               Delete
             </button>
-          </div>
+          </MenuSurface>
         )}
       </div>
     </div>
@@ -694,7 +678,6 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
     x: number;
     y: number;
   } | null>(null);
-  const panelMenuRef = useRef<HTMLDivElement>(null);
   const [connectOptionsTarget, setConnectOptionsTarget] =
     useState<Connection | null>(null);
   const [connectOptionsData, setConnectOptionsData] = useState<{
@@ -1113,17 +1096,6 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
     setPanelMenuPosition({ x: e.clientX, y: e.clientY });
   }, []);
 
-  // Close panel menu when clicking outside
-  useEffect(() => {
-    if (!panelMenuPosition) return;
-    const handleClick = (event: MouseEvent) => {
-      if (panelMenuRef.current?.contains(event.target as Node)) return;
-      setPanelMenuPosition(null);
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [panelMenuPosition]);
-
   // Handle dropping on the panel (root level drop)
   const handlePanelDragOver = useCallback(
     (e: React.DragEvent) => {
@@ -1210,22 +1182,24 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
 
       {/* Panel context menu */}
       {panelMenuPosition && onOpenImport && (
-        <div
-          ref={panelMenuRef}
-          className="fixed z-[9999] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 min-w-[160px]"
-          style={{ left: panelMenuPosition.x, top: panelMenuPosition.y }}
+        <MenuSurface
+          isOpen={Boolean(panelMenuPosition && onOpenImport)}
+          onClose={() => setPanelMenuPosition(null)}
+          position={panelMenuPosition}
+          className="min-w-[160px] rounded-lg py-1"
+          dataTestId="connection-tree-panel-menu"
         >
           <button
             onClick={() => {
               onOpenImport();
               setPanelMenuPosition(null);
             }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)] transition-colors"
+            className="sor-menu-item"
           >
             <Upload size={14} />
             Import Connections
           </button>
-        </div>
+        </MenuSurface>
       )}
 
       {renameTarget && (

@@ -465,6 +465,55 @@ body {
   border-top: 1px solid var(--color-border);
 }
 
+.sor-menu-surface {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+  min-width: 10rem;
+  overflow: hidden;
+}
+
+.sor-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.875rem;
+  color: var(--color-textSecondary);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.sor-menu-item:hover {
+  background-color: var(--color-surfaceHover);
+  color: var(--color-text);
+}
+
+.sor-menu-item-danger {
+  color: var(--color-error);
+}
+
+.sor-menu-item-danger:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--color-error) 12%,
+    var(--color-surfaceHover)
+  );
+  color: var(--color-error);
+}
+
+.sor-menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 0.25rem 0;
+}
+
 .sor-manager-panel {
   max-width: 64rem;
   height: 85vh;

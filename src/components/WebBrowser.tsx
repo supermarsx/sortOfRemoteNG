@@ -1,13 +1,19 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { debugLog } from '../utils/debugLogger';
-import { invoke } from '@tauri-apps/api/core';
-import { save as saveDialog } from '@tauri-apps/plugin-dialog';
-import { 
-  ArrowLeft, 
-  ArrowRight, 
-  RotateCcw, 
-  ExternalLink, 
-  Shield, 
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
+import { debugLog } from "../utils/debugLogger";
+import { invoke } from "@tauri-apps/api/core";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import {
+  ArrowLeft,
+  ArrowRight,
+  RotateCcw,
+  ExternalLink,
+  Shield,
   ShieldAlert,
   ShieldOff,
   Globe,
@@ -31,21 +37,22 @@ import {
   Square,
   Pause,
   Play as PlayIcon,
-} from 'lucide-react';
-import { ConnectionSession, HttpBookmarkItem } from '../types/connection';
-import { TOTPConfig } from '../types/settings';
-import { useConnections } from '../contexts/useConnections';
-import { useSettings } from '../contexts/SettingsContext';
-import RDPTotpPanel from './rdp/RDPTotpPanel';
-import { useToastContext } from '../contexts/ToastContext';
-import { generateId } from '../utils/id';
-import { CertificateInfoPopup } from './CertificateInfoPopup';
-import { TrustWarningDialog } from './TrustWarningDialog';
-import { InputDialog } from './InputDialog';
-import { ConfirmDialog } from './ConfirmDialog';
-import { useWebRecorder } from '../hooks/useWebRecorder';
-import { useDisplayRecorder } from '../hooks/useDisplayRecorder';
-import * as macroService from '../utils/macroService';
+} from "lucide-react";
+import { ConnectionSession, HttpBookmarkItem } from "../types/connection";
+import { TOTPConfig } from "../types/settings";
+import { useConnections } from "../contexts/useConnections";
+import { useSettings } from "../contexts/SettingsContext";
+import RDPTotpPanel from "./rdp/RDPTotpPanel";
+import { useToastContext } from "../contexts/ToastContext";
+import { generateId } from "../utils/id";
+import { CertificateInfoPopup } from "./CertificateInfoPopup";
+import { TrustWarningDialog } from "./TrustWarningDialog";
+import { InputDialog } from "./InputDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { MenuSurface } from "./ui/MenuSurface";
+import { useWebRecorder } from "../hooks/useWebRecorder";
+import { useDisplayRecorder } from "../hooks/useDisplayRecorder";
+import * as macroService from "../utils/macroService";
 import {
   verifyIdentity,
   trustIdentity,
@@ -53,7 +60,7 @@ import {
   getEffectiveTrustPolicy,
   type CertIdentity,
   type TrustVerifyResult,
-} from '../utils/trustStore';
+} from "../utils/trustStore";
 
 interface ProxyMediatorResponse {
   local_port: number;
@@ -69,15 +76,27 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const { state, dispatch } = useConnections();
   const { settings } = useSettings();
   const { toast } = useToastContext();
-  const connection = state.connections.find(c => c.id === session.connectionId);
+  const connection = state.connections.find(
+    (c) => c.id === session.connectionId,
+  );
 
   // Resolve the best auth credentials from the saved connection config.
   // Prefer the dedicated basicAuth fields (set by the HTTP editor), then fall
   // back to the generic username/password fields that older entries might use.
-  const resolvedCreds = React.useMemo<{ username: string; password: string } | null>(() => {
+  const resolvedCreds = React.useMemo<{
+    username: string;
+    password: string;
+  } | null>(() => {
     if (!connection) return null;
-    if (connection.authType === 'basic' && connection.basicAuthUsername && connection.basicAuthPassword) {
-      return { username: connection.basicAuthUsername, password: connection.basicAuthPassword };
+    if (
+      connection.authType === "basic" &&
+      connection.basicAuthUsername &&
+      connection.basicAuthPassword
+    ) {
+      return {
+        username: connection.basicAuthUsername,
+        password: connection.basicAuthPassword,
+      };
     }
     if (connection.username && connection.password) {
       return { username: connection.username, password: connection.password };
@@ -90,18 +109,18 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const hasAuth = resolvedCreds !== null;
 
   const buildTargetUrl = useCallback(() => {
-    const protocol = session.protocol === 'https' ? 'https' : 'http';
-    const defaultPort = session.protocol === 'https' ? 443 : 80;
+    const protocol = session.protocol === "https" ? "https" : "http";
+    const defaultPort = session.protocol === "https" ? 443 : 80;
     const port = connection?.port || defaultPort;
-    const portSuffix = port === defaultPort ? '' : `:${port}`;
+    const portSuffix = port === defaultPort ? "" : `:${port}`;
     return `${protocol}://${session.hostname}${portSuffix}/`;
   }, [connection, session.protocol, session.hostname]);
 
   const [currentUrl, setCurrentUrl] = useState(buildTargetUrl);
   const [inputUrl, setInputUrl] = useState(currentUrl);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string>('');
-  const [isSecure, setIsSecure] = useState(session.protocol === 'https');
+  const [loadError, setLoadError] = useState<string>("");
+  const [isSecure, setIsSecure] = useState(session.protocol === "https");
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -109,14 +128,16 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   // ---- Certificate trust state ----
   const [showCertPopup, setShowCertPopup] = useState(false);
   const [certIdentity, setCertIdentity] = useState<CertIdentity | null>(null);
-  const [trustPrompt, setTrustPrompt] = useState<TrustVerifyResult | null>(null);
+  const [trustPrompt, setTrustPrompt] = useState<TrustVerifyResult | null>(
+    null,
+  );
   const trustResolveRef = useRef<((accept: boolean) => void) | null>(null);
   const certPopupRef = useRef<HTMLDivElement>(null);
 
   // Track the active proxy session via refs so cleanup always sees the latest
   // values regardless of render cycle.
-  const proxySessionIdRef = useRef<string>('');
-  const proxyUrlRef = useRef<string>('');
+  const proxySessionIdRef = useRef<string>("");
+  const proxyUrlRef = useRef<string>("");
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Navigation generation counter — prevents stale async navigations from
    *  creating orphan proxy sessions when navigateToUrl is called concurrently
@@ -126,7 +147,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   // Timeout for loading (30 seconds)
   const LOAD_TIMEOUT_MS = 30_000;
 
-  const sslVerifyDisabled = connection && connection.protocol === 'https' && (connection as unknown as Record<string, unknown>)?.httpVerifySsl === false;
+  const sslVerifyDisabled =
+    connection &&
+    connection.protocol === "https" &&
+    (connection as unknown as Record<string, unknown>)?.httpVerifySsl === false;
   const iconCount = 2 + (hasAuth ? 1 : 0) + (sslVerifyDisabled ? 1 : 0);
   // 12px left offset + each icon is 14px + 8px gap (space-x-2) + 16px for separator + 8px trailing
   const iconPadding = 12 + iconCount * 22 + 16;
@@ -134,14 +158,19 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   // Bookmark context menu state  —  idx is the top-level index, folderPath
   // is set when the right-clicked item lives inside a subfolder.
   const [bmContextMenu, setBmContextMenu] = useState<{
-    x: number; y: number; idx: number; folderPath?: number[];
+    x: number;
+    y: number;
+    idx: number;
+    folderPath?: number[];
   } | null>(null);
   // Context menu when right-clicking the bookmark bar background (not a chip)
-  const [bmBarContextMenu, setBmBarContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [bmBarContextMenu, setBmBarContextMenu] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [editingBmIdx, setEditingBmIdx] = useState<number | null>(null);
-  const [editBmName, setEditBmName] = useState('');
+  const [editBmName, setEditBmName] = useState("");
   const editBmRef = useRef<HTMLInputElement>(null);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
   // Drag-to-reorder state (top-level only)
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
@@ -162,15 +191,23 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   // ---- Recording state ----
   const webRecorder = useWebRecorder();
   const displayRecorder = useDisplayRecorder();
-  const [showRecordingNamePrompt, setShowRecordingNamePrompt] = useState<'har' | 'video' | null>(null);
+  const [showRecordingNamePrompt, setShowRecordingNamePrompt] = useState<
+    "har" | "video" | null
+  >(null);
   const pendingRecordingRef = useRef<unknown>(null);
 
   const totpConfigs = connection?.totpConfigs ?? [];
-  const handleUpdateTotpConfigs = useCallback((configs: TOTPConfig[]) => {
-    if (connection) {
-      dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, totpConfigs: configs } });
-    }
-  }, [connection, dispatch]);
+  const handleUpdateTotpConfigs = useCallback(
+    (configs: TOTPConfig[]) => {
+      if (connection) {
+        dispatch({
+          type: "UPDATE_CONNECTION",
+          payload: { ...connection, totpConfigs: configs },
+        });
+      }
+    },
+    [connection, dispatch],
+  );
 
   // ------------------------------------------------------------------
   // TLS certificate trust helpers
@@ -178,12 +215,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
   /** Fetch the TLS certificate from the backend and run trust verification. */
   const fetchAndVerifyCert = useCallback(async (): Promise<boolean> => {
-    if (session.protocol !== 'https') return true;
+    if (session.protocol !== "https") return true;
 
     const port = connection?.port || 443;
-    const policy = getEffectiveTrustPolicy(connection?.tlsTrustPolicy, settings.tlsTrustPolicy);
+    const policy = getEffectiveTrustPolicy(
+      connection?.tlsTrustPolicy,
+      settings.tlsTrustPolicy,
+    );
 
-    if (policy === 'always-trust') return true;
+    if (policy === "always-trust") return true;
 
     try {
       const info = await invoke<{
@@ -196,7 +236,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         serial: string | null;
         signature_algorithm: string | null;
         san: string[];
-      }>('get_tls_certificate_info', { host: session.hostname, port });
+      }>("get_tls_certificate_info", { host: session.hostname, port });
 
       const now = new Date().toISOString();
       const identity: CertIdentity = {
@@ -216,18 +256,28 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       setCertIdentity(identity);
 
       const connId = connection?.id;
-      const result = verifyIdentity(session.hostname, port, 'tls', identity, connId);
+      const result = verifyIdentity(
+        session.hostname,
+        port,
+        "tls",
+        identity,
+        connId,
+      );
 
-      if (result.status === 'trusted') return true;
+      if (result.status === "trusted") return true;
 
-      if (result.status === 'first-use' && policy === 'tofu') {
+      if (result.status === "first-use" && policy === "tofu") {
         // TOFU — silently trust on first use
-        trustIdentity(session.hostname, port, 'tls', identity, false, connId);
+        trustIdentity(session.hostname, port, "tls", identity, false, connId);
         return true;
       }
 
       // For 'first-use' with always-ask/strict, or 'mismatch' — prompt the user
-      if (result.status === 'mismatch' || policy === 'always-ask' || policy === 'strict') {
+      if (
+        result.status === "mismatch" ||
+        policy === "always-ask" ||
+        policy === "strict"
+      ) {
         return new Promise<boolean>((resolve) => {
           trustResolveRef.current = resolve;
           setTrustPrompt(result);
@@ -236,7 +286,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
       return true;
     } catch (err) {
-      debugLog('WebBrowser', 'Failed to fetch TLS cert info', { err });
+      debugLog("WebBrowser", "Failed to fetch TLS cert info", { err });
       // If we can't get cert info, proceed anyway (degraded mode)
       return true;
     }
@@ -245,7 +295,14 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const handleTrustAccept = useCallback(() => {
     if (trustPrompt && certIdentity) {
       const port = connection?.port || 443;
-      trustIdentity(session.hostname, port, 'tls', certIdentity, true, connection?.id);
+      trustIdentity(
+        session.hostname,
+        port,
+        "tls",
+        certIdentity,
+        true,
+        connection?.id,
+      );
     }
     setTrustPrompt(null);
     trustResolveRef.current?.(true);
@@ -256,7 +313,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     setTrustPrompt(null);
     trustResolveRef.current?.(false);
     trustResolveRef.current = null;
-    setLoadError('Connection aborted: certificate not trusted by user.');
+    setLoadError("Connection aborted: certificate not trusted by user.");
     setIsLoading(false);
   }, []);
 
@@ -270,13 +327,13 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     const id = sessionId ?? proxySessionIdRef.current;
     if (!id) return;
     try {
-      await invoke('stop_basic_auth_proxy', { sessionId: id });
+      await invoke("stop_basic_auth_proxy", { sessionId: id });
     } catch {
       // Session may already be gone – ignore
     }
     if (!sessionId || sessionId === proxySessionIdRef.current) {
-      proxySessionIdRef.current = '';
-      proxyUrlRef.current = '';
+      proxySessionIdRef.current = "";
+      proxyUrlRef.current = "";
     }
   }, []);
 
@@ -286,130 +343,155 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
    * request (CSS, JS, images, fonts…) automatically carries the auth
    * credentials without ever showing a native browser auth prompt.
    */
-  const navigateToUrl = useCallback(async (url: string, addToHistory = true) => {
-    // Bump generation so any in-flight navigateToUrl from a prior call
-    // knows it has been superseded and can clean up after itself.
-    const gen = ++navGenRef.current;
+  const navigateToUrl = useCallback(
+    async (url: string, addToHistory = true) => {
+      // Bump generation so any in-flight navigateToUrl from a prior call
+      // knows it has been superseded and can clean up after itself.
+      const gen = ++navGenRef.current;
 
-    setIsLoading(true);
-    setLoadError('');
+      setIsLoading(true);
+      setLoadError("");
 
-    // Cancel any previous load timeout
-    if (loadTimeoutRef.current) {
-      clearTimeout(loadTimeoutRef.current);
-      loadTimeoutRef.current = null;
-    }
+      // Cancel any previous load timeout
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+        loadTimeoutRef.current = null;
+      }
 
-    // ---- TLS trust verification (before loading content) ----
-    if (url.startsWith('https://')) {
-      const trusted = await fetchAndVerifyCert();
-      if (!trusted) return; // user rejected — loadError already set
-      // Check if a newer navigation superseded us while we were awaiting
-      if (gen !== navGenRef.current) return;
-    }
+      // ---- TLS trust verification (before loading content) ----
+      if (url.startsWith("https://")) {
+        const trusted = await fetchAndVerifyCert();
+        if (!trusted) return; // user rejected — loadError already set
+        // Check if a newer navigation superseded us while we were awaiting
+        if (gen !== navGenRef.current) return;
+      }
 
-    // Start a timeout watchdog so we don't spin forever
-    loadTimeoutRef.current = setTimeout(() => {
-      setIsLoading(false);
-      setLoadError(`Connection timed out after ${LOAD_TIMEOUT_MS / 1000} seconds. The server at ${url} did not respond.`);
-    }, LOAD_TIMEOUT_MS);
+      // Start a timeout watchdog so we don't spin forever
+      loadTimeoutRef.current = setTimeout(() => {
+        setIsLoading(false);
+        setLoadError(
+          `Connection timed out after ${LOAD_TIMEOUT_MS / 1000} seconds. The server at ${url} did not respond.`,
+        );
+      }, LOAD_TIMEOUT_MS);
 
-    try {
-      if (hasAuth && resolvedCreds) {
-        debugLog('WebBrowser', 'Starting auth proxy for', { url });
+      try {
+        if (hasAuth && resolvedCreds) {
+          debugLog("WebBrowser", "Starting auth proxy for", { url });
 
-        // Always use the origin (scheme://host:port) as the proxy target so that
-        // every request from the page resolves relative to the site root, not
-        // to the specific page path we happen to be loading.
-        const urlObj = new URL(url);
-        const targetOrigin = urlObj.origin + '/';
-        const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
+          // Always use the origin (scheme://host:port) as the proxy target so that
+          // every request from the page resolves relative to the site root, not
+          // to the specific page path we happen to be loading.
+          const urlObj = new URL(url);
+          const targetOrigin = urlObj.origin + "/";
+          const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
 
-        // If we already have a proxy running for the same origin, just change
-        // the iframe path — no need to tear down and restart.
-        if (proxySessionIdRef.current && proxyUrlRef.current) {
-          const proxyBase = proxyUrlRef.current.replace(/\/+$/, '');
-          if (iframeRef.current) {
-            iframeRef.current.src = proxyBase + pagePath;
-          }
-        } else {
-          // Tear down any previous proxy session
-          await stopProxy();
-          // Re-check generation after the async stop
-          if (gen !== navGenRef.current) return;
+          // If we already have a proxy running for the same origin, just change
+          // the iframe path — no need to tear down and restart.
+          if (proxySessionIdRef.current && proxyUrlRef.current) {
+            const proxyBase = proxyUrlRef.current.replace(/\/+$/, "");
+            if (iframeRef.current) {
+              iframeRef.current.src = proxyBase + pagePath;
+            }
+          } else {
+            // Tear down any previous proxy session
+            await stopProxy();
+            // Re-check generation after the async stop
+            if (gen !== navGenRef.current) return;
 
-          const response = await invoke<ProxyMediatorResponse>('start_basic_auth_proxy', {
-            config: {
-              target_url: targetOrigin,
-              username: resolvedCreds.username,
-              password: resolvedCreds.password,
-              local_port: 0,
-              verify_ssl: (connection as unknown as Record<string, unknown>)?.httpVerifySsl ?? true,
-              connection_id: connection?.id ?? '',
-            },
-          });
+            const response = await invoke<ProxyMediatorResponse>(
+              "start_basic_auth_proxy",
+              {
+                config: {
+                  target_url: targetOrigin,
+                  username: resolvedCreds.username,
+                  password: resolvedCreds.password,
+                  local_port: 0,
+                  verify_ssl:
+                    (connection as unknown as Record<string, unknown>)
+                      ?.httpVerifySsl ?? true,
+                  connection_id: connection?.id ?? "",
+                },
+              },
+            );
 
-          // If a newer navigation started while we awaited, kill the proxy
-          // we just created — it's already orphaned.
-          if (gen !== navGenRef.current) {
-            invoke('stop_basic_auth_proxy', { sessionId: response.session_id }).catch(() => {});
-            return;
-          }
+            // If a newer navigation started while we awaited, kill the proxy
+            // we just created — it's already orphaned.
+            if (gen !== navGenRef.current) {
+              invoke("stop_basic_auth_proxy", {
+                sessionId: response.session_id,
+              }).catch(() => {});
+              return;
+            }
 
-          proxySessionIdRef.current = response.session_id;
-          proxyUrlRef.current = response.proxy_url;
+            proxySessionIdRef.current = response.session_id;
+            proxyUrlRef.current = response.proxy_url;
 
-          // Auto-start web recording if enabled
-          if (settings.webRecording?.autoRecordWebSessions && response.session_id) {
-            try {
-              await webRecorder.startRecording(response.session_id, settings.webRecording?.recordHeaders ?? true);
-            } catch (err) {
-              console.error('Auto-record failed:', err);
+            // Auto-start web recording if enabled
+            if (
+              settings.webRecording?.autoRecordWebSessions &&
+              response.session_id
+            ) {
+              try {
+                await webRecorder.startRecording(
+                  response.session_id,
+                  settings.webRecording?.recordHeaders ?? true,
+                );
+              } catch (err) {
+                console.error("Auto-record failed:", err);
+              }
+            }
+
+            // Point the iframe at the local proxy + the page path so the initial
+            // page loads correctly while all other requests use the site root.
+            if (iframeRef.current) {
+              const proxyBase = response.proxy_url.replace(/\/+$/, "");
+              iframeRef.current.src = proxyBase + pagePath;
             }
           }
-
-          // Point the iframe at the local proxy + the page path so the initial
-          // page loads correctly while all other requests use the site root.
+        } else {
+          // No auth — load directly
           if (iframeRef.current) {
-            const proxyBase = response.proxy_url.replace(/\/+$/, '');
-            iframeRef.current.src = proxyBase + pagePath;
+            iframeRef.current.src = url;
           }
         }
-      } else {
-        // No auth — load directly
-        if (iframeRef.current) {
-          iframeRef.current.src = url;
+
+        setCurrentUrl(url);
+        setInputUrl(url);
+        setIsSecure(url.startsWith("https"));
+
+        if (addToHistory) {
+          setHistory((prev) => [...prev.slice(0, historyIndex + 1), url]);
+          setHistoryIndex((prev) => prev + 1);
         }
+
+        debugLog("WebBrowser", "Navigation initiated", { url, hasAuth });
+      } catch (error) {
+        // Ignore errors from superseded navigations
+        if (gen !== navGenRef.current) return;
+        console.error("Navigation failed:", error);
+        const msg = error instanceof Error ? error.message : String(error);
+
+        if (msg.includes("401") || msg.includes("Unauthorized")) {
+          setLoadError(
+            !resolvedCreds
+              ? "Authentication required — No credentials configured for this connection. Edit the connection and add Basic Auth credentials."
+              : "Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings.",
+          );
+        } else {
+          setLoadError(`Failed to load page: ${msg}`);
+        }
+        setIsLoading(false);
       }
-
-      setCurrentUrl(url);
-      setInputUrl(url);
-      setIsSecure(url.startsWith('https'));
-
-      if (addToHistory) {
-        setHistory(prev => [...prev.slice(0, historyIndex + 1), url]);
-        setHistoryIndex(prev => prev + 1);
-      }
-
-      debugLog('WebBrowser', 'Navigation initiated', { url, hasAuth });
-    } catch (error) {
-      // Ignore errors from superseded navigations
-      if (gen !== navGenRef.current) return;
-      console.error('Navigation failed:', error);
-      const msg = error instanceof Error ? error.message : String(error);
-
-      if (msg.includes('401') || msg.includes('Unauthorized')) {
-        setLoadError(
-          !resolvedCreds
-            ? 'Authentication required — No credentials configured for this connection. Edit the connection and add Basic Auth credentials.'
-            : 'Authentication required — The saved credentials were rejected by the server. Verify the username and password in the connection settings.',
-        );
-      } else {
-        setLoadError(`Failed to load page: ${msg}`);
-      }
-      setIsLoading(false);
-    }
-  }, [hasAuth, resolvedCreds, connection, stopProxy, historyIndex, fetchAndVerifyCert]);
+    },
+    [
+      hasAuth,
+      resolvedCreds,
+      connection,
+      stopProxy,
+      historyIndex,
+      fetchAndVerifyCert,
+    ],
+  );
 
   // ------------------------------------------------------------------
   // Effects
@@ -428,7 +510,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       }
       const id = proxySessionIdRef.current;
       if (id) {
-        invoke('stop_basic_auth_proxy', { sessionId: id }).catch(() => {});
+        invoke("stop_basic_auth_proxy", { sessionId: id }).catch(() => {});
       }
     };
   }, []);
@@ -439,28 +521,36 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   // Auto-restart is attempted up to the configured limit; if that also
   // fails we leave the banner visible so the user can trigger a manual restart.
   useEffect(() => {
-    if (!hasAuth) return;           // no proxy when auth is not needed
+    if (!hasAuth) return; // no proxy when auth is not needed
     if (!settings.proxyKeepaliveEnabled) return; // keepalive disabled in settings
     const intervalMs = (settings.proxyKeepaliveIntervalSeconds ?? 10) * 1000;
     const id = setInterval(async () => {
       const sid = proxySessionIdRef.current;
-      if (!sid) return;             // proxy not started yet
+      if (!sid) return; // proxy not started yet
       try {
-        const results = await invoke<Array<{ session_id: string; alive: boolean; error?: string }>>(
-          'check_proxy_health',
-          { sessionIds: [sid] },
-        );
-        const entry = results.find(r => r.session_id === sid);
+        const results = await invoke<
+          Array<{ session_id: string; alive: boolean; error?: string }>
+        >("check_proxy_health", { sessionIds: [sid] });
+        const entry = results.find((r) => r.session_id === sid);
         if (entry && !entry.alive) {
-          debugLog('WebBrowser', 'Proxy health check failed — attempting auto-restart', { sid, error: entry.error });
+          debugLog(
+            "WebBrowser",
+            "Proxy health check failed — attempting auto-restart",
+            { sid, error: entry.error },
+          );
           setProxyAlive(false);
 
           const maxRestarts = settings.proxyMaxAutoRestarts ?? 5;
-          const canAutoRestart = settings.proxyAutoRestart && (maxRestarts === 0 || autoRestartCountRef.current < maxRestarts);
+          const canAutoRestart =
+            settings.proxyAutoRestart &&
+            (maxRestarts === 0 || autoRestartCountRef.current < maxRestarts);
 
           if (canAutoRestart) {
             try {
-              const resp = await invoke<ProxyMediatorResponse>('restart_proxy_session', { sessionId: sid });
+              const resp = await invoke<ProxyMediatorResponse>(
+                "restart_proxy_session",
+                { sessionId: sid },
+              );
               proxySessionIdRef.current = resp.session_id;
               proxyUrlRef.current = resp.proxy_url;
               autoRestartCountRef.current += 1;
@@ -469,21 +559,30 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               if (iframeRef.current) {
                 const urlObj = new URL(currentUrl);
                 const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
-                iframeRef.current.src = resp.proxy_url.replace(/\/+$/, '') + pagePath;
+                iframeRef.current.src =
+                  resp.proxy_url.replace(/\/+$/, "") + pagePath;
               }
-              debugLog('WebBrowser', 'Proxy auto-restarted successfully', {
+              debugLog("WebBrowser", "Proxy auto-restarted successfully", {
                 newSessionId: resp.session_id,
                 restartCount: autoRestartCountRef.current,
               });
             } catch (restartErr) {
-              debugLog('WebBrowser', 'Auto-restart failed — user intervention needed', { restartErr });
+              debugLog(
+                "WebBrowser",
+                "Auto-restart failed — user intervention needed",
+                { restartErr },
+              );
             }
           } else {
-            debugLog('WebBrowser', 'Auto-restart skipped (disabled or limit reached)', {
-              autoRestart: settings.proxyAutoRestart,
-              count: autoRestartCountRef.current,
-              max: maxRestarts,
-            });
+            debugLog(
+              "WebBrowser",
+              "Auto-restart skipped (disabled or limit reached)",
+              {
+                autoRestart: settings.proxyAutoRestart,
+                count: autoRestartCountRef.current,
+                max: maxRestarts,
+              },
+            );
           }
         } else if (entry && entry.alive) {
           // Only flip back to true if we previously marked it dead
@@ -494,7 +593,14 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       }
     }, intervalMs);
     return () => clearInterval(id);
-  }, [hasAuth, currentUrl, settings.proxyKeepaliveEnabled, settings.proxyKeepaliveIntervalSeconds, settings.proxyAutoRestart, settings.proxyMaxAutoRestarts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [
+    hasAuth,
+    currentUrl,
+    settings.proxyKeepaliveEnabled,
+    settings.proxyKeepaliveIntervalSeconds,
+    settings.proxyAutoRestart,
+    settings.proxyMaxAutoRestarts,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Manually restart a dead proxy session. */
   const handleRestartProxy = useCallback(async () => {
@@ -506,20 +612,23 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     }
     setProxyRestarting(true);
     try {
-      const resp = await invoke<ProxyMediatorResponse>('restart_proxy_session', { sessionId: sid });
+      const resp = await invoke<ProxyMediatorResponse>(
+        "restart_proxy_session",
+        { sessionId: sid },
+      );
       proxySessionIdRef.current = resp.session_id;
       proxyUrlRef.current = resp.proxy_url;
       setProxyAlive(true);
       if (iframeRef.current) {
         const urlObj = new URL(currentUrl);
         const pagePath = urlObj.pathname + urlObj.search + urlObj.hash;
-        iframeRef.current.src = resp.proxy_url.replace(/\/+$/, '') + pagePath;
+        iframeRef.current.src = resp.proxy_url.replace(/\/+$/, "") + pagePath;
       }
     } catch {
       // Restart via the stored session failed — fall back to a full re-navigate
       // which will create a brand-new proxy from scratch.
-      proxySessionIdRef.current = '';
-      proxyUrlRef.current = '';
+      proxySessionIdRef.current = "";
+      proxyUrlRef.current = "";
       navigateToUrl(currentUrl);
     } finally {
       setProxyRestarting(false);
@@ -529,26 +638,27 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   // Track in-proxy navigation via the reporter script injected by the backend.
   // We keep a ref to the base target URL so the listener is stable and does not
   // depend on currentUrl (which would recreate the listener on every nav).
-  const baseTargetRef = useRef(buildTargetUrl().replace(/\/+$/, ''));
+  const baseTargetRef = useRef(buildTargetUrl().replace(/\/+$/, ""));
   useEffect(() => {
-    baseTargetRef.current = buildTargetUrl().replace(/\/+$/, '');
+    baseTargetRef.current = buildTargetUrl().replace(/\/+$/, "");
   }, [buildTargetUrl]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'proxy_navigate' && event.data.url) {
+      if (event.data?.type === "proxy_navigate" && event.data.url) {
         const proxyOrigin = proxyUrlRef.current;
         if (proxyOrigin && event.data.url.startsWith(proxyOrigin)) {
           const rawPath = event.data.url.slice(proxyOrigin.length);
-          const path = rawPath && !rawPath.startsWith('/') ? '/' + rawPath : rawPath;
-          const realUrl = baseTargetRef.current + (path || '/');
+          const path =
+            rawPath && !rawPath.startsWith("/") ? "/" + rawPath : rawPath;
+          const realUrl = baseTargetRef.current + (path || "/");
           setCurrentUrl(realUrl);
           setInputUrl(realUrl);
         }
       }
     };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
   }, []);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
@@ -556,13 +666,13 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     let url = inputUrl.trim();
 
     // Add protocol if missing
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
       url = `http://${url}`;
     }
 
     setCurrentUrl(url);
-    setIsSecure(url.startsWith('https://'));
-    setLoadError('');
+    setIsSecure(url.startsWith("https://"));
+    setLoadError("");
     navigateToUrl(url);
   };
 
@@ -580,10 +690,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     try {
       const doc = iframeRef.current?.contentDocument;
       if (doc) {
-        const body = doc.body?.innerText?.trim() ?? '';
+        const body = doc.body?.innerText?.trim() ?? "";
         if (
-          body.startsWith('Upstream request failed:') ||
-          body.startsWith('Failed to read upstream response:')
+          body.startsWith("Upstream request failed:") ||
+          body.startsWith("Failed to read upstream response:")
         ) {
           setLoadError(body);
           return;
@@ -593,7 +703,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       // Cross-origin — cannot read; that's fine, clear the error.
     }
 
-    setLoadError('');
+    setLoadError("");
   };
 
   const handleRefresh = () => {
@@ -628,19 +738,19 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       id: generateId(),
       connectionId: connection.id,
       name: `${connection.name} (tab)`,
-      status: 'connected',
+      status: "connected",
       startTime: new Date(),
       protocol: connection.protocol,
       hostname: connection.hostname,
     };
-    dispatch({ type: 'ADD_SESSION', payload: newSession });
+    dispatch({ type: "ADD_SESSION", payload: newSession });
   };
 
   /** Open the current URL in the OS default browser */
   const handleOpenExternal = () => {
-    invoke('open_url_external', { url: currentUrl }).catch(() => {
+    invoke("open_url_external", { url: currentUrl }).catch(() => {
       // Fallback if the Rust command isn't available
-      window.open(currentUrl, '_blank', 'noopener,noreferrer');
+      window.open(currentUrl, "_blank", "noopener,noreferrer");
     });
   };
 
@@ -656,10 +766,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   }, []);
 
   const currentPath = useMemo(() => {
-    const base = buildTargetUrl().replace(/\/+$/, '');
+    const base = buildTargetUrl().replace(/\/+$/, "");
     const url = inputUrl || currentUrl;
-    const raw = url.startsWith(base) ? url.slice(base.length) : '/';
-    return raw && raw.startsWith('/') ? raw : '/' + raw;
+    const raw = url.startsWith(base) ? url.slice(base.length) : "/";
+    return raw && raw.startsWith("/") ? raw : "/" + raw;
   }, [inputUrl, currentUrl, buildTargetUrl]);
 
   const activeBookmarkPaths = useMemo(
@@ -672,15 +782,27 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const handleAddBookmark = () => {
     if (!connection) return;
     const url = inputUrl || currentUrl;
-    const base = buildTargetUrl().replace(/\/+$/, '');
-    const rawPath = url.startsWith(base) ? url.slice(base.length) : '/';
-    const normalizedPath = rawPath && rawPath.startsWith('/') ? rawPath : '/' + rawPath;
+    const base = buildTargetUrl().replace(/\/+$/, "");
+    const rawPath = url.startsWith(base) ? url.slice(base.length) : "/";
+    const normalizedPath =
+      rawPath && rawPath.startsWith("/") ? rawPath : "/" + rawPath;
     // Avoid duplicate paths (check whole tree)
     if (activeBookmarkPaths.has(normalizedPath)) return;
-    const name = normalizedPath === '/' ? 'Home' : decodeURIComponent(normalizedPath.split('/').filter(Boolean).pop() || 'Page');
+    const name =
+      normalizedPath === "/"
+        ? "Home"
+        : decodeURIComponent(
+            normalizedPath.split("/").filter(Boolean).pop() || "Page",
+          );
     dispatch({
-      type: 'UPDATE_CONNECTION',
-      payload: { ...connection, httpBookmarks: [...(connection.httpBookmarks || []), { name, path: normalizedPath }] },
+      type: "UPDATE_CONNECTION",
+      payload: {
+        ...connection,
+        httpBookmarks: [
+          ...(connection.httpBookmarks || []),
+          { name, path: normalizedPath },
+        ],
+      },
     });
   };
 
@@ -691,7 +813,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     if (toIdx < 0 || toIdx >= bookmarks.length) return;
     const [moved] = bookmarks.splice(fromIdx, 1);
     bookmarks.splice(toIdx, 0, moved);
-    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: { ...connection, httpBookmarks: bookmarks },
+    });
   };
 
   /** Remove a top-level bookmark by index */
@@ -699,7 +824,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     if (!connection) return;
     const bookmarks = [...(connection.httpBookmarks || [])];
     bookmarks.splice(idx, 1);
-    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: { ...connection, httpBookmarks: bookmarks },
+    });
   };
 
   /** Rename a top-level bookmark */
@@ -707,7 +835,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     if (!connection || !newName.trim()) return;
     const bookmarks = [...(connection.httpBookmarks || [])];
     bookmarks[idx] = { ...bookmarks[idx], name: newName.trim() };
-    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: { ...connection, httpBookmarks: bookmarks },
+    });
   };
 
   /** Delete ALL bookmarks */
@@ -716,13 +847,19 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     if (settings.confirmDeleteAllBookmarks) {
       setShowDeleteAllConfirm(true);
     } else {
-      dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: [] } });
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...connection, httpBookmarks: [] },
+      });
     }
   };
 
   const confirmDeleteAllBookmarks = () => {
     if (!connection) return;
-    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: [] } });
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: { ...connection, httpBookmarks: [] },
+    });
     setShowDeleteAllConfirm(false);
   };
 
@@ -734,10 +871,17 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
   const confirmAddFolder = (folderName: string) => {
     if (!connection || !folderName) return;
-    const folder: HttpBookmarkItem = { name: folderName, isFolder: true, children: [] };
+    const folder: HttpBookmarkItem = {
+      name: folderName,
+      isFolder: true,
+      children: [],
+    };
     dispatch({
-      type: 'UPDATE_CONNECTION',
-      payload: { ...connection, httpBookmarks: [...(connection.httpBookmarks || []), folder] },
+      type: "UPDATE_CONNECTION",
+      payload: {
+        ...connection,
+        httpBookmarks: [...(connection.httpBookmarks || []), folder],
+      },
     });
     setShowNewFolderDialog(false);
   };
@@ -745,7 +889,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   /** Move a bookmark into or out of a folder */
   const handleMoveToFolder = (bmIdx: number, folderIdx: number) => {
     if (!connection) return;
-    const bookmarks = [...(connection.httpBookmarks || [])].map(b =>
+    const bookmarks = [...(connection.httpBookmarks || [])].map((b) =>
       b.isFolder ? { ...b, children: [...b.children] } : { ...b },
     );
     const [item] = bookmarks.splice(bmIdx, 1);
@@ -754,19 +898,25 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     if (folder && folder.isFolder) {
       folder.children.push(item);
     }
-    dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+    dispatch({
+      type: "UPDATE_CONNECTION",
+      payload: { ...connection, httpBookmarks: bookmarks },
+    });
   };
 
   /** Remove bookmark inside a folder */
   const handleRemoveFromFolder = (folderIdx: number, childIdx: number) => {
     if (!connection) return;
-    const bookmarks = [...(connection.httpBookmarks || [])].map(b =>
+    const bookmarks = [...(connection.httpBookmarks || [])].map((b) =>
       b.isFolder ? { ...b, children: [...b.children] } : { ...b },
     );
     const folder = bookmarks[folderIdx];
     if (folder && folder.isFolder) {
       folder.children.splice(childIdx, 1);
-      dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, httpBookmarks: bookmarks } });
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: { ...connection, httpBookmarks: bookmarks },
+      });
     }
   };
 
@@ -776,30 +926,33 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     const now = new Date();
     const ts = [
       now.getFullYear(),
-      String(now.getMonth() + 1).padStart(2, '0'),
-      String(now.getDate()).padStart(2, '0'),
-      String(now.getHours()).padStart(2, '0'),
-      String(now.getMinutes()).padStart(2, '0'),
-      String(now.getSeconds()).padStart(2, '0'),
-    ].join('-');
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+      String(now.getHours()).padStart(2, "0"),
+      String(now.getMinutes()).padStart(2, "0"),
+      String(now.getSeconds()).padStart(2, "0"),
+    ].join("-");
     const defaultName = `${connection.name}-${ts}.pdf`;
     try {
       const filePath = await saveDialog({
-        title: 'Save page as PDF',
+        title: "Save page as PDF",
         defaultPath: defaultName,
-        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+        filters: [{ name: "PDF", extensions: ["pdf"] }],
       });
       if (!filePath) return;
       // Use the Tauri webview print_to_pdf if available, otherwise fall back
       // to triggering the browser print dialog on the iframe.
       try {
-        await invoke('save_page_as_pdf', { sessionId: proxySessionIdRef.current, outputPath: filePath });
+        await invoke("save_page_as_pdf", {
+          sessionId: proxySessionIdRef.current,
+          outputPath: filePath,
+        });
       } catch {
         // Fallback: trigger the iframe print dialog
         iframeRef.current?.contentWindow?.print();
       }
     } catch (e) {
-      console.error('Save page failed:', e);
+      console.error("Save page failed:", e);
     }
   };
 
@@ -807,12 +960,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const handleCopyAll = async () => {
     // Strategy 1: read the iframe DOM directly (works when same-origin / proxied)
     try {
-      const iframeDoc = iframeRef.current?.contentDocument || iframeRef.current?.contentWindow?.document;
+      const iframeDoc =
+        iframeRef.current?.contentDocument ||
+        iframeRef.current?.contentWindow?.document;
       if (iframeDoc) {
-        const text = iframeDoc.body?.innerText || iframeDoc.body?.textContent || '';
+        const text =
+          iframeDoc.body?.innerText || iframeDoc.body?.textContent || "";
         if (text.trim()) {
           await navigator.clipboard.writeText(text);
-          toast.success('Page content copied to clipboard');
+          toast.success("Page content copied to clipboard");
           return;
         }
       }
@@ -826,16 +982,16 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       if (proxyUrl) {
         const urlObj = new URL(currentUrl);
         const pagePath = urlObj.pathname + urlObj.search;
-        const fetchUrl = proxyUrl.replace(/\/+$/, '') + pagePath;
+        const fetchUrl = proxyUrl.replace(/\/+$/, "") + pagePath;
         const resp = await fetch(fetchUrl);
         if (resp.ok) {
           const html = await resp.text();
           const parser = new DOMParser();
-          const doc = parser.parseFromString(html, 'text/html');
-          const text = doc.body?.innerText || doc.body?.textContent || '';
+          const doc = parser.parseFromString(html, "text/html");
+          const text = doc.body?.innerText || doc.body?.textContent || "";
           if (text.trim()) {
             await navigator.clipboard.writeText(text);
-            toast.success('Page content copied to clipboard');
+            toast.success("Page content copied to clipboard");
             return;
           }
         }
@@ -844,18 +1000,20 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       // fetch failed — fall through
     }
 
-    toast.error('Could not copy page content — the page may be empty or inaccessible');
+    toast.error(
+      "Could not copy page content — the page may be empty or inaccessible",
+    );
   };
 
   // Drag handlers for bookmark reordering
   const handleDragStart = (idx: number) => (e: React.DragEvent) => {
     setDragIdx(idx);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', String(idx));
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(idx));
   };
   const handleDragOver = (idx: number) => (e: React.DragEvent) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.dropEffect = "move";
     setDragOverIdx(idx);
   };
   const handleDrop = (idx: number) => (e: React.DragEvent) => {
@@ -876,9 +1034,12 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     const sid = proxySessionIdRef.current;
     if (!sid) return;
     try {
-      await webRecorder.startRecording(sid, settings.webRecording?.recordHeaders ?? true);
+      await webRecorder.startRecording(
+        sid,
+        settings.webRecording?.recordHeaders ?? true,
+      );
     } catch (err) {
-      console.error('Failed to start web recording:', err);
+      console.error("Failed to start web recording:", err);
     }
   }, [webRecorder, settings.webRecording]);
 
@@ -888,34 +1049,39 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     const recording = await webRecorder.stopRecording(sid);
     if (recording) {
       pendingRecordingRef.current = recording;
-      setShowRecordingNamePrompt('har');
+      setShowRecordingNamePrompt("har");
     }
   }, [webRecorder]);
 
-  const handleSaveHarRecording = useCallback(async (name: string) => {
-    const recording = pendingRecordingRef.current as import('../types/macroTypes').WebRecording | null;
-    if (!recording) return;
-    await macroService.saveWebRecording({
-      id: crypto.randomUUID(),
-      name,
-      recording,
-      savedAt: new Date().toISOString(),
-      connectionId: connection?.id,
-      connectionName: connection?.name,
-      host: session.hostname,
-    });
-    const max = settings.webRecording?.maxStoredWebRecordings ?? 50;
-    await macroService.trimWebRecordings(max);
-    pendingRecordingRef.current = null;
-    setShowRecordingNamePrompt(null);
-    toast.success('Web recording saved');
-  }, [connection, session.hostname, settings.webRecording, toast]);
+  const handleSaveHarRecording = useCallback(
+    async (name: string) => {
+      const recording = pendingRecordingRef.current as
+        | import("../types/macroTypes").WebRecording
+        | null;
+      if (!recording) return;
+      await macroService.saveWebRecording({
+        id: crypto.randomUUID(),
+        name,
+        recording,
+        savedAt: new Date().toISOString(),
+        connectionId: connection?.id,
+        connectionName: connection?.name,
+        host: session.hostname,
+      });
+      const max = settings.webRecording?.maxStoredWebRecordings ?? 50;
+      await macroService.trimWebRecordings(max);
+      pendingRecordingRef.current = null;
+      setShowRecordingNamePrompt(null);
+      toast.success("Web recording saved");
+    },
+    [connection, session.hostname, settings.webRecording, toast],
+  );
 
   // ---- Video Recording handlers ----
   const handleStartVideoRecording = useCallback(async () => {
-    const started = await displayRecorder.startRecording('webm');
+    const started = await displayRecorder.startRecording("webm");
     if (!started) {
-      toast.error('Failed to start video recording');
+      toast.error("Failed to start video recording");
     }
   }, [displayRecorder, toast]);
 
@@ -923,39 +1089,29 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     const blob = await displayRecorder.stopRecording();
     if (blob) {
       pendingRecordingRef.current = blob;
-      setShowRecordingNamePrompt('video');
+      setShowRecordingNamePrompt("video");
     }
   }, [displayRecorder]);
 
-  const handleSaveVideoRecording = useCallback(async (name: string) => {
-    const blob = pendingRecordingRef.current as Blob | null;
-    if (!blob) return;
-    const saved = await macroService.blobToWebVideoRecording(blob, {
-      name,
-      connectionId: connection?.id,
-      connectionName: connection?.name,
-      host: session.hostname,
-      durationMs: displayRecorder.state.duration * 1000,
-      format: displayRecorder.state.format || 'webm',
-    });
-    await macroService.saveWebVideoRecording(saved);
-    pendingRecordingRef.current = null;
-    setShowRecordingNamePrompt(null);
-    toast.success('Video recording saved');
-  }, [connection, session.hostname, displayRecorder.state, toast]);
-
-  // Close context menu on outside click
-  useEffect(() => {
-    if (!bmContextMenu && !bmBarContextMenu) return;
-    const handleClick = (e: MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
-        setBmContextMenu(null);
-        setBmBarContextMenu(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [bmContextMenu, bmBarContextMenu]);
+  const handleSaveVideoRecording = useCallback(
+    async (name: string) => {
+      const blob = pendingRecordingRef.current as Blob | null;
+      if (!blob) return;
+      const saved = await macroService.blobToWebVideoRecording(blob, {
+        name,
+        connectionId: connection?.id,
+        connectionName: connection?.name,
+        host: session.hostname,
+        durationMs: displayRecorder.state.duration * 1000,
+        format: displayRecorder.state.format || "webm",
+      });
+      await macroService.saveWebVideoRecording(saved);
+      pendingRecordingRef.current = null;
+      setShowRecordingNamePrompt(null);
+      toast.success("Video recording saved");
+    },
+    [connection, session.hostname, displayRecorder.state, toast],
+  );
 
   // Focus inline rename input
   useEffect(() => {
@@ -969,7 +1125,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       return (
         <button
           type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowCertPopup(v => !v); }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setShowCertPopup((v) => !v);
+          }}
           className="hover:bg-[var(--color-border)] rounded p-0.5 transition-colors"
           title="View certificate information"
         >
@@ -983,7 +1143,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
   const getAuthIcon = () => {
     if (hasAuth) {
-      return <span data-tooltip="Basic Authentication"><User size={14} className="text-blue-400" /></span>;
+      return (
+        <span data-tooltip="Basic Authentication">
+          <User size={14} className="text-blue-400" />
+        </span>
+      );
     }
     return null;
   };
@@ -999,9 +1163,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               onClick={handleBack}
               disabled={!canGoBack}
               className={`p-2 rounded transition-colors ${
-                canGoBack 
-                  ? 'hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]' 
-                  : 'text-gray-600 cursor-not-allowed'
+                canGoBack
+                  ? "hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                  : "text-gray-600 cursor-not-allowed"
               }`}
               title="Back"
             >
@@ -1011,9 +1175,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               onClick={handleForward}
               disabled={!canGoForward}
               className={`p-2 rounded transition-colors ${
-                canGoForward 
-                  ? 'hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]' 
-                  : 'text-gray-600 cursor-not-allowed'
+                canGoForward
+                  ? "hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                  : "text-gray-600 cursor-not-allowed"
               }`}
               title="Forward"
             >
@@ -1040,7 +1204,12 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                       host={session.hostname}
                       port={connection?.port || 443}
                       currentIdentity={certIdentity ?? undefined}
-                      trustRecord={getStoredIdentity(session.hostname, connection?.port || 443, 'tls', connection?.id)}
+                      trustRecord={getStoredIdentity(
+                        session.hostname,
+                        connection?.port || 443,
+                        "tls",
+                        connection?.id,
+                      )}
                       connectionId={connection?.id}
                       triggerRef={certPopupRef}
                       onClose={() => setShowCertPopup(false)}
@@ -1048,12 +1217,18 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   )}
                 </div>
                 {sslVerifyDisabled && (
-                  <span title="SSL verification is disabled for this connection" className="flex items-center">
+                  <span
+                    title="SSL verification is disabled for this connection"
+                    className="flex items-center"
+                  >
                     <ShieldOff size={14} className="text-red-400" />
                   </span>
                 )}
                 {getAuthIcon()}
-                <Globe size={14} className="text-[var(--color-textSecondary)] flex-shrink-0" />
+                <Globe
+                  size={14}
+                  className="text-[var(--color-textSecondary)] flex-shrink-0"
+                />
                 <div className="w-px h-4 bg-gray-600 flex-shrink-0" />
               </div>
               <input
@@ -1070,11 +1245,20 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           <button
             onClick={handleAddBookmark}
             className={`p-2 hover:bg-[var(--color-border)] rounded transition-colors ${
-              isCurrentPageBookmarked ? 'text-yellow-400' : 'text-[var(--color-textSecondary)] hover:text-yellow-400'
+              isCurrentPageBookmarked
+                ? "text-yellow-400"
+                : "text-[var(--color-textSecondary)] hover:text-yellow-400"
             }`}
-            title={isCurrentPageBookmarked ? 'Page is bookmarked' : 'Bookmark this page'}
+            title={
+              isCurrentPageBookmarked
+                ? "Page is bookmarked"
+                : "Bookmark this page"
+            }
           >
-            <Star size={16} fill={isCurrentPageBookmarked ? 'currentColor' : 'none'} />
+            <Star
+              size={16}
+              fill={isCurrentPageBookmarked ? "currentColor" : "none"}
+            />
           </button>
           <button
             onClick={handleSavePage}
@@ -1102,7 +1286,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             <button
               type="button"
               onClick={() => setShowTotpPanel(!showTotpPanel)}
-              className={`p-2 rounded transition-colors relative ${showTotpPanel ? 'text-blue-400 bg-blue-600/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`}
+              className={`p-2 rounded transition-colors relative ${showTotpPanel ? "text-blue-400 bg-blue-600/20" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]"}`}
               title="2FA Codes"
             >
               <Shield size={16} />
@@ -1141,8 +1325,13 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             <div className="flex items-center gap-1">
               <span className="flex items-center gap-1 px-2 py-1 bg-red-900/40 rounded text-red-400 text-xs font-mono animate-pulse">
                 <Circle size={10} fill="currentColor" />
-                HAR {Math.floor(webRecorder.duration / 60000)}:{String(Math.floor((webRecorder.duration % 60000) / 1000)).padStart(2, '0')}
-                <span className="text-[var(--color-textSecondary)] ml-1">{webRecorder.entryCount} req</span>
+                HAR {Math.floor(webRecorder.duration / 60000)}:
+                {String(
+                  Math.floor((webRecorder.duration % 60000) / 1000),
+                ).padStart(2, "0")}
+                <span className="text-[var(--color-textSecondary)] ml-1">
+                  {webRecorder.entryCount} req
+                </span>
               </span>
               <button
                 onClick={handleStopHarRecording}
@@ -1166,7 +1355,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             <div className="flex items-center gap-1">
               <span className="flex items-center gap-1 px-2 py-1 bg-blue-900/40 rounded text-blue-400 text-xs font-mono animate-pulse">
                 <Film size={10} />
-                VIDEO {Math.floor(displayRecorder.state.duration / 60)}:{String(displayRecorder.state.duration % 60).padStart(2, '0')}
+                VIDEO {Math.floor(displayRecorder.state.duration / 60)}:
+                {String(displayRecorder.state.duration % 60).padStart(2, "0")}
               </span>
               {displayRecorder.state.isPaused ? (
                 <button
@@ -1217,11 +1407,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             </div>
           )}
           <span className="text-gray-500">•</span>
-          <span className="text-[var(--color-textSecondary)]">Connected to {session.hostname}</span>
+          <span className="text-[var(--color-textSecondary)]">
+            Connected to {session.hostname}
+          </span>
           {hasAuth && (
             <>
               <span className="text-gray-500">•</span>
-              <span className="text-blue-400">Basic Auth: {resolvedCreds?.username}</span>
+              <span className="text-blue-400">
+                Basic Auth: {resolvedCreds?.username}
+              </span>
             </>
           )}
         </div>
@@ -1234,19 +1428,20 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           // Only fire when clicking the bar background, not a child chip
           if (e.target === e.currentTarget) {
             e.preventDefault();
+            setBmContextMenu(null);
             setBmBarContextMenu({ x: e.clientX, y: e.clientY });
           }
         }}
       >
         <Star
           size={11}
-          className={`flex-shrink-0 ${isCurrentPageBookmarked ? 'text-yellow-400' : 'text-yellow-400/60'}`}
-          fill={isCurrentPageBookmarked ? 'currentColor' : 'none'}
+          className={`flex-shrink-0 ${isCurrentPageBookmarked ? "text-yellow-400" : "text-yellow-400/60"}`}
+          fill={isCurrentPageBookmarked ? "currentColor" : "none"}
         />
 
         {/* Render top-level bookmarks & folders */}
         {(connection?.httpBookmarks || []).map((bm, idx) => {
-          const baseUrl = buildTargetUrl().replace(/\/+$/, '');
+          const baseUrl = buildTargetUrl().replace(/\/+$/, "");
 
           // ---- Folder chip ----
           if (bm.isFolder) {
@@ -1254,14 +1449,18 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             return (
               <div key={`folder-${idx}`} className="relative flex-shrink-0">
                 <button
-                  onClick={() => setOpenFolders(prev => {
-                    const next = new Set(prev);
-                    if (next.has(idx)) next.delete(idx); else next.add(idx);
-                    return next;
-                  })}
+                  onClick={() =>
+                    setOpenFolders((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(idx)) next.delete(idx);
+                      else next.add(idx);
+                      return next;
+                    })
+                  }
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    setBmBarContextMenu(null);
                     setBmContextMenu({ x: e.clientX, y: e.clientY, idx });
                   }}
                   draggable
@@ -1270,19 +1469,26 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   onDrop={handleDrop(idx)}
                   onDragEnd={handleDragEnd}
                   className={`text-xs px-2 py-0.5 rounded hover:bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors whitespace-nowrap flex items-center gap-1 ${
-                    dragOverIdx === idx ? 'ring-1 ring-[var(--color-primary)]' : ''
+                    dragOverIdx === idx
+                      ? "ring-1 ring-[var(--color-primary)]"
+                      : ""
                   }`}
                   title={bm.name}
                 >
                   <FolderOpen size={11} />
                   {bm.name}
-                  <ChevronRight size={10} className={`transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                  <ChevronRight
+                    size={10}
+                    className={`transition-transform ${isOpen ? "rotate-90" : ""}`}
+                  />
                 </button>
                 {/* Folder dropdown */}
                 {isOpen && (
                   <div className="absolute left-0 top-full mt-0.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded shadow-xl z-40 min-w-[140px] py-0.5">
                     {bm.children.length === 0 && (
-                      <span className="text-xs text-[var(--color-textMuted,var(--color-textSecondary))] italic px-3 py-1 block select-none">Empty folder</span>
+                      <span className="text-xs text-[var(--color-textMuted,var(--color-textSecondary))] italic px-3 py-1 block select-none">
+                        Empty folder
+                      </span>
                     )}
                     {bm.children.map((child, cIdx) => {
                       if (child.isFolder) return null; // no nested folders rendered
@@ -1294,16 +1500,24 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                           onClick={() => {
                             setCurrentUrl(childUrl);
                             setInputUrl(childUrl);
-                            setLoadError('');
+                            setLoadError("");
                             navigateToUrl(childUrl);
                           }}
                           onContextMenu={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            setBmContextMenu({ x: e.clientX, y: e.clientY, idx, folderPath: [cIdx] });
+                            setBmBarContextMenu(null);
+                            setBmContextMenu({
+                              x: e.clientX,
+                              y: e.clientY,
+                              idx,
+                              folderPath: [cIdx],
+                            });
                           }}
                           className={`w-full text-left px-3 py-1 text-xs hover:bg-[var(--color-surfaceHover)] transition-colors whitespace-nowrap flex items-center gap-1 ${
-                            isActive ? 'text-yellow-400 font-semibold' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)]'
+                            isActive
+                              ? "text-yellow-400 font-semibold"
+                              : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                           }`}
                           title={child.path}
                         >
@@ -1330,10 +1544,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               value={editBmName}
               onChange={(e) => setEditBmName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   handleRenameBookmark(idx, editBmName);
                   setEditingBmIdx(null);
-                } else if (e.key === 'Escape') {
+                } else if (e.key === "Escape") {
                   setEditingBmIdx(null);
                 }
               }}
@@ -1354,20 +1568,21 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               onClick={() => {
                 setCurrentUrl(bookmarkUrl);
                 setInputUrl(bookmarkUrl);
-                setLoadError('');
+                setLoadError("");
                 navigateToUrl(bookmarkUrl);
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                setBmBarContextMenu(null);
                 setBmContextMenu({ x: e.clientX, y: e.clientY, idx });
               }}
               className={`text-xs px-2 py-0.5 rounded hover:bg-[var(--color-surfaceHover)] transition-colors whitespace-nowrap flex-shrink-0 flex items-center gap-1 ${
-                dragOverIdx === idx ? 'ring-1 ring-[var(--color-primary)]' : ''
+                dragOverIdx === idx ? "ring-1 ring-[var(--color-primary)]" : ""
               } ${
                 isActive
-                  ? 'text-yellow-400 font-semibold bg-[var(--color-surfaceHover)]'
-                  : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)]'
+                  ? "text-yellow-400 font-semibold bg-[var(--color-surfaceHover)]"
+                  : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               }`}
               title={bm.path}
             >
@@ -1378,23 +1593,32 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         })}
 
         {(connection?.httpBookmarks || []).length === 0 && (
-          <span className="text-xs text-[var(--color-textMuted,var(--color-textSecondary))] italic select-none">Right-click bar to add folders — use ★ to save pages</span>
+          <span className="text-xs text-[var(--color-textMuted,var(--color-textSecondary))] italic select-none">
+            Right-click bar to add folders — use ★ to save pages
+          </span>
         )}
 
         {/* ---- Bookmark chip / folder Context Menu ---- */}
         {bmContextMenu && (
-          <div
-            ref={contextMenuRef}
-            className="fixed bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 z-50 min-w-[170px]"
-            style={{ left: bmContextMenu.x, top: bmContextMenu.y }}
+          <MenuSurface
+            isOpen={Boolean(bmContextMenu)}
+            onClose={() => setBmContextMenu(null)}
+            position={
+              bmContextMenu ? { x: bmContextMenu.x, y: bmContextMenu.y } : null
+            }
+            className="min-w-[170px] rounded-lg py-1"
+            dataTestId="web-browser-bookmark-menu"
           >
             {/* If inside a folder child */}
             {bmContextMenu.folderPath ? (
               <>
                 <button
-                  className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[var(--color-surfaceHover)] hover:text-red-300 flex items-center gap-2"
+                  className="sor-menu-item sor-menu-item-danger text-xs py-1.5"
                   onClick={() => {
-                    handleRemoveFromFolder(bmContextMenu.idx, bmContextMenu.folderPath![0]);
+                    handleRemoveFromFolder(
+                      bmContextMenu.idx,
+                      bmContextMenu.folderPath![0],
+                    );
                     setBmContextMenu(null);
                   }}
                 >
@@ -1404,9 +1628,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             ) : (
               <>
                 <button
-                  className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                  className="sor-menu-item text-xs py-1.5"
                   onClick={() => {
-                    const bm = (connection?.httpBookmarks || [])[bmContextMenu.idx];
+                    const bm = (connection?.httpBookmarks || [])[
+                      bmContextMenu.idx
+                    ];
                     if (bm) {
                       setEditBmName(bm.name);
                       setEditingBmIdx(bmContextMenu.idx);
@@ -1417,14 +1643,19 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   <Pencil size={12} /> Rename
                 </button>
                 {/* Copy URL — only for leaf bookmarks */}
-                {!(connection?.httpBookmarks || [])[bmContextMenu.idx]?.isFolder && (
+                {!(connection?.httpBookmarks || [])[bmContextMenu.idx]
+                  ?.isFolder && (
                   <button
-                    className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                    className="sor-menu-item text-xs py-1.5"
                     onClick={() => {
-                      const bm = (connection?.httpBookmarks || [])[bmContextMenu.idx];
+                      const bm = (connection?.httpBookmarks || [])[
+                        bmContextMenu.idx
+                      ];
                       if (bm && !bm.isFolder) {
-                        const baseUrl = buildTargetUrl().replace(/\/+$/, '');
-                        navigator.clipboard.writeText(baseUrl + bm.path).catch(() => {});
+                        const baseUrl = buildTargetUrl().replace(/\/+$/, "");
+                        navigator.clipboard
+                          .writeText(baseUrl + bm.path)
+                          .catch(() => {});
                       }
                       setBmContextMenu(null);
                     }}
@@ -1433,15 +1664,24 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   </button>
                 )}
                 {/* Open externally — only for leaf bookmarks */}
-                {!(connection?.httpBookmarks || [])[bmContextMenu.idx]?.isFolder && (
+                {!(connection?.httpBookmarks || [])[bmContextMenu.idx]
+                  ?.isFolder && (
                   <button
-                    className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                    className="sor-menu-item text-xs py-1.5"
                     onClick={() => {
-                      const bm = (connection?.httpBookmarks || [])[bmContextMenu.idx];
+                      const bm = (connection?.httpBookmarks || [])[
+                        bmContextMenu.idx
+                      ];
                       if (bm && !bm.isFolder) {
-                        const baseUrl = buildTargetUrl().replace(/\/+$/, '');
-                        invoke('open_url_external', { url: baseUrl + bm.path }).catch(() => {
-                          window.open(baseUrl + bm.path, '_blank', 'noopener,noreferrer');
+                        const baseUrl = buildTargetUrl().replace(/\/+$/, "");
+                        invoke("open_url_external", {
+                          url: baseUrl + bm.path,
+                        }).catch(() => {
+                          window.open(
+                            baseUrl + bm.path,
+                            "_blank",
+                            "noopener,noreferrer",
+                          );
                         });
                       }
                       setBmContextMenu(null);
@@ -1450,16 +1690,19 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                     <ExternalLink size={12} /> Open externally
                   </button>
                 )}
-                <div className="border-t border-[var(--color-border)] my-1" />
+                <div className="sor-menu-divider" />
                 {/* Move to folder — available folders listed */}
-                {!(connection?.httpBookmarks || [])[bmContextMenu.idx]?.isFolder &&
-                  (connection?.httpBookmarks || []).some((b, i) => b.isFolder && i !== bmContextMenu.idx) && (
+                {!(connection?.httpBookmarks || [])[bmContextMenu.idx]
+                  ?.isFolder &&
+                  (connection?.httpBookmarks || []).some(
+                    (b, i) => b.isFolder && i !== bmContextMenu.idx,
+                  ) && (
                     <>
                       {(connection?.httpBookmarks || []).map((b, i) =>
                         b.isFolder && i !== bmContextMenu.idx ? (
                           <button
                             key={i}
-                            className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                            className="sor-menu-item text-xs py-1.5"
                             onClick={() => {
                               handleMoveToFolder(bmContextMenu.idx, i);
                               setBmContextMenu(null);
@@ -1469,34 +1712,41 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                           </button>
                         ) : null,
                       )}
-                      <div className="border-t border-[var(--color-border)] my-1" />
+                      <div className="sor-menu-divider" />
                     </>
                   )}
                 {bmContextMenu.idx > 0 && (
                   <button
-                    className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                    className="sor-menu-item text-xs py-1.5"
                     onClick={() => {
-                      handleMoveBookmark(bmContextMenu.idx, bmContextMenu.idx - 1);
+                      handleMoveBookmark(
+                        bmContextMenu.idx,
+                        bmContextMenu.idx - 1,
+                      );
                       setBmContextMenu(null);
                     }}
                   >
                     <ArrowLeft size={12} /> Move left
                   </button>
                 )}
-                {bmContextMenu.idx < (connection?.httpBookmarks || []).length - 1 && (
+                {bmContextMenu.idx <
+                  (connection?.httpBookmarks || []).length - 1 && (
                   <button
-                    className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+                    className="sor-menu-item text-xs py-1.5"
                     onClick={() => {
-                      handleMoveBookmark(bmContextMenu.idx, bmContextMenu.idx + 1);
+                      handleMoveBookmark(
+                        bmContextMenu.idx,
+                        bmContextMenu.idx + 1,
+                      );
                       setBmContextMenu(null);
                     }}
                   >
                     <ArrowRight size={12} /> Move right
                   </button>
                 )}
-                <div className="border-t border-[var(--color-border)] my-1" />
+                <div className="sor-menu-divider" />
                 <button
-                  className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[var(--color-surfaceHover)] hover:text-red-300 flex items-center gap-2"
+                  className="sor-menu-item sor-menu-item-danger text-xs py-1.5"
                   onClick={() => {
                     handleRemoveBookmark(bmContextMenu.idx);
                     setBmContextMenu(null);
@@ -1506,18 +1756,24 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 </button>
               </>
             )}
-          </div>
+          </MenuSurface>
         )}
 
         {/* ---- Bar background Context Menu (right-click empty area) ---- */}
         {bmBarContextMenu && (
-          <div
-            ref={contextMenuRef}
-            className="fixed bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 z-50 min-w-[170px]"
-            style={{ left: bmBarContextMenu.x, top: bmBarContextMenu.y }}
+          <MenuSurface
+            isOpen={Boolean(bmBarContextMenu)}
+            onClose={() => setBmBarContextMenu(null)}
+            position={
+              bmBarContextMenu
+                ? { x: bmBarContextMenu.x, y: bmBarContextMenu.y }
+                : null
+            }
+            className="min-w-[170px] rounded-lg py-1"
+            dataTestId="web-browser-bookmark-bar-menu"
           >
             <button
-              className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+              className="sor-menu-item text-xs py-1.5"
               onClick={() => {
                 handleAddFolder();
                 setBmBarContextMenu(null);
@@ -1526,7 +1782,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               <FolderPlus size={12} /> New folder
             </button>
             <button
-              className="w-full text-left px-3 py-1.5 text-xs text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)] hover:text-[var(--color-text)] flex items-center gap-2"
+              className="sor-menu-item text-xs py-1.5"
               onClick={() => {
                 handleAddBookmark();
                 setBmBarContextMenu(null);
@@ -1536,9 +1792,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             </button>
             {(connection?.httpBookmarks || []).length > 0 && (
               <>
-                <div className="border-t border-[var(--color-border)] my-1" />
+                <div className="sor-menu-divider" />
                 <button
-                  className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-[var(--color-surfaceHover)] hover:text-red-300 flex items-center gap-2"
+                  className="sor-menu-item sor-menu-item-danger text-xs py-1.5"
                   onClick={() => {
                     handleDeleteAllBookmarks();
                     setBmBarContextMenu(null);
@@ -1548,7 +1804,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 </button>
               </>
             )}
-          </div>
+          </MenuSurface>
         )}
       </div>
 
@@ -1566,8 +1822,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               disabled={proxyRestarting}
               className="flex items-center gap-1 px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-[var(--color-text)] transition-colors disabled:opacity-50"
             >
-              <RefreshCw size={12} className={proxyRestarting ? 'animate-spin' : ''} />
-              {proxyRestarting ? 'Restarting…' : 'Reconnect proxy'}
+              <RefreshCw
+                size={12}
+                className={proxyRestarting ? "animate-spin" : ""}
+              />
+              {proxyRestarting ? "Restarting…" : "Reconnect proxy"}
             </button>
           </div>
         )}
@@ -1576,8 +1835,23 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           <div className="absolute inset-0 bg-[var(--color-background)] flex items-center justify-center z-10">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
-              <p className="text-[var(--color-textSecondary)] mb-2">Loading {currentUrl}...</p>
-              <p className="text-gray-600 text-xs">Taking too long? <button onClick={() => { setIsLoading(false); setLoadError(`Connection timed out. The server at ${currentUrl} did not respond.`); }} className="text-blue-500 hover:text-blue-400 underline">Cancel</button></p>
+              <p className="text-[var(--color-textSecondary)] mb-2">
+                Loading {currentUrl}...
+              </p>
+              <p className="text-gray-600 text-xs">
+                Taking too long?{" "}
+                <button
+                  onClick={() => {
+                    setIsLoading(false);
+                    setLoadError(
+                      `Connection timed out. The server at ${currentUrl} did not respond.`,
+                    );
+                  }}
+                  className="text-blue-500 hover:text-blue-400 underline"
+                >
+                  Cancel
+                </button>
+              </p>
             </div>
           </div>
         )}
@@ -1585,117 +1859,234 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         {loadError ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-8">
             {/* Categorized error screen */}
-            {loadError.includes('certificate') || loadError.includes('Certificate') || loadError.includes('SSL') || loadError.includes('CERT_') || loadError.includes('self-signed') || loadError.includes('trust provider') ? (
+            {loadError.includes("certificate") ||
+            loadError.includes("Certificate") ||
+            loadError.includes("SSL") ||
+            loadError.includes("CERT_") ||
+            loadError.includes("self-signed") ||
+            loadError.includes("trust provider") ? (
               // Certificate / TLS error
               <>
                 <div className="w-16 h-16 rounded-full bg-orange-900/30 flex items-center justify-center mb-4">
                   <ShieldAlert size={32} className="text-orange-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Certificate Error</h3>
-                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">The connection to <span className="text-yellow-400">{session.hostname}</span> failed because the server&apos;s SSL/TLS certificate is not trusted.</p>
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
+                  Certificate Error
+                </h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
+                  The connection to{" "}
+                  <span className="text-yellow-400">{session.hostname}</span>{" "}
+                  failed because the server&apos;s SSL/TLS certificate is not
+                  trusted.
+                </p>
                 <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">This usually means:</p>
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
+                    This usually means:
+                  </p>
                   <ul className="list-disc list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
-                    <li>The server is using a <span className="text-orange-400">self-signed certificate</span></li>
-                    <li>The certificate chain is incomplete or issued by an untrusted CA</li>
+                    <li>
+                      The server is using a{" "}
+                      <span className="text-orange-400">
+                        self-signed certificate
+                      </span>
+                    </li>
+                    <li>
+                      The certificate chain is incomplete or issued by an
+                      untrusted CA
+                    </li>
                     <li>The certificate has expired or is not yet valid</li>
-                    <li>The hostname does not match the certificate&apos;s subject</li>
+                    <li>
+                      The hostname does not match the certificate&apos;s subject
+                    </li>
                   </ul>
-                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mt-3 mb-2">To fix this:</p>
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mt-3 mb-2">
+                    To fix this:
+                  </p>
                   <ol className="list-decimal list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
-                    <li>Edit this connection and <span className="text-blue-400">uncheck &quot;Verify SSL Certificate&quot;</span> to trust self-signed certs</li>
-                    <li>Or install the server&apos;s CA certificate into your system trust store</li>
+                    <li>
+                      Edit this connection and{" "}
+                      <span className="text-blue-400">
+                        uncheck &quot;Verify SSL Certificate&quot;
+                      </span>{" "}
+                      to trust self-signed certs
+                    </li>
+                    <li>
+                      Or install the server&apos;s CA certificate into your
+                      system trust store
+                    </li>
                   </ol>
                 </div>
                 <details className="mb-4 max-w-lg text-left">
-                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-[var(--color-textSecondary)]">Technical details</summary>
-                  <pre className="mt-2 text-xs text-gray-500 bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-3 whitespace-pre-wrap break-all">{loadError}</pre>
+                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-[var(--color-textSecondary)]">
+                    Technical details
+                  </summary>
+                  <pre className="mt-2 text-xs text-gray-500 bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-3 whitespace-pre-wrap break-all">
+                    {loadError}
+                  </pre>
                 </details>
                 <div className="flex items-center space-x-3">
-                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
+                  <button
+                    onClick={handleRefresh}
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                  >
                     <RefreshCw size={14} /> <span>Retry Connection</span>
                   </button>
-                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors">
+                  <button
+                    onClick={handleOpenExternal}
+                    className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+                  >
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
                 </div>
               </>
-            ) : loadError.includes('refused') || loadError.includes('Upstream request failed') || loadError.includes('proxy') ? (
+            ) : loadError.includes("refused") ||
+              loadError.includes("Upstream request failed") ||
+              loadError.includes("proxy") ? (
               // Internal proxy failure
               <>
                 <div className="w-16 h-16 rounded-full bg-red-900/30 flex items-center justify-center mb-4">
                   <ServerCrash size={32} className="text-red-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Internal Proxy Error</h3>
-                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">{loadError}</p>
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
+                  Internal Proxy Error
+                </h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
+                  {loadError}
+                </p>
                 <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">Troubleshooting steps:</p>
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
+                    Troubleshooting steps:
+                  </p>
                   <ol className="list-decimal list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
-                    <li>Open the <span className="text-blue-400">Internal Proxy Manager</span> from the toolbar and check the proxy status</li>
-                    <li>Verify the target host <span className="text-yellow-400">{session.hostname}</span> is reachable on your network</li>
-                    <li>Check the proxy error log for detailed failure information</li>
+                    <li>
+                      Open the{" "}
+                      <span className="text-blue-400">
+                        Internal Proxy Manager
+                      </span>{" "}
+                      from the toolbar and check the proxy status
+                    </li>
+                    <li>
+                      Verify the target host{" "}
+                      <span className="text-yellow-400">
+                        {session.hostname}
+                      </span>{" "}
+                      is reachable on your network
+                    </li>
+                    <li>
+                      Check the proxy error log for detailed failure information
+                    </li>
                     <li>Try restarting the proxy session via the manager</li>
                   </ol>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
+                  <button
+                    onClick={handleRefresh}
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                  >
                     <RefreshCw size={14} /> <span>Retry Connection</span>
                   </button>
-                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors">
+                  <button
+                    onClick={handleOpenExternal}
+                    className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+                  >
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
                 </div>
               </>
-            ) : loadError.includes('timed out') ? (
+            ) : loadError.includes("timed out") ? (
               // Timeout error
               <>
                 <div className="w-16 h-16 rounded-full bg-yellow-900/30 flex items-center justify-center mb-4">
                   <WifiOff size={32} className="text-yellow-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Connection Timed Out</h3>
-                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">{loadError}</p>
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
+                  Connection Timed Out
+                </h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
+                  {loadError}
+                </p>
                 <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">Possible causes:</p>
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
+                    Possible causes:
+                  </p>
                   <ul className="list-disc list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
-                    <li>The server at <span className="text-yellow-400">{session.hostname}</span> is not responding</li>
+                    <li>
+                      The server at{" "}
+                      <span className="text-yellow-400">
+                        {session.hostname}
+                      </span>{" "}
+                      is not responding
+                    </li>
                     <li>A firewall is blocking the connection</li>
                     <li>The hostname or port may be incorrect</li>
-                    <li>Network connectivity issues between you and the target</li>
+                    <li>
+                      Network connectivity issues between you and the target
+                    </li>
                     <li>The internal proxy session may have died</li>
                   </ul>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
+                  <button
+                    onClick={handleRefresh}
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                  >
                     <RefreshCw size={14} /> <span>Try Again</span>
                   </button>
                   {hasAuth && (
-                    <button onClick={handleRestartProxy} disabled={proxyRestarting} className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] rounded-lg transition-colors disabled:opacity-50">
-                      <RefreshCw size={14} className={proxyRestarting ? 'animate-spin' : ''} /> <span>{proxyRestarting ? 'Restarting…' : 'Reconnect Proxy'}</span>
+                    <button
+                      onClick={handleRestartProxy}
+                      disabled={proxyRestarting}
+                      className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw
+                        size={14}
+                        className={proxyRestarting ? "animate-spin" : ""}
+                      />{" "}
+                      <span>
+                        {proxyRestarting ? "Restarting…" : "Reconnect Proxy"}
+                      </span>
                     </button>
                   )}
-                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors">
+                  <button
+                    onClick={handleOpenExternal}
+                    className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+                  >
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
                 </div>
               </>
-            ) : loadError.includes('Authentication required') ? (
+            ) : loadError.includes("Authentication required") ? (
               // Auth error
               <>
                 <div className="w-16 h-16 rounded-full bg-blue-900/30 flex items-center justify-center mb-4">
                   <Shield size={32} className="text-blue-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Authentication Required</h3>
-                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">{loadError}</p>
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
+                  Authentication Required
+                </h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
+                  {loadError}
+                </p>
                 <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">To fix this:</p>
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
+                    To fix this:
+                  </p>
                   <ol className="list-decimal list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
                     <li>Edit this connection in the sidebar</li>
-                    <li>Set Authentication Type to <span className="text-blue-400">Basic Authentication</span></li>
+                    <li>
+                      Set Authentication Type to{" "}
+                      <span className="text-blue-400">
+                        Basic Authentication
+                      </span>
+                    </li>
                     <li>Enter the correct username and password</li>
                     <li>Save and reconnect</li>
                   </ol>
                 </div>
-                <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
+                <button
+                  onClick={handleRefresh}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                >
                   <RefreshCw size={14} /> <span>Try Again</span>
                 </button>
               </>
@@ -1705,10 +2096,16 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="w-16 h-16 rounded-full bg-yellow-900/30 flex items-center justify-center mb-4">
                   <AlertTriangle size={32} className="text-yellow-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Unable to Load Webpage</h3>
-                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">{loadError}</p>
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">
+                  Unable to Load Webpage
+                </h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
+                  {loadError}
+                </p>
                 <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">Common issues:</p>
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
+                    Common issues:
+                  </p>
                   <ul className="list-disc list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
                     <li>The website blocks embedding (X-Frame-Options)</li>
                     <li>CORS restrictions prevent loading</li>
@@ -1718,15 +2115,31 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   </ul>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
+                  <button
+                    onClick={handleRefresh}
+                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                  >
                     <RefreshCw size={14} /> <span>Try Again</span>
                   </button>
                   {hasAuth && (
-                    <button onClick={handleRestartProxy} disabled={proxyRestarting} className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] rounded-lg transition-colors disabled:opacity-50">
-                      <RefreshCw size={14} className={proxyRestarting ? 'animate-spin' : ''} /> <span>{proxyRestarting ? 'Restarting…' : 'Reconnect Proxy'}</span>
+                    <button
+                      onClick={handleRestartProxy}
+                      disabled={proxyRestarting}
+                      className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw
+                        size={14}
+                        className={proxyRestarting ? "animate-spin" : ""}
+                      />{" "}
+                      <span>
+                        {proxyRestarting ? "Restarting…" : "Reconnect Proxy"}
+                      </span>
                     </button>
                   )}
-                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors">
+                  <button
+                    onClick={handleOpenExternal}
+                    className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+                  >
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
                 </div>
@@ -1751,9 +2164,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           type="tls"
           host={session.hostname}
           port={connection?.port || 443}
-          reason={trustPrompt.status === 'mismatch' ? 'mismatch' : 'first-use'}
+          reason={trustPrompt.status === "mismatch" ? "mismatch" : "first-use"}
           receivedIdentity={certIdentity}
-          storedIdentity={trustPrompt.status === 'mismatch' ? trustPrompt.stored : undefined}
+          storedIdentity={
+            trustPrompt.status === "mismatch" ? trustPrompt.stored : undefined
+          }
           onAccept={handleTrustAccept}
           onReject={handleTrustReject}
         />
@@ -1785,11 +2200,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
       {showRecordingNamePrompt && (
         <InputDialog
           isOpen={true}
-          title={showRecordingNamePrompt === 'har' ? 'Save Web Recording' : 'Save Video Recording'}
+          title={
+            showRecordingNamePrompt === "har"
+              ? "Save Web Recording"
+              : "Save Video Recording"
+          }
           message="Enter a name for this recording:"
           defaultValue={`${connection?.name || session.hostname} - ${new Date().toLocaleString()}`}
           onConfirm={(name) => {
-            if (showRecordingNamePrompt === 'har') {
+            if (showRecordingNamePrompt === "har") {
               handleSaveHarRecording(name);
             } else {
               handleSaveVideoRecording(name);
