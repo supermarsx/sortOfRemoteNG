@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { createGifFrameCollector, type GifFrameCollector } from '../utils/gifEncoder';
 
 export interface RecordingState {
   isRecording: boolean;
@@ -15,8 +16,9 @@ const INITIAL_STATE: RecordingState = {
 };
 
 /**
- * Hook for recording an HTML canvas stream using the MediaRecorder API.
- * Supports WebM (VP8/VP9) natively in Chromium-based webviews.
+ * Hook for recording an HTML canvas stream using the MediaRecorder API
+ * or frame-by-frame GIF capture.
+ * Supports WebM (VP8/VP9), MP4 (H.264), and GIF.
  */
 export function useSessionRecorder(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   const [state, setState] = useState<RecordingState>(INITIAL_STATE);
@@ -24,6 +26,11 @@ export function useSessionRecorder(canvasRef: React.RefObject<HTMLCanvasElement 
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
+
+  // GIF-specific refs
+  const gifCollectorRef = useRef<GifFrameCollector | null>(null);
+  const gifIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isGifModeRef = useRef(false);
 
   // Duration tracking timer
   useEffect(() => {
@@ -71,6 +78,33 @@ export function useSessionRecorder(canvasRef: React.RefObject<HTMLCanvasElement 
   const startRecording = useCallback((format: string = 'webm', fps: number = 30) => {
     if (!canvasRef.current) return false;
 
+    // ── GIF mode: capture frames directly from canvas ──
+    if (format === 'gif') {
+      const delayMs = Math.round(1000 / Math.min(fps, 10)); // Cap GIF at 10fps for size
+      const collector = createGifFrameCollector(canvasRef.current, {
+        delayMs,
+        maxColors: 256,
+      });
+      gifCollectorRef.current = collector;
+      isGifModeRef.current = true;
+
+      // Capture frames at the specified interval
+      gifIntervalRef.current = setInterval(() => {
+        collector.captureFrame();
+      }, delayMs);
+
+      startTimeRef.current = Date.now();
+      setState({
+        isRecording: true,
+        isPaused: false,
+        duration: 0,
+        format: 'gif',
+      });
+      return true;
+    }
+
+    // ── Video mode: use MediaRecorder ──
+    isGifModeRef.current = false;
     const mimeType = getSupportedMimeType(format);
     if (!mimeType) return false;
 
@@ -102,6 +136,29 @@ export function useSessionRecorder(canvasRef: React.RefObject<HTMLCanvasElement 
   }, [canvasRef, getSupportedMimeType]);
 
   const stopRecording = useCallback((): Promise<Blob | null> => {
+    // ── GIF stop ──
+    if (isGifModeRef.current) {
+      if (gifIntervalRef.current) {
+        clearInterval(gifIntervalRef.current);
+        gifIntervalRef.current = null;
+      }
+
+      const collector = gifCollectorRef.current;
+      if (!collector || collector.frameCount() === 0) {
+        setState(INITIAL_STATE);
+        isGifModeRef.current = false;
+        return Promise.resolve(null);
+      }
+
+      const blob = collector.encode();
+      collector.clear();
+      gifCollectorRef.current = null;
+      isGifModeRef.current = false;
+      setState(INITIAL_STATE);
+      return Promise.resolve(blob);
+    }
+
+    // ── Video stop ──
     const recorder = mediaRecorderRef.current;
     if (!recorder || recorder.state === 'inactive') {
       setState(INITIAL_STATE);
@@ -121,6 +178,16 @@ export function useSessionRecorder(canvasRef: React.RefObject<HTMLCanvasElement 
   }, []);
 
   const pauseRecording = useCallback(() => {
+    if (isGifModeRef.current) {
+      // Pause GIF capture by stopping the interval
+      if (gifIntervalRef.current) {
+        clearInterval(gifIntervalRef.current);
+        gifIntervalRef.current = null;
+      }
+      setState(prev => ({ ...prev, isPaused: true }));
+      return;
+    }
+
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state === 'recording') {
       recorder.pause();
@@ -129,16 +196,31 @@ export function useSessionRecorder(canvasRef: React.RefObject<HTMLCanvasElement 
   }, []);
 
   const resumeRecording = useCallback(() => {
+    if (isGifModeRef.current) {
+      // Resume GIF capture
+      const collector = gifCollectorRef.current;
+      const canvas = canvasRef.current;
+      if (collector && canvas) {
+        // Use the same delay (we stored it indirectly; default to 100ms)
+        gifIntervalRef.current = setInterval(() => {
+          collector.captureFrame();
+        }, 100);
+      }
+      setState(prev => ({ ...prev, isPaused: false }));
+      return;
+    }
+
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state === 'paused') {
       recorder.resume();
       setState(prev => ({ ...prev, isPaused: false }));
     }
-  }, []);
+  }, [canvasRef]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (gifIntervalRef.current) clearInterval(gifIntervalRef.current);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }

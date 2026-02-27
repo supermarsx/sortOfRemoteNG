@@ -9,6 +9,7 @@ import type { BackupConfig } from './backupSettings';
 import type { CloudSyncConfig } from './cloudSyncSettings';
 import type { OpenVPNConfig } from './vpnSettings';
 import type { SSHTerminalConfig } from './sshSettings';
+import type { RdpRecordingConfig } from './macroTypes';
 
 export const Themes = [
   "dark",
@@ -252,7 +253,10 @@ export interface GlobalSettings {
 
   // Recording & Macros
   recording: RecordingConfig;
+  rdpRecording: RdpRecordingConfig;
   macros: MacroConfig;
+  /** Show Recording Manager icon in secondary bar */
+  showRecordingManagerIcon: boolean;
 
   // Auto Lock
   autoLock: AutoLockConfig;
@@ -741,7 +745,7 @@ export interface RecordingConfig {
   recordInput: boolean;
   maxRecordingDurationMinutes: number;
   maxStoredRecordings: number;
-  defaultExportFormat: 'json' | 'asciicast' | 'script';
+  defaultExportFormat: 'json' | 'asciicast' | 'script' | 'gif';
 }
 
 export interface MacroConfig {

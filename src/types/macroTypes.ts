@@ -54,7 +54,44 @@ export interface RecordingConfig {
   recordInput: boolean;
   maxRecordingDurationMinutes: number;
   maxStoredRecordings: number;
-  defaultExportFormat: 'json' | 'asciicast' | 'script';
+  defaultExportFormat: 'json' | 'asciicast' | 'script' | 'gif';
+}
+
+// ─── RDP Screen Recording ─────────────────────────────────────────
+
+export interface SavedRdpRecording {
+  id: string;
+  name: string;
+  description?: string;
+  connectionId?: string;
+  connectionName?: string;
+  host?: string;
+  savedAt: string;
+  durationMs: number;
+  format: string;
+  width: number;
+  height: number;
+  sizeBytes: number;
+  /** Base64-encoded video data (stored in IndexedDB) */
+  data: string;
+  tags?: string[];
+}
+
+export interface RdpRecordingConfig {
+  /** Auto-record RDP sessions on connect */
+  autoRecordRdpSessions: boolean;
+  /** Default video format: 'webm' | 'mp4' | 'gif' */
+  defaultVideoFormat: 'webm' | 'mp4' | 'gif';
+  /** Recording FPS */
+  recordingFps: number;
+  /** Video bitrate in Mbps */
+  videoBitrateMbps: number;
+  /** Max recording duration in minutes (0 = unlimited) */
+  maxRdpRecordingDurationMinutes: number;
+  /** Max stored RDP recordings */
+  maxStoredRdpRecordings: number;
+  /** Auto-save to library instead of file dialog */
+  autoSaveToLibrary: boolean;
 }
 
 export interface MacroConfig {

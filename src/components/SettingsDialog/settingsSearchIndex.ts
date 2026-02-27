@@ -147,7 +147,15 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'recording.recordInput', label: 'Record Input', description: 'Record keyboard input in sessions', tags: ['record', 'input', 'keystrokes', 'capture'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'recording.maxRecordingDurationMinutes', label: 'Max Recording Duration', description: 'Maximum recording duration in minutes', tags: ['recording', 'duration', 'limit', 'time'], section: 'recording', sectionLabel: 'Recording' },
   { key: 'recording.maxStoredRecordings', label: 'Max Stored Recordings', description: 'Maximum number of stored recordings', tags: ['recording', 'storage', 'limit', 'count'], section: 'recording', sectionLabel: 'Recording' },
-  { key: 'recording.defaultExportFormat', label: 'Default Export Format', description: 'Default recording export format', tags: ['export', 'format', 'asciicast', 'script', 'json'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'recording.defaultExportFormat', label: 'Default Export Format', description: 'Default recording export format', tags: ['export', 'format', 'asciicast', 'script', 'json', 'gif', 'animated'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'rdpRecording.autoRecordRdpSessions', label: 'Auto Record RDP Sessions', description: 'Automatically record RDP screen sessions', tags: ['rdp', 'record', 'auto', 'video', 'screen'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'rdpRecording.autoSaveToLibrary', label: 'Auto Save to Library', description: 'Save RDP recordings to library instead of file dialog', tags: ['rdp', 'auto save', 'library', 'recording'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'rdpRecording.defaultVideoFormat', label: 'Video Format', description: 'Default RDP recording video format', tags: ['rdp', 'video', 'format', 'webm', 'mp4', 'gif', 'animated'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'rdpRecording.recordingFps', label: 'Recording FPS', description: 'RDP recording frame rate', tags: ['rdp', 'fps', 'framerate', 'video', 'quality'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'rdpRecording.videoBitrateMbps', label: 'Video Bitrate', description: 'RDP recording video bitrate in Mbps', tags: ['rdp', 'bitrate', 'quality', 'video', 'size'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'rdpRecording.maxRdpRecordingDurationMinutes', label: 'Max RDP Recording Duration', description: 'Maximum RDP recording duration', tags: ['rdp', 'duration', 'limit', 'time', 'recording'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'rdpRecording.maxStoredRdpRecordings', label: 'Max Stored RDP Recordings', description: 'Maximum stored RDP recordings', tags: ['rdp', 'storage', 'limit', 'count', 'recording'], section: 'recording', sectionLabel: 'Recording' },
+  { key: 'showRecordingManagerIcon', label: 'Recording Manager Icon', description: 'Show Recording Manager in toolbar', tags: ['toolbar', 'icon', 'recording', 'manager'], section: 'recording', sectionLabel: 'Recording' },
 
   // ─── Macros ─────────────────────────────────────────────────────
   { key: 'macros.defaultStepDelayMs', label: 'Default Step Delay', description: 'Default delay between macro steps', tags: ['macro', 'delay', 'speed', 'replay'], section: 'macros', sectionLabel: 'Macros' },

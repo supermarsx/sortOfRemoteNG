@@ -22,6 +22,7 @@ import {
   ArrowUpDown,
   Cpu,
   ListVideo,
+  Disc,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -50,6 +51,7 @@ interface AppToolbarProps {
   setShowBulkSSH: (v: boolean) => void;
   setShowScriptManager: (v: boolean) => void;
   setShowMacroManager: (v: boolean) => void;
+  setShowRecordingManager: (v: boolean) => void;
   setShowPerformanceMonitor: (v: boolean) => void;
   setShowActionLog: (v: boolean) => void;
   setShowErrorLog: React.Dispatch<React.SetStateAction<boolean>>;
@@ -82,6 +84,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowBulkSSH,
   setShowScriptManager,
   setShowMacroManager,
+  setShowRecordingManager,
   setShowPerformanceMonitor,
   setShowActionLog,
   setShowErrorLog,
@@ -281,9 +284,18 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
             <button
               onClick={() => setShowMacroManager(true)}
               className="app-bar-button p-2"
-              title="Macro & Recording Manager"
+              title="Macro Manager"
             >
               <ListVideo size={14} />
+            </button>
+          )}
+          {appSettings.showRecordingManagerIcon && (
+            <button
+              onClick={() => setShowRecordingManager(true)}
+              className="app-bar-button p-2"
+              title="Recording Manager"
+            >
+              <Disc size={14} />
             </button>
           )}
           {appSettings.showPerformanceMonitorIcon && (

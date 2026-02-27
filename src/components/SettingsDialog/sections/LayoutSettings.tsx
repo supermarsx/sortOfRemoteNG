@@ -18,7 +18,6 @@ import {
   Activity,
   Code,
   ShieldCheck,
-  Mouse,
   EyeOff,
   Terminal,
   FileCode,
@@ -31,6 +30,7 @@ import {
   RefreshCw,
   Cpu,
   ListVideo,
+  Disc,
 } from "lucide-react";
 
 interface LayoutSettingsProps {
@@ -158,16 +158,6 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             />
             <Network className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
             <span className="text-gray-300 group-hover:text-white">Allow connection reordering</span>
-          </label>
-          <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.middleClickCloseTab}
-              onChange={(e) => updateSettings({ middleClickCloseTab: e.target.checked })}
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
-            />
-            <Mouse className="w-4 h-4 text-gray-500 group-hover:text-gray-300" />
-            <span className="text-gray-300 group-hover:text-white">Middle-click to close tabs</span>
           </label>
         </div>
       </div>
@@ -327,7 +317,17 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
               className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
             />
             <ListVideo className="w-4 h-4 text-orange-500 group-hover:text-orange-400" />
-            <span className="text-gray-300 group-hover:text-white">Macro & Recording Manager</span>
+            <span className="text-gray-300 group-hover:text-white">Macro Manager</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showRecordingManagerIcon}
+              onChange={(e) => updateSettings({ showRecordingManagerIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Disc className="w-4 h-4 text-red-500 group-hover:text-red-400" />
+            <span className="text-gray-300 group-hover:text-white">Recording Manager</span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input

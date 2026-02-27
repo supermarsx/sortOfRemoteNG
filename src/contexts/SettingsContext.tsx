@@ -134,6 +134,16 @@ const defaultSettings: GlobalSettings = {
     maxStoredRecordings: 50,
     defaultExportFormat: 'asciicast' as const,
   },
+  rdpRecording: {
+    autoRecordRdpSessions: false,
+    defaultVideoFormat: 'webm' as const,
+    recordingFps: 30,
+    videoBitrateMbps: 5,
+    maxRdpRecordingDurationMinutes: 0,
+    maxStoredRdpRecordings: 20,
+    autoSaveToLibrary: false,
+  },
+  showRecordingManagerIcon: true,
   macros: {
     defaultStepDelayMs: 200,
     confirmBeforeReplay: true,

@@ -71,6 +71,7 @@ const AppContent: React.FC = () => {
   const [showBulkSSH, setShowBulkSSH] = useState(false);
   const [showScriptManager, setShowScriptManager] = useState(false);
   const [showMacroManager, setShowMacroManager] = useState(false);
+  const [showRecordingManager, setShowRecordingManager] = useState(false);
   const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
@@ -1008,6 +1009,7 @@ const AppContent: React.FC = () => {
         setShowBulkSSH={setShowBulkSSH}
         setShowScriptManager={setShowScriptManager}
         setShowMacroManager={setShowMacroManager}
+        setShowRecordingManager={setShowRecordingManager}
         setShowPerformanceMonitor={setShowPerformanceMonitor}
         setShowActionLog={setShowActionLog}
         setShowErrorLog={setShowErrorLog}
@@ -1139,6 +1141,7 @@ const AppContent: React.FC = () => {
         showBulkSSH={showBulkSSH}
         showScriptManager={showScriptManager}
         showMacroManager={showMacroManager}
+        showRecordingManager={showRecordingManager}
         showDiagnostics={showDiagnostics}
         showErrorLog={showErrorLog}
         rdpPanelOpen={rdpPanelOpen}
@@ -1156,6 +1159,7 @@ const AppContent: React.FC = () => {
         setShowBulkSSH={setShowBulkSSH}
         setShowScriptManager={setShowScriptManager}
         setShowMacroManager={setShowMacroManager}
+        setShowRecordingManager={setShowRecordingManager}
         setShowDiagnostics={setShowDiagnostics}
         setShowErrorLog={setShowErrorLog}
         setRdpPanelOpen={setRdpPanelOpen}

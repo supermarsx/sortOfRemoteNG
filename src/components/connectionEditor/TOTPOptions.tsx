@@ -2,11 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Shield, Plus, Trash2, Copy, Check, ChevronDown, ChevronUp,
   Eye, EyeOff, Pencil, Download, Upload, KeyRound, QrCode, FileUp,
+  ArrowDownToLine, ArrowUpFromLine,
 } from 'lucide-react';
 import { Connection } from '../../types/connection';
 import { TOTPConfig } from '../../types/settings';
 import { TOTPService } from '../../utils/totpService';
 import { useSettings } from '../../contexts/SettingsContext';
+import { useConnections } from '../../contexts/useConnections';
 import { TotpImportDialog } from '../TotpImportDialog';
 
 interface TOTPOptionsProps {
@@ -16,6 +18,7 @@ interface TOTPOptionsProps {
 
 export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData }) => {
   const { settings } = useSettings();
+  const { state: connState, dispatch: connDispatch } = useConnections();
   const [expanded, setExpanded] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newAccount, setNewAccount] = useState('');
@@ -36,6 +39,10 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState('');
   const [showFileImport, setShowFileImport] = useState(false);
+  const [showCopyFrom, setShowCopyFrom] = useState(false);
+  const [showReplicateTo, setShowReplicateTo] = useState(false);
+  const [selectedReplicateIds, setSelectedReplicateIds] = useState<Set<string>>(new Set());
+  const [replicateDone, setReplicateDone] = useState(false);
 
   const totpService = useMemo(() => new TOTPService(), []);
   const configs = formData.totpConfigs ?? [];
@@ -191,6 +198,82 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
     return period - (now % period);
   };
 
+  // ── Copy from / Replicate to ────────────────────────────────────────
+
+  // Other connections that have TOTP configs (excluding current)
+  const otherConnectionsWithTotp = useMemo(
+    () =>
+      connState.connections.filter(
+        (c) =>
+          c.id !== formData.id &&
+          !c.isGroup &&
+          c.totpConfigs &&
+          c.totpConfigs.length > 0,
+      ),
+    [connState.connections, formData.id],
+  );
+
+  // Other non-group connections (for replicate target list)
+  const otherConnections = useMemo(
+    () =>
+      connState.connections.filter(
+        (c) => c.id !== formData.id && !c.isGroup,
+      ),
+    [connState.connections, formData.id],
+  );
+
+  const handleCopyFrom = (sourceConn: Connection) => {
+    const sourceConfigs = sourceConn.totpConfigs ?? [];
+    if (sourceConfigs.length === 0) return;
+    const existingSecrets = new Set(configs.map((c) => c.secret.toLowerCase()));
+    const newConfigs = sourceConfigs.filter(
+      (c) => !existingSecrets.has(c.secret.toLowerCase()),
+    );
+    if (newConfigs.length > 0) {
+      updateConfigs([...configs, ...newConfigs]);
+    }
+    setShowCopyFrom(false);
+  };
+
+  const toggleReplicateTarget = (id: string) => {
+    setSelectedReplicateIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleReplicateTo = () => {
+    if (configs.length === 0 || selectedReplicateIds.size === 0) return;
+    for (const targetId of selectedReplicateIds) {
+      const target = connState.connections.find((c) => c.id === targetId);
+      if (!target) continue;
+      const existingSecrets = new Set(
+        (target.totpConfigs ?? []).map((c) => c.secret.toLowerCase()),
+      );
+      const newConfigs = configs.filter(
+        (c) => !existingSecrets.has(c.secret.toLowerCase()),
+      );
+      if (newConfigs.length > 0) {
+        connDispatch({
+          type: 'UPDATE_CONNECTION',
+          payload: {
+            ...target,
+            totpConfigs: [...(target.totpConfigs ?? []), ...newConfigs],
+            updatedAt: new Date(),
+          },
+        });
+      }
+    }
+    setReplicateDone(true);
+    setTimeout(() => {
+      setReplicateDone(false);
+      setShowReplicateTo(false);
+      setSelectedReplicateIds(new Set());
+    }, 1500);
+  };
+
   return (
     <div className="border border-gray-700 rounded-lg overflow-hidden">
       <button
@@ -214,8 +297,8 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
 
       {expanded && (
         <div className="px-4 py-3 space-y-3 border-t border-gray-700">
-          {/* Import/Export header */}
-          <div className="flex items-center justify-end space-x-2">
+          {/* Import/Export/Copy header */}
+          <div className="flex items-center justify-end space-x-2 flex-wrap gap-y-1">
             <button
               type="button"
               onClick={handleExport}
@@ -244,7 +327,114 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
               <FileUp size={11} />
               <span>Import File</span>
             </button>
+            {otherConnectionsWithTotp.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { setShowCopyFrom(!showCopyFrom); setShowReplicateTo(false); }}
+                className="flex items-center space-x-1 text-[10px] text-gray-400 hover:text-white transition-colors"
+                title="Copy 2FA from another connection"
+              >
+                <ArrowDownToLine size={11} />
+                <span>Copy From</span>
+              </button>
+            )}
+            {configs.length > 0 && otherConnections.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { setShowReplicateTo(!showReplicateTo); setShowCopyFrom(false); }}
+                className="flex items-center space-x-1 text-[10px] text-gray-400 hover:text-white transition-colors"
+                title="Replicate 2FA configs to other connections"
+              >
+                <ArrowUpFromLine size={11} />
+                <span>Replicate To</span>
+              </button>
+            )}
           </div>
+
+          {/* Copy from another connection */}
+          {showCopyFrom && (
+            <div className="bg-gray-800 rounded-lg p-3 space-y-2">
+              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
+                Copy 2FA from another connection
+              </div>
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {otherConnectionsWithTotp.map((conn) => (
+                  <button
+                    key={conn.id}
+                    type="button"
+                    onClick={() => handleCopyFrom(conn)}
+                    className="w-full flex items-center justify-between px-2 py-1.5 bg-gray-700/60 hover:bg-gray-700 rounded text-left transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs text-white truncate">{conn.name}</div>
+                      <div className="text-[10px] text-gray-400 truncate">
+                        {conn.hostname}{conn.username ? ` · ${conn.username}` : ''}
+                        {' · '}{conn.totpConfigs!.length} config{conn.totpConfigs!.length !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                    <ArrowDownToLine size={12} className="text-gray-400 ml-2 flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
+              <div className="flex justify-end">
+                <button type="button" onClick={() => setShowCopyFrom(false)} className="px-2 py-1 text-[10px] text-gray-400 hover:text-white">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Replicate to other connections */}
+          {showReplicateTo && (
+            <div className="bg-gray-800 rounded-lg p-3 space-y-2">
+              <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
+                Replicate {configs.length} 2FA config{configs.length !== 1 ? 's' : ''} to connections
+              </div>
+              <div className="max-h-40 overflow-y-auto space-y-1">
+                {otherConnections.map((conn) => {
+                  const existing = (conn.totpConfigs ?? []).length;
+                  return (
+                    <label
+                      key={conn.id}
+                      className="flex items-center gap-2 px-2 py-1.5 bg-gray-700/60 hover:bg-gray-700 rounded cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedReplicateIds.has(conn.id)}
+                        onChange={() => toggleReplicateTarget(conn.id)}
+                        className="rounded border-gray-600 bg-gray-600 text-blue-600 w-3.5 h-3.5"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-white truncate">{conn.name}</div>
+                        <div className="text-[10px] text-gray-400 truncate">
+                          {conn.hostname}{conn.username ? ` · ${conn.username}` : ''}
+                          {existing > 0 && ` · ${existing} existing`}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-500">
+                  {selectedReplicateIds.size} selected (duplicates will be skipped)
+                </span>
+                <div className="flex space-x-2">
+                  <button type="button" onClick={() => { setShowReplicateTo(false); setSelectedReplicateIds(new Set()); }} className="px-2 py-1 text-[10px] text-gray-400 hover:text-white">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleReplicateTo}
+                    disabled={selectedReplicateIds.size === 0}
+                    className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded flex items-center gap-1"
+                  >
+                    {replicateDone ? <><Check size={10} /> Done</> : <><ArrowUpFromLine size={10} /> Replicate</>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Import form */}
           {showImport && (
