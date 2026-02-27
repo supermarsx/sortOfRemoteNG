@@ -28,8 +28,10 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { ConnectionSession, HttpBookmarkItem } from '../types/connection';
+import { TOTPConfig } from '../types/settings';
 import { useConnections } from '../contexts/useConnections';
 import { useSettings } from '../contexts/SettingsContext';
+import RDPTotpPanel from './rdp/RDPTotpPanel';
 import { useToastContext } from '../contexts/ToastContext';
 import { generateId } from '../utils/id';
 import { CertificateInfoPopup } from './CertificateInfoPopup';
@@ -146,6 +148,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   // ---- Themed dialogs ----
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
+  const [showTotpPanel, setShowTotpPanel] = useState(false);
+  const totpBtnRef = useRef<HTMLDivElement>(null);
+
+  const totpConfigs = connection?.totpConfigs ?? [];
+  const handleUpdateTotpConfigs = useCallback((configs: TOTPConfig[]) => {
+    if (connection) {
+      dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, totpConfigs: configs } });
+    }
+  }, [connection, dispatch]);
 
   // ------------------------------------------------------------------
   // TLS certificate trust helpers
@@ -990,6 +1001,33 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           >
             <Copy size={16} />
           </button>
+          {/* 2FA / TOTP */}
+          <div className="relative" ref={totpBtnRef}>
+            <button
+              type="button"
+              onClick={() => setShowTotpPanel(!showTotpPanel)}
+              className={`p-2 rounded transition-colors relative ${showTotpPanel ? 'text-blue-400 bg-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+              title="2FA Codes"
+            >
+              <Shield size={16} />
+              {totpConfigs.length > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                  {totpConfigs.length}
+                </span>
+              )}
+            </button>
+            {showTotpPanel && (
+              <RDPTotpPanel
+                configs={totpConfigs}
+                onUpdate={handleUpdateTotpConfigs}
+                onClose={() => setShowTotpPanel(false)}
+                defaultIssuer={settings.totpIssuer}
+                defaultDigits={settings.totpDigits}
+                defaultPeriod={settings.totpPeriod}
+                defaultAlgorithm={settings.totpAlgorithm}
+              />
+            )}
+          </div>
           <button
             onClick={handleOpenExternal}
             className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"

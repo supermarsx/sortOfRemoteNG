@@ -64,6 +64,7 @@ const defaultSettings: GlobalSettings = {
   showShortcutManagerIcon: true,
   showWolIcon: true,
   showErrorLogBar: false,
+  showRdpSessionsIcon: true,
   autoLock: {
     enabled: false,
     timeoutMinutes: 15,

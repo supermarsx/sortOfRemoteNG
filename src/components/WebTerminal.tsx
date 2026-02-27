@@ -4,6 +4,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, StopCircle, Trash2, X, Play, Search, Filter, Unplug, Fingerprint, Shield, ShieldCheck, ShieldAlert, Key } from "lucide-react";
+import { TOTPConfig } from '../types/settings';
+import RDPTotpPanel from './rdp/RDPTotpPanel';
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../types/connection";
@@ -80,6 +82,8 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
   const [sshTrustPrompt, setSshTrustPrompt] = useState<TrustVerifyResult | null>(null);
   const sshTrustResolveRef = useRef<((accept: boolean) => void) | null>(null);
   const keyPopupRef = useRef<HTMLDivElement>(null);
+  const totpBtnRef = useRef<HTMLDivElement>(null);
+  const [showTotpPanel, setShowTotpPanel] = useState(false);
 
   const sessionRef = useRef(session);
   const connectionRef = useRef(connection);
@@ -1233,6 +1237,13 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     }
   }, [isSsh]);
 
+  const totpConfigs = connection?.totpConfigs ?? [];
+  const handleUpdateTotpConfigs = useCallback((configs: TOTPConfig[]) => {
+    if (connection) {
+      dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, totpConfigs: configs } });
+    }
+  }, [connection, dispatch]);
+
   const statusToneClass = useMemo(() => {
     switch (status) {
       case "connected":
@@ -1341,6 +1352,34 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                 </div>
               </>
             )}
+            {/* 2FA / TOTP */}
+            <div className="relative" ref={totpBtnRef}>
+              <button
+                type="button"
+                onClick={() => setShowTotpPanel(!showTotpPanel)}
+                className={`app-bar-button p-2 relative ${showTotpPanel ? 'text-blue-400' : ''}`}
+                data-tooltip="2FA Codes"
+                aria-label="2FA Codes"
+              >
+                <Shield size={14} />
+                {totpConfigs.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                    {totpConfigs.length}
+                  </span>
+                )}
+              </button>
+              {showTotpPanel && (
+                <RDPTotpPanel
+                  configs={totpConfigs}
+                  onUpdate={handleUpdateTotpConfigs}
+                  onClose={() => setShowTotpPanel(false)}
+                  defaultIssuer={settings.totpIssuer}
+                  defaultDigits={settings.totpDigits}
+                  defaultPeriod={settings.totpPeriod}
+                  defaultAlgorithm={settings.totpAlgorithm}
+                />
+              )}
+            </div>
             <button
               onClick={clearTerminal}
               className="app-bar-button p-2"

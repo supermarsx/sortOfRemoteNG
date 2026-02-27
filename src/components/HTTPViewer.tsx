@@ -18,7 +18,10 @@ import {
   X,
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
+import { TOTPConfig } from '../types/settings';
 import { useConnections } from '../contexts/useConnections';
+import { useSettings } from '../contexts/SettingsContext';
+import RDPTotpPanel from './rdp/RDPTotpPanel';
 
 interface HTTPViewerProps {
   session: ConnectionSession;
@@ -43,7 +46,8 @@ type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error';
  * - Consistent authentication state
  */
 export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
-  const { state } = useConnections();
+  const { state, dispatch } = useConnections();
+  const { settings } = useSettings();
   const connection = state.connections.find((c) => c.id === session.connectionId);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -57,6 +61,15 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [isSecure, setIsSecure] = useState(false);
+  const [showTotpPanel, setShowTotpPanel] = useState(false);
+  const totpBtnRef = useRef<HTMLDivElement>(null);
+
+  const totpConfigs = connection?.totpConfigs ?? [];
+  const handleUpdateTotpConfigs = useCallback((configs: TOTPConfig[]) => {
+    if (connection) {
+      dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, totpConfigs: configs } });
+    }
+  }, [connection, dispatch]);
 
   // Build the target URL from connection config
   const buildTargetUrl = useCallback(() => {
@@ -338,6 +351,33 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
           >
             <ExternalLink className="w-4 h-4" />
           </button>
+          {/* 2FA / TOTP */}
+          <div className="relative" ref={totpBtnRef}>
+            <button
+              type="button"
+              onClick={() => setShowTotpPanel(!showTotpPanel)}
+              className={`p-1.5 rounded relative ${showTotpPanel ? 'text-blue-400 bg-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+              title="2FA Codes"
+            >
+              <Shield className="w-4 h-4" />
+              {totpConfigs.length > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                  {totpConfigs.length}
+                </span>
+              )}
+            </button>
+            {showTotpPanel && (
+              <RDPTotpPanel
+                configs={totpConfigs}
+                onUpdate={handleUpdateTotpConfigs}
+                onClose={() => setShowTotpPanel(false)}
+                defaultIssuer={settings.totpIssuer}
+                defaultDigits={settings.totpDigits}
+                defaultPeriod={settings.totpPeriod}
+                defaultAlgorithm={settings.totpAlgorithm}
+              />
+            )}
+          </div>
           <button
             onClick={() => setShowSettings(!showSettings)}
             className={`p-1.5 rounded ${showSettings ? 'text-blue-400 bg-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}

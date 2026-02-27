@@ -211,13 +211,15 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
         </div>
 
         <div className="flex items-center space-x-1">
-          <button
-            onClick={() => setRdpPanelOpen(prev => !prev)}
-            className={`app-bar-button p-2 ${rdpPanelOpen ? 'text-indigo-400' : ''}`}
-            title="RDP Sessions Panel"
-          >
-            <Cpu size={14} />
-          </button>
+          {appSettings.showRdpSessionsIcon && (
+            <button
+              onClick={() => setRdpPanelOpen(prev => !prev)}
+              className={`app-bar-button p-2 ${rdpPanelOpen ? 'text-indigo-400' : ''}`}
+              title="RDP Sessions"
+            >
+              <Cpu size={14} />
+            </button>
+          )}
           {appSettings.showInternalProxyIcon && (
             <button
               onClick={() => setShowInternalProxyManager(true)}

@@ -143,6 +143,7 @@ export interface GlobalSettings {
   showBackupStatusIcon: boolean;      // Separate backup icon
   showCloudSyncStatusIcon: boolean;   // Separate cloud sync icon
   showErrorLogBar: boolean;
+  showRdpSessionsIcon: boolean;
 
   // Auto Lock
   autoLock: AutoLockConfig;

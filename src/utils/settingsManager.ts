@@ -88,6 +88,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showBackupStatusIcon: true,         // Separate backup icon
   showCloudSyncStatusIcon: true,      // Separate cloud sync icon
   showErrorLogBar: false,
+  showRdpSessionsIcon: true,
 
   autoLock: {
     enabled: false,

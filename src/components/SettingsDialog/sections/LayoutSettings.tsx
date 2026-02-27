@@ -29,6 +29,7 @@ import {
   HardDrive,
   Cloud,
   RefreshCw,
+  Cpu,
 } from "lucide-react";
 
 interface LayoutSettingsProps {
@@ -356,6 +357,16 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             />
             <RefreshCw className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400" />
             <span className="text-gray-300 group-hover:text-white">Sync &amp; Backup (Combined)</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showRdpSessionsIcon}
+              onChange={(e) => updateSettings({ showRdpSessionsIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Cpu className="w-4 h-4 text-indigo-500 group-hover:text-indigo-400" />
+            <span className="text-gray-300 group-hover:text-white">RDP Sessions</span>
           </label>
         </div>
       </div>
