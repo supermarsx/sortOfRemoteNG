@@ -268,7 +268,7 @@ export const MySQLClient: React.FC<MySQLClientProps> = ({ session }) => {
                 {/* Data Table */}
                 {results.rows.length > 0 && (
                   <div className="flex-1 overflow-auto">
-                    <table className="w-full">
+                    <table className="sor-data-table w-full">
                       <thead className="bg-[var(--color-border)] sticky top-0">
                         <tr>
                           {results.columns.map((column, index) => (

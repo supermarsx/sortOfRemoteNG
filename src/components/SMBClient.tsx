@@ -214,7 +214,7 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
             <RefreshCw size={24} className="animate-spin text-[var(--color-textSecondary)]" />
           </div>
         ) : (
-          <table className="w-full">
+          <table className="sor-data-table w-full">
             <thead className="bg-[var(--color-border)] sticky top-0">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">

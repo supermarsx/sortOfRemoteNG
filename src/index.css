@@ -605,3 +605,14 @@ body {
 .sor-data-table tbody {
   border-top: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
 }
+
+/* Toolbar anchored status popups */
+.sor-toolbar-popup {
+  position: fixed;
+  width: 24rem;
+  z-index: 9999;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 20px 48px rgb(0 0 0 / 0.35);
+}

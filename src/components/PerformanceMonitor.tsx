@@ -596,7 +596,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
             </h3>
             <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="sor-data-table w-full">
                   <thead className="bg-[var(--color-surfaceHover)]">
                     <tr>
                       <th className="px-4 py-3 text-left text-[10px] font-medium text-[var(--color-textMuted)] uppercase tracking-wider">

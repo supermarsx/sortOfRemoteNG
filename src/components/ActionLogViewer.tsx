@@ -385,7 +385,7 @@ export const ActionLogViewer: React.FC<ActionLogViewerProps> = ({
 
         {/* Log Table */}
         <div className="flex-1 overflow-y-auto min-h-0">
-          <table className="w-full">
+          <table className="sor-data-table w-full">
             <thead className="bg-[var(--color-border)] sticky top-0">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider">

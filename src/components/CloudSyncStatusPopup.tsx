@@ -267,8 +267,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
               el.style.left = `${left}px`;
             }
           }}
-          className="fixed w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl"
-          style={{ zIndex: 9999 }}
+          className="sor-toolbar-popup"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
