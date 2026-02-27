@@ -93,6 +93,9 @@ interface AppDialogsProps {
   collectionManager: CollectionManager;
 }
 
+const getToolMode = (settings: GlobalSettings, key: keyof import('../types/settings').ToolDisplayModes): 'popup' | 'panel' =>
+  settings.toolDisplayModes?.[key] ?? 'popup';
+
 export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
   const {
     appSettings,
@@ -238,30 +241,40 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         initialTab={importExportInitialTab}
       />
 
-      <PerformanceMonitor
-        isOpen={showPerformanceMonitor}
-        onClose={() => setShowPerformanceMonitor(false)}
-      />
+      {getToolMode(appSettings, 'performanceMonitor') === 'popup' && (
+        <PerformanceMonitor
+          isOpen={showPerformanceMonitor}
+          onClose={() => setShowPerformanceMonitor(false)}
+        />
+      )}
 
-      <ActionLogViewer
-        isOpen={showActionLog}
-        onClose={() => setShowActionLog(false)}
-      />
+      {getToolMode(appSettings, 'actionLog') === 'popup' && (
+        <ActionLogViewer
+          isOpen={showActionLog}
+          onClose={() => setShowActionLog(false)}
+        />
+      )}
 
-      <ShortcutManagerDialog
-        isOpen={showShortcutManager}
-        onClose={() => setShowShortcutManager(false)}
-      />
+      {getToolMode(appSettings, 'shortcutManager') === 'popup' && (
+        <ShortcutManagerDialog
+          isOpen={showShortcutManager}
+          onClose={() => setShowShortcutManager(false)}
+        />
+      )}
 
-      <ProxyChainMenu
-        isOpen={showProxyMenu}
-        onClose={() => setShowProxyMenu(false)}
-      />
+      {getToolMode(appSettings, 'proxyChain') === 'popup' && (
+        <ProxyChainMenu
+          isOpen={showProxyMenu}
+          onClose={() => setShowProxyMenu(false)}
+        />
+      )}
 
-      <InternalProxyManager
-        isOpen={showInternalProxyManager}
-        onClose={() => setShowInternalProxyManager(false)}
-      />
+      {getToolMode(appSettings, 'internalProxy') === 'popup' && (
+        <InternalProxyManager
+          isOpen={showInternalProxyManager}
+          onClose={() => setShowInternalProxyManager(false)}
+        />
+      )}
 
       {rdpPanelOpen && appSettings.rdpSessionDisplayMode === 'popup' && (
         <div
@@ -291,27 +304,37 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         </div>
       )}
 
-      <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
+      {getToolMode(appSettings, 'wol') === 'popup' && (
+        <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
+      )}
 
-      <BulkSSHCommander
-        isOpen={showBulkSSH}
-        onClose={() => setShowBulkSSH(false)}
-      />
+      {getToolMode(appSettings, 'bulkSsh') === 'popup' && (
+        <BulkSSHCommander
+          isOpen={showBulkSSH}
+          onClose={() => setShowBulkSSH(false)}
+        />
+      )}
 
-      <ScriptManager
-        isOpen={showScriptManager}
-        onClose={() => setShowScriptManager(false)}
-      />
+      {getToolMode(appSettings, 'scriptManager') === 'popup' && (
+        <ScriptManager
+          isOpen={showScriptManager}
+          onClose={() => setShowScriptManager(false)}
+        />
+      )}
 
-      <MacroManager
-        isOpen={showMacroManager}
-        onClose={() => setShowMacroManager(false)}
-      />
+      {getToolMode(appSettings, 'macroManager') === 'popup' && (
+        <MacroManager
+          isOpen={showMacroManager}
+          onClose={() => setShowMacroManager(false)}
+        />
+      )}
 
-      <RecordingManager
-        isOpen={showRecordingManager}
-        onClose={() => setShowRecordingManager(false)}
-      />
+      {getToolMode(appSettings, 'recordingManager') === 'popup' && (
+        <RecordingManager
+          isOpen={showRecordingManager}
+          onClose={() => setShowRecordingManager(false)}
+        />
+      )}
 
       {showDiagnostics && diagnosticsConnection && (
         <ConnectionDiagnostics

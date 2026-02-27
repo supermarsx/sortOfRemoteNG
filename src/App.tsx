@@ -28,6 +28,7 @@ import { TabLayoutManager } from "./components/TabLayoutManager";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SplashScreen } from "./components/SplashScreen";
 import { RdpSessionPanel } from "./components/RdpSessionPanel";
+import { ToolPanel } from "./components/ToolPanel";
 import { generateId } from "./utils/id";
 import { useTooltipSystem } from "./hooks/useTooltipSystem";
 import { useWindowControls } from "./hooks/useWindowControls";
@@ -1120,6 +1121,23 @@ const AppContent: React.FC = () => {
             />
           </div>
         )}
+
+        {/* Tool panels (non-popup mode) */}
+        <ToolPanel
+          appSettings={appSettings}
+          tools={{
+            recordingManager: { isOpen: showRecordingManager, close: () => setShowRecordingManager(false) },
+            macroManager: { isOpen: showMacroManager, close: () => setShowMacroManager(false) },
+            scriptManager: { isOpen: showScriptManager, close: () => setShowScriptManager(false) },
+            performanceMonitor: { isOpen: showPerformanceMonitor, close: () => setShowPerformanceMonitor(false) },
+            actionLog: { isOpen: showActionLog, close: () => setShowActionLog(false) },
+            shortcutManager: { isOpen: showShortcutManager, close: () => setShowShortcutManager(false) },
+            bulkSsh: { isOpen: showBulkSSH, close: () => setShowBulkSSH(false) },
+            internalProxy: { isOpen: showInternalProxyManager, close: () => setShowInternalProxyManager(false) },
+            proxyChain: { isOpen: showProxyMenu, close: () => setShowProxyMenu(false) },
+            wol: { isOpen: showWol, close: () => setShowWol(false) },
+          }}
+        />
 
         {renderSidebar("right")}
       </div>

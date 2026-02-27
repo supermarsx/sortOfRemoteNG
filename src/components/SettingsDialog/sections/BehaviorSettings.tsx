@@ -29,7 +29,9 @@ import {
   MonitorUp,
   Compass,
   ArrowUpDown,
+  PanelRight,
 } from "lucide-react";
+import type { ToolDisplayMode, ToolDisplayModes } from "../../../types/settings";
 
 interface BehaviorSettingsProps {
   settings: GlobalSettings;
@@ -735,8 +737,64 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
           />
         </Card>
       </div>
+
+      {/* Tool Display Modes */}
+      <div className="space-y-4">
+        <SectionHeader
+          icon={<PanelRight className="w-4 h-4" />}
+          title="Tool Display Modes"
+        />
+        <p className="text-[10px] text-gray-500 -mt-2">
+          Choose whether each tool opens as a popup overlay or a side panel.
+        </p>
+        <Card>
+          {([
+            { key: 'recordingManager', label: 'Recording Manager' },
+            { key: 'macroManager', label: 'Macro Manager' },
+            { key: 'scriptManager', label: 'Script Manager' },
+            { key: 'performanceMonitor', label: 'Performance Monitor' },
+            { key: 'actionLog', label: 'Action Log' },
+            { key: 'shortcutManager', label: 'Shortcut Manager' },
+            { key: 'bulkSsh', label: 'Bulk SSH Commander' },
+            { key: 'internalProxy', label: 'Internal Proxy Manager' },
+            { key: 'proxyChain', label: 'Proxy Chain Menu' },
+            { key: 'wol', label: 'Wake-on-LAN' },
+          ] as { key: keyof ToolDisplayModes; label: string }[]).map(tool => (
+            <SelectRow
+              key={tool.key}
+              label={tool.label}
+              value={(settings.toolDisplayModes?.[tool.key] ?? 'popup')}
+              options={[
+                { value: 'popup', label: 'Popup' },
+                { value: 'panel', label: 'Panel' },
+              ]}
+              onChange={(v) => updateSettings({
+                toolDisplayModes: {
+                  ...defaultToolDisplayModes,
+                  ...settings.toolDisplayModes,
+                  [tool.key]: v as ToolDisplayMode,
+                },
+              })}
+              settingKey={`toolDisplayModes.${tool.key}`}
+            />
+          ))}
+        </Card>
+      </div>
     </div>
   );
+};
+
+const defaultToolDisplayModes: ToolDisplayModes = {
+  recordingManager: 'popup',
+  macroManager: 'popup',
+  scriptManager: 'popup',
+  performanceMonitor: 'popup',
+  actionLog: 'popup',
+  shortcutManager: 'popup',
+  bulkSsh: 'popup',
+  internalProxy: 'popup',
+  proxyChain: 'popup',
+  wol: 'popup',
 };
 
 export default BehaviorSettings;

@@ -69,6 +69,18 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'mouseBackAction', label: 'Mouse Back Button', description: 'Action for mouse back button', tags: ['mouse', 'back', 'button', 'navigate'], section: 'behavior', sectionLabel: 'Behavior' },
   { key: 'mouseForwardAction', label: 'Mouse Forward Button', description: 'Action for mouse forward button', tags: ['mouse', 'forward', 'button', 'navigate'], section: 'behavior', sectionLabel: 'Behavior' },
 
+  // Tool Display Modes
+  { key: 'toolDisplayModes.recordingManager', label: 'Recording Manager Display', description: 'Open Recording Manager as popup or panel', tags: ['recording', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.macroManager', label: 'Macro Manager Display', description: 'Open Macro Manager as popup or panel', tags: ['macro', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.scriptManager', label: 'Script Manager Display', description: 'Open Script Manager as popup or panel', tags: ['script', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.performanceMonitor', label: 'Performance Monitor Display', description: 'Open Performance Monitor as popup or panel', tags: ['performance', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.actionLog', label: 'Action Log Display', description: 'Open Action Log as popup or panel', tags: ['action', 'log', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.shortcutManager', label: 'Shortcut Manager Display', description: 'Open Shortcut Manager as popup or panel', tags: ['shortcut', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.bulkSsh', label: 'Bulk SSH Display', description: 'Open Bulk SSH Commander as popup or panel', tags: ['bulk', 'ssh', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.internalProxy', label: 'Internal Proxy Display', description: 'Open Internal Proxy Manager as popup or panel', tags: ['proxy', 'internal', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.proxyChain', label: 'Proxy Chain Display', description: 'Open Proxy Chain Menu as popup or panel', tags: ['proxy', 'chain', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.wol', label: 'Wake-on-LAN Display', description: 'Open Wake-on-LAN as popup or panel', tags: ['wol', 'wake', 'lan', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+
   // ─── Startup ────────────────────────────────────────────────────
   { key: 'startMinimized', label: 'Start Minimized', description: 'Start application minimized', tags: ['minimize', 'hidden', 'tray'], section: 'startup', sectionLabel: 'Startup' },
   { key: 'startMaximized', label: 'Start Maximized', description: 'Start application maximized', tags: ['maximize', 'fullscreen'], section: 'startup', sectionLabel: 'Startup' },
