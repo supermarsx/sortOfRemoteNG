@@ -71,6 +71,7 @@ Consolidate reusable UI structure and CSS for:
   - `SyncBackupStatusBar`
   - `BackupStatusPopup`
   - `CloudSyncStatusPopup`
+  - `WebBrowser` folder dropdown (bookmark folder children)
   - `CertificateInfoPopup`
   - `rdp/RDPTotpPanel` (anchored mode)
   - `rdp/RDPClientHeader` (send keys + host info)
@@ -97,6 +98,7 @@ Consolidate reusable UI structure and CSS for:
   - `tests/ColorTagManager.test.tsx`
   - `tests/MenuSurface.test.tsx`
   - `tests/PopoverSurface.test.tsx`
+  - `tests/ToolbarPopover.test.tsx`
   - `tests/StatusPopovers.test.tsx`
   - `tests/CertificateInfoPopup.test.tsx`
   - `tests/RDPClientHeader.test.tsx`
@@ -118,7 +120,6 @@ Consolidate reusable UI structure and CSS for:
 
 ### Context/Action Menus (Different Primitive)
 
-- `WebBrowser` folder dropdown (`absolute`) is still custom and can move to a shared anchored popover if needed.
 - Any future right-click menus should use `MenuSurface` by default.
 
 ### CSS Consolidation Follow-Up

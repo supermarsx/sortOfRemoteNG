@@ -50,6 +50,7 @@ import { TrustWarningDialog } from "./TrustWarningDialog";
 import { InputDialog } from "./InputDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { MenuSurface } from "./ui/MenuSurface";
+import { PopoverSurface } from "./ui/PopoverSurface";
 import { useWebRecorder } from "../hooks/useWebRecorder";
 import { useDisplayRecorder } from "../hooks/useDisplayRecorder";
 import * as macroService from "../utils/macroService";
@@ -176,6 +177,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
   // Open subfolder names
   const [openFolders, setOpenFolders] = useState<Set<number>>(new Set());
+  const folderButtonRefs = useRef<Record<number, HTMLButtonElement | null>>({});
 
   // ---- Proxy health / keepalive ----
   const [proxyAlive, setProxyAlive] = useState(true);
@@ -208,6 +210,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     },
     [connection, dispatch],
   );
+
+  const closeFolderDropdown = useCallback((idx: number) => {
+    setOpenFolders((prev) => {
+      if (!prev.has(idx)) return prev;
+      const next = new Set(prev);
+      next.delete(idx);
+      return next;
+    });
+  }, []);
 
   // ------------------------------------------------------------------
   // TLS certificate trust helpers
@@ -1449,6 +1460,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             return (
               <div key={`folder-${idx}`} className="relative flex-shrink-0">
                 <button
+                  ref={(node) => {
+                    folderButtonRefs.current[idx] = node;
+                  }}
                   onClick={() =>
                     setOpenFolders((prev) => {
                       const next = new Set(prev);
@@ -1484,49 +1498,63 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 </button>
                 {/* Folder dropdown */}
                 {isOpen && (
-                  <div className="absolute left-0 top-full mt-0.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded shadow-xl z-40 min-w-[140px] py-0.5">
-                    {bm.children.length === 0 && (
-                      <span className="text-xs text-[var(--color-textMuted,var(--color-textSecondary))] italic px-3 py-1 block select-none">
-                        Empty folder
-                      </span>
-                    )}
-                    {bm.children.map((child, cIdx) => {
-                      if (child.isFolder) return null; // no nested folders rendered
-                      const childUrl = baseUrl + child.path;
-                      const isActive = child.path === currentPath;
-                      return (
-                        <button
-                          key={cIdx}
-                          onClick={() => {
-                            setCurrentUrl(childUrl);
-                            setInputUrl(childUrl);
-                            setLoadError("");
-                            navigateToUrl(childUrl);
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setBmBarContextMenu(null);
-                            setBmContextMenu({
-                              x: e.clientX,
-                              y: e.clientY,
-                              idx,
-                              folderPath: [cIdx],
-                            });
-                          }}
-                          className={`w-full text-left px-3 py-1 text-xs hover:bg-[var(--color-surfaceHover)] transition-colors whitespace-nowrap flex items-center gap-1 ${
-                            isActive
-                              ? "text-yellow-400 font-semibold"
-                              : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                          }`}
-                          title={child.path}
-                        >
-                          {isActive && <Star size={9} fill="currentColor" />}
-                          {child.name}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <PopoverSurface
+                    isOpen={isOpen}
+                    onClose={() => closeFolderDropdown(idx)}
+                    anchorRef={{ current: folderButtonRefs.current[idx] }}
+                    align="start"
+                    offset={2}
+                    className="min-w-[140px] rounded border border-[var(--color-border)] bg-[var(--color-surface)] py-0.5 shadow-xl"
+                    dataTestId={`web-browser-folder-popover-${idx}`}
+                  >
+                    <div className="sor-option-list">
+                      {bm.children.length === 0 && (
+                        <span className="block select-none px-3 py-1 text-xs italic text-[var(--color-textMuted,var(--color-textSecondary))]">
+                          Empty folder
+                        </span>
+                      )}
+                      {bm.children.map((child, cIdx) => {
+                        if (child.isFolder) return null; // no nested folders rendered
+                        const childUrl = baseUrl + child.path;
+                        const isActive = child.path === currentPath;
+                        return (
+                          <button
+                            key={cIdx}
+                            onClick={() => {
+                              setCurrentUrl(childUrl);
+                              setInputUrl(childUrl);
+                              setLoadError("");
+                              navigateToUrl(childUrl);
+                            }}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setBmBarContextMenu(null);
+                              setBmContextMenu({
+                                x: e.clientX,
+                                y: e.clientY,
+                                idx,
+                                folderPath: [cIdx],
+                              });
+                            }}
+                            className={`sor-option-item whitespace-nowrap py-1 text-xs hover:bg-[var(--color-surfaceHover)] ${
+                              isActive
+                                ? "font-semibold text-yellow-400"
+                                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                            }`}
+                            title={child.path}
+                          >
+                            <span className="flex items-center gap-1">
+                              {isActive && (
+                                <Star size={9} fill="currentColor" />
+                              )}
+                              {child.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </PopoverSurface>
                 )}
               </div>
             );
