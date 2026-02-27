@@ -959,6 +959,82 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           </>
         )}
       </div>
+
+      {/* ─── 2FA / TOTP Defaults ──────────────────────────────────── */}
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div>
+          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Shield className="w-4 h-4 text-blue-400" />
+            2FA / TOTP Defaults
+          </h4>
+          <p className="text-xs text-gray-500 mt-1">
+            Default values used when adding new TOTP configurations to connections.
+          </p>
+        </div>
+
+        <label className="flex items-center space-x-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={settings.totpEnabled}
+            onChange={(e) => updateSettings({ totpEnabled: e.target.checked })}
+            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          />
+          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            Enable TOTP functionality
+          </span>
+        </label>
+
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Default Issuer</label>
+          <input
+            type="text"
+            value={settings.totpIssuer}
+            onChange={(e) => updateSettings({ totpIssuer: e.target.value })}
+            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            placeholder="sortOfRemoteNG"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Default Digits</label>
+            <select
+              value={settings.totpDigits}
+              onChange={(e) => updateSettings({ totpDigits: parseInt(e.target.value) })}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            >
+              <option value={6}>6 digits</option>
+              <option value={8}>8 digits</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Default Period</label>
+            <select
+              value={settings.totpPeriod}
+              onChange={(e) => updateSettings({ totpPeriod: parseInt(e.target.value) })}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            >
+              <option value={15}>15 seconds</option>
+              <option value={30}>30 seconds</option>
+              <option value={60}>60 seconds</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Default Algorithm</label>
+            <select
+              value={settings.totpAlgorithm}
+              onChange={(e) => updateSettings({ totpAlgorithm: e.target.value as 'sha1' | 'sha256' | 'sha512' })}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            >
+              <option value="sha1">SHA-1 (MS Authenticator)</option>
+              <option value="sha256">SHA-256</option>
+              <option value="sha512">SHA-512</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

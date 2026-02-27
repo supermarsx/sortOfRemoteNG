@@ -387,6 +387,27 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     });
   }, []);
 
+  const handleAutoTypeTOTP = useCallback((code: string) => {
+    if (!isConnected || !sessionIdRef.current) return;
+    const digitScancodes: Record<string, number> = {
+      '0': 0x0B, '1': 0x02, '2': 0x03, '3': 0x04, '4': 0x05,
+      '5': 0x06, '6': 0x07, '7': 0x08, '8': 0x09, '9': 0x0A,
+    };
+    const events: Record<string, unknown>[] = [];
+    for (const ch of code) {
+      const sc = digitScancodes[ch];
+      if (sc !== undefined) {
+        events.push({ type: 'KeyboardKey', scancode: sc, pressed: true, extended: false });
+        events.push({ type: 'KeyboardKey', scancode: sc, pressed: false, extended: false });
+      }
+    }
+    if (events.length > 0) {
+      invoke('rdp_send_input', { sessionId: sessionIdRef.current, events }).catch(e => {
+        debugLog(`Auto-type TOTP error: ${e}`);
+      });
+    }
+  }, [isConnected]);
+
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
 
@@ -1220,6 +1241,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
             dispatch({ type: 'UPDATE_CONNECTION', payload: { ...connection, totpConfigs: configs } });
           }
         }}
+        handleAutoTypeTOTP={handleAutoTypeTOTP}
+        totpDefaultIssuer={settings.totpIssuer}
+        totpDefaultDigits={settings.totpDigits}
+        totpDefaultPeriod={settings.totpPeriod}
+        totpDefaultAlgorithm={settings.totpAlgorithm}
       />
 
       {showSettings && (

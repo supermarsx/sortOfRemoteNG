@@ -84,7 +84,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
   security: [
     'encryptionAlgorithm', 'blockCipherMode', 'keyDerivationIterations',
     'autoBenchmarkIterations', 'benchmarkTimeSeconds', 'totpEnabled',
-    'totpIssuer', 'totpDigits', 'totpPeriod',
+    'totpIssuer', 'totpDigits', 'totpPeriod', 'totpAlgorithm',
   ],
   trust: [
     'tlsTrustPolicy', 'sshTrustPolicy', 'showTrustIdentityInfo', 'certExpiryWarningDays',
@@ -178,6 +178,7 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
   totpIssuer: 'sortOfRemoteNG',
   totpDigits: 6,
   totpPeriod: 30,
+  totpAlgorithm: 'sha1' as const,
   tabGrouping: 'none',
   hostnameOverride: false,
   defaultTabLayout: 'tabs',

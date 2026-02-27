@@ -1076,6 +1076,21 @@ fn run_active_session_loop(
                     }
                     attached_channel = Some(new_channel);
                     viewer_detached = false;
+
+                    // Emit "connected" status so the frontend knows the session is live
+                    let _ = app_handle.emit(
+                        "rdp://status",
+                        RdpStatusEvent {
+                            session_id: session_id.to_string(),
+                            status: "connected".to_string(),
+                            message: format!(
+                                "Reattached ({}x{})",
+                                est.desktop_width, est.desktop_height
+                            ),
+                            desktop_width: Some(est.desktop_width),
+                            desktop_height: Some(est.desktop_height),
+                        },
+                    );
                 }
                 Ok(RdpCommand::DetachViewer) => {
                     log::info!("RDP session {session_id}: viewer detached");

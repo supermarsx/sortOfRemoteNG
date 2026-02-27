@@ -69,6 +69,11 @@ interface RDPClientHeaderProps {
   onRenameConnection: (name: string) => void;
   totpConfigs?: TOTPConfig[];
   onUpdateTotpConfigs: (configs: TOTPConfig[]) => void;
+  handleAutoTypeTOTP?: (code: string) => void;
+  totpDefaultIssuer?: string;
+  totpDefaultDigits?: number;
+  totpDefaultPeriod?: number;
+  totpDefaultAlgorithm?: string;
 }
 
 function formatDuration(sec: number): string {
@@ -120,6 +125,11 @@ export default function RDPClientHeader({
   onRenameConnection,
   totpConfigs,
   onUpdateTotpConfigs,
+  handleAutoTypeTOTP,
+  totpDefaultIssuer,
+  totpDefaultDigits,
+  totpDefaultPeriod,
+  totpDefaultAlgorithm,
 }: RDPClientHeaderProps) {
   const [showSendKeys, setShowSendKeys] = useState(false);
   const [showHostInfo, setShowHostInfo] = useState(false);
@@ -418,6 +428,11 @@ export default function RDPClientHeader({
               configs={configs}
               onUpdate={onUpdateTotpConfigs}
               onClose={() => setShowTotpPanel(false)}
+              onAutoType={handleAutoTypeTOTP}
+              defaultIssuer={totpDefaultIssuer}
+              defaultDigits={totpDefaultDigits}
+              defaultPeriod={totpDefaultPeriod}
+              defaultAlgorithm={totpDefaultAlgorithm}
             />
           )}
         </div>

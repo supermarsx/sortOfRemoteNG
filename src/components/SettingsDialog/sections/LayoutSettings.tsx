@@ -24,7 +24,11 @@ import {
   FileCode,
   Power,
   ScreenShare,
-  ArrowUpDown
+  ArrowUpDown,
+  Bug,
+  HardDrive,
+  Cloud,
+  RefreshCw,
 } from "lucide-react";
 
 interface LayoutSettingsProps {
@@ -312,6 +316,46 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             />
             <FileCode className="w-4 h-4 text-purple-500 group-hover:text-purple-400" />
             <span className="text-gray-300 group-hover:text-white">Script Manager</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showErrorLogBar}
+              onChange={(e) => updateSettings({ showErrorLogBar: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Bug className="w-4 h-4 text-red-500 group-hover:text-red-400" />
+            <span className="text-gray-300 group-hover:text-white">Error Log Bar</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showBackupStatusIcon}
+              onChange={(e) => updateSettings({ showBackupStatusIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <HardDrive className="w-4 h-4 text-blue-500 group-hover:text-blue-400" />
+            <span className="text-gray-300 group-hover:text-white">Backup Status</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showCloudSyncStatusIcon}
+              onChange={(e) => updateSettings({ showCloudSyncStatusIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Cloud className="w-4 h-4 text-cyan-500 group-hover:text-cyan-400" />
+            <span className="text-gray-300 group-hover:text-white">Cloud Sync Status</span>
+          </label>
+          <label className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.showSyncBackupStatusIcon}
+              onChange={(e) => updateSettings({ showSyncBackupStatusIcon: e.target.checked })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <RefreshCw className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400" />
+            <span className="text-gray-300 group-hover:text-white">Sync &amp; Backup (Combined)</span>
           </label>
         </div>
       </div>

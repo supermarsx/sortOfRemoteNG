@@ -87,6 +87,7 @@ const defaultSettings: GlobalSettings = {
   totpIssuer: 'sortOfRemoteNG',
   totpDigits: 6,
   totpPeriod: 30,
+  totpAlgorithm: 'sha1',
   globalProxy: {
     type: 'http',
     host: '',

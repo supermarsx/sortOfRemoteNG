@@ -168,6 +168,7 @@ export interface GlobalSettings {
   totpIssuer: string;
   totpDigits: number;
   totpPeriod: number;
+  totpAlgorithm: 'sha1' | 'sha256' | 'sha512';
 
   // Proxy Settings
   globalProxy?: ProxyConfig;
@@ -583,6 +584,8 @@ export interface TOTPConfig {
   digits: number;
   period: number;
   algorithm: "sha1" | "sha256" | "sha512";
+  backupCodes?: string[];
+  createdAt?: string;
 }
 
 export interface BackendConfig {
