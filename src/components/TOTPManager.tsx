@@ -6,7 +6,6 @@ import React, {
   useRef,
 } from "react";
 import {
-  X,
   Plus,
   Trash2,
   Copy,
@@ -18,6 +17,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { TOTPConfig } from "../types/settings";
 import { TOTPService } from "../utils/totpService";
+import { Modal, ModalHeader, ModalBody } from "./ui/Modal";
 import QRCode from "qrcode";
 
 interface TOTPManagerProps {
@@ -126,249 +126,244 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
     return period - (now % period);
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      closeOnEscape={false}
+      panelClassName="max-w-4xl mx-4 max-h-[90vh]"
+      contentClassName="overflow-hidden"
+      dataTestId="totp-manager-modal"
     >
-      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden border border-[var(--color-border)]">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+      <ModalHeader
+        onClose={onClose}
+        title={
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-500/20 rounded-lg">
               <Shield size={18} className="text-blue-500" />
             </div>
-            <h2 className="text-lg font-semibold text-[var(--color-text)]">TOTP Authenticator</h2>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+              TOTP Authenticator
+            </h2>
           </div>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 text-sm"
-            >
-              <Plus size={14} />
-              <span>Add TOTP</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        </div>
+        }
+        actions={
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 text-sm"
+          >
+            <Plus size={14} />
+            <span>Add TOTP</span>
+          </button>
+        }
+      />
 
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
-          {/* Add TOTP Form */}
-          {showAddForm && (
-            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-                Add New TOTP Configuration
-              </h3>
+      <ModalBody className="p-6">
+        {/* Add TOTP Form */}
+        {showAddForm && (
+          <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+            <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+              Add New TOTP Configuration
+            </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Account Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={newConfig.account || ""}
-                    onChange={(e) =>
-                      setNewConfig({ ...newConfig, account: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                    placeholder="user@example.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Issuer
-                  </label>
-                  <input
-                    type="text"
-                    value={newConfig.issuer || ""}
-                    onChange={(e) =>
-                      setNewConfig({ ...newConfig, issuer: e.target.value })
-                    }
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                    placeholder="sortOfRemoteNG"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Digits
-                  </label>
-                  <select
-                    value={newConfig.digits || 6}
-                    onChange={(e) =>
-                      setNewConfig({
-                        ...newConfig,
-                        digits: parseInt(e.target.value),
-                      })
-                    }
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                  >
-                    <option value={6}>6 digits</option>
-                    <option value={8}>8 digits</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Period (seconds)
-                  </label>
-                  <select
-                    value={newConfig.period || 30}
-                    onChange={(e) =>
-                      setNewConfig({
-                        ...newConfig,
-                        period: parseInt(e.target.value),
-                      })
-                    }
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                  >
-                    <option value={15}>15 seconds</option>
-                    <option value={30}>30 seconds</option>
-                    <option value={60}>60 seconds</option>
-                  </select>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                  Account Name *
+                </label>
+                <input
+                  type="text"
+                  value={newConfig.account || ""}
+                  onChange={(e) =>
+                    setNewConfig({ ...newConfig, account: e.target.value })
+                  }
+                  className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                  placeholder="user@example.com"
+                />
               </div>
 
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={() => setShowAddForm(false)}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+              <div>
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                  Issuer
+                </label>
+                <input
+                  type="text"
+                  value={newConfig.issuer || ""}
+                  onChange={(e) =>
+                    setNewConfig({ ...newConfig, issuer: e.target.value })
+                  }
+                  className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                  placeholder="sortOfRemoteNG"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                  Digits
+                </label>
+                <select
+                  value={newConfig.digits || 6}
+                  onChange={(e) =>
+                    setNewConfig({
+                      ...newConfig,
+                      digits: parseInt(e.target.value),
+                    })
+                  }
+                  className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                 >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddConfig}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
+                  <option value={6}>6 digits</option>
+                  <option value={8}>8 digits</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                  Period (seconds)
+                </label>
+                <select
+                  value={newConfig.period || 30}
+                  onChange={(e) =>
+                    setNewConfig({
+                      ...newConfig,
+                      period: parseInt(e.target.value),
+                    })
+                  }
+                  className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                 >
-                  Add TOTP
-                </button>
+                  <option value={15}>15 seconds</option>
+                  <option value={30}>30 seconds</option>
+                  <option value={60}>60 seconds</option>
+                </select>
               </div>
             </div>
-          )}
 
-          {/* QR Code Display */}
-          {qrCodeUrl && (
-            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6 text-center">
-              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-                Scan QR Code
-              </h3>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={qrCodeUrl}
-                alt="TOTP QR Code"
-                className="mx-auto mb-4"
-              />
-              <p className="text-[var(--color-textSecondary)] text-sm">
-                Scan this QR code with your authenticator app (Google
-                Authenticator, Aegis, etc.)
-              </p>
+            <div className="flex justify-end space-x-3">
               <button
-                onClick={() => setQrCodeUrl("")}
-                className="mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+                onClick={() => setShowAddForm(false)}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
               >
-                Close
+                Cancel
+              </button>
+              <button
+                onClick={handleAddConfig}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
+              >
+                Add TOTP
               </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* TOTP Configurations */}
-          <div className="space-y-4">
-            {totpConfigs.length === 0 ? (
-              <div className="text-center py-12">
-                <Key size={48} className="mx-auto text-gray-500 mb-4" />
-                <p className="text-[var(--color-textSecondary)]">No TOTP configurations found</p>
-                <p className="text-gray-500 text-sm">
-                  Add a new TOTP configuration to get started
-                </p>
-              </div>
-            ) : (
-              totpConfigs.map((config) => (
-                <div key={config.secret} className="bg-[var(--color-border)] rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <Shield size={16} className="text-blue-400" />
-                        <span className="text-[var(--color-text)] font-medium">
-                          {config.account}
-                        </span>
-                        <span className="text-[var(--color-textSecondary)] text-sm">
-                          ({config.issuer})
-                        </span>
-                      </div>
+        {/* QR Code Display */}
+        {qrCodeUrl && (
+          <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6 text-center">
+            <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+              Scan QR Code
+            </h3>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={qrCodeUrl} alt="TOTP QR Code" className="mx-auto mb-4" />
+            <p className="text-[var(--color-textSecondary)] text-sm">
+              Scan this QR code with your authenticator app (Google
+              Authenticator, Aegis, etc.)
+            </p>
+            <button
+              onClick={() => setQrCodeUrl("")}
+              className="mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        )}
 
-                      <div className="flex items-center space-x-4">
-                        <div className="bg-[var(--color-surface)] rounded-lg px-4 py-2 font-mono text-2xl text-green-400">
-                          {currentCodes[config.secret] || "------"}
-                        </div>
+        {/* TOTP Configurations */}
+        <div className="sor-selection-list">
+          {totpConfigs.length === 0 ? (
+            <div className="text-center py-12">
+              <Key size={48} className="mx-auto text-gray-500 mb-4" />
+              <p className="text-[var(--color-textSecondary)]">
+                No TOTP configurations found
+              </p>
+              <p className="text-gray-500 text-sm">
+                Add a new TOTP configuration to get started
+              </p>
+            </div>
+          ) : (
+            totpConfigs.map((config) => (
+              <div
+                key={config.secret}
+                className="sor-selection-row cursor-default bg-[var(--color-border)] p-4"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 mb-2">
+                    <Shield size={16} className="text-blue-400" />
+                    <span className="text-[var(--color-text)] font-medium">
+                      {config.account}
+                    </span>
+                    <span className="text-[var(--color-textSecondary)] text-sm">
+                      ({config.issuer})
+                    </span>
+                  </div>
 
-                        <div className="text-sm text-[var(--color-textSecondary)]">
-                          <div>Expires in: {getTimeRemaining()}s</div>
-                          <div>
-                            {config.digits} digits • {config.period}s period
-                          </div>
-                        </div>
-                      </div>
+                  <div className="flex items-center space-x-4">
+                    <div className="bg-[var(--color-surface)] rounded-lg px-4 py-2 font-mono text-2xl text-green-400">
+                      {currentCodes[config.secret] || "------"}
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() =>
-                          copyToClipboard(currentCodes[config.secret] || "")
-                        }
-                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title="Copy code"
-                      >
-                        <Copy size={16} />
-                      </button>
-
-                      <button
-                        onClick={() => copyToClipboard(config.secret)}
-                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title="Copy secret"
-                      >
-                        <Key size={16} />
-                      </button>
-
-                      <button
-                        onClick={() => handleDeleteConfig(config.secret)}
-                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-red-400 hover:text-red-300"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                    <div className="text-sm text-[var(--color-textSecondary)]">
+                      <div>Expires in: {getTimeRemaining()}s</div>
+                      <div>
+                        {config.digits} digits • {config.period}s period
+                      </div>
                     </div>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
 
-          {/* Instructions */}
-          <div className="mt-8 bg-blue-900/20 border border-blue-700 rounded-lg p-4">
-            <h3 className="text-blue-300 font-medium mb-2">How to use TOTP</h3>
-            <ul className="text-blue-200 text-sm space-y-1">
-              <li>
-                • Install an authenticator app like Google Authenticator or
-                Aegis
-              </li>
-              <li>• Scan the QR code or manually enter the secret key</li>
-              <li>• Use the generated codes for two-factor authentication</li>
-              <li>• Codes refresh every 30 seconds (or configured period)</li>
-              <li>• Keep your secret keys secure and backed up</li>
-            </ul>
-          </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() =>
+                      copyToClipboard(currentCodes[config.secret] || "")
+                    }
+                    className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                    title="Copy code"
+                  >
+                    <Copy size={16} />
+                  </button>
+
+                  <button
+                    onClick={() => copyToClipboard(config.secret)}
+                    className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                    title="Copy secret"
+                  >
+                    <Key size={16} />
+                  </button>
+
+                  <button
+                    onClick={() => handleDeleteConfig(config.secret)}
+                    className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-red-400 hover:text-red-300"
+                    title="Delete"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
-      </div>
-    </div>
+
+        {/* Instructions */}
+        <div className="mt-8 bg-blue-900/20 border border-blue-700 rounded-lg p-4">
+          <h3 className="text-blue-300 font-medium mb-2">How to use TOTP</h3>
+          <ul className="text-blue-200 text-sm space-y-1">
+            <li>
+              • Install an authenticator app like Google Authenticator or Aegis
+            </li>
+            <li>• Scan the QR code or manually enter the secret key</li>
+            <li>• Use the generated codes for two-factor authentication</li>
+            <li>• Codes refresh every 30 seconds (or configured period)</li>
+            <li>• Keep your secret keys secure and backed up</li>
+          </ul>
+        </div>
+      </ModalBody>
+    </Modal>
   );
 };

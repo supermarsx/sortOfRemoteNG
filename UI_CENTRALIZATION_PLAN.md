@@ -33,6 +33,9 @@ Centralize repeated UI structure and styling for:
   - `src/components/ConnectionDiagnostics.tsx`
   - `src/components/RdpSessionManager.tsx`
   - `src/components/ImportExport/index.tsx`
+  - `src/components/FileTransferManager.tsx`
+  - `src/components/SSHKeyManager.tsx`
+  - `src/components/TOTPManager.tsx`
 - New centralized CSS primitives added in `src/index.css`:
   - option chips/cards: `.sor-option-chip`, `.sor-option-chip-active`, `.sor-option-card`
   - chip lists: `.sor-chip-list`, `.sor-chip-button`
@@ -49,20 +52,22 @@ Centralize repeated UI structure and styling for:
   - Connection Diagnostics uses shared modal scaffold and centralized action chip styling.
   - RDP Session Manager uses shared modal scaffold and selection-list primitives.
   - Import/Export dialog uses shared modal scaffold while preserving embedded mode behavior.
+  - File Transfer Manager uses shared modal scaffold (including nested upload dialog) and shared selection-list primitives for transfer queue rows.
+  - SSH Key Manager uses shared modal scaffold with centralized header/body/footer primitives.
+  - TOTP Manager uses shared modal scaffold and selection-list primitives for config rows.
 - Overlay reduction:
-  - manual `fixed inset-0` popup wrappers reduced from ~30 to 18 component files in this pass.
+  - manual `fixed inset-0` popup wrappers reduced from ~30 to 15 component files in this pass.
 
 ## Remaining Migration Backlog
 
 ### Dialog Priority (next)
 
 - `SettingsDialog/index.tsx` and section sub-dialogs
-- `FileTransferManager`
-- `SSHKeyManager`
+- `ConnectionTree` nested editors
+- `connectionEditor/HTTPOptions.tsx`
 
 ### Dialog Priority (follow-up)
 
-- `TOTPManager`
 - `TrustWarningDialog`
 - nested editor dialogs in `ConnectionTree` and `connectionEditor/HTTPOptions.tsx`
 - proxy editors (`ProxyProfileEditor`, `ProxyChainEditor`, `ProxyChainMenu`, `SSHTunnelDialog`)
@@ -74,14 +79,15 @@ Centralize repeated UI structure and styling for:
   - `CollectionSelector` dense lists
   - `ImportExport` previews
   - `FileTransferManager` transfer queues
+  - `TOTPManager` configuration rows
 - Standardize button chip groups in settings and tool headers.
 - Keep semantic color overrides local, but always layer over shared structural classes.
 
 ## Next Execution Wave (Immediate)
 
-1. Migrate `FileTransferManager` and `SSHKeyManager` to `Modal` while preserving current `data-testid` and keyboard flows.
+1. Migrate settings-related nested dialogs to `Modal` while preserving existing close semantics.
 2. Apply `.sor-tab-trigger` in at least two additional manager-style components to complete tab-header standardization.
-3. Expand `.sor-selection-*` adoption to dense operational lists (`CollectionSelector` list rows, `FileTransferManager` queues).
+3. Expand `.sor-selection-*` adoption to dense operational lists in `ConnectionTree` and settings sub-dialogs.
 4. Re-run lint and targeted test set after each batch to catch regressions early.
 
 ## Execution Plan
