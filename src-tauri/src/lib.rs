@@ -535,6 +535,7 @@ pub fn run() {
         rdp::diagnose_rdp_connection,
         rdp::rdp_sign_out,
         rdp::rdp_force_reboot,
+        rdp::reconnect_rdp_session,
         rdp::rdp_get_thumbnail,
         rdp::rdp_save_screenshot,
         rdp::get_rdp_logs,

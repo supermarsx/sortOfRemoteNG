@@ -85,6 +85,12 @@ pub struct RdpSession {
     pub server_cert_fingerprint: Option<String>,
     /// Whether a frontend viewer is currently attached (receiving frames).
     pub viewer_attached: bool,
+    /// Number of automatic reconnections performed during this session's lifetime.
+    #[serde(default)]
+    pub reconnect_count: u32,
+    /// Whether the session is currently attempting to reconnect.
+    #[serde(default)]
+    pub reconnecting: bool,
 }
 
 pub(crate) enum RdpCommand {
@@ -98,6 +104,9 @@ pub(crate) enum RdpCommand {
     SignOut,
     /// Force reboot the remote machine.
     ForceReboot,
+    /// Trigger a manual reconnect — drops the current TCP connection and
+    /// re-establishes TCP + TLS + CredSSP from scratch.
+    Reconnect,
 }
 
 pub(crate) struct RdpActiveConnection {
@@ -105,6 +114,10 @@ pub(crate) struct RdpActiveConnection {
     pub(crate) cmd_tx: mpsc::UnboundedSender<RdpCommand>,
     pub(crate) stats: Arc<RdpSessionStats>,
     pub(crate) _handle: tokio::task::JoinHandle<()>,
+    /// Cached password for automatic reconnection (CredSSP re-auth).
+    pub(crate) cached_password: String,
+    /// Cached domain for automatic reconnection.
+    pub(crate) cached_domain: Option<String>,
 }
 
 /// A single RDP log entry stored in the ring buffer.

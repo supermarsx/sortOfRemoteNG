@@ -122,6 +122,8 @@ pub async fn connect_rdp(
         desktop_height: actual_height,
         server_cert_fingerprint: None,
         viewer_attached: true,
+        reconnect_count: 0,
+        reconnecting: false,
     };
 
     let stats = Arc::new(RdpSessionStats::new());
@@ -168,6 +170,8 @@ pub async fn connect_rdp(
         cmd_tx,
         stats,
         _handle: handle,
+        cached_password: password.clone(),
+        cached_domain: domain.clone(),
     };
 
     let mut service = state.lock().await;
@@ -332,6 +336,41 @@ pub async fn rdp_force_reboot(
         .send(RdpCommand::ForceReboot)
         .map_err(|_| "Session command channel closed".to_string())?;
     service.push_log("warn", format!("Force reboot requested for session {session_id}"), Some(session_id));
+    Ok(())
+}
+
+/// Trigger a manual reconnect for an active RDP session.
+/// The session drops its current TCP connection and re-establishes from scratch.
+#[tauri::command]
+pub async fn reconnect_rdp_session(
+    state: tauri::State<'_, RdpServiceState>,
+    session_id: Option<String>,
+    connection_id: Option<String>,
+) -> Result<(), String> {
+    let service = state.lock().await;
+
+    let target_id = if let Some(ref sid) = session_id {
+        Some(sid.clone())
+    } else if let Some(ref cid) = connection_id {
+        service
+            .connections
+            .values()
+            .find(|c| c.session.connection_id.as_deref() == Some(cid.as_str()))
+            .map(|c| c.session.id.clone())
+    } else {
+        None
+    };
+
+    let id = target_id.ok_or("No session_id or connection_id provided")?;
+    let conn = service
+        .connections
+        .get(&id)
+        .ok_or_else(|| format!("Session {id} not found"))?;
+
+    conn.cmd_tx
+        .send(RdpCommand::Reconnect)
+        .map_err(|_| "Session command channel closed".to_string())?;
+
     Ok(())
 }
 

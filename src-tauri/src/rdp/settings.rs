@@ -150,6 +150,9 @@ pub struct RdpAdvancedPayload {
     pub full_frame_sync_interval: Option<u64>,
     pub max_consecutive_errors: Option<u32>,
     pub stats_interval_secs: Option<u64>,
+    pub reconnect_base_delay_secs: Option<u64>,
+    pub reconnect_max_delay_secs: Option<u64>,
+    pub reconnect_on_network_loss: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -357,6 +360,10 @@ pub(crate) struct ResolvedSettings {
     pub(crate) tcp_keep_alive_interval: Duration,
     pub(crate) tcp_recv_buffer_size: u32,
     pub(crate) tcp_send_buffer_size: u32,
+    // Reconnection
+    pub(crate) reconnect_base_delay: Duration,
+    pub(crate) reconnect_max_delay: Duration,
+    pub(crate) reconnect_on_network_loss: bool,
 }
 
 impl ResolvedSettings {
@@ -523,6 +530,16 @@ impl ResolvedSettings {
             ),
             tcp_recv_buffer_size: payload.tcp.as_ref().and_then(|t| t.recv_buffer_size).unwrap_or(256 * 1024),
             tcp_send_buffer_size: payload.tcp.as_ref().and_then(|t| t.send_buffer_size).unwrap_or(256 * 1024),
+            // Reconnection
+            reconnect_base_delay: Duration::from_secs(
+                adv.and_then(|a| a.reconnect_base_delay_secs).unwrap_or(3),
+            ),
+            reconnect_max_delay: Duration::from_secs(
+                adv.and_then(|a| a.reconnect_max_delay_secs).unwrap_or(30),
+            ),
+            reconnect_on_network_loss: adv
+                .and_then(|a| a.reconnect_on_network_loss)
+                .unwrap_or(true),
         }
     }
 }

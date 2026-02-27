@@ -110,6 +110,37 @@ pub(crate) fn handle_reactivation<S: std::io::Read + std::io::Write>(
     }
 }
 
+// ---- Session loop exit reason ----
+
+/// Why the active session loop stopped.  Used to decide whether to reconnect.
+enum SessionLoopExit {
+    /// User/system requested shutdown — session is done for good.
+    Shutdown,
+    /// Server closed the connection cleanly (EOF or Terminate PDU).
+    ServerClosed,
+    /// Network error (TCP dropped) — eligible for seamless reconnect.
+    NetworkError(String),
+    /// Unrecoverable protocol error.
+    ProtocolError(String),
+    /// Manual reconnect requested via RdpCommand::Reconnect.
+    ReconnectRequested,
+}
+
+// ---- Established session state ----
+
+/// State returned by `establish_rdp_connection` — everything needed
+/// to run the active session loop.
+struct EstablishedSession {
+    tls_framed: Framed<native_tls::TlsStream<TcpStream>>,
+    active_stage: ActiveStage,
+    image: DecodedImage,
+    desktop_width: u16,
+    desktop_height: u16,
+    compositor: Option<Box<dyn FrameCompositor>>,
+    active_render_backend: String,
+    gfx_frame_rx: Option<std::sync::mpsc::Receiver<crate::gfx::processor::GfxFrame>>,
+}
+
 // ---- Blocking RDP session runner ----
 
 pub(crate) fn run_rdp_session(
@@ -389,14 +420,6 @@ fn run_rdp_session_auto_detect(
     }
 
     // -- Phase 2: try minimal/fallback Config --
-    // If we saw a BasicSettingsExchange failure the protocol negotiation
-    // itself worked -- the server just didn't like something in the GCC
-    // Conference Create data.  Re-try with a stripped-down Config that
-    // mirrors what the diagnostic probe sends (which often succeeds).
-    //
-    // We also vary the color depth: some servers reject 24-bit but accept
-    // 32 or 16.  The order [32, 16] covers the vast majority of cases.
-
     if had_basic_settings_failure {
         log::info!(
             "RDP session {session_id}: auto-detect Phase 2 -- retrying with minimal Config \
@@ -431,27 +454,20 @@ fn run_rdp_session_auto_detect(
                     },
                 );
 
-                // Build minimal settings -- keep the protocol flags but strip
-                // everything that might upset the GCC exchange.
                 let mut fallback_settings = ResolvedSettings {
                     enable_tls: *tls,
                     enable_credssp: *credssp,
                     allow_hybrid_ex: *hybrid_ex,
-                    // Minimal display -- matches diagnostic probe
                     width: 1024,
                     height: 768,
                     desktop_scale_factor: 100,
                     lossy_compression: false,
                     color_depth: depth,
-                    // Strip load-balancing / routing
                     load_balancing_info: String::new(),
                     use_routing_token: false,
-                    // No autologon, no audio
                     autologon: false,
                     enable_audio_playback: false,
-                    // No SSPI restrictions
                     sspi_package_list: String::new(),
-                    // Keep everything else from the user settings
                     ..settings.clone()
                 };
                 if !credssp {
@@ -479,10 +495,7 @@ fn run_rdp_session_auto_detect(
                     Ok(()) => {
                         log::info!(
                             "RDP session {session_id}: auto-detect fallback succeeded on attempt {} \
-                             (tls={} credssp={} hybrid_ex={} color={}bpp, minimal config). \
-                             The server rejected the original Config at BasicSettingsExchange -- \
-                             one of: color_depth, load_balancing_info, sspi_package_list, autologon, \
-                             audio, desktop_size, or lossy_compression was the culprit.",
+                             (tls={} credssp={} hybrid_ex={} color={}bpp, minimal config).",
                             attempt_num, tls, credssp, hybrid_ex, depth
                         );
                         return Ok(());
@@ -525,8 +538,13 @@ fn run_rdp_session_auto_detect(
     }))
 }
 
+// ---- Layer 1: Connection Establishment ----
+
+/// Establish a fresh RDP connection: TCP → TLS → CredSSP/NLA → capability
+/// exchange → active session state.  Returns an `EstablishedSession` ready
+/// for the main PDU loop, or an error.
 #[allow(clippy::too_many_arguments)]
-fn run_rdp_session_inner(
+fn establish_rdp_connection(
     session_id: &str,
     host: &str,
     port: u16,
@@ -540,14 +558,10 @@ fn run_rdp_session_inner(
     cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
     cached_http_client: Option<Arc<reqwest::blocking::Client>>,
     frame_store: &SharedFrameStoreState,
-    frame_channel: &Channel<InvokeResponseBody>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<EstablishedSession, Box<dyn std::error::Error + Send + Sync>> {
     let conn_start = Instant::now();
 
     // -- 0. Pre-flight shutdown check --
-    // If an evict/disconnect was sent before we even started, bail out.
-    // Return a sentinel error so auto-detect does NOT interpret this as
-    // "connected successfully".
     match cmd_rx.try_recv() {
         Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
             log::info!("RDP session {session_id}: shutdown before connect (pre-flight)");
@@ -603,7 +617,6 @@ fn run_rdp_session_inner(
         let sock = Socket::from(tcp_stream.try_clone()?);
         let _ = sock.set_recv_buffer_size(settings.tcp_recv_buffer_size as usize);
         let _ = sock.set_send_buffer_size(settings.tcp_send_buffer_size as usize);
-        // Detach without closing -- the TcpStream still owns the fd
         std::mem::forget(sock);
     }
     let tcp_ms = t_tcp.elapsed().as_millis();
@@ -624,24 +637,13 @@ fn run_rdp_session_inner(
 
     stats.set_phase("configuring");
 
-    // Normalise domain / username.  The user may type "DOMAIN\user",
-    // "user@domain.com", or just "user" with the domain in a separate
-    // field.  We need:
-    //   * `actual_user`   -- the bare account name (no domain prefix/suffix)
-    //   * `actual_domain` -- the NetBIOS or DNS domain, or None
     let (actual_user, actual_domain): (String, Option<String>) = if domain.is_some() {
-        // Domain was provided explicitly -- use as-is
         (username.to_string(), domain.map(String::from))
     } else if let Some((d, u)) = username.split_once('\\') {
-        // Down-level logon name: DOMAIN\user
         (u.to_string(), Some(d.to_string()))
     } else if let Some((u, d)) = username.rsplit_once('@') {
-        // UPN: user@domain.com
         (u.to_string(), Some(d.to_string()))
     } else {
-        // No domain anywhere -- try the target hostname as a last resort.
-        // For a domain-joined server the user MUST provide a domain, but
-        // for a standalone/workgroup server the hostname usually works.
         (username.to_string(), None)
     };
 
@@ -680,18 +682,14 @@ fn run_rdp_session_inner(
         platform: ironrdp::pdu::rdp::capability_sets::MajorPlatformType::WINDOWS,
         hardware_id: None,
         request_data: {
-            // Load-balancing info: routing token or cookie
             let lb = &settings.load_balancing_info;
             if !lb.is_empty() {
                 if settings.use_routing_token {
-                    // Routing token for RDP load balancers (Session Broker, etc.)
                     Some(ironrdp::pdu::nego::NegoRequestData::routing_token(lb.clone()))
                 } else {
-                    // Cookie format (standard mstshash cookie)
                     Some(ironrdp::pdu::nego::NegoRequestData::cookie(lb.clone()))
                 }
             } else if settings.use_vm_id && !settings.vm_id.is_empty() {
-                // For Hyper-V: use VM ID as a routing token
                 Some(ironrdp::pdu::nego::NegoRequestData::cookie(
                     format!("vmconnect/{}", settings.vm_id),
                 ))
@@ -708,10 +706,8 @@ fn run_rdp_session_inner(
         pointer_software_rendering: settings.pointer_software_rendering,
         allow_hybrid_ex: settings.allow_hybrid_ex,
         sspi_package_list: {
-            // Build SSPI package list from individual flags, or use explicit override
             let explicit = &settings.sspi_package_list;
             if explicit.is_empty() {
-                // Derive from enable flags
                 let mut excludes = Vec::new();
                 if !settings.ntlm_enabled {
                     excludes.push("!ntlm");
@@ -723,7 +719,7 @@ fn run_rdp_session_inner(
                     excludes.push("!pku2u");
                 }
                 if excludes.is_empty() {
-                    None // no restrictions
+                    None
                 } else {
                     Some(excludes.join(","))
                 }
@@ -865,7 +861,6 @@ fn run_rdp_session_inner(
         None,
     )
     .map_err(|e| {
-        // Walk the error source chain to surface the real underlying cause
         let mut msg = format!("connect_finalize failed: {e}");
         let mut source: Option<&dyn std::error::Error> = std::error::Error::source(&e);
         while let Some(cause) = source {
@@ -873,14 +868,11 @@ fn run_rdp_session_inner(
             source = std::error::Error::source(cause);
         }
 
-        // Include timing context
         let fail_auth_ms = t_auth.elapsed().as_millis();
         msg.push_str(&format!(
             " [phase=BasicSettingsExchange, auth_elapsed={fail_auth_ms}ms, tcp={tcp_ms}ms, tls={tls_ms}ms, negotiate={negotiate_ms}ms]"
         ));
 
-        // Detect the very common "server closed after CredSSP" pattern and
-        // provide actionable guidance.
         if msg.contains("10054") || msg.contains("forcibly closed") {
             msg.push_str(
                 ".  NOTE: the server closed the connection after NLA/CredSSP authentication. \
@@ -918,8 +910,8 @@ fn run_rdp_session_inner(
 
     // -- 6. Enter active session --
 
-    let mut desktop_width = connection_result.desktop_size.width;
-    let mut desktop_height = connection_result.desktop_size.height;
+    let desktop_width = connection_result.desktop_size.width;
+    let desktop_height = connection_result.desktop_size.height;
 
     stats.set_phase("active");
     log::info!("RDP session {session_id}: connected! Desktop: {desktop_width}x{desktop_height}");
@@ -935,8 +927,8 @@ fn run_rdp_session_inner(
         },
     );
 
-    let mut image = DecodedImage::new(PixelFormat::RgbA32, desktop_width, desktop_height);
-    let mut active_stage = ActiveStage::new(connection_result);
+    let image = DecodedImage::new(PixelFormat::RgbA32, desktop_width, desktop_height);
+    let _active_stage = ActiveStage::new(connection_result);
 
     // Initialize the shared framebuffer slot for this session
     frame_store.init(session_id, desktop_width, desktop_height);
@@ -967,13 +959,6 @@ fn run_rdp_session_inner(
         }
     }
 
-    // Viewer channel management for session persistence.
-    // Initially we use the channel provided at connect time.  AttachViewer
-    // replaces it with a new channel (viewer reconnection).  DetachViewer
-    // disables frame streaming (session continues headless).
-    let mut viewer_detached = false;
-    let mut attached_channel: Option<Channel<InvokeResponseBody>> = None;
-
     // Notify the frontend which render backend is actually active
     let _ = app_handle.emit(
         "rdp://render-backend",
@@ -983,10 +968,39 @@ fn run_rdp_session_inner(
         }),
     );
 
-    // Set a short read timeout so we can interleave input handling
-    set_read_timeout_on_framed(&tls_framed, Some(settings.read_timeout));
+    Ok(EstablishedSession {
+        tls_framed,
+        active_stage: _active_stage,
+        image,
+        desktop_width,
+        desktop_height,
+        compositor,
+        active_render_backend,
+        gfx_frame_rx,
+    })
+}
 
-    // -- 7. Main session loop --
+// ---- Layer 2: Active Session Loop ----
+
+/// Run the main PDU processing loop.  Returns a `SessionLoopExit` indicating
+/// why the loop stopped (shutdown, server closed, network error, etc.).
+#[allow(clippy::too_many_arguments)]
+fn run_active_session_loop(
+    session_id: &str,
+    est: &mut EstablishedSession,
+    settings: &ResolvedSettings,
+    app_handle: &AppHandle,
+    cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    stats: &Arc<RdpSessionStats>,
+    frame_store: &SharedFrameStoreState,
+    frame_channel: &Channel<InvokeResponseBody>,
+) -> SessionLoopExit {
+    // Viewer channel management for session persistence.
+    let mut viewer_detached = false;
+    let mut attached_channel: Option<Channel<InvokeResponseBody>> = None;
+
+    // Set a short read timeout so we can interleave input handling
+    set_read_timeout_on_framed(&est.tls_framed, Some(settings.read_timeout));
 
     let mut last_stats_emit = Instant::now();
     let stats_interval = settings.stats_interval;
@@ -998,18 +1012,15 @@ fn run_rdp_session_inner(
     // Frame batching state
     let frame_batching = settings.frame_batching;
     let batch_interval = settings.frame_batch_interval;
-    let mut dirty_regions: Vec<(u16, u16, u16, u16)> = Vec::new(); // (x, y, w, h)
+    let mut dirty_regions: Vec<(u16, u16, u16, u16)> = Vec::new();
     let mut last_frame_emit = Instant::now();
 
-    // -- Reusable buffers (avoid per-iteration allocations) --
+    // Reusable buffers
     let mut merged_inputs: Vec<FastPathInputEvent> = Vec::new();
     let mut batch_dirty_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
     let mut gfx_frames: Vec<crate::gfx::processor::GfxFrame> = Vec::new();
 
-    // -- Adaptive read timeout --
-    // When frames are actively streaming the server sends data frequently,
-    // so we only need a short timeout to interleave input handling (16 ms).
-    // When idle for a while we scale up to 50 ms to cut wakeups by ~3x.
+    // Adaptive read timeout
     let timeout_active = Duration::from_millis(4);
     let timeout_idle = Duration::from_millis(50);
     let idle_threshold = Duration::from_millis(500);
@@ -1018,22 +1029,20 @@ fn run_rdp_session_inner(
 
     loop {
         // - Drain ALL pending commands (input coalescing) -
-        // Reading only one command per iteration adds up to read_timeout
-        // latency per buffered event.  Draining all pending commands and
-        // merging input events keeps the cursor responsive.
         merged_inputs.clear();
         let mut should_break = false;
+        let mut should_reconnect = false;
         loop {
             match cmd_rx.try_recv() {
                 Ok(RdpCommand::Shutdown) => {
                     log::info!("RDP session {session_id}: shutdown requested");
-                    if let Ok(outputs) = active_stage.graceful_shutdown() {
+                    if let Ok(outputs) = est.active_stage.graceful_shutdown() {
                         for output in outputs {
                             if let ActiveStageOutput::ResponseFrame(data) = output {
                                 stats
                                     .bytes_sent
                                     .fetch_add(data.len() as u64, Ordering::Relaxed);
-                                let _ = tls_framed.write_all(&data);
+                                let _ = est.tls_framed.write_all(&data);
                             }
                         }
                     }
@@ -1048,8 +1057,7 @@ fn run_rdp_session_inner(
                         "RDP session {session_id}: viewer attached (new frame channel)"
                     );
                     // Send the full current framebuffer so the reattached viewer
-                    // immediately sees the screen instead of waiting for the next
-                    // incremental update.
+                    // immediately sees the screen
                     {
                         let slots = frame_store.slots.read().unwrap();
                         if let Some(slot) = slots.get(session_id) {
@@ -1057,7 +1065,6 @@ fn run_rdp_session_inner(
                             let h = slot.height;
                             let total = 8 + slot.data.len();
                             let mut payload = Vec::with_capacity(total);
-                            // 8-byte header: x=0, y=0, w=desktop_width, h=desktop_height
                             payload.extend_from_slice(&0u16.to_le_bytes());
                             payload.extend_from_slice(&0u16.to_le_bytes());
                             payload.extend_from_slice(&w.to_le_bytes());
@@ -1073,32 +1080,29 @@ fn run_rdp_session_inner(
                     log::info!("RDP session {session_id}: viewer detached");
                     viewer_detached = true;
                 }
+                Ok(RdpCommand::Reconnect) => {
+                    log::info!("RDP session {session_id}: manual reconnect requested");
+                    should_reconnect = true;
+                    break;
+                }
                 Ok(RdpCommand::SignOut) => {
                     log::info!("RDP session {session_id}: sign-out requested");
-                    // Inject Ctrl+Alt+Del key sequence to invoke security screen,
-                    // then inject Enter to select "Sign Out" (the default action).
-                    // We use the RDP Shutdown Request PDU if possible, otherwise
-                    // inject the shutdown command via Win+R -> "logoff" -> Enter.
                     use ironrdp::pdu::input::fast_path::KeyboardFlags;
-                    // Win+R to open Run dialog
-                    let win_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B); // Left Windows key
-                    let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13); // R key
+                    let win_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
+                    let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13);
                     let r_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x13);
                     let win_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE | KeyboardFlags::EXTENDED, 0x5B);
                     merged_inputs.extend([win_press, r_press, r_release, win_release]);
-                    // Type "logoff" followed by Enter (queued as unicode events)
                     for ch in "logoff".encode_utf16() {
                         merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::empty(), ch));
                         merged_inputs.push(FastPathInputEvent::UnicodeKeyboardEvent(KeyboardFlags::RELEASE, ch));
                     }
-                    // Small delay effect: input is batched and sent together, then Enter
                     let enter_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x1C);
                     let enter_release = FastPathInputEvent::KeyboardEvent(KeyboardFlags::RELEASE, 0x1C);
                     merged_inputs.extend([enter_press, enter_release]);
                 }
                 Ok(RdpCommand::ForceReboot) => {
                     log::info!("RDP session {session_id}: force reboot requested");
-                    // Inject Win+R -> "shutdown /r /t 0 /f" -> Enter
                     use ironrdp::pdu::input::fast_path::KeyboardFlags;
                     let win_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::EXTENDED, 0x5B);
                     let r_press = FastPathInputEvent::KeyboardEvent(KeyboardFlags::empty(), 0x13);
@@ -1123,8 +1127,12 @@ fn run_rdp_session_inner(
         }
 
         if should_break {
-            break;
+            return SessionLoopExit::Shutdown;
         }
+        if should_reconnect {
+            return SessionLoopExit::ReconnectRequested;
+        }
+
         // Send all coalesced input in a single batch
         if !merged_inputs.is_empty() {
             stats
@@ -1135,22 +1143,28 @@ fn run_rdp_session_inner(
             } else {
                 frame_channel // will fail silently on send
             };
-            match active_stage.process_fastpath_input(&mut image, &merged_inputs) {
+            match est.active_stage.process_fastpath_input(&mut est.image, &merged_inputs) {
                 Ok(outputs) => {
                     if !viewer_detached {
-                        process_outputs(
+                        if let Err(e) = process_outputs(
                             session_id,
                             &outputs,
-                            &mut tls_framed,
-                            &image,
-                            desktop_width,
-                            desktop_height,
+                            &mut est.tls_framed,
+                            &est.image,
+                            est.desktop_width,
+                            est.desktop_height,
                             app_handle,
                             stats,
                             full_frame_sync_interval,
                             frame_store,
                             active_ch,
-                        )?;
+                        ) {
+                            let err_str = format!("{e}");
+                            if is_network_error_str(&err_str) {
+                                return SessionLoopExit::NetworkError(err_str);
+                            }
+                            return SessionLoopExit::ProtocolError(err_str);
+                        }
                     } else {
                         // Still need to send ResponseFrames even when viewer is detached
                         for output in &outputs {
@@ -1159,8 +1173,8 @@ fn run_rdp_session_inner(
                                     .bytes_sent
                                     .fetch_add(data.len() as u64, Ordering::Relaxed);
                                 stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
-                                if let Err(e) = tls_framed.write_all(data) {
-                                    return Err(format!("Write failed: {e}").into());
+                                if let Err(e) = est.tls_framed.write_all(data) {
+                                    return SessionLoopExit::NetworkError(format!("Write failed: {e}"));
                                 }
                             }
                         }
@@ -1183,11 +1197,10 @@ fn run_rdp_session_inner(
             merge_dirty_regions(&mut dirty_regions);
             if !viewer_detached {
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                if let Some(ref mut comp) = compositor {
-                    // Compositor: update regions and flush composed frame
+                if let Some(ref mut comp) = est.compositor {
                     for &(x, y, w, h) in &dirty_regions {
                         if w > 0 && h > 0 {
-                            comp.update_region(image.data(), desktop_width, x, y, w, h);
+                            comp.update_region(est.image.data(), est.desktop_width, x, y, w, h);
                         }
                     }
                     if let Some(frame) = comp.flush() {
@@ -1195,7 +1208,7 @@ fn run_rdp_session_inner(
                     }
                 } else {
                     push_multi_rect_via_channel(
-                        image.data(), desktop_width, &dirty_regions, active_ch,
+                        est.image.data(), est.desktop_width, &dirty_regions, active_ch,
                     );
                 }
             }
@@ -1204,13 +1217,11 @@ fn run_rdp_session_inner(
         }
 
         // - Drain GFX decoded frames (H.264 via RDPGFX DVC) -
-        if let Some(ref gfx_rx) = gfx_frame_rx {
-            // Collect all pending frames, then apply frame-skip if too many.
+        if let Some(ref gfx_rx) = est.gfx_frame_rx {
             gfx_frames.clear();
             while let Ok(gfx_frame) = gfx_rx.try_recv() {
                 gfx_frames.push(gfx_frame);
             }
-            // Frame skip: if decoder is faster than frontend, keep only the last 2.
             if gfx_frames.len() > 4 {
                 let skip = gfx_frames.len() - 2;
                 gfx_frames.drain(..skip);
@@ -1221,15 +1232,9 @@ fn run_rdp_session_inner(
                     continue;
                 }
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                // Prepend 8-byte header in-place instead of copying the entire
-                // RGBA buffer (~8 MB at 1080p) into a new allocation.
                 let mut payload = gfx_frame.rgba;
-                payload.reserve(8); // may no-op if spare capacity exists
-                // Shift existing data right by 8 bytes to make room for header.
+                payload.reserve(8);
                 let len = payload.len();
-                // SAFETY: we just reserved 8 extra bytes; the copy stays within
-                // the allocated region.  set_len is safe because all bytes in
-                // [0..len] were valid and [len..len+8] are now written below.
                 unsafe {
                     payload.set_len(len + 8);
                     std::ptr::copy(payload.as_ptr(), payload.as_mut_ptr().add(8), len);
@@ -1243,10 +1248,6 @@ fn run_rdp_session_inner(
         }
 
         // - Read and process PDUs -
-        // Process PDUs that are already buffered (zero I/O cost) plus the
-        // first blocking read.  No timeout toggling, no input interleaving
-        // inside the loop -- keep it simple and fast.  Input is handled at
-        // the top of the outer loop (every ~16ms).
         batch_dirty_rects.clear();
         let mut batch_had_graphics = false;
         let mut batch_should_reactivate: Option<Box<ironrdp::connector::connection_activation::ConnectionActivationSequence>> = None;
@@ -1254,21 +1255,17 @@ fn run_rdp_session_inner(
         let mut pdus_this_batch: u32 = 0;
 
         loop {
-            // Inner PDU drain loop -- only continues when the internal BytesMut
-            // buffer already contains data (no I/O, sub-microsecond per call).
-            // The first iteration uses the normal read timeout; subsequent
-            // iterations skip entirely if the buffer is empty.
-            if pdus_this_batch > 0 && tls_framed.peek().is_empty() {
-                break; // No buffered data -> flush and return to outer loop
+            if pdus_this_batch > 0 && est.tls_framed.peek().is_empty() {
+                break;
             }
 
-            match tls_framed.read_pdu() {
+            match est.tls_framed.read_pdu() {
                 Ok((action, payload)) => {
                     consecutive_errors = 0;
                     last_data_received = Instant::now();
                     if current_timeout != timeout_active {
                         current_timeout = timeout_active;
-                        set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
+                        set_read_timeout_on_framed(&est.tls_framed, Some(current_timeout));
                     }
                     let payload_len = payload.len() as u64;
                     stats
@@ -1276,7 +1273,7 @@ fn run_rdp_session_inner(
                         .fetch_add(payload_len, Ordering::Relaxed);
                     stats.pdus_received.fetch_add(1, Ordering::Relaxed);
 
-                    match active_stage.process(&mut image, action, payload.as_ref()) {
+                    match est.active_stage.process(&mut est.image, action, payload.as_ref()) {
                         Ok(outputs) => {
                             for output in outputs {
                                 match output {
@@ -1285,10 +1282,9 @@ fn run_rdp_session_inner(
                                             .bytes_sent
                                             .fetch_add(data.len() as u64, Ordering::Relaxed);
                                         stats.pdus_sent.fetch_add(1, Ordering::Relaxed);
-                                        if let Err(e) = tls_framed.write_all(&data) {
-                                            return Err(
-                                                format!("Failed to send response frame: {e}")
-                                                    .into(),
+                                        if let Err(e) = est.tls_framed.write_all(&data) {
+                                            return SessionLoopExit::NetworkError(
+                                                format!("Failed to send response frame: {e}"),
                                             );
                                         }
                                     }
@@ -1299,9 +1295,9 @@ fn run_rdp_session_inner(
                                         let rh = region.bottom.saturating_sub(region.top) + 1;
                                         if frame_batching {
                                             dirty_regions.push((region.left, region.top, rw, rh));
-                                        } else if let Some(ref mut comp) = compositor {
+                                        } else if let Some(ref mut comp) = est.compositor {
                                             comp.update_region(
-                                                image.data(), desktop_width,
+                                                est.image.data(), est.desktop_width,
                                                 region.left, region.top, rw, rh,
                                             );
                                         } else {
@@ -1346,9 +1342,9 @@ fn run_rdp_session_inner(
                             stats.set_last_error(&err_str);
                             consecutive_errors += 1;
                             if consecutive_errors >= max_consecutive_errors {
-                                return Err(format!(
+                                return SessionLoopExit::ProtocolError(format!(
                                     "Too many consecutive errors ({consecutive_errors}), last: {err_str}"
-                                ).into());
+                                ));
                             }
                         }
                     }
@@ -1364,7 +1360,7 @@ fn run_rdp_session_inner(
                             && last_data_received.elapsed() >= idle_threshold
                         {
                             current_timeout = timeout_idle;
-                            set_read_timeout_on_framed(&tls_framed, Some(current_timeout));
+                            set_read_timeout_on_framed(&est.tls_framed, Some(current_timeout));
                         }
                     }
                     break;
@@ -1372,18 +1368,29 @@ fn run_rdp_session_inner(
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
                         log::info!("RDP session {session_id}: server closed connection (EOF)");
-                        return Ok(());
+                        // If viewer is detached, this is a network-level issue
+                        // (the server timed out the idle session).  Try to reconnect.
+                        if viewer_detached {
+                            return SessionLoopExit::NetworkError(
+                                "Server closed connection (EOF) while detached".to_string()
+                            );
+                        }
+                        return SessionLoopExit::ServerClosed;
                     }
                     let err_str = format!("{e}");
                     log::error!("RDP session {session_id}: read error: {err_str}");
-                    return Err(format!("Read error: {err_str}").into());
+                    // Classify: network errors are recoverable
+                    if is_network_error(&e) || is_network_error_str(&err_str) {
+                        return SessionLoopExit::NetworkError(err_str);
+                    }
+                    return SessionLoopExit::ProtocolError(err_str);
                 }
             }
         } // end inner PDU drain loop
 
         // Flush accumulated dirty rects from this batch.
         if batch_had_graphics && !frame_batching {
-            if let Some(ref mut comp) = compositor {
+            if let Some(ref mut comp) = est.compositor {
                 if !viewer_detached {
                     if let Some(frame) = comp.flush() {
                         let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
@@ -1393,29 +1400,26 @@ fn run_rdp_session_inner(
             } else if !batch_dirty_rects.is_empty() && !viewer_detached {
                 merge_dirty_regions(&mut batch_dirty_rects);
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
-                // Send ALL rects in a single Channel message to reduce IPC
-                // overhead -- one send() instead of N, one ArrayBuffer instead
-                // of N on the JS side.
                 push_multi_rect_via_channel(
-                    image.data(), desktop_width, &batch_dirty_rects, active_ch,
+                    est.image.data(), est.desktop_width, &batch_dirty_rects, active_ch,
                 );
             }
 
             let fc = stats.frame_count.load(Ordering::Relaxed);
             if fc > 0 && fc % full_frame_sync_interval == 0 {
                 frame_store.update_region(
-                    session_id, image.data(), desktop_width,
+                    session_id, est.image.data(), est.desktop_width,
                     &ironrdp::pdu::geometry::InclusiveRectangle {
                         left: 0, top: 0,
-                        right: desktop_width.saturating_sub(1),
-                        bottom: desktop_height.saturating_sub(1),
+                        right: est.desktop_width.saturating_sub(1),
+                        bottom: est.desktop_height.saturating_sub(1),
                     },
                 );
             }
         }
 
         if batch_should_terminate {
-            return Ok(());
+            return SessionLoopExit::ServerClosed;
         }
 
         if let Some(cas) = batch_should_reactivate {
@@ -1436,23 +1440,24 @@ fn run_rdp_session_inner(
             );
 
             // Remove read timeout for reactivation
-            set_read_timeout_on_framed(&tls_framed, None);
+            set_read_timeout_on_framed(&est.tls_framed, None);
 
-            match handle_reactivation(cas, &mut tls_framed, stats) {
+            match handle_reactivation(cas, &mut est.tls_framed, stats) {
                 Ok(new_result) => {
-                    desktop_width = new_result.desktop_size.width;
-                    desktop_height = new_result.desktop_size.height;
-                    image = DecodedImage::new(
+                    est.desktop_width = new_result.desktop_size.width;
+                    est.desktop_height = new_result.desktop_size.height;
+                    est.image = DecodedImage::new(
                         PixelFormat::RgbA32,
-                        desktop_width,
-                        desktop_height,
+                        est.desktop_width,
+                        est.desktop_height,
                     );
-                    active_stage = ActiveStage::new(new_result);
-                    frame_store.reinit(session_id, desktop_width, desktop_height);
+                    est.active_stage = ActiveStage::new(new_result);
+                    frame_store.reinit(session_id, est.desktop_width, est.desktop_height);
                     stats.set_phase("active");
 
                     log::info!(
-                        "RDP session {session_id}: reactivated at {desktop_width}x{desktop_height}"
+                        "RDP session {session_id}: reactivated at {}x{}",
+                        est.desktop_width, est.desktop_height
                     );
 
                     let _ = app_handle.emit(
@@ -1461,15 +1466,16 @@ fn run_rdp_session_inner(
                             session_id: session_id.to_string(),
                             status: "connected".to_string(),
                             message: format!(
-                                "Reconnected ({desktop_width}x{desktop_height})"
+                                "Reconnected ({}x{})",
+                                est.desktop_width, est.desktop_height
                             ),
-                            desktop_width: Some(desktop_width),
-                            desktop_height: Some(desktop_height),
+                            desktop_width: Some(est.desktop_width),
+                            desktop_height: Some(est.desktop_height),
                         },
                     );
 
                     set_read_timeout_on_framed(
-                        &tls_framed,
+                        &est.tls_framed,
                         Some(settings.read_timeout),
                     );
                 }
@@ -1477,17 +1483,231 @@ fn run_rdp_session_inner(
                     log::error!(
                         "RDP session {session_id}: reactivation failed: {e}"
                     );
-                    return Err(format!("Reactivation failed: {e}").into());
+                    return SessionLoopExit::NetworkError(format!("Reactivation failed: {e}"));
                 }
             }
         }
     }
+}
 
-    // Drop compositor on session end
-    if let Some(ref comp) = compositor {
-        log::info!("RDP session {session_id}: dropping compositor '{}'", comp.name());
+// ---- Layer 3: Persistent Session Wrapper with Reconnection ----
+
+/// The main session function with automatic reconnection on network errors.
+/// This function **never returns** on network errors — it loops indefinitely,
+/// reconnecting with exponential backoff, until a `Shutdown` command arrives
+/// or an unrecoverable protocol error occurs.
+#[allow(clippy::too_many_arguments)]
+fn run_rdp_session_inner(
+    session_id: &str,
+    host: &str,
+    port: u16,
+    username: &str,
+    password: &str,
+    domain: Option<&str>,
+    settings: &ResolvedSettings,
+    app_handle: &AppHandle,
+    cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    stats: &Arc<RdpSessionStats>,
+    cached_tls_connector: Option<Arc<native_tls::TlsConnector>>,
+    cached_http_client: Option<Arc<reqwest::blocking::Client>>,
+    frame_store: &SharedFrameStoreState,
+    frame_channel: &Channel<InvokeResponseBody>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut reconnect_count: u32 = 0;
+    let reconnect_enabled = settings.reconnect_on_network_loss;
+
+    'session: loop {
+        // Check for shutdown before (re)connecting
+        match cmd_rx.try_recv() {
+            Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+                return Err("session_shutdown: cancelled before connect".into());
+            }
+            _ => {}
+        }
+
+        // Establish connection (TCP + TLS + CredSSP + capability exchange)
+        let mut established = match establish_rdp_connection(
+            session_id,
+            host,
+            port,
+            username,
+            password,
+            domain,
+            settings,
+            app_handle,
+            cmd_rx,
+            stats,
+            cached_tls_connector.clone(),
+            cached_http_client.clone(),
+            frame_store,
+        ) {
+            Ok(est) => {
+                // Successful connect — reset reconnect counter
+                if reconnect_count > 0 {
+                    log::info!(
+                        "RDP session {session_id}: reconnected successfully after {reconnect_count} attempts"
+                    );
+                }
+                reconnect_count = 0;
+                est
+            }
+            Err(e) => {
+                let msg = format!("{e}");
+
+                // Shutdown sentinel — always bail immediately
+                if msg.contains("session_shutdown") {
+                    return Err(e);
+                }
+
+                // If reconnection is disabled, fail immediately
+                if !reconnect_enabled {
+                    return Err(e);
+                }
+
+                // On first connect failure (not a reconnect), fail immediately
+                // so the user sees the error (bad credentials, etc.)
+                if reconnect_count == 0 {
+                    return Err(e);
+                }
+
+                // Connection failed during reconnect — keep trying
+                reconnect_count += 1;
+                log::warn!(
+                    "RDP session {session_id}: reconnect attempt {reconnect_count} failed: {msg}"
+                );
+
+                stats.set_phase("reconnecting");
+                let _ = app_handle.emit(
+                    "rdp://status",
+                    RdpStatusEvent {
+                        session_id: session_id.to_string(),
+                        status: "reconnecting".to_string(),
+                        message: format!("Reconnecting ({reconnect_count})... {msg}"),
+                        desktop_width: None,
+                        desktop_height: None,
+                    },
+                );
+
+                sleep_with_shutdown_check(
+                    cmd_rx,
+                    compute_backoff_delay(reconnect_count, settings.reconnect_base_delay, settings.reconnect_max_delay),
+                )?;
+                continue 'session;
+            }
+        };
+
+        // Run the active session loop
+        let exit = run_active_session_loop(
+            session_id,
+            &mut established,
+            settings,
+            app_handle,
+            cmd_rx,
+            stats,
+            frame_store,
+            frame_channel,
+        );
+
+        // Drop compositor explicitly before potentially reconnecting
+        if let Some(ref comp) = established.compositor {
+            log::info!("RDP session {session_id}: dropping compositor '{}'", comp.name());
+        }
+        drop(established);
+
+        match exit {
+            SessionLoopExit::Shutdown => {
+                return Ok(());
+            }
+            SessionLoopExit::ServerClosed => {
+                return Ok(());
+            }
+            SessionLoopExit::ProtocolError(msg) => {
+                return Err(msg.into());
+            }
+            SessionLoopExit::NetworkError(msg) | SessionLoopExit::ReconnectRequested => {
+                if !reconnect_enabled && !matches!(exit, SessionLoopExit::ReconnectRequested) {
+                    return Err(msg.into());
+                }
+
+                reconnect_count += 1;
+                log::info!(
+                    "RDP session {session_id}: will reconnect ({reconnect_count}): {msg}"
+                );
+
+                stats.set_phase("reconnecting");
+                let _ = app_handle.emit(
+                    "rdp://status",
+                    RdpStatusEvent {
+                        session_id: session_id.to_string(),
+                        status: "reconnecting".to_string(),
+                        message: format!("Reconnecting ({reconnect_count})..."),
+                        desktop_width: None,
+                        desktop_height: None,
+                    },
+                );
+
+                // Preserve the framebuffer — don't remove it during reconnect.
+                // Sleep with exponential backoff, checking for shutdown.
+                sleep_with_shutdown_check(
+                    cmd_rx,
+                    compute_backoff_delay(reconnect_count, settings.reconnect_base_delay, settings.reconnect_max_delay),
+                )?;
+                continue 'session;
+            }
+        }
     }
-    drop(compositor);
+}
 
+// ---- Helper functions ----
+
+/// Compute exponential backoff delay: base * 2^(attempt-1), capped at max.
+fn compute_backoff_delay(attempt: u32, base: Duration, max: Duration) -> Duration {
+    let factor = 2u64.pow((attempt - 1).min(10));
+    let delay = base.saturating_mul(factor as u32);
+    delay.min(max)
+}
+
+/// Sleep for the given duration, but check for shutdown commands periodically.
+/// Returns Err if shutdown was requested during the sleep.
+fn sleep_with_shutdown_check(
+    cmd_rx: &mut mpsc::UnboundedReceiver<RdpCommand>,
+    total: Duration,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let check_interval = Duration::from_millis(500);
+    let start = Instant::now();
+
+    while start.elapsed() < total {
+        match cmd_rx.try_recv() {
+            Ok(RdpCommand::Shutdown) | Err(mpsc::error::TryRecvError::Disconnected) => {
+                return Err("session_shutdown: cancelled during reconnect wait".into());
+            }
+            _ => {}
+        }
+        let remaining = total.saturating_sub(start.elapsed());
+        std::thread::sleep(remaining.min(check_interval));
+    }
     Ok(())
+}
+
+/// Check if an io::Error represents a network-level failure (recoverable).
+fn is_network_error(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::BrokenPipe
+            | io::ErrorKind::TimedOut
+    )
+}
+
+/// Check if an error message string indicates a network-level failure.
+fn is_network_error_str(s: &str) -> bool {
+    s.contains("10054")           // WSAECONNRESET (Windows)
+        || s.contains("10053")    // WSAECONNABORTED (Windows)
+        || s.contains("forcibly closed")
+        || s.contains("connection reset")
+        || s.contains("broken pipe")
+        || s.contains("Connection reset")
+        || s.contains("Write failed")
+        || s.contains("Failed to send response frame")
 }
