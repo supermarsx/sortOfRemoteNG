@@ -26,7 +26,7 @@
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
-  
+
   /* Animation variables */
   --animation-duration: 550ms;
   --animation-enabled: 1;
@@ -208,7 +208,10 @@ body {
 /* Active/pressed state mappings */
 .active\:bg-gray-700:active,
 .active\:bg-gray-800:active {
-  background-color: var(--color-surfaceActive, var(--color-surfaceHover)) !important;
+  background-color: var(
+    --color-surfaceActive,
+    var(--color-surfaceHover)
+  ) !important;
 }
 
 /* Hover text color mappings for light theme compatibility */
@@ -238,7 +241,9 @@ body {
 /* Light theme button enhancements */
 [data-theme="light"] button:hover,
 [data-theme="semilight"] button:hover {
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 /* Light theme input and form element overrides */
 [data-theme="light"] .bg-gray-700,
@@ -255,12 +260,20 @@ body {
 
 [data-theme="light"] .bg-gray-800\/40,
 [data-theme="semilight"] .bg-gray-800\/40 {
-  background-color: color-mix(in srgb, var(--color-surface) 60%, transparent) !important;
+  background-color: color-mix(
+    in srgb,
+    var(--color-surface) 60%,
+    transparent
+  ) !important;
 }
 
 [data-theme="light"] .bg-gray-700\/50,
 [data-theme="semilight"] .bg-gray-700\/50 {
-  background-color: color-mix(in srgb, var(--color-input, #ffffff) 50%, transparent) !important;
+  background-color: color-mix(
+    in srgb,
+    var(--color-input, #ffffff) 50%,
+    transparent
+  ) !important;
 }
 
 [data-theme="light"] .bg-gray-900,
@@ -428,7 +441,9 @@ body {
   border-radius: 0.5rem;
   padding: 0.5rem;
   color: var(--color-textSecondary);
-  transition: background-color 150ms ease, color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
 .sor-modal-close-btn:hover {
@@ -541,7 +556,9 @@ body {
   text-align: right;
   color: var(--color-textSecondary);
   font-size: 0.75rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 }
 
 .sor-settings-select {
@@ -589,6 +606,141 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+/* Centralized option group + selectable list primitives */
+.sor-option-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surfaceHover);
+  color: var(--color-textSecondary);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.sor-option-chip:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--color-textMuted) 45%,
+    var(--color-border)
+  );
+  color: var(--color-text);
+}
+
+.sor-option-chip-active {
+  border-color: color-mix(in srgb, #3b82f6 45%, var(--color-border));
+  background: color-mix(in srgb, #3b82f6 14%, transparent);
+  color: var(--color-text);
+}
+
+.sor-option-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surfaceHover);
+  color: var(--color-textSecondary);
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.sor-option-card:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--color-textMuted) 45%,
+    var(--color-border)
+  );
+  color: var(--color-text);
+}
+
+.sor-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sor-chip-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surfaceHover);
+  color: var(--color-textSecondary);
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.sor-chip-button:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--color-textMuted) 45%,
+    var(--color-border)
+  );
+  background: color-mix(
+    in srgb,
+    var(--color-surfaceHover) 75%,
+    var(--color-border)
+  );
+  color: var(--color-text);
+}
+
+.sor-selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sor-selection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surfaceHover) 50%, transparent);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.sor-selection-row:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--color-textMuted) 45%,
+    var(--color-border)
+  );
+  background: color-mix(in srgb, var(--color-surfaceHover) 75%, transparent);
+}
+
+.sor-selection-row-selected {
+  border-color: color-mix(in srgb, #16a34a 45%, var(--color-border));
+  background: color-mix(in srgb, #16a34a 12%, transparent);
+}
+
+.sor-selection-row-hover-action {
+  opacity: 0;
+}
+
+.sor-selection-row:hover .sor-selection-row-hover-action {
+  opacity: 1;
 }
 
 /* Centralized data table primitives */
