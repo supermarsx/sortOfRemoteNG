@@ -49,8 +49,6 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
   const configsRef = useRef(configs);
   configsRef.current = configs;
 
-  if (formData.isGroup) return null;
-
   const refreshCodes = useCallback(() => {
     const c: Record<string, string> = {};
     configsRef.current.forEach((cfg) => {
@@ -61,7 +59,6 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
     setCodes(c);
   }, [totpService]);
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     if (!expanded || configs.length === 0) return;
     refreshCodes();
@@ -273,6 +270,8 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
       setSelectedReplicateIds(new Set());
     }, 1500);
   };
+
+  if (formData.isGroup) return null;
 
   return (
     <div className="border border-[var(--color-border)] rounded-lg overflow-hidden">
