@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Shield, Plus, Trash2, Copy, Check, ChevronDown, ChevronUp,
-  Eye, EyeOff, Pencil, Download, Upload, KeyRound, QrCode,
+  Eye, EyeOff, Pencil, Download, Upload, KeyRound, QrCode, FileUp,
 } from 'lucide-react';
 import { Connection } from '../../types/connection';
 import { TOTPConfig } from '../../types/settings';
 import { TOTPService } from '../../utils/totpService';
 import { useSettings } from '../../contexts/SettingsContext';
+import { TotpImportDialog } from '../TotpImportDialog';
 
 interface TOTPOptionsProps {
   formData: Partial<Connection>;
@@ -34,6 +35,7 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState('');
+  const [showFileImport, setShowFileImport] = useState(false);
 
   const totpService = useMemo(() => new TOTPService(), []);
   const configs = formData.totpConfigs ?? [];
@@ -176,6 +178,14 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
     }
   };
 
+  const handleFileImport = (entries: TOTPConfig[]) => {
+    const existingSet = new Set(configs.map(c => c.secret.toLowerCase()));
+    const newEntries = entries.filter(e => !existingSet.has(e.secret.toLowerCase()));
+    if (newEntries.length > 0) {
+      updateConfigs([...configs, ...newEntries]);
+    }
+  };
+
   const getTimeRemaining = (period: number = 30) => {
     const now = Math.floor(Date.now() / 1000);
     return period - (now % period);
@@ -224,6 +234,15 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
             >
               <Upload size={11} />
               <span>Import</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowFileImport(true)}
+              className="flex items-center space-x-1 text-[10px] text-gray-400 hover:text-white transition-colors"
+              title="Import from authenticator app"
+            >
+              <FileUp size={11} />
+              <span>Import File</span>
             </button>
           </div>
 
@@ -546,6 +565,13 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
             </button>
           )}
         </div>
+      )}
+      {showFileImport && (
+        <TotpImportDialog
+          onImport={handleFileImport}
+          onClose={() => setShowFileImport(false)}
+          existingSecrets={configs.map(c => c.secret)}
+        />
       )}
     </div>
   );

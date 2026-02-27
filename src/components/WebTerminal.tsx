@@ -1451,7 +1451,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                     aria-label="Record Session"
                     disabled={status !== 'connected'}
                   >
-                    <Circle size={14} className="text-red-400" />
+                    <Circle size={14} />
                   </button>
                 ) : (
                   <button

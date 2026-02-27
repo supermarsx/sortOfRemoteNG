@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import {
   X, Plus, Trash2, Copy, Shield, Check, Eye, EyeOff,
-  Pencil, Download, Upload, Keyboard, KeyRound, QrCode,
+  Pencil, Download, Upload, Keyboard, KeyRound, QrCode, FileUp,
 } from 'lucide-react';
 import { TOTPConfig } from '../../types/settings';
 import { TOTPService } from '../../utils/totpService';
+import { TotpImportDialog } from '../TotpImportDialog';
 
 interface RDPTotpPanelProps {
   configs: TOTPConfig[];
@@ -173,6 +174,7 @@ export default function RDPTotpPanel({
   const [editData, setEditData] = useState<Partial<TOTPConfig>>({});
   const [qrConfig, setQrConfig] = useState<TOTPConfig | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [showFileImport, setShowFileImport] = useState(false);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const totpService = useMemo(() => new TOTPService(), []);
@@ -321,6 +323,13 @@ export default function RDPTotpPanel({
     } catch { /* handled in ImportModal */ }
   };
 
+  const handleFileImport = (entries: TOTPConfig[]) => {
+    if (entries.length > 0) {
+      onUpdate([...configs, ...entries]);
+    }
+    setShowFileImport(false);
+  };
+
   // When anchorRef is provided, compute fixed position and render via portal
   const fixedStyle = useMemo<React.CSSProperties | undefined>(() => {
     if (!anchorRef?.current) return undefined;
@@ -355,9 +364,16 @@ export default function RDPTotpPanel({
             <Download size={12} />
           </button>
           <button
+            onClick={() => setShowFileImport(true)}
+            className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+            title="Import from authenticator app"
+          >
+            <FileUp size={12} />
+          </button>
+          <button
             onClick={() => setShowImport(!showImport)}
             className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
-            title="Import configs from JSON"
+            title="Import from JSON"
           >
             <Upload size={12} />
           </button>
@@ -380,6 +396,16 @@ export default function RDPTotpPanel({
       {/* ── Import modal ──────────────────────────────────────── */}
       {showImport && (
         <ImportModal onImport={handleImport} onClose={() => setShowImport(false)} />
+      )}
+
+      {/* ── File import dialog (portal) ─────────────────────── */}
+      {showFileImport && createPortal(
+        <TotpImportDialog
+          onImport={handleFileImport}
+          onClose={() => setShowFileImport(false)}
+          existingSecrets={configs.map(c => c.secret)}
+        />,
+        document.body,
       )}
 
       {/* ── QR Code display ───────────────────────────────────── */}

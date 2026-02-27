@@ -39,6 +39,68 @@ const defaultSettings: GlobalSettings = {
   singleClickConnect: false,
   singleClickDisconnect: false,
   doubleClickRename: false,
+  doubleClickConnect: true,
+  middleClickCloseTab: true,
+
+  // Tab Behavior
+  openConnectionInBackground: false,
+  switchTabOnActivity: false,
+  closeTabOnDisconnect: false,
+  confirmCloseActiveTab: true,
+  enableRecentlyClosedTabs: true,
+  recentlyClosedTabsMax: 10,
+
+  // Focus & Navigation
+  focusTerminalOnTabSwitch: true,
+  scrollTreeToActiveConnection: true,
+  restoreLastActiveTab: true,
+  tabCycleMru: false,
+
+  // Clipboard Behavior
+  copyOnSelect: false,
+  pasteOnRightClick: true,
+  clearClipboardAfterSeconds: 0,
+  trimPastedWhitespace: false,
+  warnOnMultiLinePaste: true,
+  maxPasteLengthChars: 0,
+
+  // Idle & Timeout
+  idleDisconnectMinutes: 0,
+  sendKeepaliveOnIdle: true,
+  keepaliveIntervalSeconds: 60,
+  dimInactiveTabs: false,
+  showIdleDuration: false,
+
+  // Reconnection Behavior
+  autoReconnectOnDisconnect: false,
+  autoReconnectMaxAttempts: 5,
+  autoReconnectDelaySecs: 3,
+  notifyOnReconnect: true,
+
+  // Notification Behavior
+  notifyOnConnect: false,
+  notifyOnDisconnect: false,
+  notifyOnError: true,
+  notificationSound: false,
+  flashTaskbarOnActivity: false,
+
+  // Confirmation Dialogs
+  confirmDisconnect: false,
+  confirmDeleteConnection: true,
+  confirmBulkOperations: true,
+  confirmImport: true,
+
+  // Drag & Drop
+  enableFileDragDropToTerminal: true,
+  dragSensitivityPx: 5,
+  showDropPreview: true,
+
+  // Scroll & Input
+  terminalScrollSpeed: 1.0,
+  terminalSmoothScroll: true,
+  treeRightClickAction: 'contextMenu' as const,
+  mouseBackAction: 'previousTab' as const,
+  mouseForwardAction: 'nextTab' as const,
   animationsEnabled: true,
   animationDuration: 550,
   reduceMotion: false,
@@ -120,7 +182,6 @@ const defaultSettings: GlobalSettings = {
   enableZoom: true,
   enableTabReorder: true,
   enableConnectionReorder: true,
-  middleClickCloseTab: true,
   colorTags: {},
   enableStatusChecking: true,
   statusCheckInterval: 60000,

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   HardDrive,
   RefreshCw,
@@ -104,13 +105,15 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showBackupList, setShowBackupList] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
+      const target = event.target as Node;
+      if (dropdownRef.current?.contains(target)) return;
+      if (popupRef.current?.contains(target)) return;
+      setIsOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -294,9 +297,23 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
         {getStatusIcon()}
       </button>
 
-      {/* Popup */}
-      {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-96 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
+      {/* Popup (portal) */}
+      {isOpen && createPortal(
+        <div
+          ref={(el) => {
+            popupRef.current = el;
+            if (el && dropdownRef.current) {
+              const rect = dropdownRef.current.getBoundingClientRect();
+              const w = 384;
+              let left = rect.right - w;
+              if (left < 4) left = 4;
+              el.style.top = `${rect.bottom + 8}px`;
+              el.style.left = `${left}px`;
+            }
+          }}
+          className="fixed w-96 bg-gray-800 border border-gray-700 rounded-lg shadow-xl"
+          style={{ zIndex: 9999 }}
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
             <div className="flex items-center gap-2">
@@ -477,7 +494,8 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
               </div>
             )}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

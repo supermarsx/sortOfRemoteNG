@@ -105,6 +105,110 @@ export interface GlobalSettings {
   singleClickConnect: boolean;
   singleClickDisconnect: boolean;
   doubleClickRename: boolean;
+  doubleClickConnect: boolean;
+  middleClickCloseTab: boolean;
+
+  // ─── Tab Behavior ───────────────────────────────────────────
+  /** Open new connections in a background tab (don't auto-switch) */
+  openConnectionInBackground: boolean;
+  /** Switch to a tab when it receives new output/activity */
+  switchTabOnActivity: boolean;
+  /** Close the tab automatically when the session disconnects */
+  closeTabOnDisconnect: boolean;
+  /** Confirm before closing a tab with an active session */
+  confirmCloseActiveTab: boolean;
+  /** Show a "recently closed" list to reopen tabs */
+  enableRecentlyClosedTabs: boolean;
+  /** Max items in the recently-closed tab list */
+  recentlyClosedTabsMax: number;
+
+  // ─── Focus & Navigation ─────────────────────────────────────
+  /** Auto-focus the terminal/canvas when switching to a connection tab */
+  focusTerminalOnTabSwitch: boolean;
+  /** Scroll the sidebar tree to reveal the active connection */
+  scrollTreeToActiveConnection: boolean;
+  /** Restore the last active tab on startup */
+  restoreLastActiveTab: boolean;
+  /** Cycle tabs with Ctrl+Tab in most-recently-used order */
+  tabCycleMru: boolean;
+
+  // ─── Clipboard Behavior ─────────────────────────────────────
+  /** Copy terminal selection to clipboard automatically */
+  copyOnSelect: boolean;
+  /** Paste clipboard on right-click in terminal */
+  pasteOnRightClick: boolean;
+  /** Clear clipboard N seconds after a password paste (0 = off) */
+  clearClipboardAfterSeconds: number;
+  /** Trim whitespace from pasted text */
+  trimPastedWhitespace: boolean;
+  /** Warn before pasting multi-line text into terminal */
+  warnOnMultiLinePaste: boolean;
+  /** Maximum paste size in characters before prompting (0 = no limit) */
+  maxPasteLengthChars: number;
+
+  // ─── Idle & Timeout ─────────────────────────────────────────
+  /** Disconnect sessions after N minutes of idle (0 = never) */
+  idleDisconnectMinutes: number;
+  /** Send keepalive packets to prevent idle disconnect */
+  sendKeepaliveOnIdle: boolean;
+  /** Keepalive interval in seconds */
+  keepaliveIntervalSeconds: number;
+  /** Dim inactive/unfocused tabs to indicate they're not focused */
+  dimInactiveTabs: boolean;
+  /** Show idle duration badge on tabs */
+  showIdleDuration: boolean;
+
+  // ─── Reconnection Behavior ──────────────────────────────────
+  /** Auto-reconnect when a session is unexpectedly disconnected */
+  autoReconnectOnDisconnect: boolean;
+  /** Max auto-reconnect attempts (0 = unlimited) */
+  autoReconnectMaxAttempts: number;
+  /** Base delay between reconnect attempts in seconds */
+  autoReconnectDelaySecs: number;
+  /** Show a notification when a session reconnects */
+  notifyOnReconnect: boolean;
+
+  // ─── Notification Behavior ──────────────────────────────────
+  /** Show OS notification on connect */
+  notifyOnConnect: boolean;
+  /** Show OS notification on disconnect */
+  notifyOnDisconnect: boolean;
+  /** Show OS notification on error */
+  notifyOnError: boolean;
+  /** Play sound with notifications */
+  notificationSound: boolean;
+  /** Flash taskbar on background activity */
+  flashTaskbarOnActivity: boolean;
+
+  // ─── Confirmation Dialogs ───────────────────────────────────
+  /** Confirm before disconnecting a session */
+  confirmDisconnect: boolean;
+  /** Confirm before deleting a connection */
+  confirmDeleteConnection: boolean;
+  /** Confirm before bulk operations (multi-select actions) */
+  confirmBulkOperations: boolean;
+  /** Confirm before importing connections */
+  confirmImport: boolean;
+
+  // ─── Drag & Drop ────────────────────────────────────────────
+  /** Enable drag-and-drop file transfer to terminals */
+  enableFileDragDropToTerminal: boolean;
+  /** Drag start sensitivity in pixels */
+  dragSensitivityPx: number;
+  /** Show drop preview overlay when dragging connections */
+  showDropPreview: boolean;
+
+  // ─── Scroll & Input ─────────────────────────────────────────
+  /** Scroll speed multiplier for terminal (1.0 = default) */
+  terminalScrollSpeed: number;
+  /** Enable smooth scrolling in terminal */
+  terminalSmoothScroll: boolean;
+  /** Right-click action in connection tree: 'contextMenu' or 'quickConnect' */
+  treeRightClickAction: 'contextMenu' | 'quickConnect';
+  /** Mouse-back button action: 'none', 'previousTab', 'disconnect' */
+  mouseBackAction: 'none' | 'previousTab' | 'disconnect';
+  /** Mouse-forward button action: 'none', 'nextTab', 'reconnect' */
+  mouseForwardAction: 'none' | 'nextTab' | 'reconnect';
 
   // Animation Settings
   animationsEnabled: boolean;
@@ -191,7 +295,6 @@ export interface GlobalSettings {
   enableZoom: boolean;
   enableTabReorder: boolean;
   enableConnectionReorder: boolean;
-  middleClickCloseTab: boolean;
 
   // Color Tags
   colorTags: {
