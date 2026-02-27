@@ -32,6 +32,9 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
         <Power className="w-5 h-5" />
         {t("settings.startup.title", "Startup & Tray")}
       </h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Application launch behavior, system tray options, and welcome screen customization.
+      </p>
 
       {/* Startup Behavior */}
       <div className="space-y-4">

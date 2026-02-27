@@ -48,16 +48,21 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* ── SSH Terminal Recording ─────────────────────── */}
       <div>
         <h3 className="text-lg font-medium text-white flex items-center gap-2">
-          <Terminal size={16} className="text-green-400" />
-          SSH Terminal Recording
+          <Circle className="w-5 h-5" />
+          Recording
         </h3>
         <p className="text-xs text-gray-400 mb-4">
-          Record SSH terminal output and optionally input keystrokes. Recordings are stored locally and can be exported as Asciicast, script, or JSON.
+          Configure SSH terminal and RDP screen recording, export formats, and storage limits.
         </p>
       </div>
+
+      {/* ── SSH Terminal Recording ─────────────────────── */}
+      <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <Terminal className="w-4 h-4" />
+        SSH Terminal Recording
+      </h4>
 
       <div className="space-y-3">
         <label data-setting-key="recording.autoRecordSessions" className="flex items-center justify-between cursor-pointer group">
@@ -159,15 +164,10 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* ── RDP Screen Recording ──────────────────────── */}
-      <div className="pt-4 border-t border-gray-600">
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
-          <Monitor size={16} className="text-blue-400" />
-          RDP Screen Recording
-        </h3>
-        <p className="text-xs text-gray-400 mb-4">
-          Record RDP desktop sessions as video (WebM/MP4). Recordings capture the remote desktop canvas.
-        </p>
-      </div>
+      <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2 pt-4">
+        <Monitor className="w-4 h-4" />
+        RDP Screen Recording
+      </h4>
 
       <div className="space-y-3">
         <label data-setting-key="rdpRecording.autoRecordRdpSessions" className="flex items-center justify-between cursor-pointer group">
