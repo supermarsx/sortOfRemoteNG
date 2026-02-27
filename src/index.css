@@ -367,3 +367,241 @@ body {
   border: none !important;
   pointer-events: auto !important;
 }
+
+/* Centralized modal/dialog primitives */
+.sor-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.5);
+}
+
+.sor-modal-panel {
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 25px 60px rgb(0 0 0 / 0.35);
+}
+
+.sor-modal-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.sor-modal-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+}
+
+.sor-modal-title {
+  color: var(--color-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.sor-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sor-modal-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  color: var(--color-textSecondary);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.sor-modal-close-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surfaceHover);
+}
+
+.sor-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sor-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.sor-manager-panel {
+  max-width: 64rem;
+  height: 85vh;
+}
+
+/* Centralized settings primitives */
+.sor-settings-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.sor-settings-card {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sor-settings-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.sor-settings-checkbox {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.125rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: #2563eb;
+}
+
+.sor-settings-toggle-icon {
+  margin-top: 0.125rem;
+  display: flex;
+  align-items: center;
+  color: var(--color-textSecondary);
+}
+
+.sor-settings-toggle-label {
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+}
+
+.sor-settings-toggle-description {
+  margin-top: 0.125rem;
+  color: #6b7280;
+  font-size: 0.6875rem;
+}
+
+.sor-settings-slider-row,
+.sor-settings-select-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sor-settings-row-label {
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+}
+
+.sor-settings-slider-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sor-settings-range {
+  width: 7rem;
+  accent-color: #3b82f6;
+}
+
+.sor-settings-slider-value {
+  width: 3.5rem;
+  text-align: right;
+  color: var(--color-textSecondary);
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.sor-settings-select {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+
+.sor-settings-collapsible {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.sor-settings-collapsible-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-surfaceHover);
+  color: var(--color-textSecondary);
+  transition: background-color 150ms ease;
+}
+
+.sor-settings-collapsible-trigger:hover {
+  background: var(--color-border);
+}
+
+.sor-settings-collapsible-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.sor-settings-collapsible-body {
+  padding: 1rem;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Centralized data table primitives */
+.sor-data-table {
+  width: 100%;
+}
+
+.sor-data-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.sor-data-table tbody {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+}

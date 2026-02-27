@@ -6,6 +6,7 @@ import {
   ChevronDown, CopyPlus
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Modal } from './ui/Modal';
 
 interface ScriptManagerProps {
   isOpen: boolean;
@@ -570,29 +571,16 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
     setIsEditing(true);
   }, []);
   
-  // Handle ESC key to close
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
   
   return (
-    <div 
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        // Close when clicking on backdrop (not on modal content)
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      closeOnBackdrop
+      closeOnEscape
+      backdropClassName="bg-black/50"
+      panelClassName="sor-manager-panel max-w-5xl mx-4 relative"
     >
       {/* Background glow effects - only show in dark mode */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none dark:opacity-100 opacity-0">
@@ -601,7 +589,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
         <div className="absolute top-[60%] left-[40%] w-64 h-64 bg-indigo-500/5 rounded-full blur-3xl" />
       </div>
 
-      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-5xl mx-4 h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)] relative z-10">
+      <div className="relative z-10 flex h-full min-h-0 flex-col overflow-hidden bg-[var(--color-surface)]">
         {/* Header */}
         <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">
@@ -1033,6 +1021,6 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };

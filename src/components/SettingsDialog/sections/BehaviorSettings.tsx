@@ -40,121 +40,20 @@ import {
   ListVideo,
   Circle,
   Globe,
-  type LucideIcon,
 } from "lucide-react";
 import type { ToolDisplayMode, ToolDisplayModeOverride, ToolDisplayModes } from "../../../types/settings";
+import {
+  SettingsCard as Card,
+  SettingsSectionHeader as SectionHeader,
+  SettingsSelectRow as SelectRow,
+  SettingsSliderRow as SliderRow,
+  SettingsToggleRow as Toggle,
+} from "../../ui/SettingsPrimitives";
 
 interface BehaviorSettingsProps {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
-
-/* ─── Reusable toggle row ─────────────────────────────────── */
-const Toggle: React.FC<{
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  icon: React.ReactNode;
-  label: string;
-  description?: string;
-  settingKey?: string;
-}> = ({ checked, onChange, icon, label, description, settingKey }) => (
-  <label
-    className="flex items-start space-x-3 cursor-pointer group"
-    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
-  >
-    <input
-      type="checkbox"
-      checked={checked}
-      onChange={(e) => onChange(e.target.checked)}
-      className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4 mt-0.5"
-    />
-    <div className="flex items-center gap-2 text-gray-500 group-hover:text-purple-400 mt-0.5 flex-shrink-0">
-      {icon}
-    </div>
-    <div className="min-w-0">
-      <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] text-sm">{label}</span>
-      {description && <p className="text-[10px] text-gray-500 mt-0.5">{description}</p>}
-    </div>
-  </label>
-);
-
-/* ─── Reusable section header ─────────────────────────────── */
-const SectionHeader: React.FC<{
-  icon: React.ReactNode;
-  title: string;
-}> = ({ icon, title }) => (
-  <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
-    {icon}
-    {title}
-  </h4>
-);
-
-/* ─── Reusable section card ───────────────────────────────── */
-const Card: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-3">
-    {children}
-  </div>
-);
-
-/* ─── Reusable slider row ─────────────────────────────────── */
-const SliderRow: React.FC<{
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step?: number;
-  unit?: string;
-  onChange: (v: number) => void;
-  settingKey?: string;
-}> = ({ label, value, min, max, step = 1, unit = '', onChange, settingKey }) => (
-  <div
-    className="flex items-center justify-between gap-4"
-    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
-  >
-    <span className="text-sm text-[var(--color-textSecondary)] flex-shrink-0">{label}</span>
-    <div className="flex items-center gap-2">
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="w-28 accent-blue-500"
-      />
-      <span className="text-xs text-[var(--color-textSecondary)] w-14 text-right font-mono">
-        {value}{unit}
-      </span>
-    </div>
-  </div>
-);
-
-/* ─── Reusable select row ─────────────────────────────────── */
-const SelectRow: React.FC<{
-  label: string;
-  value: string;
-  options: { value: string; label: string }[];
-  onChange: (v: string) => void;
-  settingKey?: string;
-}> = ({ label, value, options, onChange, settingKey }) => (
-  <div
-    className="flex items-center justify-between gap-4"
-    {...(settingKey ? { 'data-setting-key': settingKey } : {})}
-  >
-    <span className="text-sm text-[var(--color-textSecondary)]">{label}</span>
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)]"
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
-      ))}
-    </select>
-  </div>
-);
-
-const I = ({ size = 16 }: { size?: number }) => <span style={{ width: size, height: size }} />;
 
 /* ================================================================ */
 

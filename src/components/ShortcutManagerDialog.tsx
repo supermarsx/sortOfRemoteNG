@@ -5,6 +5,7 @@ import { CollectionManager } from "../utils/collectionManager";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
+import { Modal } from "./ui/Modal";
 
 interface ShortcutInfo {
   id: string;
@@ -447,13 +448,14 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      closeOnBackdrop
+      closeOnEscape
+      backdropClassName="bg-black/50"
+      panelClassName="max-w-3xl mx-4 h-[85vh] bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-xl"
     >
-      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-3xl mx-4 h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
         <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-500/20 rounded-lg">
@@ -827,7 +829,6 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
             {t('shortcuts.description', 'Shortcuts can open a collection or a specific connection when the app starts. They are tracked automatically and you can clean up any that have been manually deleted.')}
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };

@@ -11,6 +11,7 @@ import {
   SavedRecording,
 } from '../types/macroTypes';
 import * as macroService from '../utils/macroService';
+import { Modal } from './ui/Modal';
 
 interface MacroManagerProps {
   isOpen: boolean;
@@ -185,8 +186,14 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      closeOnBackdrop
+      closeOnEscape
+      backdropClassName="bg-black/60"
+      panelClassName="max-w-5xl mx-4 h-[90vh] bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl"
+    >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/60">
           <div className="flex items-center gap-3">
@@ -331,8 +338,7 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 };
 

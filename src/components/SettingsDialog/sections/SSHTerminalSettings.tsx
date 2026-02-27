@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   GlobalSettings,
@@ -26,49 +26,14 @@ import {
   Monitor,
   Settings2,
   Zap,
-  ChevronDown,
-  ChevronRight,
   RotateCcw,
 } from 'lucide-react';
+import { SettingsCollapsibleSection } from '../../ui/SettingsPrimitives';
 
 interface SSHTerminalSettingsProps {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
-
-// Collapsible Section Component
-const CollapsibleSection: React.FC<{
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-}> = ({ title, icon, children, defaultOpen = true }) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-
-  return (
-    <div className="border border-[var(--color-border)] rounded-lg overflow-hidden">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] transition-colors"
-      >
-        <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
-          {icon}
-          <span>{title}</span>
-        </div>
-        {isOpen ? (
-          <ChevronDown className="w-4 h-4 text-[var(--color-textSecondary)]" />
-        ) : (
-          <ChevronRight className="w-4 h-4 text-[var(--color-textSecondary)]" />
-        )}
-      </button>
-      {isOpen && (
-        <div className="p-4 space-y-4 bg-[var(--color-surface)]">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-};
 
 // Toggle Switch Component
 const Toggle: React.FC<{
@@ -196,7 +161,7 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
       </p>
 
       {/* Line Handling */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.lineHandling', 'Line Handling')}
         icon={<Type className="w-4 h-4 text-blue-400" />}
       >
@@ -218,10 +183,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
           label={t('settings.sshTerminal.autoWrap', 'Auto wrap mode')}
           description={t('settings.sshTerminal.autoWrapDesc', 'Automatically wrap text at terminal edge')}
         />
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Line Discipline */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.lineDiscipline', 'Line Discipline')}
         icon={<Keyboard className="w-4 h-4 text-purple-400" />}
       >
@@ -245,10 +210,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             }))}
           />
         </div>
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Bell Settings */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.bellSettings', 'Bell Settings')}
         icon={<Bell className="w-4 h-4 text-yellow-400" />}
       >
@@ -329,10 +294,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             }))}
           />
         </div>
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Keyboard */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.keyboard', 'Keyboard')}
         icon={<Keyboard className="w-4 h-4 text-cyan-400" />}
         defaultOpen={false}
@@ -349,10 +314,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
           label={t('settings.sshTerminal.disableAppCursorKeys', 'Disable application cursor keys')}
           description={t('settings.sshTerminal.disableAppCursorKeysDesc', 'Force cursor keys to always send ANSI sequences')}
         />
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Terminal Dimensions */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.dimensions', 'Terminal Dimensions')}
         icon={<LayoutGrid className="w-4 h-4 text-green-400" />}
         defaultOpen={false}
@@ -381,10 +346,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             />
           </div>
         )}
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Character Set */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.characterSet', 'Character Set')}
         icon={<Type className="w-4 h-4 text-indigo-400" />}
         defaultOpen={false}
@@ -404,10 +369,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             { value: 'wide', label: 'Wide (2 cells)' },
           ]}
         />
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Font Configuration */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.font', 'Font Configuration')}
         icon={<Type className="w-4 h-4 text-pink-400" />}
         defaultOpen={false}
@@ -474,10 +439,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             />
           </div>
         )}
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Colors */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.colors', 'Color Settings')}
         icon={<Palette className="w-4 h-4 text-orange-400" />}
         defaultOpen={false}
@@ -500,10 +465,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
           label={t('settings.sshTerminal.allow24Bit', 'Allow 24-bit true colors')}
           description={t('settings.sshTerminal.allow24BitDesc', 'Enable full RGB color support (16 million colors)')}
         />
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* TCP Options */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.tcpOptions', 'Low-level TCP Options')}
         icon={<Network className="w-4 h-4 text-teal-400" />}
         defaultOpen={false}
@@ -578,10 +543,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             />
           </div>
         )}
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* SSH Protocol */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.sshProtocol', 'SSH Protocol Settings')}
         icon={<Shield className="w-4 h-4 text-red-400" />}
         defaultOpen={false}
@@ -617,10 +582,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             </div>
           )}
         </div>
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Scrollback & Selection */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.scrollback', 'Scrollback & Selection')}
         icon={<Monitor className="w-4 h-4 text-slate-400" />}
         defaultOpen={false}
@@ -667,10 +632,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             />
           </div>
         </div>
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Misc Behavior */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.misc', 'Miscellaneous')}
         icon={<Settings2 className="w-4 h-4 text-[var(--color-textSecondary)]" />}
         defaultOpen={false}
@@ -693,10 +658,10 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
           label={t('settings.sshTerminal.remotePrinting', 'Enable remote-controlled printing')}
           description={t('settings.sshTerminal.remotePrintingDesc', 'Allow remote host to trigger printing')}
         />
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
 
       {/* Advanced SSH Options (Ciphers, MACs, etc.) */}
-      <CollapsibleSection
+      <SettingsCollapsibleSection
         title={t('settings.sshTerminal.advancedSSH', 'Advanced SSH Options')}
         icon={<Zap className="w-4 h-4 text-amber-400" />}
         defaultOpen={false}
@@ -758,7 +723,7 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             />
           </div>
         </div>
-      </CollapsibleSection>
+      </SettingsCollapsibleSection>
     </div>
   );
 };
