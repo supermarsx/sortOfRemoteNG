@@ -409,7 +409,7 @@ export default function RDPTotpPanel({
               onChange={(e) => setNewAlgorithm(e.target.value)}
               className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
             >
-              <option value="sha1">SHA-1 (MS Authenticator)</option>
+              <option value="sha1">SHA-1</option>
               <option value="sha256">SHA-256</option>
               <option value="sha512">SHA-512</option>
             </select>
@@ -485,7 +485,7 @@ export default function RDPTotpPanel({
                       onChange={(e) => setEditData(d => ({ ...d, algorithm: e.target.value as TOTPConfig['algorithm'] }))}
                       className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
                     >
-                      <option value="sha1">SHA-1 (MS Authenticator)</option>
+                      <option value="sha1">SHA-1</option>
                       <option value="sha256">SHA-256</option>
                       <option value="sha512">SHA-512</option>
                     </select>

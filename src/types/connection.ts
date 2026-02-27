@@ -42,6 +42,11 @@ export interface Connection {
   passphrase?: string;
   totpSecret?: string;
   totpConfigs?: TOTPConfig[];  // Multiple TOTP configs per connection
+
+  // Security Questions & Recovery Info
+  securityQuestions?: SecurityQuestion[];
+  recoveryInfo?: RecoveryInfo;
+
   ignoreSshSecurityErrors?: boolean;
   sshConnectTimeout?: number;
   sshKeepAliveInterval?: number;
@@ -1090,6 +1095,19 @@ export interface FileTransferSession {
   endTime?: Date;
   totalSize: number;
   transferredSize: number;
+}
+
+export interface SecurityQuestion {
+  question: string;
+  answer: string;
+}
+
+export interface RecoveryInfo {
+  phone?: string;
+  alternativeEmail?: string;
+  alternativePhone?: string;
+  alternativeEquipment?: string;
+  seedPhrase?: string;
 }
 
 export interface ConnectionCollection {

@@ -1028,7 +1028,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
               onChange={(e) => updateSettings({ totpAlgorithm: e.target.value as 'sha1' | 'sha256' | 'sha512' })}
               className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
             >
-              <option value="sha1">SHA-1 (MS Authenticator)</option>
+              <option value="sha1">SHA-1</option>
               <option value="sha256">SHA-256</option>
               <option value="sha512">SHA-512</option>
             </select>

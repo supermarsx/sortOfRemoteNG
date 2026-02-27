@@ -321,7 +321,7 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
                       onChange={(e) => setEditData(d => ({ ...d, algorithm: e.target.value as TOTPConfig['algorithm'] }))}
                       className="flex-1 px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white"
                     >
-                      <option value="sha1">SHA-1 (MS Authenticator)</option>
+                      <option value="sha1">SHA-1</option>
                       <option value="sha256">SHA-256</option>
                       <option value="sha512">SHA-512</option>
                     </select>
@@ -513,7 +513,7 @@ export const TOTPOptions: React.FC<TOTPOptionsProps> = ({ formData, setFormData 
                   onChange={(e) => setNewAlgorithm(e.target.value)}
                   className="flex-1 px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-sm text-white"
                 >
-                  <option value="sha1">SHA-1 (MS Authenticator)</option>
+                  <option value="sha1">SHA-1</option>
                   <option value="sha256">SHA-256</option>
                   <option value="sha512">SHA-512</option>
                 </select>

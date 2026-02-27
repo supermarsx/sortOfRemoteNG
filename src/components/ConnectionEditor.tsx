@@ -11,6 +11,8 @@ import CloudProviderOptions from './connectionEditor/CloudProviderOptions';
 import RDPOptions from './connectionEditor/RDPOptions';
 import TOTPOptions from './connectionEditor/TOTPOptions';
 import BackupCodesSection from './connectionEditor/BackupCodesSection';
+import SecurityQuestionsSection from './connectionEditor/SecurityQuestionsSection';
+import RecoveryInfoSection from './connectionEditor/RecoveryInfoSection';
 import { useSettings } from '../contexts/SettingsContext';
 import { getConnectionDepth, getMaxDescendantDepth, MAX_NESTING_DEPTH } from '../utils/dragDropManager';
 
@@ -594,6 +596,8 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                 <RDPOptions formData={formData} setFormData={setFormData} />
                 <TOTPOptions formData={formData} setFormData={setFormData} />
                 <BackupCodesSection formData={formData} setFormData={setFormData} />
+                <SecurityQuestionsSection formData={formData} setFormData={setFormData} />
+                <RecoveryInfoSection formData={formData} setFormData={setFormData} />
               </>
             )}
 
