@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use tauri::command;
 use tokio::sync::Mutex;
 use sha2::{Sha256, Digest};
@@ -362,6 +363,57 @@ impl ProxySessionManager {
 
 pub type ProxySessionManagerState = Arc<std::sync::Mutex<ProxySessionManager>>;
 
+// ─── Web Session Recording ───────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebRecordingEntry {
+    pub timestamp_ms: u64,
+    pub method: String,
+    pub url: String,
+    pub request_headers: HashMap<String, String>,
+    pub request_body_size: u64,
+    pub status: u16,
+    pub response_headers: HashMap<String, String>,
+    pub response_body_size: u64,
+    pub content_type: Option<String>,
+    pub duration_ms: u64,
+    pub error: Option<String>,
+}
+
+pub struct WebRecordingState {
+    pub start_time: std::time::Instant,
+    pub start_utc: chrono::DateTime<chrono::Utc>,
+    pub session_id: String,
+    pub target_url: String,
+    pub connection_id: String,
+    pub host: String,
+    pub entries: Vec<WebRecordingEntry>,
+    pub record_headers: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebRecordingMetadata {
+    pub session_id: String,
+    pub start_time: String,
+    pub end_time: Option<String>,
+    pub host: String,
+    pub target_url: String,
+    pub duration_ms: u64,
+    pub entry_count: usize,
+    pub total_bytes_transferred: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebRecording {
+    pub metadata: WebRecordingMetadata,
+    pub entries: Vec<WebRecordingEntry>,
+}
+
+fn active_web_recordings() -> &'static std::sync::Mutex<HashMap<String, WebRecordingState>> {
+    static INSTANCE: OnceLock<std::sync::Mutex<HashMap<String, WebRecordingState>>> = OnceLock::new();
+    INSTANCE.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 // -----------------------------------------------------------------------
 // Axum proxy handler — shared state passed to every request handler
 // -----------------------------------------------------------------------
@@ -491,6 +543,7 @@ async fn axum_proxy_handler(
     }
 
     // Try once, and retry on transient failures.
+    let req_start = std::time::Instant::now();
     let result = match send_upstream(&state, &reqwest_method, &full_url, &fwd_headers, &body_bytes).await {
         Ok(resp) => Ok(resp),
         Err(e) if is_retryable(&e) => {
@@ -553,6 +606,42 @@ async fn axum_proxy_handler(
                         .unwrap();
                 }
             };
+
+            // ── Web recording capture ──
+            if let Ok(mut recordings) = active_web_recordings().lock() {
+                if let Some(rec_state) = recordings.get_mut(&state.session_id) {
+                    let timestamp_ms = rec_state.start_time.elapsed().as_millis() as u64;
+                    let req_headers = if rec_state.record_headers {
+                        fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+                    } else {
+                        HashMap::new()
+                    };
+                    let resp_headers_map = if rec_state.record_headers {
+                        let mut h = HashMap::new();
+                        for (key, value) in resp_hdrs.iter() {
+                            if let Ok(v) = value.to_str() {
+                                h.insert(key.as_str().to_string(), v.to_string());
+                            }
+                        }
+                        h
+                    } else {
+                        HashMap::new()
+                    };
+                    rec_state.entries.push(WebRecordingEntry {
+                        timestamp_ms,
+                        method: method_str.clone(),
+                        url: full_url.clone(),
+                        request_headers: req_headers,
+                        request_body_size: body_bytes.len() as u64,
+                        status: status_u16,
+                        response_headers: resp_headers_map,
+                        response_body_size: raw_bytes.len() as u64,
+                        content_type: content_type.clone(),
+                        duration_ms: req_start.elapsed().as_millis() as u64,
+                        error: None,
+                    });
+                }
+            }
 
             // Rewrite absolute target URLs in text responses so that
             // sub-resources resolve through the local proxy.
@@ -640,12 +729,32 @@ async fn axum_proxy_handler(
                 }
                 mgr.request_log.push(ProxyRequestLogEntry {
                     session_id: state.session_id.clone(),
-                    method: method_str,
+                    method: method_str.clone(),
                     url: full_url.clone(),
                     status: 502,
                     error: Some(err_msg.clone()),
                     timestamp: chrono::Utc::now().to_rfc3339(),
                 });
+            }
+
+            // ── Web recording capture (error) ──
+            if let Ok(mut recordings) = active_web_recordings().lock() {
+                if let Some(rec_state) = recordings.get_mut(&state.session_id) {
+                    let timestamp_ms = rec_state.start_time.elapsed().as_millis() as u64;
+                    rec_state.entries.push(WebRecordingEntry {
+                        timestamp_ms,
+                        method: method_str.clone(),
+                        url: full_url.clone(),
+                        request_headers: if rec_state.record_headers { fwd_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect() } else { HashMap::new() },
+                        request_body_size: body_bytes.len() as u64,
+                        status: 502,
+                        response_headers: HashMap::new(),
+                        response_body_size: 0,
+                        content_type: None,
+                        duration_ms: req_start.elapsed().as_millis() as u64,
+                        error: Some(err_msg.clone()),
+                    });
+                }
             }
 
             Response::builder()
@@ -1589,4 +1698,167 @@ pub async fn diagnose_http_connection(
     }
 
     Ok(diagnostics::finish_report(&host, port, protocol, resolved_ip, steps, run_start))
+}
+
+// ─── Web Session Recording Commands ──────────────────────────────
+
+#[command]
+pub fn start_web_recording(
+    session_id: String,
+    record_headers: Option<bool>,
+    sessions: tauri::State<'_, ProxySessionManagerState>,
+) -> Result<(), String> {
+    // Verify the proxy session exists
+    let mgr = sessions.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let entry = mgr.sessions.get(&session_id)
+        .ok_or_else(|| format!("Proxy session {} not found", session_id))?;
+
+    let host = {
+        // Extract host from target_url
+        if let Some(scheme_end) = entry.target_url.find("://") {
+            let after = &entry.target_url[scheme_end + 3..];
+            after.split('/').next().unwrap_or("unknown").to_string()
+        } else {
+            entry.target_url.clone()
+        }
+    };
+
+    let target_url = entry.target_url.clone();
+    let connection_id = entry.connection_id.clone();
+    drop(mgr);
+
+    let mut recordings = active_web_recordings().lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+
+    if recordings.contains_key(&session_id) {
+        return Err("Web recording already active for this session".into());
+    }
+
+    recordings.insert(session_id.clone(), WebRecordingState {
+        start_time: std::time::Instant::now(),
+        start_utc: chrono::Utc::now(),
+        session_id: session_id.clone(),
+        target_url,
+        connection_id,
+        host,
+        entries: Vec::new(),
+        record_headers: record_headers.unwrap_or(true),
+    });
+
+    Ok(())
+}
+
+#[command]
+pub fn stop_web_recording(
+    session_id: String,
+) -> Result<WebRecording, String> {
+    let mut recordings = active_web_recordings().lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+
+    let state = recordings.remove(&session_id)
+        .ok_or_else(|| format!("No active web recording for session {}", session_id))?;
+
+    let total_bytes: u64 = state.entries.iter()
+        .map(|e| e.request_body_size + e.response_body_size)
+        .sum();
+
+    Ok(WebRecording {
+        metadata: WebRecordingMetadata {
+            session_id: state.session_id,
+            start_time: state.start_utc.to_rfc3339(),
+            end_time: Some(chrono::Utc::now().to_rfc3339()),
+            host: state.host,
+            target_url: state.target_url,
+            duration_ms: state.start_time.elapsed().as_millis() as u64,
+            entry_count: state.entries.len(),
+            total_bytes_transferred: total_bytes,
+        },
+        entries: state.entries,
+    })
+}
+
+#[command]
+pub fn is_web_recording(session_id: String) -> Result<bool, String> {
+    let recordings = active_web_recordings().lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    Ok(recordings.contains_key(&session_id))
+}
+
+#[command]
+pub fn get_web_recording_status(session_id: String) -> Result<Option<WebRecordingMetadata>, String> {
+    let recordings = active_web_recordings().lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+
+    Ok(recordings.get(&session_id).map(|state| {
+        let total_bytes: u64 = state.entries.iter()
+            .map(|e| e.request_body_size + e.response_body_size)
+            .sum();
+        WebRecordingMetadata {
+            session_id: state.session_id.clone(),
+            start_time: state.start_utc.to_rfc3339(),
+            end_time: None,
+            host: state.host.clone(),
+            target_url: state.target_url.clone(),
+            duration_ms: state.start_time.elapsed().as_millis() as u64,
+            entry_count: state.entries.len(),
+            total_bytes_transferred: total_bytes,
+        }
+    }))
+}
+
+#[command]
+pub fn export_web_recording_har(recording: WebRecording) -> Result<String, String> {
+    // HAR 1.2 format
+    let entries: Vec<serde_json::Value> = recording.entries.iter().map(|e| {
+        serde_json::json!({
+            "startedDateTime": recording.metadata.start_time,
+            "time": e.duration_ms,
+            "request": {
+                "method": e.method,
+                "url": e.url,
+                "httpVersion": "HTTP/1.1",
+                "headers": e.request_headers.iter().map(|(k, v)| {
+                    serde_json::json!({"name": k, "value": v})
+                }).collect::<Vec<_>>(),
+                "queryString": [],
+                "headersSize": -1,
+                "bodySize": e.request_body_size as i64,
+            },
+            "response": {
+                "status": e.status,
+                "statusText": "",
+                "httpVersion": "HTTP/1.1",
+                "headers": e.response_headers.iter().map(|(k, v)| {
+                    serde_json::json!({"name": k, "value": v})
+                }).collect::<Vec<_>>(),
+                "content": {
+                    "size": e.response_body_size as i64,
+                    "mimeType": e.content_type.as_deref().unwrap_or(""),
+                },
+                "redirectURL": "",
+                "headersSize": -1,
+                "bodySize": e.response_body_size as i64,
+            },
+            "cache": {},
+            "timings": {
+                "send": 0,
+                "wait": e.duration_ms,
+                "receive": 0,
+            },
+        })
+    }).collect();
+
+    let har = serde_json::json!({
+        "log": {
+            "version": "1.2",
+            "creator": {
+                "name": "sortOfRemoteNG",
+                "version": "1.0",
+            },
+            "pages": [],
+            "entries": entries,
+        }
+    });
+
+    serde_json::to_string_pretty(&har).map_err(|e| format!("JSON serialization failed: {}", e))
 }

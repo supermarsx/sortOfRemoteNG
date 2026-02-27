@@ -124,7 +124,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'wolBroadcastAddress', 'enableActionLog', 'logLevel', 'maxLogEntries',
     'exportEncryption',
   ],
-  recording: ['recording', 'rdpRecording', 'showRecordingManagerIcon'],
+  recording: ['recording', 'rdpRecording', 'webRecording', 'showRecordingManagerIcon'],
   macros: ['macros'],
   backend: ['backendConfig'],
   sshTerminal: ['sshTerminal'],

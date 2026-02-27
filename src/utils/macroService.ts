@@ -5,13 +5,18 @@ import {
   MacroStep,
   SavedRecording,
   SavedRdpRecording,
+  SavedWebRecording,
+  SavedWebVideoRecording,
   SessionRecording,
+  WebRecording,
 } from '../types/macroTypes';
 import { renderTerminalToGif, stripAnsi } from './gifEncoder';
 
 const MACROS_STORAGE_KEY = 'mremote-terminal-macros';
 const RECORDINGS_STORAGE_KEY = 'mremote-session-recordings';
 const RDP_RECORDINGS_STORAGE_KEY = 'mremote-rdp-recordings';
+const WEB_RECORDINGS_STORAGE_KEY = 'mremote-web-recordings';
+const WEB_VIDEO_RECORDINGS_STORAGE_KEY = 'mremote-web-video-recordings';
 
 // ─── Macros ────────────────────────────────────────────────────────
 
@@ -168,6 +173,129 @@ export function rdpRecordingToBlob(recording: SavedRdpRecording): Blob {
     : recording.format === 'gif'
       ? 'image/gif'
       : 'video/webm';
+  return new Blob([bytes], { type: mimeType });
+}
+
+// ─── Web HAR Recordings ───────────────────────────────────────────
+
+export async function loadWebRecordings(): Promise<SavedWebRecording[]> {
+  const data = await IndexedDbService.getItem<SavedWebRecording[]>(WEB_RECORDINGS_STORAGE_KEY);
+  return data ?? [];
+}
+
+export async function saveWebRecordings(recordings: SavedWebRecording[]): Promise<void> {
+  await IndexedDbService.setItem(WEB_RECORDINGS_STORAGE_KEY, recordings);
+}
+
+export async function saveWebRecording(recording: SavedWebRecording): Promise<void> {
+  const recordings = await loadWebRecordings();
+  const idx = recordings.findIndex((r) => r.id === recording.id);
+  if (idx >= 0) {
+    recordings[idx] = recording;
+  } else {
+    recordings.push(recording);
+  }
+  await saveWebRecordings(recordings);
+}
+
+export async function deleteWebRecording(id: string): Promise<void> {
+  const recordings = await loadWebRecordings();
+  await saveWebRecordings(recordings.filter((r) => r.id !== id));
+}
+
+export async function trimWebRecordings(maxCount: number): Promise<void> {
+  if (maxCount <= 0) return;
+  const recordings = await loadWebRecordings();
+  if (recordings.length <= maxCount) return;
+  recordings.sort((a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime());
+  await saveWebRecordings(recordings.slice(recordings.length - maxCount));
+}
+
+export async function exportWebRecording(
+  recording: WebRecording,
+  format: 'json' | 'har',
+): Promise<string> {
+  if (format === 'har') {
+    return await invoke<string>('export_web_recording_har', { recording });
+  }
+  return JSON.stringify(recording, null, 2);
+}
+
+// ─── Web Video Recordings ─────────────────────────────────────────
+
+export async function loadWebVideoRecordings(): Promise<SavedWebVideoRecording[]> {
+  const data = await IndexedDbService.getItem<SavedWebVideoRecording[]>(WEB_VIDEO_RECORDINGS_STORAGE_KEY);
+  return data ?? [];
+}
+
+export async function saveWebVideoRecordings(recordings: SavedWebVideoRecording[]): Promise<void> {
+  await IndexedDbService.setItem(WEB_VIDEO_RECORDINGS_STORAGE_KEY, recordings);
+}
+
+export async function saveWebVideoRecording(recording: SavedWebVideoRecording): Promise<void> {
+  const recordings = await loadWebVideoRecordings();
+  const idx = recordings.findIndex((r) => r.id === recording.id);
+  if (idx >= 0) {
+    recordings[idx] = recording;
+  } else {
+    recordings.push(recording);
+  }
+  await saveWebVideoRecordings(recordings);
+}
+
+export async function deleteWebVideoRecording(id: string): Promise<void> {
+  const recordings = await loadWebVideoRecordings();
+  await saveWebVideoRecordings(recordings.filter((r) => r.id !== id));
+}
+
+export async function trimWebVideoRecordings(maxCount: number): Promise<void> {
+  if (maxCount <= 0) return;
+  const recordings = await loadWebVideoRecordings();
+  if (recordings.length <= maxCount) return;
+  recordings.sort((a, b) => new Date(a.savedAt).getTime() - new Date(b.savedAt).getTime());
+  await saveWebVideoRecordings(recordings.slice(recordings.length - maxCount));
+}
+
+export async function blobToWebVideoRecording(
+  blob: Blob,
+  meta: {
+    name: string;
+    connectionId?: string;
+    connectionName?: string;
+    host?: string;
+    durationMs: number;
+    format: string;
+  },
+): Promise<SavedWebVideoRecording> {
+  const buffer = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const data = btoa(binary);
+
+  return {
+    id: crypto.randomUUID(),
+    name: meta.name,
+    connectionId: meta.connectionId,
+    connectionName: meta.connectionName,
+    host: meta.host,
+    savedAt: new Date().toISOString(),
+    durationMs: meta.durationMs,
+    format: meta.format,
+    sizeBytes: blob.size,
+    data,
+  };
+}
+
+export function webVideoRecordingToBlob(recording: SavedWebVideoRecording): Blob {
+  const binary = atob(recording.data);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const mimeType = recording.format === 'mp4' ? 'video/mp4' : 'video/webm';
   return new Blob([bytes], { type: mimeType });
 }
 

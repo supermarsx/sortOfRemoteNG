@@ -815,6 +815,12 @@ pub fn run() {
         http::check_proxy_health,
         http::restart_proxy_session,
         http::get_tls_certificate_info,
+        // Web session recording commands
+        http::start_web_recording,
+        http::stop_web_recording,
+        http::is_web_recording,
+        http::get_web_recording_status,
+        http::export_web_recording_har,
         passkey::passkey_is_available,
         passkey::passkey_authenticate,
         passkey::passkey_register,

@@ -99,3 +99,71 @@ export interface MacroConfig {
   confirmBeforeReplay: boolean;
   maxMacroSteps: number;
 }
+
+// ─── Web Session Recording ───────────────────────────────────────
+
+export interface WebRecordingEntry {
+  timestamp_ms: number;
+  method: string;
+  url: string;
+  request_headers: Record<string, string>;
+  request_body_size: number;
+  status: number;
+  response_headers: Record<string, string>;
+  response_body_size: number;
+  content_type: string | null;
+  duration_ms: number;
+  error: string | null;
+}
+
+export interface WebRecordingMetadata {
+  session_id: string;
+  start_time: string;
+  end_time: string | null;
+  host: string;
+  target_url: string;
+  duration_ms: number;
+  entry_count: number;
+  total_bytes_transferred: number;
+}
+
+export interface WebRecording {
+  metadata: WebRecordingMetadata;
+  entries: WebRecordingEntry[];
+}
+
+export interface SavedWebRecording {
+  id: string;
+  name: string;
+  description?: string;
+  recording: WebRecording;
+  savedAt: string;
+  tags?: string[];
+  connectionId?: string;
+  connectionName?: string;
+  host?: string;
+}
+
+export interface SavedWebVideoRecording {
+  id: string;
+  name: string;
+  description?: string;
+  connectionId?: string;
+  connectionName?: string;
+  host?: string;
+  savedAt: string;
+  durationMs: number;
+  format: string;
+  sizeBytes: number;
+  /** Base64-encoded video data */
+  data: string;
+  tags?: string[];
+}
+
+export interface WebRecordingConfig {
+  autoRecordWebSessions: boolean;
+  recordHeaders: boolean;
+  maxWebRecordingDurationMinutes: number;
+  maxStoredWebRecordings: number;
+  defaultExportFormat: 'json' | 'har';
+}

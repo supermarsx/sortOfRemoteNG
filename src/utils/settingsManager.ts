@@ -169,6 +169,13 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     maxStoredRdpRecordings: 20,
     autoSaveToLibrary: false,
   },
+  webRecording: {
+    autoRecordWebSessions: false,
+    recordHeaders: true,
+    maxWebRecordingDurationMinutes: 0,
+    maxStoredWebRecordings: 50,
+    defaultExportFormat: 'har' as const,
+  },
   showRecordingManagerIcon: true,
   macros: {
     defaultStepDelayMs: 200,

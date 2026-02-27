@@ -26,6 +26,11 @@ import {
   Download,
   ClipboardCopy,
   FolderOpen,
+  Circle,
+  Film,
+  Square,
+  Pause,
+  Play as PlayIcon,
 } from 'lucide-react';
 import { ConnectionSession, HttpBookmarkItem } from '../types/connection';
 import { TOTPConfig } from '../types/settings';
@@ -38,6 +43,9 @@ import { CertificateInfoPopup } from './CertificateInfoPopup';
 import { TrustWarningDialog } from './TrustWarningDialog';
 import { InputDialog } from './InputDialog';
 import { ConfirmDialog } from './ConfirmDialog';
+import { useWebRecorder } from '../hooks/useWebRecorder';
+import { useDisplayRecorder } from '../hooks/useDisplayRecorder';
+import * as macroService from '../utils/macroService';
 import {
   verifyIdentity,
   trustIdentity,
@@ -150,6 +158,12 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false);
   const [showTotpPanel, setShowTotpPanel] = useState(false);
   const totpBtnRef = useRef<HTMLDivElement>(null);
+
+  // ---- Recording state ----
+  const webRecorder = useWebRecorder();
+  const displayRecorder = useDisplayRecorder();
+  const [showRecordingNamePrompt, setShowRecordingNamePrompt] = useState<'har' | 'video' | null>(null);
+  const pendingRecordingRef = useRef<unknown>(null);
 
   const totpConfigs = connection?.totpConfigs ?? [];
   const handleUpdateTotpConfigs = useCallback((configs: TOTPConfig[]) => {
@@ -344,6 +358,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
           proxySessionIdRef.current = response.session_id;
           proxyUrlRef.current = response.proxy_url;
+
+          // Auto-start web recording if enabled
+          if (settings.webRecording?.autoRecordWebSessions && response.session_id) {
+            try {
+              await webRecorder.startRecording(response.session_id, settings.webRecording?.recordHeaders ?? true);
+            } catch (err) {
+              console.error('Auto-record failed:', err);
+            }
+          }
 
           // Point the iframe at the local proxy + the page path so the initial
           // page loads correctly while all other requests use the site root.
@@ -848,6 +871,79 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     setDragOverIdx(null);
   };
 
+  // ---- HAR Recording handlers ----
+  const handleStartHarRecording = useCallback(async () => {
+    const sid = proxySessionIdRef.current;
+    if (!sid) return;
+    try {
+      await webRecorder.startRecording(sid, settings.webRecording?.recordHeaders ?? true);
+    } catch (err) {
+      console.error('Failed to start web recording:', err);
+    }
+  }, [webRecorder, settings.webRecording]);
+
+  const handleStopHarRecording = useCallback(async () => {
+    const sid = proxySessionIdRef.current;
+    if (!sid) return;
+    const recording = await webRecorder.stopRecording(sid);
+    if (recording) {
+      pendingRecordingRef.current = recording;
+      setShowRecordingNamePrompt('har');
+    }
+  }, [webRecorder]);
+
+  const handleSaveHarRecording = useCallback(async (name: string) => {
+    const recording = pendingRecordingRef.current as import('../types/macroTypes').WebRecording | null;
+    if (!recording) return;
+    await macroService.saveWebRecording({
+      id: crypto.randomUUID(),
+      name,
+      recording,
+      savedAt: new Date().toISOString(),
+      connectionId: connection?.id,
+      connectionName: connection?.name,
+      host: session.hostname,
+    });
+    const max = settings.webRecording?.maxStoredWebRecordings ?? 50;
+    await macroService.trimWebRecordings(max);
+    pendingRecordingRef.current = null;
+    setShowRecordingNamePrompt(null);
+    toast.success('Web recording saved');
+  }, [connection, session.hostname, settings.webRecording, toast]);
+
+  // ---- Video Recording handlers ----
+  const handleStartVideoRecording = useCallback(async () => {
+    const started = await displayRecorder.startRecording('webm');
+    if (!started) {
+      toast.error('Failed to start video recording');
+    }
+  }, [displayRecorder, toast]);
+
+  const handleStopVideoRecording = useCallback(async () => {
+    const blob = await displayRecorder.stopRecording();
+    if (blob) {
+      pendingRecordingRef.current = blob;
+      setShowRecordingNamePrompt('video');
+    }
+  }, [displayRecorder]);
+
+  const handleSaveVideoRecording = useCallback(async (name: string) => {
+    const blob = pendingRecordingRef.current as Blob | null;
+    if (!blob) return;
+    const saved = await macroService.blobToWebVideoRecording(blob, {
+      name,
+      connectionId: connection?.id,
+      connectionName: connection?.name,
+      host: session.hostname,
+      durationMs: displayRecorder.state.duration * 1000,
+      format: displayRecorder.state.format || 'webm',
+    });
+    await macroService.saveWebVideoRecording(saved);
+    pendingRecordingRef.current = null;
+    setShowRecordingNamePrompt(null);
+    toast.success('Video recording saved');
+  }, [connection, session.hostname, displayRecorder.state, toast]);
+
   // Close context menu on outside click
   useEffect(() => {
     if (!bmContextMenu && !bmBarContextMenu) return;
@@ -1029,6 +1125,75 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               />
             )}
           </div>
+          {/* ── Recording controls ── */}
+          <div className="w-px h-5 bg-gray-600 mx-1" />
+          {/* HAR Recording */}
+          {!webRecorder.isRecording ? (
+            <button
+              onClick={handleStartHarRecording}
+              disabled={!proxySessionIdRef.current}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Record HTTP traffic (HAR)"
+            >
+              <Circle size={16} />
+            </button>
+          ) : (
+            <div className="flex items-center gap-1">
+              <span className="flex items-center gap-1 px-2 py-1 bg-red-900/40 rounded text-red-400 text-xs font-mono animate-pulse">
+                <Circle size={10} fill="currentColor" />
+                HAR {Math.floor(webRecorder.duration / 60000)}:{String(Math.floor((webRecorder.duration % 60000) / 1000)).padStart(2, '0')}
+                <span className="text-gray-400 ml-1">{webRecorder.entryCount} req</span>
+              </span>
+              <button
+                onClick={handleStopHarRecording}
+                className="p-1.5 hover:bg-gray-700 rounded transition-colors text-red-400 hover:text-red-300"
+                title="Stop HAR recording"
+              >
+                <Square size={14} fill="currentColor" />
+              </button>
+            </div>
+          )}
+          {/* Video Recording */}
+          {!displayRecorder.state.isRecording ? (
+            <button
+              onClick={handleStartVideoRecording}
+              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-blue-400"
+              title="Record screen video"
+            >
+              <Film size={16} />
+            </button>
+          ) : (
+            <div className="flex items-center gap-1">
+              <span className="flex items-center gap-1 px-2 py-1 bg-blue-900/40 rounded text-blue-400 text-xs font-mono animate-pulse">
+                <Film size={10} />
+                VIDEO {Math.floor(displayRecorder.state.duration / 60)}:{String(displayRecorder.state.duration % 60).padStart(2, '0')}
+              </span>
+              {displayRecorder.state.isPaused ? (
+                <button
+                  onClick={() => displayRecorder.resumeRecording()}
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors text-blue-400"
+                  title="Resume video recording"
+                >
+                  <PlayIcon size={14} />
+                </button>
+              ) : (
+                <button
+                  onClick={() => displayRecorder.pauseRecording()}
+                  className="p-1.5 hover:bg-gray-700 rounded transition-colors text-blue-400"
+                  title="Pause video recording"
+                >
+                  <Pause size={14} />
+                </button>
+              )}
+              <button
+                onClick={handleStopVideoRecording}
+                className="p-1.5 hover:bg-gray-700 rounded transition-colors text-blue-400 hover:text-blue-300"
+                title="Stop video recording"
+              >
+                <Square size={14} fill="currentColor" />
+              </button>
+            </div>
+          )}
           <button
             onClick={handleOpenExternal}
             className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
@@ -1615,6 +1780,27 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         onConfirm={confirmDeleteAllBookmarks}
         onCancel={() => setShowDeleteAllConfirm(false)}
       />
+
+      {/* Recording name prompt */}
+      {showRecordingNamePrompt && (
+        <InputDialog
+          isOpen={true}
+          title={showRecordingNamePrompt === 'har' ? 'Save Web Recording' : 'Save Video Recording'}
+          message="Enter a name for this recording:"
+          defaultValue={`${connection?.name || session.hostname} - ${new Date().toLocaleString()}`}
+          onConfirm={(name) => {
+            if (showRecordingNamePrompt === 'har') {
+              handleSaveHarRecording(name);
+            } else {
+              handleSaveVideoRecording(name);
+            }
+          }}
+          onCancel={() => {
+            pendingRecordingRef.current = null;
+            setShowRecordingNamePrompt(null);
+          }}
+        />
+      )}
     </div>
   );
 };
