@@ -197,4 +197,9 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'logLevel', label: 'Log Level', description: 'Logging verbosity level', tags: ['log', 'debug', 'verbose', 'level'], section: 'advanced', sectionLabel: 'Advanced' },
   { key: 'wolEnabled', label: 'Wake-on-LAN', description: 'Enable Wake-on-LAN', tags: ['wol', 'wake', 'lan', 'power'], section: 'advanced', sectionLabel: 'Advanced' },
   { key: 'exportEncryption', label: 'Export Encryption', description: 'Encrypt exported data', tags: ['export', 'encryption', 'secure', 'password'], section: 'advanced', sectionLabel: 'Advanced' },
+
+  // Settings Dialog
+  { key: 'settingsDialog.autoSave', label: 'Auto-save Settings', description: 'Automatically save settings changes', tags: ['auto', 'save', 'settings', 'dialog', 'debounce'], section: 'advanced', sectionLabel: 'Advanced' },
+  { key: 'settingsDialog.showSaveButton', label: 'Show Save Button', description: 'Show manual save button in settings header', tags: ['save', 'button', 'settings', 'dialog', 'manual'], section: 'advanced', sectionLabel: 'Advanced' },
+  { key: 'settingsDialog.confirmBeforeReset', label: 'Confirm Before Reset', description: 'Show confirmation before resetting tab settings to defaults', tags: ['confirm', 'reset', 'defaults', 'settings', 'dialog'], section: 'advanced', sectionLabel: 'Advanced' },
 ];

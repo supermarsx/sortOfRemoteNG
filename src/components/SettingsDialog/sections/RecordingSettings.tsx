@@ -16,9 +16,9 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
   settings,
   updateSettings,
 }) => {
-  const recording = settings.recording;
-  const rdpRec = settings.rdpRecording;
-  const webRec = settings.webRecording;
+  const recording = { enabled: true, ...settings.recording };
+  const rdpRec = { enabled: true, ...settings.rdpRecording };
+  const webRec = { enabled: true, ...settings.webRecording };
   const [sshCount, setSshCount] = useState(0);
   const [rdpCount, setRdpCount] = useState(0);
   const [rdpSize, setRdpSize] = useState(0);

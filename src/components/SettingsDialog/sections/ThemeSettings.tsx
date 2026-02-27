@@ -282,10 +282,18 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
         <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Eye className="w-4 h-4" />
           {t("settings.theme.transparency", "Window Transparency")}
+          <span className="ml-1 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded">
+            Experimental
+          </span>
         </h4>
 
+        <p className="text-xs text-gray-500">
+          Window transparency is experimental and may cause visual artifacts on some platforms or compositors.
+          Disabled by default.
+        </p>
+
         <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-          <label className="flex items-center space-x-3 cursor-pointer">
+          <label data-setting-key="windowTransparencyEnabled" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.windowTransparencyEnabled}
@@ -294,11 +302,14 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
               }
               className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
             />
-            <span className="text-sm text-gray-300">Enable window transparency</span>
+            <div>
+              <span className="text-sm text-gray-300 group-hover:text-white">Enable window transparency</span>
+              <p className="text-[10px] text-gray-500">Make the application window semi-transparent</p>
+            </div>
           </label>
 
           <div className={`space-y-2 ${!settings.windowTransparencyEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            <label className="text-xs text-gray-400">Opacity Level</label>
+            <label data-setting-key="windowTransparencyOpacity" className="text-xs text-gray-400">Opacity Level</label>
             <div className="flex items-center gap-3">
               <input
                 type="range"
@@ -335,14 +346,17 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
             </div>
           </div>
 
-          <label className="flex items-center space-x-3 cursor-pointer">
+          <label data-setting-key="showTransparencyToggle" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
-              checked={settings.showTransparencyToggle ?? true}
+              checked={settings.showTransparencyToggle ?? false}
               onChange={(e) => updateSettings({ showTransparencyToggle: e.target.checked })}
               className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
             />
-            <span className="text-sm text-gray-300">Show transparency toggle in title bar</span>
+            <div>
+              <span className="text-sm text-gray-300 group-hover:text-white">Show transparency toggle in title bar</span>
+              <p className="text-[10px] text-gray-500">Add a quick-toggle button to the window title bar</p>
+            </div>
           </label>
         </div>
       </div>

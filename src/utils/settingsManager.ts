@@ -130,7 +130,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
 
   windowTransparencyEnabled: false,
   windowTransparencyOpacity: 0.94,
-  showTransparencyToggle: true,
+  showTransparencyToggle: false,
 
   showQuickConnectIcon: true,
   showCollectionSwitcherIcon: true,
@@ -184,6 +184,11 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     defaultStepDelayMs: 200,
     confirmBeforeReplay: true,
     maxMacroSteps: 100,
+  },
+  settingsDialog: {
+    showSaveButton: false,
+    confirmBeforeReset: true,
+    autoSave: true,
   },
 
   autoLock: {

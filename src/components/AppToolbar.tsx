@@ -126,7 +126,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
 
         {/* Window Controls */}
         <div className="flex items-center space-x-1">
-          {(appSettings.showTransparencyToggle ?? true) && (
+          {(appSettings.showTransparencyToggle ?? false) && (
             <button
               onClick={handleToggleTransparency}
               className="app-bar-button p-2"

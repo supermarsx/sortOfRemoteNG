@@ -467,9 +467,9 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
                     onDelete={() => handleDeleteWeb(rec.id)}
                     onExport={(format) => handleExportWeb(rec, format)}
                   />
-                ))
-              }
-            </div>
+                ))}
+              </div>
+            )
           )}
 
           {activeTab === 'webVideo' && (

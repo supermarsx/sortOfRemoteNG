@@ -122,7 +122,7 @@ const TAB_DEFAULTS: Record<string, (keyof GlobalSettings)[]> = {
     'enableTabResize', 'enableZoom', 'enableStatusChecking', 'statusCheckInterval',
     'statusCheckMethod', 'networkDiscovery', 'restApi', 'wolEnabled', 'wolPort',
     'wolBroadcastAddress', 'enableActionLog', 'logLevel', 'maxLogEntries',
-    'exportEncryption',
+    'exportEncryption', 'settingsDialog',
   ],
   recording: ['recording', 'rdpRecording', 'webRecording', 'showRecordingManagerIcon'],
   macros: ['macros'],
@@ -171,7 +171,7 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
   backgroundGlowBlur: 140,
   windowTransparencyEnabled: false,
   windowTransparencyOpacity: 0.94,
-  showTransparencyToggle: true,
+  showTransparencyToggle: false,
   showQuickConnectIcon: true,
   showCollectionSwitcherIcon: true,
   showImportExportIcon: true,
@@ -231,6 +231,11 @@ const DEFAULT_VALUES: Partial<GlobalSettings> = {
     enabled: false,
   },
   sshTerminal: defaultSSHTerminalConfig,
+  settingsDialog: {
+    showSaveButton: false,
+    confirmBeforeReset: true,
+    autoSave: true,
+  },
 };
 
 interface SettingsDialogProps {
@@ -308,7 +313,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   };
 
   const handleReset = () => {
-    setShowResetConfirm(true);
+    // Check the config at call-time (settings might have changed)
+    const confirm = settings?.settingsDialog?.confirmBeforeReset ?? true;
+    if (confirm) {
+      setShowResetConfirm(true);
+    } else {
+      confirmReset();
+    }
   };
 
   const confirmReset = async () => {
@@ -414,10 +425,19 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   /** Schedule a debounced persist of settings (1.5 s after last change).
    *  The in-memory singleton is updated *immediately* so that other code
    *  (e.g. the window-close handler) always reads the latest values.
-   *  Only the IndexedDB write is debounced. */
+   *  Only the IndexedDB write is debounced.
+   *  When autoSave is disabled, only the in-memory singleton is updated;
+   *  the user must click Save to persist to disk. */
   const scheduleSave = useCallback((newSettings: GlobalSettings) => {
     // Immediately update the in-memory singleton so getSettings() is never stale
     settingsManager.applyInMemory(newSettings);
+
+    // If auto-save is disabled, don't schedule a disk write
+    const autoSave = newSettings.settingsDialog?.autoSave ?? true;
+    if (!autoSave) {
+      pendingSettingsRef.current = newSettings;
+      return;
+    }
 
     pendingSettingsRef.current = newSettings;
     if (debounceSaveRef.current) {
@@ -484,6 +504,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
   if (!isOpen || !settings) return null;
 
+  const dialogConfig = {
+    showSaveButton: false,
+    confirmBeforeReset: true,
+    autoSave: true,
+    ...settings.settingsDialog,
+  };
+
   const tabs = [
     { id: 'general', label: t('settings.general'), icon: Monitor },
     { id: 'behavior', label: 'Behavior', icon: MousePointerClick },
@@ -525,22 +552,16 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleReset}
-              data-tooltip={t("settings.reset")}
-              aria-label={t("settings.reset")}
-              className="p-2 text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
-            >
-              <RotateCcw size={16} />
-            </button>
-            <button
-              onClick={handleSave}
-              data-tooltip={t("settings.save")}
-              aria-label={t("settings.save")}
-              className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              <Save size={16} />
-            </button>
+            {dialogConfig.showSaveButton && (
+              <button
+                onClick={handleSave}
+                data-tooltip={t("settings.save")}
+                aria-label={t("settings.save")}
+                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                <Save size={16} />
+              </button>
+            )}
             <button
               onClick={onClose}
               data-tooltip={t("settings.cancel")}
@@ -622,6 +643,19 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
           {/* Content */}
           <div className="flex-1 overflow-y-auto min-h-0">
             <div className="p-6">
+              {/* Per-tab reset button */}
+              {activeTab !== 'recovery' && TAB_DEFAULTS[activeTab] && (
+                <div className="flex justify-end mb-4">
+                  <button
+                    onClick={handleReset}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
+                  >
+                    <RotateCcw size={12} />
+                    {t("settings.reset", "Reset to Defaults")}
+                  </button>
+                </div>
+              )}
+
               {activeTab === 'general' && (
                 <GeneralSettings settings={settings} updateSettings={updateSettings} />
               )}

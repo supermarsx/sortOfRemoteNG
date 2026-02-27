@@ -11,6 +11,9 @@ import {
   Bug,
   Info,
   ShieldAlert,
+  Settings,
+  Save,
+  RotateCcw,
 } from 'lucide-react';
 
 interface AdvancedSettingsProps {
@@ -150,6 +153,64 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
               <span className="text-gray-300 group-hover:text-white">Detect unexpected app close</span>
               <p className="text-xs text-gray-500 mt-0.5">
                 Show recovery options if the app was closed unexpectedly
+              </p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Settings Dialog Section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Settings className="w-4 h-4" />
+          Settings Dialog
+        </h4>
+
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
+          <label data-setting-key="settingsDialog.autoSave" className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.settingsDialog?.autoSave ?? true}
+              onChange={(e) => updateSettings({ settingsDialog: { ...settings.settingsDialog, showSaveButton: settings.settingsDialog?.showSaveButton ?? false, confirmBeforeReset: settings.settingsDialog?.confirmBeforeReset ?? true, autoSave: e.target.checked } })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Save className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
+            <div>
+              <span className="text-gray-300 group-hover:text-white">Auto-save settings</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Automatically save changes as you make them (debounced). Disable to require an explicit Save click.
+              </p>
+            </div>
+          </label>
+
+          <label data-setting-key="settingsDialog.showSaveButton" className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.settingsDialog?.showSaveButton ?? false}
+              onChange={(e) => updateSettings({ settingsDialog: { ...settings.settingsDialog, autoSave: settings.settingsDialog?.autoSave ?? true, confirmBeforeReset: settings.settingsDialog?.confirmBeforeReset ?? true, showSaveButton: e.target.checked } })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <Save className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
+            <div>
+              <span className="text-gray-300 group-hover:text-white">Show save button</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Show a manual save button in the settings header. Useful when auto-save is disabled.
+              </p>
+            </div>
+          </label>
+
+          <label data-setting-key="settingsDialog.confirmBeforeReset" className="flex items-center space-x-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={settings.settingsDialog?.confirmBeforeReset ?? true}
+              onChange={(e) => updateSettings({ settingsDialog: { ...settings.settingsDialog, autoSave: settings.settingsDialog?.autoSave ?? true, showSaveButton: settings.settingsDialog?.showSaveButton ?? false, confirmBeforeReset: e.target.checked } })}
+              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            />
+            <RotateCcw className="w-4 h-4 text-gray-500 group-hover:text-orange-400" />
+            <div>
+              <span className="text-gray-300 group-hover:text-white">Confirm before reset</span>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Show a confirmation dialog before resetting a tab's settings to defaults.
               </p>
             </div>
           </label>

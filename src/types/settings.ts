@@ -388,6 +388,9 @@ export interface GlobalSettings {
   /** Warn on TLS certificate expiry within N days (0 = disabled) */
   certExpiryWarningDays: number;
 
+  // ─── Settings Dialog Behavior ────────────────────────────────────
+  settingsDialog: SettingsDialogConfig;
+
   // ── Web Browser / HTTP proxy settings ──
 
   /** Enable automatic proxy keepalive health checks */
@@ -754,6 +757,15 @@ export interface MacroConfig {
   defaultStepDelayMs: number;
   confirmBeforeReplay: boolean;
   maxMacroSteps: number;
+}
+
+export interface SettingsDialogConfig {
+  /** Show the manual save button in the header (settings auto-save by default) */
+  showSaveButton: boolean;
+  /** Show a confirmation dialog before resetting a tab to defaults */
+  confirmBeforeReset: boolean;
+  /** Auto-save settings on change (debounced) */
+  autoSave: boolean;
 }
 
 export interface AutoLockConfig {
