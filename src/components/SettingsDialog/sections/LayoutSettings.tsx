@@ -51,7 +51,7 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
 
       {/* Window Persistence Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Maximize2 className="w-4 h-4 text-blue-400" />
           Window Persistence
         </h4>
@@ -94,7 +94,7 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
 
       {/* Sidebar Persistence Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <PanelLeft className="w-4 h-4 text-green-400" />
           Sidebar Persistence
         </h4>
@@ -134,7 +134,7 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
 
       {/* Reordering Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <GripVertical className="w-4 h-4 text-purple-400" />
           Tab Interaction
         </h4>
@@ -164,7 +164,7 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
 
       {/* Secondary Bar Icons Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-semibold text-gray-200 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Settings className="w-4 h-4 text-purple-400" />
           Secondary Bar Icons
         </h4>

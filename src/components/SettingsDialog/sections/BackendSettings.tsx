@@ -57,7 +57,10 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-white mb-1">Backend</h3>
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
+          <Server className="w-5 h-5" />
+          Backend
+        </h3>
         <p className="text-sm text-gray-400">
           Tauri runtime and backend service configuration. Changes may require an application restart.
         </p>
@@ -65,8 +68,8 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Runtime ─────────────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-          <Cpu className="w-4 h-4 text-indigo-400" />
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Cpu className="w-4 h-4 text-blue-400" />
           Runtime
         </h4>
 
@@ -104,7 +107,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── RDP Engine ──────────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-cyan-400" />
           RDP Engine
         </h4>
@@ -145,7 +148,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Network ─────────────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Network className="w-4 h-4 text-green-400" />
           Network
         </h4>
@@ -192,7 +195,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Storage ─────────────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-amber-400" />
           Storage
         </h4>
@@ -251,7 +254,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Security ────────────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Shield className="w-4 h-4 text-red-400" />
           Security
         </h4>
@@ -288,7 +291,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Internal API Server ─────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Globe className="w-4 h-4 text-purple-400" />
           Internal API Server
         </h4>

@@ -561,7 +561,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       {/* ─── CredSSP Remediation Defaults ─────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-400" />
             CredSSP Remediation Defaults
           </h4>
@@ -847,7 +847,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       {/* ─── Password Reveal Settings ─────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
             <Eye className="w-4 h-4 text-blue-400" />
             Password Reveal
           </h4>
@@ -963,7 +963,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       {/* ─── 2FA / TOTP Defaults ──────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
             <Shield className="w-4 h-4 text-blue-400" />
             2FA / TOTP Defaults
           </h4>

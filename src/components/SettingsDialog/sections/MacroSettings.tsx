@@ -26,7 +26,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
           <ListVideo size={16} className="text-orange-400" />
           Macros
         </h3>

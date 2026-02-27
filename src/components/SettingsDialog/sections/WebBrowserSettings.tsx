@@ -12,10 +12,10 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
   updateSettings,
 }) => {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* ── Proxy Keepalive ── */}
       <section>
-        <h3 className="text-lg font-medium text-white flex items-center gap-2 mb-4">
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
           <Wifi className="w-5 h-5 text-blue-400" />
           Internal Proxy Keepalive
         </h3>
@@ -115,7 +115,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
 
       {/* ── Bookmarks ── */}
       <section>
-        <h3 className="text-lg font-medium text-white flex items-center gap-2 mb-4">
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
           <Bookmark className="w-5 h-5 text-yellow-400" />
           Bookmarks
         </h3>

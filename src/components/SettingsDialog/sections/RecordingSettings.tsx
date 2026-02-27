@@ -50,7 +50,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
     <div className="space-y-6">
       {/* ── SSH Terminal Recording ─────────────────────── */}
       <div>
-        <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
           <Terminal size={16} className="text-green-400" />
           SSH Terminal Recording
         </h3>
@@ -160,7 +160,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
 
       {/* ── RDP Screen Recording ──────────────────────── */}
       <div className="pt-4 border-t border-gray-600">
-        <h3 className="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
           <Monitor size={16} className="text-blue-400" />
           RDP Screen Recording
         </h3>

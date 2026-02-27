@@ -87,7 +87,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
           <ShieldCheck size={20} className="text-blue-400" />
           Trust &amp; Verification
         </h3>
@@ -103,7 +103,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <div className="flex items-center gap-2 mb-3">
             <Lock size={16} className="text-green-400" />
-            <h4 className="text-sm font-medium text-white">TLS Certificate Policy</h4>
+            <h4 className="text-sm font-medium text-gray-300">TLS Certificate Policy</h4>
           </div>
           <select
             value={settings.tlsTrustPolicy ?? 'tofu'}
@@ -123,7 +123,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
           <div className="flex items-center gap-2 mb-3">
             <Fingerprint size={16} className="text-blue-400" />
-            <h4 className="text-sm font-medium text-white">SSH Host Key Policy</h4>
+            <h4 className="text-sm font-medium text-gray-300">SSH Host Key Policy</h4>
           </div>
           <select
             value={settings.sshTrustPolicy ?? 'tofu'}
@@ -222,7 +222,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
       {/* Stored Trust Records */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm font-medium text-white flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
             <ShieldAlert size={16} className="text-yellow-400" />
             Stored Identities ({totalCount})
           </h4>

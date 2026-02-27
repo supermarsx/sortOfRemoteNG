@@ -241,7 +241,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
           <Archive className="w-5 h-5" />
           Backup & Scheduling
         </h3>
@@ -364,7 +364,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 
       {/* Schedule Settings */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Clock className="w-4 h-4 text-blue-400" />
           Schedule
         </h4>
@@ -453,7 +453,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 
       {/* Differential Backup */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-purple-400" />
           Differential Backups
         </h4>
@@ -504,7 +504,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 
       {/* Format & Content */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <FileArchive className="w-4 h-4 text-orange-400" />
           Format & Content
         </h4>
@@ -620,7 +620,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 
       {/* Encryption */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Lock className="w-4 h-4 text-yellow-400" />
           Encryption
         </h4>

@@ -732,7 +732,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
           <FolderSync className="w-5 h-5" />
           Cloud Sync
         </h3>

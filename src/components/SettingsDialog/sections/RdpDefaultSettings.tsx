@@ -33,7 +33,10 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-white mb-1">RDP</h3>
+        <h3 className="text-lg font-medium text-white flex items-center gap-2">
+          <Monitor className="w-5 h-5" />
+          RDP
+        </h3>
         <p className="text-sm text-gray-400">
           Default configuration applied to all new RDP connections. Individual connections can
           override these settings.
@@ -42,8 +45,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Session Management ─────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-          <Layers className="w-4 h-4 text-indigo-400" />
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <Layers className="w-4 h-4 text-blue-400" />
           Session Management
         </h4>
 
@@ -140,7 +143,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Security Defaults ─────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Shield className="w-4 h-4 text-red-400" />
           Security Defaults
         </h4>
@@ -204,7 +207,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Display Defaults ──────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Monitor className="w-4 h-4 text-blue-400" />
           Display Defaults
         </h4>
@@ -264,7 +267,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Gateway Defaults ──────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Network className="w-4 h-4 text-cyan-400" />
           RDP Gateway Defaults
         </h4>
@@ -359,7 +362,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Hyper-V Defaults ──────────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Server className="w-4 h-4 text-violet-400" />
           Hyper-V Defaults
         </h4>
@@ -382,7 +385,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Negotiation Defaults ──────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Zap className="w-4 h-4 text-amber-400" />
           Connection Negotiation Defaults
         </h4>
@@ -463,7 +466,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── TCP / Socket Defaults ─────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Cable className="w-4 h-4 text-emerald-400" />
           TCP / Socket Defaults
         </h4>
@@ -574,7 +577,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Render Backend Defaults ─────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Monitor className="w-4 h-4 text-cyan-400" />
           Render Backend Default
         </h4>
@@ -624,7 +627,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Performance / Frame Delivery Defaults ─────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Zap className="w-4 h-4 text-yellow-400" />
           Performance / Frame Delivery Defaults
         </h4>
@@ -733,7 +736,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Bitmap Codec Defaults ─────────────────────────────── */}
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
           <Monitor className="w-4 h-4 text-purple-400" />
           Bitmap Codec Negotiation Defaults
         </h4>
