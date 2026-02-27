@@ -154,8 +154,25 @@ const AppContent: React.FC = () => {
   );
 
   // ─── Tool Tab Mode ──────────────────────────────────────────────
-  // Map of tool key → the setter that controls its popup visibility.
-  const toolSetters: Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>> = useMemo(() => ({
+  // Use a ref for the latest settings + sessions so the callbacks below
+  // never need to be re-created when those values change.  This avoids
+  // the circular-dependency / referential-identity issues that broke
+  // the previous useMemo/useCallback chain.
+  const toolModeRef = useRef(appSettings.toolDisplayModes);
+  const sessionsRef = useRef(state.sessions);
+  useEffect(() => { toolModeRef.current = appSettings.toolDisplayModes; }, [appSettings.toolDisplayModes]);
+  useEffect(() => { sessionsRef.current = state.sessions; }, [state.sessions]);
+
+  /** Resolve effective display mode for a tool (inherit → global default). */
+  const resolveToolMode = useCallback((toolKey: ToolKey): 'popup' | 'tab' => {
+    const modes = toolModeRef.current;
+    const raw = modes?.[toolKey] ?? 'inherit';
+    if (raw === 'inherit') return modes?.globalDefault ?? 'popup';
+    return raw;
+  }, []);
+
+  /** Map of tool key → raw popup setter (stable — useState setters never change). */
+  const toolPopupSetters = useRef<Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>>({
     performanceMonitor: setShowPerformanceMonitor,
     actionLog: setShowActionLog,
     shortcutManager: setShowShortcutManager,
@@ -166,59 +183,57 @@ const AppContent: React.FC = () => {
     scriptManager: setShowScriptManager,
     macroManager: setShowMacroManager,
     recordingManager: setShowRecordingManager,
-  }), []);
+  }).current;
 
   /**
-   * Open a tool: if its display mode is 'tab', create a session tab.
-   * Otherwise, set the popup show-state to true.
-   * Returns a setter-compatible function.
+   * Wrapped setter for each tool.  When the tool is in 'tab' mode and
+   * the caller sets it to `true`, we open/focus a session tab instead
+   * of the popup.  All other calls go straight to the popup setter.
    */
-  const openToolOrTab = useCallback((toolKey: ToolKey, show: boolean) => {
-    const raw = appSettings.toolDisplayModes?.[toolKey] ?? 'inherit';
-    const mode = raw === 'inherit'
-      ? (appSettings.toolDisplayModes?.globalDefault ?? 'popup')
-      : raw;
-    if (mode === 'tab' && show) {
-      // Check if a tab for this tool already exists
+  const makeToolSetter = useCallback((toolKey: ToolKey): React.Dispatch<React.SetStateAction<boolean>> => {
+    return ((v: boolean | ((prev: boolean) => boolean)) => {
+      if (v !== true) {
+        // close / toggle — always forward to the popup setter
+        toolPopupSetters[toolKey](v as boolean);
+        return;
+      }
+      // v === true — opening the tool
+      if (resolveToolMode(toolKey) !== 'tab') {
+        toolPopupSetters[toolKey](true);
+        return;
+      }
+      // Tab mode: find or create a session tab
       const protocol = getToolProtocol(toolKey);
-      const existing = state.sessions.find(s => s.protocol === protocol && !s.layout?.isDetached);
+      const existing = sessionsRef.current.find(
+        s => s.protocol === protocol && !s.layout?.isDetached,
+      );
       if (existing) {
-        // Just activate the existing tab
         setActiveSessionId(existing.id);
       } else {
         const session = createToolSession(toolKey);
         dispatch({ type: 'ADD_SESSION', payload: session });
-        setActiveSessionId(session.id);
+        // Use requestAnimationFrame to let React flush the dispatch
+        // before we switch the active tab.
+        requestAnimationFrame(() => setActiveSessionId(session.id));
       }
-      // Make sure the popup is closed
-      toolSetters[toolKey](false);
-    } else {
-      toolSetters[toolKey](show);
-    }
-  }, [appSettings.toolDisplayModes, state.sessions, dispatch, setActiveSessionId, toolSetters]);
+      // Ensure popup is closed
+      toolPopupSetters[toolKey](false);
+    }) as React.Dispatch<React.SetStateAction<boolean>>;
+  // dispatch and setActiveSessionId are stable (from useReducer / useState)
+  }, [dispatch, setActiveSessionId, resolveToolMode]);
 
-  // Create wrapped setters that intercept tab-mode tools
-  const toolShowSetters = useMemo(() => {
-    const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
+  // Build wrapped setters once — they're stable because makeToolSetter
+  // only depends on stable refs and dispatch.
+  const toolShowSetters = useRef<Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>>(null!);
+  if (toolShowSetters.current === null) {
     const keys: ToolKey[] = [
       'performanceMonitor', 'actionLog', 'shortcutManager', 'proxyChain',
       'internalProxy', 'wol', 'bulkSsh', 'scriptManager', 'macroManager', 'recordingManager',
     ];
-    for (const key of keys) {
-      result[key] = ((v: boolean | ((prev: boolean) => boolean)) => {
-        // Only intercept direct `true` calls (opening the tool)
-        if (v === true) {
-          openToolOrTab(key, true);
-        } else if (v === false) {
-          toolSetters[key](false);
-        } else {
-          // Function updater — just pass through
-          toolSetters[key](v);
-        }
-      }) as React.Dispatch<React.SetStateAction<boolean>>;
-    }
-    return result;
-  }, [openToolOrTab, toolSetters]);
+    const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
+    for (const key of keys) result[key] = makeToolSetter(key);
+    toolShowSetters.current = result;
+  }
 
   // Show window immediately so splash screen is visible
   useEffect(() => {
@@ -1070,16 +1085,16 @@ const AppContent: React.FC = () => {
         setShowCollectionSelector={setShowCollectionSelector}
         setShowSettings={setShowSettings}
         setRdpPanelOpen={setRdpPanelOpen}
-        setShowInternalProxyManager={toolShowSetters.internalProxy}
-        setShowProxyMenu={toolShowSetters.proxyChain}
-        setShowShortcutManager={toolShowSetters.shortcutManager}
-        setShowWol={toolShowSetters.wol}
-        setShowBulkSSH={toolShowSetters.bulkSsh}
-        setShowScriptManager={toolShowSetters.scriptManager}
-        setShowMacroManager={toolShowSetters.macroManager}
-        setShowRecordingManager={toolShowSetters.recordingManager}
-        setShowPerformanceMonitor={toolShowSetters.performanceMonitor}
-        setShowActionLog={toolShowSetters.actionLog}
+        setShowInternalProxyManager={toolShowSetters.current.internalProxy}
+        setShowProxyMenu={toolShowSetters.current.proxyChain}
+        setShowShortcutManager={toolShowSetters.current.shortcutManager}
+        setShowWol={toolShowSetters.current.wol}
+        setShowBulkSSH={toolShowSetters.current.bulkSsh}
+        setShowScriptManager={toolShowSetters.current.scriptManager}
+        setShowMacroManager={toolShowSetters.current.macroManager}
+        setShowRecordingManager={toolShowSetters.current.recordingManager}
+        setShowPerformanceMonitor={toolShowSetters.current.performanceMonitor}
+        setShowActionLog={toolShowSetters.current.actionLog}
         setShowErrorLog={setShowErrorLog}
         handleToggleTransparency={handleToggleTransparency}
         handleToggleAlwaysOnTop={handleToggleAlwaysOnTop}
@@ -1218,16 +1233,16 @@ const AppContent: React.FC = () => {
         setShowQuickConnect={setShowQuickConnect}
         setShowSettings={setShowSettings}
         setShowImportExport={setShowImportExport}
-        setShowPerformanceMonitor={toolShowSetters.performanceMonitor}
-        setShowActionLog={toolShowSetters.actionLog}
-        setShowShortcutManager={toolShowSetters.shortcutManager}
-        setShowProxyMenu={toolShowSetters.proxyChain}
-        setShowInternalProxyManager={toolShowSetters.internalProxy}
-        setShowWol={toolShowSetters.wol}
-        setShowBulkSSH={toolShowSetters.bulkSsh}
-        setShowScriptManager={toolShowSetters.scriptManager}
-        setShowMacroManager={toolShowSetters.macroManager}
-        setShowRecordingManager={toolShowSetters.recordingManager}
+        setShowPerformanceMonitor={toolShowSetters.current.performanceMonitor}
+        setShowActionLog={toolShowSetters.current.actionLog}
+        setShowShortcutManager={toolShowSetters.current.shortcutManager}
+        setShowProxyMenu={toolShowSetters.current.proxyChain}
+        setShowInternalProxyManager={toolShowSetters.current.internalProxy}
+        setShowWol={toolShowSetters.current.wol}
+        setShowBulkSSH={toolShowSetters.current.bulkSsh}
+        setShowScriptManager={toolShowSetters.current.scriptManager}
+        setShowMacroManager={toolShowSetters.current.macroManager}
+        setShowRecordingManager={toolShowSetters.current.recordingManager}
         setShowDiagnostics={setShowDiagnostics}
         setShowErrorLog={setShowErrorLog}
         setRdpPanelOpen={setRdpPanelOpen}

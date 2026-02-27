@@ -800,7 +800,7 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                   >
                     {isExecuting ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-[var(--color-border)]/30 border-t-white rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-[var(--color-border)]/30 border-t-[var(--color-text)] rounded-full animate-spin" />
                         {t('bulkSsh.executing', 'Running...')}
                       </>
                     ) : (

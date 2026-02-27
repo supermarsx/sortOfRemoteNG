@@ -85,7 +85,7 @@ function formatDuration(sec: number): string {
 const btnBase = 'p-1 hover:bg-[var(--color-border)] rounded transition-colors';
 const btnDefault = `${btnBase} text-[var(--color-textSecondary)] hover:text-[var(--color-text)]`;
 const btnActive = `${btnBase} text-[var(--color-text)] bg-[var(--color-border)]`;
-const btnDisabled = `${btnBase} text-gray-600 cursor-not-allowed`;
+const btnDisabled = `${btnBase} text-[var(--color-textSecondary)] cursor-not-allowed`;
 
 export default function RDPClientHeader({
   sessionName,
@@ -195,15 +195,36 @@ export default function RDPClientHeader({
     <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-4 py-2 flex items-center justify-between">
       <div className="flex items-center space-x-3">
         <Monitor size={16} className="text-[var(--color-textSecondary)]" />
-        <span className="text-sm text-[var(--color-textSecondary)]">
-          RDP - {sessionName !== sessionHostname ? `${sessionName} (${sessionHostname})` : sessionHostname}
-        </span>
+        {isEditingName ? (
+          <div className="flex items-center space-x-1">
+            <input
+              ref={nameInputRef}
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') confirmRename();
+                if (e.key === 'Escape') cancelRename();
+              }}
+              onBlur={confirmRename}
+              className="px-2 py-0.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] w-48"
+            />
+          </div>
+        ) : (
+          <span
+            className="text-sm text-[var(--color-textSecondary)] cursor-pointer hover:text-[var(--color-text)] transition-colors"
+            onDoubleClick={startEditing}
+            title="Double-click to rename"
+          >
+            RDP - {sessionName !== sessionHostname ? `${sessionName} (${sessionHostname})` : sessionHostname}
+          </span>
+        )}
         <div className={`flex items-center space-x-1 ${getStatusColor()}`}>
           {getStatusIcon()}
           <span className="text-xs capitalize">{connectionStatus}</span>
         </div>
         {statusMessage && (
-          <span className="text-xs text-gray-500 ml-2 truncate max-w-xs">{statusMessage}</span>
+          <span className="text-xs text-[var(--color-textSecondary)] ml-2 truncate max-w-xs">{statusMessage}</span>
         )}
       </div>
 
@@ -253,7 +274,7 @@ export default function RDPClientHeader({
           <Power size={14} />
         </button>
 
-        <div className="w-px h-4 bg-gray-600 mx-1" />
+        <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
 
         {/* ── Clipboard ──────────────────────────────────────── */}
         <button
@@ -274,7 +295,7 @@ export default function RDPClientHeader({
           <ClipboardPaste size={14} />
         </button>
 
-        <div className="w-px h-4 bg-gray-600 mx-1" />
+        <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
 
         {/* ── Send Keys (separate button) ────────────────────── */}
         <div ref={sendKeysRef} className="relative">
@@ -307,7 +328,7 @@ export default function RDPClientHeader({
                   className={`w-full text-left px-3 py-1.5 text-xs ${
                     isConnected
                       ? 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]'
-                      : 'text-gray-600 cursor-not-allowed'
+                      : 'text-[var(--color-textSecondary)] cursor-not-allowed'
                   } transition-colors`}
                 >
                   {item.label}
@@ -380,10 +401,10 @@ export default function RDPClientHeader({
                   Host
                 </div>
                 <div className="text-xs text-[var(--color-textSecondary)]">{sessionHostname}</div>
-                <div className="text-[10px] text-gray-500">
+                <div className="text-[10px] text-[var(--color-textSecondary)]">
                   Status: <span className="capitalize">{connectionStatus}</span>
                 </div>
-                <div className="text-[10px] text-gray-500">
+                <div className="text-[10px] text-[var(--color-textSecondary)]">
                   Resolution: {desktopSize.width}x{desktopSize.height} · {colorDepth}-bit
                 </div>
               </div>
@@ -394,7 +415,7 @@ export default function RDPClientHeader({
                   Certificate
                 </div>
                 <div className="flex items-start space-x-2">
-                  <Fingerprint size={12} className="text-gray-500 flex-shrink-0 mt-0.5" />
+                  <Fingerprint size={12} className="text-[var(--color-textSecondary)] flex-shrink-0 mt-0.5" />
                   <div className="text-[10px] text-[var(--color-textSecondary)] min-w-0">
                     {certFingerprint ? (
                       <span className="font-mono break-all">{certFingerprint}</span>
@@ -417,7 +438,7 @@ export default function RDPClientHeader({
           >
             <Shield size={14} />
             {configs.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-[var(--color-text)] text-[8px] font-bold rounded-full flex items-center justify-center">
+              <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[var(--color-border)] text-[var(--color-text)] text-[8px] font-bold rounded-full flex items-center justify-center">
                 {configs.length}
               </span>
             )}
@@ -437,7 +458,7 @@ export default function RDPClientHeader({
           )}
         </div>
 
-        <div className="w-px h-4 bg-gray-600 mx-1" />
+        <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
 
         {/* ── Existing buttons ───────────────────────────────── */}
         {magnifierEnabled && (
