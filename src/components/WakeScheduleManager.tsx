@@ -4,8 +4,19 @@ import {
   type WakeSchedule,
   type WakeRecurrence,
 } from "../utils/wakeOnLan";
-import { Trash2, Pencil, Save, X, Clock, Plus, Power, Calendar, Repeat } from "lucide-react";
+import {
+  Trash2,
+  Pencil,
+  Save,
+  X,
+  Clock,
+  Plus,
+  Power,
+  Calendar,
+  Repeat,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Modal } from "./ui/Modal";
 
 const wolService = new WakeOnLanService();
 
@@ -15,9 +26,9 @@ const toLocalInput = (date: Date) =>
     .slice(0, 16);
 
 const formatMac = (value: string): string => {
-  const clean = value.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  const clean = value.replace(/[^0-9a-fA-F]/g, "").toUpperCase();
   const pairs = clean.match(/.{1,2}/g) || [];
-  return pairs.slice(0, 6).join(':');
+  return pairs.slice(0, 6).join(":");
 };
 
 interface Props {
@@ -45,7 +56,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         if (showForm) {
           resetForm();
         } else {
@@ -53,8 +64,8 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
         }
       }
     };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, showForm, onClose]);
 
   if (!isOpen) return null;
@@ -95,9 +106,12 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
 
   const getRecurrenceLabel = (recurrence?: string) => {
     switch (recurrence) {
-      case 'daily': return t("wake.daily", "Daily");
-      case 'weekly': return t("wake.weekly", "Weekly");
-      default: return t("wake.once", "Once");
+      case "daily":
+        return t("wake.daily", "Daily");
+      case "weekly":
+        return t("wake.weekly", "Weekly");
+      default:
+        return t("wake.once", "Once");
     }
   };
 
@@ -106,11 +120,15 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      closeOnEscape={false}
+      backdropClassName="bg-black/50 backdrop-blur-sm"
+      panelClassName="relative max-w-xl rounded-xl overflow-hidden border border-[var(--color-border)]"
+      contentClassName="relative bg-[var(--color-surface)]"
     >
-      <div className="relative bg-[var(--color-surface)] rounded-xl shadow-2xl w-full max-w-xl overflow-hidden border border-[var(--color-border)]">
+      <div className="relative flex flex-1 min-h-0 flex-col">
         {/* Subtle glow effect */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute w-[200px] h-[150px] bg-orange-500/8 rounded-full blur-[80px] top-[20%] left-[15%]" />
@@ -132,8 +150,8 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
               </p>
             </div>
           </div>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
           >
             <X size={18} />
@@ -143,31 +161,42 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
         {/* Content */}
         <div className="relative z-10 p-5">
           {/* Schedule List */}
-          <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
+          <div className="sor-selection-list max-h-60 overflow-y-auto mb-4">
             {schedules.map((s) => {
               const isPast = isSchedulePast(s.wakeTime) && !s.recurrence;
               return (
                 <div
                   key={`${s.macAddress}-${s.wakeTime}-${s.broadcastAddress ?? ""}-${s.port}-${s.recurrence ?? ""}`}
-                  className={`flex justify-between items-center p-3 rounded-lg border transition-all ${
-                    isPast 
-                      ? 'bg-[var(--color-surfaceHover)]/30 border-[var(--color-border)]/50 opacity-60' 
-                      : 'bg-[var(--color-surfaceHover)]/50 border-[var(--color-border)] hover:border-[var(--color-textMuted)]'
+                  className={`sor-selection-row cursor-default ${
+                    isPast ? "opacity-60" : ""
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg ${isPast ? 'bg-gray-500/20' : 'bg-green-500/20'}`}>
-                      <Power size={16} className={isPast ? 'text-[var(--color-textSecondary)]' : 'text-green-500'} />
+                    <div
+                      className={`p-2 rounded-lg ${isPast ? "bg-gray-500/20" : "bg-green-500/20"}`}
+                    >
+                      <Power
+                        size={16}
+                        className={
+                          isPast
+                            ? "text-[var(--color-textSecondary)]"
+                            : "text-green-500"
+                        }
+                      />
                     </div>
                     <div>
-                      <div className="text-sm font-mono text-[var(--color-text)]">{s.macAddress}</div>
+                      <div className="text-sm font-mono text-[var(--color-text)]">
+                        {s.macAddress}
+                      </div>
                       <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
                         <Calendar size={10} />
                         <span>{new Date(s.wakeTime).toLocaleString()}</span>
                         {s.recurrence && (
                           <>
                             <Repeat size={10} className="ml-1" />
-                            <span className="text-orange-400">{getRecurrenceLabel(s.recurrence)}</span>
+                            <span className="text-orange-400">
+                              {getRecurrenceLabel(s.recurrence)}
+                            </span>
                           </>
                         )}
                       </div>
@@ -195,8 +224,12 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
             {schedules.length === 0 && !showForm && (
               <div className="text-center py-8 text-[var(--color-textMuted)]">
                 <Clock size={32} className="mx-auto mb-3 opacity-50" />
-                <p className="text-sm">{t("wake.noSchedules", "No schedules configured")}</p>
-                <p className="text-xs mt-1">Click "New Schedule" to create one</p>
+                <p className="text-sm">
+                  {t("wake.noSchedules", "No schedules configured")}
+                </p>
+                <p className="text-xs mt-1">
+                  Click "New Schedule" to create one
+                </p>
               </div>
             )}
           </div>
@@ -206,7 +239,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
             <div className="space-y-3 p-4 bg-[var(--color-surfaceHover)]/30 rounded-lg border border-[var(--color-border)]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium text-[var(--color-text)]">
-                  {editing ? 'Edit Schedule' : 'New Schedule'}
+                  {editing ? "Edit Schedule" : "New Schedule"}
                 </span>
                 <button
                   onClick={resetForm}
@@ -215,76 +248,106 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
                   Cancel
                 </button>
               </div>
-              
+
               <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">MAC Address</label>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  MAC Address
+                </label>
                 <input
                   type="text"
                   placeholder="00:11:22:33:44:55"
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   value={form.macAddress}
-                  onChange={(e) => setForm({ ...form, macAddress: formatMac(e.target.value) })}
+                  onChange={(e) =>
+                    setForm({ ...form, macAddress: formatMac(e.target.value) })
+                  }
                 />
               </div>
-              
+
               <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Wake Time</label>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  Wake Time
+                </label>
                 <input
                   type="datetime-local"
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   value={form.wakeTime}
-                  onChange={(e) => setForm({ ...form, wakeTime: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, wakeTime: e.target.value })
+                  }
                 />
               </div>
-              
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Broadcast Address</label>
+                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                    Broadcast Address
+                  </label>
                   <input
                     type="text"
                     placeholder="255.255.255.255"
                     className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     value={form.broadcastAddress ?? ""}
-                    onChange={(e) => setForm({ ...form, broadcastAddress: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, broadcastAddress: e.target.value })
+                    }
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">UDP Port</label>
+                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                    UDP Port
+                  </label>
                   <input
                     type="number"
                     className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                     value={form.port}
-                    onChange={(e) => setForm({ ...form, port: parseInt(e.target.value, 10) || 9 })}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        port: parseInt(e.target.value, 10) || 9,
+                      })
+                    }
                   />
                 </div>
               </div>
-              
+
               <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Recurrence</label>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  Recurrence
+                </label>
                 <select
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                   value={form.recurrence ?? ""}
-                  onChange={(e) => setForm({ ...form, recurrence: e.target.value as WakeRecurrence })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      recurrence: e.target.value as WakeRecurrence,
+                    })
+                  }
                 >
                   <option value="">{t("wake.once", "Once")}</option>
                   <option value="daily">{t("wake.daily", "Daily")}</option>
                   <option value="weekly">{t("wake.weekly", "Weekly")}</option>
                 </select>
               </div>
-              
+
               <button
                 onClick={handleSubmit}
                 disabled={!form.macAddress || form.macAddress.length < 17}
                 className="w-full flex items-center justify-center space-x-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-orange-500/20 disabled:shadow-none"
               >
                 <Save size={16} />
-                <span>{editing ? t("common.save", "Save") : t("common.add", "Add Schedule")}</span>
+                <span>
+                  {editing
+                    ? t("common.save", "Save")
+                    : t("common.add", "Add Schedule")}
+                </span>
               </button>
             </div>
           ) : (
             <button
               onClick={() => setShowForm(true)}
-              className="w-full flex items-center justify-center space-x-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] py-2.5 rounded-lg font-medium transition-colors border border-[var(--color-border)]"
+              className="sor-option-chip w-full justify-center py-2.5 font-medium"
             >
               <Plus size={16} />
               <span>New Schedule</span>
@@ -292,7 +355,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
 

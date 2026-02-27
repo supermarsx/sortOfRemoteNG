@@ -1,13 +1,30 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { PasswordInput } from './ui/PasswordInput';
-import { Database, Plus, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload, X, Layers, Network, Link2, Copy, Search } from 'lucide-react';
-import { ConnectionCollection } from '../types/connection';
-import { SavedProxyProfile, SavedProxyChain } from '../types/settings';
-import { CollectionManager } from '../utils/collectionManager';
-import { proxyCollectionManager } from '../utils/proxyCollectionManager';
-import { ImportExport } from './ImportExport';
-import { ProxyProfileEditor } from './ProxyProfileEditor';
-import { ProxyChainEditor } from './ProxyChainEditor';
+import React, { useState, useEffect, useCallback } from "react";
+import { PasswordInput } from "./ui/PasswordInput";
+import {
+  Database,
+  Plus,
+  Lock,
+  Trash2,
+  Edit,
+  Eye,
+  EyeOff,
+  Download,
+  Upload,
+  X,
+  Layers,
+  Network,
+  Link2,
+  Copy,
+  Search,
+} from "lucide-react";
+import { ConnectionCollection } from "../types/connection";
+import { SavedProxyProfile, SavedProxyChain } from "../types/settings";
+import { CollectionManager } from "../utils/collectionManager";
+import { proxyCollectionManager } from "../utils/proxyCollectionManager";
+import { ImportExport } from "./ImportExport";
+import { ProxyProfileEditor } from "./ProxyProfileEditor";
+import { ProxyChainEditor } from "./ProxyChainEditor";
+import { Modal } from "./ui/Modal";
 
 interface CollectionSelectorProps {
   isOpen: boolean;
@@ -24,47 +41,56 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showImportForm, setShowImportForm] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [selectedCollection, setSelectedCollection] = useState<ConnectionCollection | null>(null);
+  const [selectedCollection, setSelectedCollection] =
+    useState<ConnectionCollection | null>(null);
   const [newCollection, setNewCollection] = useState({
-    name: '',
-    description: '',
+    name: "",
+    description: "",
     isEncrypted: false,
-    password: '',
-    confirmPassword: '',
+    password: "",
+    confirmPassword: "",
   });
-  const [editingCollection, setEditingCollection] = useState<ConnectionCollection | null>(null);
+  const [editingCollection, setEditingCollection] =
+    useState<ConnectionCollection | null>(null);
   const [editPassword, setEditPassword] = useState({
-    current: '',
-    next: '',
-    confirm: '',
+    current: "",
+    next: "",
+    confirm: "",
     enableEncryption: false,
   });
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importPassword, setImportPassword] = useState('');
-  const [importCollectionName, setImportCollectionName] = useState('');
+  const [importPassword, setImportPassword] = useState("");
+  const [importCollectionName, setImportCollectionName] = useState("");
   const [encryptImport, setEncryptImport] = useState(false);
-  const [importEncryptPassword, setImportEncryptPassword] = useState('');
-  const [importEncryptConfirmPassword, setImportEncryptConfirmPassword] = useState('');
-  const [exportingCollection, setExportingCollection] = useState<ConnectionCollection | null>(null);
+  const [importEncryptPassword, setImportEncryptPassword] = useState("");
+  const [importEncryptConfirmPassword, setImportEncryptConfirmPassword] =
+    useState("");
+  const [exportingCollection, setExportingCollection] =
+    useState<ConnectionCollection | null>(null);
   const [includePasswords, setIncludePasswords] = useState(false);
-  const [exportPassword, setExportPassword] = useState('');
-  const [collectionPassword, setCollectionPassword] = useState('');
-  const [password, setPassword] = useState('');
+  const [exportPassword, setExportPassword] = useState("");
+  const [collectionPassword, setCollectionPassword] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'collections' | 'connections' | 'proxies'>('collections');
+  const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState<
+    "collections" | "connections" | "proxies"
+  >("collections");
 
   const collectionManager = CollectionManager.getInstance();
 
   // Proxy/VPN profiles state
   const [savedProfiles, setSavedProfiles] = useState<SavedProxyProfile[]>([]);
   const [savedChains, setSavedChains] = useState<SavedProxyChain[]>([]);
-  const [profileSearch, setProfileSearch] = useState('');
-  const [chainSearch, setChainSearch] = useState('');
+  const [profileSearch, setProfileSearch] = useState("");
+  const [chainSearch, setChainSearch] = useState("");
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showChainEditor, setShowChainEditor] = useState(false);
-  const [editingProfile, setEditingProfile] = useState<SavedProxyProfile | null>(null);
-  const [editingChain, setEditingChain] = useState<SavedProxyChain | null>(null);
+  const [editingProfile, setEditingProfile] =
+    useState<SavedProxyProfile | null>(null);
+  const [editingChain, setEditingChain] = useState<SavedProxyChain | null>(
+    null,
+  );
 
   const loadCollections = useCallback(async () => {
     const allCollections = await collectionManager.getAllCollections();
@@ -82,21 +108,21 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
   const handleCreateCollection = async () => {
     if (!newCollection.name.trim()) {
-      setError('Collection name is required');
+      setError("Collection name is required");
       return;
     }
 
     if (newCollection.isEncrypted) {
       if (!newCollection.password) {
-        setError('Password is required for encrypted collections');
+        setError("Password is required for encrypted collections");
         return;
       }
       if (newCollection.password !== newCollection.confirmPassword) {
-        setError('Passwords do not match');
+        setError("Passwords do not match");
         return;
       }
       if (newCollection.password.length < 4) {
-        setError('Password must be at least 4 characters');
+        setError("Password must be at least 4 characters");
         return;
       }
     }
@@ -106,40 +132,42 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         newCollection.name,
         newCollection.description,
         newCollection.isEncrypted,
-        newCollection.password || undefined
+        newCollection.password || undefined,
       );
 
       setCollections([...collections, collection]);
       setShowCreateForm(false);
       setNewCollection({
-        name: '',
-        description: '',
+        name: "",
+        description: "",
         isEncrypted: false,
-        password: '',
-        confirmPassword: '',
+        password: "",
+        confirmPassword: "",
       });
-      setError('');
+      setError("");
 
       // Auto-select the new collection
       onCollectionSelect(collection.id, newCollection.password || undefined);
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to create collection');
+      setError(
+        error instanceof Error ? error.message : "Failed to create collection",
+      );
     }
   };
 
   const handleImportCollection = async () => {
     if (!importFile) {
-      setError('Select a collection file to import');
+      setError("Select a collection file to import");
       return;
     }
 
     if (encryptImport) {
       if (!importEncryptPassword) {
-        setError('Password is required to encrypt the imported collection');
+        setError("Password is required to encrypt the imported collection");
         return;
       }
       if (importEncryptPassword !== importEncryptConfirmPassword) {
-        setError('Encryption passwords do not match');
+        setError("Encryption passwords do not match");
         return;
       }
     }
@@ -155,23 +183,25 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
       setCollections([...collections, collection]);
       setShowImportForm(false);
       setImportFile(null);
-      setImportPassword('');
-      setImportCollectionName('');
+      setImportPassword("");
+      setImportCollectionName("");
       setEncryptImport(false);
-      setImportEncryptPassword('');
-      setImportEncryptConfirmPassword('');
-      setError('');
+      setImportEncryptPassword("");
+      setImportEncryptConfirmPassword("");
+      setError("");
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to import collection');
+      setError(
+        error instanceof Error ? error.message : "Failed to import collection",
+      );
     }
   };
 
   const handleExportCollection = (collection: ConnectionCollection) => {
     setExportingCollection(collection);
     setIncludePasswords(false);
-    setExportPassword('');
-    setCollectionPassword('');
-    setError('');
+    setExportPassword("");
+    setCollectionPassword("");
+    setError("");
   };
 
   const handleExportDownload = async () => {
@@ -185,9 +215,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         collectionPassword || undefined,
       );
       const filename = collectionManager.generateExportFilename();
-      const blob = new Blob([content], { type: 'application/json' });
+      const blob = new Blob([content], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
       link.download = filename;
       document.body.appendChild(link);
@@ -195,9 +225,11 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       setExportingCollection(null);
-      setError('');
+      setError("");
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to export collection');
+      setError(
+        error instanceof Error ? error.message : "Failed to export collection",
+      );
     }
   };
 
@@ -205,8 +237,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     if (collection.isEncrypted) {
       setSelectedCollection(collection);
       setShowPasswordDialog(true);
-      setPassword('');
-      setError('');
+      setPassword("");
+      setError("");
     } else {
       onCollectionSelect(collection.id);
     }
@@ -218,20 +250,28 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     try {
       onCollectionSelect(selectedCollection.id, password);
       setShowPasswordDialog(false);
-      setPassword('');
-      setError('');
+      setPassword("");
+      setError("");
     } catch (error) {
-      setError('Invalid password');
+      setError("Invalid password");
     }
   };
 
   const handleDeleteCollection = async (collection: ConnectionCollection) => {
-    if (confirm(`Are you sure you want to delete the collection "${collection.name}"? This action cannot be undone.`)) {
+    if (
+      confirm(
+        `Are you sure you want to delete the collection "${collection.name}"? This action cannot be undone.`,
+      )
+    ) {
       try {
         await collectionManager.deleteCollection(collection.id);
-        setCollections(collections.filter(c => c.id !== collection.id));
+        setCollections(collections.filter((c) => c.id !== collection.id));
       } catch (error) {
-        setError(error instanceof Error ? error.message : 'Failed to delete collection');
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Failed to delete collection",
+        );
       }
     }
   };
@@ -239,18 +279,18 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   const handleEditCollection = (collection: ConnectionCollection) => {
     setEditingCollection({ ...collection });
     setEditPassword({
-      current: '',
-      next: '',
-      confirm: '',
+      current: "",
+      next: "",
+      confirm: "",
       enableEncryption: collection.isEncrypted,
     });
-    setError('');
+    setError("");
   };
 
   const handleUpdateCollection = async () => {
     if (!editingCollection) return;
     if (!editingCollection.name.trim()) {
-      setError('Collection name is required');
+      setError("Collection name is required");
       return;
     }
 
@@ -259,30 +299,33 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
     if (wantsEncryption) {
       if (!editingCollection.isEncrypted && !wantsPasswordChange) {
-        setError('Password is required to encrypt this collection');
+        setError("Password is required to encrypt this collection");
         return;
       }
       if (wantsPasswordChange) {
         if (editPassword.next !== editPassword.confirm) {
-          setError('New passwords do not match');
+          setError("New passwords do not match");
           return;
         }
         if (editPassword.next.length < 4) {
-          setError('Password must be at least 4 characters');
+          setError("Password must be at least 4 characters");
           return;
         }
         if (editingCollection.isEncrypted && !editPassword.current) {
-          setError('Current password is required');
+          setError("Current password is required");
           return;
         }
       }
     } else if (editingCollection.isEncrypted && !editPassword.current) {
-      setError('Current password is required to remove encryption');
+      setError("Current password is required to remove encryption");
       return;
     }
 
     try {
-      let updatedCollection = { ...editingCollection, isEncrypted: wantsEncryption };
+      let updatedCollection = {
+        ...editingCollection,
+        isEncrypted: wantsEncryption,
+      };
 
       if (editingCollection.isEncrypted && !wantsEncryption) {
         await collectionManager.removePasswordFromCollection(
@@ -302,11 +345,17 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
       }
 
       await collectionManager.updateCollection(updatedCollection);
-      setCollections(collections.map(c => c.id === editingCollection.id ? updatedCollection : c));
+      setCollections(
+        collections.map((c) =>
+          c.id === editingCollection.id ? updatedCollection : c,
+        ),
+      );
       setEditingCollection(null);
-      setError('');
+      setError("");
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to update collection');
+      setError(
+        error instanceof Error ? error.message : "Failed to update collection",
+      );
     }
   };
 
@@ -321,16 +370,25 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     setShowProfileEditor(true);
   };
 
-  const handleSaveProfile = async (profileData: Omit<SavedProxyProfile, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleSaveProfile = async (
+    profileData: Omit<SavedProxyProfile, "id" | "createdAt" | "updatedAt">,
+  ) => {
     try {
       if (editingProfile) {
-        await proxyCollectionManager.updateProfile(editingProfile.id, profileData);
+        await proxyCollectionManager.updateProfile(
+          editingProfile.id,
+          profileData,
+        );
       } else {
-        await proxyCollectionManager.createProfile(profileData.name, profileData.config, {
-          description: profileData.description,
-          tags: profileData.tags,
-          isDefault: profileData.isDefault,
-        });
+        await proxyCollectionManager.createProfile(
+          profileData.name,
+          profileData.config,
+          {
+            description: profileData.description,
+            tags: profileData.tags,
+            isDefault: profileData.isDefault,
+          },
+        );
       }
       setShowProfileEditor(false);
       setEditingProfile(null);
@@ -346,7 +404,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         await proxyCollectionManager.deleteProfile(profileId);
         setSavedProfiles(proxyCollectionManager.getProfiles());
       } catch (error) {
-        alert(error instanceof Error ? error.message : "Failed to delete profile");
+        alert(
+          error instanceof Error ? error.message : "Failed to delete profile",
+        );
       }
     }
   };
@@ -371,15 +431,21 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     setShowChainEditor(true);
   };
 
-  const handleSaveChain = async (chainData: Omit<SavedProxyChain, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleSaveChain = async (
+    chainData: Omit<SavedProxyChain, "id" | "createdAt" | "updatedAt">,
+  ) => {
     try {
       if (editingChain) {
         await proxyCollectionManager.updateChain(editingChain.id, chainData);
       } else {
-        await proxyCollectionManager.createChain(chainData.name, chainData.layers, {
-          description: chainData.description,
-          tags: chainData.tags,
-        });
+        await proxyCollectionManager.createChain(
+          chainData.name,
+          chainData.layers,
+          {
+            description: chainData.description,
+            tags: chainData.tags,
+          },
+        );
       }
       setShowChainEditor(false);
       setEditingChain(null);
@@ -395,7 +461,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         await proxyCollectionManager.deleteChain(chainId);
         setSavedChains(proxyCollectionManager.getChains());
       } catch (error) {
-        alert(error instanceof Error ? error.message : "Failed to delete chain");
+        alert(
+          error instanceof Error ? error.message : "Failed to delete chain",
+        );
       }
     }
   };
@@ -412,11 +480,11 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   const handleExportProxies = async () => {
     try {
       const data = await proxyCollectionManager.exportData();
-      const blob = new Blob([data], { type: 'application/json' });
+      const blob = new Blob([data], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = 'proxy-profiles.json';
+      a.download = "proxy-profiles.json";
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -425,9 +493,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
   };
 
   const handleImportProxies = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
@@ -437,14 +505,17 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
           setSavedProfiles(proxyCollectionManager.getProfiles());
           setSavedChains(proxyCollectionManager.getChains());
         } catch (error) {
-          alert("Failed to import profiles: " + (error instanceof Error ? error.message : "Unknown error"));
+          alert(
+            "Failed to import profiles: " +
+              (error instanceof Error ? error.message : "Unknown error"),
+          );
         }
       }
     };
     input.click();
   };
 
-  const filteredProfiles = profileSearch.trim() 
+  const filteredProfiles = profileSearch.trim()
     ? proxyCollectionManager.searchProfiles(profileSearch)
     : savedProfiles;
 
@@ -452,42 +523,33 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     ? proxyCollectionManager.searchChains(chainSearch)
     : savedChains;
 
-  // Handle ESC key to close dialog
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      backdropClassName="bg-black/50"
+      panelClassName="max-w-5xl h-[90vh] rounded-lg overflow-hidden"
+      contentClassName="bg-[var(--color-surface)]"
     >
-      <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
+      <div className="flex flex-1 min-h-0 flex-col">
         <div className="sticky top-0 z-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-500/20 rounded-lg">
               <Database size={20} className="text-blue-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-[var(--color-text)]">Collection Center</h2>
-              <p className="text-xs text-[var(--color-textSecondary)]">Manage your connection collections</p>
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">
+                Collection Center
+              </h2>
+              <p className="text-xs text-[var(--color-textSecondary)]">
+                Manage your connection collections
+              </p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            {activeTab === 'collections' && (
+            {activeTab === "collections" && (
               <>
                 <button
                   onClick={() => setShowImportForm(true)}
@@ -505,7 +567,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                 </button>
               </>
             )}
-            {activeTab === 'proxies' && (
+            {activeTab === "proxies" && (
               <>
                 <button
                   onClick={handleImportProxies}
@@ -536,33 +598,33 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         <div className="flex flex-1 min-h-0">
           <div className="w-60 bg-[var(--color-background)] border-r border-[var(--color-border)] p-4 space-y-2">
             <button
-              onClick={() => setActiveTab('collections')}
+              onClick={() => setActiveTab("collections")}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === 'collections'
-                  ? 'bg-blue-600 text-[var(--color-text)]'
-                  : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
+                activeTab === "collections"
+                  ? "bg-blue-600 text-[var(--color-text)]"
+                  : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
               <Database size={16} />
               <span>Collections</span>
             </button>
             <button
-              onClick={() => setActiveTab('connections')}
+              onClick={() => setActiveTab("connections")}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === 'connections'
-                  ? 'bg-blue-600 text-[var(--color-text)]'
-                  : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
+                activeTab === "connections"
+                  ? "bg-blue-600 text-[var(--color-text)]"
+                  : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
               <Layers size={16} />
               <span>Connections</span>
             </button>
             <button
-              onClick={() => setActiveTab('proxies')}
+              onClick={() => setActiveTab("proxies")}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === 'proxies'
-                  ? 'bg-blue-600 text-[var(--color-text)]'
-                  : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
+                activeTab === "proxies"
+                  ? "bg-blue-600 text-[var(--color-text)]"
+                  : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
               <Network size={16} />
@@ -572,577 +634,672 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
           <div className="flex-1 overflow-y-auto min-h-0">
             <div className="p-6">
-              {activeTab === 'collections' && (
+              {activeTab === "collections" && (
                 <div className="space-y-6">
-          {/* Create Collection Form */}
-          {showCreateForm && (
-            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">Create New Collection</h3>
-              
-              {error && (
-                <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
-                  <p className="text-red-300 text-sm">{error}</p>
-                </div>
-              )}
+                  {/* Create Collection Form */}
+                  {showCreateForm && (
+                    <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+                      <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+                        Create New Collection
+                      </h3>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Collection Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={newCollection.name}
-                    onChange={(e) => setNewCollection({ ...newCollection, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                    placeholder="My Connections"
-                  />
-                </div>
+                      {error && (
+                        <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
+                          <p className="text-red-300 text-sm">{error}</p>
+                        </div>
+                      )}
 
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Description
-                  </label>
-                  <textarea
-                    value={newCollection.description}
-                    onChange={(e) => setNewCollection({ ...newCollection, description: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] resize-none"
-                    rows={3}
-                    placeholder="Optional description"
-                  />
-                </div>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                            Collection Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={newCollection.name}
+                            onChange={(e) =>
+                              setNewCollection({
+                                ...newCollection,
+                                name: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                            placeholder="My Connections"
+                          />
+                        </div>
 
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={newCollection.isEncrypted}
-                    onChange={(e) => setNewCollection({ ...newCollection, isEncrypted: e.target.checked })}
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-                  />
-                  <span className="text-[var(--color-textSecondary)]">Encrypt this collection</span>
-                </label>
+                        <div>
+                          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                            Description
+                          </label>
+                          <textarea
+                            value={newCollection.description}
+                            onChange={(e) =>
+                              setNewCollection({
+                                ...newCollection,
+                                description: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] resize-none"
+                            rows={3}
+                            placeholder="Optional description"
+                          />
+                        </div>
 
-                {newCollection.isEncrypted && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                        Password *
-                      </label>
-                      <PasswordInput
-                        value={newCollection.password}
-                        onChange={(e) => setNewCollection({ ...newCollection, password: e.target.value })}
-                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                        placeholder="Enter password"
-                      />
-                    </div>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={newCollection.isEncrypted}
+                            onChange={(e) =>
+                              setNewCollection({
+                                ...newCollection,
+                                isEncrypted: e.target.checked,
+                              })
+                            }
+                            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                          />
+                          <span className="text-[var(--color-textSecondary)]">
+                            Encrypt this collection
+                          </span>
+                        </label>
 
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                        Confirm Password *
-                      </label>
-                      <PasswordInput
-                        value={newCollection.confirmPassword}
-                        onChange={(e) => setNewCollection({ ...newCollection, confirmPassword: e.target.value })}
-                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                        placeholder="Confirm password"
-                      />
-                    </div>
-                  </>
-                )}
+                        {newCollection.isEncrypted && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                                Password *
+                              </label>
+                              <PasswordInput
+                                value={newCollection.password}
+                                onChange={(e) =>
+                                  setNewCollection({
+                                    ...newCollection,
+                                    password: e.target.value,
+                                  })
+                                }
+                                className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                                placeholder="Enter password"
+                              />
+                            </div>
 
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => {
-                      setShowCreateForm(false);
-                      setError('');
-                    }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleCreateCollection}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
-                  >
-                    Create Collection
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Password Dialog */}
-          {showPasswordDialog && selectedCollection && (
-            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-                Unlock Collection: {selectedCollection.name}
-              </h3>
-              
-              {error && (
-                <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
-                  <p className="text-red-300 text-sm">{error}</p>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-                      className="w-full px-3 py-2 pr-10 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                      placeholder="Enter collection password"
-                      autoFocus
-                    />
-                    <button
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => {
-                      setShowPasswordDialog(false);
-                      setError('');
-                    }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handlePasswordSubmit}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
-                  >
-                    Unlock
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Export Collection Form */}
-          {exportingCollection && (
-            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
-                Export Collection: {exportingCollection.name}
-              </h3>
-
-              {error && (
-                <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
-                  <p className="text-red-300 text-sm">{error}</p>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                {exportingCollection.isEncrypted && (
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                      Collection Password
-                    </label>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={collectionPassword}
-                      onChange={(e) => setCollectionPassword(e.target.value)}
-                      className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                      placeholder="Password"
-                    />
-                  </div>
-                )}
-
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={includePasswords}
-                    onChange={(e) => setIncludePasswords(e.target.checked)}
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-                  />
-                  <span className="text-[var(--color-textSecondary)]">Include passwords</span>
-                </label>
-
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Export Password (optional)
-                  </label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={exportPassword}
-                    onChange={(e) => setExportPassword(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                    placeholder="Encrypt export"
-                  />
-                </div>
-
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => {
-                      setExportingCollection(null);
-                      setError('');
-                    }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleExportDownload}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
-                  >
-                    <Download size={14} />
-                    <span>Export</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Import Collection Form */}
-          {showImportForm && (
-            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">Import Collection</h3>
-
-              {error && (
-                <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
-                  <p className="text-red-300 text-sm">{error}</p>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Collection File *
-                  </label>
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Collection Name (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={importCollectionName}
-                    onChange={(e) => setImportCollectionName(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                    placeholder="Leave blank to use the export name"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Import Password (if encrypted)
-                  </label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={importPassword}
-                    onChange={(e) => setImportPassword(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                    placeholder="Password"
-                  />
-                </div>
-
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={encryptImport}
-                    onChange={(e) => setEncryptImport(e.target.checked)}
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-                  />
-                  <span className="text-[var(--color-textSecondary)]">Encrypt imported collection</span>
-                </label>
-
-                {encryptImport && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                        New Password
-                      </label>
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={importEncryptPassword}
-                        onChange={(e) => setImportEncryptPassword(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                        placeholder="New password"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                        Confirm Password
-                      </label>
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={importEncryptConfirmPassword}
-                        onChange={(e) => setImportEncryptConfirmPassword(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                        placeholder="Confirm password"
-                      />
-                    </div>
-                  </>
-                )}
-
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => {
-                      setShowImportForm(false);
-                      setError('');
-                    }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleImportCollection}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
-                  >
-                    <Upload size={14} />
-                    <span>Import</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Edit Collection Form */}
-          {editingCollection && (
-            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">Edit Collection</h3>
-
-              {error && (
-                <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
-                  <p className="text-red-300 text-sm">{error}</p>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Collection Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={editingCollection.name}
-                    onChange={(e) => setEditingCollection({ ...editingCollection, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Description
-                  </label>
-                  <textarea
-                    value={editingCollection.description || ''}
-                    onChange={(e) => setEditingCollection({ ...editingCollection, description: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] resize-none"
-                    rows={3}
-                  />
-                </div>
-
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={editPassword.enableEncryption}
-                    onChange={(e) =>
-                      setEditPassword((prev) => ({
-                        ...prev,
-                        enableEncryption: e.target.checked,
-                      }))
-                    }
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-                  />
-                  <span className="text-[var(--color-textSecondary)]">Encrypt this collection</span>
-                </label>
-
-                {(editingCollection.isEncrypted || editPassword.enableEncryption) && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                        Current Password
-                      </label>
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={editPassword.current}
-                        onChange={(e) =>
-                          setEditPassword((prev) => ({
-                            ...prev,
-                            current: e.target.value,
-                          }))
-                        }
-                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                        placeholder="Current password"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                        New Password
-                      </label>
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={editPassword.next}
-                        onChange={(e) =>
-                          setEditPassword((prev) => ({
-                            ...prev,
-                            next: e.target.value,
-                          }))
-                        }
-                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                        placeholder="New password"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                        Confirm Password
-                      </label>
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        value={editPassword.confirm}
-                        onChange={(e) =>
-                          setEditPassword((prev) => ({
-                            ...prev,
-                            confirm: e.target.value,
-                          }))
-                        }
-                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-                        placeholder="Confirm password"
-                      />
-                    </div>
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="w-full px-3 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors flex items-center justify-center space-x-2"
-                      >
-                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                        <span>{showPassword ? 'Hide' : 'Show'}</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => { setEditingCollection(null); setError(''); }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleUpdateCollection}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
-                  >
-                    Update
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Collections List */}
-          <div className="space-y-3">
-            {collections.length === 0 ? (
-              <div className="text-center py-12">
-                <Database size={48} className="mx-auto text-gray-500 mb-4" />
-                <p className="text-[var(--color-textSecondary)] mb-2">No collections found</p>
-                <p className="text-gray-500 text-sm">Create your first connection collection to get started</p>
-              </div>
-            ) : (
-              collections.map(collection => (
-                <div
-                  key={collection.id}
-                  className="bg-[var(--color-border)]/60 rounded-lg p-4 hover:bg-[var(--color-border)]/80 hover:shadow-lg hover:shadow-blue-500/5 border border-transparent hover:border-[var(--color-border)] transition-all duration-200 cursor-pointer group"
-                  onClick={() => handleSelectCollection(collection)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="flex items-center space-x-2">
-                        <Database size={20} className="text-blue-400 group-hover:text-blue-300 transition-colors" />
-                        {collection.isEncrypted && (
-                          <Lock size={16} className="text-yellow-400" />
+                            <div>
+                              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                                Confirm Password *
+                              </label>
+                              <PasswordInput
+                                value={newCollection.confirmPassword}
+                                onChange={(e) =>
+                                  setNewCollection({
+                                    ...newCollection,
+                                    confirmPassword: e.target.value,
+                                  })
+                                }
+                                className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                                placeholder="Confirm password"
+                              />
+                            </div>
+                          </>
                         )}
+
+                        <div className="flex justify-end space-x-3">
+                          <button
+                            onClick={() => {
+                              setShowCreateForm(false);
+                              setError("");
+                            }}
+                            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleCreateCollection}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
+                          >
+                            Create Collection
+                          </button>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-[var(--color-text)] font-medium group-hover:text-blue-100 transition-colors">{collection.name}</h4>
-                        {collection.description && (
-                          <p className="text-[var(--color-textSecondary)] text-sm">{collection.description}</p>
+                    </div>
+                  )}
+
+                  {/* Password Dialog */}
+                  {showPasswordDialog && selectedCollection && (
+                    <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+                      <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+                        Unlock Collection: {selectedCollection.name}
+                      </h3>
+
+                      {error && (
+                        <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
+                          <p className="text-red-300 text-sm">{error}</p>
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                            Password
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showPassword ? "text" : "password"}
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              onKeyPress={(e) =>
+                                e.key === "Enter" && handlePasswordSubmit()
+                              }
+                              className="w-full px-3 py-2 pr-10 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                              placeholder="Enter collection password"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                            >
+                              {showPassword ? (
+                                <EyeOff size={16} />
+                              ) : (
+                                <Eye size={16} />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end space-x-3">
+                          <button
+                            onClick={() => {
+                              setShowPasswordDialog(false);
+                              setError("");
+                            }}
+                            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handlePasswordSubmit}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
+                          >
+                            Unlock
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Export Collection Form */}
+                  {exportingCollection && (
+                    <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+                      <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+                        Export Collection: {exportingCollection.name}
+                      </h3>
+
+                      {error && (
+                        <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
+                          <p className="text-red-300 text-sm">{error}</p>
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                        {exportingCollection.isEncrypted && (
+                          <div>
+                            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                              Collection Password
+                            </label>
+                            <input
+                              type={showPassword ? "text" : "password"}
+                              value={collectionPassword}
+                              onChange={(e) =>
+                                setCollectionPassword(e.target.value)
+                              }
+                              className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                              placeholder="Password"
+                            />
+                          </div>
                         )}
-                        <p className="text-gray-500 text-xs">
-                          Last accessed: {collection.lastAccessed.toLocaleDateString()}
+
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={includePasswords}
+                            onChange={(e) =>
+                              setIncludePasswords(e.target.checked)
+                            }
+                            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                          />
+                          <span className="text-[var(--color-textSecondary)]">
+                            Include passwords
+                          </span>
+                        </label>
+
+                        <div>
+                          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                            Export Password (optional)
+                          </label>
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            value={exportPassword}
+                            onChange={(e) => setExportPassword(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                            placeholder="Encrypt export"
+                          />
+                        </div>
+
+                        <div className="flex justify-end space-x-3">
+                          <button
+                            onClick={() => {
+                              setExportingCollection(null);
+                              setError("");
+                            }}
+                            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleExportDownload}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
+                          >
+                            <Download size={14} />
+                            <span>Export</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Import Collection Form */}
+                  {showImportForm && (
+                    <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+                      <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+                        Import Collection
+                      </h3>
+
+                      {error && (
+                        <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
+                          <p className="text-red-300 text-sm">{error}</p>
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                            Collection File *
+                          </label>
+                          <input
+                            type="file"
+                            accept=".json"
+                            onChange={(e) =>
+                              setImportFile(e.target.files?.[0] ?? null)
+                            }
+                            className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                            Collection Name (optional)
+                          </label>
+                          <input
+                            type="text"
+                            value={importCollectionName}
+                            onChange={(e) =>
+                              setImportCollectionName(e.target.value)
+                            }
+                            className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                            placeholder="Leave blank to use the export name"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                            Import Password (if encrypted)
+                          </label>
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            value={importPassword}
+                            onChange={(e) => setImportPassword(e.target.value)}
+                            className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                            placeholder="Password"
+                          />
+                        </div>
+
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={encryptImport}
+                            onChange={(e) => setEncryptImport(e.target.checked)}
+                            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                          />
+                          <span className="text-[var(--color-textSecondary)]">
+                            Encrypt imported collection
+                          </span>
+                        </label>
+
+                        {encryptImport && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                                New Password
+                              </label>
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                value={importEncryptPassword}
+                                onChange={(e) =>
+                                  setImportEncryptPassword(e.target.value)
+                                }
+                                className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                                placeholder="New password"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                                Confirm Password
+                              </label>
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                value={importEncryptConfirmPassword}
+                                onChange={(e) =>
+                                  setImportEncryptConfirmPassword(
+                                    e.target.value,
+                                  )
+                                }
+                                className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                                placeholder="Confirm password"
+                              />
+                            </div>
+                          </>
+                        )}
+
+                        <div className="flex justify-end space-x-3">
+                          <button
+                            onClick={() => {
+                              setShowImportForm(false);
+                              setError("");
+                            }}
+                            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleImportCollection}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
+                          >
+                            <Upload size={14} />
+                            <span>Import</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Edit Collection Form */}
+                  {editingCollection && (
+                    <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+                      <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
+                        Edit Collection
+                      </h3>
+
+                      {error && (
+                        <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
+                          <p className="text-red-300 text-sm">{error}</p>
+                        </div>
+                      )}
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                            Collection Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={editingCollection.name}
+                            onChange={(e) =>
+                              setEditingCollection({
+                                ...editingCollection,
+                                name: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                            Description
+                          </label>
+                          <textarea
+                            value={editingCollection.description || ""}
+                            onChange={(e) =>
+                              setEditingCollection({
+                                ...editingCollection,
+                                description: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] resize-none"
+                            rows={3}
+                          />
+                        </div>
+
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={editPassword.enableEncryption}
+                            onChange={(e) =>
+                              setEditPassword((prev) => ({
+                                ...prev,
+                                enableEncryption: e.target.checked,
+                              }))
+                            }
+                            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                          />
+                          <span className="text-[var(--color-textSecondary)]">
+                            Encrypt this collection
+                          </span>
+                        </label>
+
+                        {(editingCollection.isEncrypted ||
+                          editPassword.enableEncryption) && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                                Current Password
+                              </label>
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                value={editPassword.current}
+                                onChange={(e) =>
+                                  setEditPassword((prev) => ({
+                                    ...prev,
+                                    current: e.target.value,
+                                  }))
+                                }
+                                className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                                placeholder="Current password"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                                New Password
+                              </label>
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                value={editPassword.next}
+                                onChange={(e) =>
+                                  setEditPassword((prev) => ({
+                                    ...prev,
+                                    next: e.target.value,
+                                  }))
+                                }
+                                className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                                placeholder="New password"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                                Confirm Password
+                              </label>
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                value={editPassword.confirm}
+                                onChange={(e) =>
+                                  setEditPassword((prev) => ({
+                                    ...prev,
+                                    confirm: e.target.value,
+                                  }))
+                                }
+                                className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                                placeholder="Confirm password"
+                              />
+                            </div>
+                            <div className="flex items-end">
+                              <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="w-full px-3 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors flex items-center justify-center space-x-2"
+                              >
+                                {showPassword ? (
+                                  <EyeOff size={16} />
+                                ) : (
+                                  <Eye size={16} />
+                                )}
+                                <span>{showPassword ? "Hide" : "Show"}</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex justify-end space-x-3">
+                          <button
+                            onClick={() => {
+                              setEditingCollection(null);
+                              setError("");
+                            }}
+                            className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleUpdateCollection}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
+                          >
+                            Update
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Collections List */}
+                  <div className="space-y-3">
+                    {collections.length === 0 ? (
+                      <div className="text-center py-12">
+                        <Database
+                          size={48}
+                          className="mx-auto text-gray-500 mb-4"
+                        />
+                        <p className="text-[var(--color-textSecondary)] mb-2">
+                          No collections found
+                        </p>
+                        <p className="text-gray-500 text-sm">
+                          Create your first connection collection to get started
                         </p>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleExportCollection(collection);
-                        }}
-                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title="Export"
-                      >
-                        <Download size={16} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditCollection(collection);
-                        }}
-                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title="Edit"
-                      >
-                        <Edit size={16} />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteCollection(collection);
-                        }}
-                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-red-400 hover:text-red-300"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    ) : (
+                      collections.map((collection) => (
+                        <div
+                          key={collection.id}
+                          className="bg-[var(--color-border)]/60 rounded-lg p-4 hover:bg-[var(--color-border)]/80 hover:shadow-lg hover:shadow-blue-500/5 border border-transparent hover:border-[var(--color-border)] transition-all duration-200 cursor-pointer group"
+                          onClick={() => handleSelectCollection(collection)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="flex items-center space-x-2">
+                                <Database
+                                  size={20}
+                                  className="text-blue-400 group-hover:text-blue-300 transition-colors"
+                                />
+                                {collection.isEncrypted && (
+                                  <Lock size={16} className="text-yellow-400" />
+                                )}
+                              </div>
+                              <div>
+                                <h4 className="text-[var(--color-text)] font-medium group-hover:text-blue-100 transition-colors">
+                                  {collection.name}
+                                </h4>
+                                {collection.description && (
+                                  <p className="text-[var(--color-textSecondary)] text-sm">
+                                    {collection.description}
+                                  </p>
+                                )}
+                                <p className="text-gray-500 text-xs">
+                                  Last accessed:{" "}
+                                  {collection.lastAccessed.toLocaleDateString()}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center space-x-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleExportCollection(collection);
+                                }}
+                                className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                                title="Export"
+                              >
+                                <Download size={16} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditCollection(collection);
+                                }}
+                                className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                                title="Edit"
+                              >
+                                <Edit size={16} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteCollection(collection);
+                                }}
+                                className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-red-400 hover:text-red-300"
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
-                </div>
-              ))
-            )}
-          </div>
                 </div>
               )}
 
-              {activeTab === 'connections' && (
+              {activeTab === "connections" && (
                 <div className="space-y-6">
                   <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-4">
                     <h3 className="text-lg font-medium text-[var(--color-text)] mb-2">
                       Connection Import / Export
                     </h3>
                     <p className="text-sm text-[var(--color-textSecondary)] mb-4">
-                      Manage connection backups and transfers without leaving the collection center.
+                      Manage connection backups and transfers without leaving
+                      the collection center.
                     </p>
                     <ImportExport isOpen onClose={() => undefined} embedded />
                   </div>
                 </div>
               )}
 
-              {activeTab === 'proxies' && (
+              {activeTab === "proxies" && (
                 <div className="space-y-6">
                   {/* Proxy Profiles Section */}
                   <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-4">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-medium text-[var(--color-text)]">Proxy Profiles</h3>
+                      <h3 className="text-lg font-medium text-[var(--color-text)]">
+                        Proxy Profiles
+                      </h3>
                       <button
                         onClick={handleNewProfile}
                         className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
@@ -1152,7 +1309,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       </button>
                     </div>
                     <p className="text-sm text-[var(--color-textSecondary)] mb-4">
-                      Create and manage reusable proxy configurations that can be used across connections and chains.
+                      Create and manage reusable proxy configurations that can
+                      be used across connections and chains.
                     </p>
 
                     {/* Search */}
@@ -1171,9 +1329,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     <div className="space-y-2">
                       {filteredProfiles.length === 0 ? (
                         <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
-                          {profileSearch 
+                          {profileSearch
                             ? "No profiles match your search."
-                            : "No proxy profiles saved. Click \"New Profile\" to create one."}
+                            : 'No proxy profiles saved. Click "New Profile" to create one.'}
                         </div>
                       ) : (
                         filteredProfiles.map((profile) => (
@@ -1183,7 +1341,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <div className="text-sm font-medium text-[var(--color-text)]">{profile.name}</div>
+                                <div className="text-sm font-medium text-[var(--color-text)]">
+                                  {profile.name}
+                                </div>
                                 <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400 uppercase">
                                   {profile.config.type}
                                 </span>
@@ -1195,15 +1355,21 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                               </div>
                               <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
                                 {profile.config.host}:{profile.config.port}
-                                {profile.config.username && ` (${profile.config.username})`}
+                                {profile.config.username &&
+                                  ` (${profile.config.username})`}
                               </div>
                               {profile.description && (
-                                <div className="text-xs text-gray-500 mt-1">{profile.description}</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {profile.description}
+                                </div>
                               )}
                               {profile.tags && profile.tags.length > 0 && (
                                 <div className="flex gap-1 mt-2">
-                                  {profile.tags.map(tag => (
-                                    <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300">
+                                  {profile.tags.map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300"
+                                    >
                                       {tag}
                                     </span>
                                   ))}
@@ -1212,7 +1378,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                             </div>
                             <div className="flex items-center gap-2">
                               <button
-                                onClick={() => handleDuplicateProfile(profile.id)}
+                                onClick={() =>
+                                  handleDuplicateProfile(profile.id)
+                                }
                                 className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
                                 title="Duplicate"
                               >
@@ -1242,7 +1410,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                   {/* Proxy Chains Section */}
                   <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-4">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-medium text-[var(--color-text)]">Proxy Chains</h3>
+                      <h3 className="text-lg font-medium text-[var(--color-text)]">
+                        Proxy Chains
+                      </h3>
                       <button
                         onClick={handleNewChain}
                         className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
@@ -1252,7 +1422,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       </button>
                     </div>
                     <p className="text-sm text-[var(--color-textSecondary)] mb-4">
-                      Create reusable proxy chains that route traffic through multiple layers.
+                      Create reusable proxy chains that route traffic through
+                      multiple layers.
                     </p>
 
                     {/* Search */}
@@ -1271,9 +1442,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     <div className="space-y-2">
                       {filteredChains.length === 0 ? (
                         <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
-                          {chainSearch 
+                          {chainSearch
                             ? "No chains match your search."
-                            : "No proxy chains saved. Click \"New Chain\" to create one."}
+                            : 'No proxy chains saved. Click "New Chain" to create one.'}
                         </div>
                       ) : (
                         filteredChains.map((chain) => (
@@ -1283,24 +1454,31 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <div className="text-sm font-medium text-[var(--color-text)]">{chain.name}</div>
+                                <div className="text-sm font-medium text-[var(--color-text)]">
+                                  {chain.name}
+                                </div>
                                 <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">
-                                  {chain.layers.length} layer{chain.layers.length !== 1 ? 's' : ''}
+                                  {chain.layers.length} layer
+                                  {chain.layers.length !== 1 ? "s" : ""}
                                 </span>
                               </div>
                               {chain.description && (
-                                <div className="text-xs text-gray-500 mt-1">{chain.description}</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {chain.description}
+                                </div>
                               )}
                               <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
                                 {chain.layers.map((layer, i) => {
-                                  const profile = layer.proxyProfileId 
-                                    ? savedProfiles.find(p => p.id === layer.proxyProfileId)
+                                  const profile = layer.proxyProfileId
+                                    ? savedProfiles.find(
+                                        (p) => p.id === layer.proxyProfileId,
+                                      )
                                     : null;
                                   return (
                                     <span key={i}>
-                                      {i > 0 && ' → '}
-                                      {layer.type === 'proxy' && profile 
-                                        ? profile.name 
+                                      {i > 0 && " → "}
+                                      {layer.type === "proxy" && profile
+                                        ? profile.name
                                         : layer.type}
                                     </span>
                                   );
@@ -1308,8 +1486,11 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                               </div>
                               {chain.tags && chain.tags.length > 0 && (
                                 <div className="flex gap-1 mt-2">
-                                  {chain.tags.map(tag => (
-                                    <span key={tag} className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300">
+                                  {chain.tags.map((tag) => (
+                                    <span
+                                      key={tag}
+                                      className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300"
+                                    >
                                       {tag}
                                     </span>
                                   ))}
@@ -1372,6 +1553,6 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         onSave={handleSaveChain}
         editingChain={editingChain}
       />
-    </div>
+    </Modal>
   );
 };

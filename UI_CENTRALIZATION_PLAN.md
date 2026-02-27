@@ -24,6 +24,15 @@ Centralize repeated UI structure and styling for:
   - `src/components/ConnectionEditor.tsx`
   - `src/components/WOLQuickTool.tsx`
   - `src/components/BulkConnectionEditor.tsx`
+  - `src/components/InternalProxyManager.tsx`
+  - `src/components/WakeScheduleManager.tsx`
+  - `src/components/TotpImportDialog.tsx`
+  - `src/components/ActionLogViewer.tsx`
+  - `src/components/PerformanceMonitor.tsx`
+  - `src/components/CollectionSelector.tsx`
+  - `src/components/ConnectionDiagnostics.tsx`
+  - `src/components/RdpSessionManager.tsx`
+  - `src/components/ImportExport/index.tsx`
 - New centralized CSS primitives added in `src/index.css`:
   - option chips/cards: `.sor-option-chip`, `.sor-option-chip-active`, `.sor-option-card`
   - chip lists: `.sor-chip-list`, `.sor-chip-button`
@@ -31,37 +40,49 @@ Centralize repeated UI structure and styling for:
 - Component-level adoption in this wave:
   - Connection Editor protocol/option groups now use shared option classes.
   - WOL Quick Tool uses shared chip/list/selection classes.
+  - Internal Proxy Manager uses shared modal + option/list/table primitives.
+  - Wake Schedule Manager uses shared modal + selection row primitives.
+  - TOTP Import dialog uses shared modal + selection row/chip primitives.
+  - Action Log Viewer uses shared modal + option chip primitives.
+  - Performance Monitor uses shared modal + option chip primitives.
+  - Collection Selector uses shared modal scaffold while preserving nested editor dialogs.
+  - Connection Diagnostics uses shared modal scaffold and centralized action chip styling.
+  - RDP Session Manager uses shared modal scaffold and selection-list primitives.
+  - Import/Export dialog uses shared modal scaffold while preserving embedded mode behavior.
+- Overlay reduction:
+  - manual `fixed inset-0` popup wrappers reduced from ~30 to 18 component files in this pass.
 
 ## Remaining Migration Backlog
 
 ### Dialog Priority (next)
 
-- `CollectionSelector`
 - `SettingsDialog/index.tsx` and section sub-dialogs
-- `PerformanceMonitor`
-- `ConnectionDiagnostics`
-- `InternalProxyManager`
-- `RdpSessionManager`
+- `FileTransferManager`
+- `SSHKeyManager`
 
 ### Dialog Priority (follow-up)
 
-- `ActionLogViewer`
-- `ImportExport/index.tsx`
-- `FileTransferManager`
-- `SSHKeyManager`
 - `TOTPManager`
 - `TrustWarningDialog`
 - nested editor dialogs in `ConnectionTree` and `connectionEditor/HTTPOptions.tsx`
+- proxy editors (`ProxyProfileEditor`, `ProxyChainEditor`, `ProxyChainMenu`, `SSHTunnelDialog`)
 
 ### Option/List/CSS Priority
 
 - Standardize list rows in:
-  - `WakeScheduleManager`
-  - `TotpImportDialog`
   - `ConnectionDiagnostics` host/result lists
-  - `InternalProxyManager` session/log lists
+  - `CollectionSelector` dense lists
+  - `ImportExport` previews
+  - `FileTransferManager` transfer queues
 - Standardize button chip groups in settings and tool headers.
 - Keep semantic color overrides local, but always layer over shared structural classes.
+
+## Next Execution Wave (Immediate)
+
+1. Migrate `FileTransferManager` and `SSHKeyManager` to `Modal` while preserving current `data-testid` and keyboard flows.
+2. Apply `.sor-tab-trigger` in at least two additional manager-style components to complete tab-header standardization.
+3. Expand `.sor-selection-*` adoption to dense operational lists (`CollectionSelector` list rows, `FileTransferManager` queues).
+4. Re-run lint and targeted test set after each batch to catch regressions early.
 
 ## Execution Plan
 

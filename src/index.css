@@ -743,6 +743,33 @@ body {
   opacity: 1;
 }
 
+/* Centralized tab trigger primitives */
+.sor-tab-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: 0.5rem 0.5rem 0 0;
+  border-bottom: 2px solid transparent;
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+.sor-tab-trigger:hover {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-surfaceHover) 70%, transparent);
+}
+
+.sor-tab-trigger-active {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
 /* Centralized data table primitives */
 .sor-data-table {
   width: 100%;
