@@ -16,6 +16,7 @@ Consolidate reusable UI structure and CSS for:
   - `src/components/ui/MenuSurface.tsx`
   - `src/components/ui/PopoverSurface.tsx`
   - `src/components/ui/ToolbarPopover.tsx`
+  - `src/components/ui/OptionList.tsx`
   - `src/components/ui/SettingsPrimitives.tsx`
   - shared CSS primitives in `src/index.css`
 - Major popup/dialog surfaces already migrated to `Modal`.
@@ -77,6 +78,7 @@ Consolidate reusable UI structure and CSS for:
   - `rdp/RDPClientHeader` (send keys + host info)
   - `WebTerminal` (macro replay list)
   - shared toolbar popover shell/header extracted into `ToolbarPopover`
+  - shared option list/group/items extracted into `OptionList`
 
 ### CSS Primitive Expansion
 
@@ -86,6 +88,8 @@ Consolidate reusable UI structure and CSS for:
   - selection rows: `.sor-selection-list`, `.sor-selection-row`, `.sor-selection-row-selected`, `.sor-selection-row-hover-action`
   - menu shell/items: `.sor-menu-surface`, `.sor-menu-item`, `.sor-menu-item-danger`, `.sor-menu-divider`
   - popover/list primitives: `.sor-popover-surface`, `.sor-option-list`, `.sor-option-item`
+  - popover shell primitives: `.sor-popover-panel`, `.sor-popover-panel-strong`
+  - option grouping primitives: `.sor-option-group`, `.sor-option-group-label`, `.sor-option-empty`, `.sor-option-item-*`
   - toolbar status popup primitives: `.sor-toolbar-popover-*`, `.sor-status-item`
 - Migrated components adopted these classes where behavior/style stacks were duplicated.
 
@@ -99,6 +103,7 @@ Consolidate reusable UI structure and CSS for:
   - `tests/MenuSurface.test.tsx`
   - `tests/PopoverSurface.test.tsx`
   - `tests/ToolbarPopover.test.tsx`
+  - `tests/OptionList.test.tsx`
   - `tests/StatusPopovers.test.tsx`
   - `tests/CertificateInfoPopup.test.tsx`
   - `tests/RDPClientHeader.test.tsx`
