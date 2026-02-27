@@ -1,12 +1,31 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import {
-  X, Plus, Trash2, Copy, Shield, Check, Eye, EyeOff,
-  Pencil, Download, Upload, Keyboard, KeyRound, QrCode, FileUp,
-} from 'lucide-react';
-import { TOTPConfig } from '../../types/settings';
-import { TOTPService } from '../../utils/totpService';
-import { TotpImportDialog } from '../TotpImportDialog';
+  X,
+  Plus,
+  Trash2,
+  Copy,
+  Shield,
+  Check,
+  Eye,
+  EyeOff,
+  Pencil,
+  Download,
+  Upload,
+  Keyboard,
+  KeyRound,
+  QrCode,
+  FileUp,
+} from "lucide-react";
+import { TOTPConfig } from "../../types/settings";
+import { TOTPService } from "../../utils/totpService";
+import { TotpImportDialog } from "../TotpImportDialog";
+import { PopoverSurface } from "../ui/PopoverSurface";
 
 interface RDPTotpPanelProps {
   configs: TOTPConfig[];
@@ -24,16 +43,27 @@ interface RDPTotpPanelProps {
 }
 
 // ── Inline QR display ──────────────────────────────────────────────
-function QRDisplay({ config, onDismiss }: { config: TOTPConfig; onDismiss: () => void }) {
+function QRDisplay({
+  config,
+  onDismiss,
+}: {
+  config: TOTPConfig;
+  onDismiss: () => void;
+}) {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const totpService = useMemo(() => new TOTPService(), []);
 
   useEffect(() => {
     let cancelled = false;
-    totpService.generateQRCode(config).then(url => {
-      if (!cancelled) setQrUrl(url);
-    }).catch(() => {});
-    return () => { cancelled = true; };
+    totpService
+      .generateQRCode(config)
+      .then((url) => {
+        if (!cancelled) setQrUrl(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [config, totpService]);
 
   return (
@@ -83,7 +113,10 @@ function BackupCodesDisplay({
       </div>
       <div className="grid grid-cols-2 gap-1">
         {codes.map((code, i) => (
-          <span key={i} className="font-mono text-[10px] text-[var(--color-textSecondary)] bg-[var(--color-border)]/50 rounded px-1.5 py-0.5 text-center">
+          <span
+            key={i}
+            className="font-mono text-[10px] text-[var(--color-textSecondary)] bg-[var(--color-border)]/50 rounded px-1.5 py-0.5 text-center"
+          >
             {code}
           </span>
         ))}
@@ -100,19 +133,20 @@ function ImportModal({
   onImport: (json: string) => void;
   onClose: () => void;
 }) {
-  const [text, setText] = useState('');
-  const [error, setError] = useState('');
+  const [text, setText] = useState("");
+  const [error, setError] = useState("");
 
   const handleImport = () => {
     try {
       const parsed = JSON.parse(text);
-      if (!Array.isArray(parsed)) throw new Error('Expected an array');
+      if (!Array.isArray(parsed)) throw new Error("Expected an array");
       for (const c of parsed) {
-        if (!c.secret || !c.account) throw new Error('Each entry needs secret and account');
+        if (!c.secret || !c.account)
+          throw new Error("Each entry needs secret and account");
       }
       onImport(text);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Invalid JSON');
+      setError(e instanceof Error ? e.message : "Invalid JSON");
     }
   };
 
@@ -123,13 +157,19 @@ function ImportModal({
       </div>
       <textarea
         value={text}
-        onChange={(e) => { setText(e.target.value); setError(''); }}
+        onChange={(e) => {
+          setText(e.target.value);
+          setError("");
+        }}
         placeholder='[{"secret":"...","account":"...","issuer":"...","digits":6,"period":30,"algorithm":"sha1"}]'
         className="w-full h-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[10px] text-[var(--color-text)] font-mono placeholder-gray-500 resize-none"
       />
       {error && <div className="text-[10px] text-red-400">{error}</div>}
       <div className="flex justify-end space-x-2">
-        <button onClick={onClose} className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+        <button
+          onClick={onClose}
+          className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+        >
           Cancel
         </button>
         <button
@@ -149,16 +189,16 @@ export default function RDPTotpPanel({
   onUpdate,
   onClose,
   onAutoType,
-  defaultIssuer = 'sortOfRemoteNG',
+  defaultIssuer = "sortOfRemoteNG",
   defaultDigits = 6,
   defaultPeriod = 30,
-  defaultAlgorithm = 'sha1',
+  defaultAlgorithm = "sha1",
   anchorRef,
 }: RDPTotpPanelProps) {
   // Add form state
   const [showAdd, setShowAdd] = useState(false);
-  const [newAccount, setNewAccount] = useState('');
-  const [newSecret, setNewSecret] = useState('');
+  const [newAccount, setNewAccount] = useState("");
+  const [newSecret, setNewSecret] = useState("");
   const [newIssuer, setNewIssuer] = useState(defaultIssuer);
   const [newDigits, setNewDigits] = useState<number>(defaultDigits);
   const [newPeriod, setNewPeriod] = useState<number>(defaultPeriod);
@@ -168,7 +208,9 @@ export default function RDPTotpPanel({
   // Display state
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [copiedSecret, setCopiedSecret] = useState<string | null>(null);
-  const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(new Set());
+  const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(
+    new Set(),
+  );
   const [showBackup, setShowBackup] = useState<string | null>(null);
   const [editingSecret, setEditingSecret] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<TOTPConfig>>({});
@@ -176,23 +218,9 @@ export default function RDPTotpPanel({
   const [showImport, setShowImport] = useState(false);
   const [showFileImport, setShowFileImport] = useState(false);
 
-  const panelRef = useRef<HTMLDivElement>(null);
   const totpService = useMemo(() => new TOTPService(), []);
   const configsRef = useRef(configs);
   configsRef.current = configs;
-
-  // Click-outside handler for portal mode
-  useEffect(() => {
-    if (!anchorRef) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (panelRef.current?.contains(target)) return;
-      if (anchorRef.current?.contains(target)) return;
-      onClose();
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [anchorRef, onClose]);
 
   const refreshCodes = useCallback(() => {
     const c: Record<string, string> = {};
@@ -210,7 +238,9 @@ export default function RDPTotpPanel({
     return () => clearInterval(interval);
   }, [refreshCodes]);
 
-  useEffect(() => { refreshCodes(); }, [configs, refreshCodes]);
+  useEffect(() => {
+    refreshCodes();
+  }, [configs, refreshCodes]);
 
   const getTimeRemaining = (period: number = 30) => {
     const now = Math.floor(Date.now() / 1000);
@@ -227,13 +257,13 @@ export default function RDPTotpPanel({
       account: newAccount,
       digits: newDigits,
       period: newPeriod,
-      algorithm: newAlgorithm as TOTPConfig['algorithm'],
+      algorithm: newAlgorithm as TOTPConfig["algorithm"],
       createdAt: new Date().toISOString(),
     };
     onUpdate([...configs, config]);
     setQrConfig(config);
-    setNewAccount('');
-    setNewSecret('');
+    setNewAccount("");
+    setNewSecret("");
     setNewIssuer(defaultIssuer);
     setNewDigits(defaultDigits);
     setNewPeriod(defaultPeriod);
@@ -259,7 +289,7 @@ export default function RDPTotpPanel({
 
   // ── Secret reveal ──────────────────────────────────────────────
   const toggleReveal = (secret: string) => {
-    setRevealedSecrets(prev => {
+    setRevealedSecrets((prev) => {
       const next = new Set(prev);
       if (next.has(secret)) next.delete(secret);
       else next.add(secret);
@@ -270,14 +300,22 @@ export default function RDPTotpPanel({
   // ── Edit ───────────────────────────────────────────────────────
   const startEdit = (cfg: TOTPConfig) => {
     setEditingSecret(cfg.secret);
-    setEditData({ account: cfg.account, issuer: cfg.issuer, digits: cfg.digits, period: cfg.period, algorithm: cfg.algorithm });
+    setEditData({
+      account: cfg.account,
+      issuer: cfg.issuer,
+      digits: cfg.digits,
+      period: cfg.period,
+      algorithm: cfg.algorithm,
+    });
   };
 
   const saveEdit = () => {
     if (!editingSecret) return;
-    onUpdate(configs.map(c =>
-      c.secret === editingSecret ? { ...c, ...editData } : c
-    ));
+    onUpdate(
+      configs.map((c) =>
+        c.secret === editingSecret ? { ...c, ...editData } : c,
+      ),
+    );
     setEditingSecret(null);
     setEditData({});
   };
@@ -290,15 +328,15 @@ export default function RDPTotpPanel({
   // ── Backup codes ───────────────────────────────────────────────
   const generateBackup = (secret: string) => {
     const backupCodes = totpService.generateBackupCodes(10);
-    onUpdate(configs.map(c =>
-      c.secret === secret ? { ...c, backupCodes } : c
-    ));
+    onUpdate(
+      configs.map((c) => (c.secret === secret ? { ...c, backupCodes } : c)),
+    );
     setShowBackup(secret);
   };
 
   const copyAllBackup = (backupCodes: string[]) => {
-    navigator.clipboard.writeText(backupCodes.join('\n'));
-    setCopiedSecret('backup');
+    navigator.clipboard.writeText(backupCodes.join("\n"));
+    setCopiedSecret("backup");
     setTimeout(() => setCopiedSecret(null), 1500);
   };
 
@@ -306,7 +344,7 @@ export default function RDPTotpPanel({
   const handleExport = () => {
     const json = JSON.stringify(configs, null, 2);
     navigator.clipboard.writeText(json);
-    setCopiedSecret('export');
+    setCopiedSecret("export");
     setTimeout(() => setCopiedSecret(null), 1500);
   };
 
@@ -314,13 +352,15 @@ export default function RDPTotpPanel({
   const handleImport = (json: string) => {
     try {
       const imported = JSON.parse(json) as TOTPConfig[];
-      const existingSecrets = new Set(configs.map(c => c.secret));
-      const newConfigs = imported.filter(c => !existingSecrets.has(c.secret));
+      const existingSecrets = new Set(configs.map((c) => c.secret));
+      const newConfigs = imported.filter((c) => !existingSecrets.has(c.secret));
       if (newConfigs.length > 0) {
         onUpdate([...configs, ...newConfigs]);
       }
       setShowImport(false);
-    } catch { /* handled in ImportModal */ }
+    } catch {
+      /* handled in ImportModal */
+    }
   };
 
   const handleFileImport = (entries: TOTPConfig[]) => {
@@ -330,28 +370,16 @@ export default function RDPTotpPanel({
     setShowFileImport(false);
   };
 
-  // When anchorRef is provided, compute fixed position and render via portal
-  const fixedStyle = useMemo<React.CSSProperties | undefined>(() => {
-    if (!anchorRef?.current) return undefined;
-    const rect = anchorRef.current.getBoundingClientRect();
-    const panelWidth = 384; // w-96 = 24rem = 384px
-    let left = rect.right - panelWidth;
-    if (left < 4) left = 4;
-    return { position: 'fixed' as const, top: rect.bottom + 4, left, zIndex: 9999 };
-  }, [anchorRef]);
-
   const panel = (
-    <div
-      ref={panelRef}
-      className={`${anchorRef ? '' : 'absolute right-0 top-full mt-1 z-50 '}w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden`}
-      style={fixedStyle}
-    >
+    <div className="w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
       {/* ── Header ────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/80">
         <div className="flex items-center space-x-2">
           <Shield size={14} className="text-blue-400" />
-          <span className="text-xs font-semibold text-[var(--color-text)]">2FA Codes</span>
-          {copiedSecret === 'export' && (
+          <span className="text-xs font-semibold text-[var(--color-text)]">
+            2FA Codes
+          </span>
+          {copiedSecret === "export" && (
             <span className="text-[10px] text-green-400">Copied!</span>
           )}
         </div>
@@ -395,17 +423,19 @@ export default function RDPTotpPanel({
 
       {/* ── Import modal ──────────────────────────────────────── */}
       {showImport && (
-        <ImportModal onImport={handleImport} onClose={() => setShowImport(false)} />
+        <ImportModal
+          onImport={handleImport}
+          onClose={() => setShowImport(false)}
+        />
       )}
 
       {/* ── File import dialog (portal) ─────────────────────── */}
-      {showFileImport && createPortal(
+      {showFileImport && (
         <TotpImportDialog
           onImport={handleFileImport}
           onClose={() => setShowFileImport(false)}
-          existingSecrets={configs.map(c => c.secret)}
-        />,
-        document.body,
+          existingSecrets={configs.map((c) => c.secret)}
+        />
       )}
 
       {/* ── QR Code display ───────────────────────────────────── */}
@@ -432,7 +462,7 @@ export default function RDPTotpPanel({
           />
           <div className="relative">
             <input
-              type={showNewSecret ? 'text' : 'password'}
+              type={showNewSecret ? "text" : "password"}
               value={newSecret}
               onChange={(e) => setNewSecret(e.target.value)}
               placeholder="Secret (auto-generated if empty)"
@@ -503,29 +533,44 @@ export default function RDPTotpPanel({
             const progress = remaining / (cfg.period || 30);
             const isEditing = editingSecret === cfg.secret;
             const isRevealed = revealedSecrets.has(cfg.secret);
-            const showingBackup = showBackup === cfg.secret && cfg.backupCodes && cfg.backupCodes.length > 0;
+            const showingBackup =
+              showBackup === cfg.secret &&
+              cfg.backupCodes &&
+              cfg.backupCodes.length > 0;
 
             if (isEditing) {
               return (
-                <div key={cfg.secret} className="px-3 py-2 border-b border-[var(--color-border)]/50 space-y-1.5 bg-gray-750">
+                <div
+                  key={cfg.secret}
+                  className="px-3 py-2 border-b border-[var(--color-border)]/50 space-y-1.5 bg-gray-750"
+                >
                   <input
                     type="text"
-                    value={editData.account ?? ''}
-                    onChange={(e) => setEditData(d => ({ ...d, account: e.target.value }))}
+                    value={editData.account ?? ""}
+                    onChange={(e) =>
+                      setEditData((d) => ({ ...d, account: e.target.value }))
+                    }
                     placeholder="Account"
                     className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                   />
                   <input
                     type="text"
-                    value={editData.issuer ?? ''}
-                    onChange={(e) => setEditData(d => ({ ...d, issuer: e.target.value }))}
+                    value={editData.issuer ?? ""}
+                    onChange={(e) =>
+                      setEditData((d) => ({ ...d, issuer: e.target.value }))
+                    }
                     placeholder="Issuer"
                     className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                   />
                   <div className="flex space-x-2">
                     <select
                       value={editData.digits ?? 6}
-                      onChange={(e) => setEditData(d => ({ ...d, digits: parseInt(e.target.value) }))}
+                      onChange={(e) =>
+                        setEditData((d) => ({
+                          ...d,
+                          digits: parseInt(e.target.value),
+                        }))
+                      }
                       className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                     >
                       <option value={6}>6 digits</option>
@@ -533,7 +578,12 @@ export default function RDPTotpPanel({
                     </select>
                     <select
                       value={editData.period ?? 30}
-                      onChange={(e) => setEditData(d => ({ ...d, period: parseInt(e.target.value) }))}
+                      onChange={(e) =>
+                        setEditData((d) => ({
+                          ...d,
+                          period: parseInt(e.target.value),
+                        }))
+                      }
                       className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                     >
                       <option value={15}>15s</option>
@@ -541,8 +591,13 @@ export default function RDPTotpPanel({
                       <option value={60}>60s</option>
                     </select>
                     <select
-                      value={editData.algorithm ?? 'sha1'}
-                      onChange={(e) => setEditData(d => ({ ...d, algorithm: e.target.value as TOTPConfig['algorithm'] }))}
+                      value={editData.algorithm ?? "sha1"}
+                      onChange={(e) =>
+                        setEditData((d) => ({
+                          ...d,
+                          algorithm: e.target.value as TOTPConfig["algorithm"],
+                        }))
+                      }
                       className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                     >
                       <option value="sha1">SHA-1</option>
@@ -551,10 +606,16 @@ export default function RDPTotpPanel({
                     </select>
                   </div>
                   <div className="flex justify-end space-x-2">
-                    <button onClick={cancelEdit} className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+                    <button
+                      onClick={cancelEdit}
+                      className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                    >
                       Cancel
                     </button>
-                    <button onClick={saveEdit} className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded">
+                    <button
+                      onClick={saveEdit}
+                      className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded"
+                    >
                       Save
                     </button>
                   </div>
@@ -567,23 +628,29 @@ export default function RDPTotpPanel({
                 <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)]/50 hover:bg-[var(--color-border)]/30">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-1">
-                      <span className="text-[10px] text-[var(--color-textSecondary)] truncate">{cfg.account}</span>
-                      <span className="text-[10px] text-gray-600">({cfg.issuer})</span>
+                      <span className="text-[10px] text-[var(--color-textSecondary)] truncate">
+                        {cfg.account}
+                      </span>
+                      <span className="text-[10px] text-gray-600">
+                        ({cfg.issuer})
+                      </span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <span className="font-mono text-lg text-green-400 tracking-wider">
-                        {codes[cfg.secret] || '------'}
+                        {codes[cfg.secret] || "------"}
                       </span>
                       <div className="flex items-center space-x-1">
                         <div className="w-12 h-1 bg-[var(--color-border)] rounded-full overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all duration-1000 ${
-                              remaining <= 5 ? 'bg-red-500' : 'bg-blue-500'
+                              remaining <= 5 ? "bg-red-500" : "bg-blue-500"
                             }`}
                             style={{ width: `${progress * 100}%` }}
                           />
                         </div>
-                        <span className="text-[10px] text-gray-500 w-4 text-right">{remaining}</span>
+                        <span className="text-[10px] text-gray-500 w-4 text-right">
+                          {remaining}
+                        </span>
                       </div>
                     </div>
                     {/* Secret reveal */}
@@ -594,8 +661,10 @@ export default function RDPTotpPanel({
                     )}
                     {/* Meta info */}
                     <div className="text-[9px] text-gray-600 mt-0.5">
-                      {cfg.digits}d · {cfg.period}s · {cfg.algorithm.toUpperCase()}
-                      {cfg.createdAt && ` · ${new Date(cfg.createdAt).toLocaleDateString()}`}
+                      {cfg.digits}d · {cfg.period}s ·{" "}
+                      {cfg.algorithm.toUpperCase()}
+                      {cfg.createdAt &&
+                        ` · ${new Date(cfg.createdAt).toLocaleDateString()}`}
                     </div>
                   </div>
                   <div className="flex items-center space-x-0.5 ml-2">
@@ -618,13 +687,17 @@ export default function RDPTotpPanel({
                       className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                       title="Copy code"
                     >
-                      {copiedSecret === cfg.secret ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                      {copiedSecret === cfg.secret ? (
+                        <Check size={12} className="text-green-400" />
+                      ) : (
+                        <Copy size={12} />
+                      )}
                     </button>
                     {/* Reveal secret */}
                     <button
                       onClick={() => toggleReveal(cfg.secret)}
                       className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
-                      title={isRevealed ? 'Hide secret' : 'Show secret'}
+                      title={isRevealed ? "Hide secret" : "Show secret"}
                     >
                       {isRevealed ? <EyeOff size={12} /> : <Eye size={12} />}
                     </button>
@@ -632,7 +705,9 @@ export default function RDPTotpPanel({
                     <button
                       onClick={() => {
                         if (cfg.backupCodes && cfg.backupCodes.length > 0) {
-                          setShowBackup(showBackup === cfg.secret ? null : cfg.secret);
+                          setShowBackup(
+                            showBackup === cfg.secret ? null : cfg.secret,
+                          );
                         } else {
                           generateBackup(cfg.secret);
                         }
@@ -676,7 +751,19 @@ export default function RDPTotpPanel({
   );
 
   if (anchorRef) {
-    return createPortal(panel, document.body);
+    return (
+      <PopoverSurface
+        isOpen
+        onClose={onClose}
+        anchorRef={anchorRef}
+        align="end"
+        offset={4}
+        className="sor-popover-surface"
+        dataTestId="rdp-totp-popover"
+      >
+        {panel}
+      </PopoverSurface>
+    );
   }
-  return panel;
+  return <div className="absolute right-0 top-full mt-1 z-50">{panel}</div>;
 }

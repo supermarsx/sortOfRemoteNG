@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from "react";
 import {
   Monitor,
   Activity,
@@ -25,10 +25,11 @@ import {
   X,
   LogOut,
   Power,
-} from 'lucide-react';
-import { TOTPConfig } from '../../types/settings';
-import RDPTotpPanel from './RDPTotpPanel';
-import { ConfirmDialog } from '../ConfirmDialog';
+} from "lucide-react";
+import { TOTPConfig } from "../../types/settings";
+import RDPTotpPanel from "./RDPTotpPanel";
+import { ConfirmDialog } from "../ConfirmDialog";
+import { PopoverSurface } from "../ui/PopoverSurface";
 
 interface RDPClientHeaderProps {
   sessionName: string;
@@ -79,10 +80,10 @@ interface RDPClientHeaderProps {
 function formatDuration(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const btnBase = 'p-1 hover:bg-[var(--color-border)] rounded transition-colors';
+const btnBase = "p-1 hover:bg-[var(--color-border)] rounded transition-colors";
 const btnDefault = `${btnBase} text-[var(--color-textSecondary)] hover:text-[var(--color-text)]`;
 const btnActive = `${btnBase} text-[var(--color-text)] bg-[var(--color-border)]`;
 const btnDisabled = `${btnBase} text-[var(--color-textSecondary)] cursor-not-allowed`;
@@ -142,28 +143,17 @@ export default function RDPClientHeader({
   const totpBtnRef = useRef<HTMLDivElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  const isConnected = connectionStatus === 'connected';
-  const isReconnecting = connectionStatus === 'reconnecting';
-  const canReconnect = connectionStatus === 'disconnected' || connectionStatus === 'error' || isReconnecting;
-  const canDisconnect = connectionStatus === 'connected' || connectionStatus === 'connecting' || isReconnecting;
+  const isConnected = connectionStatus === "connected";
+  const isReconnecting = connectionStatus === "reconnecting";
+  const canReconnect =
+    connectionStatus === "disconnected" ||
+    connectionStatus === "error" ||
+    isReconnecting;
+  const canDisconnect =
+    connectionStatus === "connected" ||
+    connectionStatus === "connecting" ||
+    isReconnecting;
   const configs = totpConfigs ?? [];
-
-  // Close menus on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (sendKeysRef.current && !sendKeysRef.current.contains(e.target as Node)) {
-        setShowSendKeys(false);
-      }
-      if (hostInfoRef.current && !hostInfoRef.current.contains(e.target as Node)) {
-        setShowHostInfo(false);
-      }
-      if (totpBtnRef.current && !totpBtnRef.current.contains(e.target as Node)) {
-        setShowTotpPanel(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   // Focus name input when entering edit mode
   useEffect(() => {
@@ -203,8 +193,8 @@ export default function RDPClientHeader({
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') confirmRename();
-                if (e.key === 'Escape') cancelRename();
+                if (e.key === "Enter") confirmRename();
+                if (e.key === "Escape") cancelRename();
               }}
               onBlur={confirmRename}
               className="px-2 py-0.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] w-48"
@@ -216,7 +206,10 @@ export default function RDPClientHeader({
             onDoubleClick={startEditing}
             title="Double-click to rename"
           >
-            RDP - {sessionName !== sessionHostname ? `${sessionName} (${sessionHostname})` : sessionHostname}
+            RDP -{" "}
+            {sessionName !== sessionHostname
+              ? `${sessionName} (${sessionHostname})`
+              : sessionHostname}
           </span>
         )}
         <div className={`flex items-center space-x-1 ${getStatusColor()}`}>
@@ -224,13 +217,17 @@ export default function RDPClientHeader({
           <span className="text-xs capitalize">{connectionStatus}</span>
         </div>
         {statusMessage && (
-          <span className="text-xs text-[var(--color-textSecondary)] ml-2 truncate max-w-xs">{statusMessage}</span>
+          <span className="text-xs text-[var(--color-textSecondary)] ml-2 truncate max-w-xs">
+            {statusMessage}
+          </span>
         )}
       </div>
 
       <div className="flex items-center space-x-1">
         <div className="flex items-center space-x-1 text-xs text-[var(--color-textSecondary)] mr-2">
-          <span>{desktopSize.width}x{desktopSize.height}</span>
+          <span>
+            {desktopSize.width}x{desktopSize.height}
+          </span>
           <span>·</span>
           <span>{colorDepth}-bit</span>
           <span>·</span>
@@ -307,16 +304,22 @@ export default function RDPClientHeader({
             <Keyboard size={14} />
           </button>
 
-          {showSendKeys && (
-            <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
+          <PopoverSurface
+            isOpen={showSendKeys}
+            onClose={() => setShowSendKeys(false)}
+            anchorRef={sendKeysRef}
+            className="sor-popover-surface w-48 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden"
+            dataTestId="rdp-send-keys-popover"
+          >
+            <div className="sor-option-list">
               {[
-                { id: 'ctrl-alt-del', label: 'Ctrl + Alt + Del' },
-                { id: 'alt-tab', label: 'Alt + Tab' },
-                { id: 'win', label: 'Windows Key' },
-                { id: 'win-l', label: 'Win + L (Lock)' },
-                { id: 'win-r', label: 'Win + R (Run)' },
-                { id: 'alt-f4', label: 'Alt + F4' },
-                { id: 'print-screen', label: 'Print Screen' },
+                { id: "ctrl-alt-del", label: "Ctrl + Alt + Del" },
+                { id: "alt-tab", label: "Alt + Tab" },
+                { id: "win", label: "Windows Key" },
+                { id: "win-l", label: "Win + L (Lock)" },
+                { id: "win-r", label: "Win + R (Run)" },
+                { id: "alt-f4", label: "Alt + F4" },
+                { id: "print-screen", label: "Print Screen" },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -325,17 +328,17 @@ export default function RDPClientHeader({
                     setShowSendKeys(false);
                   }}
                   disabled={!isConnected}
-                  className={`w-full text-left px-3 py-1.5 text-xs ${
+                  className={`sor-option-item ${
                     isConnected
-                      ? 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]'
-                      : 'text-[var(--color-textSecondary)] cursor-not-allowed'
+                      ? "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]"
+                      : "text-[var(--color-textSecondary)] cursor-not-allowed"
                   } transition-colors`}
                 >
                   {item.label}
                 </button>
               ))}
             </div>
-          )}
+          </PopoverSurface>
         </div>
 
         {/* ── Host Info (separate button) ────────────────────── */}
@@ -348,8 +351,14 @@ export default function RDPClientHeader({
             <Info size={14} />
           </button>
 
-          {showHostInfo && (
-            <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
+          <PopoverSurface
+            isOpen={showHostInfo}
+            onClose={() => setShowHostInfo(false)}
+            anchorRef={hostInfoRef}
+            className="sor-popover-surface w-72 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden"
+            dataTestId="rdp-host-info-popover"
+          >
+            <div>
               {/* Friendly Name */}
               <div className="px-3 py-2 border-b border-[var(--color-border)]">
                 <div className="text-[10px] font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider mb-1.5">
@@ -363,8 +372,8 @@ export default function RDPClientHeader({
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') confirmRename();
-                        if (e.key === 'Escape') cancelRename();
+                        if (e.key === "Enter") confirmRename();
+                        if (e.key === "Escape") cancelRename();
                       }}
                       className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                     />
@@ -383,7 +392,9 @@ export default function RDPClientHeader({
                   </div>
                 ) : (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-[var(--color-textSecondary)]">{connectionName}</span>
+                    <span className="text-xs text-[var(--color-textSecondary)]">
+                      {connectionName}
+                    </span>
                     <button
                       onClick={startEditing}
                       className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
@@ -400,12 +411,15 @@ export default function RDPClientHeader({
                 <div className="text-[10px] font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider mb-1">
                   Host
                 </div>
-                <div className="text-xs text-[var(--color-textSecondary)]">{sessionHostname}</div>
+                <div className="text-xs text-[var(--color-textSecondary)]">
+                  {sessionHostname}
+                </div>
                 <div className="text-[10px] text-[var(--color-textSecondary)]">
                   Status: <span className="capitalize">{connectionStatus}</span>
                 </div>
                 <div className="text-[10px] text-[var(--color-textSecondary)]">
-                  Resolution: {desktopSize.width}x{desktopSize.height} · {colorDepth}-bit
+                  Resolution: {desktopSize.width}x{desktopSize.height} ·{" "}
+                  {colorDepth}-bit
                 </div>
               </div>
 
@@ -415,10 +429,15 @@ export default function RDPClientHeader({
                   Certificate
                 </div>
                 <div className="flex items-start space-x-2">
-                  <Fingerprint size={12} className="text-[var(--color-textSecondary)] flex-shrink-0 mt-0.5" />
+                  <Fingerprint
+                    size={12}
+                    className="text-[var(--color-textSecondary)] flex-shrink-0 mt-0.5"
+                  />
                   <div className="text-[10px] text-[var(--color-textSecondary)] min-w-0">
                     {certFingerprint ? (
-                      <span className="font-mono break-all">{certFingerprint}</span>
+                      <span className="font-mono break-all">
+                        {certFingerprint}
+                      </span>
                     ) : (
                       <span className="italic">No certificate available</span>
                     )}
@@ -426,7 +445,7 @@ export default function RDPClientHeader({
                 </div>
               </div>
             </div>
-          )}
+          </PopoverSurface>
         </div>
 
         {/* ── 2FA / TOTP ─────────────────────────────────────── */}
@@ -454,6 +473,7 @@ export default function RDPClientHeader({
               defaultDigits={totpDefaultDigits}
               defaultPeriod={totpDefaultPeriod}
               defaultAlgorithm={totpDefaultAlgorithm}
+              anchorRef={totpBtnRef}
             />
           )}
         </div>
@@ -507,7 +527,7 @@ export default function RDPClientHeader({
         {/* Recording */}
         {!recState.isRecording ? (
           <button
-            onClick={() => startRecording('webm')}
+            onClick={() => startRecording("webm")}
             className={btnDefault}
             title="Start recording"
           >
@@ -548,7 +568,7 @@ export default function RDPClientHeader({
         <button
           onClick={toggleFullscreen}
           className={btnDefault}
-          title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
         >
           {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>

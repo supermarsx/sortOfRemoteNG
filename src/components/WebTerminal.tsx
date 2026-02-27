@@ -64,6 +64,7 @@ import {
   type TrustVerifyResult,
 } from "../utils/trustStore";
 import { Modal } from "./ui/Modal";
+import { PopoverSurface } from "./ui/PopoverSurface";
 
 interface WebTerminalProps {
   session: ConnectionSession;
@@ -1591,21 +1592,6 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({
     }
   }, [showMacroList]);
 
-  // Close macro list on click outside
-  useEffect(() => {
-    if (!showMacroList) return;
-    const handler = (e: MouseEvent) => {
-      if (
-        macroListRef.current &&
-        !macroListRef.current.contains(e.target as Node)
-      ) {
-        setShowMacroList(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showMacroList]);
-
   const formatDuration = (ms: number) => {
     const s = Math.floor(ms / 1000);
     const m = Math.floor(s / 60);
@@ -1779,8 +1765,14 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({
                       <PlayCircle size={14} />
                     </button>
                   )}
-                  {showMacroList && (
-                    <div className="absolute right-0 top-full mt-1 w-64 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+                  <PopoverSurface
+                    isOpen={showMacroList}
+                    onClose={() => setShowMacroList(false)}
+                    anchorRef={macroListRef}
+                    className="sor-popover-surface w-64 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl max-h-64 overflow-y-auto"
+                    dataTestId="web-terminal-macro-popover"
+                  >
+                    <div className="sor-option-list">
                       {savedMacros.length === 0 ? (
                         <div className="p-3 text-xs text-[var(--color-textSecondary)] text-center">
                           No saved macros
@@ -1790,7 +1782,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({
                           <button
                             key={m.id}
                             onClick={() => handleReplayMacro(m)}
-                            className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-[var(--color-border)] border-b border-[var(--color-border)]/50 last:border-b-0"
+                            className="sor-option-item border-b border-[var(--color-border)]/50 last:border-b-0 text-sm text-gray-200 hover:bg-[var(--color-border)]"
                           >
                             <div className="font-medium truncate">{m.name}</div>
                             <div className="text-[10px] text-[var(--color-textSecondary)]">
@@ -1800,7 +1792,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({
                         ))
                       )}
                     </div>
-                  )}
+                  </PopoverSurface>
                 </div>
                 <div className="relative" ref={keyPopupRef}>
                   <button

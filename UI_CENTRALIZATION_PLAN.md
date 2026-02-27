@@ -14,6 +14,7 @@ Consolidate reusable UI structure and CSS for:
 - Shared primitives in active use:
   - `src/components/ui/Modal.tsx`
   - `src/components/ui/MenuSurface.tsx`
+  - `src/components/ui/PopoverSurface.tsx`
   - `src/components/ui/SettingsPrimitives.tsx`
   - shared CSS primitives in `src/index.css`
 - Major popup/dialog surfaces already migrated to `Modal`.
@@ -61,9 +62,18 @@ Consolidate reusable UI structure and CSS for:
 
 - New shared primitive:
   - `src/components/ui/MenuSurface.tsx`
+  - `src/components/ui/PopoverSurface.tsx`
 - Migrated context/action menus:
   - `ConnectionTree` (item menu + panel menu)
   - `WebBrowser` (bookmark item menu + bookmark bar menu)
+- Migrated anchored popovers and option-list overlays:
+  - `SyncBackupStatusBar`
+  - `BackupStatusPopup`
+  - `CloudSyncStatusPopup`
+  - `CertificateInfoPopup`
+  - `rdp/RDPTotpPanel` (anchored mode)
+  - `rdp/RDPClientHeader` (send keys + host info)
+  - `WebTerminal` (macro replay list)
 
 ### CSS Primitive Expansion
 
@@ -72,6 +82,7 @@ Consolidate reusable UI structure and CSS for:
   - chip groups: `.sor-chip-list`, `.sor-chip-button`
   - selection rows: `.sor-selection-list`, `.sor-selection-row`, `.sor-selection-row-selected`, `.sor-selection-row-hover-action`
   - menu shell/items: `.sor-menu-surface`, `.sor-menu-item`, `.sor-menu-item-danger`, `.sor-menu-divider`
+  - popover/list primitives: `.sor-popover-surface`, `.sor-option-list`, `.sor-option-item`
 - Migrated components adopted these classes where behavior/style stacks were duplicated.
 
 ### Test Coverage Added/Updated
@@ -82,6 +93,9 @@ Consolidate reusable UI structure and CSS for:
   - `tests/AutoLockManager.test.tsx`
   - `tests/ColorTagManager.test.tsx`
   - `tests/MenuSurface.test.tsx`
+  - `tests/PopoverSurface.test.tsx`
+  - `tests/CertificateInfoPopup.test.tsx`
+  - `tests/RDPClientHeader.test.tsx`
   - `tests/ProxyChainEditor.test.tsx`
   - `tests/ProxyProfileEditor.test.tsx`
   - `tests/SSHTunnelDialog.test.tsx`

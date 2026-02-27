@@ -661,4 +661,33 @@ describe("WebTerminal", () => {
       });
     });
   });
+
+  describe("Macro Replay Popover", () => {
+    it("opens and closes replay macro popover", async () => {
+      mockInvoke.mockResolvedValueOnce("ssh-session-123");
+
+      renderWithProviders(mockSession);
+
+      await waitFor(() => {
+        expect(screen.getByText("Connected")).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /replay macro/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("web-terminal-macro-popover"),
+        ).toBeInTheDocument();
+      });
+      expect(screen.getByText("No saved macros")).toBeInTheDocument();
+
+      fireEvent.mouseDown(document.body);
+
+      await waitFor(() => {
+        expect(
+          screen.queryByTestId("web-terminal-macro-popover"),
+        ).not.toBeInTheDocument();
+      });
+    });
+  });
 });

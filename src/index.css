@@ -514,6 +514,25 @@ body {
   margin: 0.25rem 0;
 }
 
+.sor-popover-surface {
+  min-width: 10rem;
+}
+
+.sor-option-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.sor-option-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
 .sor-manager-panel {
   max-width: 64rem;
   height: 85vh;

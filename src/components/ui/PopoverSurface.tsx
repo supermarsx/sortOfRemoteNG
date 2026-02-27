@@ -1,4 +1,10 @@
-import React, { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  CSSProperties,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 const cx = (...classes: Array<string | false | null | undefined>) =>
@@ -60,13 +66,17 @@ export const PopoverSurface: React.FC<PopoverSurfaceProps> = ({
 
     let left = anchorRect.right - width;
     if (align === "start") left = anchorRect.left;
-    if (align === "center") left = anchorRect.left + anchorRect.width / 2 - width / 2;
+    if (align === "center")
+      left = anchorRect.left + anchorRect.width / 2 - width / 2;
 
     let top = anchorRect.bottom + offset;
 
     if (left < viewportPadding) left = viewportPadding;
     if (left + width > window.innerWidth - viewportPadding) {
-      left = Math.max(viewportPadding, window.innerWidth - width - viewportPadding);
+      left = Math.max(
+        viewportPadding,
+        window.innerWidth - width - viewportPadding,
+      );
     }
 
     if (top + height > window.innerHeight - viewportPadding) {
@@ -74,7 +84,10 @@ export const PopoverSurface: React.FC<PopoverSurfaceProps> = ({
       if (above >= viewportPadding) {
         top = above;
       } else {
-        top = Math.max(viewportPadding, window.innerHeight - height - viewportPadding);
+        top = Math.max(
+          viewportPadding,
+          window.innerHeight - height - viewportPadding,
+        );
       }
     }
 
@@ -126,12 +139,12 @@ export const PopoverSurface: React.FC<PopoverSurfaceProps> = ({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose, closeOnEscape]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !anchorRef.current) return null;
 
   return createPortal(
     <div
       ref={popoverRef}
-      className={cx("fixed z-[9999]", className)}
+      className={cx("sor-popover-surface fixed z-[9999]", className)}
       style={{
         left: position.left,
         top: position.top,
