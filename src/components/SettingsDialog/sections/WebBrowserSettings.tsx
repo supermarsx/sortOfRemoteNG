@@ -23,7 +23,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
 
       {/* ── Proxy Keepalive ── */}
       <section>
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Wifi className="w-4 h-4 text-blue-400" />
           Internal Proxy Keepalive
         </h4>
@@ -123,7 +123,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
 
       {/* ── Bookmarks ── */}
       <section>
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Bookmark className="w-4 h-4 text-yellow-400" />
           Bookmarks
         </h4>

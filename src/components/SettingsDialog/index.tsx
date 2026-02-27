@@ -256,6 +256,9 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   useSettingHighlight(highlightKey);
   const { toast } = useToastContext();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+  const contentScrollRef = useRef<HTMLDivElement>(null);
+  const bottomSentinelRef = useRef<HTMLDivElement>(null);
   const settingsManager = SettingsManager.getInstance();
   const themeManager = ThemeManager.getInstance();
 
@@ -283,6 +286,37 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  // Reset scroll-to-bottom flag when tab changes
+  useEffect(() => {
+    setHasScrolledToBottom(false);
+    // Also scroll to top
+    contentScrollRef.current?.scrollTo(0, 0);
+  }, [activeTab]);
+
+  // Observe the bottom sentinel to detect when user scrolled to the bottom
+  useEffect(() => {
+    const sentinel = bottomSentinelRef.current;
+    const container = contentScrollRef.current;
+    if (!sentinel || !container) return;
+
+    // If content doesn't overflow, show reset immediately
+    const checkOverflow = () => {
+      if (container.scrollHeight <= container.clientHeight + 10) {
+        setHasScrolledToBottom(true);
+      }
+    };
+    checkOverflow();
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) setHasScrolledToBottom(true);
+      },
+      { root: container, threshold: 0.1 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [activeTab, settings]);
 
   const handleSave = async () => {
     if (!settings) return;
@@ -576,11 +610,11 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
         <div className="flex flex-1 min-h-0">
           {/* Sidebar */}
-          <div className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col">
+          <div className="w-64 bg-[var(--color-background)] border-r border-[var(--color-border)] flex flex-col">
             {/* Search */}
-            <div className="p-3 border-b border-gray-700/50">
-              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-800 border border-gray-600/50 rounded-lg">
-                <Search size={14} className="text-gray-400 flex-shrink-0" />
+            <div className="p-3 border-b border-[var(--color-border)]/50">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)]/50 rounded-lg">
+                <Search size={14} className="text-[var(--color-textSecondary)] flex-shrink-0" />
                 <input
                   type="text"
                   value={searchQuery}
@@ -607,7 +641,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-left transition-colors ${
                         activeTab === tab.id
                           ? 'bg-blue-600 text-white'
-                          : 'text-gray-300 hover:bg-gray-700'
+                          : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]'
                       }`}
                     >
                       <Icon size={16} />
@@ -625,7 +659,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                           <button
                             key={entry.key}
                             onClick={() => { setActiveTab(tab.id); setHighlightKey(entry.key); }}
-                            className="w-full text-left px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-700/50 rounded truncate"
+                            className="w-full text-left px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[var(--color-surface)]/50 rounded truncate"
                           >
                             {entry.label}
                           </button>
@@ -642,7 +676,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto min-h-0 flex flex-col">
+          <div ref={contentScrollRef} className="flex-1 overflow-y-auto min-h-0 flex flex-col">
             <div className="flex-1 p-6">
               {activeTab === 'general' && (
                 <GeneralSettings settings={settings} updateSettings={updateSettings} />
@@ -731,10 +765,13 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
               {activeTab === 'recovery' && (
                 <RecoverySettings onClose={onClose} />
               )}
+
+              {/* Sentinel for scroll-to-bottom detection */}
+              <div ref={bottomSentinelRef} className="h-px" />
             </div>
 
-            {/* Per-tab reset footer */}
-            {activeTab !== 'recovery' && TAB_DEFAULTS[activeTab] && (
+            {/* Per-tab reset footer — only visible after scrolling to bottom */}
+            {hasScrolledToBottom && activeTab !== 'recovery' && TAB_DEFAULTS[activeTab] && (
               <div className="sticky bottom-0 flex justify-end px-6 py-2 border-t border-[var(--color-border)]/30 bg-[var(--color-surface)]/80 backdrop-blur-sm">
                 <button
                   onClick={handleReset}
@@ -756,10 +793,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
       />
       {isBenchmarking && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60]">
-          <div className="bg-gray-800 border border-gray-700 rounded-xl p-8 shadow-2xl max-w-sm mx-4">
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-8 shadow-2xl max-w-sm mx-4">
             <div className="flex flex-col items-center text-center">
               <div className="relative mb-6">
-                <div className="w-20 h-20 rounded-full border-4 border-gray-700 border-t-blue-500 animate-spin" />
+                <div className="w-20 h-20 rounded-full border-4 border-[var(--color-border)] border-t-blue-500 animate-spin" />
                 <Gauge className="w-8 h-8 text-blue-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
               </div>
               <h3 className="text-lg font-semibold text-white mb-2">

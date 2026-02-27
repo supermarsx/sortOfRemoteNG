@@ -127,12 +127,12 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
       {/* Encryption Algorithm Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Lock className="w-4 h-4 text-blue-400" />
           {t('security.algorithm')}
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           {/* Compact Algorithm Selection */}
           <div data-setting-key="encryptionAlgorithm" className="flex items-center gap-3">
             <Lock className="w-5 h-5 text-blue-400 flex-shrink-0" />
@@ -199,12 +199,12 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
       {/* Key Derivation Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Key className="w-4 h-4 text-purple-400" />
           Key Derivation (PBKDF2)
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-gray-400">
@@ -278,12 +278,12 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
       {/* Auto Lock Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Clock className="w-4 h-4 text-yellow-400" />
           Auto Lock
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           {!hasPassword && (
             <div className="flex items-center gap-2 px-3 py-2 bg-yellow-900/20 border border-yellow-700/50 rounded-md text-yellow-400 text-sm">
               <Lock className="w-4 h-4" />
@@ -336,12 +336,12 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
       {/* Generate Key File Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <FileKey className="w-4 h-4 text-emerald-400" />
           Generate SSH Key File
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <p className="text-sm text-gray-400">
             Generate a new SSH key pair and save it to a file. The private key will be saved to your chosen location, and the public key will be saved with a .pub extension.
           </p>
@@ -439,12 +439,12 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
       {/* Generate Collection Encryption Key File Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Database className="w-4 h-4 text-blue-400" />
           Generate Collection Encryption Key File
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <p className="text-sm text-gray-400">
             Generate a secure encryption key file that can be used to encrypt your connection collections. 
             This key file can be used instead of a password when creating or opening encrypted collections.
@@ -562,9 +562,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       </div>
 
       {/* ─── CredSSP Remediation Defaults ─────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-400" />
             CredSSP Remediation Defaults
           </h4>
@@ -848,9 +848,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       </div>
 
       {/* ─── Password Reveal Settings ─────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
             <Eye className="w-4 h-4 text-blue-400" />
             Password Reveal
           </h4>
@@ -964,9 +964,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       </div>
 
       {/* ─── 2FA / TOTP Defaults ──────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
             <Shield className="w-4 h-4 text-blue-400" />
             2FA / TOTP Defaults
           </h4>

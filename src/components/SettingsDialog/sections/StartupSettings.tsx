@@ -38,7 +38,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Startup Behavior */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2">
           {t("settings.startup.behavior", "Startup Behavior")}
         </h4>
 
@@ -122,7 +122,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Tray Behavior */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2">
           {t("settings.startup.trayBehavior", "System Tray Behavior")}
         </h4>
 
@@ -178,7 +178,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Welcome Screen */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2">
           {t("settings.startup.welcomeScreen", "Welcome Screen")}
         </h4>
 

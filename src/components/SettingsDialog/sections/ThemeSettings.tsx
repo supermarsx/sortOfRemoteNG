@@ -105,7 +105,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
 
       {/* Theme & Color Scheme Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Droplets className="w-4 h-4" />
           {t("settings.theme.appearance", "Appearance")}
         </h4>
@@ -173,12 +173,12 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
 
       {/* Background Glow Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Sparkles className="w-4 h-4" />
           {t("settings.theme.backgroundGlow", "Background Glow")}
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <label className="flex items-center space-x-3 cursor-pointer">
             <input
               type="checkbox"
@@ -279,7 +279,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
 
       {/* Window Transparency Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Eye className="w-4 h-4" />
           {t("settings.theme.transparency", "Window Transparency")}
           <span className="ml-1 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded">
@@ -292,7 +292,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
           Disabled by default.
         </p>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <label data-setting-key="windowTransparencyEnabled" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
@@ -363,12 +363,12 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
 
       {/* Animation Settings Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Zap className="w-4 h-4" />
           {t("settings.theme.animations", "Animations")}
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <label className="flex items-center space-x-3 cursor-pointer">
             <input
               type="checkbox"
@@ -418,7 +418,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
 
       {/* Custom CSS Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Code className="w-4 h-4" />
           {t("settings.theme.customCss", "Custom CSS")}
         </h4>

@@ -93,7 +93,7 @@ interface AppDialogsProps {
   collectionManager: CollectionManager;
 }
 
-const getToolMode = (settings: GlobalSettings, key: keyof import('../types/settings').ToolDisplayModes): 'popup' | 'panel' =>
+const getToolMode = (settings: GlobalSettings, key: keyof import('../types/settings').ToolDisplayModes): 'popup' | 'tab' =>
   settings.toolDisplayModes?.[key] ?? 'popup';
 
 export const AppDialogs: React.FC<AppDialogsProps> = (props) => {

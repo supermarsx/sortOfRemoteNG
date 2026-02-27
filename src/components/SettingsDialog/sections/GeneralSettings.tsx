@@ -39,7 +39,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       {/* Basic Settings Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Globe className="w-4 h-4 text-blue-400" />
           Language & Timing
         </h4>
@@ -84,12 +84,12 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       {/* Autosave Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Save className="w-4 h-4 text-green-400" />
           Autosave Settings
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <label data-setting-key="autoSaveEnabled" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
@@ -124,12 +124,12 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       {/* Warning Settings */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-yellow-400" />
           Confirmation Warnings
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-3">
           <label data-setting-key="warnOnClose" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
@@ -188,12 +188,12 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       {/* Quick Connect History */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <History className="w-4 h-4 text-cyan-400" />
           Quick Connect History
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <label data-setting-key="quickConnectHistoryEnabled" className="flex items-center space-x-3 cursor-pointer group">
               <input

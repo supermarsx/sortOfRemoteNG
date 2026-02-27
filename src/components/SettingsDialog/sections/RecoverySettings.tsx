@@ -141,7 +141,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
 
     return (
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
-        <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-gray-700 shadow-2xl">
+        <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-[var(--color-border)] shadow-2xl">
           <div className="flex items-start gap-4">
             <div className={`p-3 rounded-full ${action.danger ? 'bg-red-500/20' : 'bg-yellow-500/20'}`}>
               <AlertTriangle className={`w-6 h-6 ${action.danger ? 'text-red-400' : 'text-yellow-400'}`} />
@@ -189,12 +189,12 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
 
       {/* Data Management */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Database className="w-4 h-4 text-blue-400" />
           Data Management
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 text-white font-medium">
@@ -214,7 +214,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
             </button>
           </div>
 
-          <div className="border-t border-gray-700/50 pt-4">
+          <div className="border-t border-[var(--color-border)]/50 pt-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-white font-medium">
@@ -239,12 +239,12 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
 
       {/* Reset Settings */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <RotateCcw className="w-4 h-4 text-yellow-400" />
           Reset Options
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 text-white font-medium">
@@ -268,12 +268,12 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
 
       {/* Restart Options */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <RefreshCw className="w-4 h-4 text-green-400" />
           Restart Options
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 text-white font-medium">
@@ -293,7 +293,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
             </button>
           </div>
 
-          <div className="border-t border-gray-700/50 pt-4">
+          <div className="border-t border-[var(--color-border)]/50 pt-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center gap-2 text-white font-medium">

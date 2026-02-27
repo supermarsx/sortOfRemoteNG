@@ -72,7 +72,7 @@ const SectionHeader: React.FC<{
   icon: React.ReactNode;
   title: string;
 }> = ({ icon, title }) => (
-  <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+  <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
     {icon}
     {title}
   </h4>
@@ -80,7 +80,7 @@ const SectionHeader: React.FC<{
 
 /* ─── Reusable section card ───────────────────────────────── */
 const Card: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
+  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-3">
     {children}
   </div>
 );
@@ -766,7 +766,7 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
               value={(settings.toolDisplayModes?.[tool.key] ?? 'popup')}
               options={[
                 { value: 'popup', label: 'Popup' },
-                { value: 'panel', label: 'Panel' },
+                { value: 'tab', label: 'Tab' },
               ]}
               onChange={(v) => updateSettings({
                 toolDisplayModes: {

@@ -68,7 +68,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* ── SSH Terminal Recording ─────────────────────── */}
-      <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
         <Terminal className="w-4 h-4" />
         SSH Terminal Recording
       </h4>
@@ -125,7 +125,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* SSH Limits */}
-      <div className="space-y-3 pt-2 border-t border-gray-700">
+      <div className="space-y-3 pt-2 border-t border-[var(--color-border)]">
         <div data-setting-key="recording.maxRecordingDurationMinutes" className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Clock size={14} className="text-blue-400" />
@@ -182,7 +182,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* SSH Storage info */}
-      <div className="pt-2 border-t border-gray-700">
+      <div className="pt-2 border-t border-[var(--color-border)]">
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <HardDrive size={12} />
           <span>{sshCount} SSH recording{sshCount !== 1 ? 's' : ''} stored</span>
@@ -190,7 +190,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* ── RDP Screen Recording ──────────────────────── */}
-      <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2 pt-4">
+      <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2 pt-4">
         <Monitor className="w-4 h-4" />
         RDP Screen Recording
       </h4>
@@ -247,7 +247,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* RDP Format & Quality */}
-      <div className="space-y-3 pt-2 border-t border-gray-700">
+      <div className="space-y-3 pt-2 border-t border-[var(--color-border)]">
         <div data-setting-key="rdpRecording.defaultVideoFormat" className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Film size={14} className="text-cyan-400" />
@@ -310,7 +310,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* RDP Limits */}
-      <div className="space-y-3 pt-2 border-t border-gray-700">
+      <div className="space-y-3 pt-2 border-t border-[var(--color-border)]">
         <div data-setting-key="rdpRecording.maxRdpRecordingDurationMinutes" className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Clock size={14} className="text-blue-400" />
@@ -350,7 +350,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* RDP Storage info */}
-      <div className="pt-2 border-t border-gray-700">
+      <div className="pt-2 border-t border-[var(--color-border)]">
         <div className="flex items-center gap-4 text-xs text-gray-500">
           <span className="flex items-center gap-1">
             <Film size={12} />
@@ -366,7 +366,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* ── Web Session Recording ──────────────────────── */}
-      <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2 pt-4">
+      <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2 pt-4">
         <Globe className="w-4 h-4" />
         Web Session Recording
       </h4>
@@ -423,7 +423,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* Web Limits */}
-      <div className="space-y-3 pt-2 border-t border-gray-700">
+      <div className="space-y-3 pt-2 border-t border-[var(--color-border)]">
         <div data-setting-key="webRecording.maxWebRecordingDurationMinutes" className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Clock size={14} className="text-blue-400" />
@@ -478,7 +478,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* Web Storage info */}
-      <div className="pt-2 border-t border-gray-700">
+      <div className="pt-2 border-t border-[var(--color-border)]">
         <div className="flex items-center gap-4 text-xs text-gray-500">
           <span className="flex items-center gap-1">
             <Globe size={12} />

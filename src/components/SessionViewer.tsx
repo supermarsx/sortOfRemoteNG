@@ -5,13 +5,25 @@ import { WebTerminal } from './WebTerminal';
 import { WebBrowser } from './WebBrowser';
 import RDPClient from './RDPClient';
 import { AnyDeskClient } from './AnyDeskClient';
+import { isToolProtocol, ToolTabViewer } from './ToolPanel';
 
 interface SessionViewerProps {
   session: ConnectionSession;
+  onCloseSession?: (sessionId: string) => void;
 }
 
-export const SessionViewer: React.FC<SessionViewerProps> = ({ session }) => {
+export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSession }) => {
   const renderContent = () => {
+    // Tool tabs render their own component
+    if (isToolProtocol(session.protocol)) {
+      return (
+        <ToolTabViewer
+          session={session}
+          onClose={() => onCloseSession?.(session.id)}
+        />
+      );
+    }
+
     // RDP handles its own connection lifecycle internally — mount the
     // client for both 'connecting' and 'connected' status so there is a
     // single stable component instance (no unmount/remount on status change).

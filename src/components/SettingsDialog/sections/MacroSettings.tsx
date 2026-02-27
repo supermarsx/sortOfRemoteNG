@@ -96,7 +96,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
       </div>
 
       {/* Storage info */}
-      <div className="pt-2 border-t border-gray-700">
+      <div className="pt-2 border-t border-[var(--color-border)]">
         <div className="flex items-center gap-3 text-xs text-gray-500">
           <ListVideo size={12} />
           <span>{macroCount} macro{macroCount !== 1 ? 's' : ''} saved</span>

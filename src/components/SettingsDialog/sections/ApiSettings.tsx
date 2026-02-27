@@ -108,7 +108,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
       </p>
 
       {/* Enable API Server */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
         <label className="flex items-center space-x-3 cursor-pointer group">
           <input
             type="checkbox"
@@ -131,7 +131,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
       {settings.restApi?.enabled && (
         <>
           {/* Start on Launch */}
-          <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
             <label className="flex items-center space-x-3 cursor-pointer group">
               <input
                 type="checkbox"
@@ -155,7 +155,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
           </div>
 
           {/* Server Controls */}
-          <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-medium text-gray-300 flex items-center gap-2">
                 <Settings className="w-4 h-4 text-blue-400" />
@@ -215,12 +215,12 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* Port Configuration */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Globe className="w-4 h-4 text-blue-400" />
               {t('settings.api.network', 'Network')}
             </h4>
 
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm text-gray-400">
@@ -303,12 +303,12 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* Authentication */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Shield className="w-4 h-4 text-green-400" />
               {t('settings.api.authentication', 'Authentication')}
             </h4>
 
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
               <label className="flex items-center space-x-3 cursor-pointer group">
                 <input
                   type="checkbox"
@@ -331,7 +331,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
               </label>
 
               {settings.restApi?.authentication && (
-                <div className="space-y-2 pt-2 border-t border-gray-700">
+                <div className="space-y-2 pt-2 border-t border-[var(--color-border)]">
                   <label className="flex items-center gap-2 text-sm text-gray-400">
                     <Key className="w-4 h-4" />
                     {t('settings.api.apiKey', 'API Key')}
@@ -375,12 +375,12 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* SSL/TLS */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <FileKey className="w-4 h-4 text-purple-400" />
               {t('settings.api.ssl', 'SSL/TLS')}
             </h4>
 
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
               <label className="flex items-center space-x-3 cursor-pointer group">
                 <input
                   type="checkbox"
@@ -403,7 +403,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
               </label>
 
               {settings.restApi?.sslEnabled && (
-                <div className="space-y-4 pt-2 border-t border-gray-700">
+                <div className="space-y-4 pt-2 border-t border-[var(--color-border)]">
                   {/* SSL Mode Selection */}
                   <div className="space-y-2">
                     <label className="flex items-center gap-2 text-sm text-gray-400">
@@ -522,12 +522,12 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* Performance & Threading */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Cpu className="w-4 h-4 text-cyan-400" />
               {t('settings.api.performance', 'Performance')}
             </h4>
 
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm text-gray-400">
@@ -572,12 +572,12 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* Rate Limiting */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Clock className="w-4 h-4 text-orange-400" />
               {t('settings.api.rateLimit', 'Rate Limiting')}
             </h4>
 
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm text-gray-400">
                   <Clock className="w-4 h-4" />

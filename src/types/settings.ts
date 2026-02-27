@@ -763,7 +763,7 @@ export interface MacroConfig {
   maxMacroSteps: number;
 }
 
-export type ToolDisplayMode = 'popup' | 'panel';
+export type ToolDisplayMode = 'popup' | 'tab';
 
 export interface ToolDisplayModes {
   recordingManager: ToolDisplayMode;

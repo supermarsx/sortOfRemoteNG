@@ -45,8 +45,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── Session Management ─────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-blue-400" />
           Session Management
         </h4>
@@ -143,8 +143,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── Security Defaults ─────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Shield className="w-4 h-4 text-red-400" />
           Security Defaults
         </h4>
@@ -207,36 +207,77 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── Display Defaults ──────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Monitor className="w-4 h-4 text-blue-400" />
           Display Defaults
         </h4>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Default Width</label>
-            <input
-              type="number"
-              min={640}
-              max={7680}
-              value={rdp.defaultWidth ?? 1920}
-              onChange={(e) => update({ defaultWidth: parseInt(e.target.value) || 1920 })}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">Default Height</label>
-            <input
-              type="number"
-              min={480}
-              max={4320}
-              value={rdp.defaultHeight ?? 1080}
-              onChange={(e) => update({ defaultHeight: parseInt(e.target.value) || 1080 })}
-              className={inputClass}
-            />
-          </div>
-        </div>
+        {(() => {
+          const RESOLUTION_PRESETS = [
+            { label: '1280 × 720 (HD)', w: 1280, h: 720 },
+            { label: '1366 × 768 (HD+)', w: 1366, h: 768 },
+            { label: '1600 × 900 (HD+)', w: 1600, h: 900 },
+            { label: '1920 × 1080 (Full HD)', w: 1920, h: 1080 },
+            { label: '2560 × 1440 (QHD)', w: 2560, h: 1440 },
+            { label: '3440 × 1440 (Ultrawide)', w: 3440, h: 1440 },
+            { label: '3840 × 2160 (4K UHD)', w: 3840, h: 2160 },
+            { label: '5120 × 2880 (5K)', w: 5120, h: 2880 },
+          ];
+          const currentW = rdp.defaultWidth ?? 1920;
+          const currentH = rdp.defaultHeight ?? 1080;
+          const matchedPreset = RESOLUTION_PRESETS.find(p => p.w === currentW && p.h === currentH);
+          const selectedValue = matchedPreset ? `${matchedPreset.w}x${matchedPreset.h}` : 'custom';
+
+          return (
+            <>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Default Resolution</label>
+                <select
+                  value={selectedValue}
+                  onChange={(e) => {
+                    if (e.target.value === 'custom') return;
+                    const [w, h] = e.target.value.split('x').map(Number);
+                    update({ defaultWidth: w, defaultHeight: h });
+                  }}
+                  className={selectClass}
+                >
+                  {RESOLUTION_PRESETS.map(p => (
+                    <option key={`${p.w}x${p.h}`} value={`${p.w}x${p.h}`}>{p.label}</option>
+                  ))}
+                  <option value="custom">Custom...</option>
+                </select>
+              </div>
+
+              {selectedValue === 'custom' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Width</label>
+                    <input
+                      type="number"
+                      min={640}
+                      max={7680}
+                      value={currentW}
+                      onChange={(e) => update({ defaultWidth: parseInt(e.target.value) || 1920 })}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-400 mb-1">Height</label>
+                    <input
+                      type="number"
+                      min={480}
+                      max={4320}
+                      value={currentH}
+                      onChange={(e) => update({ defaultHeight: parseInt(e.target.value) || 1080 })}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         <div>
           <label className="block text-sm text-gray-400 mb-1">Default Color Depth</label>
@@ -267,8 +308,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── Gateway Defaults ──────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Network className="w-4 h-4 text-cyan-400" />
           RDP Gateway Defaults
         </h4>
@@ -362,8 +403,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── Hyper-V Defaults ──────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Server className="w-4 h-4 text-violet-400" />
           Hyper-V Defaults
         </h4>
@@ -385,8 +426,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── Negotiation Defaults ──────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Zap className="w-4 h-4 text-amber-400" />
           Connection Negotiation Defaults
         </h4>
@@ -466,8 +507,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── TCP / Socket Defaults ─────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Cable className="w-4 h-4 text-emerald-400" />
           TCP / Socket Defaults
         </h4>
@@ -577,8 +618,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── Render Backend Defaults ─────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Monitor className="w-4 h-4 text-cyan-400" />
           Render Backend Default
         </h4>
@@ -627,8 +668,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── Performance / Frame Delivery Defaults ─────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Zap className="w-4 h-4 text-yellow-400" />
           Performance / Frame Delivery Defaults
         </h4>
@@ -736,8 +777,8 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
       </div>
 
       {/* ─── Bitmap Codec Defaults ─────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Monitor className="w-4 h-4 text-purple-400" />
           Bitmap Codec Negotiation Defaults
         </h4>
@@ -788,7 +829,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
               </div>
             )}
 
-            <div className="border-t border-gray-700 pt-3 mt-3">
+            <div className="border-t border-[var(--color-border)] pt-3 mt-3">
               <label className="flex items-center space-x-3 cursor-pointer group">
                 <input
                   type="checkbox"

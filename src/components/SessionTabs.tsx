@@ -10,10 +10,42 @@ import {
   WifiOff,
   ExternalLink,
   ShieldOff,
+  Gauge,
+  ScrollText,
+  Keyboard,
+  Network,
+  Server,
+  Radio,
+  TerminalSquare,
+  FileCode,
+  ListVideo,
+  Circle,
+  Wrench,
 } from "lucide-react";
 import { useConnections } from "../contexts/useConnections";
+import { isToolProtocol, getToolKeyFromProtocol } from "./ToolPanel";
+
+const getToolIcon = (toolKey: string) => {
+  switch (toolKey) {
+    case 'performanceMonitor': return Gauge;
+    case 'actionLog': return ScrollText;
+    case 'shortcutManager': return Keyboard;
+    case 'proxyChain': return Network;
+    case 'internalProxy': return Server;
+    case 'wol': return Radio;
+    case 'bulkSsh': return TerminalSquare;
+    case 'scriptManager': return FileCode;
+    case 'macroManager': return ListVideo;
+    case 'recordingManager': return Circle;
+    default: return Wrench;
+  }
+};
 
 const getProtocolIcon = (protocol: string) => {
+  if (isToolProtocol(protocol)) {
+    const toolKey = getToolKeyFromProtocol(protocol);
+    return toolKey ? getToolIcon(toolKey) : Wrench;
+  }
   switch (protocol) {
     case "rdp":
       return Monitor;

@@ -39,12 +39,12 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
 
       {/* Retry Settings Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <RefreshCw className="w-4 h-4 text-blue-400" />
           Connection Retry
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-gray-400">
@@ -82,12 +82,12 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
 
       {/* Monitoring Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Gauge className="w-4 h-4 text-green-400" />
           Performance Monitoring
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
@@ -140,12 +140,12 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
 
       {/* Status Checking Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Wifi className="w-4 h-4 text-purple-400" />
           Status Checking
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
@@ -205,12 +205,12 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
 
       {/* Logging Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <FileText className="w-4 h-4 text-yellow-400" />
           Action Logging
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"

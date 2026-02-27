@@ -67,8 +67,8 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       </div>
 
       {/* ─── Runtime ─────────────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Cpu className="w-4 h-4 text-blue-400" />
           Runtime
         </h4>
@@ -106,8 +106,8 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       </div>
 
       {/* ─── RDP Engine ──────────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-cyan-400" />
           RDP Engine
         </h4>
@@ -147,8 +147,8 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       </div>
 
       {/* ─── Network ─────────────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Network className="w-4 h-4 text-green-400" />
           Network
         </h4>
@@ -194,8 +194,8 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       </div>
 
       {/* ─── Storage ─────────────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-amber-400" />
           Storage
         </h4>
@@ -253,8 +253,8 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       </div>
 
       {/* ─── Security ────────────────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Shield className="w-4 h-4 text-red-400" />
           Security
         </h4>
@@ -290,8 +290,8 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       </div>
 
       {/* ─── Internal API Server ─────────────────────────────── */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Globe className="w-4 h-4 text-purple-400" />
           Internal API Server
         </h4>

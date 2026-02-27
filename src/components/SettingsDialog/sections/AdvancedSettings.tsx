@@ -49,12 +49,12 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
 
       {/* Tab Grouping Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-blue-400" />
           Tab Grouping
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {TAB_GROUPING_CONFIG.map((option) => (
               <button
@@ -77,12 +77,12 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
 
       {/* Logging Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <FileText className="w-4 h-4 text-green-400" />
           Logging
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
           <label className="block text-sm text-gray-400 mb-3">Log Level</label>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {LOG_LEVEL_CONFIG.map((level) => {
@@ -109,12 +109,12 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
 
       {/* Tab Naming Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Tags className="w-4 h-4 text-purple-400" />
           Tab Naming
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
@@ -135,12 +135,12 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
 
       {/* Diagnostics Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <ShieldAlert className="w-4 h-4 text-yellow-400" />
           Diagnostics
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-3">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
@@ -161,12 +161,12 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
 
       {/* Settings Dialog Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Settings className="w-4 h-4" />
           Settings Dialog
         </h4>
 
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-3">
           <label data-setting-key="settingsDialog.autoSave" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"

@@ -37,7 +37,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
       </p>
 
       {/* Enable Global Proxy */}
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
         <label className="flex items-center space-x-3 cursor-pointer group">
           <input
             type="checkbox"
@@ -57,7 +57,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
         <>
           {/* Proxy Type Section */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Globe className="w-4 h-4 text-blue-400" />
               Proxy Type
             </h4>
@@ -83,12 +83,12 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
 
           {/* Connection Details Section */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Server className="w-4 h-4 text-green-400" />
               Connection Details
             </h4>
 
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm text-gray-400">
@@ -124,12 +124,12 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
 
           {/* Authentication Section */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Lock className="w-4 h-4 text-yellow-400" />
               Authentication (Optional)
             </h4>
 
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm text-gray-400">

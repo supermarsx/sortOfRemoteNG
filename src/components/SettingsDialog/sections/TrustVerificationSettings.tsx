@@ -100,7 +100,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
       {/* Global Policies */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* TLS Trust Policy */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-gray-800 rounded-lg p-4 border border-[var(--color-border)]">
           <div className="flex items-center gap-2 mb-3">
             <Lock size={16} className="text-green-400" />
             <h4 className="text-sm font-medium text-gray-300">TLS Certificate Policy</h4>
@@ -120,7 +120,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
         </div>
 
         {/* SSH Trust Policy */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <div className="bg-gray-800 rounded-lg p-4 border border-[var(--color-border)]">
           <div className="flex items-center gap-2 mb-3">
             <Fingerprint size={16} className="text-blue-400" />
             <h4 className="text-sm font-medium text-gray-300">SSH Host Key Policy</h4>
@@ -222,7 +222,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
       {/* Stored Trust Records */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm font-medium text-gray-300 border-b border-gray-700 pb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
             <ShieldAlert size={16} className="text-yellow-400" />
             Stored Identities ({totalCount})
           </h4>
@@ -256,7 +256,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
         </div>
 
         {totalCount === 0 ? (
-          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 text-center">
+          <div className="bg-gray-800 rounded-lg p-6 border border-[var(--color-border)] text-center">
             <ShieldCheck size={24} className="text-gray-500 mx-auto mb-2" />
             <p className="text-sm text-gray-500">No stored identities yet.</p>
             <p className="text-xs text-gray-600 mt-1">
@@ -377,7 +377,7 @@ function TrustRecordRow({ record, connectionId, onRemove, onUpdated }: { record:
   };
 
   return (
-    <div className="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2">
+    <div className="flex items-center gap-3 bg-gray-800 border border-[var(--color-border)] rounded-lg px-4 py-2">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           {editingNick ? (
