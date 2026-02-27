@@ -1,5 +1,11 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { PasswordInput } from './ui/PasswordInput';
+import React, {
+  useState,
+  useMemo,
+  useCallback,
+  useEffect,
+  useRef,
+} from "react";
+import { PasswordInput } from "./ui/PasswordInput";
 import {
   ChevronRight,
   ChevronDown,
@@ -36,6 +42,7 @@ import { useSettings } from "../contexts/SettingsContext";
 import { generateId } from "../utils/id";
 import { ScriptEngine } from "../utils/scriptEngine";
 import { canMoveToParent } from "../utils/dragDropManager";
+import { Modal, ModalHeader } from "./ui/Modal";
 
 /**
  * Maps a connection protocol to a Lucide icon component.
@@ -133,12 +140,18 @@ interface ConnectionTreeItemProps {
   enableReorder: boolean;
   isDragging: boolean;
   isDragOver: boolean;
-  dropPosition: 'before' | 'after' | 'inside' | null;
+  dropPosition: "before" | "after" | "inside" | null;
   onDragStart: (connectionId: string) => void;
-  onDragOver: (connectionId: string, position: 'before' | 'after' | 'inside') => void;
+  onDragOver: (
+    connectionId: string,
+    position: "before" | "after" | "inside",
+  ) => void;
   onDragLeave: () => void;
   onDragEnd: () => void;
-  onDrop: (connectionId: string, position: 'before' | 'after' | 'inside') => void;
+  onDrop: (
+    connectionId: string,
+    position: "before" | "after" | "inside",
+  ) => void;
   singleClickConnect?: boolean;
   singleClickDisconnect?: boolean;
   doubleClickRename?: boolean;
@@ -178,7 +191,10 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 }) => {
   const { state, dispatch } = useConnections();
   const [showMenu, setShowMenu] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [isExpanded, setIsExpanded] = useState(connection.expanded || false);
@@ -201,7 +217,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
   const handleSelect = () => {
     dispatch({ type: "SELECT_CONNECTION", payload: connection });
-    
+
     // Handle single-click actions
     if (!connection.isGroup) {
       if (activeSession && singleClickDisconnect) {
@@ -214,7 +230,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
 
   const handleDoubleClick = () => {
     if (connection.isGroup) return;
-    
+
     if (doubleClickRename) {
       onRename(connection);
     } else {
@@ -257,9 +273,13 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         data-connection-item="true"
         data-tauri-disable-drag="true"
         className={`group flex items-center h-8 px-2 cursor-pointer hover:bg-[var(--color-border)]/50 transition-colors relative ${
-          isSelected ? "bg-blue-600/20 text-blue-400" : "text-[var(--color-textSecondary)]"
+          isSelected
+            ? "bg-blue-600/20 text-blue-400"
+            : "text-[var(--color-textSecondary)]"
         } ${isDragging ? "opacity-50 scale-95" : ""} ${
-          isDragOver && dropPosition === 'inside' ? "bg-blue-500/20 ring-2 ring-blue-500/50 ring-inset" : ""
+          isDragOver && dropPosition === "inside"
+            ? "bg-blue-500/20 ring-2 ring-blue-500/50 ring-inset"
+            : ""
         }`}
         style={{ paddingLeft: `${level * 16 + 8}px` }}
         onClick={handleSelect}
@@ -278,27 +298,27 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
           e.preventDefault();
           e.stopPropagation();
           e.dataTransfer.dropEffect = "move";
-          
+
           // Calculate drop position based on mouse Y position within the element
           const rect = e.currentTarget.getBoundingClientRect();
           const y = e.clientY - rect.top;
           const height = rect.height;
-          
-          let position: 'before' | 'after' | 'inside';
+
+          let position: "before" | "after" | "inside";
           if (connection.isGroup) {
             // For groups: top 25% = before, middle 50% = inside, bottom 25% = after
             if (y < height * 0.25) {
-              position = 'before';
+              position = "before";
             } else if (y > height * 0.75) {
-              position = 'after';
+              position = "after";
             } else {
-              position = 'inside';
+              position = "inside";
             }
           } else {
             // For non-groups: top 50% = before, bottom 50% = after
-            position = y < height * 0.5 ? 'before' : 'after';
+            position = y < height * 0.5 ? "before" : "after";
           }
-          
+
           onDragOver(connection.id, position);
         }}
         onDragLeave={(e) => {
@@ -313,33 +333,33 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
           if (!enableReorder) return;
           e.preventDefault();
           e.stopPropagation();
-          
+
           // Calculate final drop position
           const rect = e.currentTarget.getBoundingClientRect();
           const y = e.clientY - rect.top;
           const height = rect.height;
-          
-          let position: 'before' | 'after' | 'inside';
+
+          let position: "before" | "after" | "inside";
           if (connection.isGroup) {
             if (y < height * 0.25) {
-              position = 'before';
+              position = "before";
             } else if (y > height * 0.75) {
-              position = 'after';
+              position = "after";
             } else {
-              position = 'inside';
+              position = "inside";
             }
           } else {
-            position = y < height * 0.5 ? 'before' : 'after';
+            position = y < height * 0.5 ? "before" : "after";
           }
-          
+
           onDrop(connection.id, position);
         }}
       >
         {/* Drop indicator lines */}
-        {isDragOver && dropPosition === 'before' && (
+        {isDragOver && dropPosition === "before" && (
           <div className="absolute left-0 right-0 top-0 h-0.5 bg-blue-500 z-10" />
         )}
-        {isDragOver && dropPosition === 'after' && (
+        {isDragOver && dropPosition === "after" && (
           <div className="absolute left-0 right-0 bottom-0 h-0.5 bg-blue-500 z-10" />
         )}
         {/* Group expand/collapse button */}
@@ -414,8 +434,13 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
             ref={triggerRef}
             onClick={(e) => {
               e.stopPropagation();
-              const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-              setMenuPosition({ x: Math.max(8, rect.right - 140), y: rect.bottom + 6 });
+              const rect = (
+                e.currentTarget as HTMLButtonElement
+              ).getBoundingClientRect();
+              setMenuPosition({
+                x: Math.max(8, rect.right - 140),
+                y: rect.bottom + 6,
+              });
               setShowMenu((prev) => !prev);
             }}
             className="p-1 hover:bg-[var(--color-border)] rounded transition-colors"
@@ -428,7 +453,11 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
           <div
             ref={menuRef}
             className="fixed bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md shadow-lg z-[9999] min-w-[140px]"
-            style={menuPosition ? { left: menuPosition.x, top: menuPosition.y } : undefined}
+            style={
+              menuPosition
+                ? { left: menuPosition.x, top: menuPosition.y }
+                : undefined
+            }
             onClick={(e) => e.stopPropagation()}
           >
             {!connection.isGroup && (
@@ -444,7 +473,11 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 }}
                 className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
               >
-                {activeSession ? <Power size={14} className="mr-2" /> : <Play size={14} className="mr-2" />}
+                {activeSession ? (
+                  <Power size={14} className="mr-2" />
+                ) : (
+                  <Play size={14} className="mr-2" />
+                )}
                 {activeSession ? "Disconnect" : "Connect"}
               </button>
             )}
@@ -509,7 +542,9 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 )}
               </>
             )}
-            {!connection.isGroup && <hr className="border-[var(--color-border)]" />}
+            {!connection.isGroup && (
+              <hr className="border-[var(--color-border)]" />
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -650,12 +685,18 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   const { settings } = useSettings();
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
+  const [dropPosition, setDropPosition] = useState<
+    "before" | "after" | "inside" | null
+  >(null);
   const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [panelMenuPosition, setPanelMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [panelMenuPosition, setPanelMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const panelMenuRef = useRef<HTMLDivElement>(null);
-  const [connectOptionsTarget, setConnectOptionsTarget] = useState<Connection | null>(null);
+  const [connectOptionsTarget, setConnectOptionsTarget] =
+    useState<Connection | null>(null);
   const [connectOptionsData, setConnectOptionsData] = useState<{
     username: string;
     authType: "password" | "key";
@@ -736,7 +777,10 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
       try {
         const engine = ScriptEngine.getInstance();
         const session = state.sessions.find((item) => item.id === sessionId);
-        const scripts = engine.getScriptsForTrigger("manual", connection.protocol);
+        const scripts = engine.getScriptsForTrigger(
+          "manual",
+          connection.protocol,
+        );
         for (const script of scripts) {
           await engine.executeScript(script, {
             trigger: "manual",
@@ -787,50 +831,56 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
 
   const buildTree = useCallback(
     (connections: Connection[], parentId?: string): Connection[] => {
-      const sortBy = state.filter.sortBy || 'name';
-      const sortDirection = state.filter.sortDirection || 'asc';
-      const multiplier = sortDirection === 'desc' ? -1 : 1;
-      
+      const sortBy = state.filter.sortBy || "name";
+      const sortDirection = state.filter.sortDirection || "asc";
+      const multiplier = sortDirection === "desc" ? -1 : 1;
+
       return connections
         .filter((conn) => conn.parentId === parentId)
         .sort((a, b) => {
           // Groups always come first
           if (a.isGroup && !b.isGroup) return -1;
           if (!a.isGroup && b.isGroup) return 1;
-          
+
           // Custom order takes precedence when enabled and sortBy is custom
-          if (enableReorder && sortBy === 'custom') {
+          if (enableReorder && sortBy === "custom") {
             const orderA = a.order ?? 0;
             const orderB = b.order ?? 0;
             if (orderA !== orderB) return (orderA - orderB) * multiplier;
           }
-          
+
           // Sort based on selected criteria
           switch (sortBy) {
-            case 'protocol':
+            case "protocol":
               return a.protocol.localeCompare(b.protocol) * multiplier;
-            case 'hostname':
-              return (a.hostname || '').localeCompare(b.hostname || '') * multiplier;
-            case 'createdAt': {
+            case "hostname":
+              return (
+                (a.hostname || "").localeCompare(b.hostname || "") * multiplier
+              );
+            case "createdAt": {
               const dateA = new Date(a.createdAt).getTime();
               const dateB = new Date(b.createdAt).getTime();
               return (dateA - dateB) * multiplier;
             }
-            case 'updatedAt': {
+            case "updatedAt": {
               const dateA = new Date(a.updatedAt).getTime();
               const dateB = new Date(b.updatedAt).getTime();
               return (dateA - dateB) * multiplier;
             }
-            case 'recentlyUsed': {
-              const dateA = a.lastConnected ? new Date(a.lastConnected).getTime() : 0;
-              const dateB = b.lastConnected ? new Date(b.lastConnected).getTime() : 0;
+            case "recentlyUsed": {
+              const dateA = a.lastConnected
+                ? new Date(a.lastConnected).getTime()
+                : 0;
+              const dateB = b.lastConnected
+                ? new Date(b.lastConnected).getTime()
+                : 0;
               // Recently used should default to descending (most recent first)
-              return (dateB - dateA) * (sortDirection === 'asc' ? -1 : 1);
+              return (dateB - dateA) * (sortDirection === "asc" ? -1 : 1);
             }
-            case 'custom':
+            case "custom":
               // Already handled above with enableReorder
               return a.name.localeCompare(b.name) * multiplier;
-            case 'name':
+            case "name":
             default:
               return a.name.localeCompare(b.name) * multiplier;
           }
@@ -862,8 +912,14 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
           onDetachSession={onSessionDetach}
           enableReorder={enableReorder}
           isDragging={draggedId === connection.id}
-          isDragOver={dragOverId === connection.id && draggedId !== connection.id}
-          dropPosition={dragOverId === connection.id && draggedId !== connection.id ? dropPosition : null}
+          isDragOver={
+            dragOverId === connection.id && draggedId !== connection.id
+          }
+          dropPosition={
+            dragOverId === connection.id && draggedId !== connection.id
+              ? dropPosition
+              : null
+          }
           singleClickConnect={settings.singleClickConnect}
           singleClickDisconnect={settings.singleClickDisconnect}
           doubleClickRename={settings.doubleClickRename}
@@ -892,9 +948,13 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
               return;
             }
 
-            const draggedConnection = state.connections.find((conn) => conn.id === draggedId);
-            const targetConnection = state.connections.find((conn) => conn.id === targetId);
-            
+            const draggedConnection = state.connections.find(
+              (conn) => conn.id === draggedId,
+            );
+            const targetConnection = state.connections.find(
+              (conn) => conn.id === targetId,
+            );
+
             if (!draggedConnection || !targetConnection) {
               setDraggedId(null);
               setDragOverId(null);
@@ -903,24 +963,26 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
             }
 
             // Prevent dropping a folder into itself or its descendants
-            if (draggedConnection.isGroup && position === 'inside') {
+            if (draggedConnection.isGroup && position === "inside") {
               let checkId: string | undefined = targetId;
               while (checkId) {
                 if (checkId === draggedId) {
-                  console.warn('Cannot drop a folder into itself or its descendants');
+                  console.warn(
+                    "Cannot drop a folder into itself or its descendants",
+                  );
                   setDraggedId(null);
                   setDragOverId(null);
                   setDropPosition(null);
                   return;
                 }
-                const parent = state.connections.find(c => c.id === checkId);
+                const parent = state.connections.find((c) => c.id === checkId);
                 checkId = parent?.parentId;
               }
             }
 
             // Determine the new parent ID based on drop position
             let newParentId: string | undefined;
-            if (position === 'inside' && targetConnection.isGroup) {
+            if (position === "inside" && targetConnection.isGroup) {
               newParentId = targetConnection.id;
             } else {
               newParentId = targetConnection.parentId;
@@ -928,7 +990,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
 
             // Check nesting depth constraints
             if (!canMoveToParent(draggedId, newParentId, state.connections)) {
-              console.warn('Cannot move: would exceed maximum nesting depth');
+              console.warn("Cannot move: would exceed maximum nesting depth");
               setDraggedId(null);
               setDragOverId(null);
               setDropPosition(null);
@@ -936,15 +998,17 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
             }
 
             // Get siblings at the target level
-            const targetSiblings = state.connections.filter(c => c.parentId === newParentId);
-            
+            const targetSiblings = state.connections.filter(
+              (c) => c.parentId === newParentId,
+            );
+
             // Calculate the new order
             let newOrder: number;
-            if (position === 'inside') {
+            if (position === "inside") {
               // When dropping inside a folder, add at the beginning
               newOrder = 0;
               // Shift existing children's order
-              targetSiblings.forEach(sibling => {
+              targetSiblings.forEach((sibling) => {
                 if (sibling.id !== draggedId) {
                   dispatch({
                     type: "UPDATE_CONNECTION",
@@ -954,17 +1018,24 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
               });
             } else {
               // Find the target's position among its siblings
-              const sortedSiblings = [...targetSiblings].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-              const targetIndex = sortedSiblings.findIndex(s => s.id === targetId);
-              
-              if (position === 'before') {
+              const sortedSiblings = [...targetSiblings].sort(
+                (a, b) => (a.order ?? 0) - (b.order ?? 0),
+              );
+              const targetIndex = sortedSiblings.findIndex(
+                (s) => s.id === targetId,
+              );
+
+              if (position === "before") {
                 newOrder = targetIndex >= 0 ? targetIndex : 0;
               } else {
-                newOrder = targetIndex >= 0 ? targetIndex + 1 : sortedSiblings.length;
+                newOrder =
+                  targetIndex >= 0 ? targetIndex + 1 : sortedSiblings.length;
               }
-              
+
               // Reorder siblings to make room
-              const filteredSiblings = sortedSiblings.filter(s => s.id !== draggedId);
+              const filteredSiblings = sortedSiblings.filter(
+                (s) => s.id !== draggedId,
+              );
               filteredSiblings.forEach((sibling, index) => {
                 const adjustedOrder = index >= newOrder ? index + 1 : index;
                 if (sibling.order !== adjustedOrder) {
@@ -988,7 +1059,11 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
             });
 
             // If dropping into a collapsed folder, expand it
-            if (position === 'inside' && targetConnection.isGroup && !targetConnection.expanded) {
+            if (
+              position === "inside" &&
+              targetConnection.isGroup &&
+              !targetConnection.expanded
+            ) {
               dispatch({
                 type: "UPDATE_CONNECTION",
                 payload: { ...targetConnection, expanded: true },
@@ -1031,7 +1106,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   const handlePanelContextMenu = useCallback((e: React.MouseEvent) => {
     // Only show if clicking on the panel itself, not on a connection item
     const target = e.target as HTMLElement;
-    if (target.closest('[data-connection-item]')) {
+    if (target.closest("[data-connection-item]")) {
       return;
     }
     e.preventDefault();
@@ -1050,63 +1125,74 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   }, [panelMenuPosition]);
 
   // Handle dropping on the panel (root level drop)
-  const handlePanelDragOver = useCallback((e: React.DragEvent) => {
-    // Always prevent default to allow drop (prevents forbidden cursor)
-    e.preventDefault();
-    e.stopPropagation();
-    if (!enableReorder) return;
-    e.dataTransfer.dropEffect = "move";
-    // Clear the dragOver target when over empty space
-    if (draggedId) {
-      setDragOverId(null);
-      setDropPosition(null);
-    }
-  }, [enableReorder, draggedId]);
+  const handlePanelDragOver = useCallback(
+    (e: React.DragEvent) => {
+      // Always prevent default to allow drop (prevents forbidden cursor)
+      e.preventDefault();
+      e.stopPropagation();
+      if (!enableReorder) return;
+      e.dataTransfer.dropEffect = "move";
+      // Clear the dragOver target when over empty space
+      if (draggedId) {
+        setDragOverId(null);
+        setDropPosition(null);
+      }
+    },
+    [enableReorder, draggedId],
+  );
 
-  const handlePanelDrop = useCallback((e: React.DragEvent) => {
-    if (!enableReorder || !draggedId) return;
-    e.preventDefault();
-    
-    const draggedConnection = state.connections.find((conn) => conn.id === draggedId);
-    if (!draggedConnection) {
+  const handlePanelDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!enableReorder || !draggedId) return;
+      e.preventDefault();
+
+      const draggedConnection = state.connections.find(
+        (conn) => conn.id === draggedId,
+      );
+      if (!draggedConnection) {
+        setDraggedId(null);
+        setDragOverId(null);
+        setDropPosition(null);
+        return;
+      }
+
+      // Check if we can move to root
+      if (!canMoveToParent(draggedId, undefined, state.connections)) {
+        console.warn("Cannot move: would exceed maximum nesting depth");
+        setDraggedId(null);
+        setDragOverId(null);
+        setDropPosition(null);
+        return;
+      }
+
+      // Move to root level at the end
+      const rootSiblings = state.connections.filter((c) => !c.parentId);
+      const maxOrder = rootSiblings.reduce(
+        (max, c) => Math.max(max, c.order ?? 0),
+        -1,
+      );
+
+      dispatch({
+        type: "UPDATE_CONNECTION",
+        payload: {
+          ...draggedConnection,
+          parentId: undefined,
+          order: maxOrder + 1,
+          updatedAt: new Date(),
+        },
+      });
+
       setDraggedId(null);
       setDragOverId(null);
       setDropPosition(null);
-      return;
-    }
-
-    // Check if we can move to root
-    if (!canMoveToParent(draggedId, undefined, state.connections)) {
-      console.warn('Cannot move: would exceed maximum nesting depth');
-      setDraggedId(null);
-      setDragOverId(null);
-      setDropPosition(null);
-      return;
-    }
-
-    // Move to root level at the end
-    const rootSiblings = state.connections.filter(c => !c.parentId);
-    const maxOrder = rootSiblings.reduce((max, c) => Math.max(max, c.order ?? 0), -1);
-
-    dispatch({
-      type: "UPDATE_CONNECTION",
-      payload: {
-        ...draggedConnection,
-        parentId: undefined,
-        order: maxOrder + 1,
-        updatedAt: new Date(),
-      },
-    });
-
-    setDraggedId(null);
-    setDragOverId(null);
-    setDropPosition(null);
-  }, [enableReorder, draggedId, state.connections, dispatch]);
+    },
+    [enableReorder, draggedId, state.connections, dispatch],
+  );
 
   return (
     <>
-      <div 
-        className={`flex-1 overflow-y-auto ${draggedId ? 'min-h-[100px]' : ''}`}
+      <div
+        className={`flex-1 overflow-y-auto ${draggedId ? "min-h-[100px]" : ""}`}
         data-tauri-disable-drag="true"
         onContextMenu={handlePanelContextMenu}
         onDragOver={handlePanelDragOver}
@@ -1143,30 +1229,23 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
       )}
 
       {renameTarget && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setRenameTarget(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setRenameTarget(null);
-          }}
+        <Modal
+          isOpen={Boolean(renameTarget)}
+          onClose={() => setRenameTarget(null)}
+          panelClassName="max-w-md mx-4"
+          dataTestId="connection-tree-rename-modal"
         >
-          <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4 relative">
-            <div className="relative h-12 border-b border-[var(--color-border)]">
-              <h2 className="absolute left-5 top-3 text-sm font-semibold text-[var(--color-text)]">
-                Rename Connection
-              </h2>
-              <button
-                onClick={() => setRenameTarget(null)}
-                className="absolute right-3 top-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
-                aria-label="Close"
-              >
-                <X size={18} />
-              </button>
-            </div>
+          <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full relative">
+            <ModalHeader
+              onClose={() => setRenameTarget(null)}
+              className="relative h-12 border-b border-[var(--color-border)]"
+              titleClassName="absolute left-5 top-3 text-sm font-semibold text-[var(--color-text)]"
+              title="Rename Connection"
+            />
             <div className="p-6">
-              <label className="block text-sm text-[var(--color-textSecondary)] mb-2">Connection Name</label>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-2">
+                Connection Name
+              </label>
               <input
                 type="text"
                 autoFocus
@@ -1180,7 +1259,11 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                   if (!trimmed) return;
                   dispatch({
                     type: "UPDATE_CONNECTION",
-                    payload: { ...renameTarget, name: trimmed, updatedAt: new Date() },
+                    payload: {
+                      ...renameTarget,
+                      name: trimmed,
+                      updatedAt: new Date(),
+                    },
                   });
                   setRenameTarget(null);
                 }}
@@ -1203,7 +1286,11 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                     if (!trimmed) return;
                     dispatch({
                       type: "UPDATE_CONNECTION",
-                      payload: { ...renameTarget, name: trimmed, updatedAt: new Date() },
+                      payload: {
+                        ...renameTarget,
+                        name: trimmed,
+                        updatedAt: new Date(),
+                      },
                     });
                     setRenameTarget(null);
                   }}
@@ -1214,20 +1301,21 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {connectOptionsTarget && connectOptionsData && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setConnectOptionsTarget(null);
-              setConnectOptionsData(null);
-            }
+        <Modal
+          isOpen={Boolean(connectOptionsTarget && connectOptionsData)}
+          onClose={() => {
+            setConnectOptionsTarget(null);
+            setConnectOptionsData(null);
           }}
+          closeOnEscape={false}
+          panelClassName="max-w-md mx-4"
+          dataTestId="connection-tree-connect-options-modal"
         >
-          <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden">
+          <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full overflow-hidden">
             <div className="border-b border-[var(--color-border)] px-4 py-3">
               <h3 className="text-sm font-semibold text-[var(--color-text)]">
                 Connect with Options
@@ -1242,7 +1330,10 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                   type="text"
                   value={connectOptionsData.username}
                   onChange={(e) =>
-                    setConnectOptionsData({ ...connectOptionsData, username: e.target.value })
+                    setConnectOptionsData({
+                      ...connectOptionsData,
+                      username: e.target.value,
+                    })
                   }
                   className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
@@ -1370,7 +1461,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </>
   );

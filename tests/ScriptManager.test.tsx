@@ -3,10 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ScriptManager } from "../src/components/ScriptManager";
 
 // Mock dependencies
-vi.mock('react-i18next', () => ({
+vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback || key
-  })
+    t: (key: string, fallback?: string) => fallback || key,
+  }),
 }));
 
 const mockOnClose = vi.fn();
@@ -17,13 +17,11 @@ const defaultProps = {
 };
 
 const renderComponent = (props = {}) => {
-  return render(
-    <ScriptManager {...defaultProps} {...props} />
-  );
+  return render(<ScriptManager {...defaultProps} {...props} />);
 };
 
 // Storage key used by ScriptManager
-const SCRIPTS_STORAGE_KEY = 'managedScripts';
+const SCRIPTS_STORAGE_KEY = "managedScripts";
 
 // Default scripts that should exist in the component (matches actual component)
 const expectedDefaultScripts = [
@@ -66,7 +64,7 @@ describe("ScriptManager", () => {
 
     it("should display default scripts", () => {
       renderComponent();
-      expectedDefaultScripts.forEach(scriptName => {
+      expectedDefaultScripts.forEach((scriptName) => {
         expect(screen.getByText(scriptName)).toBeInTheDocument();
       });
     });
@@ -88,17 +86,21 @@ describe("ScriptManager", () => {
   describe("Search and Filtering", () => {
     it("should have search input", () => {
       renderComponent();
-      expect(screen.getByPlaceholderText(/Search scripts/i)).toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText(/Search scripts/i),
+      ).toBeInTheDocument();
     });
 
     it("should filter scripts based on search query", () => {
       renderComponent();
       const searchInput = screen.getByPlaceholderText(/Search scripts/i);
-      
+
       fireEvent.change(searchInput, { target: { value: "disk" } });
-      
+
       expect(screen.getByText("Disk Usage (Linux)")).toBeInTheDocument();
-      expect(screen.queryByText("Memory Usage (Linux)")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Memory Usage (Linux)"),
+      ).not.toBeInTheDocument();
     });
 
     it("should have category filter dropdown", () => {
@@ -110,10 +112,12 @@ describe("ScriptManager", () => {
     it("should filter by category", () => {
       renderComponent();
       const categorySelect = screen.getAllByRole("combobox")[0];
-      
+
       fireEvent.change(categorySelect, { target: { value: "Network" } });
-      
-      expect(screen.getByText("Network Connections (Linux)")).toBeInTheDocument();
+
+      expect(
+        screen.getByText("Network Connections (Linux)"),
+      ).toBeInTheDocument();
       expect(screen.queryByText("Disk Usage (Linux)")).not.toBeInTheDocument();
     });
   });
@@ -123,7 +127,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       // Selected script should show details - script content contains uname
       expect(screen.getByText(/uname/)).toBeInTheDocument();
     });
@@ -132,7 +136,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       // Should show language badge - use getAllByText since it appears multiple places
       const bashElements = screen.getAllByText(/^Bash$/);
       expect(bashElements.length).toBeGreaterThan(0);
@@ -144,7 +148,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const copyButton = screen.getByTitle("Copy to Clipboard");
       expect(copyButton).toBeInTheDocument();
     });
@@ -153,10 +157,10 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const copyButton = screen.getByTitle("Copy to Clipboard");
       fireEvent.click(copyButton);
-      
+
       await waitFor(() => {
         expect(navigator.clipboard.writeText).toHaveBeenCalled();
       });
@@ -168,7 +172,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const duplicateButton = screen.getByTitle("Duplicate Script");
       expect(duplicateButton).toBeInTheDocument();
     });
@@ -177,13 +181,15 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const duplicateButton = screen.getByTitle("Duplicate Script");
       fireEvent.click(duplicateButton);
-      
+
       // Should open edit mode with copied name
       await waitFor(() => {
-        const nameInput = screen.getByDisplayValue(/System Info \(Linux\) \(Copy\)/);
+        const nameInput = screen.getByDisplayValue(
+          /System Info \(Linux\) \(Copy\)/,
+        );
         expect(nameInput).toBeInTheDocument();
       });
     });
@@ -192,7 +198,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const duplicateButton = screen.getByTitle("Duplicate Script");
       expect(duplicateButton).not.toBeDisabled();
     });
@@ -200,21 +206,28 @@ describe("ScriptManager", () => {
     it("should allow duplicate for custom scripts", async () => {
       // First create a custom script
       const customScript = {
-        id: 'custom-1',
-        name: 'My Custom Script',
-        description: 'A test script',
+        id: "custom-1",
+        name: "My Custom Script",
+        description: "A test script",
         script: 'echo "test"',
-        category: 'Custom',
-        language: 'bash',
+        category: "Custom",
+        language: "bash",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
-      
+      localStorage.setItem(
+        SCRIPTS_STORAGE_KEY,
+        JSON.stringify({
+          customScripts: [customScript],
+          modifiedDefaults: [],
+          deletedDefaultIds: [],
+        }),
+      );
+
       renderComponent();
       const scriptItem = screen.getByText("My Custom Script");
       fireEvent.click(scriptItem);
-      
+
       const duplicateButton = screen.getByTitle("Duplicate Script");
       expect(duplicateButton).not.toBeDisabled();
     });
@@ -225,7 +238,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       // Delete button should exist for default scripts
       const deleteButton = screen.getByTitle("Delete");
       expect(deleteButton).toBeInTheDocument();
@@ -235,56 +248,72 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const deleteButton = screen.getByTitle("Delete");
       fireEvent.click(deleteButton);
-      
+
       await waitFor(() => {
-        expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
+        expect(
+          screen.queryByText("System Info (Linux)"),
+        ).not.toBeInTheDocument();
       });
     });
 
     it("should have delete button for custom scripts", async () => {
       const customScript = {
-        id: 'custom-1',
-        name: 'My Custom Script',
-        description: 'A test script',
+        id: "custom-1",
+        name: "My Custom Script",
+        description: "A test script",
         script: 'echo "test"',
-        category: 'Custom',
-        language: 'bash',
+        category: "Custom",
+        language: "bash",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
-      
+      localStorage.setItem(
+        SCRIPTS_STORAGE_KEY,
+        JSON.stringify({
+          customScripts: [customScript],
+          modifiedDefaults: [],
+          deletedDefaultIds: [],
+        }),
+      );
+
       renderComponent();
       const scriptItem = screen.getByText("My Custom Script");
       fireEvent.click(scriptItem);
-      
+
       const deleteButton = screen.getByTitle("Delete");
       expect(deleteButton).toBeInTheDocument();
     });
 
     it("should delete custom script when delete button clicked", async () => {
       const customScript = {
-        id: 'custom-1',
-        name: 'Script To Delete',
-        description: 'Will be deleted',
+        id: "custom-1",
+        name: "Script To Delete",
+        description: "Will be deleted",
         script: 'echo "delete me"',
-        category: 'Custom',
-        language: 'bash',
+        category: "Custom",
+        language: "bash",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
-      
+      localStorage.setItem(
+        SCRIPTS_STORAGE_KEY,
+        JSON.stringify({
+          customScripts: [customScript],
+          modifiedDefaults: [],
+          deletedDefaultIds: [],
+        }),
+      );
+
       renderComponent();
       const scriptItem = screen.getByText("Script To Delete");
       fireEvent.click(scriptItem);
-      
+
       const deleteButton = screen.getByTitle("Delete");
       fireEvent.click(deleteButton);
-      
+
       await waitFor(() => {
         expect(screen.queryByText("Script To Delete")).not.toBeInTheDocument();
       });
@@ -302,31 +331,35 @@ describe("ScriptManager", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       // Editor form should appear - look for the name input placeholder
-      expect(screen.getByPlaceholderText(/Enter script name/i)).toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText(/Enter script name/i),
+      ).toBeInTheDocument();
     });
 
     it("should create new script with provided details", async () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       // Fill in form
       const nameInput = screen.getByPlaceholderText(/Enter script name/i);
-      fireEvent.change(nameInput, { target: { value: 'New Test Script' } });
-      
+      fireEvent.change(nameInput, { target: { value: "New Test Script" } });
+
       const descInput = screen.getByPlaceholderText(/Brief description/i);
-      fireEvent.change(descInput, { target: { value: 'Test description' } });
-      
+      fireEvent.change(descInput, { target: { value: "Test description" } });
+
       // Enter script content
-      const scriptTextarea = screen.getByPlaceholderText(/Enter your script here/i);
+      const scriptTextarea = screen.getByPlaceholderText(
+        /Enter your script here/i,
+      );
       fireEvent.change(scriptTextarea, { target: { value: 'echo "hello"' } });
-      
+
       // Save
       const saveButton = screen.getByRole("button", { name: /^Save$/i });
       fireEvent.click(saveButton);
-      
+
       await waitFor(() => {
         expect(screen.getByText("New Test Script")).toBeInTheDocument();
       });
@@ -336,11 +369,13 @@ describe("ScriptManager", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       // Don't fill name, just script
-      const scriptTextarea = screen.getByPlaceholderText(/Enter your script here/i);
+      const scriptTextarea = screen.getByPlaceholderText(
+        /Enter your script here/i,
+      );
       fireEvent.change(scriptTextarea, { target: { value: 'echo "test"' } });
-      
+
       // Save button should be disabled
       const saveButton = screen.getByRole("button", { name: /^Save$/i });
       expect(saveButton).toBeDisabled();
@@ -352,7 +387,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const editButton = screen.getByTitle("Edit");
       expect(editButton).toBeInTheDocument();
     });
@@ -361,10 +396,10 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const editButton = screen.getByTitle("Edit");
       fireEvent.click(editButton);
-      
+
       // Should open edit mode
       const nameInput = screen.getByDisplayValue("System Info (Linux)");
       expect(nameInput).toBeInTheDocument();
@@ -372,53 +407,67 @@ describe("ScriptManager", () => {
 
     it("should have edit button for custom scripts", async () => {
       const customScript = {
-        id: 'custom-1',
-        name: 'Editable Script',
-        description: 'Can be edited',
+        id: "custom-1",
+        name: "Editable Script",
+        description: "Can be edited",
         script: 'echo "edit me"',
-        category: 'Custom',
-        language: 'bash',
+        category: "Custom",
+        language: "bash",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
-      
+      localStorage.setItem(
+        SCRIPTS_STORAGE_KEY,
+        JSON.stringify({
+          customScripts: [customScript],
+          modifiedDefaults: [],
+          deletedDefaultIds: [],
+        }),
+      );
+
       renderComponent();
       const scriptItem = screen.getByText("Editable Script");
       fireEvent.click(scriptItem);
-      
+
       const editButton = screen.getByTitle("Edit");
       expect(editButton).toBeInTheDocument();
     });
 
     it("should update script when edited and saved", async () => {
       const customScript = {
-        id: 'custom-1',
-        name: 'Original Name',
-        description: 'Original description',
+        id: "custom-1",
+        name: "Original Name",
+        description: "Original description",
         script: 'echo "original"',
-        category: 'Custom',
-        language: 'bash',
+        category: "Custom",
+        language: "bash",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ customScripts: [customScript], modifiedDefaults: [], deletedDefaultIds: [] }));
-      
+      localStorage.setItem(
+        SCRIPTS_STORAGE_KEY,
+        JSON.stringify({
+          customScripts: [customScript],
+          modifiedDefaults: [],
+          deletedDefaultIds: [],
+        }),
+      );
+
       renderComponent();
       const scriptItem = screen.getByText("Original Name");
       fireEvent.click(scriptItem);
-      
+
       const editButton = screen.getByTitle("Edit");
       fireEvent.click(editButton);
-      
+
       // Edit the name
       const nameInput = screen.getByDisplayValue("Original Name");
-      fireEvent.change(nameInput, { target: { value: 'Updated Name' } });
-      
+      fireEvent.change(nameInput, { target: { value: "Updated Name" } });
+
       // Save
       const saveButton = screen.getByRole("button", { name: /^Save$/i });
       fireEvent.click(saveButton);
-      
+
       await waitFor(() => {
         expect(screen.getByText("Updated Name")).toBeInTheDocument();
         expect(screen.queryByText("Original Name")).not.toBeInTheDocument();
@@ -431,7 +480,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       // The preview should contain the script content
       expect(screen.getByText(/uname/i)).toBeInTheDocument();
     });
@@ -442,7 +491,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       // Check for language select in editor
       const languageSelect = screen.getByDisplayValue(/Auto Detect/i);
       expect(languageSelect).toBeInTheDocument();
@@ -454,71 +503,73 @@ describe("ScriptManager", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       const nameInput = screen.getByPlaceholderText(/Enter script name/i);
-      fireEvent.change(nameInput, { target: { value: 'Persisted Script' } });
-      
-      const scriptTextarea = screen.getByPlaceholderText(/Enter your script here/i);
+      fireEvent.change(nameInput, { target: { value: "Persisted Script" } });
+
+      const scriptTextarea = screen.getByPlaceholderText(
+        /Enter your script here/i,
+      );
       fireEvent.change(scriptTextarea, { target: { value: 'echo "persist"' } });
-      
+
       const saveButton = screen.getByRole("button", { name: /^Save$/i });
       fireEvent.click(saveButton);
-      
+
       await waitFor(() => {
         const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
         expect(stored).toBeTruthy();
         const parsed = JSON.parse(stored!);
         // New storage format: { customScripts, modifiedDefaults, deletedDefaultIds }
         expect(parsed.customScripts).toContainEqual(
-          expect.objectContaining({ name: 'Persisted Script' })
+          expect.objectContaining({ name: "Persisted Script" }),
         );
       });
     });
 
     it("should load custom scripts from localStorage on mount", () => {
       const customScript = {
-        id: 'stored-1',
-        name: 'Stored Script',
-        description: 'From localStorage',
+        id: "stored-1",
+        name: "Stored Script",
+        description: "From localStorage",
         script: 'echo "stored"',
-        category: 'Custom',
-        language: 'bash',
+        category: "Custom",
+        language: "bash",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
-      
+
       renderComponent();
-      
+
       expect(screen.getByText("Stored Script")).toBeInTheDocument();
     });
 
     it("should remove script from localStorage when deleted", async () => {
       const customScript = {
-        id: 'to-delete',
-        name: 'Delete Me',
-        description: 'Will be deleted',
+        id: "to-delete",
+        name: "Delete Me",
+        description: "Will be deleted",
         script: 'echo "bye"',
-        category: 'Custom',
-        language: 'bash',
+        category: "Custom",
+        language: "bash",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([customScript]));
-      
+
       renderComponent();
       const scriptItem = screen.getByText("Delete Me");
       fireEvent.click(scriptItem);
-      
+
       const deleteButton = screen.getByTitle("Delete");
       fireEvent.click(deleteButton);
-      
+
       await waitFor(() => {
         const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
         if (stored) {
           const scripts = JSON.parse(stored);
           expect(scripts).not.toContainEqual(
-            expect.objectContaining({ name: 'Delete Me' })
+            expect.objectContaining({ name: "Delete Me" }),
           );
         }
       });
@@ -530,7 +581,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const categorySelects = screen.getAllByRole("combobox");
       const categorySelect = categorySelects[0]; // First combobox is category filter
-      
+
       // Check options exist - use getAllByText since categories appear elsewhere
       expect(screen.getByText("All Categories")).toBeInTheDocument();
       // Check that there is at least one System option in the select
@@ -542,7 +593,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       // Category input should exist in the form
       const categoryInput = screen.getByPlaceholderText("Custom");
       expect(categoryInput).toBeInTheDocument();
@@ -552,10 +603,10 @@ describe("ScriptManager", () => {
   describe("Modal Close Behavior", () => {
     it("should close when ESC key is pressed", async () => {
       renderComponent();
-      
+
       // Press Escape key
-      fireEvent.keyDown(window, { key: 'Escape' });
-      
+      fireEvent.keyDown(document, { key: "Escape" });
+
       await waitFor(() => {
         expect(mockOnClose).toHaveBeenCalledTimes(1);
       });
@@ -563,14 +614,14 @@ describe("ScriptManager", () => {
 
     it("should close when clicking outside the modal", async () => {
       renderComponent();
-      
+
       // Find the backdrop (the fixed inset-0 div)
-      const backdrop = document.querySelector('.fixed.inset-0.bg-black\\/50');
+      const backdrop = document.querySelector(".fixed.inset-0.bg-black\\/50");
       expect(backdrop).toBeInTheDocument();
-      
+
       // Click on the backdrop
       fireEvent.click(backdrop!);
-      
+
       await waitFor(() => {
         expect(mockOnClose).toHaveBeenCalledTimes(1);
       });
@@ -578,11 +629,11 @@ describe("ScriptManager", () => {
 
     it("should NOT close when clicking inside the modal content", async () => {
       renderComponent();
-      
+
       // Click on a script item (inside the modal)
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       expect(mockOnClose).not.toHaveBeenCalled();
     });
   });
@@ -590,37 +641,45 @@ describe("ScriptManager", () => {
   describe("New Storage Format", () => {
     it("should load scripts from new storage format with modifiedDefaults", () => {
       const modifiedDefault = {
-        id: 'default-1',
-        name: 'Modified System Info (Linux)',
-        description: 'Modified description',
+        id: "default-1",
+        name: "Modified System Info (Linux)",
+        description: "Modified description",
         script: 'echo "modified"',
-        category: 'System',
-        language: 'bash',
+        category: "System",
+        language: "bash",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({
-        customScripts: [],
-        modifiedDefaults: [modifiedDefault],
-        deletedDefaultIds: []
-      }));
-      
+      localStorage.setItem(
+        SCRIPTS_STORAGE_KEY,
+        JSON.stringify({
+          customScripts: [],
+          modifiedDefaults: [modifiedDefault],
+          deletedDefaultIds: [],
+        }),
+      );
+
       renderComponent();
-      
+
       // Should show modified name instead of original
-      expect(screen.getByText("Modified System Info (Linux)")).toBeInTheDocument();
+      expect(
+        screen.getByText("Modified System Info (Linux)"),
+      ).toBeInTheDocument();
       expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
     });
 
     it("should not show deleted default scripts", () => {
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({
-        customScripts: [],
-        modifiedDefaults: [],
-        deletedDefaultIds: ['default-1']
-      }));
-      
+      localStorage.setItem(
+        SCRIPTS_STORAGE_KEY,
+        JSON.stringify({
+          customScripts: [],
+          modifiedDefaults: [],
+          deletedDefaultIds: ["default-1"],
+        }),
+      );
+
       renderComponent();
-      
+
       // default-1 is System Info (Linux) - should not be shown
       expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
       // Other default scripts should still be there
@@ -629,62 +688,67 @@ describe("ScriptManager", () => {
 
     it("should persist deleted default script IDs to localStorage", async () => {
       renderComponent();
-      
+
       // Delete a default script
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const deleteButton = screen.getByTitle("Delete");
       fireEvent.click(deleteButton);
-      
+
       await waitFor(() => {
         const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
         const parsed = JSON.parse(stored!);
-        expect(parsed.deletedDefaultIds).toContain('default-1');
+        expect(parsed.deletedDefaultIds).toContain("default-1");
       });
     });
 
     it("should persist modified default scripts to localStorage", async () => {
       renderComponent();
-      
+
       // Edit a default script
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const editButton = screen.getByTitle("Edit");
       fireEvent.click(editButton);
-      
+
       const nameInput = screen.getByDisplayValue("System Info (Linux)");
-      fireEvent.change(nameInput, { target: { value: 'Custom System Info' } });
-      
+      fireEvent.change(nameInput, { target: { value: "Custom System Info" } });
+
       const saveButton = screen.getByRole("button", { name: /^Save$/i });
       fireEvent.click(saveButton);
-      
+
       await waitFor(() => {
         const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
         const parsed = JSON.parse(stored!);
-        const modifiedScript = parsed.modifiedDefaults.find((s: { id: string }) => s.id === 'default-1');
+        const modifiedScript = parsed.modifiedDefaults.find(
+          (s: { id: string }) => s.id === "default-1",
+        );
         expect(modifiedScript).toBeTruthy();
-        expect(modifiedScript.name).toBe('Custom System Info');
+        expect(modifiedScript.name).toBe("Custom System Info");
       });
     });
 
     it("should still load old storage format (array of custom scripts)", () => {
       const oldFormatScript = {
-        id: 'old-custom-1',
-        name: 'Old Format Script',
-        description: 'From old format',
+        id: "old-custom-1",
+        name: "Old Format Script",
+        description: "From old format",
         script: 'echo "old"',
-        category: 'Custom',
-        language: 'bash',
+        category: "Custom",
+        language: "bash",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       // Old format: just an array
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify([oldFormatScript]));
-      
+      localStorage.setItem(
+        SCRIPTS_STORAGE_KEY,
+        JSON.stringify([oldFormatScript]),
+      );
+
       renderComponent();
-      
+
       // Should show both old custom script and all defaults
       expect(screen.getByText("Old Format Script")).toBeInTheDocument();
       expect(screen.getByText("System Info (Linux)")).toBeInTheDocument();
@@ -704,9 +768,9 @@ describe("ScriptManager", () => {
       renderComponent();
       // Find the OS tag filter (third combobox)
       const osTagSelect = screen.getAllByRole("combobox")[2];
-      
+
       fireEvent.change(osTagSelect, { target: { value: "windows" } });
-      
+
       // Should show Windows scripts
       expect(screen.getByText("System Info (Windows)")).toBeInTheDocument();
       // Should not show Linux scripts
@@ -718,7 +782,7 @@ describe("ScriptManager", () => {
       // Linux scripts should show penguin emoji
       const linuxEmojis = screen.getAllByText("🐧");
       expect(linuxEmojis.length).toBeGreaterThan(0);
-      
+
       // Windows scripts should show windows emoji
       const windowsEmojis = screen.getAllByText("🪟");
       expect(windowsEmojis.length).toBeGreaterThan(0);
@@ -728,7 +792,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       // Should show "Linux" badge in detail view
       expect(screen.getByText("Linux")).toBeInTheDocument();
     });
@@ -737,7 +801,7 @@ describe("ScriptManager", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       // Should see all platform tag buttons
       expect(screen.getByText("Windows")).toBeInTheDocument();
       expect(screen.getByText("Linux")).toBeInTheDocument();
@@ -751,9 +815,11 @@ describe("ScriptManager", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       // Find the Agnostic button - it should be selected (have purple styling)
-      const agnosticButton = screen.getByRole("button", { name: /🌐 Agnostic/i });
+      const agnosticButton = screen.getByRole("button", {
+        name: /🌐 Agnostic/i,
+      });
       expect(agnosticButton).toHaveClass("bg-purple-500/20");
     });
 
@@ -761,14 +827,14 @@ describe("ScriptManager", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       // Find and click the Linux button
       const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
       expect(linuxButton).not.toHaveClass("bg-purple-500/20");
-      
+
       fireEvent.click(linuxButton);
       expect(linuxButton).toHaveClass("bg-purple-500/20");
-      
+
       // Click again to deselect
       fireEvent.click(linuxButton);
       expect(linuxButton).not.toHaveClass("bg-purple-500/20");
@@ -778,33 +844,39 @@ describe("ScriptManager", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
+
       // Fill in form
       const nameInput = screen.getByPlaceholderText(/Enter script name/i);
-      fireEvent.change(nameInput, { target: { value: 'Multi-Platform Script' } });
-      
-      const scriptTextarea = screen.getByPlaceholderText(/Enter your script here/i);
+      fireEvent.change(nameInput, {
+        target: { value: "Multi-Platform Script" },
+      });
+
+      const scriptTextarea = screen.getByPlaceholderText(
+        /Enter your script here/i,
+      );
       fireEvent.change(scriptTextarea, { target: { value: 'echo "hello"' } });
-      
+
       // Select Linux tag
       const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
       fireEvent.click(linuxButton);
-      
+
       // Select Windows tag
       const windowsButton = screen.getByRole("button", { name: /🪟 Windows/i });
       fireEvent.click(windowsButton);
-      
+
       // Save
       const saveButton = screen.getByRole("button", { name: /^Save$/i });
       fireEvent.click(saveButton);
-      
+
       await waitFor(() => {
         const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
         const parsed = JSON.parse(stored!);
-        const savedScript = parsed.customScripts.find((s: { name: string }) => s.name === 'Multi-Platform Script');
-        expect(savedScript.osTags).toContain('linux');
-        expect(savedScript.osTags).toContain('windows');
-        expect(savedScript.osTags).toContain('agnostic'); // default selected
+        const savedScript = parsed.customScripts.find(
+          (s: { name: string }) => s.name === "Multi-Platform Script",
+        );
+        expect(savedScript.osTags).toContain("linux");
+        expect(savedScript.osTags).toContain("windows");
+        expect(savedScript.osTags).toContain("agnostic"); // default selected
       });
     });
 
@@ -812,10 +884,10 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const duplicateButton = screen.getByTitle("Duplicate Script");
       fireEvent.click(duplicateButton);
-      
+
       // Editor should open with Linux tag already selected
       await waitFor(() => {
         const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
@@ -827,10 +899,10 @@ describe("ScriptManager", () => {
       renderComponent();
       const scriptItem = screen.getByText("System Info (Linux)");
       fireEvent.click(scriptItem);
-      
+
       const editButton = screen.getByTitle("Edit");
       fireEvent.click(editButton);
-      
+
       // Linux tag should be selected
       await waitFor(() => {
         const linuxButton = screen.getByRole("button", { name: /🐧 Linux/i });
@@ -840,39 +912,48 @@ describe("ScriptManager", () => {
 
     it("should filter showing only scripts with matching OS tag", () => {
       const customScript = {
-        id: 'custom-cisco',
-        name: 'Cisco Config Script',
-        description: 'For Cisco devices',
-        script: 'show version',
-        category: 'Network',
-        language: 'bash',
-        osTags: ['cisco-ios'],
+        id: "custom-cisco",
+        name: "Cisco Config Script",
+        description: "For Cisco devices",
+        script: "show version",
+        category: "Network",
+        language: "bash",
+        osTags: ["cisco-ios"],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({ 
-        customScripts: [customScript], 
-        modifiedDefaults: [], 
-        deletedDefaultIds: [] 
-      }));
-      
+      localStorage.setItem(
+        SCRIPTS_STORAGE_KEY,
+        JSON.stringify({
+          customScripts: [customScript],
+          modifiedDefaults: [],
+          deletedDefaultIds: [],
+        }),
+      );
+
       renderComponent();
-      
+
       // Filter by cisco-ios
       const osTagSelect = screen.getAllByRole("combobox")[2];
       fireEvent.change(osTagSelect, { target: { value: "cisco-ios" } });
-      
+
       expect(screen.getByText("Cisco Config Script")).toBeInTheDocument();
       expect(screen.queryByText("System Info (Linux)")).not.toBeInTheDocument();
-      expect(screen.queryByText("System Info (Windows)")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("System Info (Windows)"),
+      ).not.toBeInTheDocument();
     });
 
     it("should show hint text below OS tags in editor", () => {
       renderComponent();
       const newButton = screen.getByText("New Script");
       fireEvent.click(newButton);
-      
-      expect(screen.getByText(/Select the platforms this script is compatible with/i)).toBeInTheDocument();
+
+      expect(
+        screen.getByText(
+          /Select the platforms this script is compatible with/i,
+        ),
+      ).toBeInTheDocument();
     });
   });
 });

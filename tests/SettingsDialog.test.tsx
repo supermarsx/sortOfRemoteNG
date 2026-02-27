@@ -1,6 +1,6 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { SettingsDialog } from "../src/components/SettingsDialog";
 import { GlobalSettings } from "../src/types/settings";
 import { ToastProvider } from "../src/contexts/ToastContext";
@@ -125,11 +125,26 @@ vi.mock("../src/utils/themeManager", () => ({
 }));
 
 describe("SettingsDialog", () => {
+  beforeAll(() => {
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("renders general tab content", async () => {
     render(
       <ToastProvider>
         <SettingsDialog isOpen onClose={() => {}} />
-      </ToastProvider>
+      </ToastProvider>,
     );
     const items = await screen.findAllByText("settings.general");
     expect(items.length).toBeGreaterThan(0);

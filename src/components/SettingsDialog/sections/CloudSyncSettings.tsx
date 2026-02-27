@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { PasswordInput } from '../../ui/PasswordInput';
+import { PasswordInput } from "../../ui/PasswordInput";
 import { useTranslation } from "react-i18next";
 import {
   Cloud,
@@ -44,6 +44,7 @@ import {
   defaultCloudSyncConfig,
   ProviderSyncStatus,
 } from "../../../types/settings";
+import { Modal } from "../../ui/Modal";
 
 interface CloudSyncSettingsProps {
   settings: GlobalSettings;
@@ -56,10 +57,14 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
 }) => {
   const { t } = useTranslation();
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [expandedProvider, setExpandedProvider] = useState<CloudSyncProvider | null>(null);
+  const [expandedProvider, setExpandedProvider] =
+    useState<CloudSyncProvider | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncingProvider, setSyncingProvider] = useState<CloudSyncProvider | null>(null);
-  const [authProvider, setAuthProvider] = useState<CloudSyncProvider | null>(null);
+  const [syncingProvider, setSyncingProvider] =
+    useState<CloudSyncProvider | null>(null);
+  const [authProvider, setAuthProvider] = useState<CloudSyncProvider | null>(
+    null,
+  );
   const [authForm, setAuthForm] = useState({
     accessToken: "",
     refreshToken: "",
@@ -68,7 +73,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
   });
   // Ensure cloudSync is always defined, falling back to default config
   const cloudSync = settings.cloudSync ?? defaultCloudSyncConfig;
-  
+
   // Ensure enabledProviders array exists for backward compatibility
   const enabledProviders = cloudSync.enabledProviders ?? [];
   const providerStatus = cloudSync.providerStatus ?? {};
@@ -106,7 +111,9 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
     if (!authProvider) return;
     const tokenExpiry = authForm.tokenExpiry.trim();
     const parsedExpiry = tokenExpiry ? Number(tokenExpiry) : undefined;
-    const expiryValue = Number.isFinite(parsedExpiry) ? parsedExpiry : undefined;
+    const expiryValue = Number.isFinite(parsedExpiry)
+      ? parsedExpiry
+      : undefined;
 
     if (authProvider === "googleDrive") {
       updateCloudSync({
@@ -140,12 +147,12 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
   };
 
   const toggleProvider = (provider: CloudSyncProvider) => {
-    if (provider === 'none') return;
-    
+    if (provider === "none") return;
+
     const newEnabledProviders = enabledProviders.includes(provider)
-      ? enabledProviders.filter(p => p !== provider)
+      ? enabledProviders.filter((p) => p !== provider)
       : [...enabledProviders, provider];
-    
+
     // Update provider status
     const newStatus = { ...providerStatus };
     if (!enabledProviders.includes(provider)) {
@@ -161,16 +168,19 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
         setExpandedProvider(null);
       }
     }
-    
-    updateCloudSync({ 
+
+    updateCloudSync({
       enabledProviders: newEnabledProviders,
       providerStatus: newStatus,
       // Keep legacy provider field in sync (use first enabled provider)
-      provider: newEnabledProviders.length > 0 ? newEnabledProviders[0] : 'none',
+      provider:
+        newEnabledProviders.length > 0 ? newEnabledProviders[0] : "none",
     });
   };
 
-  const getProviderStatus = (provider: CloudSyncProvider): ProviderSyncStatus | undefined => {
+  const getProviderStatus = (
+    provider: CloudSyncProvider,
+  ): ProviderSyncStatus | undefined => {
     return providerStatus[provider];
   };
 
@@ -181,7 +191,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
 
   const applySyncStatusUpdate = (
     providers: CloudSyncProvider[],
-    status: ProviderSyncStatus['lastSyncStatus'],
+    status: ProviderSyncStatus["lastSyncStatus"],
   ) => {
     const nowSeconds = Math.floor(Date.now() / 1000);
     const newStatus = { ...providerStatus };
@@ -219,7 +229,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
     setIsSyncing(true);
     setSyncingProvider(provider ?? null);
     try {
-      applySyncStatusUpdate(targetProviders, 'success');
+      applySyncStatusUpdate(targetProviders, "success");
     } finally {
       setIsSyncing(false);
       setSyncingProvider(null);
@@ -289,13 +299,13 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
       return <CloudOff className="w-5 h-5 text-[var(--color-textSecondary)]" />;
     }
     switch (cloudSync.lastSyncStatus) {
-      case 'success':
+      case "success":
         return <Check className="w-5 h-5 text-green-400" />;
-      case 'failed':
+      case "failed":
         return <X className="w-5 h-5 text-red-400" />;
-      case 'partial':
+      case "partial":
         return <AlertTriangle className="w-5 h-5 text-yellow-400" />;
-      case 'conflict':
+      case "conflict":
         return <AlertTriangle className="w-5 h-5 text-orange-400" />;
       default:
         return <RefreshCw className="w-5 h-5 text-blue-400" />;
@@ -305,7 +315,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
   const renderProviderConfig = (provider?: CloudSyncProvider) => {
     const targetProvider = provider ?? cloudSync.provider;
     switch (targetProvider) {
-      case 'googleDrive':
+      case "googleDrive":
         return (
           <div className="space-y-4">
             {cloudSync.googleDrive.accountEmail ? (
@@ -317,14 +327,16 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                   </span>
                 </div>
                 <button
-                  onClick={() => updateCloudSync({ 
-                    googleDrive: { 
-                      ...cloudSync.googleDrive, 
-                      accessToken: undefined,
-                      refreshToken: undefined,
-                      accountEmail: undefined,
-                    } 
-                  })}
+                  onClick={() =>
+                    updateCloudSync({
+                      googleDrive: {
+                        ...cloudSync.googleDrive,
+                        accessToken: undefined,
+                        refreshToken: undefined,
+                        accountEmail: undefined,
+                      },
+                    })
+                  }
                   className="text-xs text-red-400 hover:text-red-300"
                 >
                   Disconnect
@@ -341,7 +353,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 Connect Google Account
               </button>
             )}
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Folder Path
@@ -349,9 +361,14 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <input
                 type="text"
                 value={cloudSync.googleDrive.folderPath}
-                onChange={(e) => updateCloudSync({ 
-                  googleDrive: { ...cloudSync.googleDrive, folderPath: e.target.value } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    googleDrive: {
+                      ...cloudSync.googleDrive,
+                      folderPath: e.target.value,
+                    },
+                  })
+                }
                 placeholder="/sortOfRemoteNG"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
@@ -359,7 +376,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           </div>
         );
 
-      case 'oneDrive':
+      case "oneDrive":
         return (
           <div className="space-y-4">
             {cloudSync.oneDrive.accountEmail ? (
@@ -371,14 +388,16 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                   </span>
                 </div>
                 <button
-                  onClick={() => updateCloudSync({ 
-                    oneDrive: { 
-                      ...cloudSync.oneDrive, 
-                      accessToken: undefined,
-                      refreshToken: undefined,
-                      accountEmail: undefined,
-                    } 
-                  })}
+                  onClick={() =>
+                    updateCloudSync({
+                      oneDrive: {
+                        ...cloudSync.oneDrive,
+                        accessToken: undefined,
+                        refreshToken: undefined,
+                        accountEmail: undefined,
+                      },
+                    })
+                  }
                   className="text-xs text-red-400 hover:text-red-300"
                 >
                   Disconnect
@@ -395,7 +414,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 Connect Microsoft Account
               </button>
             )}
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Folder Path
@@ -403,9 +422,14 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <input
                 type="text"
                 value={cloudSync.oneDrive.folderPath}
-                onChange={(e) => updateCloudSync({ 
-                  oneDrive: { ...cloudSync.oneDrive, folderPath: e.target.value } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    oneDrive: {
+                      ...cloudSync.oneDrive,
+                      folderPath: e.target.value,
+                    },
+                  })
+                }
                 placeholder="/sortOfRemoteNG"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
@@ -413,7 +437,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           </div>
         );
 
-      case 'nextcloud':
+      case "nextcloud":
         return (
           <div className="space-y-4">
             <div>
@@ -423,14 +447,19 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <input
                 type="url"
                 value={cloudSync.nextcloud.serverUrl}
-                onChange={(e) => updateCloudSync({ 
-                  nextcloud: { ...cloudSync.nextcloud, serverUrl: e.target.value } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    nextcloud: {
+                      ...cloudSync.nextcloud,
+                      serverUrl: e.target.value,
+                    },
+                  })
+                }
                 placeholder="https://cloud.example.com"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Username
@@ -438,46 +467,69 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <input
                 type="text"
                 value={cloudSync.nextcloud.username}
-                onChange={(e) => updateCloudSync({ 
-                  nextcloud: { ...cloudSync.nextcloud, username: e.target.value } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    nextcloud: {
+                      ...cloudSync.nextcloud,
+                      username: e.target.value,
+                    },
+                  })
+                }
                 placeholder="your-username"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
             </div>
-            
+
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={cloudSync.nextcloud.useAppPassword}
-                onChange={(e) => updateCloudSync({ 
-                  nextcloud: { ...cloudSync.nextcloud, useAppPassword: e.target.checked } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    nextcloud: {
+                      ...cloudSync.nextcloud,
+                      useAppPassword: e.target.checked,
+                    },
+                  })
+                }
                 className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
               />
-              <span className="text-sm text-[var(--color-text)]">Use App Password (Recommended)</span>
+              <span className="text-sm text-[var(--color-text)]">
+                Use App Password (Recommended)
+              </span>
             </label>
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
-                {cloudSync.nextcloud.useAppPassword ? 'App Password' : 'Password'}
+                {cloudSync.nextcloud.useAppPassword
+                  ? "App Password"
+                  : "Password"}
               </label>
               <PasswordInput
-                value={cloudSync.nextcloud.useAppPassword ? cloudSync.nextcloud.appPassword || '' : cloudSync.nextcloud.password || ''}
-                onChange={(e) => updateCloudSync({ 
-                  nextcloud: { 
-                    ...cloudSync.nextcloud, 
-                    ...(cloudSync.nextcloud.useAppPassword 
-                      ? { appPassword: e.target.value }
-                      : { password: e.target.value }
-                    )
-                  } 
-                })}
-                placeholder={cloudSync.nextcloud.useAppPassword ? 'xxxxx-xxxxx-xxxxx-xxxxx' : '••••••••'}
+                value={
+                  cloudSync.nextcloud.useAppPassword
+                    ? cloudSync.nextcloud.appPassword || ""
+                    : cloudSync.nextcloud.password || ""
+                }
+                onChange={(e) =>
+                  updateCloudSync({
+                    nextcloud: {
+                      ...cloudSync.nextcloud,
+                      ...(cloudSync.nextcloud.useAppPassword
+                        ? { appPassword: e.target.value }
+                        : { password: e.target.value }),
+                    },
+                  })
+                }
+                placeholder={
+                  cloudSync.nextcloud.useAppPassword
+                    ? "xxxxx-xxxxx-xxxxx-xxxxx"
+                    : "••••••••"
+                }
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Folder Path
@@ -485,9 +537,14 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <input
                 type="text"
                 value={cloudSync.nextcloud.folderPath}
-                onChange={(e) => updateCloudSync({ 
-                  nextcloud: { ...cloudSync.nextcloud, folderPath: e.target.value } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    nextcloud: {
+                      ...cloudSync.nextcloud,
+                      folderPath: e.target.value,
+                    },
+                  })
+                }
                 placeholder="/sortOfRemoteNG"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
@@ -495,7 +552,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           </div>
         );
 
-      case 'webdav':
+      case "webdav":
         return (
           <div className="space-y-4">
             <div>
@@ -505,23 +562,33 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <input
                 type="url"
                 value={cloudSync.webdav.serverUrl}
-                onChange={(e) => updateCloudSync({ 
-                  webdav: { ...cloudSync.webdav, serverUrl: e.target.value } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    webdav: { ...cloudSync.webdav, serverUrl: e.target.value },
+                  })
+                }
                 placeholder="https://webdav.example.com/dav/"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Authentication Method
               </label>
               <select
                 value={cloudSync.webdav.authMethod}
-                onChange={(e) => updateCloudSync({ 
-                  webdav: { ...cloudSync.webdav, authMethod: e.target.value as 'basic' | 'digest' | 'bearer' } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    webdav: {
+                      ...cloudSync.webdav,
+                      authMethod: e.target.value as
+                        | "basic"
+                        | "digest"
+                        | "bearer",
+                    },
+                  })
+                }
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               >
                 <option value="basic">Basic Authentication</option>
@@ -529,17 +596,22 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <option value="bearer">Bearer Token</option>
               </select>
             </div>
-            
-            {cloudSync.webdav.authMethod === 'bearer' ? (
+
+            {cloudSync.webdav.authMethod === "bearer" ? (
               <div>
                 <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                   Bearer Token
                 </label>
                 <PasswordInput
-                  value={cloudSync.webdav.bearerToken || ''}
-                  onChange={(e) => updateCloudSync({ 
-                    webdav: { ...cloudSync.webdav, bearerToken: e.target.value } 
-                  })}
+                  value={cloudSync.webdav.bearerToken || ""}
+                  onChange={(e) =>
+                    updateCloudSync({
+                      webdav: {
+                        ...cloudSync.webdav,
+                        bearerToken: e.target.value,
+                      },
+                    })
+                  }
                   placeholder="Your bearer token"
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
@@ -553,30 +625,40 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                   <input
                     type="text"
                     value={cloudSync.webdav.username}
-                    onChange={(e) => updateCloudSync({ 
-                      webdav: { ...cloudSync.webdav, username: e.target.value } 
-                    })}
+                    onChange={(e) =>
+                      updateCloudSync({
+                        webdav: {
+                          ...cloudSync.webdav,
+                          username: e.target.value,
+                        },
+                      })
+                    }
                     placeholder="your-username"
                     className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                     Password
                   </label>
                   <PasswordInput
-                    value={cloudSync.webdav.password || ''}
-                    onChange={(e) => updateCloudSync({ 
-                      webdav: { ...cloudSync.webdav, password: e.target.value } 
-                    })}
+                    value={cloudSync.webdav.password || ""}
+                    onChange={(e) =>
+                      updateCloudSync({
+                        webdav: {
+                          ...cloudSync.webdav,
+                          password: e.target.value,
+                        },
+                      })
+                    }
                     placeholder="••••••••"
                     className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                   />
                 </div>
               </>
             )}
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Folder Path
@@ -584,9 +666,11 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <input
                 type="text"
                 value={cloudSync.webdav.folderPath}
-                onChange={(e) => updateCloudSync({ 
-                  webdav: { ...cloudSync.webdav, folderPath: e.target.value } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    webdav: { ...cloudSync.webdav, folderPath: e.target.value },
+                  })
+                }
                 placeholder="/sortOfRemoteNG"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
@@ -594,7 +678,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           </div>
         );
 
-      case 'sftp':
+      case "sftp":
         return (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -605,14 +689,16 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <input
                   type="text"
                   value={cloudSync.sftp.host}
-                  onChange={(e) => updateCloudSync({ 
-                    sftp: { ...cloudSync.sftp, host: e.target.value } 
-                  })}
+                  onChange={(e) =>
+                    updateCloudSync({
+                      sftp: { ...cloudSync.sftp, host: e.target.value },
+                    })
+                  }
                   placeholder="sftp.example.com"
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                   Port
@@ -620,15 +706,20 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <input
                   type="number"
                   value={cloudSync.sftp.port}
-                  onChange={(e) => updateCloudSync({ 
-                    sftp: { ...cloudSync.sftp, port: parseInt(e.target.value) || 22 } 
-                  })}
+                  onChange={(e) =>
+                    updateCloudSync({
+                      sftp: {
+                        ...cloudSync.sftp,
+                        port: parseInt(e.target.value) || 22,
+                      },
+                    })
+                  }
                   placeholder="22"
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
               </div>
             </div>
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Username
@@ -636,56 +727,67 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <input
                 type="text"
                 value={cloudSync.sftp.username}
-                onChange={(e) => updateCloudSync({ 
-                  sftp: { ...cloudSync.sftp, username: e.target.value } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    sftp: { ...cloudSync.sftp, username: e.target.value },
+                  })
+                }
                 placeholder="your-username"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
             </div>
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Authentication Method
               </label>
               <select
                 value={cloudSync.sftp.authMethod}
-                onChange={(e) => updateCloudSync({ 
-                  sftp: { ...cloudSync.sftp, authMethod: e.target.value as 'password' | 'key' } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    sftp: {
+                      ...cloudSync.sftp,
+                      authMethod: e.target.value as "password" | "key",
+                    },
+                  })
+                }
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               >
                 <option value="password">Password</option>
                 <option value="key">SSH Key</option>
               </select>
             </div>
-            
-            {cloudSync.sftp.authMethod === 'key' ? (
+
+            {cloudSync.sftp.authMethod === "key" ? (
               <>
                 <div>
                   <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                     Private Key
                   </label>
                   <textarea
-                    value={cloudSync.sftp.privateKey || ''}
-                    onChange={(e) => updateCloudSync({ 
-                      sftp: { ...cloudSync.sftp, privateKey: e.target.value } 
-                    })}
+                    value={cloudSync.sftp.privateKey || ""}
+                    onChange={(e) =>
+                      updateCloudSync({
+                        sftp: { ...cloudSync.sftp, privateKey: e.target.value },
+                      })
+                    }
                     placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
                     rows={4}
                     className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm font-mono"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                     Passphrase (if encrypted)
                   </label>
                   <PasswordInput
-                    value={cloudSync.sftp.passphrase || ''}
-                    onChange={(e) => updateCloudSync({ 
-                      sftp: { ...cloudSync.sftp, passphrase: e.target.value } 
-                    })}
+                    value={cloudSync.sftp.passphrase || ""}
+                    onChange={(e) =>
+                      updateCloudSync({
+                        sftp: { ...cloudSync.sftp, passphrase: e.target.value },
+                      })
+                    }
                     placeholder="Key passphrase"
                     className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                   />
@@ -697,16 +799,18 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                   Password
                 </label>
                 <PasswordInput
-                  value={cloudSync.sftp.password || ''}
-                  onChange={(e) => updateCloudSync({ 
-                    sftp: { ...cloudSync.sftp, password: e.target.value } 
-                  })}
+                  value={cloudSync.sftp.password || ""}
+                  onChange={(e) =>
+                    updateCloudSync({
+                      sftp: { ...cloudSync.sftp, password: e.target.value },
+                    })
+                  }
                   placeholder="••••••••"
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
               </div>
             )}
-            
+
             <div>
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Remote Folder Path
@@ -714,9 +818,11 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <input
                 type="text"
                 value={cloudSync.sftp.folderPath}
-                onChange={(e) => updateCloudSync({ 
-                  sftp: { ...cloudSync.sftp, folderPath: e.target.value } 
-                })}
+                onChange={(e) =>
+                  updateCloudSync({
+                    sftp: { ...cloudSync.sftp, folderPath: e.target.value },
+                  })
+                }
                 placeholder="/home/user/sortOfRemoteNG"
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
               />
@@ -739,7 +845,9 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
         </h3>
         <button
           onClick={() => handleSyncNow()}
-          disabled={!cloudSync.enabled || enabledProviders.length === 0 || isSyncing}
+          disabled={
+            !cloudSync.enabled || enabledProviders.length === 0 || isSyncing
+          }
           className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
         >
           <RefreshCw className="w-4 h-4" />
@@ -747,7 +855,8 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
         </button>
       </div>
       <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Synchronize connections and settings across devices using cloud storage providers.
+        Synchronize connections and settings across devices using cloud storage
+        providers.
       </p>
 
       {/* Multi-Target Sync Status Overview */}
@@ -756,27 +865,37 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           <div className="flex items-center gap-2 mb-3">
             <FolderSync className="w-4 h-4 text-blue-400" />
             <span className="text-sm font-medium text-[var(--color-text)]">
-              Syncing to {enabledProviders.length} target{enabledProviders.length > 1 ? 's' : ''}
+              Syncing to {enabledProviders.length} target
+              {enabledProviders.length > 1 ? "s" : ""}
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {enabledProviders.map(provider => {
+            {enabledProviders.map((provider) => {
               const status = getProviderStatus(provider);
               return (
                 <div
                   key={provider}
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
-                    status?.lastSyncStatus === 'success' ? 'bg-green-500/20 text-green-400' :
-                    status?.lastSyncStatus === 'failed' ? 'bg-red-500/20 text-red-400' :
-                    status?.lastSyncStatus === 'conflict' ? 'bg-orange-500/20 text-orange-400' :
-                    'bg-blue-500/20 text-blue-400'
+                    status?.lastSyncStatus === "success"
+                      ? "bg-green-500/20 text-green-400"
+                      : status?.lastSyncStatus === "failed"
+                        ? "bg-red-500/20 text-red-400"
+                        : status?.lastSyncStatus === "conflict"
+                          ? "bg-orange-500/20 text-orange-400"
+                          : "bg-blue-500/20 text-blue-400"
                   }`}
                 >
                   {providerIcons[provider]}
-                  <span>{providerLabels[provider].split(' ')[0]}</span>
-                  {status?.lastSyncStatus === 'success' && <Check className="w-3 h-3" />}
-                  {status?.lastSyncStatus === 'failed' && <X className="w-3 h-3" />}
-                  {status?.lastSyncStatus === 'conflict' && <AlertTriangle className="w-3 h-3" />}
+                  <span>{providerLabels[provider].split(" ")[0]}</span>
+                  {status?.lastSyncStatus === "success" && (
+                    <Check className="w-3 h-3" />
+                  )}
+                  {status?.lastSyncStatus === "failed" && (
+                    <X className="w-3 h-3" />
+                  )}
+                  {status?.lastSyncStatus === "conflict" && (
+                    <AlertTriangle className="w-3 h-3" />
+                  )}
                 </div>
               );
             })}
@@ -820,20 +939,20 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
             Enable multiple targets for redundancy
           </span>
         </div>
-        
+
         <div className="space-y-2">
-          {CloudSyncProviders.filter(p => p !== 'none').map((provider) => {
+          {CloudSyncProviders.filter((p) => p !== "none").map((provider) => {
             const isEnabled = enabledProviders.includes(provider);
             const isExpanded = expandedProvider === provider;
             const status = getProviderStatus(provider);
-            
+
             return (
-              <div 
+              <div
                 key={provider}
                 className={`rounded-lg border transition-all ${
                   isEnabled
-                    ? 'border-blue-500/50 bg-blue-500/10'
-                    : 'border-[var(--color-border)] bg-[var(--color-surface)]/50'
+                    ? "border-blue-500/50 bg-blue-500/10"
+                    : "border-[var(--color-border)] bg-[var(--color-surface)]/50"
                 }`}
               >
                 {/* Provider Header */}
@@ -859,15 +978,17 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
                     {/* Status indicator */}
                     {isEnabled && status?.lastSyncTime && (
                       <span className="text-xs text-[var(--color-textMuted)]">
-                        {new Date(getSyncTimestampMs(status.lastSyncTime) ?? 0).toLocaleDateString()}
+                        {new Date(
+                          getSyncTimestampMs(status.lastSyncTime) ?? 0,
+                        ).toLocaleDateString()}
                       </span>
                     )}
-                    
+
                     {/* Sync this provider button */}
                     {isEnabled && (
                       <button
@@ -879,11 +1000,13 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                         <RefreshCw className="w-4 h-4 text-[var(--color-textSecondary)]" />
                       </button>
                     )}
-                    
+
                     {/* Expand/collapse config */}
                     {isEnabled && (
                       <button
-                        onClick={() => setExpandedProvider(isExpanded ? null : provider)}
+                        onClick={() =>
+                          setExpandedProvider(isExpanded ? null : provider)
+                        }
                         className="p-1.5 hover:bg-[var(--color-surfaceHover)] rounded transition-colors"
                       >
                         {isExpanded ? (
@@ -895,7 +1018,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                     )}
                   </div>
                 </div>
-                
+
                 {/* Provider Configuration (expanded) */}
                 {isEnabled && isExpanded && (
                   <div className="border-t border-[var(--color-border)] p-3">
@@ -914,10 +1037,12 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           <Clock className="w-4 h-4 inline mr-2" />
           Sync Frequency
         </label>
-        
+
         <select
           value={cloudSync.frequency}
-          onChange={(e) => updateCloudSync({ frequency: e.target.value as CloudSyncFrequency })}
+          onChange={(e) =>
+            updateCloudSync({ frequency: e.target.value as CloudSyncFrequency })
+          }
           className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
           {CloudSyncFrequencies.map((freq) => (
@@ -934,68 +1059,82 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           <Database className="w-4 h-4 inline mr-2" />
           What to Sync
         </label>
-        
+
         <div className="grid grid-cols-2 gap-3">
           <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
             <input
               type="checkbox"
               checked={cloudSync.syncConnections}
-              onChange={(e) => updateCloudSync({ syncConnections: e.target.checked })}
+              onChange={(e) =>
+                updateCloudSync({ syncConnections: e.target.checked })
+              }
               className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
             />
             <HardDrive className="w-4 h-4 text-blue-400" />
-            <span className="text-sm text-[var(--color-text)]">Connections</span>
+            <span className="text-sm text-[var(--color-text)]">
+              Connections
+            </span>
           </label>
-          
+
           <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
             <input
               type="checkbox"
               checked={cloudSync.syncSettings}
-              onChange={(e) => updateCloudSync({ syncSettings: e.target.checked })}
+              onChange={(e) =>
+                updateCloudSync({ syncSettings: e.target.checked })
+              }
               className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
             />
             <Settings className="w-4 h-4 text-purple-400" />
             <span className="text-sm text-[var(--color-text)]">Settings</span>
           </label>
-          
+
           <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
             <input
               type="checkbox"
               checked={cloudSync.syncSSHKeys}
-              onChange={(e) => updateCloudSync({ syncSSHKeys: e.target.checked })}
+              onChange={(e) =>
+                updateCloudSync({ syncSSHKeys: e.target.checked })
+              }
               className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
             />
             <Key className="w-4 h-4 text-yellow-400" />
             <span className="text-sm text-[var(--color-text)]">SSH Keys</span>
           </label>
-          
+
           <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
             <input
               type="checkbox"
               checked={cloudSync.syncScripts}
-              onChange={(e) => updateCloudSync({ syncScripts: e.target.checked })}
+              onChange={(e) =>
+                updateCloudSync({ syncScripts: e.target.checked })
+              }
               className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
             />
             <FileKey className="w-4 h-4 text-green-400" />
             <span className="text-sm text-[var(--color-text)]">Scripts</span>
           </label>
-          
+
           <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
             <input
               type="checkbox"
               checked={cloudSync.syncColorTags}
-              onChange={(e) => updateCloudSync({ syncColorTags: e.target.checked })}
+              onChange={(e) =>
+                updateCloudSync({ syncColorTags: e.target.checked })
+              }
               className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
             />
             <Palette className="w-4 h-4 text-pink-400" />
             <span className="text-sm text-[var(--color-text)]">Color Tags</span>
           </label>
-          
+
           <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
             <input
               type="checkbox"
               checked={cloudSync.syncShortcuts}
-              onChange={(e) => updateCloudSync({ syncShortcuts: e.target.checked })}
+              onChange={(e) =>
+                updateCloudSync({ syncShortcuts: e.target.checked })
+              }
               className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
             />
             <Keyboard className="w-4 h-4 text-orange-400" />
@@ -1023,11 +1162,13 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           <input
             type="checkbox"
             checked={cloudSync.encryptBeforeSync}
-            onChange={(e) => updateCloudSync({ encryptBeforeSync: e.target.checked })}
+            onChange={(e) =>
+              updateCloudSync({ encryptBeforeSync: e.target.checked })
+            }
             className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
           />
         </label>
-        
+
         {cloudSync.encryptBeforeSync && (
           <div>
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
@@ -1035,8 +1176,10 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               Encryption Password
             </label>
             <PasswordInput
-              value={cloudSync.syncEncryptionPassword || ''}
-              onChange={(e) => updateCloudSync({ syncEncryptionPassword: e.target.value })}
+              value={cloudSync.syncEncryptionPassword || ""}
+              onChange={(e) =>
+                updateCloudSync({ syncEncryptionPassword: e.target.value })
+              }
               placeholder="Enter a strong password"
               className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
             />
@@ -1054,10 +1197,14 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           <AlertTriangle className="w-4 h-4 inline mr-2" />
           Conflict Resolution
         </label>
-        
+
         <select
           value={cloudSync.conflictResolution}
-          onChange={(e) => updateCloudSync({ conflictResolution: e.target.value as ConflictResolutionStrategy })}
+          onChange={(e) =>
+            updateCloudSync({
+              conflictResolution: e.target.value as ConflictResolutionStrategy,
+            })
+          }
           className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]"
         >
           {ConflictResolutionStrategies.map((strategy) => (
@@ -1066,7 +1213,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
             </option>
           ))}
         </select>
-        
+
         <p className="text-xs text-[var(--color-textSecondary)]">
           {conflictDescriptions[cloudSync.conflictResolution]}
         </p>
@@ -1078,20 +1225,28 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           <input
             type="checkbox"
             checked={cloudSync.syncOnStartup}
-            onChange={(e) => updateCloudSync({ syncOnStartup: e.target.checked })}
+            onChange={(e) =>
+              updateCloudSync({ syncOnStartup: e.target.checked })
+            }
             className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
           />
-          <span className="text-sm text-[var(--color-text)]">Sync on Startup</span>
+          <span className="text-sm text-[var(--color-text)]">
+            Sync on Startup
+          </span>
         </label>
-        
+
         <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
           <input
             type="checkbox"
             checked={cloudSync.syncOnShutdown}
-            onChange={(e) => updateCloudSync({ syncOnShutdown: e.target.checked })}
+            onChange={(e) =>
+              updateCloudSync({ syncOnShutdown: e.target.checked })
+            }
             className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
           />
-          <span className="text-sm text-[var(--color-text)]">Sync on Shutdown</span>
+          <span className="text-sm text-[var(--color-text)]">
+            Sync on Shutdown
+          </span>
         </label>
       </div>
 
@@ -1101,22 +1256,30 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
           <input
             type="checkbox"
             checked={cloudSync.notifyOnSync}
-            onChange={(e) => updateCloudSync({ notifyOnSync: e.target.checked })}
+            onChange={(e) =>
+              updateCloudSync({ notifyOnSync: e.target.checked })
+            }
             className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
           />
           <Bell className="w-4 h-4 text-blue-400" />
-          <span className="text-sm text-[var(--color-text)]">Notify on Sync</span>
+          <span className="text-sm text-[var(--color-text)]">
+            Notify on Sync
+          </span>
         </label>
-        
+
         <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
           <input
             type="checkbox"
             checked={cloudSync.notifyOnConflict}
-            onChange={(e) => updateCloudSync({ notifyOnConflict: e.target.checked })}
+            onChange={(e) =>
+              updateCloudSync({ notifyOnConflict: e.target.checked })
+            }
             className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
           />
           <AlertTriangle className="w-4 h-4 text-orange-400" />
-          <span className="text-sm text-[var(--color-text)]">Notify on Conflict</span>
+          <span className="text-sm text-[var(--color-text)]">
+            Notify on Conflict
+          </span>
         </label>
       </div>
 
@@ -1130,21 +1293,29 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
             <Zap className="w-4 h-4" />
             Advanced Options
           </span>
-          {showAdvanced ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          {showAdvanced ? (
+            <ChevronUp className="w-4 h-4" />
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
         </button>
-        
+
         {showAdvanced && (
           <div className="space-y-4 p-4 bg-[var(--color-surface)]/50 rounded-lg border border-[var(--color-border)]">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={cloudSync.compressionEnabled}
-                onChange={(e) => updateCloudSync({ compressionEnabled: e.target.checked })}
+                onChange={(e) =>
+                  updateCloudSync({ compressionEnabled: e.target.checked })
+                }
                 className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
               />
-              <span className="text-sm text-[var(--color-text)]">Enable Compression</span>
+              <span className="text-sm text-[var(--color-text)]">
+                Enable Compression
+              </span>
             </label>
-            
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
@@ -1153,13 +1324,17 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <input
                   type="number"
                   value={cloudSync.maxFileSizeMB}
-                  onChange={(e) => updateCloudSync({ maxFileSizeMB: parseInt(e.target.value) || 50 })}
+                  onChange={(e) =>
+                    updateCloudSync({
+                      maxFileSizeMB: parseInt(e.target.value) || 50,
+                    })
+                  }
                   min={1}
                   max={500}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                   <Upload className="w-3 h-3 inline mr-1" />
@@ -1168,12 +1343,16 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <input
                   type="number"
                   value={cloudSync.uploadLimitKBs}
-                  onChange={(e) => updateCloudSync({ uploadLimitKBs: parseInt(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    updateCloudSync({
+                      uploadLimitKBs: parseInt(e.target.value) || 0,
+                    })
+                  }
                   min={0}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                   <Download className="w-3 h-3 inline mr-1" />
@@ -1182,22 +1361,30 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <input
                   type="number"
                   value={cloudSync.downloadLimitKBs}
-                  onChange={(e) => updateCloudSync({ downloadLimitKBs: parseInt(e.target.value) || 0 })}
+                  onChange={(e) =>
+                    updateCloudSync({
+                      downloadLimitKBs: parseInt(e.target.value) || 0,
+                    })
+                  }
                   min={0}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
               </div>
             </div>
-            
+
             <div>
               <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                 Exclude Patterns (one per line)
               </label>
               <textarea
-                value={cloudSync.excludePatterns.join('\n')}
-                onChange={(e) => updateCloudSync({ 
-                  excludePatterns: e.target.value.split('\n').filter(p => p.trim()) 
-                })}
+                value={cloudSync.excludePatterns.join("\n")}
+                onChange={(e) =>
+                  updateCloudSync({
+                    excludePatterns: e.target.value
+                      .split("\n")
+                      .filter((p) => p.trim()),
+                  })
+                }
                 placeholder="*.tmp&#10;*.bak&#10;temp/*"
                 rows={3}
                 className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm font-mono"
@@ -1208,13 +1395,15 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
       </div>
 
       {authProvider && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeTokenDialog();
-          }}
+        <Modal
+          isOpen={Boolean(authProvider)}
+          onClose={closeTokenDialog}
+          closeOnEscape={false}
+          backdropClassName="z-50 bg-black/60 p-4"
+          panelClassName="max-w-md mx-4"
+          dataTestId="cloud-sync-token-modal"
         >
-          <div className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <div className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium text-[var(--color-text)]">
                 {authProvider === "googleDrive"
@@ -1240,7 +1429,9 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 </label>
                 <PasswordInput
                   value={authForm.accessToken}
-                  onChange={(e) => setAuthForm({ ...authForm, accessToken: e.target.value })}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, accessToken: e.target.value })
+                  }
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
               </div>
@@ -1251,7 +1442,9 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 </label>
                 <PasswordInput
                   value={authForm.refreshToken}
-                  onChange={(e) => setAuthForm({ ...authForm, refreshToken: e.target.value })}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, refreshToken: e.target.value })
+                  }
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
               </div>
@@ -1263,7 +1456,9 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <input
                   type="email"
                   value={authForm.accountEmail}
-                  onChange={(e) => setAuthForm({ ...authForm, accountEmail: e.target.value })}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, accountEmail: e.target.value })
+                  }
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
               </div>
@@ -1275,7 +1470,9 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 <input
                   type="number"
                   value={authForm.tokenExpiry}
-                  onChange={(e) => setAuthForm({ ...authForm, tokenExpiry: e.target.value })}
+                  onChange={(e) =>
+                    setAuthForm({ ...authForm, tokenExpiry: e.target.value })
+                  }
                   min={0}
                   className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
                 />
@@ -1299,7 +1496,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

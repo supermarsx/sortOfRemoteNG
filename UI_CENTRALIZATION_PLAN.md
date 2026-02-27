@@ -1,127 +1,117 @@
 # UI/CSS Centralization Plan
 
-## Objective
+## Goal
 
-Centralize repeated UI structure and styling for:
+Consolidate reusable UI structure and CSS for:
 
-- Popup/dialog scaffolds
-- Repeated option groups/chip buttons
-- Selectable list-row patterns
-- Data-table shells
+- dialog/popup scaffolds
+- option groups and chip controls
+- selectable list rows
+- shared table shells
 
-## Current State Snapshot
+## Current Baseline (After This Migration Wave)
 
-- Shared primitives already present:
+- Shared primitives in active use:
   - `src/components/ui/Modal.tsx`
   - `src/components/ui/SettingsPrimitives.tsx`
-  - centralized blocks in `src/index.css` for modal/settings/table/toolbar popup
-- Manual overlay dialogs still present across many components (`fixed inset-0` pattern remains in ~30 component files).
-- Repeated option/list classes are duplicated in multiple tools (Connection Editor, WOL tools, schedule managers, diagnostics/managers).
+  - shared CSS primitives in `src/index.css`
+- Major popup/dialog surfaces already migrated to `Modal`.
+- New tests cover dialog open/close behavior and key interaction paths for migrated components.
 
-## Executed In This Wave
+## Completed Migrations
 
-- Dialog migrations to shared modal primitive:
-  - `src/components/ConnectionEditor.tsx`
-  - `src/components/WOLQuickTool.tsx`
-  - `src/components/BulkConnectionEditor.tsx`
-  - `src/components/InternalProxyManager.tsx`
-  - `src/components/WakeScheduleManager.tsx`
-  - `src/components/TotpImportDialog.tsx`
-  - `src/components/ActionLogViewer.tsx`
-  - `src/components/PerformanceMonitor.tsx`
-  - `src/components/CollectionSelector.tsx`
-  - `src/components/ConnectionDiagnostics.tsx`
-  - `src/components/RdpSessionManager.tsx`
-  - `src/components/ImportExport/index.tsx`
-  - `src/components/FileTransferManager.tsx`
-  - `src/components/SSHKeyManager.tsx`
-  - `src/components/TOTPManager.tsx`
-- New centralized CSS primitives added in `src/index.css`:
-  - option chips/cards: `.sor-option-chip`, `.sor-option-chip-active`, `.sor-option-card`
-  - chip lists: `.sor-chip-list`, `.sor-chip-button`
-  - selectable list rows: `.sor-selection-list`, `.sor-selection-row`, `.sor-selection-row-selected`, `.sor-selection-row-hover-action`
-- Component-level adoption in this wave:
-  - Connection Editor protocol/option groups now use shared option classes.
-  - WOL Quick Tool uses shared chip/list/selection classes.
-  - Internal Proxy Manager uses shared modal + option/list/table primitives.
-  - Wake Schedule Manager uses shared modal + selection row primitives.
-  - TOTP Import dialog uses shared modal + selection row/chip primitives.
-  - Action Log Viewer uses shared modal + option chip primitives.
-  - Performance Monitor uses shared modal + option chip primitives.
-  - Collection Selector uses shared modal scaffold while preserving nested editor dialogs.
-  - Connection Diagnostics uses shared modal scaffold and centralized action chip styling.
-  - RDP Session Manager uses shared modal scaffold and selection-list primitives.
-  - Import/Export dialog uses shared modal scaffold while preserving embedded mode behavior.
-  - File Transfer Manager uses shared modal scaffold (including nested upload dialog) and shared selection-list primitives for transfer queue rows.
-  - SSH Key Manager uses shared modal scaffold with centralized header/body/footer primitives.
-  - TOTP Manager uses shared modal scaffold and selection-list primitives for config rows.
-- Overlay reduction:
-  - manual `fixed inset-0` popup wrappers reduced from ~30 to 15 component files in this pass.
+### Modal Scaffold Centralization
 
-## Remaining Migration Backlog
+- Earlier wave:
+  - `ConnectionEditor`
+  - `WOLQuickTool`
+  - `BulkConnectionEditor`
+  - `InternalProxyManager`
+  - `WakeScheduleManager`
+  - `TotpImportDialog`
+  - `ActionLogViewer`
+  - `PerformanceMonitor`
+  - `CollectionSelector`
+  - `ConnectionDiagnostics`
+  - `RdpSessionManager`
+  - `ImportExport/index`
+  - `FileTransferManager`
+  - `SSHKeyManager`
+  - `TOTPManager`
+  - `TrustWarningDialog`
+  - `SSHTunnelDialog`
+  - `ProxyProfileEditor`
+  - `ProxyChainEditor`
+  - `ProxyChainMenu`
+  - `ColorTagManager`
 
-### Dialog Priority (next)
+- Current wave:
+  - `SettingsDialog/index`
+  - `SettingsDialog/sections/CloudSyncSettings`
+  - `SettingsDialog/sections/RecoverySettings`
+  - `ConnectionTree` (rename/connect-options dialogs)
+  - `connectionEditor/HTTPOptions` (bookmark/header dialogs)
+  - `BulkSSHCommander`
+  - `AppDialogs` (RDP popup wrapper)
 
-- `SettingsDialog/index.tsx` and section sub-dialogs
-- `ConnectionTree` nested editors
-- `connectionEditor/HTTPOptions.tsx`
+### CSS Primitive Expansion
 
-### Dialog Priority (follow-up)
+- `src/index.css` now centrally provides:
+  - option styles: `.sor-option-chip`, `.sor-option-chip-active`, `.sor-option-card`
+  - chip groups: `.sor-chip-list`, `.sor-chip-button`
+  - selection rows: `.sor-selection-list`, `.sor-selection-row`, `.sor-selection-row-selected`, `.sor-selection-row-hover-action`
+- Migrated components adopted these classes where behavior/style stacks were duplicated.
 
-- `TrustWarningDialog`
-- nested editor dialogs in `ConnectionTree` and `connectionEditor/HTTPOptions.tsx`
-- proxy editors (`ProxyProfileEditor`, `ProxyChainEditor`, `ProxyChainMenu`, `SSHTunnelDialog`)
+### Test Coverage Added/Updated
 
-### Option/List/CSS Priority
+- New:
+  - `tests/HTTPOptions.test.tsx`
+  - `tests/AppDialogs.test.tsx`
+  - `tests/ColorTagManager.test.tsx`
+  - `tests/ProxyChainEditor.test.tsx`
+  - `tests/ProxyProfileEditor.test.tsx`
+  - `tests/SSHTunnelDialog.test.tsx`
+  - `tests/TrustWarningDialog.test.tsx`
+- Updated:
+  - `tests/BulkSSHCommander.test.tsx`
+  - `tests/SettingsDialog.test.tsx`
 
-- Standardize list rows in:
-  - `ConnectionDiagnostics` host/result lists
-  - `CollectionSelector` dense lists
-  - `ImportExport` previews
-  - `FileTransferManager` transfer queues
-  - `TOTPManager` configuration rows
-- Standardize button chip groups in settings and tool headers.
-- Keep semantic color overrides local, but always layer over shared structural classes.
+## Remaining Scope
 
-## Next Execution Wave (Immediate)
+### Non-Modal Overlays To Triage
 
-1. Migrate settings-related nested dialogs to `Modal` while preserving existing close semantics.
-2. Apply `.sor-tab-trigger` in at least two additional manager-style components to complete tab-header standardization.
-3. Expand `.sor-selection-*` adoption to dense operational lists in `ConnectionTree` and settings sub-dialogs.
-4. Re-run lint and targeted test set after each batch to catch regressions early.
+- `WebTerminal` script overlay (candidate for `Modal`)
+- `AutoLockManager` lock overlay (special security UX; evaluate separately)
+- fullscreen client containers and splash screen are intentionally not modal migrations
 
-## Execution Plan
+### Context/Action Menus (Different Primitive)
 
-### Phase 1: Dialog Unification
+- `ConnectionTree` and `WebBrowser` still use ad-hoc fixed/absolute menu shells.
+- Next centralization target should be a shared menu/popover primitive instead of forcing these into `Modal`.
 
-- Migrate highest-traffic dialogs to `Modal` first.
-- Preserve existing `data-testid` values and close behavior semantics.
-- Where a dialog needs custom escape handling, set `closeOnEscape={false}` and keep local keyboard flow.
+### CSS Consolidation Follow-Up
 
-### Phase 2: Option/List Primitive Adoption
+- Finish converging remaining dense lists to `.sor-selection-*`.
+- Complete option chip adoption in settings/tool headers.
+- Remove duplicate local class stacks once adoption is complete.
 
-- Replace repeated ad-hoc Tailwind class stacks with shared `.sor-option-*`, `.sor-chip-*`, `.sor-selection-*` classes.
-- Keep component-specific state coloring additive (e.g. green selected rows in WOL).
+## Execution Plan (Next Steps)
 
-### Phase 3: Table Shell Consolidation
-
-- Move remaining table shells to `.sor-data-table`.
-- Add companion table utility classes only when at least 2 components share them.
-
-### Phase 4: Cleanup + Hardening
-
-- Remove no-longer-used local style fragments after migration completion.
-- Add regression tests for backdrop close, escape behavior, and selected-row rendering on migrated dialogs.
+1. Create shared `MenuSurface` primitive for context menus/popovers and migrate `ConnectionTree` + `WebBrowser`.
+2. Migrate `WebTerminal` script modal overlay to `Modal` with current close semantics preserved.
+3. Decide whether `AutoLockManager` should remain a dedicated hard lock overlay or adopt a locked-down `Modal` variant.
+4. Sweep duplicated list/chip styles and replace with existing `.sor-*` utilities.
+5. Run lint + targeted tests after each batch, then full suite pass.
 
 ## Guardrails
 
-- No feature/logic changes while centralizing structure and CSS.
-- Preserve keyboard behavior and focus flow.
-- Keep theme variable usage (`--color-*`) as the single style source.
+- No behavior changes while centralizing structure/CSS.
+- Preserve existing keyboard and backdrop-close semantics per component.
+- Keep theme variables (`--color-*`) as the single source of visual truth.
 
-## Verification
+## Verification Checklist
 
 - `npm run lint`
-- `npm test -- --run` (fallback to direct Vitest if Bun is unavailable)
-- Targeted tests for touched dialogs/components
-- Manual spot check: open/close, backdrop click, escape key, selection states
+- `npm test -- --run` (fallback to direct Vitest when Bun is unavailable)
+- targeted tests for every migrated dialog
+- smoke-check backdrop click + escape close behavior for each popup class

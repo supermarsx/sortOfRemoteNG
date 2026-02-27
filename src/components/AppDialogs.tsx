@@ -24,6 +24,7 @@ import { RecordingManager } from "./RecordingManager";
 import { ConnectionDiagnostics } from "./ConnectionDiagnostics";
 import { ErrorLogBar } from "./ErrorLogBar";
 import { AutoLockManager } from "./AutoLockManager";
+import { Modal } from "./ui/Modal";
 
 interface AppDialogsProps {
   appSettings: GlobalSettings;
@@ -93,9 +94,16 @@ interface AppDialogsProps {
   collectionManager: CollectionManager;
 }
 
-const getToolMode = (settings: GlobalSettings, key: Exclude<keyof import('../types/settings').ToolDisplayModes, 'globalDefault'>): 'popup' | 'tab' => {
-  const raw = settings.toolDisplayModes?.[key] ?? 'inherit';
-  if (raw === 'inherit') return settings.toolDisplayModes?.globalDefault ?? 'popup';
+const getToolMode = (
+  settings: GlobalSettings,
+  key: Exclude<
+    keyof import("../types/settings").ToolDisplayModes,
+    "globalDefault"
+  >,
+): "popup" | "tab" => {
+  const raw = settings.toolDisplayModes?.[key] ?? "inherit";
+  if (raw === "inherit")
+    return settings.toolDisplayModes?.globalDefault ?? "popup";
   return raw;
 };
 
@@ -244,47 +252,52 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         initialTab={importExportInitialTab}
       />
 
-      {getToolMode(appSettings, 'performanceMonitor') === 'popup' && (
+      {getToolMode(appSettings, "performanceMonitor") === "popup" && (
         <PerformanceMonitor
           isOpen={showPerformanceMonitor}
           onClose={() => setShowPerformanceMonitor(false)}
         />
       )}
 
-      {getToolMode(appSettings, 'actionLog') === 'popup' && (
+      {getToolMode(appSettings, "actionLog") === "popup" && (
         <ActionLogViewer
           isOpen={showActionLog}
           onClose={() => setShowActionLog(false)}
         />
       )}
 
-      {getToolMode(appSettings, 'shortcutManager') === 'popup' && (
+      {getToolMode(appSettings, "shortcutManager") === "popup" && (
         <ShortcutManagerDialog
           isOpen={showShortcutManager}
           onClose={() => setShowShortcutManager(false)}
         />
       )}
 
-      {getToolMode(appSettings, 'proxyChain') === 'popup' && (
+      {getToolMode(appSettings, "proxyChain") === "popup" && (
         <ProxyChainMenu
           isOpen={showProxyMenu}
           onClose={() => setShowProxyMenu(false)}
         />
       )}
 
-      {getToolMode(appSettings, 'internalProxy') === 'popup' && (
+      {getToolMode(appSettings, "internalProxy") === "popup" && (
         <InternalProxyManager
           isOpen={showInternalProxyManager}
           onClose={() => setShowInternalProxyManager(false)}
         />
       )}
 
-      {rdpPanelOpen && appSettings.rdpSessionDisplayMode === 'popup' && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setRdpPanelOpen(false); }}
+      {rdpPanelOpen && appSettings.rdpSessionDisplayMode === "popup" && (
+        <Modal
+          isOpen={rdpPanelOpen}
+          onClose={() => setRdpPanelOpen(false)}
+          closeOnEscape={false}
+          backdropClassName="bg-black/60 backdrop-blur-sm p-4"
+          panelClassName="max-w-3xl mx-4 h-[90vh]"
+          contentClassName="overflow-hidden"
+          dataTestId="rdp-session-panel-modal"
         >
-          <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full max-w-3xl h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full h-[90vh] flex flex-col overflow-hidden">
             <RdpSessionPanel
               isVisible={rdpPanelOpen}
               connections={connections}
@@ -293,7 +306,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
               onReattachSession={handleReattachRdpSession}
               onDetachToWindow={(sessionId) => {
                 const frontendSession = sessions.find(
-                  s => s.backendSessionId === sessionId || s.id === sessionId
+                  (s) => s.backendSessionId === sessionId || s.id === sessionId,
                 );
                 if (frontendSession) {
                   handleSessionDetach(frontendSession.id);
@@ -304,35 +317,35 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
               thumbnailInterval={appSettings.rdpSessionThumbnailInterval}
             />
           </div>
-        </div>
+        </Modal>
       )}
 
-      {getToolMode(appSettings, 'wol') === 'popup' && (
+      {getToolMode(appSettings, "wol") === "popup" && (
         <WOLQuickTool isOpen={showWol} onClose={() => setShowWol(false)} />
       )}
 
-      {getToolMode(appSettings, 'bulkSsh') === 'popup' && (
+      {getToolMode(appSettings, "bulkSsh") === "popup" && (
         <BulkSSHCommander
           isOpen={showBulkSSH}
           onClose={() => setShowBulkSSH(false)}
         />
       )}
 
-      {getToolMode(appSettings, 'scriptManager') === 'popup' && (
+      {getToolMode(appSettings, "scriptManager") === "popup" && (
         <ScriptManager
           isOpen={showScriptManager}
           onClose={() => setShowScriptManager(false)}
         />
       )}
 
-      {getToolMode(appSettings, 'macroManager') === 'popup' && (
+      {getToolMode(appSettings, "macroManager") === "popup" && (
         <MacroManager
           isOpen={showMacroManager}
           onClose={() => setShowMacroManager(false)}
         />
       )}
 
-      {getToolMode(appSettings, 'recordingManager') === 'popup' && (
+      {getToolMode(appSettings, "recordingManager") === "popup" && (
         <RecordingManager
           isOpen={showRecordingManager}
           onClose={() => setShowRecordingManager(false)}

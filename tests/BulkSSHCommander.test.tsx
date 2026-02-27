@@ -4,68 +4,101 @@ import { BulkSSHCommander } from "../src/components/BulkSSHCommander";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 // Mock dependencies
-vi.mock('react-i18next', () => ({
+vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback || key
-  })
+    t: (key: string, fallback?: string) => fallback || key,
+  }),
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn()
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
 }));
 
 // Mock the useConnections hook
 const mockSessions = [
   {
-    id: 'session-1',
-    name: 'SSH Server 1',
-    protocol: 'ssh',
-    hostname: '192.168.1.100',
-    status: 'connected',
-    backendSessionId: 'backend-1',
+    id: "session-1",
+    name: "SSH Server 1",
+    protocol: "ssh",
+    hostname: "192.168.1.100",
+    status: "connected",
+    backendSessionId: "backend-1",
   },
   {
-    id: 'session-2',
-    name: 'SSH Server 2',
-    protocol: 'ssh',
-    hostname: '192.168.1.101',
-    status: 'connected',
-    backendSessionId: 'backend-2',
+    id: "session-2",
+    name: "SSH Server 2",
+    protocol: "ssh",
+    hostname: "192.168.1.101",
+    status: "connected",
+    backendSessionId: "backend-2",
   },
   {
-    id: 'session-3',
-    name: 'RDP Server',
-    protocol: 'rdp',
-    hostname: '192.168.1.102',
-    status: 'connected',
+    id: "session-3",
+    name: "RDP Server",
+    protocol: "rdp",
+    hostname: "192.168.1.102",
+    status: "connected",
   },
 ];
 
-vi.mock('../src/contexts/useConnections', () => ({
+vi.mock("../src/contexts/useConnections", () => ({
   useConnections: () => ({
     state: {
       sessions: mockSessions,
       connections: [],
     },
     dispatch: vi.fn(),
-  })
+  }),
 }));
 
-const SCRIPTS_STORAGE_KEY = 'bulkSshScripts';
+const SCRIPTS_STORAGE_KEY = "bulkSshScripts";
 const mockOnClose = vi.fn();
+
+const ensureLocalStorage = () => {
+  const hasStorageApi =
+    typeof globalThis.localStorage !== "undefined" &&
+    typeof globalThis.localStorage.getItem === "function" &&
+    typeof globalThis.localStorage.setItem === "function" &&
+    typeof globalThis.localStorage.removeItem === "function" &&
+    typeof globalThis.localStorage.clear === "function";
+
+  if (hasStorageApi) return;
+
+  const store: Record<string, string> = {};
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => store[key] ?? null,
+      setItem: (key: string, value: string) => {
+        store[key] = String(value);
+      },
+      removeItem: (key: string) => {
+        delete store[key];
+      },
+      clear: () => {
+        for (const key of Object.keys(store)) delete store[key];
+      },
+      key: (index: number) => Object.keys(store)[index] ?? null,
+      get length() {
+        return Object.keys(store).length;
+      },
+    },
+  });
+};
 
 const renderComponent = (isOpen = true) => {
   return render(
     <ConnectionProvider>
       <BulkSSHCommander isOpen={isOpen} onClose={mockOnClose} />
-    </ConnectionProvider>
+    </ConnectionProvider>,
   );
 };
 
 describe("BulkSSHCommander", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    localStorage.clear();
+    ensureLocalStorage();
+    if (typeof localStorage?.clear === "function") localStorage.clear();
   });
 
   describe("Basic Rendering", () => {
@@ -105,18 +138,18 @@ describe("BulkSSHCommander", () => {
     it("should select all sessions by default", () => {
       renderComponent();
       // All SSH sessions should be selected by default
-      const checkboxIcons = document.querySelectorAll('.lucide-check-square');
+      const checkboxIcons = document.querySelectorAll(".lucide-check-square");
       expect(checkboxIcons.length).toBeGreaterThanOrEqual(2);
     });
 
     it("should toggle session selection when clicked", () => {
       renderComponent();
       // Find session buttons in the sidebar (they have the checkbox behavior)
-      const sessionButtons = screen.getAllByRole("button").filter(
-        btn => btn.textContent?.includes("SSH Server")
-      );
+      const sessionButtons = screen
+        .getAllByRole("button")
+        .filter((btn) => btn.textContent?.includes("SSH Server"));
       expect(sessionButtons.length).toBeGreaterThan(0);
-      
+
       // Click should toggle selection
       fireEvent.click(sessionButtons[0]);
     });
@@ -145,10 +178,10 @@ describe("BulkSSHCommander", () => {
       renderComponent();
       const tabButton = screen.getByTitle("Tab View");
       const mosaicButton = screen.getByTitle("Mosaic View");
-      
+
       fireEvent.click(tabButton);
       // Tab view should be active
-      
+
       fireEvent.click(mosaicButton);
       // Mosaic view should be active
     });
@@ -164,8 +197,8 @@ describe("BulkSSHCommander", () => {
     it("should update command state when typing", () => {
       renderComponent();
       const textarea = screen.getByPlaceholderText(/Enter command/i);
-      fireEvent.change(textarea, { target: { value: 'ls -la' } });
-      expect(textarea).toHaveValue('ls -la');
+      fireEvent.change(textarea, { target: { value: "ls -la" } });
+      expect(textarea).toHaveValue("ls -la");
     });
 
     it("should have send button", () => {
@@ -197,14 +230,16 @@ describe("BulkSSHCommander", () => {
       const scriptsButton = screen.getByText("Scripts");
       fireEvent.click(scriptsButton);
       // Script library should be visible
-      expect(screen.getByPlaceholderText(/Search scripts/i)).toBeInTheDocument();
+      expect(
+        screen.getByPlaceholderText(/Search scripts/i),
+      ).toBeInTheDocument();
     });
 
     it("should show default scripts", () => {
       renderComponent();
       const scriptsButton = screen.getByText("Scripts");
       fireEvent.click(scriptsButton);
-      
+
       expect(screen.getByText("System Info")).toBeInTheDocument();
       expect(screen.getByText("Disk Usage")).toBeInTheDocument();
     });
@@ -242,10 +277,10 @@ describe("BulkSSHCommander", () => {
 
     it("should close when ESC key is pressed", async () => {
       renderComponent();
-      
+
       // Press Escape key
-      fireEvent.keyDown(window, { key: 'Escape' });
-      
+      fireEvent.keyDown(document, { key: "Escape" });
+
       await waitFor(() => {
         expect(mockOnClose).toHaveBeenCalledTimes(1);
       });
@@ -253,14 +288,14 @@ describe("BulkSSHCommander", () => {
 
     it("should close when clicking outside the modal", async () => {
       renderComponent();
-      
+
       // Find the backdrop (the fixed inset-0 div)
-      const backdrop = document.querySelector('.fixed.inset-0.bg-black\\/50');
+      const backdrop = document.querySelector(".fixed.inset-0.bg-black\\/50");
       expect(backdrop).toBeInTheDocument();
-      
+
       // Click on the backdrop
       fireEvent.click(backdrop!);
-      
+
       await waitFor(() => {
         expect(mockOnClose).toHaveBeenCalledTimes(1);
       });
@@ -268,11 +303,11 @@ describe("BulkSSHCommander", () => {
 
     it("should NOT close when clicking inside the modal content", async () => {
       renderComponent();
-      
+
       // Click on command textarea (inside the modal)
       const textarea = screen.getByPlaceholderText(/Enter command/i);
       fireEvent.click(textarea);
-      
+
       expect(mockOnClose).not.toHaveBeenCalled();
     });
   });
@@ -281,29 +316,29 @@ describe("BulkSSHCommander", () => {
     it("should have command textarea with resize-y class", () => {
       renderComponent();
       const textarea = screen.getByPlaceholderText(/Enter command/i);
-      expect(textarea).toHaveClass('resize-y');
+      expect(textarea).toHaveClass("resize-y");
     });
 
     it("should have min and max height constraints", () => {
       renderComponent();
       const textarea = screen.getByPlaceholderText(/Enter command/i);
-      expect(textarea).toHaveClass('min-h-[80px]');
-      expect(textarea).toHaveClass('max-h-[300px]');
+      expect(textarea).toHaveClass("min-h-[80px]");
+      expect(textarea).toHaveClass("max-h-[300px]");
     });
   });
 
   describe("View Toggle Location", () => {
     it("should have view toggle buttons in secondary toolbar", () => {
       renderComponent();
-      
+
       // View toggle should be in the secondary toolbar (below header)
       const tabButton = screen.getByTitle("Tab View");
       const mosaicButton = screen.getByTitle("Mosaic View");
-      
+
       // Both buttons should be visible and in the same parent toolbar
       expect(tabButton).toBeInTheDocument();
       expect(mosaicButton).toBeInTheDocument();
-      
+
       // They should be siblings (in same button group)
       expect(tabButton.parentElement).toBe(mosaicButton.parentElement);
     });
@@ -317,20 +352,20 @@ describe("BulkSSHCommander with no sessions", () => {
 
   it("should show no sessions message when no SSH sessions", () => {
     // Override the mock to return empty sessions
-    vi.doMock('../src/contexts/useConnections', () => ({
+    vi.doMock("../src/contexts/useConnections", () => ({
       useConnections: () => ({
         state: {
           sessions: [],
           connections: [],
         },
         dispatch: vi.fn(),
-      })
+      }),
     }));
 
     render(
       <ConnectionProvider>
         <BulkSSHCommander isOpen={true} onClose={mockOnClose} />
-      </ConnectionProvider>
+      </ConnectionProvider>,
     );
 
     // The session count should show 0
@@ -339,16 +374,17 @@ describe("BulkSSHCommander with no sessions", () => {
 
 describe("BulkSSHCommander Script Storage", () => {
   beforeEach(() => {
-    localStorage.clear();
+    ensureLocalStorage();
+    if (typeof localStorage?.clear === "function") localStorage.clear();
   });
 
   it("should load saved scripts from localStorage", () => {
     const customScript = {
-      id: 'custom-1',
-      name: 'Custom Script',
-      description: 'A custom test script',
+      id: "custom-1",
+      name: "Custom Script",
+      description: "A custom test script",
       script: 'echo "Hello World"',
-      category: 'Custom',
+      category: "Custom",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
