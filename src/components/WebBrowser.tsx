@@ -116,7 +116,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   // Timeout for loading (30 seconds)
   const LOAD_TIMEOUT_MS = 30_000;
 
-  const sslVerifyDisabled = connection && connection.protocol === 'https' && (connection as Record<string, unknown>)?.httpVerifySsl === false;
+  const sslVerifyDisabled = connection && connection.protocol === 'https' && (connection as unknown as Record<string, unknown>)?.httpVerifySsl === false;
   const iconCount = 2 + (hasAuth ? 1 : 0) + (sslVerifyDisabled ? 1 : 0);
   // 12px left offset + each icon is 14px + 8px gap (space-x-2) + 16px for separator + 8px trailing
   const iconPadding = 12 + iconCount * 22 + 16;
@@ -319,7 +319,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               username: resolvedCreds.username,
               password: resolvedCreds.password,
               local_port: 0,
-              verify_ssl: (connection as Record<string, unknown>)?.httpVerifySsl ?? true,
+              verify_ssl: (connection as unknown as Record<string, unknown>)?.httpVerifySsl ?? true,
               connection_id: connection?.id ?? '',
             },
           });

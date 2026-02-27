@@ -130,6 +130,7 @@ enum SessionLoopExit {
 
 /// State returned by `establish_rdp_connection` — everything needed
 /// to run the active session loop.
+#[allow(dead_code)]
 struct EstablishedSession {
     tls_framed: Framed<native_tls::TlsStream<TcpStream>>,
     active_stage: ActiveStage,
@@ -1624,37 +1625,43 @@ fn run_rdp_session_inner(
             SessionLoopExit::ProtocolError(msg) => {
                 return Err(msg.into());
             }
-            SessionLoopExit::NetworkError(msg) | SessionLoopExit::ReconnectRequested => {
-                if !reconnect_enabled && !matches!(exit, SessionLoopExit::ReconnectRequested) {
+            SessionLoopExit::NetworkError(msg) => {
+                if !reconnect_enabled {
                     return Err(msg.into());
                 }
-
                 reconnect_count += 1;
                 log::info!(
                     "RDP session {session_id}: will reconnect ({reconnect_count}): {msg}"
                 );
-
-                stats.set_phase("reconnecting");
-                let _ = app_handle.emit(
-                    "rdp://status",
-                    RdpStatusEvent {
-                        session_id: session_id.to_string(),
-                        status: "reconnecting".to_string(),
-                        message: format!("Reconnecting ({reconnect_count})..."),
-                        desktop_width: None,
-                        desktop_height: None,
-                    },
+            }
+            SessionLoopExit::ReconnectRequested => {
+                reconnect_count += 1;
+                log::info!(
+                    "RDP session {session_id}: will reconnect ({reconnect_count}): manual reconnect"
                 );
-
-                // Preserve the framebuffer — don't remove it during reconnect.
-                // Sleep with exponential backoff, checking for shutdown.
-                sleep_with_shutdown_check(
-                    cmd_rx,
-                    compute_backoff_delay(reconnect_count, settings.reconnect_base_delay, settings.reconnect_max_delay),
-                )?;
-                continue 'session;
             }
         }
+
+        // Shared reconnection logic for NetworkError and ReconnectRequested
+        stats.set_phase("reconnecting");
+        let _ = app_handle.emit(
+            "rdp://status",
+            RdpStatusEvent {
+                session_id: session_id.to_string(),
+                status: "reconnecting".to_string(),
+                message: format!("Reconnecting ({reconnect_count})..."),
+                desktop_width: None,
+                desktop_height: None,
+            },
+        );
+
+        // Preserve the framebuffer — don't remove it during reconnect.
+        // Sleep with exponential backoff, checking for shutdown.
+        sleep_with_shutdown_check(
+            cmd_rx,
+            compute_backoff_delay(reconnect_count, settings.reconnect_base_delay, settings.reconnect_max_delay),
+        )?;
+        continue 'session;
     }
 }
 

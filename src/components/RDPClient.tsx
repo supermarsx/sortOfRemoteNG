@@ -151,7 +151,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const renderFrames = useCallback(() => renderFramesRef.current(), []);
 
   const [isConnected, setIsConnected] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error' | 'reconnecting'>('disconnected');
   const [statusMessage, setStatusMessage] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -346,6 +346,14 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       'print-screen': [
         { scancode: 0x37, extended: true },   // PrintScreen down
       ],
+      'win-l': [
+        { scancode: 0x5B, extended: true },   // Win down
+        { scancode: 0x26, extended: false },  // L down
+      ],
+      'win-r': [
+        { scancode: 0x5B, extended: true },   // Win down
+        { scancode: 0x13, extended: false },  // R down
+      ],
     };
 
     const keys = combos[combo];
@@ -364,6 +372,20 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       debugLog(`Send keys error: ${e}`);
     });
   }, [isConnected]);
+
+  const handleSignOut = useCallback(() => {
+    if (!sessionIdRef.current) return;
+    invoke('rdp_sign_out', { sessionId: sessionIdRef.current }).catch(e => {
+      debugLog(`Sign out error: ${e}`);
+    });
+  }, []);
+
+  const handleForceReboot = useCallback(() => {
+    if (!sessionIdRef.current) return;
+    invoke('rdp_force_reboot', { sessionId: sessionIdRef.current }).catch(e => {
+      debugLog(`Force reboot error: ${e}`);
+    });
+  }, []);
 
   // Get connection details
   const connection = state.connections.find(c => c.id === session.connectionId);
@@ -568,8 +590,16 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
   // ─── Reconnect handler ────────────────────────────────────────────
   const handleReconnect = useCallback(async () => {
-    // Disconnect first if still connected
     const sid = sessionIdRef.current;
+    // If we have an active backend session, tell it to reconnect in-place
+    // (the backend will drop TCP and re-establish without killing the session).
+    if (sid && connectionStatus === 'reconnecting') {
+      try {
+        await invoke('reconnect_rdp_session', { sessionId: sid });
+      } catch { /* ignore — the backend reconnect loop handles retries */ }
+      return;
+    }
+    // Otherwise do a full disconnect + fresh connect
     if (sid) {
       try {
         await invoke('disconnect_rdp', { sessionId: sid });
@@ -584,7 +614,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     setStatusMessage('Reconnecting...');
     // Re-run the full connection flow
     initializeRDPConnection();
-  }, [initializeRDPConnection]);
+  }, [initializeRDPConnection, connectionStatus]);
 
   // ─── Disconnect ────────────────────────────────────────────────────
 
@@ -669,7 +699,11 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           }
           break;
         case 'connecting':
+        case 'negotiating':
           setConnectionStatus('connecting');
+          break;
+        case 'reconnecting':
+          setConnectionStatus('reconnecting');
           break;
         case 'error':
           setConnectionStatus('error');
@@ -1117,6 +1151,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     switch (connectionStatus) {
       case 'connected': return 'text-green-400';
       case 'connecting': return 'text-yellow-400';
+      case 'reconnecting': return 'text-amber-400';
       case 'error': return 'text-red-400';
       default: return 'text-gray-400';
     }
@@ -1126,6 +1161,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
     switch (connectionStatus) {
       case 'connected': return <Wifi size={14} />;
       case 'connecting': return <Wifi size={14} className="animate-pulse" />;
+      case 'reconnecting': return <Wifi size={14} className="animate-pulse" />;
       default: return <WifiOff size={14} />;
     }
   };
@@ -1168,6 +1204,8 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         handleCopyToClipboard={handleCopyToClipboard}
         handlePasteFromClipboard={handlePasteFromClipboard}
         handleSendKeys={handleSendKeys}
+        handleSignOut={handleSignOut}
+        handleForceReboot={handleForceReboot}
         connectionId={session.connectionId}
         certFingerprint={certFingerprint ?? ''}
         connectionName={connection?.name || session.name}

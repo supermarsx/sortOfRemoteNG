@@ -23,9 +23,12 @@ import {
   Pencil,
   Check,
   X,
+  LogOut,
+  Power,
 } from 'lucide-react';
 import { TOTPConfig } from '../../types/settings';
 import RDPTotpPanel from './RDPTotpPanel';
+import { ConfirmDialog } from '../ConfirmDialog';
 
 interface RDPClientHeaderProps {
   sessionName: string;
@@ -58,6 +61,8 @@ interface RDPClientHeaderProps {
   handleCopyToClipboard: () => void;
   handlePasteFromClipboard: () => void;
   handleSendKeys: (combo: string) => void;
+  handleSignOut: () => void;
+  handleForceReboot: () => void;
   connectionId: string;
   certFingerprint: string;
   connectionName: string;
@@ -108,6 +113,8 @@ export default function RDPClientHeader({
   handleCopyToClipboard,
   handlePasteFromClipboard,
   handleSendKeys,
+  handleSignOut,
+  handleForceReboot,
   certFingerprint,
   connectionName,
   onRenameConnection,
@@ -117,6 +124,7 @@ export default function RDPClientHeader({
   const [showSendKeys, setShowSendKeys] = useState(false);
   const [showHostInfo, setShowHostInfo] = useState(false);
   const [showTotpPanel, setShowTotpPanel] = useState(false);
+  const [showRebootConfirm, setShowRebootConfirm] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(connectionName);
   const sendKeysRef = useRef<HTMLDivElement>(null);
@@ -125,8 +133,9 @@ export default function RDPClientHeader({
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const isConnected = connectionStatus === 'connected';
-  const canReconnect = connectionStatus === 'disconnected' || connectionStatus === 'error';
-  const canDisconnect = connectionStatus === 'connected' || connectionStatus === 'connecting';
+  const isReconnecting = connectionStatus === 'reconnecting';
+  const canReconnect = connectionStatus === 'disconnected' || connectionStatus === 'error' || isReconnecting;
+  const canDisconnect = connectionStatus === 'connected' || connectionStatus === 'connecting' || isReconnecting;
   const configs = totpConfigs ?? [];
 
   // Close menus on outside click
@@ -216,6 +225,24 @@ export default function RDPClientHeader({
           <Unplug size={14} />
         </button>
 
+        <button
+          onClick={handleSignOut}
+          className={isConnected ? btnDefault : btnDisabled}
+          disabled={!isConnected}
+          title="Sign out remote session"
+        >
+          <LogOut size={14} />
+        </button>
+
+        <button
+          onClick={() => setShowRebootConfirm(true)}
+          className={isConnected ? btnDefault : btnDisabled}
+          disabled={!isConnected}
+          title="Reboot remote machine"
+        >
+          <Power size={14} />
+        </button>
+
         <div className="w-px h-4 bg-gray-600 mx-1" />
 
         {/* ── Clipboard ──────────────────────────────────────── */}
@@ -255,6 +282,8 @@ export default function RDPClientHeader({
                 { id: 'ctrl-alt-del', label: 'Ctrl + Alt + Del' },
                 { id: 'alt-tab', label: 'Alt + Tab' },
                 { id: 'win', label: 'Windows Key' },
+                { id: 'win-l', label: 'Win + L (Lock)' },
+                { id: 'win-r', label: 'Win + R (Run)' },
                 { id: 'alt-f4', label: 'Alt + F4' },
                 { id: 'print-screen', label: 'Print Screen' },
               ].map((item) => (
@@ -488,6 +517,20 @@ export default function RDPClientHeader({
           {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
       </div>
+
+      <ConfirmDialog
+        isOpen={showRebootConfirm}
+        title="Reboot Remote Machine"
+        message={`Are you sure you want to force reboot ${sessionHostname}? This will immediately restart the remote machine and terminate all running programs.`}
+        confirmText="Reboot"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          setShowRebootConfirm(false);
+          handleForceReboot();
+        }}
+        onCancel={() => setShowRebootConfirm(false)}
+      />
     </div>
   );
 }

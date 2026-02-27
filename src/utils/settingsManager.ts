@@ -298,6 +298,9 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     remoteFxEntropy: 'rlgr3' as const,
     gfxEnabled: false,
     h264Decoder: 'auto' as const,
+    reconnectBaseDelaySecs: 3,
+    reconnectMaxDelaySecs: 30,
+    reconnectOnNetworkLoss: true,
   },
 
   // RDP Session Panel Settings

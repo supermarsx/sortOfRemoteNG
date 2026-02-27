@@ -483,6 +483,14 @@ export interface RdpGlobalDefaultsConfig {
    * - `offscreen-worker` — OffscreenCanvas in a Worker
    */
   frontendRenderer: 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker';
+
+  // ─── Reconnection defaults ─────────────────────────────────
+  /** Base delay in seconds between reconnection attempts */
+  reconnectBaseDelaySecs: number;
+  /** Maximum delay in seconds between reconnection attempts */
+  reconnectMaxDelaySecs: number;
+  /** Automatically reconnect on network loss */
+  reconnectOnNetworkLoss: boolean;
 }
 
 export interface ProxyConfig {
