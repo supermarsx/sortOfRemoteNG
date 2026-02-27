@@ -179,7 +179,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
       </div>
 
       {/* Secondary actions bar */}
-      <div className="h-9 app-bar-secondary border-b flex items-center justify-between px-3 select-none">
+      <div className="h-9 app-bar-secondary border-b flex items-center justify-between px-3 select-none relative z-20">
         <div className="flex items-center space-x-1">
           {appSettings.showQuickConnectIcon && (
             <button
