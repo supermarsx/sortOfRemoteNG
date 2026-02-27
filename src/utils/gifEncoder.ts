@@ -281,9 +281,16 @@ export function renderTerminalToGif(
  * This is a simplified version - handles the most common sequences.
  */
 export function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-    .replace(/\x1b\][^\x07]*\x07/g, '')  // OSC sequences
-    .replace(/\x1b[()][A-Z0-9]/g, '')     // Character set
-    .replace(/\x1b[>=<]/g, '');            // Mode changes
+  const esc = '\u001b';
+  const bell = '\u0007';
+  const csiPattern = new RegExp(`${esc}\\[[0-9;]*[a-zA-Z]`, 'g');
+  const oscPattern = new RegExp(`${esc}\\][^${bell}]*${bell}`, 'g');
+  const charsetPattern = new RegExp(`${esc}[()][A-Z0-9]`, 'g');
+  const modePattern = new RegExp(`${esc}[>=<]`, 'g');
+
+  return str
+    .replace(csiPattern, '')
+    .replace(oscPattern, '') // OSC sequences
+    .replace(charsetPattern, '') // Character set
+    .replace(modePattern, ''); // Mode changes
 }
