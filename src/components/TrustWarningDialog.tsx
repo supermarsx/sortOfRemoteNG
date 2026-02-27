@@ -49,7 +49,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
-      <div className="bg-gray-800 border border-gray-600 rounded-xl shadow-2xl w-full max-w-lg mx-4">
+      <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full max-w-lg mx-4">
         {/* Header */}
         <div className={`flex items-center gap-3 px-6 py-4 border-b ${
           isMismatch ? 'border-red-700/50 bg-red-900/20' : 'border-yellow-700/50 bg-yellow-900/20'
@@ -66,7 +66,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                 : `Unknown ${isTls ? 'Certificate' : 'Host Key'}`
               }
             </h2>
-            <p className="text-sm text-gray-400">{host}:{port}</p>
+            <p className="text-sm text-[var(--color-textSecondary)]">{host}:{port}</p>
           </div>
         </div>
 
@@ -90,13 +90,13 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
               {/* Side-by-side comparison */}
               <div className="grid grid-cols-2 gap-3">
                 {/* Previously stored */}
-                <div className="bg-gray-900 rounded-lg p-3">
+                <div className="bg-[var(--color-background)] rounded-lg p-3">
                   <p className="text-xs text-gray-500 font-medium mb-2">Previously Stored</p>
                   <div className="flex items-center gap-1 mb-1">
                     <Fingerprint size={10} className="text-gray-500" />
                     <span className="text-[10px] text-gray-500">Fingerprint</span>
                   </div>
-                  <p className="text-[11px] font-mono text-gray-400 break-all">
+                  <p className="text-[11px] font-mono text-[var(--color-textSecondary)] break-all">
                     {storedIdentity ? formatFingerprint(storedIdentity.fingerprint) : '—'}
                   </p>
                   {storedIdentity?.lastSeen && (
@@ -107,7 +107,7 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
                 </div>
 
                 {/* Received now */}
-                <div className="bg-gray-900 rounded-lg p-3 border border-red-700/30">
+                <div className="bg-[var(--color-background)] rounded-lg p-3 border border-red-700/30">
                   <p className="text-xs text-red-400 font-medium mb-2">Received Now</p>
                   <div className="flex items-center gap-1 mb-1">
                     <Fingerprint size={10} className="text-gray-500" />
@@ -121,20 +121,20 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
             </>
           ) : (
             <>
-              <p className="text-sm text-gray-300">
+              <p className="text-sm text-[var(--color-textSecondary)]">
                 The server at <span className="text-yellow-400 font-medium">{host}:{port}</span> presented
                 a {identityLabel} that has not been seen before.
               </p>
-              <div className="bg-gray-900 rounded-lg p-3">
+              <div className="bg-[var(--color-background)] rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-2 text-xs text-gray-500">
                   <Fingerprint size={12} />
                   <span>Fingerprint (SHA-256)</span>
                 </div>
-                <p className="text-xs font-mono text-gray-300 break-all">
+                <p className="text-xs font-mono text-[var(--color-textSecondary)] break-all">
                   {formatFingerprint(receivedIdentity.fingerprint)}
                 </p>
               </div>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-[var(--color-textSecondary)]">
                 If you trust this server, accept the {identityLabel} to remember it for future
                 connections. Any change to this {identityLabel} will trigger a warning.
               </p>
@@ -143,16 +143,16 @@ export const TrustWarningDialog: React.FC<TrustWarningDialogProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-700">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[var(--color-border)]">
           <button
             onClick={onReject}
-            className="px-4 py-2 text-sm text-gray-300 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm text-[var(--color-textSecondary)] hover:text-[var(--color-text)] bg-[var(--color-border)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
           >
             Disconnect
           </button>
           <button
             onClick={onAccept}
-            className={`flex items-center gap-2 px-4 py-2 text-sm text-white rounded-lg transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm text-[var(--color-text)] rounded-lg transition-colors ${
               isMismatch
                 ? 'bg-red-600 hover:bg-red-500'
                 : 'bg-blue-600 hover:bg-blue-500'

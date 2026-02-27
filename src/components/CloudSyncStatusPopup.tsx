@@ -130,7 +130,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
     if (statuses.every(s => s === 'success')) {
       return <CheckCircle className="w-4 h-4 text-green-400" />;
     }
-    return <Cloud className="w-4 h-4 text-gray-400" />;
+    return <Cloud className="w-4 h-4 text-[var(--color-textSecondary)]" />;
   };
 
   const getProviderStatusIcon = (provider: CloudSyncProvider) => {
@@ -139,7 +139,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
       return <Loader2 className="w-3 h-3 animate-spin text-blue-400" />;
     }
     if (!status?.lastSyncStatus) {
-      return <Clock className="w-3 h-3 text-gray-400" />;
+      return <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />;
     }
     switch (status.lastSyncStatus) {
       case 'success':
@@ -151,7 +151,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
       case 'partial':
         return <AlertTriangle className="w-3 h-3 text-orange-400" />;
       default:
-        return <Clock className="w-3 h-3 text-gray-400" />;
+        return <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />;
     }
   };
 
@@ -267,11 +267,11 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
               el.style.left = `${left}px`;
             }
           }}
-          className="fixed w-96 bg-gray-800 border border-gray-700 rounded-lg shadow-xl"
+          className="fixed w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl"
           style={{ zIndex: 9999 }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
             <div className="flex items-center gap-2">
               <Cloud className="w-5 h-5 text-blue-400" />
               <h3 className="font-semibold text-gray-200">
@@ -281,14 +281,14 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
             <div className="flex items-center gap-1">
               <button
                 onClick={onOpenSettings}
-                className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-gray-200"
+                className="p-1.5 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-gray-200"
                 title={t('sync.settings', 'Sync Settings')}
               >
                 <Settings className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-gray-200"
+                className="p-1.5 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-gray-200"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -300,7 +300,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
             {!hasSync ? (
               <div className="text-center py-6">
                 <CloudOff className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                <p className="text-sm text-gray-400 mb-4">
+                <p className="text-sm text-[var(--color-textSecondary)] mb-4">
                   {t('sync.noProviders', 'No sync providers configured')}
                 </p>
                 <button
@@ -313,8 +313,8 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
             ) : (
               <>
                 {/* Overall Status */}
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-700">
-                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-[var(--color-border)]">
+                  <div className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Clock className="w-4 h-4" />
                     <span>{t('sync.lastSync', 'Last sync')}:</span>
                     <span className="text-gray-200">{formatRelativeTime(getLastSyncTime())}</span>
@@ -371,7 +371,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
                             <button
                               onClick={() => handleTestProvider(provider)}
                               disabled={testingProvider === provider}
-                              className="p-1 rounded hover:bg-gray-600 text-gray-400 hover:text-blue-400 disabled:opacity-50"
+                              className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-blue-400 disabled:opacity-50"
                               title={t('sync.testProvider', 'Test Connection')}
                             >
                               {testingProvider === provider ? (
@@ -383,7 +383,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
                             <button
                               onClick={() => handleSyncProvider(provider)}
                               disabled={syncingProvider === provider}
-                              className="p-1 rounded hover:bg-gray-600 text-gray-400 hover:text-green-400 disabled:opacity-50"
+                              className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-green-400 disabled:opacity-50"
                               title={t('sync.syncProvider', 'Sync Now')}
                             >
                               {syncingProvider === provider ? (
@@ -398,7 +398,7 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
                         {/* Status Details */}
                         <div className="text-xs text-gray-500">
                           <span>{t('sync.lastSync', 'Last sync')}: </span>
-                          <span className="text-gray-400">
+                          <span className="text-[var(--color-textSecondary)]">
                             {formatRelativeTime(status?.lastSyncTime)}
                           </span>
                         </div>
@@ -444,9 +444,9 @@ export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
                 </div>
 
                 {/* Frequency Info */}
-                <div className="mt-4 pt-3 border-t border-gray-700 text-xs text-gray-500">
+                <div className="mt-4 pt-3 border-t border-[var(--color-border)] text-xs text-gray-500">
                   <span>{t('sync.frequency', 'Sync frequency')}: </span>
-                  <span className="text-gray-400">{config.frequency}</span>
+                  <span className="text-[var(--color-textSecondary)]">{config.frequency}</span>
                 </div>
               </>
             )}

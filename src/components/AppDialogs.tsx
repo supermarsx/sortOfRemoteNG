@@ -93,8 +93,11 @@ interface AppDialogsProps {
   collectionManager: CollectionManager;
 }
 
-const getToolMode = (settings: GlobalSettings, key: keyof import('../types/settings').ToolDisplayModes): 'popup' | 'tab' =>
-  settings.toolDisplayModes?.[key] ?? 'popup';
+const getToolMode = (settings: GlobalSettings, key: Exclude<keyof import('../types/settings').ToolDisplayModes, 'globalDefault'>): 'popup' | 'tab' => {
+  const raw = settings.toolDisplayModes?.[key] ?? 'inherit';
+  if (raw === 'inherit') return settings.toolDisplayModes?.globalDefault ?? 'popup';
+  return raw;
+};
 
 export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
   const {
@@ -281,7 +284,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
           className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setRdpPanelOpen(false); }}
         >
-          <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full max-w-3xl h-[90vh] flex flex-col overflow-hidden">
             <RdpSessionPanel
               isVisible={rdpPanelOpen}
               connections={connections}

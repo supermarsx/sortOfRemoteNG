@@ -46,12 +46,12 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
   return (
     <>
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">Username</label>
+        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Username</label>
         <input
           type="text"
           value={formData.username || ''}
           onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           placeholder="Username"
         />
       </div>
@@ -59,29 +59,29 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
       {formData.protocol === 'ssh' && (
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Authentication Type</label>
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Authentication Type</label>
             <select
               value={formData.authType ?? 'password'}
               onChange={(e) => setFormData({ ...formData, authType: e.target.value as any })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="password">Password</option>
               <option value="key">Private Key</option>
             </select>
           </div>
-          <label className="flex items-center space-x-2 text-sm text-gray-300">
+          <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)]">
             <input
               type="checkbox"
               checked={formData.ignoreSshSecurityErrors ?? true}
               onChange={(e) =>
                 setFormData({ ...formData, ignoreSshSecurityErrors: e.target.checked })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
             />
             <span>Ignore SSH security errors (host keys/certs)</span>
           </label>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
               Host Key Trust Policy
             </label>
             <select
@@ -92,7 +92,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
                   sshTrustPolicy: e.target.value === '' ? undefined : (e.target.value as 'tofu' | 'always-ask' | 'always-trust' | 'strict'),
                 })
               }
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-blue-500 text-sm"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:ring-2 focus:ring-blue-500 text-sm"
             >
               <option value="">Use global default</option>
               <option value="tofu">Trust On First Use (TOFU)</option>
@@ -111,7 +111,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
             return (
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
                     <Fingerprint size={14} className="text-green-400" />
                     Stored Host Keys ({records.length})
                   </label>
@@ -130,10 +130,10 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
                   {records.map((record, i) => {
                     const [host, portStr] = record.host.split(':');
                     return (
-                      <div key={i} className="flex items-center gap-2 bg-gray-700/50 border border-gray-600/50 rounded px-3 py-1.5 text-xs">
+                      <div key={i} className="flex items-center gap-2 bg-[var(--color-border)]/50 border border-[var(--color-border)]/50 rounded px-3 py-1.5 text-xs">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <p className="text-gray-300 truncate">{record.nickname || record.host}</p>
+                            <p className="text-[var(--color-textSecondary)] truncate">{record.nickname || record.host}</p>
                             {record.nickname && <p className="text-gray-500 truncate">({record.host})</p>}
                           </div>
                           <p className="font-mono text-gray-500 truncate">{formatFingerprint(record.identity.fingerprint)}</p>
@@ -159,7 +159,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
           })()}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Connect Timeout (sec)
               </label>
               <input
@@ -173,11 +173,11 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
                     sshConnectTimeout: Number(e.target.value) || 30,
                   })
                 }
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Keep Alive (sec)
               </label>
               <input
@@ -191,11 +191,11 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
                     sshKeepAliveInterval: Number(e.target.value) || 60,
                   })
                 }
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Known Hosts Path
               </label>
               <input
@@ -204,7 +204,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
                 onChange={(e) =>
                   setFormData({ ...formData, sshKnownHostsPath: e.target.value })
                 }
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="C:\\Users\\me\\.ssh\\known_hosts"
               />
             </div>
@@ -214,11 +214,11 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
 
       {formData.authType === 'password' && (
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Password</label>
           <PasswordInput
             value={formData.password || ''}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Password"
           />
         </div>
@@ -228,11 +228,11 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
         <>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-300">Private Key</label>
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)]">Private Key</label>
               <button
                 type="button"
                 onClick={() => setShowKeyManager(true)}
-                className="flex items-center gap-1.5 px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
               >
                 <Key className="w-3.5 h-3.5" />
                 Manage Keys
@@ -242,22 +242,22 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
               value={formData.privateKey || ''}
               onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
               rows={4}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               placeholder="-----BEGIN PRIVATE KEY-----"
             />
             <input
               type="file"
               accept=".key,.pem,.ppk"
               onChange={handlePrivateKeyFileChange}
-              className="mt-2 text-sm text-gray-300"
+              className="mt-2 text-sm text-[var(--color-textSecondary)]"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Passphrase (optional)</label>
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Passphrase (optional)</label>
             <PasswordInput
               value={formData.passphrase || ''}
               onChange={(e) => setFormData({ ...formData, passphrase: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Passphrase"
             />
           </div>
@@ -309,7 +309,7 @@ function NicknameEditButton({ record, connectionId, onSaved }: { record: TrustRe
           onSaved();
         }}
         placeholder="Nickname…"
-        className="w-24 px-1.5 py-0.5 bg-gray-700 border border-gray-600 rounded text-gray-200 placeholder-gray-500 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="w-24 px-1.5 py-0.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-gray-200 placeholder-gray-500 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
       />
     );
   }
@@ -317,7 +317,7 @@ function NicknameEditButton({ record, connectionId, onSaved }: { record: TrustRe
     <button
       type="button"
       onClick={() => { setDraft(record.nickname ?? ''); setEditing(true); }}
-      className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors flex-shrink-0"
+      className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5 transition-colors flex-shrink-0"
       title={record.nickname ? `Nickname: ${record.nickname}` : 'Add nickname'}
     >
       <Pencil size={10} />

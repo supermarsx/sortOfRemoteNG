@@ -93,7 +93,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
   return (
     <div className="flex flex-col h-full">
       {/* Filter bar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700 flex-shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] flex-shrink-0">
         <div className="relative flex-1">
           <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
           <input
@@ -101,13 +101,13 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
             value={filter}
             onChange={e => setFilter(e.target.value)}
             placeholder="Filter logs..."
-            className="w-full pl-7 pr-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+            className="w-full pl-7 pr-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500 focus:outline-none focus:border-indigo-500"
           />
         </div>
         <select
           value={levelFilter}
           onChange={e => setLevelFilter(e.target.value)}
-          className="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-white focus:outline-none focus:border-indigo-500"
+          className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] focus:outline-none focus:border-indigo-500"
         >
           <option value="all">All</option>
           <option value="info">Info</option>
@@ -118,7 +118,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
           <select
             value={sessionIdFilter}
             onChange={e => setSessionIdFilter(e.target.value)}
-            className="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-white focus:outline-none focus:border-indigo-500 max-w-[80px]"
+            className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] focus:outline-none focus:border-indigo-500 max-w-[80px]"
             data-tooltip="Filter by session"
           >
             <option value="all">All sessions</option>
@@ -129,7 +129,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
         )}
         <button
           onClick={() => setAutoScroll(!autoScroll)}
-          className={`p-1 rounded transition-colors ${autoScroll ? 'text-indigo-400 bg-indigo-900/30' : 'text-gray-500 hover:text-gray-300'}`}
+          className={`p-1 rounded transition-colors ${autoScroll ? 'text-indigo-400 bg-indigo-900/30' : 'text-gray-500 hover:text-[var(--color-textSecondary)]'}`}
           data-tooltip={autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
         >
           <ArrowDown size={12} />
@@ -149,7 +149,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
             return (
               <div
                 key={`${entry.timestamp}-${i}`}
-                className="flex items-start gap-1.5 px-1.5 py-0.5 hover:bg-gray-800/50 rounded"
+                className="flex items-start gap-1.5 px-1.5 py-0.5 hover:bg-[var(--color-surface)]/50 rounded"
               >
                 <Icon size={10} className={`${config.color} flex-shrink-0 mt-0.5`} />
                 <span className="text-gray-500 flex-shrink-0">
@@ -160,7 +160,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
                     [{entry.session_id.slice(0, 6)}]
                   </span>
                 )}
-                <span className="text-gray-300 break-all">{entry.message}</span>
+                <span className="text-[var(--color-textSecondary)] break-all">{entry.message}</span>
               </div>
             );
           })
@@ -168,7 +168,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
       </div>
 
       {/* Status bar */}
-      <div className="px-3 py-1 border-t border-gray-700 text-[10px] text-gray-500 flex-shrink-0">
+      <div className="px-3 py-1 border-t border-[var(--color-border)] text-[10px] text-gray-500 flex-shrink-0">
         {filteredLogs.length} / {logs.length} entries
       </div>
     </div>

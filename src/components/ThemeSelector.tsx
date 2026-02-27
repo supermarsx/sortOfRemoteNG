@@ -252,7 +252,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
     <div className="space-y-6">
       {/* Theme Mode */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-3">
+        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-3">
           Theme
         </label>
         <div className="grid grid-cols-3 gap-3">
@@ -263,11 +263,11 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
               className={`p-4 rounded-lg border-2 transition-colors flex flex-col items-center space-y-2 ${
                 theme === value
                   ? "border-blue-500 bg-blue-500/20"
-                  : "border-gray-600 hover:border-gray-500"
+                  : "border-[var(--color-border)] hover:border-[var(--color-border)]"
               }`}
             >
-              <Icon size={24} className="text-gray-300" />
-              <span className="text-white font-medium capitalize">{value}</span>
+              <Icon size={24} className="text-[var(--color-textSecondary)]" />
+              <span className="text-[var(--color-text)] font-medium capitalize">{value}</span>
             </button>
           ))}
         </div>
@@ -275,7 +275,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
 
       {/* Color Scheme */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-3">
+        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-3">
           Color Scheme
         </label>
         <div className="grid grid-cols-3 gap-3">
@@ -286,12 +286,12 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
               className={`p-4 rounded-lg border-2 transition-colors ${
                 colorScheme === scheme.name
                   ? "border-blue-500 bg-blue-500/20"
-                  : "border-gray-600 hover:border-gray-500"
+                  : "border-[var(--color-border)] hover:border-[var(--color-border)]"
               }`}
             >
               <div className="flex items-center space-x-2 mb-2">
-                <Palette size={16} className="text-gray-300" />
-                <span className="text-white font-medium capitalize">
+                <Palette size={16} className="text-[var(--color-textSecondary)]" />
+                <span className="text-[var(--color-text)] font-medium capitalize">
                   {scheme.name}
                 </span>
               </div>
@@ -310,36 +310,36 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
       </div>
 
       {/* Preview */}
-      <div className="bg-gray-700 rounded-lg p-4">
-        <h3 className="text-white font-medium mb-3">Preview</h3>
+      <div className="bg-[var(--color-border)] rounded-lg p-4">
+        <h3 className="text-[var(--color-text)] font-medium mb-3">Preview</h3>
         <div className="space-y-2">
           <div className="flex items-center space-x-2">
             <div
               className="w-4 h-4 rounded"
               style={{ backgroundColor: selectedScheme?.primary }}
             />
-            <span className="text-gray-300">Primary Color</span>
+            <span className="text-[var(--color-textSecondary)]">Primary Color</span>
           </div>
           <div className="flex items-center space-x-2">
             <div
               className="w-4 h-4 rounded"
               style={{ backgroundColor: selectedScheme?.secondary }}
             />
-            <span className="text-gray-300">Secondary Color</span>
+            <span className="text-[var(--color-textSecondary)]">Secondary Color</span>
           </div>
           <div className="flex items-center space-x-2">
             <div
               className="w-4 h-4 rounded"
               style={{ backgroundColor: selectedScheme?.accent }}
             />
-            <span className="text-gray-300">Accent Color</span>
+            <span className="text-[var(--color-textSecondary)]">Accent Color</span>
           </div>
         </div>
       </div>
 
       {/* Management for custom items */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
+        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
           Custom Themes
         </label>
         <ul className="space-y-2">
@@ -348,7 +348,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
             .map((tName) => (
               <li
                 key={tName}
-                className="flex items-center justify-between text-white"
+                className="flex items-center justify-between text-[var(--color-text)]"
               >
                 <span className="capitalize">{tName}</span>
                 <div className="space-x-2 text-sm">
@@ -377,7 +377,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
+        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
           Custom Color Schemes
         </label>
         <ul className="space-y-2">
@@ -386,7 +386,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
             .map((s) => (
               <li
                 key={s}
-                className="flex items-center justify-between text-white"
+                className="flex items-center justify-between text-[var(--color-text)]"
               >
                 <span className="capitalize">{s}</span>
                 <div className="space-x-2 text-sm">
@@ -415,21 +415,21 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
       </div>
 
       {/* Import/Export Section */}
-      <div className="border-t border-gray-600 pt-4">
-        <label className="block text-sm font-medium text-gray-300 mb-3">
+      <div className="border-t border-[var(--color-border)] pt-4">
+        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-3">
           Import / Export
         </label>
         <div className="flex flex-wrap gap-3">
           <button
             onClick={handleExportAll}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors text-sm"
           >
             <Download size={16} />
             Export All Custom
           </button>
           <button
             onClick={handleImportClick}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-lg transition-colors text-sm"
           >
             <Upload size={16} />
             Import from File
@@ -452,7 +452,7 @@ export const ThemeSelector: React.FC<ThemeSelectorProps> = ({
             {importStatus}
           </div>
         )}
-        <p className="mt-3 text-xs text-gray-400">
+        <p className="mt-3 text-xs text-[var(--color-textSecondary)]">
           Export your custom themes and color schemes to share or backup. 
           Import will skip existing items unless you delete them first.
         </p>

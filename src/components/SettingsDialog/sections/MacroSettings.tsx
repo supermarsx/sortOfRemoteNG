@@ -26,11 +26,11 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
           <ListVideo className="w-5 h-5" />
           Macros
         </h3>
-        <p className="text-xs text-gray-400 mb-4">
+        <p className="text-xs text-[var(--color-textSecondary)] mb-4">
           Configure terminal macro recording and replay behavior.
         </p>
       </div>
@@ -41,7 +41,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Clock size={14} className="text-blue-400" />
             <div>
-              <span className="text-sm text-gray-300">Default delay between steps</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Default delay between steps</span>
               <p className="text-[10px] text-gray-500">Delay in milliseconds when replaying macros</p>
             </div>
           </div>
@@ -55,7 +55,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
               step={50}
               className="w-32"
             />
-            <span className="text-xs text-gray-400 w-14 text-right">{macros.defaultStepDelayMs}ms</span>
+            <span className="text-xs text-[var(--color-textSecondary)] w-14 text-right">{macros.defaultStepDelayMs}ms</span>
           </div>
         </div>
 
@@ -64,7 +64,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           <div className="flex items-center gap-3">
             <AlertCircle size={14} className="text-yellow-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Confirm before replay</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Confirm before replay</span>
               <p className="text-[10px] text-gray-500">Show confirmation dialog before replaying a macro</p>
             </div>
           </div>
@@ -72,7 +72,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
             type="checkbox"
             checked={macros.confirmBeforeReplay}
             onChange={(e) => update({ confirmBeforeReplay: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
         </label>
 
@@ -81,7 +81,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Hash size={14} className="text-green-400" />
             <div>
-              <span className="text-sm text-gray-300">Max steps per macro</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Max steps per macro</span>
               <p className="text-[10px] text-gray-500">Maximum number of steps allowed in a single macro</p>
             </div>
           </div>
@@ -89,7 +89,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
             type="number"
             value={macros.maxMacroSteps}
             onChange={(e) => update({ maxMacroSteps: Math.max(1, Number(e.target.value)) })}
-            className="w-20 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white text-right outline-none focus:border-blue-500"
+            className="w-20 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] text-right outline-none focus:border-blue-500"
             min={1}
           />
         </div>

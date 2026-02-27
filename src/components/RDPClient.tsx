@@ -1174,7 +1174,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       case 'connecting': return 'text-yellow-400';
       case 'reconnecting': return 'text-amber-400';
       case 'error': return 'text-red-400';
-      default: return 'text-gray-400';
+      default: return 'text-[var(--color-textSecondary)]';
     }
   };
 
@@ -1193,7 +1193,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
   const colorDepth = rdpSettings.display?.colorDepth ?? 32;
 
   return (
-    <div className={`flex flex-col bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full overflow-hidden'}`}>
+    <div className={`flex flex-col bg-[var(--color-background)] ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full overflow-hidden'}`}>
       <RDPClientHeader
         sessionName={session.name}
         sessionHostname={session.hostname}
@@ -1275,7 +1275,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
       <div ref={containerRef} className="flex-1 flex items-center justify-center bg-black p-1 relative min-h-0 overflow-hidden">
         <canvas
           ref={canvasRef}
-          className="border border-gray-600 max-w-full max-h-full"
+          className="border border-[var(--color-border)] max-w-full max-h-full"
           style={{
             cursor: magnifierActive ? 'crosshair' : pointerStyle,
             imageRendering: 'auto',
@@ -1314,7 +1314,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
 
         {/* Magnifier zoom indicator */}
         {magnifierEnabled && magnifierActive && isConnected && (
-          <div className="absolute top-2 right-2 bg-blue-600 bg-opacity-80 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+          <div className="absolute top-2 right-2 bg-blue-600 bg-opacity-80 text-[var(--color-text)] text-xs px-2 py-1 rounded flex items-center gap-1">
             <ZoomIn size={12} />
             {magnifierZoom}x
           </div>
@@ -1324,7 +1324,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
           <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
-              <p className="text-gray-400">Connecting to RDP server...</p>
+              <p className="text-[var(--color-textSecondary)]">Connecting to RDP server...</p>
               <p className="text-gray-500 text-sm mt-2">
                 {session.name !== session.hostname ? `${session.name} (${session.hostname})` : session.hostname}
               </p>
@@ -1359,7 +1359,7 @@ const RDPClient: React.FC<RDPClientProps> = ({ session }) => {
         {connectionStatus === 'disconnected' && (
           <div className="text-center">
             <Monitor size={48} className="text-gray-600 mx-auto mb-4" />
-            <p className="text-gray-400">Disconnected</p>
+            <p className="text-[var(--color-textSecondary)]">Disconnected</p>
           </div>
         )}
       </div>

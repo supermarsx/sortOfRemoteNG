@@ -37,21 +37,21 @@ function QRDisplay({ config, onDismiss }: { config: TOTPConfig; onDismiss: () =>
   }, [config, totpService]);
 
   return (
-    <div className="p-3 border-b border-gray-700 flex flex-col items-center space-y-2">
+    <div className="p-3 border-b border-[var(--color-border)] flex flex-col items-center space-y-2">
       {qrUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={qrUrl} alt="TOTP QR Code" className="w-40 h-40 rounded" />
       ) : (
-        <div className="w-40 h-40 bg-gray-700 rounded flex items-center justify-center">
+        <div className="w-40 h-40 bg-[var(--color-border)] rounded flex items-center justify-center">
           <QrCode size={32} className="text-gray-500 animate-pulse" />
         </div>
       )}
-      <p className="text-[10px] text-gray-400 text-center">
+      <p className="text-[10px] text-[var(--color-textSecondary)] text-center">
         Scan with your authenticator app
       </p>
       <button
         onClick={onDismiss}
-        className="text-[10px] text-gray-400 hover:text-white transition-colors"
+        className="text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
       >
         Dismiss
       </button>
@@ -68,14 +68,14 @@ function BackupCodesDisplay({
   onCopyAll: () => void;
 }) {
   return (
-    <div className="px-3 py-2 border-t border-gray-700/50 bg-gray-800/60">
+    <div className="px-3 py-2 border-t border-[var(--color-border)]/50 bg-[var(--color-surface)]/60">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
+        <span className="text-[10px] text-[var(--color-textSecondary)] font-semibold uppercase tracking-wider">
           Backup Codes
         </span>
         <button
           onClick={onCopyAll}
-          className="text-[10px] text-gray-400 hover:text-white transition-colors flex items-center space-x-1"
+          className="text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors flex items-center space-x-1"
         >
           <Copy size={10} />
           <span>Copy all</span>
@@ -83,7 +83,7 @@ function BackupCodesDisplay({
       </div>
       <div className="grid grid-cols-2 gap-1">
         {codes.map((code, i) => (
-          <span key={i} className="font-mono text-[10px] text-gray-300 bg-gray-700/50 rounded px-1.5 py-0.5 text-center">
+          <span key={i} className="font-mono text-[10px] text-[var(--color-textSecondary)] bg-[var(--color-border)]/50 rounded px-1.5 py-0.5 text-center">
             {code}
           </span>
         ))}
@@ -117,24 +117,24 @@ function ImportModal({
   };
 
   return (
-    <div className="p-3 border-b border-gray-700 space-y-2">
-      <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">
+    <div className="p-3 border-b border-[var(--color-border)] space-y-2">
+      <div className="text-[10px] text-[var(--color-textSecondary)] font-semibold uppercase tracking-wider">
         Import TOTP Configs (JSON)
       </div>
       <textarea
         value={text}
         onChange={(e) => { setText(e.target.value); setError(''); }}
         placeholder='[{"secret":"...","account":"...","issuer":"...","digits":6,"period":30,"algorithm":"sha1"}]'
-        className="w-full h-20 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-[10px] text-white font-mono placeholder-gray-500 resize-none"
+        className="w-full h-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[10px] text-[var(--color-text)] font-mono placeholder-gray-500 resize-none"
       />
       {error && <div className="text-[10px] text-red-400">{error}</div>}
       <div className="flex justify-end space-x-2">
-        <button onClick={onClose} className="px-2 py-1 text-[10px] text-gray-400 hover:text-white">
+        <button onClick={onClose} className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
           Cancel
         </button>
         <button
           onClick={handleImport}
-          className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-white rounded"
+          className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded"
         >
           Import
         </button>
@@ -343,14 +343,14 @@ export default function RDPTotpPanel({
   const panel = (
     <div
       ref={panelRef}
-      className={`${anchorRef ? '' : 'absolute right-0 top-full mt-1 z-50 '}w-96 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden`}
+      className={`${anchorRef ? '' : 'absolute right-0 top-full mt-1 z-50 '}w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden`}
       style={fixedStyle}
     >
       {/* ── Header ────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800/80">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/80">
         <div className="flex items-center space-x-2">
           <Shield size={14} className="text-blue-400" />
-          <span className="text-xs font-semibold text-white">2FA Codes</span>
+          <span className="text-xs font-semibold text-[var(--color-text)]">2FA Codes</span>
           {copiedSecret === 'export' && (
             <span className="text-[10px] text-green-400">Copied!</span>
           )}
@@ -358,35 +358,35 @@ export default function RDPTotpPanel({
         <div className="flex items-center space-x-1">
           <button
             onClick={handleExport}
-            className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+            className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
             title="Export configs to clipboard"
           >
             <Download size={12} />
           </button>
           <button
             onClick={() => setShowFileImport(true)}
-            className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+            className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
             title="Import from authenticator app"
           >
             <FileUp size={12} />
           </button>
           <button
             onClick={() => setShowImport(!showImport)}
-            className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+            className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
             title="Import from JSON"
           >
             <Upload size={12} />
           </button>
           <button
             onClick={() => setShowAdd(!showAdd)}
-            className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+            className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
             title="Add TOTP"
           >
             <Plus size={12} />
           </button>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+            className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
           >
             <X size={12} />
           </button>
@@ -415,20 +415,20 @@ export default function RDPTotpPanel({
 
       {/* ── Add Form ──────────────────────────────────────────── */}
       {showAdd && (
-        <div className="p-3 border-b border-gray-700 space-y-2">
+        <div className="p-3 border-b border-[var(--color-border)] space-y-2">
           <input
             type="text"
             value={newAccount}
             onChange={(e) => setNewAccount(e.target.value)}
             placeholder="Account name (e.g. admin@server)"
-            className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white placeholder-gray-500"
+            className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500"
           />
           <input
             type="text"
             value={newIssuer}
             onChange={(e) => setNewIssuer(e.target.value)}
             placeholder="Issuer"
-            className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white placeholder-gray-500"
+            className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500"
           />
           <div className="relative">
             <input
@@ -436,12 +436,12 @@ export default function RDPTotpPanel({
               value={newSecret}
               onChange={(e) => setNewSecret(e.target.value)}
               placeholder="Secret (auto-generated if empty)"
-              className="w-full px-2 py-1 pr-7 bg-gray-700 border border-gray-600 rounded text-xs text-white placeholder-gray-500 font-mono"
+              className="w-full px-2 py-1 pr-7 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500 font-mono"
             />
             <button
               type="button"
               onClick={() => setShowNewSecret(!showNewSecret)}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             >
               {showNewSecret ? <EyeOff size={12} /> : <Eye size={12} />}
             </button>
@@ -450,7 +450,7 @@ export default function RDPTotpPanel({
             <select
               value={newDigits}
               onChange={(e) => setNewDigits(parseInt(e.target.value))}
-              className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+              className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
             >
               <option value={6}>6 digits</option>
               <option value={8}>8 digits</option>
@@ -458,7 +458,7 @@ export default function RDPTotpPanel({
             <select
               value={newPeriod}
               onChange={(e) => setNewPeriod(parseInt(e.target.value))}
-              className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+              className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
             >
               <option value={15}>15s</option>
               <option value={30}>30s</option>
@@ -467,7 +467,7 @@ export default function RDPTotpPanel({
             <select
               value={newAlgorithm}
               onChange={(e) => setNewAlgorithm(e.target.value)}
-              className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+              className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
             >
               <option value="sha1">SHA-1</option>
               <option value="sha256">SHA-256</option>
@@ -477,13 +477,13 @@ export default function RDPTotpPanel({
           <div className="flex justify-end space-x-2">
             <button
               onClick={() => setShowAdd(false)}
-              className="px-2 py-1 text-xs text-gray-400 hover:text-white transition-colors"
+              className="px-2 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleAdd}
-              className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+              className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded transition-colors"
             >
               Add
             </button>
@@ -507,26 +507,26 @@ export default function RDPTotpPanel({
 
             if (isEditing) {
               return (
-                <div key={cfg.secret} className="px-3 py-2 border-b border-gray-700/50 space-y-1.5 bg-gray-750">
+                <div key={cfg.secret} className="px-3 py-2 border-b border-[var(--color-border)]/50 space-y-1.5 bg-gray-750">
                   <input
                     type="text"
                     value={editData.account ?? ''}
                     onChange={(e) => setEditData(d => ({ ...d, account: e.target.value }))}
                     placeholder="Account"
-                    className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+                    className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                   />
                   <input
                     type="text"
                     value={editData.issuer ?? ''}
                     onChange={(e) => setEditData(d => ({ ...d, issuer: e.target.value }))}
                     placeholder="Issuer"
-                    className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+                    className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                   />
                   <div className="flex space-x-2">
                     <select
                       value={editData.digits ?? 6}
                       onChange={(e) => setEditData(d => ({ ...d, digits: parseInt(e.target.value) }))}
-                      className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+                      className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                     >
                       <option value={6}>6 digits</option>
                       <option value={8}>8 digits</option>
@@ -534,7 +534,7 @@ export default function RDPTotpPanel({
                     <select
                       value={editData.period ?? 30}
                       onChange={(e) => setEditData(d => ({ ...d, period: parseInt(e.target.value) }))}
-                      className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+                      className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                     >
                       <option value={15}>15s</option>
                       <option value={30}>30s</option>
@@ -543,7 +543,7 @@ export default function RDPTotpPanel({
                     <select
                       value={editData.algorithm ?? 'sha1'}
                       onChange={(e) => setEditData(d => ({ ...d, algorithm: e.target.value as TOTPConfig['algorithm'] }))}
-                      className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+                      className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                     >
                       <option value="sha1">SHA-1</option>
                       <option value="sha256">SHA-256</option>
@@ -551,10 +551,10 @@ export default function RDPTotpPanel({
                     </select>
                   </div>
                   <div className="flex justify-end space-x-2">
-                    <button onClick={cancelEdit} className="px-2 py-1 text-[10px] text-gray-400 hover:text-white">
+                    <button onClick={cancelEdit} className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
                       Cancel
                     </button>
-                    <button onClick={saveEdit} className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-white rounded">
+                    <button onClick={saveEdit} className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded">
                       Save
                     </button>
                   </div>
@@ -564,10 +564,10 @@ export default function RDPTotpPanel({
 
             return (
               <div key={cfg.secret}>
-                <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700/50 hover:bg-gray-700/30">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)]/50 hover:bg-[var(--color-border)]/30">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-1">
-                      <span className="text-[10px] text-gray-400 truncate">{cfg.account}</span>
+                      <span className="text-[10px] text-[var(--color-textSecondary)] truncate">{cfg.account}</span>
                       <span className="text-[10px] text-gray-600">({cfg.issuer})</span>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -575,7 +575,7 @@ export default function RDPTotpPanel({
                         {codes[cfg.secret] || '------'}
                       </span>
                       <div className="flex items-center space-x-1">
-                        <div className="w-12 h-1 bg-gray-700 rounded-full overflow-hidden">
+                        <div className="w-12 h-1 bg-[var(--color-border)] rounded-full overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all duration-1000 ${
                               remaining <= 5 ? 'bg-red-500' : 'bg-blue-500'
@@ -606,7 +606,7 @@ export default function RDPTotpPanel({
                           const code = codes[cfg.secret];
                           if (code) onAutoType(code);
                         }}
-                        className="p-1 hover:bg-gray-600 rounded text-gray-400 hover:text-white transition-colors"
+                        className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                         title="Type code into RDP session"
                       >
                         <Keyboard size={12} />
@@ -615,7 +615,7 @@ export default function RDPTotpPanel({
                     {/* Copy code */}
                     <button
                       onClick={() => copyCode(cfg.secret)}
-                      className="p-1 hover:bg-gray-600 rounded text-gray-400 hover:text-white transition-colors"
+                      className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                       title="Copy code"
                     >
                       {copiedSecret === cfg.secret ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
@@ -623,7 +623,7 @@ export default function RDPTotpPanel({
                     {/* Reveal secret */}
                     <button
                       onClick={() => toggleReveal(cfg.secret)}
-                      className="p-1 hover:bg-gray-600 rounded text-gray-400 hover:text-white transition-colors"
+                      className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                       title={isRevealed ? 'Hide secret' : 'Show secret'}
                     >
                       {isRevealed ? <EyeOff size={12} /> : <Eye size={12} />}
@@ -637,7 +637,7 @@ export default function RDPTotpPanel({
                           generateBackup(cfg.secret);
                         }
                       }}
-                      className="p-1 hover:bg-gray-600 rounded text-gray-400 hover:text-white transition-colors"
+                      className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                       title="Backup codes"
                     >
                       <KeyRound size={12} />
@@ -645,7 +645,7 @@ export default function RDPTotpPanel({
                     {/* Edit */}
                     <button
                       onClick={() => startEdit(cfg)}
-                      className="p-1 hover:bg-gray-600 rounded text-gray-400 hover:text-white transition-colors"
+                      className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                       title="Edit"
                     >
                       <Pencil size={12} />
@@ -653,7 +653,7 @@ export default function RDPTotpPanel({
                     {/* Delete */}
                     <button
                       onClick={() => handleDelete(cfg.secret)}
-                      className="p-1 hover:bg-gray-600 rounded text-red-400 hover:text-red-300 transition-colors"
+                      className="p-1 hover:bg-[var(--color-border)] rounded text-red-400 hover:text-red-300 transition-colors"
                       title="Remove"
                     >
                       <Trash2 size={12} />

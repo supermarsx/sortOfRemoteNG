@@ -162,7 +162,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
     if (statuses.every(s => s === 'success')) {
       return <CheckCircle className="w-4 h-4 text-green-400" />;
     }
-    return <Cloud className="w-4 h-4 text-gray-400" />;
+    return <Cloud className="w-4 h-4 text-[var(--color-textSecondary)]" />;
   };
 
   // Compute overall backup status
@@ -181,7 +181,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
     if (backupStatus.lastBackupStatus === 'success') {
       return <CheckCircle className="w-4 h-4 text-green-400" />;
     }
-    return <HardDrive className="w-4 h-4 text-gray-400" />;
+    return <HardDrive className="w-4 h-4 text-[var(--color-textSecondary)]" />;
   };
 
   const handleSyncAll = async () => {
@@ -230,7 +230,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
       {/* Compact Status Button */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-gray-700/50 transition-colors"
+        className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[var(--color-border)]/50 transition-colors"
         title={t('syncBackup.statusBarTitle', 'Sync & Backup Status')}
       >
         <div className="flex items-center gap-1">
@@ -238,9 +238,9 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
           {getBackupStatusIcon()}
         </div>
         {isExpanded ? (
-          <ChevronUp className="w-3 h-3 text-gray-400" />
+          <ChevronUp className="w-3 h-3 text-[var(--color-textSecondary)]" />
         ) : (
-          <ChevronDown className="w-3 h-3 text-gray-400" />
+          <ChevronDown className="w-3 h-3 text-[var(--color-textSecondary)]" />
         )}
       </button>
 
@@ -258,24 +258,24 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
               el.style.left = `${left}px`;
             }
           }}
-          className="fixed w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-xl"
+          className="fixed w-80 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl"
           style={{ zIndex: 9999 }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--color-border)]">
             <h3 className="font-semibold text-sm text-gray-200">
               {t('syncBackup.title', 'Sync & Backup')}
             </h3>
             <button
               onClick={() => setIsExpanded(false)}
-              className="p-1 rounded hover:bg-gray-700"
+              className="p-1 rounded hover:bg-[var(--color-border)]"
             >
-              <X className="w-4 h-4 text-gray-400" />
+              <X className="w-4 h-4 text-[var(--color-textSecondary)]" />
             </button>
           </div>
 
           {/* Cloud Sync Section */}
-          <div className="p-4 border-b border-gray-700">
+          <div className="p-4 border-b border-[var(--color-border)]">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <Cloud className="w-4 h-4 text-blue-400" />
@@ -323,9 +323,9 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
                           <AlertCircle className="w-3 h-3 text-yellow-400" />
                         )}
                         {!status?.lastSyncStatus && (
-                          <Clock className="w-3 h-3 text-gray-400" />
+                          <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />
                         )}
-                        <span className="text-xs text-gray-300">
+                        <span className="text-xs text-[var(--color-textSecondary)]">
                           {PROVIDER_NAMES[provider]}
                         </span>
                       </div>
@@ -336,10 +336,10 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
                         <button
                           onClick={() => handleSyncProvider(provider)}
                           disabled={isSyncing}
-                          className="p-1 hover:bg-gray-700 rounded"
+                          className="p-1 hover:bg-[var(--color-border)] rounded"
                           title={t('syncBackup.syncProvider', 'Sync {{provider}}', { provider: PROVIDER_NAMES[provider] })}
                         >
-                          <RefreshCw className="w-3 h-3 text-gray-400" />
+                          <RefreshCw className="w-3 h-3 text-[var(--color-textSecondary)]" />
                         </button>
                       </div>
                     </div>
@@ -385,7 +385,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
               <div className="space-y-2">
                 {/* Last Backup */}
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-400">
+                  <span className="text-[var(--color-textSecondary)]">
                     {t('syncBackup.lastBackup', 'Last backup')}:
                   </span>
                   <div className="flex items-center gap-2">
@@ -395,7 +395,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
                     {backupStatus.lastBackupStatus === 'failed' && (
                       <AlertCircle className="w-3 h-3 text-red-400" />
                     )}
-                    <span className="text-gray-300">
+                    <span className="text-[var(--color-textSecondary)]">
                       {formatRelativeTime(backupStatus.lastBackupTime)}
                     </span>
                   </div>
@@ -403,17 +403,17 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
 
                 {/* Next Scheduled */}
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-gray-400">
+                  <span className="text-[var(--color-textSecondary)]">
                     {t('syncBackup.nextBackup', 'Next backup')}:
                   </span>
-                  <div className="flex items-center gap-1 text-gray-300">
+                  <div className="flex items-center gap-1 text-[var(--color-textSecondary)]">
                     <Timer className="w-3 h-3 text-gray-500" />
                     {formatNextTime(backupStatus.nextScheduledTime)}
                   </div>
                 </div>
 
                 {/* Stats */}
-                <div className="flex items-center justify-between text-xs pt-2 border-t border-gray-700">
+                <div className="flex items-center justify-between text-xs pt-2 border-t border-[var(--color-border)]">
                   <span className="text-gray-500">
                     {backupStatus.backupCount} {t('syncBackup.backups', 'backups')}
                   </span>
@@ -439,7 +439,7 @@ export const SyncBackupStatusBar: React.FC<SyncBackupStatusBarProps> = ({
           </div>
 
           {/* Footer */}
-          <div className="px-4 py-2 border-t border-gray-700">
+          <div className="px-4 py-2 border-t border-[var(--color-border)]">
             <button
               onClick={onOpenSettings}
               className="w-full text-center text-xs text-blue-400 hover:text-blue-300"

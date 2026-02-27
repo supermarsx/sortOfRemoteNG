@@ -91,11 +91,11 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
   return (
     <>
       <div className="md:col-span-2">
-        <label className="block text-sm font-medium text-gray-300 mb-2">Authentication Type</label>
+        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Authentication Type</label>
         <select
           value={formData.authType ?? 'basic'}
           onChange={(e) => setFormData({ ...formData, authType: e.target.value as any })}
-          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         >
           <option value="basic">Basic Authentication</option>
           <option value="header">Custom Headers</option>
@@ -105,33 +105,33 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
       {formData.authType === 'basic' && (
         <>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Basic Auth Username</label>
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Basic Auth Username</label>
             <input
               type="text"
               value={formData.basicAuthUsername || ''}
               onChange={(e) => setFormData({ ...formData, basicAuthUsername: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Username"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">Basic Auth Password</label>
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Basic Auth Password</label>
             <PasswordInput
               value={formData.basicAuthPassword || ''}
               onChange={(e) => setFormData({ ...formData, basicAuthPassword: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Password"
             />
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-300 mb-2">Realm (Optional)</label>
+            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Realm (Optional)</label>
             <input
               type="text"
               value={formData.basicAuthRealm || ''}
               onChange={(e) => setFormData({ ...formData, basicAuthRealm: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Authentication realm"
             />
           </div>
@@ -140,14 +140,14 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
 
       {isHttps && (
         <div className="md:col-span-2">
-          <label className="flex items-center space-x-2 text-sm text-gray-300">
+          <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)]">
             <input
               type="checkbox"
               checked={formData.httpVerifySsl ?? true}
               onChange={(e) =>
                 setFormData({ ...formData, httpVerifySsl: e.target.checked })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 focus:ring-blue-500"
             />
             <span>Verify TLS certificates</span>
           </label>
@@ -172,7 +172,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
 
       {isHttps && (
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
             Certificate Trust Policy
           </label>
           <select
@@ -183,7 +183,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                 tlsTrustPolicy: e.target.value === '' ? undefined : (e.target.value as 'tofu' | 'always-ask' | 'always-trust' | 'strict'),
               })
             }
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:ring-2 focus:ring-blue-500 text-sm"
           >
             <option value="">Use global default</option>
             <option value="tofu">Trust On First Use (TOFU)</option>
@@ -201,7 +201,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
             return (
               <div className="mt-3">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
                     <Lock size={14} className="text-green-400" />
                     Stored Certificates ({records.length})
                   </label>
@@ -220,10 +220,10 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                   {records.map((record, i) => {
                     const [host, portStr] = record.host.split(':');
                     return (
-                      <div key={i} className="flex items-center gap-2 bg-gray-700/50 border border-gray-600/50 rounded px-3 py-1.5 text-xs">
+                      <div key={i} className="flex items-center gap-2 bg-[var(--color-border)]/50 border border-[var(--color-border)]/50 rounded px-3 py-1.5 text-xs">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <p className="text-gray-300 truncate">{record.nickname || record.host}</p>
+                            <p className="text-[var(--color-textSecondary)] truncate">{record.nickname || record.host}</p>
                             {record.nickname && <p className="text-gray-500 truncate">({record.host})</p>}
                           </div>
                           <p className="font-mono text-gray-500 truncate">{formatFingerprint(record.identity.fingerprint)}</p>
@@ -252,7 +252,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
 
       {formData.authType === 'header' && (
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Custom HTTP Headers</label>
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Custom HTTP Headers</label>
           <div className="space-y-2">
             {Object.entries(formData.httpHeaders || {}).map(([key, value]) => (
               <div key={key} className="flex items-center space-x-2">
@@ -260,18 +260,18 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                   type="text"
                   value={key}
                   readOnly
-                  className="flex-1 px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                  className="flex-1 px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                 />
                 <input
                   type="text"
                   value={value}
                   onChange={(e) => setFormData({ ...formData, httpHeaders: { ...(formData.httpHeaders || {}), [key]: e.target.value } })}
-                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  className="flex-1 px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                 />
                 <button
                   type="button"
                   onClick={() => removeHttpHeader(key)}
-                  className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors"
+                  className="px-3 py-2 bg-red-600 hover:bg-red-700 text-[var(--color-text)] rounded-md transition-colors"
                 >
                   Remove
                 </button>
@@ -280,7 +280,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
             <button
               type="button"
               onClick={() => setShowAddHeader(true)}
-              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
             >
               Add Header
             </button>
@@ -291,7 +291,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
       {/* Bookmarks / Favorites */}
       <div className="md:col-span-2">
         <div className="flex items-center justify-between mb-2">
-          <label className="block text-sm font-medium text-gray-300 flex items-center gap-1.5">
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
             <Star size={14} className="text-yellow-400" />
             Bookmarks ({(formData.httpBookmarks || []).length})
           </label>
@@ -317,7 +317,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
             {(formData.httpBookmarks || []).map((bm, idx) => (
               <div
                 key={idx}
-                className="flex items-center gap-2 bg-gray-700/50 border border-gray-600/50 rounded px-3 py-1.5 text-xs group"
+                className="flex items-center gap-2 bg-[var(--color-border)]/50 border border-[var(--color-border)]/50 rounded px-3 py-1.5 text-xs group"
               >
                 {bm.isFolder ? (
                   <FolderOpen size={12} className="text-blue-400/70 flex-shrink-0" />
@@ -341,7 +341,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                         [bookmarks[idx - 1], bookmarks[idx]] = [bookmarks[idx], bookmarks[idx - 1]];
                         setFormData({ ...formData, httpBookmarks: bookmarks });
                       }}
-                      className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors"
+                      className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5 transition-colors"
                       title="Move up"
                     >
                       <ArrowUp size={12} />
@@ -355,7 +355,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                         [bookmarks[idx], bookmarks[idx + 1]] = [bookmarks[idx + 1], bookmarks[idx]];
                         setFormData({ ...formData, httpBookmarks: bookmarks });
                       }}
-                      className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors"
+                      className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5 transition-colors"
                       title="Move down"
                     >
                       <ArrowDown size={12} />
@@ -370,7 +370,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                         setEditingBookmarkIdx(idx);
                         setShowAddBookmark(true);
                       }}
-                      className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors"
+                      className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5 transition-colors"
                       title="Edit"
                     >
                       <Pencil size={12} />
@@ -405,15 +405,15 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
             if (e.key === 'Escape') setShowAddBookmark(false);
           }}
         >
-          <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
-            <div className="relative h-12 border-b border-gray-700">
-              <h2 className="absolute left-5 top-3 text-sm font-semibold text-white">
+          <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4 relative">
+            <div className="relative h-12 border-b border-[var(--color-border)]">
+              <h2 className="absolute left-5 top-3 text-sm font-semibold text-[var(--color-text)]">
                 {editingBookmarkIdx !== null ? 'Edit Bookmark' : 'Add Bookmark'}
               </h2>
               <button
                 type="button"
                 onClick={() => setShowAddBookmark(false)}
-                className="absolute right-3 top-2 text-gray-400 hover:text-white transition-colors"
+                className="absolute right-3 top-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                 aria-label="Close"
               >
                 <X size={18} />
@@ -421,7 +421,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Name</label>
+                <label className="block text-sm text-[var(--color-textSecondary)] mb-2">Name</label>
                 <input
                   ref={bookmarkNameRef}
                   type="text"
@@ -433,12 +433,12 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                       handleSaveBookmark();
                     }
                   }}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g. Status Page"
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Path</label>
+                <label className="block text-sm text-[var(--color-textSecondary)] mb-2">Path</label>
                 <input
                   type="text"
                   value={bookmarkPath}
@@ -449,7 +449,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                       handleSaveBookmark();
                     }
                   }}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g. /status-log.asp"
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -460,14 +460,14 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                 <button
                   type="button"
                   onClick={() => setShowAddBookmark(false)}
-                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
+                  className="px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-md transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleSaveBookmark}
-                  className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+                  className="px-4 py-2 text-[var(--color-text)] bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
                 >
                   {editingBookmarkIdx !== null ? 'Save' : 'Add'}
                 </button>
@@ -488,15 +488,15 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
             if (e.key === 'Escape') setShowAddHeader(false);
           }}
         >
-          <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
-            <div className="relative h-12 border-b border-gray-700">
-              <h2 className="absolute left-5 top-3 text-sm font-semibold text-white">
+          <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4 relative">
+            <div className="relative h-12 border-b border-[var(--color-border)]">
+              <h2 className="absolute left-5 top-3 text-sm font-semibold text-[var(--color-text)]">
                 Add HTTP Header
               </h2>
               <button
                 type="button"
                 onClick={() => setShowAddHeader(false)}
-                className="absolute right-3 top-2 text-gray-400 hover:text-white transition-colors"
+                className="absolute right-3 top-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                 aria-label="Close"
               >
                 <X size={18} />
@@ -504,7 +504,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Header Name</label>
+                <label className="block text-sm text-[var(--color-textSecondary)] mb-2">Header Name</label>
                 <input
                   ref={headerNameRef}
                   type="text"
@@ -516,12 +516,12 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                       handleAddHeader();
                     }
                   }}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g. Authorization"
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-400 mb-2">Header Value</label>
+                <label className="block text-sm text-[var(--color-textSecondary)] mb-2">Header Value</label>
                 <input
                   type="text"
                   value={headerValue}
@@ -532,7 +532,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                       handleAddHeader();
                     }
                   }}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g. Bearer token123"
                 />
               </div>
@@ -540,14 +540,14 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({ formData, setFormData 
                 <button
                   type="button"
                   onClick={() => setShowAddHeader(false)}
-                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
+                  className="px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-md transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleAddHeader}
-                  className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+                  className="px-4 py-2 text-[var(--color-text)] bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
                 >
                   Add
                 </button>
@@ -586,7 +586,7 @@ function NicknameEditButton({ record, connectionId, onSaved }: { record: TrustRe
           onSaved();
         }}
         placeholder="Nickname…"
-        className="w-24 px-1.5 py-0.5 bg-gray-700 border border-gray-600 rounded text-gray-200 placeholder-gray-500 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="w-24 px-1.5 py-0.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-gray-200 placeholder-gray-500 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
       />
     );
   }
@@ -594,7 +594,7 @@ function NicknameEditButton({ record, connectionId, onSaved }: { record: TrustRe
     <button
       type="button"
       onClick={() => { setDraft(record.nickname ?? ''); setEditing(true); }}
-      className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors flex-shrink-0"
+      className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5 transition-colors flex-shrink-0"
       title={record.nickname ? `Nickname: ${record.nickname}` : 'Add nickname'}
     >
       <Pencil size={10} />

@@ -253,7 +253,7 @@ function buildDiagnostics(category: ErrorCategory): DiagnosticCause[] {
     case 'network':
       return [
         {
-          icon: <Network size={20} className="text-gray-400" />,
+          icon: <Network size={20} className="text-[var(--color-textSecondary)]" />,
           title: 'Network connectivity issue',
           description: 'Could not establish a TCP connection to the target host.',
           remediation: [
@@ -270,7 +270,7 @@ function buildDiagnostics(category: ErrorCategory): DiagnosticCause[] {
     default:
       return [
         {
-          icon: <ServerCrash size={20} className="text-gray-400" />,
+          icon: <ServerCrash size={20} className="text-[var(--color-textSecondary)]" />,
           title: 'Unexpected connection failure',
           description: 'The connection failed for an unrecognised reason. See the full error below for details.',
           remediation: [
@@ -413,7 +413,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
             <h2 className="text-lg font-semibold text-red-300">
               RDP Connection Failed
             </h2>
-            <p className="text-sm text-gray-400 mt-1 truncate">
+            <p className="text-sm text-[var(--color-textSecondary)] mt-1 truncate">
               {hostname} &mdash; {CATEGORY_LABELS[category]}
             </p>
             <p className="text-xs text-gray-500 mt-1 font-mono">
@@ -429,7 +429,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
 
           {/* ── Diagnostic causes (accordion) ──────────────────────── */}
           <section>
-            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider mb-3 flex items-center gap-2">
               <Info size={14} />
               Probable Causes &amp; Fixes
             </h3>
@@ -441,8 +441,8 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
                     key={idx}
                     className={`rounded-lg border transition-colors ${
                       isOpen
-                        ? 'border-gray-600 bg-gray-900/80'
-                        : 'border-gray-800 bg-gray-900/40 hover:border-gray-700'
+                        ? 'border-[var(--color-border)] bg-[var(--color-background)]/80'
+                        : 'border-[var(--color-border)] bg-[var(--color-background)]/40 hover:border-[var(--color-border)]'
                     }`}
                   >
                     {/* accordion header */}
@@ -460,7 +460,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
                             ? 'bg-red-900/60 text-red-300'
                             : cause.severity === 'medium'
                             ? 'bg-yellow-900/60 text-yellow-300'
-                            : 'bg-gray-800 text-gray-400'
+                            : 'bg-[var(--color-surface)] text-[var(--color-textSecondary)]'
                         }`}
                       >
                         {cause.severity}
@@ -475,7 +475,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
                     {/* accordion body */}
                     {isOpen && (
                       <div className="px-4 pb-4 space-y-3">
-                        <p className="text-sm text-gray-400 leading-relaxed">
+                        <p className="text-sm text-[var(--color-textSecondary)] leading-relaxed">
                           {cause.description}
                         </p>
                         <div className="space-y-2">
@@ -486,7 +486,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
                             {cause.remediation.map((step, si) => (
                               <li
                                 key={si}
-                                className="flex items-start gap-2 text-sm text-gray-300"
+                                className="flex items-start gap-2 text-sm text-[var(--color-textSecondary)]"
                               >
                                 <span className="text-gray-600 select-none">
                                   {si + 1}.
@@ -509,7 +509,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
             {onRetry && (
               <button
                 onClick={onRetry}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-sm font-medium transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-600 text-[var(--color-text)] text-sm font-medium transition-colors"
               >
                 <RefreshCw size={14} />
                 Retry Connection
@@ -518,7 +518,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
             {onEditConnection && (
               <button
                 onClick={onEditConnection}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm font-medium transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200 text-sm font-medium transition-colors"
               >
                 <Terminal size={14} />
                 Edit Connection Settings
@@ -528,7 +528,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
               <button
                 onClick={runDeepDiagnostics}
                 disabled={isRunningDiagnostics}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-700 hover:bg-purple-600 disabled:bg-purple-900 disabled:opacity-60 text-white text-sm font-medium transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-700 hover:bg-purple-600 disabled:bg-purple-900 disabled:opacity-60 text-[var(--color-text)] text-sm font-medium transition-colors"
               >
                 {isRunningDiagnostics ? (
                   <Loader2 size={14} className="animate-spin" />
@@ -540,7 +540,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
             )}
             <button
               onClick={handleCopy}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium transition-colors"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--color-surface)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] text-sm font-medium transition-colors"
             >
               {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
               {copied ? 'Copied!' : 'Copy Error'}
@@ -549,7 +549,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
 
           {/* ── Deep Diagnostics Report ────────────────────────────── */}
           {(diagnosticReport || diagnosticError) && (
-            <section className="rounded-lg border border-purple-800/60 bg-gray-900/60 overflow-hidden">
+            <section className="rounded-lg border border-purple-800/60 bg-[var(--color-background)]/60 overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-3 bg-purple-950/40 border-b border-purple-800/40">
                 <Microscope size={16} className="text-purple-400" />
                 <h3 className="text-sm font-semibold text-purple-300">Deep Diagnostics Report</h3>
@@ -569,7 +569,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
               )}
 
               {diagnosticReport && (
-                <div className="divide-y divide-gray-800/60">
+                <div className="divide-y divide-[var(--color-border)]/60">
                   {/* Step-by-step results */}
                   {diagnosticReport.steps.map((step, idx) => {
                     const isExpanded = expandedStep === idx;
@@ -577,7 +577,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
                       <div key={idx}>
                         <button
                           onClick={() => setExpandedStep(p => p === idx ? null : idx)}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-800/40 transition-colors"
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[var(--color-surface)]/40 transition-colors"
                         >
                           {STEP_ICON[step.status] ?? STEP_ICON.skip}
                           <span className="flex-1 text-sm text-gray-200">{step.name}</span>
@@ -600,7 +600,7 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
                         {/* detail (expanded) */}
                         {isExpanded && step.detail && (
                           <div className="px-4 pb-3 pl-11">
-                            <pre className="text-xs text-gray-400 whitespace-pre-wrap bg-gray-950/60 border border-gray-800 rounded p-2 mt-1">
+                            <pre className="text-xs text-[var(--color-textSecondary)] whitespace-pre-wrap bg-gray-950/60 border border-[var(--color-border)] rounded p-2 mt-1">
                               {step.detail}
                             </pre>
                           </div>
@@ -611,8 +611,8 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
 
                   {/* Summary */}
                   <div className="px-4 py-3 space-y-2">
-                    <p className="text-sm text-gray-300">
-                      <span className="font-semibold text-gray-400">Summary: </span>
+                    <p className="text-sm text-[var(--color-textSecondary)]">
+                      <span className="font-semibold text-[var(--color-textSecondary)]">Summary: </span>
                       {diagnosticReport.summary}
                     </p>
                     {diagnosticReport.rootCauseHint && (
@@ -639,11 +639,11 @@ const RdpErrorScreen: React.FC<RdpErrorScreenProps> = ({
                 <ShieldAlert size={16} />
                 CredSSP Quick-Fix Commands
               </h4>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-[var(--color-textSecondary)]">
                 Run these on the <em>target server</em> in an elevated PowerShell to temporarily allow
                 connections while you investigate:
               </p>
-              <pre className="text-xs bg-gray-950 border border-gray-800 rounded p-3 overflow-x-auto text-green-300 select-all">
+              <pre className="text-xs bg-gray-950 border border-[var(--color-border)] rounded p-3 overflow-x-auto text-green-300 select-all">
 {`# Allow unpatched clients temporarily (revert after testing)
 reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\CredSSP\\Parameters" ^
   /v AllowEncryptionOracle /t REG_DWORD /d 2 /f
@@ -689,13 +689,13 @@ reg add "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\C
           <section>
             <button
               onClick={() => setShowRawError(p => !p)}
-              className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-400 transition-colors"
+              className="flex items-center gap-2 text-xs text-gray-500 hover:text-[var(--color-textSecondary)] transition-colors"
             >
               {showRawError ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               {showRawError ? 'Hide' : 'Show'} full error details
             </button>
             {showRawError && (
-              <pre className="mt-2 text-xs bg-gray-900 border border-gray-800 rounded p-4 whitespace-pre-wrap break-all text-gray-400 max-h-48 overflow-y-auto font-mono">
+              <pre className="mt-2 text-xs bg-[var(--color-background)] border border-[var(--color-border)] rounded p-4 whitespace-pre-wrap break-all text-[var(--color-textSecondary)] max-h-48 overflow-y-auto font-mono">
                 {errorMessage}
               </pre>
             )}

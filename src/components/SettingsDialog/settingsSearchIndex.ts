@@ -70,16 +70,17 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   { key: 'mouseForwardAction', label: 'Mouse Forward Button', description: 'Action for mouse forward button', tags: ['mouse', 'forward', 'button', 'navigate'], section: 'behavior', sectionLabel: 'Behavior' },
 
   // Tool Display Modes
-  { key: 'toolDisplayModes.recordingManager', label: 'Recording Manager Display', description: 'Open Recording Manager as popup or panel', tags: ['recording', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
-  { key: 'toolDisplayModes.macroManager', label: 'Macro Manager Display', description: 'Open Macro Manager as popup or panel', tags: ['macro', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
-  { key: 'toolDisplayModes.scriptManager', label: 'Script Manager Display', description: 'Open Script Manager as popup or panel', tags: ['script', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
-  { key: 'toolDisplayModes.performanceMonitor', label: 'Performance Monitor Display', description: 'Open Performance Monitor as popup or panel', tags: ['performance', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
-  { key: 'toolDisplayModes.actionLog', label: 'Action Log Display', description: 'Open Action Log as popup or panel', tags: ['action', 'log', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
-  { key: 'toolDisplayModes.shortcutManager', label: 'Shortcut Manager Display', description: 'Open Shortcut Manager as popup or panel', tags: ['shortcut', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
-  { key: 'toolDisplayModes.bulkSsh', label: 'Bulk SSH Display', description: 'Open Bulk SSH Commander as popup or panel', tags: ['bulk', 'ssh', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
-  { key: 'toolDisplayModes.internalProxy', label: 'Internal Proxy Display', description: 'Open Internal Proxy Manager as popup or panel', tags: ['proxy', 'internal', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
-  { key: 'toolDisplayModes.proxyChain', label: 'Proxy Chain Display', description: 'Open Proxy Chain Menu as popup or panel', tags: ['proxy', 'chain', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
-  { key: 'toolDisplayModes.wol', label: 'Wake-on-LAN Display', description: 'Open Wake-on-LAN as popup or panel', tags: ['wol', 'wake', 'lan', 'popup', 'panel', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.globalDefault', label: 'Global Tool Display Mode', description: 'Default display mode for all tools (popup or tab)', tags: ['global', 'default', 'popup', 'tab', 'display', 'mode', 'tool', 'inherit'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.recordingManager', label: 'Recording Manager Display', description: 'Open Recording Manager as popup or tab', tags: ['recording', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.macroManager', label: 'Macro Manager Display', description: 'Open Macro Manager as popup or tab', tags: ['macro', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.scriptManager', label: 'Script Manager Display', description: 'Open Script Manager as popup or tab', tags: ['script', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.performanceMonitor', label: 'Performance Monitor Display', description: 'Open Performance Monitor as popup or tab', tags: ['performance', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.actionLog', label: 'Action Log Display', description: 'Open Action Log as popup or tab', tags: ['action', 'log', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.shortcutManager', label: 'Shortcut Manager Display', description: 'Open Shortcut Manager as popup or tab', tags: ['shortcut', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.bulkSsh', label: 'Bulk SSH Display', description: 'Open Bulk SSH Commander as popup or tab', tags: ['bulk', 'ssh', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.internalProxy', label: 'Internal Proxy Display', description: 'Open Internal Proxy Manager as popup or tab', tags: ['proxy', 'internal', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.proxyChain', label: 'Proxy Chain Display', description: 'Open Proxy Chain Menu as popup or tab', tags: ['proxy', 'chain', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
+  { key: 'toolDisplayModes.wol', label: 'Wake-on-LAN Display', description: 'Open Wake-on-LAN as popup or tab', tags: ['wol', 'wake', 'lan', 'popup', 'tab', 'display', 'mode', 'tool'], section: 'behavior', sectionLabel: 'Behavior' },
 
   // ─── Startup ────────────────────────────────────────────────────
   { key: 'startMinimized', label: 'Start Minimized', description: 'Start application minimized', tags: ['minimize', 'hidden', 'tray'], section: 'startup', sectionLabel: 'Startup' },
@@ -107,7 +108,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchEntry[] = [
   // ─── Layout ─────────────────────────────────────────────────────
   { key: 'persistWindowSize', label: 'Persist Window Size', description: 'Remember window size', tags: ['window', 'size', 'remember'], section: 'layout', sectionLabel: 'Layout' },
   { key: 'persistWindowPosition', label: 'Persist Window Position', description: 'Remember window position', tags: ['window', 'position', 'remember'], section: 'layout', sectionLabel: 'Layout' },
-  { key: 'persistSidebarWidth', label: 'Persist Sidebar Width', description: 'Remember sidebar width', tags: ['sidebar', 'width', 'panel'], section: 'layout', sectionLabel: 'Layout' },
+  { key: 'persistSidebarWidth', label: 'Persist Sidebar Width', description: 'Remember sidebar width', tags: ['sidebar', 'width', 'tab'], section: 'layout', sectionLabel: 'Layout' },
   { key: 'enableTabReorder', label: 'Tab Reorder', description: 'Allow drag-to-reorder tabs', tags: ['tabs', 'drag', 'reorder', 'sort'], section: 'layout', sectionLabel: 'Layout' },
   { key: 'showQuickConnectIcon', label: 'Quick Connect Icon', description: 'Show quick connect in toolbar', tags: ['toolbar', 'icon', 'quick connect'], section: 'layout', sectionLabel: 'Layout' },
   { key: 'showSettingsIcon', label: 'Settings Icon', description: 'Show settings in toolbar', tags: ['toolbar', 'icon', 'settings'], section: 'layout', sectionLabel: 'Layout' },

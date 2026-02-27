@@ -46,15 +46,15 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         if (e.target === e.currentTarget && onCancel) onCancel();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
-        <div className="relative h-12 border-b border-gray-700">
-          <h2 className="absolute left-5 top-3 text-sm font-semibold text-white">
+      <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4 relative">
+        <div className="relative h-12 border-b border-[var(--color-border)]">
+          <h2 className="absolute left-5 top-3 text-sm font-semibold text-[var(--color-text)]">
             {title}
           </h2>
           {onCancel && (
             <button
               onClick={onCancel}
-              className="absolute right-3 top-2 text-gray-400 hover:text-white transition-colors"
+              className="absolute right-3 top-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
               aria-label="Close"
             >
               <X size={18} />
@@ -62,19 +62,19 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           )}
         </div>
         <div className="p-6">
-          <p className="text-white mb-6">{message}</p>
+          <p className="text-[var(--color-text)] mb-6">{message}</p>
           <div className="flex justify-end space-x-3">
             {onCancel && (
               <button
                 onClick={onCancel}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
+                className="px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-md transition-colors"
               >
                 {cancelText}
               </button>
             )}
             <button
               onClick={onConfirm}
-              className={`px-4 py-2 text-white rounded-md transition-colors ${
+              className={`px-4 py-2 text-[var(--color-text)] rounded-md transition-colors ${
                 variant === 'danger'
                   ? 'bg-red-600 hover:bg-red-700'
                   : variant === 'warning'

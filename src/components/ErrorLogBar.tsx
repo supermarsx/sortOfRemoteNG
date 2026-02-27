@@ -32,14 +32,14 @@ const LEVEL_ICONS: Record<string, JSX.Element> = {
   error: <AlertCircle className="text-red-400" size={14} />,
   warn: <AlertTriangle className="text-yellow-400" size={14} />,
   info: <Info className="text-blue-400" size={14} />,
-  debug: <Bug className="text-gray-400" size={14} />,
+  debug: <Bug className="text-[var(--color-textSecondary)]" size={14} />,
 };
 
 const LEVEL_COLORS: Record<string, string> = {
   error: "text-red-400 bg-red-900/20 border-red-800",
   warn: "text-yellow-400 bg-yellow-900/20 border-yellow-800",
   info: "text-blue-400 bg-blue-900/20 border-blue-800",
-  debug: "text-gray-400 bg-gray-800/50 border-gray-700",
+  debug: "text-[var(--color-textSecondary)] bg-[var(--color-surface)]/50 border-[var(--color-border)]",
 };
 
 export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
@@ -174,15 +174,15 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
   if (!isVisible) return null;
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-gray-900 border-t border-gray-700 shadow-lg">
+    <div className="fixed bottom-0 left-0 right-0 z-40 bg-[var(--color-background)] border-t border-[var(--color-border)] shadow-lg">
       {/* Header bar - always visible when error log is enabled */}
       <div
-        className="flex items-center justify-between px-4 py-2 bg-gray-800 cursor-pointer hover:bg-gray-750"
+        className="flex items-center justify-between px-4 py-2 bg-[var(--color-surface)] cursor-pointer hover:bg-gray-750"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <div className="flex items-center gap-3">
-          <Bug size={16} className="text-gray-400" />
-          <span className="text-sm font-medium text-gray-300">
+          <Bug size={16} className="text-[var(--color-textSecondary)]" />
+          <span className="text-sm font-medium text-[var(--color-textSecondary)]">
             {t("errorLog.title", "Error Log")}
           </span>
           {errorCount > 0 && (
@@ -202,7 +202,7 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
               e.stopPropagation();
               clearErrors();
             }}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+            className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors"
             title={t("errorLog.clear", "Clear all")}
           >
             <Trash2 size={14} />
@@ -212,15 +212,15 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
               e.stopPropagation();
               onToggle();
             }}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+            className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors"
             title={t("errorLog.hide", "Hide error log")}
           >
             <X size={14} />
           </button>
           {isExpanded ? (
-            <ChevronDown size={16} className="text-gray-400" />
+            <ChevronDown size={16} className="text-[var(--color-textSecondary)]" />
           ) : (
-            <ChevronUp size={16} className="text-gray-400" />
+            <ChevronUp size={16} className="text-[var(--color-textSecondary)]" />
           )}
         </div>
       </div>
@@ -233,12 +233,12 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
               {t("errorLog.noErrors", "No errors recorded")}
             </div>
           ) : (
-            <div className="divide-y divide-gray-800">
+            <div className="divide-y divide-[var(--color-border)]">
               {errors.map((entry) => (
                 <div
                   key={entry.id}
-                  className={`px-4 py-2 cursor-pointer hover:bg-gray-800/50 transition-colors ${
-                    selectedEntry?.id === entry.id ? "bg-gray-800" : ""
+                  className={`px-4 py-2 cursor-pointer hover:bg-[var(--color-surface)]/50 transition-colors ${
+                    selectedEntry?.id === entry.id ? "bg-[var(--color-surface)]" : ""
                   }`}
                   onClick={() =>
                     setSelectedEntry(selectedEntry?.id === entry.id ? null : entry)
@@ -263,13 +263,13 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
                             ? "text-red-300"
                             : entry.level === "warn"
                             ? "text-yellow-300"
-                            : "text-gray-300"
+                            : "text-[var(--color-textSecondary)]"
                         }`}
                       >
                         {entry.message}
                       </p>
                       {selectedEntry?.id === entry.id && entry.stack && (
-                        <pre className="mt-2 p-2 text-xs bg-gray-950 rounded overflow-x-auto text-gray-400 font-mono">
+                        <pre className="mt-2 p-2 text-xs bg-gray-950 rounded overflow-x-auto text-[var(--color-textSecondary)] font-mono">
                           {entry.stack}
                         </pre>
                       )}
@@ -279,7 +279,7 @@ export const ErrorLogBar: React.FC<ErrorLogBarProps> = ({
                         e.stopPropagation();
                         copyToClipboard(entry);
                       }}
-                      className="p-1 text-gray-500 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                      className="p-1 text-gray-500 hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors"
                       title={t("common.copy", "Copy")}
                     >
                       <Copy size={12} />

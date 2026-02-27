@@ -475,15 +475,15 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
-        <div className="sticky top-0 z-10 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+      <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
+        <div className="sticky top-0 z-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-500/20 rounded-lg">
               <Database size={20} className="text-blue-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">Collection Center</h2>
-              <p className="text-xs text-gray-400">Manage your connection collections</p>
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">Collection Center</h2>
+              <p className="text-xs text-[var(--color-textSecondary)]">Manage your connection collections</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
@@ -491,14 +491,14 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               <>
                 <button
                   onClick={() => setShowImportForm(true)}
-                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                  className="px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                 >
                   <Upload size={14} />
                   <span>Import</span>
                 </button>
                 <button
                   onClick={() => setShowCreateForm(true)}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                 >
                   <Plus size={14} />
                   <span>New</span>
@@ -509,14 +509,14 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               <>
                 <button
                   onClick={handleImportProxies}
-                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                  className="px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                 >
                   <Upload size={14} />
                   <span>Import</span>
                 </button>
                 <button
                   onClick={handleExportProxies}
-                  className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                  className="px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                 >
                   <Download size={14} />
                   <span>Export</span>
@@ -525,7 +525,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
             )}
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+              className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               title="Close"
             >
               <X size={18} />
@@ -534,13 +534,13 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
         </div>
 
         <div className="flex flex-1 min-h-0">
-          <div className="w-60 bg-gray-900 border-r border-gray-700 p-4 space-y-2">
+          <div className="w-60 bg-[var(--color-background)] border-r border-[var(--color-border)] p-4 space-y-2">
             <button
               onClick={() => setActiveTab('collections')}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
                 activeTab === 'collections'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
+                  ? 'bg-blue-600 text-[var(--color-text)]'
+                  : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
               }`}
             >
               <Database size={16} />
@@ -550,8 +550,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               onClick={() => setActiveTab('connections')}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
                 activeTab === 'connections'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
+                  ? 'bg-blue-600 text-[var(--color-text)]'
+                  : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
               }`}
             >
               <Layers size={16} />
@@ -561,8 +561,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               onClick={() => setActiveTab('proxies')}
               className={`w-full flex items-center space-x-2 px-3 py-2 rounded-md text-left transition-colors ${
                 activeTab === 'proxies'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-700'
+                  ? 'bg-blue-600 text-[var(--color-text)]'
+                  : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
               }`}
             >
               <Network size={16} />
@@ -576,8 +576,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                 <div className="space-y-6">
           {/* Create Collection Form */}
           {showCreateForm && (
-            <div className="bg-gray-700 rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-white mb-4">Create New Collection</h3>
+            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">Create New Collection</h3>
               
               {error && (
                 <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
@@ -587,26 +587,26 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Collection Name *
                   </label>
                   <input
                     type="text"
                     value={newCollection.name}
                     onChange={(e) => setNewCollection({ ...newCollection, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="My Connections"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Description
                   </label>
                   <textarea
                     value={newCollection.description}
                     onChange={(e) => setNewCollection({ ...newCollection, description: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white resize-none"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] resize-none"
                     rows={3}
                     placeholder="Optional description"
                   />
@@ -617,33 +617,33 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     type="checkbox"
                     checked={newCollection.isEncrypted}
                     onChange={(e) => setNewCollection({ ...newCollection, isEncrypted: e.target.checked })}
-                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                   />
-                  <span className="text-gray-300">Encrypt this collection</span>
+                  <span className="text-[var(--color-textSecondary)]">Encrypt this collection</span>
                 </label>
 
                 {newCollection.isEncrypted && (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                         Password *
                       </label>
                       <PasswordInput
                         value={newCollection.password}
                         onChange={(e) => setNewCollection({ ...newCollection, password: e.target.value })}
-                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                         placeholder="Enter password"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                         Confirm Password *
                       </label>
                       <PasswordInput
                         value={newCollection.confirmPassword}
                         onChange={(e) => setNewCollection({ ...newCollection, confirmPassword: e.target.value })}
-                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                         placeholder="Confirm password"
                       />
                     </div>
@@ -656,13 +656,13 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       setShowCreateForm(false);
                       setError('');
                     }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleCreateCollection}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Create Collection
                   </button>
@@ -673,8 +673,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
           {/* Password Dialog */}
           {showPasswordDialog && selectedCollection && (
-            <div className="bg-gray-700 rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-white mb-4">
+            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
                 Unlock Collection: {selectedCollection.name}
               </h3>
               
@@ -686,7 +686,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Password
                   </label>
                   <div className="relative">
@@ -695,13 +695,13 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-                      className="w-full px-3 py-2 pr-10 bg-gray-600 border border-gray-500 rounded-md text-white"
+                      className="w-full px-3 py-2 pr-10 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                       placeholder="Enter collection password"
                       autoFocus
                     />
                     <button
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -714,13 +714,13 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       setShowPasswordDialog(false);
                       setError('');
                     }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handlePasswordSubmit}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Unlock
                   </button>
@@ -731,8 +731,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
           {/* Export Collection Form */}
           {exportingCollection && (
-            <div className="bg-gray-700 rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-white mb-4">
+            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
                 Export Collection: {exportingCollection.name}
               </h3>
 
@@ -745,14 +745,14 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               <div className="space-y-4">
                 {exportingCollection.isEncrypted && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                       Collection Password
                     </label>
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={collectionPassword}
                       onChange={(e) => setCollectionPassword(e.target.value)}
-                      className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                      className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                       placeholder="Password"
                     />
                   </div>
@@ -763,20 +763,20 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     type="checkbox"
                     checked={includePasswords}
                     onChange={(e) => setIncludePasswords(e.target.checked)}
-                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                   />
-                  <span className="text-gray-300">Include passwords</span>
+                  <span className="text-[var(--color-textSecondary)]">Include passwords</span>
                 </label>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Export Password (optional)
                   </label>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={exportPassword}
                     onChange={(e) => setExportPassword(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="Encrypt export"
                   />
                 </div>
@@ -787,13 +787,13 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       setExportingCollection(null);
                       setError('');
                     }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleExportDownload}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                   >
                     <Download size={14} />
                     <span>Export</span>
@@ -805,8 +805,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
           {/* Import Collection Form */}
           {showImportForm && (
-            <div className="bg-gray-700 rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-white mb-4">Import Collection</h3>
+            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">Import Collection</h3>
 
               {error && (
                 <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
@@ -816,39 +816,39 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Collection File *
                   </label>
                   <input
                     type="file"
                     accept=".json"
                     onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Collection Name (optional)
                   </label>
                   <input
                     type="text"
                     value={importCollectionName}
                     onChange={(e) => setImportCollectionName(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="Leave blank to use the export name"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Import Password (if encrypted)
                   </label>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={importPassword}
                     onChange={(e) => setImportPassword(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="Password"
                   />
                 </div>
@@ -858,34 +858,34 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                     type="checkbox"
                     checked={encryptImport}
                     onChange={(e) => setEncryptImport(e.target.checked)}
-                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                   />
-                  <span className="text-gray-300">Encrypt imported collection</span>
+                  <span className="text-[var(--color-textSecondary)]">Encrypt imported collection</span>
                 </label>
 
                 {encryptImport && (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                         New Password
                       </label>
                       <input
                         type={showPassword ? 'text' : 'password'}
                         value={importEncryptPassword}
                         onChange={(e) => setImportEncryptPassword(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                         placeholder="New password"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                         Confirm Password
                       </label>
                       <input
                         type={showPassword ? 'text' : 'password'}
                         value={importEncryptConfirmPassword}
                         onChange={(e) => setImportEncryptConfirmPassword(e.target.value)}
-                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                         placeholder="Confirm password"
                       />
                     </div>
@@ -898,13 +898,13 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       setShowImportForm(false);
                       setError('');
                     }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleImportCollection}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                   >
                     <Upload size={14} />
                     <span>Import</span>
@@ -916,8 +916,8 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
           {/* Edit Collection Form */}
           {editingCollection && (
-            <div className="bg-gray-700 rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-white mb-4">Edit Collection</h3>
+            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">Edit Collection</h3>
 
               {error && (
                 <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
@@ -927,25 +927,25 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Collection Name *
                   </label>
                   <input
                     type="text"
                     value={editingCollection.name}
                     onChange={(e) => setEditingCollection({ ...editingCollection, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Description
                   </label>
                   <textarea
                     value={editingCollection.description || ''}
                     onChange={(e) => setEditingCollection({ ...editingCollection, description: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white resize-none"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] resize-none"
                     rows={3}
                   />
                 </div>
@@ -960,15 +960,15 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                         enableEncryption: e.target.checked,
                       }))
                     }
-                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                   />
-                  <span className="text-gray-300">Encrypt this collection</span>
+                  <span className="text-[var(--color-textSecondary)]">Encrypt this collection</span>
                 </label>
 
                 {(editingCollection.isEncrypted || editPassword.enableEncryption) && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                         Current Password
                       </label>
                       <input
@@ -980,12 +980,12 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                             current: e.target.value,
                           }))
                         }
-                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                         placeholder="Current password"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                         New Password
                       </label>
                       <input
@@ -997,12 +997,12 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                             next: e.target.value,
                           }))
                         }
-                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                         placeholder="New password"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                         Confirm Password
                       </label>
                       <input
@@ -1014,7 +1014,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                             confirm: e.target.value,
                           }))
                         }
-                        className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                        className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                         placeholder="Confirm password"
                       />
                     </div>
@@ -1022,7 +1022,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="w-full px-3 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors flex items-center justify-center space-x-2"
+                        className="w-full px-3 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors flex items-center justify-center space-x-2"
                       >
                         {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         <span>{showPassword ? 'Hide' : 'Show'}</span>
@@ -1034,13 +1034,13 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                 <div className="flex justify-end space-x-3">
                   <button
                     onClick={() => { setEditingCollection(null); setError(''); }}
-                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleUpdateCollection}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Update
                   </button>
@@ -1054,14 +1054,14 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
             {collections.length === 0 ? (
               <div className="text-center py-12">
                 <Database size={48} className="mx-auto text-gray-500 mb-4" />
-                <p className="text-gray-400 mb-2">No collections found</p>
+                <p className="text-[var(--color-textSecondary)] mb-2">No collections found</p>
                 <p className="text-gray-500 text-sm">Create your first connection collection to get started</p>
               </div>
             ) : (
               collections.map(collection => (
                 <div
                   key={collection.id}
-                  className="bg-gray-700/60 rounded-lg p-4 hover:bg-gray-600/80 hover:shadow-lg hover:shadow-blue-500/5 border border-transparent hover:border-gray-600 transition-all duration-200 cursor-pointer group"
+                  className="bg-[var(--color-border)]/60 rounded-lg p-4 hover:bg-[var(--color-border)]/80 hover:shadow-lg hover:shadow-blue-500/5 border border-transparent hover:border-[var(--color-border)] transition-all duration-200 cursor-pointer group"
                   onClick={() => handleSelectCollection(collection)}
                 >
                   <div className="flex items-center justify-between">
@@ -1073,9 +1073,9 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                         )}
                       </div>
                       <div>
-                        <h4 className="text-white font-medium group-hover:text-blue-100 transition-colors">{collection.name}</h4>
+                        <h4 className="text-[var(--color-text)] font-medium group-hover:text-blue-100 transition-colors">{collection.name}</h4>
                         {collection.description && (
-                          <p className="text-gray-400 text-sm">{collection.description}</p>
+                          <p className="text-[var(--color-textSecondary)] text-sm">{collection.description}</p>
                         )}
                         <p className="text-gray-500 text-xs">
                           Last accessed: {collection.lastAccessed.toLocaleDateString()}
@@ -1089,7 +1089,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                           e.stopPropagation();
                           handleExportCollection(collection);
                         }}
-                        className="p-2 hover:bg-gray-600 rounded transition-colors text-gray-400 hover:text-white"
+                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                         title="Export"
                       >
                         <Download size={16} />
@@ -1099,7 +1099,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                           e.stopPropagation();
                           handleEditCollection(collection);
                         }}
-                        className="p-2 hover:bg-gray-600 rounded transition-colors text-gray-400 hover:text-white"
+                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                         title="Edit"
                       >
                         <Edit size={16} />
@@ -1109,7 +1109,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                           e.stopPropagation();
                           handleDeleteCollection(collection);
                         }}
-                        className="p-2 hover:bg-gray-600 rounded transition-colors text-red-400 hover:text-red-300"
+                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-red-400 hover:text-red-300"
                         title="Delete"
                       >
                         <Trash2 size={16} />
@@ -1125,11 +1125,11 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
 
               {activeTab === 'connections' && (
                 <div className="space-y-6">
-                  <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
-                    <h3 className="text-lg font-medium text-white mb-2">
+                  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-4">
+                    <h3 className="text-lg font-medium text-[var(--color-text)] mb-2">
                       Connection Import / Export
                     </h3>
-                    <p className="text-sm text-gray-400 mb-4">
+                    <p className="text-sm text-[var(--color-textSecondary)] mb-4">
                       Manage connection backups and transfers without leaving the collection center.
                     </p>
                     <ImportExport isOpen onClose={() => undefined} embedded />
@@ -1140,37 +1140,37 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
               {activeTab === 'proxies' && (
                 <div className="space-y-6">
                   {/* Proxy Profiles Section */}
-                  <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+                  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-4">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-medium text-white">Proxy Profiles</h3>
+                      <h3 className="text-lg font-medium text-[var(--color-text)]">Proxy Profiles</h3>
                       <button
                         onClick={handleNewProfile}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
                       >
                         <Plus size={14} />
                         New Profile
                       </button>
                     </div>
-                    <p className="text-sm text-gray-400 mb-4">
+                    <p className="text-sm text-[var(--color-textSecondary)] mb-4">
                       Create and manage reusable proxy configurations that can be used across connections and chains.
                     </p>
 
                     {/* Search */}
                     <div className="relative mb-4">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
                       <input
                         type="text"
                         value={profileSearch}
                         onChange={(e) => setProfileSearch(e.target.value)}
                         placeholder="Search profiles..."
-                        className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+                        className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
 
                     {/* Profile List */}
                     <div className="space-y-2">
                       {filteredProfiles.length === 0 ? (
-                        <div className="text-sm text-gray-400 py-6 text-center">
+                        <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
                           {profileSearch 
                             ? "No profiles match your search."
                             : "No proxy profiles saved. Click \"New Profile\" to create one."}
@@ -1179,11 +1179,11 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                         filteredProfiles.map((profile) => (
                           <div
                             key={profile.id}
-                            className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-4 py-3"
+                            className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <div className="text-sm font-medium text-white">{profile.name}</div>
+                                <div className="text-sm font-medium text-[var(--color-text)]">{profile.name}</div>
                                 <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400 uppercase">
                                   {profile.config.type}
                                 </span>
@@ -1193,7 +1193,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                                   </span>
                                 )}
                               </div>
-                              <div className="text-xs text-gray-400 mt-1 font-mono">
+                              <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
                                 {profile.config.host}:{profile.config.port}
                                 {profile.config.username && ` (${profile.config.username})`}
                               </div>
@@ -1213,21 +1213,21 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleDuplicateProfile(profile.id)}
-                                className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                                className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
                                 title="Duplicate"
                               >
                                 <Copy size={14} />
                               </button>
                               <button
                                 onClick={() => handleEditProfile(profile)}
-                                className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                                className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
                                 title="Edit"
                               >
                                 <Edit size={14} />
                               </button>
                               <button
                                 onClick={() => handleDeleteProfile(profile.id)}
-                                className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-md"
+                                className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md"
                                 title="Delete"
                               >
                                 <Trash2 size={14} />
@@ -1240,37 +1240,37 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                   </div>
 
                   {/* Proxy Chains Section */}
-                  <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+                  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-4">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-medium text-white">Proxy Chains</h3>
+                      <h3 className="text-lg font-medium text-[var(--color-text)]">Proxy Chains</h3>
                       <button
                         onClick={handleNewChain}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
                       >
                         <Plus size={14} />
                         New Chain
                       </button>
                     </div>
-                    <p className="text-sm text-gray-400 mb-4">
+                    <p className="text-sm text-[var(--color-textSecondary)] mb-4">
                       Create reusable proxy chains that route traffic through multiple layers.
                     </p>
 
                     {/* Search */}
                     <div className="relative mb-4">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
                       <input
                         type="text"
                         value={chainSearch}
                         onChange={(e) => setChainSearch(e.target.value)}
                         placeholder="Search chains..."
-                        className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+                        className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
 
                     {/* Chain List */}
                     <div className="space-y-2">
                       {filteredChains.length === 0 ? (
-                        <div className="text-sm text-gray-400 py-6 text-center">
+                        <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
                           {chainSearch 
                             ? "No chains match your search."
                             : "No proxy chains saved. Click \"New Chain\" to create one."}
@@ -1279,11 +1279,11 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                         filteredChains.map((chain) => (
                           <div
                             key={chain.id}
-                            className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-4 py-3"
+                            className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
                           >
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <div className="text-sm font-medium text-white">{chain.name}</div>
+                                <div className="text-sm font-medium text-[var(--color-text)]">{chain.name}</div>
                                 <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">
                                   {chain.layers.length} layer{chain.layers.length !== 1 ? 's' : ''}
                                 </span>
@@ -1291,7 +1291,7 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                               {chain.description && (
                                 <div className="text-xs text-gray-500 mt-1">{chain.description}</div>
                               )}
-                              <div className="text-xs text-gray-400 mt-1 font-mono">
+                              <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
                                 {chain.layers.map((layer, i) => {
                                   const profile = layer.proxyProfileId 
                                     ? savedProfiles.find(p => p.id === layer.proxyProfileId)
@@ -1319,21 +1319,21 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleDuplicateChain(chain.id)}
-                                className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                                className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
                                 title="Duplicate"
                               >
                                 <Copy size={14} />
                               </button>
                               <button
                                 onClick={() => handleEditChain(chain)}
-                                className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                                className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
                                 title="Edit"
                               >
                                 <Edit size={14} />
                               </button>
                               <button
                                 onClick={() => handleDeleteChain(chain.id)}
-                                className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-md"
+                                className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md"
                                 title="Delete"
                               >
                                 <Trash2 size={14} />

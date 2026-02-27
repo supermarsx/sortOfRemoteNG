@@ -68,15 +68,15 @@ const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
 
   return (
     <div
-      className={`flex items-center gap-3 px-4 py-3 bg-gray-800 border-l-4 ${getBorderColor()} rounded-r shadow-lg transition-all duration-300 ${
+      className={`flex items-center gap-3 px-4 py-3 bg-[var(--color-surface)] border-l-4 ${getBorderColor()} rounded-r shadow-lg transition-all duration-300 ${
         isExiting ? 'opacity-0 translate-x-full' : 'opacity-100 translate-x-0'
       }`}
     >
       {getIcon()}
-      <p className="text-white text-sm flex-1">{toast.message}</p>
+      <p className="text-[var(--color-text)] text-sm flex-1">{toast.message}</p>
       <button
         onClick={handleClose}
-        className="text-gray-400 hover:text-white transition-colors"
+        className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
       >
         <X size={16} />
       </button>

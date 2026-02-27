@@ -350,13 +350,13 @@ export const ImportExport: React.FC<ImportExportProps> = ({
 
       <div className={embedded ? "p-0" : "p-6"}>
         {/* Tabs */}
-        <div className="flex space-x-1 mb-6 bg-gray-700 rounded-lg p-1">
+        <div className="flex space-x-1 mb-6 bg-[var(--color-border)] rounded-lg p-1">
           <button
             onClick={() => setActiveTab("export")}
             className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
               activeTab === "export"
-                ? "bg-blue-600 text-white"
-                : "text-gray-300 hover:text-white"
+                ? "bg-blue-600 text-[var(--color-text)]"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
           >
             <Download size={16} className="inline mr-2" />
@@ -366,8 +366,8 @@ export const ImportExport: React.FC<ImportExportProps> = ({
             onClick={() => setActiveTab("import")}
             className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
               activeTab === "import"
-                ? "bg-blue-600 text-white"
-                : "text-gray-300 hover:text-white"
+                ? "bg-blue-600 text-[var(--color-text)]"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
           >
             <Upload size={16} className="inline mr-2" />

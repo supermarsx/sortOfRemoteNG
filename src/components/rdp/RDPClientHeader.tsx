@@ -82,9 +82,9 @@ function formatDuration(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const btnBase = 'p-1 hover:bg-gray-700 rounded transition-colors';
-const btnDefault = `${btnBase} text-gray-400 hover:text-white`;
-const btnActive = `${btnBase} text-white bg-gray-700`;
+const btnBase = 'p-1 hover:bg-[var(--color-border)] rounded transition-colors';
+const btnDefault = `${btnBase} text-[var(--color-textSecondary)] hover:text-[var(--color-text)]`;
+const btnActive = `${btnBase} text-[var(--color-text)] bg-[var(--color-border)]`;
 const btnDisabled = `${btnBase} text-gray-600 cursor-not-allowed`;
 
 export default function RDPClientHeader({
@@ -192,10 +192,10 @@ export default function RDPClientHeader({
   };
 
   return (
-    <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
+    <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-4 py-2 flex items-center justify-between">
       <div className="flex items-center space-x-3">
-        <Monitor size={16} className="text-gray-400" />
-        <span className="text-sm text-gray-300">
+        <Monitor size={16} className="text-[var(--color-textSecondary)]" />
+        <span className="text-sm text-[var(--color-textSecondary)]">
           RDP - {sessionName !== sessionHostname ? `${sessionName} (${sessionHostname})` : sessionHostname}
         </span>
         <div className={`flex items-center space-x-1 ${getStatusColor()}`}>
@@ -208,7 +208,7 @@ export default function RDPClientHeader({
       </div>
 
       <div className="flex items-center space-x-1">
-        <div className="flex items-center space-x-1 text-xs text-gray-400 mr-2">
+        <div className="flex items-center space-x-1 text-xs text-[var(--color-textSecondary)] mr-2">
           <span>{desktopSize.width}x{desktopSize.height}</span>
           <span>·</span>
           <span>{colorDepth}-bit</span>
@@ -287,7 +287,7 @@ export default function RDPClientHeader({
           </button>
 
           {showSendKeys && (
-            <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden">
+            <div className="absolute right-0 top-full mt-1 z-50 w-48 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
               {[
                 { id: 'ctrl-alt-del', label: 'Ctrl + Alt + Del' },
                 { id: 'alt-tab', label: 'Alt + Tab' },
@@ -306,7 +306,7 @@ export default function RDPClientHeader({
                   disabled={!isConnected}
                   className={`w-full text-left px-3 py-1.5 text-xs ${
                     isConnected
-                      ? 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                      ? 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]'
                       : 'text-gray-600 cursor-not-allowed'
                   } transition-colors`}
                 >
@@ -328,10 +328,10 @@ export default function RDPClientHeader({
           </button>
 
           {showHostInfo && (
-            <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden">
+            <div className="absolute right-0 top-full mt-1 z-50 w-72 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
               {/* Friendly Name */}
-              <div className="px-3 py-2 border-b border-gray-700">
-                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+              <div className="px-3 py-2 border-b border-[var(--color-border)]">
+                <div className="text-[10px] font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider mb-1.5">
                   Friendly Name
                 </div>
                 {isEditingName ? (
@@ -345,27 +345,27 @@ export default function RDPClientHeader({
                         if (e.key === 'Enter') confirmRename();
                         if (e.key === 'Escape') cancelRename();
                       }}
-                      className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white"
+                      className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
                     />
                     <button
                       onClick={confirmRename}
-                      className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                      className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                     >
                       <Check size={12} />
                     </button>
                     <button
                       onClick={cancelRename}
-                      className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                      className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                     >
                       <X size={12} />
                     </button>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-300">{connectionName}</span>
+                    <span className="text-xs text-[var(--color-textSecondary)]">{connectionName}</span>
                     <button
                       onClick={startEditing}
-                      className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                      className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                       title="Edit name"
                     >
                       <Pencil size={11} />
@@ -375,11 +375,11 @@ export default function RDPClientHeader({
               </div>
 
               {/* Host Details */}
-              <div className="px-3 py-2 border-b border-gray-700 space-y-1">
-                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+              <div className="px-3 py-2 border-b border-[var(--color-border)] space-y-1">
+                <div className="text-[10px] font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider mb-1">
                   Host
                 </div>
-                <div className="text-xs text-gray-300">{sessionHostname}</div>
+                <div className="text-xs text-[var(--color-textSecondary)]">{sessionHostname}</div>
                 <div className="text-[10px] text-gray-500">
                   Status: <span className="capitalize">{connectionStatus}</span>
                 </div>
@@ -390,12 +390,12 @@ export default function RDPClientHeader({
 
               {/* Certificate Info */}
               <div className="px-3 py-2 space-y-1">
-                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                <div className="text-[10px] font-semibold text-[var(--color-textSecondary)] uppercase tracking-wider mb-1">
                   Certificate
                 </div>
                 <div className="flex items-start space-x-2">
                   <Fingerprint size={12} className="text-gray-500 flex-shrink-0 mt-0.5" />
-                  <div className="text-[10px] text-gray-400 min-w-0">
+                  <div className="text-[10px] text-[var(--color-textSecondary)] min-w-0">
                     {certFingerprint ? (
                       <span className="font-mono break-all">{certFingerprint}</span>
                     ) : (
@@ -417,7 +417,7 @@ export default function RDPClientHeader({
           >
             <Shield size={14} />
             {configs.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+              <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-[var(--color-text)] text-[8px] font-bold rounded-full flex items-center justify-center">
                 {configs.length}
               </span>
             )}
@@ -494,7 +494,7 @@ export default function RDPClientHeader({
           </button>
         ) : (
           <div className="flex items-center space-x-1">
-            <span className="text-[10px] text-gray-400 animate-pulse font-mono">
+            <span className="text-[10px] text-[var(--color-textSecondary)] animate-pulse font-mono">
               REC {formatDuration(recState.duration)}
             </span>
             {recState.isPaused ? (

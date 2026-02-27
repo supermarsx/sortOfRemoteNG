@@ -351,10 +351,10 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
         }`} />
       </div>
 
-      <div className="relative bg-gray-800 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-gray-600">
+      <div className="relative bg-[var(--color-surface)] backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
           {/* Header */}
-          <div className="relative border-b border-gray-600 px-6 py-5" style={{ background: isNewConnection ? 'linear-gradient(to right, rgba(16, 185, 129, 0.15), var(--color-surface))' : 'linear-gradient(to right, rgba(59, 130, 246, 0.15), var(--color-surface))' }}>
+          <div className="relative border-b border-[var(--color-border)] px-6 py-5" style={{ background: isNewConnection ? 'linear-gradient(to right, rgba(16, 185, 129, 0.15), var(--color-surface))' : 'linear-gradient(to right, rgba(59, 130, 246, 0.15), var(--color-surface))' }}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className={`p-3 rounded-xl ${
@@ -367,11 +367,11 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                   )}
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold text-white flex items-center gap-2">
+                  <h2 className="text-xl font-semibold text-[var(--color-text)] flex items-center gap-2">
                     {isNewConnection ? 'New Connection' : 'Edit Connection'}
                     {isNewConnection && <Sparkles size={16} className="text-green-400" />}
                   </h2>
-                  <p className="text-sm text-gray-400 mt-0.5">
+                  <p className="text-sm text-[var(--color-textSecondary)] mt-0.5">
                     {isNewConnection 
                       ? 'Add a new server or service to your collection' 
                       : `Editing "${formData.name || 'connection'}"`}
@@ -400,8 +400,8 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                   type="submit"
                   className={`px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 ${
                     isNewConnection
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                      : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20'
+                      ? 'bg-emerald-600 hover:bg-emerald-500 text-[var(--color-text)] shadow-lg shadow-emerald-500/20'
+                      : 'bg-blue-600 hover:bg-blue-500 text-[var(--color-text)] shadow-lg shadow-blue-500/20'
                   }`}
                 >
                   <Save size={16} />
@@ -411,7 +411,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                   type="button"
                   onClick={onClose}
                   aria-label="Close"
-                  className="p-2 text-gray-400 hover:text-white hover:bg-gray-600 rounded-lg transition-colors"
+                  className="p-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
                 >
                   <X size={18} />
                 </button>
@@ -426,7 +426,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
               <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border cursor-pointer transition-all ${
                 formData.isGroup 
                   ? 'bg-purple-500/20 border-purple-500/50 text-purple-400' 
-                  : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
+                  : 'bg-[var(--color-border)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]'
               }`}>
                 <input
                   type="checkbox"
@@ -441,7 +441,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                 <label className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border cursor-pointer transition-all ${
                   formData.favorite 
                     ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400' 
-                    : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
+                    : 'bg-[var(--color-border)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]'
                 }`}>
                   <input
                     type="checkbox"
@@ -457,7 +457,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
 
             {/* Name input - prominent */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 {formData.isGroup ? 'Folder Name' : 'Connection Name'} <span className="text-red-400">*</span>
               </label>
               <input
@@ -466,7 +466,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                 data-testid="name-input"
                 value={formData.name || ''}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white text-lg placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] text-lg placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
                 placeholder={formData.isGroup ? 'My Servers' : 'Production Server'}
                 autoFocus
               />
@@ -475,13 +475,13 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             {/* Parent folder selector */}
             {availableGroups.length > 0 && (
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Parent Folder
                 </label>
                 <select
                   value={formData.parentId || ''}
                   onChange={(e) => setFormData({ ...formData, parentId: e.target.value || undefined })}
-                  className="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                  className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
                 >
                   <option value="">Root (No parent)</option>
                   {selectableGroups.map(({ group, disabled, reason }) => (
@@ -502,7 +502,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             {!formData.isGroup && (
               <>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-3">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-3">
                     Protocol
                   </label>
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -524,7 +524,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                           className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all ${
                             isActive 
                               ? colorClasses[color]
-                              : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500 hover:text-gray-300'
+                              : 'bg-[var(--color-border)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)] hover:text-[var(--color-textSecondary)]'
                           }`}
                         >
                           <Icon size={20} />
@@ -547,7 +547,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                           className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs transition-all ${
                             isActive 
                               ? 'bg-cyan-500/20 border-cyan-500/60 text-cyan-400'
-                              : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
+                              : 'bg-[var(--color-border)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]'
                           }`}
                         >
                           <Cloud size={14} />
@@ -562,7 +562,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                 {/* Connection details */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                       Hostname / IP Address <span className="text-red-400">*</span>
                     </label>
                     <input
@@ -570,19 +570,19 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                       required
                       value={formData.hostname || ''}
                       onChange={(e) => setFormData({ ...formData, hostname: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono"
+                      className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono"
                       placeholder="192.168.1.100 or server.example.com"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                       Port
                     </label>
                     <input
                       type="number"
                       value={formData.port || 0}
                       onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 0 })}
-                      className="w-full px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono"
+                      className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono"
                       min={1}
                       max={65535}
                     />
@@ -603,7 +603,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
 
             {/* Icon selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Custom Icon
               </label>
               <div className="flex flex-wrap gap-2">
@@ -617,7 +617,7 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                       className={`p-2.5 rounded-lg border transition-all ${
                         isActive
                           ? 'border-blue-500/60 bg-blue-500/20 text-blue-400'
-                          : 'border-gray-600 bg-gray-700 text-gray-400 hover:border-gray-500'
+                          : 'border-[var(--color-border)] bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]'
                       }`}
                       title={label}
                     >
@@ -631,8 +631,8 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             {/* Tags section */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Tag size={14} className="text-gray-400" />
-                <label className="text-sm font-medium text-gray-300">Tags</label>
+                <Tag size={14} className="text-[var(--color-textSecondary)]" />
+                <label className="text-sm font-medium text-[var(--color-textSecondary)]">Tags</label>
               </div>
               <TagManager
                 tags={formData.tags || []}
@@ -643,13 +643,13 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
             </div>
 
             {/* Description - collapsible */}
-            <div className="border border-gray-600 rounded-xl overflow-hidden">
+            <div className="border border-[var(--color-border)] rounded-xl overflow-hidden">
               <button
                 type="button"
                 onClick={() => toggleSection('description')}
-                className="w-full flex items-center justify-between px-4 py-3 bg-gray-700 hover:bg-gray-600 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-border)] hover:bg-[var(--color-border)] transition-colors"
               >
-                <div className="flex items-center gap-2 text-gray-300">
+                <div className="flex items-center gap-2 text-[var(--color-textSecondary)]">
                   <FileText size={16} />
                   <span className="text-sm font-medium">Description & Notes</span>
                   {formData.description && (
@@ -658,15 +658,15 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
                     </span>
                   )}
                 </div>
-                {expandedSections.description ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+                {expandedSections.description ? <ChevronUp size={16} className="text-[var(--color-textSecondary)]" /> : <ChevronDown size={16} className="text-[var(--color-textSecondary)]" />}
               </button>
               {expandedSections.description && (
-                <div className="p-4 border-t border-gray-600">
+                <div className="p-4 border-t border-[var(--color-border)]">
                   <textarea
                     value={formData.description || ''}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     rows={4}
-                    className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all resize-none"
+                    className="w-full px-4 py-3 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all resize-none"
                     placeholder="Add notes about this connection..."
                   />
                 </div>
@@ -675,15 +675,15 @@ export const ConnectionEditor: React.FC<ConnectionEditorProps> = ({
           </div>
 
           {/* Footer hint */}
-          <div className="border-t border-gray-600 px-6 py-3 bg-gray-800">
-            <div className="flex items-center justify-between text-xs text-gray-400">
+          <div className="border-t border-[var(--color-border)] px-6 py-3 bg-[var(--color-surface)]">
+            <div className="flex items-center justify-between text-xs text-[var(--color-textSecondary)]">
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-1">
                   <Zap size={12} />
-                  Press <kbd className="px-1.5 py-0.5 bg-gray-600 rounded text-gray-300">Enter</kbd> to save
+                  Press <kbd className="px-1.5 py-0.5 bg-gray-600 rounded text-[var(--color-textSecondary)]">Enter</kbd> to save
                 </span>
                 <span className="flex items-center gap-1">
-                  <kbd className="px-1.5 py-0.5 bg-gray-600 rounded text-gray-300">Esc</kbd> to cancel
+                  <kbd className="px-1.5 py-0.5 bg-gray-600 rounded text-[var(--color-textSecondary)]">Esc</kbd> to cancel
                 </span>
               </div>
               {connection && settings.autoSaveEnabled && (

@@ -30,8 +30,19 @@ import {
   Compass,
   ArrowUpDown,
   PanelRight,
+  Gauge,
+  Keyboard,
+  Network,
+  Server,
+  Radio,
+  TerminalSquare,
+  FileCode,
+  ListVideo,
+  Circle,
+  Globe,
+  type LucideIcon,
 } from "lucide-react";
-import type { ToolDisplayMode, ToolDisplayModes } from "../../../types/settings";
+import type { ToolDisplayMode, ToolDisplayModeOverride, ToolDisplayModes } from "../../../types/settings";
 
 interface BehaviorSettingsProps {
   settings: GlobalSettings;
@@ -55,13 +66,13 @@ const Toggle: React.FC<{
       type="checkbox"
       checked={checked}
       onChange={(e) => onChange(e.target.checked)}
-      className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4 mt-0.5"
+      className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4 mt-0.5"
     />
     <div className="flex items-center gap-2 text-gray-500 group-hover:text-purple-400 mt-0.5 flex-shrink-0">
       {icon}
     </div>
     <div className="min-w-0">
-      <span className="text-gray-300 group-hover:text-white text-sm">{label}</span>
+      <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] text-sm">{label}</span>
       {description && <p className="text-[10px] text-gray-500 mt-0.5">{description}</p>}
     </div>
   </label>
@@ -72,7 +83,7 @@ const SectionHeader: React.FC<{
   icon: React.ReactNode;
   title: string;
 }> = ({ icon, title }) => (
-  <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+  <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
     {icon}
     {title}
   </h4>
@@ -100,7 +111,7 @@ const SliderRow: React.FC<{
     className="flex items-center justify-between gap-4"
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="text-sm text-gray-400 flex-shrink-0">{label}</span>
+    <span className="text-sm text-[var(--color-textSecondary)] flex-shrink-0">{label}</span>
     <div className="flex items-center gap-2">
       <input
         type="range"
@@ -111,7 +122,7 @@ const SliderRow: React.FC<{
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-28 accent-blue-500"
       />
-      <span className="text-xs text-gray-300 w-14 text-right font-mono">
+      <span className="text-xs text-[var(--color-textSecondary)] w-14 text-right font-mono">
         {value}{unit}
       </span>
     </div>
@@ -130,11 +141,11 @@ const SelectRow: React.FC<{
     className="flex items-center justify-between gap-4"
     {...(settingKey ? { 'data-setting-key': settingKey } : {})}
   >
-    <span className="text-sm text-gray-400">{label}</span>
+    <span className="text-sm text-[var(--color-textSecondary)]">{label}</span>
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-white"
+      className="px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)]"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>{o.label}</option>
@@ -155,11 +166,11 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
         <MousePointerClick className="w-5 h-5" />
         Behavior
       </h3>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Click actions, tab behavior, clipboard, notifications, and reconnection settings.
       </p>
 
@@ -745,56 +756,102 @@ const BehaviorSettings: React.FC<BehaviorSettingsProps> = ({
           title="Tool Display Modes"
         />
         <p className="text-[10px] text-gray-500 -mt-2">
-          Choose whether each tool opens as a popup overlay or a side panel.
+          Set a global default, then override per tool. "Inherit" uses the global default.
         </p>
         <Card>
-          {([
-            { key: 'recordingManager', label: 'Recording Manager' },
-            { key: 'macroManager', label: 'Macro Manager' },
-            { key: 'scriptManager', label: 'Script Manager' },
-            { key: 'performanceMonitor', label: 'Performance Monitor' },
-            { key: 'actionLog', label: 'Action Log' },
-            { key: 'shortcutManager', label: 'Shortcut Manager' },
-            { key: 'bulkSsh', label: 'Bulk SSH Commander' },
-            { key: 'internalProxy', label: 'Internal Proxy Manager' },
-            { key: 'proxyChain', label: 'Proxy Chain Menu' },
-            { key: 'wol', label: 'Wake-on-LAN' },
-          ] as { key: keyof ToolDisplayModes; label: string }[]).map(tool => (
-            <SelectRow
-              key={tool.key}
-              label={tool.label}
-              value={(settings.toolDisplayModes?.[tool.key] ?? 'popup')}
-              options={[
-                { value: 'popup', label: 'Popup' },
-                { value: 'tab', label: 'Tab' },
-              ]}
-              onChange={(v) => updateSettings({
+          {/* Global default */}
+          <div className="flex items-center justify-between gap-4 pb-3 mb-3 border-b border-[var(--color-border)]" data-setting-key="toolDisplayModes.globalDefault">
+            <div className="flex items-center gap-2">
+              <Globe className="w-4 h-4 text-blue-400 flex-shrink-0" />
+              <span className="text-sm font-medium text-[var(--color-text)]">Global Default</span>
+            </div>
+            <select
+              value={settings.toolDisplayModes?.globalDefault ?? 'popup'}
+              onChange={(e) => updateSettings({
                 toolDisplayModes: {
                   ...defaultToolDisplayModes,
                   ...settings.toolDisplayModes,
-                  [tool.key]: v as ToolDisplayMode,
+                  globalDefault: e.target.value as ToolDisplayMode,
                 },
               })}
-              settingKey={`toolDisplayModes.${tool.key}`}
-            />
-          ))}
+              className="px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)]"
+            >
+              <option value="popup">Popup</option>
+              <option value="tab">Tab</option>
+            </select>
+          </div>
+
+          {/* Per-tool overrides */}
+          {(TOOL_ENTRIES).map(tool => {
+            const current = settings.toolDisplayModes?.[tool.key] ?? 'inherit';
+            const resolved = current === 'inherit'
+              ? (settings.toolDisplayModes?.globalDefault ?? 'popup')
+              : current;
+            const Icon = tool.icon;
+            return (
+              <div
+                key={tool.key}
+                className="flex items-center justify-between gap-4"
+                data-setting-key={`toolDisplayModes.${tool.key}`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Icon className="w-3.5 h-3.5 text-[var(--color-textSecondary)] flex-shrink-0" />
+                  <span className="text-sm text-[var(--color-textSecondary)] truncate">{tool.label}</span>
+                  {current === 'inherit' && (
+                    <span className="text-[10px] text-gray-500 flex-shrink-0">({resolved})</span>
+                  )}
+                </div>
+                <select
+                  value={current}
+                  onChange={(e) => updateSettings({
+                    toolDisplayModes: {
+                      ...defaultToolDisplayModes,
+                      ...settings.toolDisplayModes,
+                      [tool.key]: e.target.value as ToolDisplayModeOverride,
+                    },
+                  })}
+                  className="px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)]"
+                >
+                  <option value="inherit">Inherit</option>
+                  <option value="popup">Popup</option>
+                  <option value="tab">Tab</option>
+                </select>
+              </div>
+            );
+          })}
         </Card>
       </div>
     </div>
   );
 };
 
+type ToolEntryKey = Exclude<keyof ToolDisplayModes, 'globalDefault'>;
+
+const TOOL_ENTRIES: { key: ToolEntryKey; label: string; icon: LucideIcon }[] = [
+  { key: 'recordingManager', label: 'Recording Manager', icon: Circle },
+  { key: 'macroManager', label: 'Macro Manager', icon: ListVideo },
+  { key: 'scriptManager', label: 'Script Manager', icon: FileCode },
+  { key: 'performanceMonitor', label: 'Performance Monitor', icon: Gauge },
+  { key: 'actionLog', label: 'Action Log', icon: ScrollText },
+  { key: 'shortcutManager', label: 'Shortcut Manager', icon: Keyboard },
+  { key: 'bulkSsh', label: 'Bulk SSH Commander', icon: TerminalSquare },
+  { key: 'internalProxy', label: 'Internal Proxy Manager', icon: Server },
+  { key: 'proxyChain', label: 'Proxy Chain Menu', icon: Network },
+  { key: 'wol', label: 'Wake-on-LAN', icon: Radio },
+];
+
 const defaultToolDisplayModes: ToolDisplayModes = {
-  recordingManager: 'popup',
-  macroManager: 'popup',
-  scriptManager: 'popup',
-  performanceMonitor: 'popup',
-  actionLog: 'popup',
-  shortcutManager: 'popup',
-  bulkSsh: 'popup',
-  internalProxy: 'popup',
-  proxyChain: 'popup',
-  wol: 'popup',
+  globalDefault: 'popup',
+  recordingManager: 'inherit',
+  macroManager: 'inherit',
+  scriptManager: 'inherit',
+  performanceMonitor: 'inherit',
+  actionLog: 'inherit',
+  shortcutManager: 'inherit',
+  bulkSsh: 'inherit',
+  internalProxy: 'inherit',
+  proxyChain: 'inherit',
+  wol: 'inherit',
 };
 
 export default BehaviorSettings;

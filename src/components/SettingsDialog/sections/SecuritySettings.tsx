@@ -117,17 +117,17 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
         <Shield className="w-5 h-5" />
         Security
       </h3>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Encryption algorithms, key derivation, master password, and credential storage settings.
       </p>
 
       {/* Encryption Algorithm Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Lock className="w-4 h-4 text-blue-400" />
           {t('security.algorithm')}
         </h4>
@@ -140,7 +140,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
               <select
                 value={settings.encryptionAlgorithm}
                 onChange={(e) => updateSettings({ encryptionAlgorithm: e.target.value as any })}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
               >
                 {ENCRYPTION_ALGORITHMS.map((algo) => (
                   <option key={algo.value} value={algo.value}>
@@ -155,13 +155,13 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           {(() => {
             const selectedAlgo = ENCRYPTION_ALGORITHMS.find(a => a.value === settings.encryptionAlgorithm);
             return selectedAlgo && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-md text-sm">
+              <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surface)]/60 rounded-md text-sm">
                 {selectedAlgo.recommended && (
                   <span className="px-1.5 py-0.5 text-[10px] bg-green-600/30 text-green-400 rounded">
                     Recommended
                   </span>
                 )}
-                <span className="text-gray-400">{selectedAlgo.description}</span>
+                <span className="text-[var(--color-textSecondary)]">{selectedAlgo.description}</span>
               </div>
             );
           })()}
@@ -171,11 +171,11 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
             <div className="flex items-center gap-3">
               <ShieldCheck className="w-5 h-5 text-purple-400 flex-shrink-0" />
               <div className="flex-1 flex items-center gap-2">
-                <span className="text-sm text-gray-400 whitespace-nowrap">Mode:</span>
+                <span className="text-sm text-[var(--color-textSecondary)] whitespace-nowrap">Mode:</span>
                 <select
                   value={settings.blockCipherMode}
                   onChange={(e) => updateSettings({ blockCipherMode: e.target.value as any })}
-                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                  className="flex-1 px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
                   disabled={validModes.length === 1}
                 >
                   {validModes.map((mode) => (
@@ -189,7 +189,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           )}
 
           {settings.encryptionAlgorithm === 'ChaCha20-Poly1305' && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-gray-800/60 rounded-md text-gray-400 text-sm">
+            <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surface)]/60 rounded-md text-[var(--color-textSecondary)] text-sm">
               <ShieldCheck className="w-4 h-4 text-purple-400" />
               Stream cipher with built-in AEAD (no block mode needed)
             </div>
@@ -199,7 +199,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
       {/* Key Derivation Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Key className="w-4 h-4 text-purple-400" />
           Key Derivation (PBKDF2)
         </h4>
@@ -207,7 +207,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-gray-400">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Gauge className="w-4 h-4" />
                 {t('security.iterations')}
               </label>
@@ -216,14 +216,14 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                   type="number"
                   value={settings.keyDerivationIterations}
                   onChange={(e) => updateSettings({ keyDerivationIterations: parseInt(e.target.value) })}
-                  className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  className="flex-1 px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   min="10000"
                   max="1000000"
                 />
                 <button
                   onClick={handleBenchmark}
                   disabled={isBenchmarking}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-md transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-[var(--color-text)] rounded-md transition-colors"
                 >
                   {isBenchmarking ? (
                     <>
@@ -244,7 +244,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
             </div>
 
             <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm text-gray-400">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Timer className="w-4 h-4" />
                 {t('security.benchmarkTime')}
               </label>
@@ -252,7 +252,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 type="number"
                 value={settings.benchmarkTimeSeconds}
                 onChange={(e) => updateSettings({ benchmarkTimeSeconds: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                 min="0.5"
                 max="10"
                 step="0.5"
@@ -268,17 +268,17 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
               type="checkbox"
               checked={settings.autoBenchmarkIterations}
               onChange={(e) => updateSettings({ autoBenchmarkIterations: e.target.checked })}
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             />
             <Gauge className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
-            <span className="text-gray-300 group-hover:text-white">{t('security.autoBenchmark')}</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">{t('security.autoBenchmark')}</span>
           </label>
         </div>
       </div>
 
       {/* Auto Lock Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Clock className="w-4 h-4 text-yellow-400" />
           Auto Lock
         </h4>
@@ -300,17 +300,17 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                   autoLock: { ...settings.autoLock, enabled: e.target.checked },
                 })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
               disabled={!hasPassword}
             />
             <Clock className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
-            <span className="text-gray-300 group-hover:text-white">
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable auto lock after inactivity
             </span>
           </label>
 
           <div className={`space-y-2 ${!hasPassword || !settings.autoLock.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            <label className="flex items-center gap-2 text-sm text-gray-400">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <Timer className="w-4 h-4" />
               Auto lock timeout (minutes)
             </label>
@@ -325,7 +325,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                   },
                 })
               }
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
               min="1"
               max="240"
               disabled={!hasPassword}
@@ -336,18 +336,18 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
       {/* Generate Key File Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <FileKey className="w-4 h-4 text-emerald-400" />
           Generate SSH Key File
         </h4>
 
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-[var(--color-textSecondary)]">
             Generate a new SSH key pair and save it to a file. The private key will be saved to your chosen location, and the public key will be saved with a .pub extension.
           </p>
 
           <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm text-gray-400">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <Key className="w-4 h-4" />
               Key Type
             </label>
@@ -357,7 +357,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
                   keyType === 'ed25519'
                     ? 'bg-emerald-600/30 border border-emerald-500 text-emerald-300'
-                    : 'bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600'
+                    : 'bg-[var(--color-border)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
                 }`}
               >
                 Ed25519 (Recommended)
@@ -367,7 +367,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
                   keyType === 'rsa'
                     ? 'bg-emerald-600/30 border border-emerald-500 text-emerald-300'
-                    : 'bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600'
+                    : 'bg-[var(--color-border)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
                 }`}
               >
                 RSA (4096-bit)
@@ -406,7 +406,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
               }
             }}
             disabled={isGeneratingKey}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-white rounded-md transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 text-[var(--color-text)] rounded-md transition-colors"
           >
             {isGeneratingKey ? (
               <>
@@ -439,13 +439,13 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
       {/* Generate Collection Encryption Key File Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Database className="w-4 h-4 text-blue-400" />
           Generate Collection Encryption Key File
         </h4>
 
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-[var(--color-textSecondary)]">
             Generate a secure encryption key file that can be used to encrypt your connection collections. 
             This key file can be used instead of a password when creating or opening encrypted collections.
             <span className="text-yellow-400 block mt-2">
@@ -454,7 +454,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           </p>
 
           <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm text-gray-400">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <Key className="w-4 h-4" />
               Key Strength
             </label>
@@ -464,7 +464,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
                   collectionKeyLength === 32
                     ? 'bg-blue-600/30 border border-blue-500 text-blue-300'
-                    : 'bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600'
+                    : 'bg-[var(--color-border)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
                 }`}
               >
                 256-bit (Standard)
@@ -474,7 +474,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 className={`flex-1 px-3 py-2 rounded-md text-sm transition-colors ${
                   collectionKeyLength === 64
                     ? 'bg-blue-600/30 border border-blue-500 text-blue-300'
-                    : 'bg-gray-700 border border-gray-600 text-gray-300 hover:bg-gray-600'
+                    : 'bg-[var(--color-border)] border border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
                 }`}
               >
                 512-bit (High Security)
@@ -530,7 +530,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
               }
             }}
             disabled={isGeneratingCollectionKey}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-md transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-[var(--color-text)] rounded-md transition-colors"
           >
             {isGeneratingCollectionKey ? (
               <>
@@ -564,7 +564,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       {/* ─── CredSSP Remediation Defaults ─────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-amber-400" />
             CredSSP Remediation Defaults
           </h4>
@@ -575,7 +575,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
         {/* Oracle Remediation Policy */}
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Encryption Oracle Remediation Policy</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Encryption Oracle Remediation Policy</label>
           <select
             value={settings.credsspDefaults?.oracleRemediation ?? 'mitigated'}
             onChange={(e) =>
@@ -586,7 +586,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 },
               })
             }
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
           >
             <option value="force-updated">Force Updated Clients</option>
             <option value="mitigated">Mitigated (recommended)</option>
@@ -603,7 +603,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
         {/* NLA Mode */}
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Default NLA Mode</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default NLA Mode</label>
           <select
             value={settings.credsspDefaults?.nlaMode ?? 'required'}
             onChange={(e) =>
@@ -614,7 +614,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 },
               })
             }
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
           >
             <option value="required">Required (reject if NLA unavailable)</option>
             <option value="preferred">Preferred (fallback to TLS)</option>
@@ -624,7 +624,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
         {/* Minimum TLS Version */}
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Minimum TLS Version</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Minimum TLS Version</label>
           <select
             value={settings.credsspDefaults?.tlsMinVersion ?? '1.2'}
             onChange={(e) =>
@@ -635,7 +635,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 },
               })
             }
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
           >
             <option value="1.0">TLS 1.0 (legacy, insecure)</option>
             <option value="1.1">TLS 1.1 (deprecated)</option>
@@ -646,7 +646,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
         {/* CredSSP Version */}
         <div>
-          <label className="block text-sm text-gray-400 mb-1">CredSSP TSRequest Version</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">CredSSP TSRequest Version</label>
           <select
             value={String(settings.credsspDefaults?.credsspVersion ?? 6)}
             onChange={(e) =>
@@ -657,7 +657,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 },
               })
             }
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
           >
             <option value="2">Version 2 (legacy)</option>
             <option value="3">Version 3 (with client nonce)</option>
@@ -667,7 +667,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
         {/* Server Cert Validation */}
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Server Certificate Validation</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Server Certificate Validation</label>
           <select
             value={settings.credsspDefaults?.serverCertValidation ?? 'validate'}
             onChange={(e) =>
@@ -678,7 +678,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 },
               })
             }
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
           >
             <option value="validate">Validate (reject untrusted)</option>
             <option value="warn">Warn (prompt on untrusted)</option>
@@ -697,9 +697,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                   credsspDefaults: { ...settings.credsspDefaults, allowHybridEx: e.target.checked },
                 })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
             />
-            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
               Allow HYBRID_EX protocol (Early User Auth Result)
             </span>
           </label>
@@ -713,9 +713,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                   credsspDefaults: { ...settings.credsspDefaults, nlaFallbackToTls: e.target.checked },
                 })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
             />
-            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
               Allow NLA fallback to TLS on failure
             </span>
           </label>
@@ -732,9 +732,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                   },
                 })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
             />
-            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
               Enforce server public key validation during CredSSP
             </span>
           </label>
@@ -748,9 +748,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                   credsspDefaults: { ...settings.credsspDefaults, restrictedAdmin: e.target.checked },
                 })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
             />
-            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
               Restricted Admin mode (no credential delegation)
             </span>
           </label>
@@ -767,9 +767,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                   },
                 })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
             />
-            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
               Remote Credential Guard (Kerberos delegation)
             </span>
           </label>
@@ -777,7 +777,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
         {/* Authentication packages */}
         <div className="space-y-2">
-          <label className="block text-sm text-gray-400">Authentication Packages</label>
+          <label className="block text-sm text-[var(--color-textSecondary)]">Authentication Packages</label>
           <div className="space-y-2 pl-1">
             <label className="flex items-center space-x-3 cursor-pointer group">
               <input
@@ -788,9 +788,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                     credsspDefaults: { ...settings.credsspDefaults, ntlmEnabled: e.target.checked },
                   })
                 }
-                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
               />
-              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
                 NTLM
               </span>
             </label>
@@ -803,9 +803,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                     credsspDefaults: { ...settings.credsspDefaults, kerberosEnabled: e.target.checked },
                   })
                 }
-                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
               />
-              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
                 Kerberos
               </span>
             </label>
@@ -818,9 +818,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                     credsspDefaults: { ...settings.credsspDefaults, pku2uEnabled: e.target.checked },
                   })
                 }
-                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
               />
-              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
                 PKU2U
               </span>
             </label>
@@ -829,7 +829,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
         {/* SSPI Override */}
         <div>
-          <label className="block text-sm text-gray-400 mb-1">SSPI Package List Override</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">SSPI Package List Override</label>
           <input
             type="text"
             value={settings.credsspDefaults?.sspiPackageList ?? ''}
@@ -838,7 +838,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 credsspDefaults: { ...settings.credsspDefaults, sspiPackageList: e.target.value },
               })
             }
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
             placeholder="e.g. !kerberos,!pku2u (leave empty for auto)"
           />
           <p className="text-xs text-gray-500 mt-1">
@@ -850,7 +850,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       {/* ─── Password Reveal Settings ─────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
             <Eye className="w-4 h-4 text-blue-400" />
             Password Reveal
           </h4>
@@ -868,9 +868,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                 passwordReveal: { ...settings.passwordReveal, enabled: e.target.checked },
               })
             }
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Enable password reveal icon on all password fields
           </span>
         </label>
@@ -879,7 +879,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           <>
             {/* Mode */}
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Reveal Mode</label>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Reveal Mode</label>
               <select
                 value={settings.passwordReveal?.mode ?? 'toggle'}
                 onChange={(e) =>
@@ -890,7 +890,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                     },
                   })
                 }
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
               >
                 <option value="toggle">Toggle (click to show/hide)</option>
                 <option value="hold">Hold (hold mouse to reveal)</option>
@@ -899,7 +899,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
             {/* Auto-hide */}
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Auto-hide after (seconds): {settings.passwordReveal?.autoHideSeconds ?? 0}
                 {(settings.passwordReveal?.autoHideSeconds ?? 0) === 0 && ' (disabled)'}
               </label>
@@ -935,9 +935,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                     passwordReveal: { ...settings.passwordReveal, showByDefault: e.target.checked },
                   })
                 }
-                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
               />
-              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
                 Show passwords by default (not recommended)
               </span>
             </label>
@@ -952,9 +952,9 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                     passwordReveal: { ...settings.passwordReveal, maskIcon: e.target.checked },
                   })
                 }
-                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
               />
-              <span className="text-sm text-gray-300 group-hover:text-white transition-colors flex items-center gap-2">
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors flex items-center gap-2">
                 Dim eye icon when password is hidden
                 <EyeOff className="w-3.5 h-3.5 opacity-40" />
               </span>
@@ -966,7 +966,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
       {/* ─── 2FA / TOTP Defaults ──────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
         <div>
-          <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
             <Shield className="w-4 h-4 text-blue-400" />
             2FA / TOTP Defaults
           </h4>
@@ -980,31 +980,31 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
             type="checkbox"
             checked={settings.totpEnabled}
             onChange={(e) => updateSettings({ totpEnabled: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Enable TOTP functionality
           </span>
         </label>
 
         <div data-setting-key="totpIssuer">
-          <label className="block text-sm text-gray-400 mb-1">Default Issuer</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Issuer</label>
           <input
             type="text"
             value={settings.totpIssuer}
             onChange={(e) => updateSettings({ totpIssuer: e.target.value })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
             placeholder="sortOfRemoteNG"
           />
         </div>
 
         <div className="grid grid-cols-3 gap-3">
           <div data-setting-key="totpDigits">
-            <label className="block text-sm text-gray-400 mb-1">Default Digits</label>
+            <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Digits</label>
             <select
               value={settings.totpDigits}
               onChange={(e) => updateSettings({ totpDigits: parseInt(e.target.value) })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
             >
               <option value={6}>6 digits</option>
               <option value={8}>8 digits</option>
@@ -1012,11 +1012,11 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           </div>
 
           <div data-setting-key="totpPeriod">
-            <label className="block text-sm text-gray-400 mb-1">Default Period</label>
+            <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Period</label>
             <select
               value={settings.totpPeriod}
               onChange={(e) => updateSettings({ totpPeriod: parseInt(e.target.value) })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
             >
               <option value={15}>15 seconds</option>
               <option value={30}>30 seconds</option>
@@ -1025,11 +1025,11 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           </div>
 
           <div data-setting-key="totpAlgorithm">
-            <label className="block text-sm text-gray-400 mb-1">Default Algorithm</label>
+            <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Algorithm</label>
             <select
               value={settings.totpAlgorithm}
               onChange={(e) => updateSettings({ totpAlgorithm: e.target.value as 'sha1' | 'sha256' | 'sha512' })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
             >
               <option value="sha1">SHA-1</option>
               <option value="sha256">SHA-256</option>

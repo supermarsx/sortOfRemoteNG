@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../contexts/useConnections";
 import { Connection, ConnectionSession } from "../types/connection";
+import { isToolProtocol } from "../components/ToolPanel";
 import { SettingsManager } from "../utils/settingsManager";
 import { StatusChecker } from "../utils/statusChecker";
 // import { ScriptEngine } from "../utils/scriptEngine"; // Disabled for Tauri migration
@@ -339,6 +340,12 @@ export const useSessionManager = () => {
   const handleSessionClose = async (sessionId: string) => {
     const session = state.sessions.find((s) => s.id === sessionId);
     if (!session) return;
+
+    // Tool tabs just get removed — no connection lifecycle
+    if (isToolProtocol(session.protocol)) {
+      dispatch({ type: "REMOVE_SESSION", payload: sessionId });
+      return;
+    }
 
     const connection = state.connections.find(
       (c) => c.id === session.connectionId,

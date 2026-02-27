@@ -1386,7 +1386,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
             <div className="truncate text-sm font-semibold">
               {session.name || "Terminal"}
             </div>
-            <div className="truncate text-xs uppercase tracking-[0.2em] text-gray-400">
+            <div className="truncate text-xs uppercase tracking-[0.2em] text-[var(--color-textSecondary)]">
               {session.protocol.toUpperCase()} - {session.hostname}
             </div>
           </div>
@@ -1511,18 +1511,18 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                     </button>
                   )}
                   {showMacroList && (
-                    <div className="absolute right-0 top-full mt-1 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+                    <div className="absolute right-0 top-full mt-1 w-64 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
                       {savedMacros.length === 0 ? (
-                        <div className="p-3 text-xs text-gray-400 text-center">No saved macros</div>
+                        <div className="p-3 text-xs text-[var(--color-textSecondary)] text-center">No saved macros</div>
                       ) : (
                         savedMacros.map(m => (
                           <button
                             key={m.id}
                             onClick={() => handleReplayMacro(m)}
-                            className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 border-b border-gray-700/50 last:border-b-0"
+                            className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-[var(--color-border)] border-b border-[var(--color-border)]/50 last:border-b-0"
                           >
                             <div className="font-medium truncate">{m.name}</div>
-                            <div className="text-[10px] text-gray-400">{m.steps.length} steps</div>
+                            <div className="text-[10px] text-[var(--color-textSecondary)]">{m.steps.length} steps</div>
                           </button>
                         ))
                       )}
@@ -1565,7 +1565,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
               >
                 <Shield size={14} />
                 {totpConfigs.length > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                  <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-[var(--color-text)] text-[8px] font-bold rounded-full flex items-center justify-center">
                     {totpConfigs.length}
                   </span>
                 )}

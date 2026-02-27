@@ -111,7 +111,7 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({
           tabIndex={-1}
           aria-label={visible ? 'Hide password' : 'Show password'}
           className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded
-            text-gray-400 hover:text-gray-200 focus:outline-none transition-colors
+            text-[var(--color-textSecondary)] hover:text-gray-200 focus:outline-none transition-colors
             ${iconOpacity}`}
           {...buttonHandlers}
         >

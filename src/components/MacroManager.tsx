@@ -186,26 +186,26 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700 bg-gray-800/60">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/60">
           <div className="flex items-center gap-3">
             <ListVideo size={18} className="text-blue-400" />
-            <h2 className="text-sm font-semibold text-white">Macro & Recording Manager</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">Macro & Recording Manager</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded">
+          <button onClick={onClose} className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded">
             <X size={16} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-700">
+        <div className="flex border-b border-[var(--color-border)]">
           <button
             onClick={() => setActiveTab('macros')}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'macros'
                 ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                : 'border-transparent text-[var(--color-textSecondary)] hover:text-gray-200'
             }`}
           >
             <CircleDot size={14} />
@@ -216,7 +216,7 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'recordings'
                 ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                : 'border-transparent text-[var(--color-textSecondary)] hover:text-gray-200'
             }`}
           >
             <Disc size={14} />
@@ -225,26 +225,26 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center gap-2 px-4 py-2 bg-gray-800/40 border-b border-gray-700/50">
-          <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-gray-700/40 border border-gray-600/50 rounded-lg">
-            <Search size={14} className="text-gray-400" />
+        <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface)]/40 border-b border-[var(--color-border)]/50">
+          <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-[var(--color-border)]/40 border border-[var(--color-border)]/50 rounded-lg">
+            <Search size={14} className="text-[var(--color-textSecondary)]" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search..."
-              className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 outline-none"
+              className="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-gray-500 outline-none"
             />
           </div>
           {activeTab === 'macros' && (
             <>
-              <button onClick={handleNewMacro} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
+              <button onClick={handleNewMacro} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg">
                 <Plus size={14} /> New
               </button>
-              <button onClick={handleImportMacros} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded-lg">
+              <button onClick={handleImportMacros} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg">
                 <Upload size={14} /> Import
               </button>
-              <button onClick={handleExportMacros} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded-lg" disabled={macros.length === 0}>
+              <button onClick={handleExportMacros} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg" disabled={macros.length === 0}>
                 <Download size={14} /> Export
               </button>
             </>
@@ -256,7 +256,7 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
           {activeTab === 'macros' ? (
             <div className="flex-1 flex overflow-hidden">
               {/* Macro list */}
-              <div className="w-[340px] border-r border-gray-700 overflow-y-auto">
+              <div className="w-[340px] border-r border-[var(--color-border)] overflow-y-auto">
                 {Object.keys(macrosByCategory).length === 0 ? (
                   <div className="p-6 text-center text-gray-500 text-sm">
                     {searchQuery ? 'No macros match your search' : 'No macros yet. Click "New" to create one.'}
@@ -264,19 +264,19 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
                 ) : (
                   Object.entries(macrosByCategory).map(([cat, catMacros]) => (
                     <div key={cat}>
-                      <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-gray-500 bg-gray-800/40 border-b border-gray-700/50">
+                      <div className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-gray-500 bg-[var(--color-surface)]/40 border-b border-[var(--color-border)]/50">
                         {cat}
                       </div>
                       {catMacros.map((macro) => (
                         <div
                           key={macro.id}
                           onClick={() => setEditingMacro(macro)}
-                          className={`px-3 py-2 border-b border-gray-700/30 cursor-pointer hover:bg-gray-800/60 ${
+                          className={`px-3 py-2 border-b border-[var(--color-border)]/30 cursor-pointer hover:bg-[var(--color-surface)]/60 ${
                             editingMacro?.id === macro.id ? 'bg-blue-900/20 border-l-2 border-l-blue-500' : ''
                           }`}
                         >
-                          <div className="text-sm font-medium text-white truncate">{macro.name}</div>
-                          <div className="text-[10px] text-gray-400">
+                          <div className="text-sm font-medium text-[var(--color-text)] truncate">{macro.name}</div>
+                          <div className="text-[10px] text-[var(--color-textSecondary)]">
                             {macro.steps.length} step{macro.steps.length !== 1 ? 's' : ''}
                             {macro.description && ` · ${macro.description}`}
                           </div>
@@ -311,7 +311,7 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
                   {searchQuery ? 'No recordings match your search' : 'No saved recordings yet.'}
                 </div>
               ) : (
-                <div className="divide-y divide-gray-700/50">
+                <div className="divide-y divide-[var(--color-border)]/50">
                   {filteredRecordings
                     .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
                     .map((rec) => (
@@ -379,63 +379,63 @@ const MacroEditor: React.FC<MacroEditorProps> = ({ macro, onChange, onSave, onDe
       {/* Name + Category */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Name</label>
+          <label className="block text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)] mb-1">Name</label>
           <input
             value={macro.name}
             onChange={(e) => updateField('name', e.target.value)}
-            className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white focus:border-blue-500 outline-none"
+            className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] focus:border-blue-500 outline-none"
           />
         </div>
         <div>
-          <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Category</label>
+          <label className="block text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)] mb-1">Category</label>
           <input
             value={macro.category || ''}
             onChange={(e) => updateField('category', e.target.value || undefined)}
             placeholder="General"
-            className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:border-blue-500 outline-none"
+            className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-gray-500 focus:border-blue-500 outline-none"
           />
         </div>
       </div>
 
       {/* Description */}
       <div>
-        <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Description</label>
+        <label className="block text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)] mb-1">Description</label>
         <input
           value={macro.description || ''}
           onChange={(e) => updateField('description', e.target.value || undefined)}
           placeholder="Optional description..."
-          className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:border-blue-500 outline-none"
+          className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-gray-500 focus:border-blue-500 outline-none"
         />
       </div>
 
       {/* Tags */}
       <div>
-        <label className="block text-[10px] uppercase tracking-widest text-gray-400 mb-1">Tags (comma-separated)</label>
+        <label className="block text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)] mb-1">Tags (comma-separated)</label>
         <input
           value={macro.tags?.join(', ') || ''}
           onChange={(e) => updateField('tags', e.target.value.split(',').map((t) => t.trim()).filter(Boolean))}
           placeholder="e.g. deploy, linux, restart"
-          className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:border-blue-500 outline-none"
+          className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] placeholder-gray-500 focus:border-blue-500 outline-none"
         />
       </div>
 
       {/* Steps */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="text-[10px] uppercase tracking-widest text-gray-400">Steps ({macro.steps.length})</label>
+          <label className="text-[10px] uppercase tracking-widest text-[var(--color-textSecondary)]">Steps ({macro.steps.length})</label>
           <button onClick={addStep} className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300">
             <Plus size={12} /> Add Step
           </button>
         </div>
         <div className="space-y-2">
           {macro.steps.map((step, i) => (
-            <div key={i} className="flex items-start gap-2 p-2 bg-gray-800/60 border border-gray-700/50 rounded">
+            <div key={i} className="flex items-start gap-2 p-2 bg-[var(--color-surface)]/60 border border-[var(--color-border)]/50 rounded">
               <div className="flex flex-col items-center gap-0.5 pt-1">
-                <button onClick={() => moveStep(i, -1)} className="text-gray-500 hover:text-gray-300" disabled={i === 0}>
+                <button onClick={() => moveStep(i, -1)} className="text-gray-500 hover:text-[var(--color-textSecondary)]" disabled={i === 0}>
                   <ChevronUp size={12} />
                 </button>
                 <GripVertical size={12} className="text-gray-600" />
-                <button onClick={() => moveStep(i, 1)} className="text-gray-500 hover:text-gray-300" disabled={i === macro.steps.length - 1}>
+                <button onClick={() => moveStep(i, 1)} className="text-gray-500 hover:text-[var(--color-textSecondary)]" disabled={i === macro.steps.length - 1}>
                   <ChevronDown size={12} />
                 </button>
               </div>
@@ -444,16 +444,16 @@ const MacroEditor: React.FC<MacroEditorProps> = ({ macro, onChange, onSave, onDe
                   value={step.command}
                   onChange={(e) => updateStep(i, { command: e.target.value })}
                   placeholder="Command..."
-                  className="w-full px-2 py-1 bg-gray-900 border border-gray-600 rounded text-sm text-white font-mono placeholder-gray-500 focus:border-blue-500 outline-none"
+                  className="w-full px-2 py-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] font-mono placeholder-gray-500 focus:border-blue-500 outline-none"
                 />
-                <div className="flex items-center gap-3 text-xs text-gray-400">
+                <div className="flex items-center gap-3 text-xs text-[var(--color-textSecondary)]">
                   <label className="flex items-center gap-1.5">
                     <Clock size={10} />
                     <input
                       type="number"
                       value={step.delayMs}
                       onChange={(e) => updateStep(i, { delayMs: Math.max(0, Number(e.target.value)) })}
-                      className="w-16 px-1.5 py-0.5 bg-gray-900 border border-gray-600 rounded text-xs text-white outline-none"
+                      className="w-16 px-1.5 py-0.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] outline-none"
                       min={0}
                     />
                     ms
@@ -463,7 +463,7 @@ const MacroEditor: React.FC<MacroEditorProps> = ({ macro, onChange, onSave, onDe
                       type="checkbox"
                       checked={step.sendNewline}
                       onChange={(e) => updateStep(i, { sendNewline: e.target.checked })}
-                      className="rounded border-gray-600"
+                      className="rounded border-[var(--color-border)]"
                     />
                     Send Enter
                   </label>
@@ -478,11 +478,11 @@ const MacroEditor: React.FC<MacroEditorProps> = ({ macro, onChange, onSave, onDe
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 pt-2 border-t border-gray-700">
-        <button onClick={() => onSave(macro)} className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg">
+      <div className="flex items-center gap-2 pt-2 border-t border-[var(--color-border)]">
+        <button onClick={() => onSave(macro)} className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] text-sm rounded-lg">
           <Save size={14} /> Save
         </button>
-        <button onClick={() => onDuplicate(macro)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg">
+        <button onClick={() => onDuplicate(macro)} className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] text-sm rounded-lg">
           <Copy size={14} /> Duplicate
         </button>
         <div className="flex-1" />
@@ -521,15 +521,15 @@ const RecordingRow: React.FC<RecordingRowProps> = ({
   const meta = recording.recording.metadata;
 
   return (
-    <div className={`${isEditing ? 'bg-gray-800/40' : ''}`}>
+    <div className={`${isEditing ? 'bg-[var(--color-surface)]/40' : ''}`}>
       <div
         onClick={onSelect}
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-800/60"
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[var(--color-surface)]/60"
       >
         <Disc size={16} className="text-red-400 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-white truncate">{recording.name}</div>
-          <div className="text-[10px] text-gray-400 flex items-center gap-2">
+          <div className="text-sm font-medium text-[var(--color-text)] truncate">{recording.name}</div>
+          <div className="text-[10px] text-[var(--color-textSecondary)] flex items-center gap-2">
             <span>{meta.host}</span>
             <span>·</span>
             <span>{formatDuration(meta.duration_ms)}</span>
@@ -539,7 +539,7 @@ const RecordingRow: React.FC<RecordingRowProps> = ({
             <span>{new Date(recording.savedAt).toLocaleDateString()}</span>
           </div>
         </div>
-        {isEditing ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+        {isEditing ? <ChevronUp size={14} className="text-[var(--color-textSecondary)]" /> : <ChevronDown size={14} className="text-[var(--color-textSecondary)]" />}
       </div>
       {isEditing && (
         <div className="px-4 pb-3 flex items-center gap-2">
@@ -548,7 +548,7 @@ const RecordingRow: React.FC<RecordingRowProps> = ({
               <input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white outline-none focus:border-blue-500"
+                className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] outline-none focus:border-blue-500"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -564,16 +564,16 @@ const RecordingRow: React.FC<RecordingRowProps> = ({
             </div>
           ) : (
             <>
-              <button onClick={() => setIsRenaming(true)} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => setIsRenaming(true)} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Edit2 size={12} /> Rename
               </button>
-              <button onClick={() => onExport('asciicast')} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => onExport('asciicast')} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Download size={12} /> Asciicast
               </button>
-              <button onClick={() => onExport('script')} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => onExport('script')} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Download size={12} /> Script
               </button>
-              <button onClick={() => onExport('json')} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => onExport('json')} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Download size={12} /> JSON
               </button>
               <div className="flex-1" />

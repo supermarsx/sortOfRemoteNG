@@ -390,7 +390,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({ isOpen, 
             {/* Action Buttons */}
             <button
               onClick={exportMetrics}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-xs font-medium"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors text-xs font-medium"
               title={t('common.export', 'Export')}
             >
               <Download size={14} />

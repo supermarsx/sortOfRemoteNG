@@ -152,40 +152,40 @@ export const RdpSessionManager: React.FC<RdpSessionManagerProps> = ({ isOpen, on
       className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
+      <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-lg bg-indigo-600/20 flex items-center justify-center">
               <Monitor size={16} className="text-indigo-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">RDP Sessions</h2>
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">RDP Sessions</h2>
               <p className="text-xs text-gray-500">
                 {sessions.length} active session{sessions.length !== 1 ? 's' : ''}
               </p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <label className="flex items-center space-x-1.5 text-xs text-gray-400 cursor-pointer">
+            <label className="flex items-center space-x-1.5 text-xs text-[var(--color-textSecondary)] cursor-pointer">
               <input
                 type="checkbox"
                 checked={autoRefresh}
                 onChange={(e) => setAutoRefresh(e.target.checked)}
-                className="rounded border-gray-600 bg-gray-700 text-indigo-600 w-3.5 h-3.5"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-indigo-600 w-3.5 h-3.5"
               />
               <span>Auto-refresh</span>
             </label>
             <button
               onClick={handleRefresh}
-              className={`p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white ${isLoading ? 'animate-spin' : ''}`}
+              className={`p-2 hover:bg-[var(--color-surface)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${isLoading ? 'animate-spin' : ''}`}
               title="Refresh"
             >
               <RefreshCw size={14} />
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white"
+              className="p-2 hover:bg-[var(--color-surface)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             >
               <X size={16} />
             </button>
@@ -219,13 +219,13 @@ export const RdpSessionManager: React.FC<RdpSessionManagerProps> = ({ isOpen, on
               return (
                 <div
                   key={session.id}
-                  className="bg-gray-800/60 border border-gray-700 rounded-lg p-4"
+                  className="bg-[var(--color-surface)]/60 border border-[var(--color-border)] rounded-lg p-4"
                 >
                   {/* Session header */}
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center space-x-2">
                       <div className={`w-2 h-2 rounded-full ${session.connected ? 'bg-green-400' : 'bg-red-400'}`} />
-                      <span className="text-sm font-medium text-white">
+                      <span className="text-sm font-medium text-[var(--color-text)]">
                         {session.host}:{session.port}
                       </span>
                       {session.username && (
@@ -237,14 +237,14 @@ export const RdpSessionManager: React.FC<RdpSessionManagerProps> = ({ isOpen, on
                     <div className="flex items-center space-x-1">
                       <button
                         onClick={() => handleDetach(session.id)}
-                        className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-yellow-400 transition-colors"
+                        className="p-1.5 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-yellow-400 transition-colors"
                         title="Detach viewer (keep session running)"
                       >
                         <Unplug size={14} />
                       </button>
                       <button
                         onClick={() => handleDisconnect(session.id)}
-                        className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
+                        className="p-1.5 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-red-400 transition-colors"
                         title="Disconnect session"
                       >
                         <PowerOff size={14} />
@@ -254,55 +254,55 @@ export const RdpSessionManager: React.FC<RdpSessionManagerProps> = ({ isOpen, on
 
                   {/* Info grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                    <div className="bg-gray-900/50 rounded px-2.5 py-1.5">
+                    <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
                       <span className="text-gray-500 block">Resolution</span>
-                      <span className="text-gray-300 font-mono">
+                      <span className="text-[var(--color-textSecondary)] font-mono">
                         {session.desktop_width}&times;{session.desktop_height}
                       </span>
                     </div>
-                    <div className="bg-gray-900/50 rounded px-2.5 py-1.5">
+                    <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
                       <span className="text-gray-500 block">Session ID</span>
-                      <span className="text-gray-300 font-mono truncate block" title={session.id}>
+                      <span className="text-[var(--color-textSecondary)] font-mono truncate block" title={session.id}>
                         {session.id.slice(0, 8)}
                       </span>
                     </div>
                     {stats && (
                       <>
-                        <div className="bg-gray-900/50 rounded px-2.5 py-1.5">
+                        <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
                           <span className="text-gray-500 flex items-center gap-1">
                             <Clock size={10} /> Uptime
                           </span>
-                          <span className="text-gray-300 font-mono">
+                          <span className="text-[var(--color-textSecondary)] font-mono">
                             {formatUptime(stats.uptime_secs)}
                           </span>
                         </div>
-                        <div className="bg-gray-900/50 rounded px-2.5 py-1.5">
+                        <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
                           <span className="text-gray-500 flex items-center gap-1">
                             <Activity size={10} /> FPS
                           </span>
-                          <span className="text-gray-300 font-mono">
+                          <span className="text-[var(--color-textSecondary)] font-mono">
                             {stats.fps.toFixed(1)}
                           </span>
                         </div>
-                        <div className="bg-gray-900/50 rounded px-2.5 py-1.5">
+                        <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
                           <span className="text-gray-500 block">Received</span>
-                          <span className="text-gray-300 font-mono">
+                          <span className="text-[var(--color-textSecondary)] font-mono">
                             {formatBytes(stats.bytes_received)}
                           </span>
                         </div>
-                        <div className="bg-gray-900/50 rounded px-2.5 py-1.5">
+                        <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
                           <span className="text-gray-500 block">Sent</span>
-                          <span className="text-gray-300 font-mono">
+                          <span className="text-[var(--color-textSecondary)] font-mono">
                             {formatBytes(stats.bytes_sent)}
                           </span>
                         </div>
-                        <div className="bg-gray-900/50 rounded px-2.5 py-1.5">
+                        <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
                           <span className="text-gray-500 block">Frames</span>
-                          <span className="text-gray-300 font-mono">
+                          <span className="text-[var(--color-textSecondary)] font-mono">
                             {stats.frame_count.toLocaleString()}
                           </span>
                         </div>
-                        <div className="bg-gray-900/50 rounded px-2.5 py-1.5">
+                        <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5">
                           <span className="text-gray-500 block">Phase</span>
                           <span className={`font-mono ${stats.phase === 'active' ? 'text-green-400' : 'text-yellow-400'}`}>
                             {stats.phase}
@@ -311,9 +311,9 @@ export const RdpSessionManager: React.FC<RdpSessionManagerProps> = ({ isOpen, on
                       </>
                     )}
                     {session.connection_id && (
-                      <div className="bg-gray-900/50 rounded px-2.5 py-1.5 col-span-2">
+                      <div className="bg-[var(--color-background)]/50 rounded px-2.5 py-1.5 col-span-2">
                         <span className="text-gray-500 block">Connection ID</span>
-                        <span className="text-gray-300 font-mono truncate block" title={session.connection_id}>
+                        <span className="text-[var(--color-textSecondary)] font-mono truncate block" title={session.connection_id}>
                           {session.connection_id}
                         </span>
                       </div>
@@ -335,7 +335,7 @@ export const RdpSessionManager: React.FC<RdpSessionManagerProps> = ({ isOpen, on
 
         {/* Footer */}
         {sessions.length > 0 && (
-          <div className="px-5 py-3 border-t border-gray-700 flex items-center justify-between">
+          <div className="px-5 py-3 border-t border-[var(--color-border)] flex items-center justify-between">
             <div className="text-xs text-gray-500">
               <ArrowDownToLine size={12} className="inline mr-1" />
               Total traffic: {formatBytes(

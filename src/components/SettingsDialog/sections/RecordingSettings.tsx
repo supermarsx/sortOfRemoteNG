@@ -58,17 +58,17 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
           <Circle className="w-5 h-5" />
           Recording
         </h3>
-        <p className="text-xs text-gray-400 mb-4">
+        <p className="text-xs text-[var(--color-textSecondary)] mb-4">
           Configure SSH terminal and RDP screen recording, export formats, and storage limits.
         </p>
       </div>
 
       {/* ── SSH Terminal Recording ─────────────────────── */}
-      <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+      <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
         <Terminal className="w-4 h-4" />
         SSH Terminal Recording
       </h4>
@@ -78,7 +78,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Power size={14} className="text-green-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Enable SSH recording</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable SSH recording</span>
               <p className="text-[10px] text-gray-500">Allow SSH terminal sessions to be recorded</p>
             </div>
           </div>
@@ -86,7 +86,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="checkbox"
             checked={recording.enabled}
             onChange={(e) => updateSsh({ enabled: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
         </label>
 
@@ -94,7 +94,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Circle size={14} className="text-red-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Auto-record SSH sessions</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-record SSH sessions</span>
               <p className="text-[10px] text-gray-500">Automatically start recording when connecting to SSH</p>
             </div>
           </div>
@@ -102,7 +102,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="checkbox"
             checked={recording.autoRecordSessions}
             onChange={(e) => updateSsh({ autoRecordSessions: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             disabled={!recording.enabled}
           />
         </label>
@@ -111,7 +111,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Keyboard size={14} className="text-orange-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Record input (keystrokes)</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Record input (keystrokes)</span>
               <p className="text-[10px] text-gray-500">Include typed input in recordings (may contain sensitive data)</p>
             </div>
           </div>
@@ -119,7 +119,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="checkbox"
             checked={recording.recordInput}
             onChange={(e) => updateSsh({ recordInput: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
         </label>
       </div>
@@ -130,7 +130,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Clock size={14} className="text-blue-400" />
             <div>
-              <span className="text-sm text-gray-300">Max recording duration</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Max recording duration</span>
               <p className="text-[10px] text-gray-500">0 = unlimited</p>
             </div>
           </div>
@@ -139,10 +139,10 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
               type="number"
               value={recording.maxRecordingDurationMinutes}
               onChange={(e) => updateSsh({ maxRecordingDurationMinutes: Math.max(0, Number(e.target.value)) })}
-              className="w-20 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white text-right outline-none focus:border-blue-500"
+              className="w-20 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] text-right outline-none focus:border-blue-500"
               min={0}
             />
-            <span className="text-xs text-gray-400">min</span>
+            <span className="text-xs text-[var(--color-textSecondary)]">min</span>
           </div>
         </div>
 
@@ -150,7 +150,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <HardDrive size={14} className="text-green-400" />
             <div>
-              <span className="text-sm text-gray-300">Max stored recordings</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Max stored recordings</span>
               <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
             </div>
           </div>
@@ -158,7 +158,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="number"
             value={recording.maxStoredRecordings}
             onChange={(e) => updateSsh({ maxStoredRecordings: Math.max(1, Number(e.target.value)) })}
-            className="w-20 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white text-right outline-none focus:border-blue-500"
+            className="w-20 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] text-right outline-none focus:border-blue-500"
             min={1}
           />
         </div>
@@ -166,12 +166,12 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
         <div data-setting-key="recording.defaultExportFormat" className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Download size={14} className="text-purple-400" />
-            <span className="text-sm text-gray-300">Default export format</span>
+            <span className="text-sm text-[var(--color-textSecondary)]">Default export format</span>
           </div>
           <select
             value={recording.defaultExportFormat}
             onChange={(e) => updateSsh({ defaultExportFormat: e.target.value as RecordingConfig['defaultExportFormat'] })}
-            className="px-3 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white outline-none focus:border-blue-500"
+            className="px-3 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] outline-none focus:border-blue-500"
           >
             <option value="asciicast">Asciicast (asciinema)</option>
             <option value="script">Script (text)</option>
@@ -190,7 +190,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* ── RDP Screen Recording ──────────────────────── */}
-      <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2 pt-4">
+      <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2 pt-4">
         <Monitor className="w-4 h-4" />
         RDP Screen Recording
       </h4>
@@ -200,7 +200,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Power size={14} className="text-green-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Enable RDP recording</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable RDP recording</span>
               <p className="text-[10px] text-gray-500">Allow RDP sessions to be screen-recorded</p>
             </div>
           </div>
@@ -208,7 +208,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="checkbox"
             checked={rdpRec.enabled}
             onChange={(e) => updateRdp({ enabled: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
         </label>
 
@@ -216,7 +216,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Circle size={14} className="text-red-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Auto-record RDP sessions</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-record RDP sessions</span>
               <p className="text-[10px] text-gray-500">Automatically start video recording on RDP connect</p>
             </div>
           </div>
@@ -224,7 +224,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="checkbox"
             checked={rdpRec.autoRecordRdpSessions}
             onChange={(e) => updateRdp({ autoRecordRdpSessions: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             disabled={!rdpRec.enabled}
           />
         </label>
@@ -233,7 +233,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Save size={14} className="text-green-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Auto-save to library</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-save to library</span>
               <p className="text-[10px] text-gray-500">Save RDP recordings to the Recording Manager instead of prompting a file dialog</p>
             </div>
           </div>
@@ -241,7 +241,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="checkbox"
             checked={rdpRec.autoSaveToLibrary}
             onChange={(e) => updateRdp({ autoSaveToLibrary: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
         </label>
       </div>
@@ -251,12 +251,12 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
         <div data-setting-key="rdpRecording.defaultVideoFormat" className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Film size={14} className="text-cyan-400" />
-            <span className="text-sm text-gray-300">Video format</span>
+            <span className="text-sm text-[var(--color-textSecondary)]">Video format</span>
           </div>
           <select
             value={rdpRec.defaultVideoFormat}
             onChange={(e) => updateRdp({ defaultVideoFormat: e.target.value as 'webm' | 'mp4' | 'gif' })}
-            className="px-3 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white outline-none focus:border-blue-500"
+            className="px-3 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] outline-none focus:border-blue-500"
           >
             <option value="webm">WebM (VP8/VP9)</option>
             <option value="mp4">MP4 (H.264)</option>
@@ -268,7 +268,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Gauge size={14} className="text-yellow-400" />
             <div>
-              <span className="text-sm text-gray-300">Recording FPS</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Recording FPS</span>
               <p className="text-[10px] text-gray-500">Higher = smoother but larger files</p>
             </div>
           </div>
@@ -282,7 +282,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
               onChange={(e) => updateRdp({ recordingFps: Number(e.target.value) })}
               className="w-24 accent-blue-500"
             />
-            <span className="text-xs text-gray-300 w-12 text-right font-mono">{rdpRec.recordingFps} fps</span>
+            <span className="text-xs text-[var(--color-textSecondary)] w-12 text-right font-mono">{rdpRec.recordingFps} fps</span>
           </div>
         </div>
 
@@ -290,7 +290,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Gauge size={14} className="text-orange-400" />
             <div>
-              <span className="text-sm text-gray-300">Video bitrate</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Video bitrate</span>
               <p className="text-[10px] text-gray-500">Higher = better quality but larger files</p>
             </div>
           </div>
@@ -304,7 +304,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
               onChange={(e) => updateRdp({ videoBitrateMbps: Number(e.target.value) })}
               className="w-24 accent-blue-500"
             />
-            <span className="text-xs text-gray-300 w-16 text-right font-mono">{rdpRec.videoBitrateMbps} Mbps</span>
+            <span className="text-xs text-[var(--color-textSecondary)] w-16 text-right font-mono">{rdpRec.videoBitrateMbps} Mbps</span>
           </div>
         </div>
       </div>
@@ -315,7 +315,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Clock size={14} className="text-blue-400" />
             <div>
-              <span className="text-sm text-gray-300">Max RDP recording duration</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Max RDP recording duration</span>
               <p className="text-[10px] text-gray-500">0 = unlimited</p>
             </div>
           </div>
@@ -324,10 +324,10 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
               type="number"
               value={rdpRec.maxRdpRecordingDurationMinutes}
               onChange={(e) => updateRdp({ maxRdpRecordingDurationMinutes: Math.max(0, Number(e.target.value)) })}
-              className="w-20 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white text-right outline-none focus:border-blue-500"
+              className="w-20 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] text-right outline-none focus:border-blue-500"
               min={0}
             />
-            <span className="text-xs text-gray-400">min</span>
+            <span className="text-xs text-[var(--color-textSecondary)]">min</span>
           </div>
         </div>
 
@@ -335,7 +335,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <HardDrive size={14} className="text-green-400" />
             <div>
-              <span className="text-sm text-gray-300">Max stored RDP recordings</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Max stored RDP recordings</span>
               <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
             </div>
           </div>
@@ -343,7 +343,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="number"
             value={rdpRec.maxStoredRdpRecordings}
             onChange={(e) => updateRdp({ maxStoredRdpRecordings: Math.max(1, Number(e.target.value)) })}
-            className="w-20 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white text-right outline-none focus:border-blue-500"
+            className="w-20 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] text-right outline-none focus:border-blue-500"
             min={1}
           />
         </div>
@@ -366,7 +366,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
       </div>
 
       {/* ── Web Session Recording ──────────────────────── */}
-      <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2 pt-4">
+      <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2 pt-4">
         <Globe className="w-4 h-4" />
         Web Session Recording
       </h4>
@@ -376,7 +376,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Power size={14} className="text-green-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Enable web recording</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable web recording</span>
               <p className="text-[10px] text-gray-500">Allow web sessions to be recorded (HAR and video)</p>
             </div>
           </div>
@@ -384,7 +384,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="checkbox"
             checked={webRec.enabled}
             onChange={(e) => updateWeb({ enabled: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
         </label>
 
@@ -392,7 +392,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Circle size={14} className="text-red-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Auto-record web sessions</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-record web sessions</span>
               <p className="text-[10px] text-gray-500">Automatically start HTTP traffic recording on web connect</p>
             </div>
           </div>
@@ -400,7 +400,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="checkbox"
             checked={webRec.autoRecordWebSessions}
             onChange={(e) => updateWeb({ autoRecordWebSessions: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             disabled={!webRec.enabled}
           />
         </label>
@@ -409,7 +409,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Eye size={14} className="text-orange-400" />
             <div>
-              <span className="text-sm text-gray-300 group-hover:text-white">Record HTTP headers</span>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Record HTTP headers</span>
               <p className="text-[10px] text-gray-500">Include request and response headers in recordings</p>
             </div>
           </div>
@@ -417,7 +417,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="checkbox"
             checked={webRec.recordHeaders}
             onChange={(e) => updateWeb({ recordHeaders: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
         </label>
       </div>
@@ -428,7 +428,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <Clock size={14} className="text-blue-400" />
             <div>
-              <span className="text-sm text-gray-300">Max web recording duration</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Max web recording duration</span>
               <p className="text-[10px] text-gray-500">0 = unlimited</p>
             </div>
           </div>
@@ -437,10 +437,10 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
               type="number"
               value={webRec.maxWebRecordingDurationMinutes}
               onChange={(e) => updateWeb({ maxWebRecordingDurationMinutes: Math.max(0, Number(e.target.value)) })}
-              className="w-20 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white text-right outline-none focus:border-blue-500"
+              className="w-20 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] text-right outline-none focus:border-blue-500"
               min={0}
             />
-            <span className="text-xs text-gray-400">min</span>
+            <span className="text-xs text-[var(--color-textSecondary)]">min</span>
           </div>
         </div>
 
@@ -448,7 +448,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
           <div className="flex items-center gap-3">
             <HardDrive size={14} className="text-green-400" />
             <div>
-              <span className="text-sm text-gray-300">Max stored web recordings</span>
+              <span className="text-sm text-[var(--color-textSecondary)]">Max stored web recordings</span>
               <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
             </div>
           </div>
@@ -456,7 +456,7 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
             type="number"
             value={webRec.maxStoredWebRecordings}
             onChange={(e) => updateWeb({ maxStoredWebRecordings: Math.max(1, Number(e.target.value)) })}
-            className="w-20 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white text-right outline-none focus:border-blue-500"
+            className="w-20 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] text-right outline-none focus:border-blue-500"
             min={1}
           />
         </div>
@@ -464,12 +464,12 @@ const RecordingSettings: React.FC<RecordingSettingsProps> = ({
         <div data-setting-key="webRecording.defaultExportFormat" className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <FileText size={14} className="text-purple-400" />
-            <span className="text-sm text-gray-300">Default export format</span>
+            <span className="text-sm text-[var(--color-textSecondary)]">Default export format</span>
           </div>
           <select
             value={webRec.defaultExportFormat}
             onChange={(e) => updateWeb({ defaultExportFormat: e.target.value as 'json' | 'har' })}
-            className="px-3 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white outline-none focus:border-blue-500"
+            className="px-3 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] outline-none focus:border-blue-500"
           >
             <option value="har">HAR (HTTP Archive)</option>
             <option value="json">JSON</option>

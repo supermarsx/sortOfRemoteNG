@@ -169,14 +169,14 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
     return (
       <div className="flex flex-col h-full">
         {showTabBar && (
-          <div className="flex bg-gray-800 border-b border-gray-700 overflow-x-auto">
+          <div className="flex bg-[var(--color-surface)] border-b border-[var(--color-border)] overflow-x-auto">
             {sessions.map((session) => (
               <div
                 key={session.id}
-                className={`flex items-center px-4 py-2 border-r border-gray-700 cursor-pointer min-w-0 ${
+                className={`flex items-center px-4 py-2 border-r border-[var(--color-border)] cursor-pointer min-w-0 ${
                   session.id === activeSessionId
-                    ? "bg-gray-700 text-white"
-                    : "text-gray-300 hover:bg-gray-700/50"
+                    ? "bg-[var(--color-border)] text-[var(--color-text)]"
+                    : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
                 }`}
                 onClick={() => onSessionSelect(session.id)}
                 onAuxClick={(e) => handleMiddleClick(session.id, e)}
@@ -187,7 +187,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                     event.stopPropagation();
                     onSessionDetach(session.id);
                   }}
-                  className="text-gray-400 hover:text-white mr-2"
+                  className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)] mr-2"
                   title="Detach"
                 >
                   ↗
@@ -197,7 +197,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                     event.stopPropagation();
                     onSessionClose(session.id);
                   }}
-                  className="text-gray-400 hover:text-white"
+                  className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                 >
                   x
                 </button>
@@ -252,19 +252,19 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
             <div
               style={style}
               className={`border-2 transition-all ${
-                isActive ? "border-blue-500" : "border-gray-600"
+                isActive ? "border-blue-500" : "border-[var(--color-border)]"
               }`}
               onClick={() => onSessionSelect(session.id)}
             >
-              <div className="bg-gray-800 border-b border-gray-700 px-2 py-1 flex items-center justify-between">
-                <span className="text-white text-sm truncate">{session.name}</span>
+              <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-2 py-1 flex items-center justify-between">
+                <span className="text-[var(--color-text)] text-sm truncate">{session.name}</span>
                 <div className="flex items-center space-x-1">
                   <button
                     onClick={(event) => {
                       event.stopPropagation();
                       onSessionDetach(session.id);
                     }}
-                    className="text-gray-400 hover:text-white"
+                    className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                     title="Detach"
                   >
                     ↗
@@ -274,7 +274,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                       event.stopPropagation();
                       onSessionClose(session.id);
                     }}
-                    className="text-gray-400 hover:text-white"
+                    className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                   >
                     x
                   </button>
@@ -296,12 +296,12 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           className={`border-2 rounded cursor-pointer transition-all ${
             session.id === activeSessionId
               ? "border-blue-500 bg-blue-900/20"
-              : "border-gray-600 hover:border-gray-500"
+              : "border-[var(--color-border)] hover:border-[var(--color-border)]"
           }`}
           onClick={() => onSessionSelect(session.id)}
         >
-          <div className="bg-gray-800 px-2 py-1 text-xs text-white truncate">{session.name}</div>
-          <div className="h-full bg-gray-900 flex items-center justify-center">
+          <div className="bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] truncate">{session.name}</div>
+          <div className="h-full bg-[var(--color-background)] flex items-center justify-center">
             <span className="text-gray-500 text-xs">Preview</span>
           </div>
         </div>
@@ -311,12 +311,12 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
+      <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <button
             onClick={() => handleLayoutModeChange("tabs")}
             className={`p-2 rounded transition-colors ${
-              layout.mode === "tabs" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+              layout.mode === "tabs" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="Tabs"
           >
@@ -326,8 +326,8 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
             onClick={() => handleLayoutModeChange("splitVertical")}
             className={`p-2 rounded transition-colors ${
               layout.mode === "splitVertical"
-                ? "bg-blue-600 text-white"
-                : "text-gray-400 hover:text-white"
+                ? "bg-blue-600 text-[var(--color-text)]"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="Split left/right"
           >
@@ -337,8 +337,8 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
             onClick={() => handleLayoutModeChange("splitHorizontal")}
             className={`p-2 rounded transition-colors ${
               layout.mode === "splitHorizontal"
-                ? "bg-blue-600 text-white"
-                : "text-gray-400 hover:text-white"
+                ? "bg-blue-600 text-[var(--color-text)]"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="Split top/bottom"
           >
@@ -347,7 +347,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <button
             onClick={() => handleLayoutModeChange("grid2")}
             className={`p-2 rounded transition-colors ${
-              layout.mode === "grid2" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+              layout.mode === "grid2" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="2 side by side"
           >
@@ -356,7 +356,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <button
             onClick={() => handleLayoutModeChange("grid4")}
             className={`p-2 rounded transition-colors ${
-              layout.mode === "grid4" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+              layout.mode === "grid4" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="4 squares"
           >
@@ -365,7 +365,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <button
             onClick={() => handleLayoutModeChange("grid6")}
             className={`p-2 rounded transition-colors ${
-              layout.mode === "grid6" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+              layout.mode === "grid6" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="6 squares"
           >
@@ -377,7 +377,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
             <button
               onClick={() => setShowCustomGrid(!showCustomGrid)}
               className={`p-2 rounded transition-colors ${
-                showCustomGrid ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+                showCustomGrid ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               }`}
               title="Custom grid layout"
             >
@@ -385,12 +385,12 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
             </button>
             
             {showCustomGrid && (
-              <div className="absolute top-full left-0 mt-2 bg-gray-800 border border-gray-600 rounded-lg p-4 z-[9999] shadow-lg min-w-[200px]">
-                <div className="text-white text-sm font-medium mb-3">Custom Grid Layout</div>
+              <div className="absolute top-full left-0 mt-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 z-[9999] shadow-lg min-w-[200px]">
+                <div className="text-[var(--color-text)] text-sm font-medium mb-3">Custom Grid Layout</div>
                 
                 <div className="space-y-3">
                   <div>
-                    <label className="text-gray-400 text-xs block mb-1">Columns</label>
+                    <label className="text-[var(--color-textSecondary)] text-xs block mb-1">Columns</label>
                     <div className="flex items-center space-x-2">
                       <input
                         type="range"
@@ -400,12 +400,12 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                         onChange={(e) => setCustomCols(parseInt(e.target.value))}
                         className="flex-1 accent-blue-500"
                       />
-                      <span className="text-white text-sm w-6">{customCols}</span>
+                      <span className="text-[var(--color-text)] text-sm w-6">{customCols}</span>
                     </div>
                   </div>
                   
                   <div>
-                    <label className="text-gray-400 text-xs block mb-1">Rows</label>
+                    <label className="text-[var(--color-textSecondary)] text-xs block mb-1">Rows</label>
                     <div className="flex items-center space-x-2">
                       <input
                         type="range"
@@ -415,12 +415,12 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                         onChange={(e) => setCustomRows(parseInt(e.target.value))}
                         className="flex-1 accent-blue-500"
                       />
-                      <span className="text-white text-sm w-6">{customRows}</span>
+                      <span className="text-[var(--color-text)] text-sm w-6">{customRows}</span>
                     </div>
                   </div>
                   
                   {/* Grid Preview */}
-                  <div className="border border-gray-600 rounded p-2">
+                  <div className="border border-[var(--color-border)] rounded p-2">
                     <div 
                       className="grid gap-1"
                       style={{ 
@@ -442,7 +442,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
                   
                   <button
                     onClick={handleCustomGridApply}
-                    className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors"
+                    className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded text-sm transition-colors"
                   >
                     Apply Layout
                   </button>
@@ -452,7 +452,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           </div>
         </div>
 
-        <div className="text-gray-400 text-sm">
+        <div className="text-[var(--color-textSecondary)] text-sm">
           {sessions.length} session{sessions.length !== 1 ? "s" : ""}
         </div>
       </div>

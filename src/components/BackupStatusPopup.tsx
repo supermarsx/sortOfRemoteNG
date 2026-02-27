@@ -166,7 +166,7 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
     if (backupStatus.lastBackupStatus === 'success') {
       return <CheckCircle className="w-4 h-4 text-green-400" />;
     }
-    return <HardDrive className="w-4 h-4 text-gray-400" />;
+    return <HardDrive className="w-4 h-4 text-[var(--color-textSecondary)]" />;
   };
 
   const handleBackupNow = async () => {
@@ -311,11 +311,11 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
               el.style.left = `${left}px`;
             }
           }}
-          className="fixed w-96 bg-gray-800 border border-gray-700 rounded-lg shadow-xl"
+          className="fixed w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl"
           style={{ zIndex: 9999 }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
             <div className="flex items-center gap-2">
               <HardDrive className="w-5 h-5 text-green-400" />
               <h3 className="font-semibold text-gray-200">
@@ -325,21 +325,21 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setShowBackupList(!showBackupList)}
-                className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-gray-200"
+                className="p-1.5 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-gray-200"
                 title={t('backup.viewBackups', 'View Backups')}
               >
                 <FolderOpen className="w-4 h-4" />
               </button>
               <button
                 onClick={onOpenSettings}
-                className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-gray-200"
+                className="p-1.5 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-gray-200"
                 title={t('backup.settings', 'Backup Settings')}
               >
                 <Settings className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-gray-200"
+                className="p-1.5 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-gray-200"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -353,7 +353,7 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
               <div className="space-y-3 mb-4">
                 {/* Last Backup */}
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">{t('backup.lastBackup', 'Last backup')}:</span>
+                  <span className="text-[var(--color-textSecondary)]">{t('backup.lastBackup', 'Last backup')}:</span>
                   <div className="flex items-center gap-2">
                     {backupStatus.lastBackupStatus === 'success' && (
                       <CheckCircle className="w-3.5 h-3.5 text-green-400" />
@@ -369,7 +369,7 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
 
                 {/* Next Scheduled */}
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-400">{t('backup.nextBackup', 'Next backup')}:</span>
+                  <span className="text-[var(--color-textSecondary)]">{t('backup.nextBackup', 'Next backup')}:</span>
                   <div className="flex items-center gap-1.5 text-gray-200">
                     <Timer className="w-3.5 h-3.5 text-gray-500" />
                     {formatNextTime(backupStatus.nextScheduledTime)}
@@ -377,7 +377,7 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
                 </div>
 
                 {/* Stats */}
-                <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-700">
+                <div className="flex items-center justify-between text-sm pt-2 border-t border-[var(--color-border)]">
                   <span className="text-gray-500">
                     {backupStatus.backupCount} {t('backup.backups', 'backups')}
                   </span>
@@ -447,8 +447,8 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
 
             {/* Backup List */}
             {showBackupList && (
-              <div className="mt-4 pt-4 border-t border-gray-700">
-                <h4 className="text-sm font-medium text-gray-300 mb-2">
+              <div className="mt-4 pt-4 border-t border-[var(--color-border)]">
+                <h4 className="text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   {t('backup.availableBackups', 'Available Backups')}
                 </h4>
                 {backupList.length === 0 ? (
@@ -461,7 +461,7 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
                         className="flex items-center justify-between p-2 bg-gray-750 rounded-lg"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="text-xs text-gray-300 truncate">
+                          <div className="text-xs text-[var(--color-textSecondary)] truncate">
                             {backup.filename}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -474,14 +474,14 @@ export const BackupStatusPopup: React.FC<BackupStatusPopupProps> = ({
                         <div className="flex items-center gap-1 ml-2">
                           <button
                             onClick={() => handleRestoreBackup(backup.id)}
-                            className="p-1 rounded hover:bg-gray-600 text-gray-400 hover:text-green-400"
+                            className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-green-400"
                             title={t('backup.restore', 'Restore')}
                           >
                             <Download className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleDeleteBackup(backup.id)}
-                            className="p-1 rounded hover:bg-gray-600 text-gray-400 hover:text-red-400"
+                            className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-red-400"
                             title={t('backup.delete', 'Delete')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />

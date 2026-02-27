@@ -228,40 +228,40 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
 
   return (
     <>
-      <div className="flex flex-col h-full bg-gray-900 border-l border-gray-700 overflow-hidden">
+      <div className="flex flex-col h-full bg-[var(--color-background)] border-l border-[var(--color-border)] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] flex-shrink-0">
           <div className="flex items-center space-x-2.5">
             <div className="w-7 h-7 rounded-lg bg-indigo-600/20 flex items-center justify-center">
               <Monitor size={14} className="text-indigo-400" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-white leading-tight">RDP Sessions</h2>
+              <h2 className="text-sm font-semibold text-[var(--color-text)] leading-tight">RDP Sessions</h2>
               <p className="text-[10px] text-gray-500">
                 {sessions.length} active session{sessions.length !== 1 ? 's' : ''}
               </p>
             </div>
           </div>
           <div className="flex items-center space-x-1">
-            <label className="flex items-center space-x-1 text-[10px] text-gray-400 cursor-pointer">
+            <label className="flex items-center space-x-1 text-[10px] text-[var(--color-textSecondary)] cursor-pointer">
               <input
                 type="checkbox"
                 checked={autoRefresh}
                 onChange={(e) => setAutoRefresh(e.target.checked)}
-                className="rounded border-gray-600 bg-gray-700 text-indigo-600 w-3 h-3"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-indigo-600 w-3 h-3"
               />
               <span>Auto</span>
             </label>
             <button
               onClick={handleRefresh}
-              className={`p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-400 hover:text-white ${isLoading ? 'animate-spin' : ''}`}
+              className={`p-1.5 hover:bg-[var(--color-surface)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${isLoading ? 'animate-spin' : ''}`}
               data-tooltip="Refresh"
             >
               <RefreshCw size={12} />
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-400 hover:text-white"
+              className="p-1.5 hover:bg-[var(--color-surface)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               data-tooltip="Close panel"
             >
               <PanelRightClose size={14} />
@@ -270,13 +270,13 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
         </div>
 
         {/* Internal tab bar */}
-        <div className="flex border-b border-gray-700 flex-shrink-0">
+        <div className="flex border-b border-[var(--color-border)] flex-shrink-0">
           <button
             onClick={() => { setActiveTab('sessions'); setLogSessionFilter(null); }}
             className={`px-4 py-2 text-xs font-medium transition-colors ${
               activeTab === 'sessions'
-                ? 'text-white border-b-2 border-indigo-500'
-                : 'text-gray-400 hover:text-gray-300'
+                ? 'text-[var(--color-text)] border-b-2 border-indigo-500'
+                : 'text-[var(--color-textSecondary)] hover:text-[var(--color-textSecondary)]'
             }`}
           >
             Sessions
@@ -285,8 +285,8 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
             onClick={() => setActiveTab('logs')}
             className={`px-4 py-2 text-xs font-medium transition-colors ${
               activeTab === 'logs'
-                ? 'text-white border-b-2 border-indigo-500'
-                : 'text-gray-400 hover:text-gray-300'
+                ? 'text-[var(--color-text)] border-b-2 border-indigo-500'
+                : 'text-[var(--color-textSecondary)] hover:text-[var(--color-textSecondary)]'
             }`}
           >
             Logs
@@ -327,12 +327,12 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                   return (
                     <div
                       key={session.id}
-                      className="bg-gray-800/60 border border-gray-700 rounded-lg p-2.5 overflow-hidden"
+                      className="bg-[var(--color-surface)]/60 border border-[var(--color-border)] rounded-lg p-2.5 overflow-hidden"
                     >
                       <div className="flex gap-2.5">
                         {/* Thumbnail column - small on the left */}
                         {thumbnailsEnabled && (
-                          <div className="flex-shrink-0 w-[120px] h-[68px] rounded overflow-hidden bg-gray-900">
+                          <div className="flex-shrink-0 w-[120px] h-[68px] rounded overflow-hidden bg-[var(--color-background)]">
                             {thumbnails[session.id] ? (
                               <img
                                 src={thumbnails[session.id]}
@@ -362,7 +362,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                                 : 'bg-red-400'
                             }`} />
                             <div className="min-w-0">
-                              <span className="text-xs font-medium text-white block truncate">
+                              <span className="text-xs font-medium text-[var(--color-text)] block truncate">
                                 {display.name}
                               </span>
                               {display.subtitle && (
@@ -378,7 +378,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                             {isDetached && onReattachSession && (
                               <button
                                 onClick={() => onReattachSession(session.id, session.connection_id)}
-                                className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-green-400 transition-colors"
+                                className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-green-400 transition-colors"
                                 data-tooltip="Reattach viewer"
                               >
                                 <PlugZap size={12} />
@@ -387,7 +387,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                             {onDetachToWindow && (
                               <button
                                 onClick={() => onDetachToWindow(session.id)}
-                                className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-blue-400 transition-colors"
+                                className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-blue-400 transition-colors"
                                 data-tooltip="Open in separate window"
                               >
                                 <ExternalLink size={12} />
@@ -395,21 +395,21 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                             )}
                             <button
                               onClick={() => handleDetach(session.id)}
-                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-yellow-400 transition-colors"
+                              className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-yellow-400 transition-colors"
                               data-tooltip="Detach viewer (keep session running)"
                             >
                               <Unplug size={12} />
                             </button>
                             <button
                               onClick={() => handleSignOut(session.id)}
-                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-blue-400 transition-colors"
+                              className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-blue-400 transition-colors"
                               data-tooltip="Sign out remote session"
                             >
                               <LogOut size={12} />
                             </button>
                             <button
                               onClick={() => setRebootConfirmSessionId(session.id)}
-                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
+                              className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-red-400 transition-colors"
                               data-tooltip="Force reboot remote machine"
                             >
                               <RotateCcw size={12} />
@@ -419,14 +419,14 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
                                 setLogSessionFilter(session.id);
                                 setActiveTab('logs');
                               }}
-                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-indigo-400 transition-colors"
+                              className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-indigo-400 transition-colors"
                               data-tooltip="View logs for this session"
                             >
                               <ScrollText size={12} />
                             </button>
                             <button
                               onClick={() => handleDisconnect(session.id)}
-                              className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400 transition-colors"
+                              className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-red-400 transition-colors"
                               data-tooltip="Disconnect session"
                             >
                               <PowerOff size={12} />
@@ -435,51 +435,51 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
 
                           {/* Info grid */}
                           <div className="grid grid-cols-2 gap-1 mt-1.5 text-[10px]">
-                            <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                            <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
                               <span className="text-gray-500">Res </span>
-                              <span className="text-gray-300 font-mono">
+                              <span className="text-[var(--color-textSecondary)] font-mono">
                                 {session.desktop_width}&times;{session.desktop_height}
                               </span>
                             </div>
-                            <div className="bg-gray-900/50 rounded px-1.5 py-0.5" title={session.id}>
+                            <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5" title={session.id}>
                               <span className="text-gray-500">ID </span>
-                              <span className="text-gray-300 font-mono truncate">
+                              <span className="text-[var(--color-textSecondary)] font-mono truncate">
                                 {display.name !== `${session.host}:${session.port}` ? display.name : session.id.slice(0, 8)}
                               </span>
                             </div>
                             {stats && (
                               <>
-                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
                                   <span className="text-gray-500">Up </span>
-                                  <span className="text-gray-300 font-mono">
+                                  <span className="text-[var(--color-textSecondary)] font-mono">
                                     {formatUptime(stats.uptime_secs)}
                                   </span>
                                 </div>
-                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
                                   <span className="text-gray-500">FPS </span>
-                                  <span className="text-gray-300 font-mono">
+                                  <span className="text-[var(--color-textSecondary)] font-mono">
                                     {stats.fps.toFixed(1)}
                                   </span>
                                 </div>
-                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
                                   <span className="text-gray-500">Rx </span>
-                                  <span className="text-gray-300 font-mono">
+                                  <span className="text-[var(--color-textSecondary)] font-mono">
                                     {formatBytes(stats.bytes_received)}
                                   </span>
                                 </div>
-                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
                                   <span className="text-gray-500">Tx </span>
-                                  <span className="text-gray-300 font-mono">
+                                  <span className="text-[var(--color-textSecondary)] font-mono">
                                     {formatBytes(stats.bytes_sent)}
                                   </span>
                                 </div>
-                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
                                   <span className="text-gray-500">Frames </span>
-                                  <span className="text-gray-300 font-mono">
+                                  <span className="text-[var(--color-textSecondary)] font-mono">
                                     {stats.frame_count.toLocaleString()}
                                   </span>
                                 </div>
-                                <div className="bg-gray-900/50 rounded px-1.5 py-0.5">
+                                <div className="bg-[var(--color-background)]/50 rounded px-1.5 py-0.5">
                                   <span className={`font-mono ${stats.phase === 'active' ? 'text-green-400' : 'text-yellow-400'}`}>
                                     {stats.phase}
                                   </span>
@@ -505,7 +505,7 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
 
             {/* Footer */}
             {sessions.length > 0 && (
-              <div className="px-3 py-2 border-t border-gray-700 flex items-center justify-between flex-shrink-0">
+              <div className="px-3 py-2 border-t border-[var(--color-border)] flex items-center justify-between flex-shrink-0">
                 <div className="text-[10px] text-gray-500">
                   <ArrowDownToLine size={10} className="inline mr-1" />
                   {formatBytes(

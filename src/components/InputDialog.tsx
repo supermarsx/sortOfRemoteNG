@@ -100,7 +100,7 @@ export const InputDialog: React.FC<InputDialogProps> = ({
             <button
               onClick={() => canSubmit && onConfirm(value.trim())}
               disabled={!canSubmit}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-md transition-colors text-sm"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-[var(--color-text)] rounded-md transition-colors text-sm"
             >
               {confirmText}
             </button>

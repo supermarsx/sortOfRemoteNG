@@ -69,11 +69,11 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
   if (formData.protocol !== 'ssh' || formData.isGroup) return null;
 
   return (
-    <div className="border border-gray-600 rounded-lg overflow-hidden">
+    <div className="border border-[var(--color-border)] rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 flex items-center justify-between bg-gray-700/50 hover:bg-gray-700 transition-colors"
+        className="w-full px-4 py-3 flex items-center justify-between bg-[var(--color-border)]/50 hover:bg-[var(--color-border)] transition-colors"
       >
         <div className="flex items-center gap-2">
           <Settings2 className="w-4 h-4 text-blue-400" />
@@ -81,21 +81,21 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
             Terminal Settings Override
           </span>
           {hasOverrides && (
-            <span className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded-full">
+            <span className="px-2 py-0.5 text-xs bg-blue-600 text-[var(--color-text)] rounded-full">
               {Object.keys(overrides).length} custom
             </span>
           )}
         </div>
         {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-gray-400" />
+          <ChevronUp className="w-4 h-4 text-[var(--color-textSecondary)]" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-gray-400" />
+          <ChevronDown className="w-4 h-4 text-[var(--color-textSecondary)]" />
         )}
       </button>
 
       {isExpanded && (
-        <div className="p-4 space-y-4 bg-gray-800/50">
-          <p className="text-xs text-gray-400">
+        <div className="p-4 space-y-4 bg-[var(--color-surface)]/50">
+          <p className="text-xs text-[var(--color-textSecondary)]">
             Override global SSH terminal settings for this connection. 
             Unchecked settings inherit from global defaults.
           </p>
@@ -104,7 +104,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
             <button
               type="button"
               onClick={clearAllOverrides}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset All to Global
@@ -113,7 +113,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
 
           {/* Font Settings */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Font</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Font</h4>
             
             <OverrideToggle
               label="Use Custom Font"
@@ -121,12 +121,12 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               globalValue={globalConfig.useCustomFont ? 'Yes' : 'No'}
               onToggle={(enabled) => updateOverride('useCustomFont', enabled ? !globalConfig.useCustomFont : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('useCustomFont')}
                   onChange={(e) => updateOverride('useCustomFont', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Enable custom font
               </label>
@@ -151,7 +151,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                     type="text"
                     value={getValue('font').family}
                     onChange={(e) => updateOverride('font', { ...getValue('font'), family: e.target.value })}
-                    className="w-full px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                    className="w-full px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
                   />
                 </OverrideToggle>
 
@@ -174,7 +174,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                     max={32}
                     value={getValue('font').size}
                     onChange={(e) => updateOverride('font', { ...getValue('font'), size: Number(e.target.value) })}
-                    className="w-24 px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                    className="w-24 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
                   />
                 </OverrideToggle>
               </>
@@ -183,7 +183,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
 
           {/* Terminal Dimensions */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Dimensions</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Dimensions</h4>
             
             <OverrideToggle
               label="Custom Dimensions"
@@ -191,12 +191,12 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               globalValue={globalConfig.useCustomDimensions ? `${globalConfig.columns}x${globalConfig.rows}` : 'Auto'}
               onToggle={(enabled) => updateOverride('useCustomDimensions', enabled ? !globalConfig.useCustomDimensions : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('useCustomDimensions')}
                   onChange={(e) => updateOverride('useCustomDimensions', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Use custom dimensions
               </label>
@@ -216,7 +216,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                     max={500}
                     value={getValue('columns')}
                     onChange={(e) => updateOverride('columns', Number(e.target.value))}
-                    className="w-20 px-2 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                    className="w-20 px-2 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
                   />
                 </OverrideToggle>
                 <OverrideToggle
@@ -231,7 +231,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                     max={200}
                     value={getValue('rows')}
                     onChange={(e) => updateOverride('rows', Number(e.target.value))}
-                    className="w-20 px-2 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                    className="w-20 px-2 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
                   />
                 </OverrideToggle>
               </div>
@@ -250,14 +250,14 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                 step={1000}
                 value={getValue('scrollbackLines')}
                 onChange={(e) => updateOverride('scrollbackLines', Number(e.target.value))}
-                className="w-28 px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                className="w-28 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
               />
             </OverrideToggle>
           </div>
 
           {/* Bell Settings */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Bell & Alerts</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Bell & Alerts</h4>
             
             <OverrideToggle
               label="Bell Style"
@@ -268,7 +268,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               <select
                 value={getValue('bellStyle')}
                 onChange={(e) => updateOverride('bellStyle', e.target.value as BellStyle)}
-                className="w-40 px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                className="w-40 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
               >
                 <option value="none">None</option>
                 <option value="system">System</option>
@@ -287,7 +287,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               <select
                 value={getValue('taskbarFlash')}
                 onChange={(e) => updateOverride('taskbarFlash', e.target.value as TaskbarFlashMode)}
-                className="w-40 px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                className="w-40 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
               >
                 <option value="disabled">Disabled</option>
                 <option value="on-bell">On Bell</option>
@@ -299,7 +299,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
 
           {/* SSH Protocol Settings */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">SSH Protocol</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">SSH Protocol</h4>
             
             <OverrideToggle
               label="Compression"
@@ -307,12 +307,12 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               globalValue={globalConfig.enableCompression ? `Level ${globalConfig.compressionLevel}` : 'Disabled'}
               onToggle={(enabled) => updateOverride('enableCompression', enabled ? !globalConfig.enableCompression : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('enableCompression')}
                   onChange={(e) => updateOverride('enableCompression', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Enable compression
               </label>
@@ -333,7 +333,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                   onChange={(e) => updateOverride('compressionLevel', Number(e.target.value))}
                   className="w-32"
                 />
-                <span className="text-sm text-gray-400 ml-2">{getValue('compressionLevel')}</span>
+                <span className="text-sm text-[var(--color-textSecondary)] ml-2">{getValue('compressionLevel')}</span>
               </OverrideToggle>
             )}
 
@@ -346,7 +346,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               <select
                 value={getValue('sshVersion')}
                 onChange={(e) => updateOverride('sshVersion', e.target.value as SSHVersion)}
-                className="w-32 px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                className="w-32 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
               >
                 <option value="auto">Auto</option>
                 <option value="1">SSH-1 Only</option>
@@ -358,7 +358,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
 
           {/* TCP Options */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">TCP Options</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">TCP Options</h4>
             
             <OverrideToggle
               label="TCP No Delay"
@@ -373,12 +373,12 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                 }
               }}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('tcpOptions').tcpNoDelay}
                   onChange={(e) => updateOverride('tcpOptions', { ...getValue('tcpOptions'), tcpNoDelay: e.target.checked })}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Disable Nagle's algorithm
               </label>
@@ -397,12 +397,12 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                 }
               }}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('tcpOptions').tcpKeepAlive}
                   onChange={(e) => updateOverride('tcpOptions', { ...getValue('tcpOptions'), tcpKeepAlive: e.target.checked })}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Enable TCP keep alive
               </label>
@@ -428,16 +428,16 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                   max={300}
                   value={getValue('tcpOptions').connectionTimeout}
                   onChange={(e) => updateOverride('tcpOptions', { ...getValue('tcpOptions'), connectionTimeout: Number(e.target.value) })}
-                  className="w-20 px-2 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                  className="w-20 px-2 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
                 />
-                <span className="text-sm text-gray-400">seconds</span>
+                <span className="text-sm text-[var(--color-textSecondary)]">seconds</span>
               </div>
             </OverrideToggle>
           </div>
 
           {/* Line Handling */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Line Handling</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Line Handling</h4>
             
             <OverrideToggle
               label="Implicit CR in LF"
@@ -445,12 +445,12 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               globalValue={globalConfig.implicitCrInLf ? 'Yes' : 'No'}
               onToggle={(enabled) => updateOverride('implicitCrInLf', enabled ? !globalConfig.implicitCrInLf : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('implicitCrInLf')}
                   onChange={(e) => updateOverride('implicitCrInLf', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Add CR to every LF
               </label>
@@ -462,12 +462,12 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               globalValue={globalConfig.autoWrap ? 'Yes' : 'No'}
               onToggle={(enabled) => updateOverride('autoWrap', enabled ? !globalConfig.autoWrap : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('autoWrap')}
                   onChange={(e) => updateOverride('autoWrap', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Auto-wrap long lines
               </label>
@@ -504,9 +504,9 @@ const OverrideToggle: React.FC<OverrideToggleProps> = ({
           type="checkbox"
           checked={isOverridden}
           onChange={(e) => onToggle(e.target.checked)}
-          className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
         />
-        <span className="text-sm text-gray-300">{label}</span>
+        <span className="text-sm text-[var(--color-textSecondary)]">{label}</span>
       </label>
       <div className="flex-1">
         {isOverridden ? (

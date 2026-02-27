@@ -383,7 +383,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
               <button
                 onClick={() => handleWake()}
                 disabled={!macAddress}
-                className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-all flex items-center space-x-2 font-medium btn-animate shadow-lg shadow-green-500/20 disabled:shadow-none"
+                className="px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 font-medium btn-animate shadow-lg shadow-green-500/20 disabled:shadow-none"
               >
                 <Send size={18} />
                 <span>{t('wake.send', 'Wake')}</span>
@@ -510,7 +510,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
                       <button
                         onClick={handleBulkWake}
                         disabled={isBulkWaking}
-                        className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-green-500/20 disabled:shadow-none"
+                        className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-green-500/20 disabled:shadow-none"
                       >
                         {isBulkWaking ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
                         <span>{t('wake.wakeSelected', 'Wake Selected')} ({selectedDevices.size})</span>
@@ -519,7 +519,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
                     <button
                       onClick={handleWakeAll}
                       disabled={isBulkWaking}
-                      className="px-3 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-white rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-amber-500/20 disabled:shadow-none"
+                      className="px-3 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 disabled:bg-gray-600 text-[var(--color-text)] rounded-lg transition-all flex items-center space-x-2 btn-animate shadow-md shadow-amber-500/20 disabled:shadow-none"
                       title="Wake all discovered devices"
                     >
                       {isBulkWaking ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
@@ -592,7 +592,7 @@ export const WOLQuickTool: React.FC<WOLQuickToolProps> = ({ isOpen, onClose }) =
                         e.stopPropagation();
                         handleWake(device.mac);
                       }}
-                      className="ml-3 p-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all opacity-0 group-hover:opacity-100 btn-animate shadow-lg shadow-green-500/20"
+                      className="ml-3 p-2 bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-lg transition-all opacity-0 group-hover:opacity-100 btn-animate shadow-lg shadow-green-500/20"
                       title="Wake this device"
                     >
                       <Power size={16} />

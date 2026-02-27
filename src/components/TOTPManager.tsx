@@ -146,7 +146,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowAddForm(true)}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center space-x-2 text-sm"
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 text-sm"
             >
               <Plus size={14} />
               <span>Add TOTP</span>
@@ -163,14 +163,14 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
           {/* Add TOTP Form */}
           {showAddForm && (
-            <div className="bg-gray-700 rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-white mb-4">
+            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
                 Add New TOTP Configuration
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Account Name *
                   </label>
                   <input
@@ -179,13 +179,13 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
                     onChange={(e) =>
                       setNewConfig({ ...newConfig, account: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="user@example.com"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Issuer
                   </label>
                   <input
@@ -194,13 +194,13 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
                     onChange={(e) =>
                       setNewConfig({ ...newConfig, issuer: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="sortOfRemoteNG"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Digits
                   </label>
                   <select
@@ -211,7 +211,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
                         digits: parseInt(e.target.value),
                       })
                     }
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   >
                     <option value={6}>6 digits</option>
                     <option value={8}>8 digits</option>
@@ -219,7 +219,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Period (seconds)
                   </label>
                   <select
@@ -230,7 +230,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
                         period: parseInt(e.target.value),
                       })
                     }
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   >
                     <option value={15}>15 seconds</option>
                     <option value={30}>30 seconds</option>
@@ -242,13 +242,13 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
               <div className="flex justify-end space-x-3">
                 <button
                   onClick={() => setShowAddForm(false)}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleAddConfig}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
                 >
                   Add TOTP
                 </button>
@@ -258,8 +258,8 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
 
           {/* QR Code Display */}
           {qrCodeUrl && (
-            <div className="bg-gray-700 rounded-lg p-6 mb-6 text-center">
-              <h3 className="text-lg font-medium text-white mb-4">
+            <div className="bg-[var(--color-border)] rounded-lg p-6 mb-6 text-center">
+              <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
                 Scan QR Code
               </h3>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -268,13 +268,13 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
                 alt="TOTP QR Code"
                 className="mx-auto mb-4"
               />
-              <p className="text-gray-300 text-sm">
+              <p className="text-[var(--color-textSecondary)] text-sm">
                 Scan this QR code with your authenticator app (Google
                 Authenticator, Aegis, etc.)
               </p>
               <button
                 onClick={() => setQrCodeUrl("")}
-                className="mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-md transition-colors"
+                className="mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
               >
                 Close
               </button>
@@ -286,32 +286,32 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
             {totpConfigs.length === 0 ? (
               <div className="text-center py-12">
                 <Key size={48} className="mx-auto text-gray-500 mb-4" />
-                <p className="text-gray-400">No TOTP configurations found</p>
+                <p className="text-[var(--color-textSecondary)]">No TOTP configurations found</p>
                 <p className="text-gray-500 text-sm">
                   Add a new TOTP configuration to get started
                 </p>
               </div>
             ) : (
               totpConfigs.map((config) => (
-                <div key={config.secret} className="bg-gray-700 rounded-lg p-4">
+                <div key={config.secret} className="bg-[var(--color-border)] rounded-lg p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
                         <Shield size={16} className="text-blue-400" />
-                        <span className="text-white font-medium">
+                        <span className="text-[var(--color-text)] font-medium">
                           {config.account}
                         </span>
-                        <span className="text-gray-400 text-sm">
+                        <span className="text-[var(--color-textSecondary)] text-sm">
                           ({config.issuer})
                         </span>
                       </div>
 
                       <div className="flex items-center space-x-4">
-                        <div className="bg-gray-800 rounded-lg px-4 py-2 font-mono text-2xl text-green-400">
+                        <div className="bg-[var(--color-surface)] rounded-lg px-4 py-2 font-mono text-2xl text-green-400">
                           {currentCodes[config.secret] || "------"}
                         </div>
 
-                        <div className="text-sm text-gray-400">
+                        <div className="text-sm text-[var(--color-textSecondary)]">
                           <div>Expires in: {getTimeRemaining()}s</div>
                           <div>
                             {config.digits} digits • {config.period}s period
@@ -325,7 +325,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
                         onClick={() =>
                           copyToClipboard(currentCodes[config.secret] || "")
                         }
-                        className="p-2 hover:bg-gray-600 rounded transition-colors text-gray-400 hover:text-white"
+                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                         title="Copy code"
                       >
                         <Copy size={16} />
@@ -333,7 +333,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
 
                       <button
                         onClick={() => copyToClipboard(config.secret)}
-                        className="p-2 hover:bg-gray-600 rounded transition-colors text-gray-400 hover:text-white"
+                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                         title="Copy secret"
                       >
                         <Key size={16} />
@@ -341,7 +341,7 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
 
                       <button
                         onClick={() => handleDeleteConfig(config.secret)}
-                        className="p-2 hover:bg-gray-600 rounded transition-colors text-red-400 hover:text-red-300"
+                        className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-red-400 hover:text-red-300"
                         title="Delete"
                       >
                         <Trash2 size={16} />

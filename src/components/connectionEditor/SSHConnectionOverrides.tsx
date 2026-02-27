@@ -71,11 +71,11 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
   if (formData.protocol !== 'ssh' || formData.isGroup) return null;
 
   return (
-    <div className="border border-gray-600 rounded-lg overflow-hidden">
+    <div className="border border-[var(--color-border)] rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full px-4 py-3 flex items-center justify-between bg-gray-700/50 hover:bg-gray-700 transition-colors"
+        className="w-full px-4 py-3 flex items-center justify-between bg-[var(--color-border)]/50 hover:bg-[var(--color-border)] transition-colors"
       >
         <div className="flex items-center gap-2">
           <Network className="w-4 h-4 text-green-400" />
@@ -83,21 +83,21 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
             SSH Connection Settings Override
           </span>
           {hasOverrides && (
-            <span className="px-2 py-0.5 text-xs bg-green-600 text-white rounded-full">
+            <span className="px-2 py-0.5 text-xs bg-green-600 text-[var(--color-text)] rounded-full">
               {Object.keys(overrides).length} custom
             </span>
           )}
         </div>
         {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-gray-400" />
+          <ChevronUp className="w-4 h-4 text-[var(--color-textSecondary)]" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-gray-400" />
+          <ChevronDown className="w-4 h-4 text-[var(--color-textSecondary)]" />
         )}
       </button>
 
       {isExpanded && (
-        <div className="p-4 space-y-4 bg-gray-800/50">
-          <p className="text-xs text-gray-400">
+        <div className="p-4 space-y-4 bg-[var(--color-surface)]/50">
+          <p className="text-xs text-[var(--color-textSecondary)]">
             Override global SSH connection settings for this connection. 
             These settings control the SSH protocol layer.
           </p>
@@ -106,7 +106,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
             <button
               type="button"
               onClick={clearAllOverrides}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset All to Global
@@ -115,7 +115,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* Connection Behavior */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Connection</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Connection</h4>
             
             <OverrideToggle
               label="Connect Timeout"
@@ -130,9 +130,9 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
                   max={300}
                   value={getValue('connectTimeout')}
                   onChange={(e) => updateOverride('connectTimeout', Number(e.target.value))}
-                  className="w-20 px-2 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                  className="w-20 px-2 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
                 />
-                <span className="text-sm text-gray-400">seconds</span>
+                <span className="text-sm text-[var(--color-textSecondary)]">seconds</span>
               </div>
             </OverrideToggle>
 
@@ -149,9 +149,9 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
                   max={600}
                   value={getValue('keepAliveInterval')}
                   onChange={(e) => updateOverride('keepAliveInterval', Number(e.target.value))}
-                  className="w-20 px-2 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                  className="w-20 px-2 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
                 />
-                <span className="text-sm text-gray-400">seconds (0 = disabled)</span>
+                <span className="text-sm text-[var(--color-textSecondary)]">seconds (0 = disabled)</span>
               </div>
             </OverrideToggle>
 
@@ -161,12 +161,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.strictHostKeyChecking ? 'Strict' : 'Disabled'}
               onToggle={(enabled) => updateOverride('strictHostKeyChecking', enabled ? !globalConfig.strictHostKeyChecking : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('strictHostKeyChecking')}
                   onChange={(e) => updateOverride('strictHostKeyChecking', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Strict host key verification
               </label>
@@ -175,7 +175,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* Authentication */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Authentication</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Authentication</h4>
             
             <OverrideToggle
               label="Auth Methods"
@@ -195,12 +195,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.tryPublicKeyFirst ? 'Yes' : 'No'}
               onToggle={(enabled) => updateOverride('tryPublicKeyFirst', enabled ? !globalConfig.tryPublicKeyFirst : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('tryPublicKeyFirst')}
                   onChange={(e) => updateOverride('tryPublicKeyFirst', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Attempt public key auth first
               </label>
@@ -212,12 +212,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.agentForwarding ? 'Enabled' : 'Disabled'}
               onToggle={(enabled) => updateOverride('agentForwarding', enabled ? !globalConfig.agentForwarding : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('agentForwarding')}
                   onChange={(e) => updateOverride('agentForwarding', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Enable SSH agent forwarding
               </label>
@@ -226,7 +226,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* SSH Protocol */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Protocol</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Protocol</h4>
             
             <OverrideToggle
               label="SSH Version"
@@ -237,7 +237,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               <select
                 value={getValue('sshVersion')}
                 onChange={(e) => updateOverride('sshVersion', e.target.value as SSHVersion)}
-                className="w-32 px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                className="w-32 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
               >
                 <option value="auto">Auto</option>
                 <option value="2">SSH-2 only</option>
@@ -252,25 +252,25 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               onToggle={(enabled) => updateOverride('enableCompression', enabled ? !globalConfig.enableCompression : undefined)}
             >
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-sm text-gray-300">
+                <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                   <input
                     type="checkbox"
                     checked={getValue('enableCompression')}
                     onChange={(e) => updateOverride('enableCompression', e.target.checked)}
-                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                   />
                   Enable
                 </label>
                 {getValue('enableCompression') && (
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-400">Level:</span>
+                    <span className="text-sm text-[var(--color-textSecondary)]">Level:</span>
                     <input
                       type="number"
                       min={1}
                       max={9}
                       value={getValue('compressionLevel')}
                       onChange={(e) => updateOverride('compressionLevel', Number(e.target.value))}
-                      className="w-16 px-2 py-1 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                      className="w-16 px-2 py-1 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
                     />
                   </div>
                 )}
@@ -286,7 +286,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               <select
                 value={getValue('ptyType')}
                 onChange={(e) => updateOverride('ptyType', e.target.value)}
-                className="w-40 px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                className="w-40 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
               >
                 <option value="xterm-256color">xterm-256color</option>
                 <option value="xterm">xterm</option>
@@ -300,7 +300,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* TCP/IP Settings */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">TCP/IP</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">TCP/IP</h4>
             
             <OverrideToggle
               label="TCP No Delay"
@@ -308,12 +308,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.tcpNoDelay ? 'Enabled' : 'Disabled'}
               onToggle={(enabled) => updateOverride('tcpNoDelay', enabled ? !globalConfig.tcpNoDelay : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('tcpNoDelay')}
                   onChange={(e) => updateOverride('tcpNoDelay', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Disable Nagle algorithm
               </label>
@@ -325,12 +325,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.tcpKeepAlive ? 'Enabled' : 'Disabled'}
               onToggle={(enabled) => updateOverride('tcpKeepAlive', enabled ? !globalConfig.tcpKeepAlive : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('tcpKeepAlive')}
                   onChange={(e) => updateOverride('tcpKeepAlive', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Enable TCP keep-alive
               </label>
@@ -345,7 +345,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               <select
                 value={getValue('ipProtocol')}
                 onChange={(e) => updateOverride('ipProtocol', e.target.value as IPProtocol)}
-                className="w-32 px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                className="w-32 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
               >
                 <option value="auto">Auto</option>
                 <option value="ipv4">IPv4 only</option>
@@ -356,7 +356,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* Port Forwarding */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Forwarding</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Forwarding</h4>
             
             <OverrideToggle
               label="TCP Forwarding"
@@ -364,12 +364,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.enableTcpForwarding ? 'Enabled' : 'Disabled'}
               onToggle={(enabled) => updateOverride('enableTcpForwarding', enabled ? !globalConfig.enableTcpForwarding : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('enableTcpForwarding')}
                   onChange={(e) => updateOverride('enableTcpForwarding', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Allow TCP port forwarding
               </label>
@@ -381,12 +381,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.enableX11Forwarding ? 'Enabled' : 'Disabled'}
               onToggle={(enabled) => updateOverride('enableX11Forwarding', enabled ? !globalConfig.enableX11Forwarding : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('enableX11Forwarding')}
                   onChange={(e) => updateOverride('enableX11Forwarding', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Enable X11 forwarding
               </label>
@@ -395,7 +395,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* SFTP/SCP */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">File Transfer</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">File Transfer</h4>
             
             <OverrideToggle
               label="SFTP"
@@ -403,12 +403,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.sftpEnabled ? 'Enabled' : 'Disabled'}
               onToggle={(enabled) => updateOverride('sftpEnabled', enabled ? !globalConfig.sftpEnabled : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('sftpEnabled')}
                   onChange={(e) => updateOverride('sftpEnabled', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Enable SFTP subsystem
               </label>
@@ -420,12 +420,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.scpEnabled ? 'Enabled' : 'Disabled'}
               onToggle={(enabled) => updateOverride('scpEnabled', enabled ? !globalConfig.scpEnabled : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('scpEnabled')}
                   onChange={(e) => updateOverride('scpEnabled', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Enable SCP transfers
               </label>
@@ -442,14 +442,14 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
                 placeholder="/path/to/start"
                 value={getValue('sftpStartPath') || ''}
                 onChange={(e) => updateOverride('sftpStartPath', e.target.value || undefined)}
-                className="w-full px-3 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                className="w-full px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
               />
             </OverrideToggle>
           </div>
 
           {/* Ciphers & Algorithms */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Ciphers & Algorithms</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Ciphers & Algorithms</h4>
             
             <OverrideToggle
               label="Preferred Ciphers"
@@ -510,7 +510,7 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* Banner & Misc */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Banner & Misc</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Banner & Misc</h4>
             
             <OverrideToggle
               label="Show Banner"
@@ -518,12 +518,12 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
               globalValue={globalConfig.showBanner ? 'Yes' : 'No'}
               onToggle={(enabled) => updateOverride('showBanner', enabled ? !globalConfig.showBanner : undefined)}
             >
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={getValue('showBanner')}
                   onChange={(e) => updateOverride('showBanner', e.target.checked)}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
                 Display server banner
               </label>
@@ -542,16 +542,16 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
                   max={60}
                   value={getValue('bannerTimeout')}
                   onChange={(e) => updateOverride('bannerTimeout', Number(e.target.value))}
-                  className="w-20 px-2 py-1.5 text-sm bg-gray-700 border border-gray-600 rounded text-white"
+                  className="w-20 px-2 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
                 />
-                <span className="text-sm text-gray-400">seconds</span>
+                <span className="text-sm text-[var(--color-textSecondary)]">seconds</span>
               </div>
             </OverrideToggle>
           </div>
 
           {/* Environment Variables */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-gray-600 pb-1">Environment Variables</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Environment Variables</h4>
             
             <OverrideToggle
               label="Custom Environment"
@@ -639,9 +639,9 @@ const OverrideToggle: React.FC<OverrideToggleProps> = ({
           type="checkbox"
           checked={isOverridden}
           onChange={(e) => onToggle(e.target.checked)}
-          className="rounded border-gray-600 bg-gray-700 text-blue-600"
+          className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
         />
-        <span className="text-sm text-gray-300">{label}</span>
+        <span className="text-sm text-[var(--color-textSecondary)]">{label}</span>
       </label>
       <div className="flex-1">
         {isOverridden ? (
@@ -685,8 +685,8 @@ const AuthMethodSelector: React.FC<AuthMethodSelectorProps> = ({ value, onChange
             key={method}
             className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded cursor-pointer transition-colors ${
               value.includes(method)
-                ? 'bg-green-600 text-white'
-                : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                ? 'bg-green-600 text-[var(--color-text)]'
+                : 'bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500'
             }`}
           >
             <input
@@ -700,13 +700,13 @@ const AuthMethodSelector: React.FC<AuthMethodSelectorProps> = ({ value, onChange
         ))}
       </div>
       {value.length > 0 && (
-        <div className="text-xs text-gray-400">
+        <div className="text-xs text-[var(--color-textSecondary)]">
           Order: {value.map((m, i) => (
             <button
               key={m}
               type="button"
               onClick={() => moveUp(i)}
-              className="mx-0.5 px-1 py-0.5 bg-gray-700 rounded hover:bg-gray-600"
+              className="mx-0.5 px-1 py-0.5 bg-[var(--color-border)] rounded hover:bg-[var(--color-border)]"
               title="Click to move up"
             >
               {m}
@@ -748,8 +748,8 @@ const CipherSelector: React.FC<CipherSelectorProps> = ({ value, onChange, option
             onClick={() => toggleOption(option)}
             className={`px-2 py-0.5 text-xs rounded transition-colors ${
               value.includes(option)
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                ? 'bg-blue-600 text-[var(--color-text)]'
+                : 'bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500'
             }`}
           >
             {option.split('@')[0]}
@@ -759,7 +759,7 @@ const CipherSelector: React.FC<CipherSelectorProps> = ({ value, onChange, option
           <button
             type="button"
             onClick={() => setShowAll(!showAll)}
-            className="px-2 py-0.5 text-xs bg-gray-700 text-gray-400 rounded hover:bg-gray-600"
+            className="px-2 py-0.5 text-xs bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded hover:bg-[var(--color-border)]"
           >
             {showAll ? 'Less...' : `+${options.length - 4} more...`}
           </button>
@@ -800,9 +800,9 @@ const EnvironmentEditor: React.FC<EnvironmentEditorProps> = ({ value, onChange }
     <div className="space-y-2">
       {Object.entries(value).map(([key, val]) => (
         <div key={key} className="flex items-center gap-2">
-          <code className="px-2 py-1 text-xs bg-gray-700 rounded text-green-400">{key}</code>
+          <code className="px-2 py-1 text-xs bg-[var(--color-border)] rounded text-green-400">{key}</code>
           <span className="text-gray-500">=</span>
-          <code className="px-2 py-1 text-xs bg-gray-700 rounded text-gray-300 flex-1 truncate">{val}</code>
+          <code className="px-2 py-1 text-xs bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] flex-1 truncate">{val}</code>
           <button
             type="button"
             onClick={() => removeVariable(key)}
@@ -818,7 +818,7 @@ const EnvironmentEditor: React.FC<EnvironmentEditorProps> = ({ value, onChange }
           placeholder="KEY"
           value={newKey}
           onChange={(e) => setNewKey(e.target.value.toUpperCase())}
-          className="w-24 px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white"
+          className="w-24 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
         />
         <span className="text-gray-500">=</span>
         <input
@@ -826,7 +826,7 @@ const EnvironmentEditor: React.FC<EnvironmentEditorProps> = ({ value, onChange }
           placeholder="value"
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
-          className="flex-1 px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white"
+          className="flex-1 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
         />
         <button
           type="button"

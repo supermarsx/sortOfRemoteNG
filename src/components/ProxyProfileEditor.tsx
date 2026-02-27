@@ -371,7 +371,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                   {tag}
                   <button
                     onClick={() => handleRemoveTag(tag)}
-                    className="hover:text-white"
+                    className="hover:text-[var(--color-text)]"
                   >
                     <X size={12} />
                   </button>
@@ -390,7 +390,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
               <button
                 onClick={handleAddTag}
                 disabled={!tagInput.trim()}
-                className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-sm"
+                className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] text-sm"
               >
                 Add
               </button>
@@ -428,7 +428,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
           <button
             onClick={handleSave}
             disabled={!name.trim() || !config.host.trim()}
-            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white text-sm flex items-center gap-2 transition-colors"
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] text-sm flex items-center gap-2 transition-colors"
           >
             <Save size={14} />
             {editingProfile ? 'Update Profile' : 'Create Profile'}

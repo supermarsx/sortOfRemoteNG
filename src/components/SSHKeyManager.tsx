@@ -398,7 +398,7 @@ export const SSHKeyManager: React.FC<SSHKeyManagerProps> = ({
             <button
               onClick={handleGenerateToFile}
               disabled={generating}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-500 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-[var(--color-text)] rounded-md hover:bg-emerald-500 transition-colors disabled:opacity-50"
               title="Generate a key and save directly to a custom location"
             >
               <FileKey className="w-4 h-4" />

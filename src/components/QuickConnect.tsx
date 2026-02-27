@@ -165,7 +165,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                 type="submit"
                 data-tooltip="Connect"
                 aria-label="Connect"
-                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                className="p-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
               >
                 <Play size={16} />
               </button>
@@ -184,14 +184,14 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           <div className="p-4 space-y-4">
           <div className="relative">
             <div className="flex items-center justify-between">
-              <label htmlFor="hostname" className="block text-sm font-medium text-gray-300 mb-2">
+              <label htmlFor="hostname" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Hostname or IP Address
               </label>
               {historyItems.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowHistory((prev) => !prev)}
-                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-white transition-colors"
+                  className="flex items-center gap-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                 >
                   <Clock size={12} />
                   History
@@ -204,36 +204,36 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
               required
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="192.168.1.100 or server.example.com"
               autoFocus
             />
             {showHistory && historyItems.length > 0 && (
-              <div className="absolute z-20 mt-2 w-full rounded-md border border-gray-700 bg-gray-800 shadow-lg overflow-hidden">
+              <div className="absolute z-20 mt-2 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg overflow-hidden">
                 <div className="max-h-48 overflow-auto">
                   {historyItems.map((entry, index) => (
                     <button
                       key={`${entry.protocol}-${entry.hostname}-${index}`}
                       type="button"
                       onClick={() => handleHistorySelect(entry)}
-                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+                      className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-[var(--color-border)] transition-colors"
                     >
                       <div className="flex items-center justify-between">
                         <span className="truncate">{entry.hostname}</span>
-                        <span className="ml-3 text-[10px] uppercase text-gray-400">
+                        <span className="ml-3 text-[10px] uppercase text-[var(--color-textSecondary)]">
                           {entry.protocol}
                         </span>
                       </div>
                       {entry.username && (
-                        <div className="text-[11px] text-gray-400 truncate">
+                        <div className="text-[11px] text-[var(--color-textSecondary)] truncate">
                           {entry.username}
                         </div>
                       )}
                     </button>
                   ))}
                 </div>
-                <div className="border-t border-gray-700 px-3 py-2 flex items-center justify-between">
-                  <span className="text-[11px] text-gray-400">
+                <div className="border-t border-[var(--color-border)] px-3 py-2 flex items-center justify-between">
+                  <span className="text-[11px] text-[var(--color-textSecondary)]">
                     {historyEnabled ? "Saved Quick Connects" : "History disabled"}
                   </span>
                   <button
@@ -242,7 +242,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                       onClearHistory();
                       setShowHistory(false);
                     }}
-                    className="flex items-center gap-1 text-[11px] text-gray-300 hover:text-white"
+                    className="flex items-center gap-1 text-[11px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                   >
                     <Trash2 size={12} />
                     Clear
@@ -253,14 +253,14 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           </div>
 
           <div>
-            <label htmlFor="protocol" className="block text-sm font-medium text-gray-300 mb-2">
+            <label htmlFor="protocol" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
               Protocol
             </label>
             <select
               id="protocol"
               value={protocol}
               onChange={(e) => setProtocol(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="rdp">RDP (Remote Desktop)</option>
               <option value="ssh">SSH (Secure Shell)</option>
@@ -274,7 +274,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {isRdp && (
             <>
               <div>
-                <label htmlFor="rdp-username" className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="rdp-username" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Username (optional)
                 </label>
                 <input
@@ -282,23 +282,23 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Administrator"
                 />
               </div>
               <div>
-                <label htmlFor="rdp-password" className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="rdp-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Password (optional)
                 </label>
                 <PasswordInput
                   id="rdp-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
-                <label htmlFor="rdp-domain" className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="rdp-domain" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Domain (optional)
                 </label>
                 <input
@@ -306,7 +306,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   type="text"
                   value={domain}
                   onChange={(e) => setDomain(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="DOMAIN"
                 />
               </div>
@@ -317,7 +317,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {isSsh && (
             <>
               <div>
-                <label htmlFor="ssh-username" className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="ssh-username" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Username
                 </label>
                 <input
@@ -326,19 +326,19 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="root"
                 />
               </div>
               <div>
-                <label htmlFor="ssh-auth" className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="ssh-auth" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Auth Method
                 </label>
                 <select
                   id="ssh-auth"
                   value={authType}
                   onChange={(e) => setAuthType(e.target.value as 'password' | 'key')}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="password">Password</option>
                   <option value="key">Private Key</option>
@@ -346,7 +346,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
               </div>
               {authType === 'password' ? (
                 <div>
-                  <label htmlFor="ssh-password" className="block text-sm font-medium text-gray-300 mb-2">
+                  <label htmlFor="ssh-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Password
                   </label>
                   <PasswordInput
@@ -354,13 +354,13 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
               ) : (
                 <>
                   <div>
-                    <label htmlFor="ssh-key" className="block text-sm font-medium text-gray-300 mb-2">
+                    <label htmlFor="ssh-key" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                       Private Key Path
                     </label>
                     <input
@@ -369,19 +369,19 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                       required
                       value={privateKey}
                       onChange={(e) => setPrivateKey(e.target.value)}
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       placeholder="C:\\Users\\me\\.ssh\\id_rsa"
                     />
                   </div>
                   <div>
-                    <label htmlFor="ssh-passphrase" className="block text-sm font-medium text-gray-300 mb-2">
+                    <label htmlFor="ssh-passphrase" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                       Passphrase (optional)
                     </label>
                     <PasswordInput
                       id="ssh-passphrase"
                       value={passphrase}
                       onChange={(e) => setPassphrase(e.target.value)}
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                   </div>
                 </>
@@ -392,14 +392,14 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {/* VNC credentials */}
           {isVnc && (
             <div>
-              <label htmlFor="vnc-password" className="block text-sm font-medium text-gray-300 mb-2">
+              <label htmlFor="vnc-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Password (optional)
               </label>
               <PasswordInput
                 id="vnc-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
           )}
@@ -408,7 +408,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {isHttp && (
             <>
               <div>
-                <label htmlFor="http-username" className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="http-username" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Basic Auth Username (optional)
                 </label>
                 <input
@@ -416,29 +416,29 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   type="text"
                   value={basicAuthUsername}
                   onChange={(e) => setBasicAuthUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="admin"
                 />
               </div>
               <div>
-                <label htmlFor="http-password" className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="http-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Basic Auth Password (optional)
                 </label>
                 <PasswordInput
                   id="http-password"
                   value={basicAuthPassword}
                   onChange={(e) => setBasicAuthPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               {isHttps && (
                 <div>
-                  <label className="flex items-center space-x-2 text-sm text-gray-300">
+                  <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)]">
                     <input
                       type="checkbox"
                       checked={httpVerifySsl}
                       onChange={(e) => setHttpVerifySsl(e.target.checked)}
-                      className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+                      className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 focus:ring-blue-500"
                     />
                     <span>Verify TLS certificates</span>
                   </label>
@@ -454,7 +454,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {isTelnet && (
             <>
               <div>
-                <label htmlFor="telnet-username" className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="telnet-username" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Username (optional)
                 </label>
                 <input
@@ -462,18 +462,18 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               <div>
-                <label htmlFor="telnet-password" className="block text-sm font-medium text-gray-300 mb-2">
+                <label htmlFor="telnet-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Password (optional)
                 </label>
                 <PasswordInput
                   id="telnet-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
             </>

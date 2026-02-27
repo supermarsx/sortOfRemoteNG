@@ -157,7 +157,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
                 >
                   <div className="flex items-center gap-3">
                     <div className={`p-2 rounded-lg ${isPast ? 'bg-gray-500/20' : 'bg-green-500/20'}`}>
-                      <Power size={16} className={isPast ? 'text-gray-400' : 'text-green-500'} />
+                      <Power size={16} className={isPast ? 'text-[var(--color-textSecondary)]' : 'text-green-500'} />
                     </div>
                     <div>
                       <div className="text-sm font-mono text-[var(--color-text)]">{s.macAddress}</div>
@@ -275,7 +275,7 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
               <button
                 onClick={handleSubmit}
                 disabled={!form.macAddress || form.macAddress.length < 17}
-                className="w-full flex items-center justify-center space-x-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-orange-500/20 disabled:shadow-none"
+                className="w-full flex items-center justify-center space-x-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-orange-500/20 disabled:shadow-none"
               >
                 <Save size={16} />
                 <span>{editing ? t("common.save", "Save") : t("common.add", "Add Schedule")}</span>

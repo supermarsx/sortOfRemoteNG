@@ -16,10 +16,10 @@ interface BackendSettingsProps {
 }
 
 const selectClass =
-  'w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm';
+  'w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm';
 const inputClass =
-  'w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm';
-const labelClass = 'block text-sm font-medium text-gray-300 mb-1';
+  'w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm';
+const labelClass = 'block text-sm font-medium text-[var(--color-textSecondary)] mb-1';
 const descClass = 'text-xs text-gray-500 mt-0.5';
 
 const DEFAULT_BACKEND: BackendConfig = {
@@ -57,18 +57,18 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
           <Cpu className="w-5 h-5" />
           Backend
         </h3>
-        <p className="text-xs text-gray-400 mb-4">
+        <p className="text-xs text-[var(--color-textSecondary)] mb-4">
           Tauri runtime and backend service configuration. Changes may require an application restart.
         </p>
       </div>
 
       {/* ─── Runtime ─────────────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Cpu className="w-4 h-4 text-blue-400" />
           Runtime
         </h4>
@@ -107,7 +107,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── RDP Engine ──────────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-cyan-400" />
           RDP Engine
         </h4>
@@ -148,7 +148,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Network ─────────────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Network className="w-4 h-4 text-green-400" />
           Network
         </h4>
@@ -195,7 +195,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Storage ─────────────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-amber-400" />
           Storage
         </h4>
@@ -217,7 +217,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <label className="text-sm font-medium text-gray-300">Temp File Cleanup</label>
+                <label className="text-sm font-medium text-[var(--color-textSecondary)]">Temp File Cleanup</label>
                 <p className={descClass}>Auto-delete temporary files (screenshots, recordings)</p>
               </div>
               <button
@@ -254,7 +254,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Security ────────────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Shield className="w-4 h-4 text-red-400" />
           Security
         </h4>
@@ -291,14 +291,14 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Internal API Server ─────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Globe className="w-4 h-4 text-purple-400" />
           Internal API Server
         </h4>
 
         <div className="flex items-center justify-between mb-2">
           <div>
-            <label className="text-sm font-medium text-gray-300">Enable Internal API</label>
+            <label className="text-sm font-medium text-[var(--color-textSecondary)]">Enable Internal API</label>
             <p className={descClass}>Expose a local REST API for automation and integrations</p>
           </div>
           <button
@@ -349,9 +349,9 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
                     type="checkbox"
                     checked={cfg.internalApiAuth}
                     onChange={(e) => update({ internalApiAuth: e.target.checked })}
-                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                   />
-                  <span className="text-sm text-gray-300">Require Auth</span>
+                  <span className="text-sm text-[var(--color-textSecondary)]">Require Auth</span>
                 </label>
 
                 <label className="flex items-center space-x-2">
@@ -359,9 +359,9 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
                     type="checkbox"
                     checked={cfg.internalApiCors}
                     onChange={(e) => update({ internalApiCors: e.target.checked })}
-                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                   />
-                  <span className="text-sm text-gray-300">Enable CORS</span>
+                  <span className="text-sm text-[var(--color-textSecondary)]">Enable CORS</span>
                 </label>
 
                 <label className="flex items-center space-x-2">
@@ -369,9 +369,9 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
                     type="checkbox"
                     checked={cfg.internalApiSsl}
                     onChange={(e) => update({ internalApiSsl: e.target.checked })}
-                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                   />
-                  <span className="text-sm text-gray-300">Enable SSL</span>
+                  <span className="text-sm text-[var(--color-textSecondary)]">Enable SSL</span>
                 </label>
               </div>
             </div>

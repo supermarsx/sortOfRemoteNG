@@ -87,11 +87,11 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
           <Fingerprint className="w-5 h-5" />
           Trust Center
         </h3>
-        <p className="text-xs text-gray-400 mb-4">
+        <p className="text-xs text-[var(--color-textSecondary)] mb-4">
           Control how TLS certificates and SSH host keys are verified and memorized.
           These settings apply globally but can be overridden per connection.
         </p>
@@ -100,15 +100,15 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
       {/* Global Policies */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* TLS Trust Policy */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-[var(--color-border)]">
+        <div className="bg-[var(--color-surface)] rounded-lg p-4 border border-[var(--color-border)]">
           <div className="flex items-center gap-2 mb-3">
             <Lock size={16} className="text-green-400" />
-            <h4 className="text-sm font-medium text-gray-300">TLS Certificate Policy</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">TLS Certificate Policy</h4>
           </div>
           <select
             value={settings.tlsTrustPolicy ?? 'tofu'}
             onChange={(e) => updateSettings({ tlsTrustPolicy: e.target.value as GlobalSettings['tlsTrustPolicy'] })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:ring-2 focus:ring-blue-500 text-sm"
           >
             {POLICY_OPTIONS.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -120,15 +120,15 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
         </div>
 
         {/* SSH Trust Policy */}
-        <div className="bg-gray-800 rounded-lg p-4 border border-[var(--color-border)]">
+        <div className="bg-[var(--color-surface)] rounded-lg p-4 border border-[var(--color-border)]">
           <div className="flex items-center gap-2 mb-3">
             <Fingerprint size={16} className="text-blue-400" />
-            <h4 className="text-sm font-medium text-gray-300">SSH Host Key Policy</h4>
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)]">SSH Host Key Policy</h4>
           </div>
           <select
             value={settings.sshTrustPolicy ?? 'tofu'}
             onChange={(e) => updateSettings({ sshTrustPolicy: e.target.value as GlobalSettings['sshTrustPolicy'] })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:ring-2 focus:ring-blue-500 text-sm"
           >
             {POLICY_OPTIONS.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -187,23 +187,23 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
 
       {/* Additional options */}
       <div className="space-y-4">
-        <label className="flex items-center gap-3 text-sm text-gray-300">
+        <label className="flex items-center gap-3 text-sm text-[var(--color-textSecondary)]">
           <input
             type="checkbox"
             checked={settings.showTrustIdentityInfo ?? true}
             onChange={(e) => updateSettings({ showTrustIdentityInfo: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 focus:ring-blue-500"
           />
           <div className="flex items-center gap-2">
-            <Eye size={14} className="text-gray-400" />
+            <Eye size={14} className="text-[var(--color-textSecondary)]" />
             <span>Show certificate / host key info in URL bar &amp; terminal toolbar</span>
           </div>
         </label>
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <Clock size={14} className="text-gray-400" />
-            <label className="text-sm text-gray-300">
+            <Clock size={14} className="text-[var(--color-textSecondary)]" />
+            <label className="text-sm text-[var(--color-textSecondary)]">
               Warn when TLS certificate expires within
             </label>
           </div>
@@ -213,16 +213,16 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             max={365}
             value={settings.certExpiryWarningDays ?? 5}
             onChange={(e) => updateSettings({ certExpiryWarningDays: parseInt(e.target.value, 10) || 0 })}
-            className="w-20 px-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:ring-2 focus:ring-blue-500"
+            className="w-20 px-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm focus:ring-2 focus:ring-blue-500"
           />
-          <span className="text-sm text-gray-400">days (0 = disabled)</span>
+          <span className="text-sm text-[var(--color-textSecondary)]">days (0 = disabled)</span>
         </div>
       </div>
 
       {/* Stored Trust Records */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+          <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
             <ShieldAlert size={16} className="text-yellow-400" />
             Stored Identities ({totalCount})
           </h4>
@@ -232,13 +232,13 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
                 <span className="text-xs text-red-400">Clear all stored identities?</span>
                 <button
                   onClick={handleClearAll}
-                  className="px-3 py-1 text-xs bg-red-600 hover:bg-red-500 text-white rounded transition-colors"
+                  className="px-3 py-1 text-xs bg-red-600 hover:bg-red-500 text-[var(--color-text)] rounded transition-colors"
                 >
                   Yes, clear all
                 </button>
                 <button
                   onClick={() => setShowConfirmClear(false)}
-                  className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                  className="px-3 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded transition-colors"
                 >
                   Cancel
                 </button>
@@ -246,7 +246,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             ) : (
               <button
                 onClick={() => setShowConfirmClear(true)}
-                className="flex items-center gap-1 px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                className="flex items-center gap-1 px-3 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded transition-colors"
               >
                 <Trash2 size={12} />
                 Clear All
@@ -256,7 +256,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
         </div>
 
         {totalCount === 0 ? (
-          <div className="bg-gray-800 rounded-lg p-6 border border-[var(--color-border)] text-center">
+          <div className="bg-[var(--color-surface)] rounded-lg p-6 border border-[var(--color-border)] text-center">
             <ShieldCheck size={24} className="text-gray-500 mx-auto mb-2" />
             <p className="text-sm text-gray-500">No stored identities yet.</p>
             <p className="text-xs text-gray-600 mt-1">
@@ -268,7 +268,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
             {/* ── Global Store ── */}
             {trustRecords.length > 0 && (
               <details className="group" open>
-                <summary className="cursor-pointer select-none text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
                   <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
                   <Globe size={12} />
                   Global Identities ({trustRecords.length})
@@ -277,7 +277,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
                   {/* TLS Records */}
                   {tlsRecords.length > 0 && (
                     <div>
-                      <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <h5 className="text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
                         <Lock size={12} /> TLS Certificates ({tlsRecords.length})
                       </h5>
                       <div className="space-y-2">
@@ -291,7 +291,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
                   {/* SSH Records */}
                   {sshRecords.length > 0 && (
                     <div>
-                      <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                      <h5 className="text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
                         <Fingerprint size={12} /> SSH Host Keys ({sshRecords.length})
                       </h5>
                       <div className="space-y-2">
@@ -311,7 +311,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
               const connSsh = group.records.filter(r => r.type === 'ssh');
               return (
                 <details key={group.connectionId} className="group">
-                  <summary className="cursor-pointer select-none text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
                     <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
                     <Link2 size={12} />
                     {connectionName(group.connectionId)} ({group.records.length})
@@ -319,7 +319,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
                   <div className="space-y-3 ml-4">
                     {connTls.length > 0 && (
                       <div>
-                        <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <h5 className="text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
                           <Lock size={12} /> TLS Certificates ({connTls.length})
                         </h5>
                         <div className="space-y-2">
@@ -337,7 +337,7 @@ export const TrustVerificationSettings: React.FC<TrustVerificationSettingsProps>
                     )}
                     {connSsh.length > 0 && (
                       <div>
-                        <h5 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <h5 className="text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
                           <Fingerprint size={12} /> SSH Host Keys ({connSsh.length})
                         </h5>
                         <div className="space-y-2">
@@ -377,7 +377,7 @@ function TrustRecordRow({ record, connectionId, onRemove, onUpdated }: { record:
   };
 
   return (
-    <div className="flex items-center gap-3 bg-gray-800 border border-[var(--color-border)] rounded-lg px-4 py-2">
+    <div className="flex items-center gap-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg px-4 py-2">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           {editingNick ? (
@@ -392,15 +392,15 @@ function TrustRecordRow({ record, connectionId, onRemove, onUpdated }: { record:
               }}
               onBlur={saveNickname}
               placeholder="Nickname…"
-              className="w-40 px-2 py-0.5 bg-gray-700 border border-gray-600 rounded text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-40 px-2 py-0.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           ) : (
             <>
-              <span className="text-sm text-white font-medium truncate">{record.nickname || record.host}</span>
+              <span className="text-sm text-[var(--color-text)] font-medium truncate">{record.nickname || record.host}</span>
               {record.nickname && <span className="text-xs text-gray-500 truncate">({record.host})</span>}
               <button
                 onClick={() => { setNickDraft(record.nickname ?? ''); setEditingNick(true); }}
-                className="text-gray-500 hover:text-gray-300 p-0.5 transition-colors flex-shrink-0"
+                className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5 transition-colors flex-shrink-0"
                 title={record.nickname ? 'Edit nickname' : 'Add nickname'}
               >
                 <Pencil size={10} />

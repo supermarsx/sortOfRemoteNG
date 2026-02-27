@@ -29,31 +29,31 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
   const { t } = useTranslation();
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
         <Monitor className="w-5 h-5" />
         General
       </h3>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Language, autosave, connection timeouts, and general application preferences.
       </p>
 
       {/* Basic Settings Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Globe className="w-4 h-4 text-blue-400" />
           Language & Timing
         </h4>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div data-setting-key="language" className="space-y-2">
-            <label className="flex items-center gap-2 text-sm text-gray-400">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <Globe className="w-4 h-4" />
               {t("settings.language")}
             </label>
             <select
               value={settings.language}
               onChange={(e) => updateSettings({ language: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
             >
               <option value="en">English</option>
               <option value="es">Español (España)</option>
@@ -64,7 +64,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
           </div>
 
           <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm text-gray-400">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <Clock className="w-4 h-4" />
               Connection Timeout (seconds)
             </label>
@@ -74,7 +74,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               onChange={(e) =>
                 updateSettings({ connectionTimeout: parseInt(e.target.value) })
               }
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
               min="5"
               max="300"
             />
@@ -84,7 +84,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       {/* Autosave Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Save className="w-4 h-4 text-green-400" />
           Autosave Settings
         </h4>
@@ -97,14 +97,14 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               onChange={(e) =>
                 updateSettings({ autoSaveEnabled: e.target.checked })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             />
             <Save className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
-            <span className="text-gray-300 group-hover:text-white">Enable autosave</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable autosave</span>
           </label>
 
           <div data-setting-key="autoSaveIntervalMinutes" className={`space-y-2 ${!settings.autoSaveEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            <label className="flex items-center gap-2 text-sm text-gray-400">
+            <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <Clock className="w-4 h-4" />
               Autosave Interval (minutes)
             </label>
@@ -114,7 +114,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               onChange={(e) =>
                 updateSettings({ autoSaveIntervalMinutes: parseInt(e.target.value) })
               }
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
               min="1"
               max="120"
             />
@@ -124,7 +124,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       {/* Warning Settings */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-yellow-400" />
           Confirmation Warnings
         </h4>
@@ -135,10 +135,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               type="checkbox"
               checked={settings.warnOnClose}
               onChange={(e) => updateSettings({ warnOnClose: e.target.checked })}
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             />
             <AlertTriangle className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
-            <span className="text-gray-300 group-hover:text-white">{t("connections.warnOnClose")}</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">{t("connections.warnOnClose")}</span>
           </label>
 
           <label data-setting-key="warnOnDetachClose" className="flex items-center space-x-3 cursor-pointer group">
@@ -148,10 +148,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               onChange={(e) =>
                 updateSettings({ warnOnDetachClose: e.target.checked })
               }
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             />
             <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
-            <span className="text-gray-300 group-hover:text-white">
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               {t("connections.warnOnDetachClose")}
             </span>
           </label>
@@ -161,10 +161,10 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               type="checkbox"
               checked={settings.warnOnExit}
               onChange={(e) => updateSettings({ warnOnExit: e.target.checked })}
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             />
             <LogOut className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
-            <span className="text-gray-300 group-hover:text-white">{t("connections.warnOnExit")}</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">{t("connections.warnOnExit")}</span>
           </label>
 
           <label className="flex items-center space-x-3 cursor-pointer group">
@@ -172,11 +172,11 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               type="checkbox"
               checked={settings.confirmMainAppClose ?? false}
               onChange={(e) => updateSettings({ confirmMainAppClose: e.target.checked })}
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             />
             <MessageSquareWarning className="w-4 h-4 text-gray-500 group-hover:text-orange-400" />
             <div>
-              <span className="text-gray-300 group-hover:text-white">Confirm main app close</span>
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Confirm main app close</span>
               <p className="text-xs text-gray-500 mt-0.5">
                 Show a confirmation dialog before closing the main window
               </p>
@@ -188,7 +188,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
       {/* Quick Connect History */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <History className="w-4 h-4 text-cyan-400" />
           Quick Connect History
         </h4>
@@ -202,16 +202,16 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 onChange={(e) =>
                   updateSettings({ quickConnectHistoryEnabled: e.target.checked })
                 }
-                className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
               />
               <History className="w-4 h-4 text-gray-500 group-hover:text-cyan-400" />
-              <span className="text-gray-300 group-hover:text-white">Save Quick Connect history</span>
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Save Quick Connect history</span>
             </label>
             <button
               type="button"
               onClick={() => updateSettings({ quickConnectHistory: [] })}
               disabled={(settings.quickConnectHistory?.length ?? 0) === 0}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md bg-gray-700 text-gray-200 hover:bg-red-600/20 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md bg-[var(--color-border)] text-gray-200 hover:bg-red-600/20 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Trash2 className="w-3 h-3" />
               Clear history

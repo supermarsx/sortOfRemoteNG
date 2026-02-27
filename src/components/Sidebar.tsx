@@ -131,13 +131,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      <div className={`bg-gray-800 ${sideBorder} border-gray-700 flex flex-col transition-all duration-300 h-full w-full sidebar-glow`}>
+      <div className={`bg-[var(--color-surface)] ${sideBorder} border-[var(--color-border)] flex flex-col transition-all duration-300 h-full w-full sidebar-glow`}>
         {/* Header */}
-        <div className={`border-b border-gray-700 ${state.sidebarCollapsed ? "p-2" : "p-3"}`}>
+        <div className={`border-b border-[var(--color-border)] ${state.sidebarCollapsed ? "p-2" : "p-3"}`}>
           <div className={`flex items-center ${state.sidebarCollapsed ? "justify-center" : "justify-between"}`}>
             {!state.sidebarCollapsed && (
               <div className="flex items-center space-x-2">
-                <h2 className="text-sm font-light text-white tracking-wide">{t('connections.title')}</h2>
+                <h2 className="text-sm font-light text-[var(--color-text)] tracking-wide">{t('connections.title')}</h2>
                 {isStorageEncrypted && (
                   <div className="flex items-center">
                     {isStorageUnlocked ? (
@@ -162,14 +162,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <button
                 onClick={onToggleSidebarPosition}
-                className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400"
+                className="p-1 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)]"
                 title={`Dock to ${sidebarPosition === 'left' ? 'right' : 'left'}`}
               >
                 <ArrowLeftRight size={16} className={sidebarPosition === 'right' ? 'rotate-180' : ''} />
               </button>
               <button
                 onClick={toggleSidebar}
-                className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400"
+                className="p-1 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)]"
                 title={state.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
                 {state.sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
@@ -181,27 +181,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {!state.sidebarCollapsed && (
           <>
             {/* Search */}
-            <div className="p-3 border-b border-gray-700">
+            <div className="p-3 border-b border-[var(--color-border)]">
               <div className="relative">
-                <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                <Search size={16} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)]" />
                 <input
                   type="text"
                   placeholder={t('connections.search')}
                   value={state.filter.searchTerm}
                   onChange={(e) => handleSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
+                  className="w-full pl-8 pr-3 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-xs"
                 />
               </div>
               
               <div className="flex items-center justify-between mt-2">
                 <button
                   onClick={() => setShowFilters(!showFilters)}
-                  className="flex items-center space-x-1 px-2 py-0.5 text-[11px] text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                  className="flex items-center space-x-1 px-2 py-0.5 text-[11px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors"
                 >
                   <Filter size={12} />
                   <span>{t('connections.filters')}</span>
                   {(state.filter.tags.length > 0 || state.filter.protocols.length > 0) && (
-                    <span className="bg-blue-600 text-white text-xs rounded-full px-1">
+                    <span className="bg-blue-600 text-[var(--color-text)] text-xs rounded-full px-1">
                       {state.filter.tags.length + state.filter.protocols.length}
                     </span>
                   )}
@@ -218,7 +218,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     className={`p-1 text-xs rounded transition-colors ${
                       isFavoritesActive
                         ? 'text-yellow-300 bg-yellow-400/20'
-                        : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                        : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'
                     }`}
                     title={isFavoritesActive ? "Showing favorites" : "Toggle favorites"}
                   >
@@ -226,14 +226,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                   <button
                     onClick={expandAllFolders}
-                    className="p-1 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                    className="p-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors"
                     title={t('connections.expandAll')}
                   >
                     <ExpandAll size={12} />
                   </button>
                   <button
                     onClick={collapseAllFolders}
-                    className="p-1 text-xs text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+                    className="p-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded transition-colors"
                     title={t('connections.collapseAll')}
                   >
                     <CollapseAll size={12} />
@@ -243,7 +243,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {(state.filter.searchTerm || state.filter.tags.length > 0 || state.filter.protocols.length > 0) && (
                   <button
                     onClick={clearFilters}
-                    className="text-xs text-gray-400 hover:text-white"
+                    className="text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                   >
                     {t('connections.clear')}
                   </button>
@@ -251,11 +251,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
 
               {showFilters && (
-                <div className="mt-3 p-3 bg-gray-700 rounded-md space-y-3">
+                <div className="mt-3 p-3 bg-[var(--color-border)] rounded-md space-y-3">
                   {/* Tag Filters */}
                   {allTags.length > 0 && (
                     <div>
-                      <label className="block text-xs font-medium text-gray-300 mb-2">
+                      <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-2">
                         Filter by Tags
                       </label>
                       <div className="flex flex-wrap gap-1">
@@ -265,8 +265,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onClick={() => handleTagFilter(tag)}
                             className={`inline-flex items-center px-2 py-1 text-xs rounded-full transition-colors ${
                               state.filter.tags.includes(tag)
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                                ? 'bg-blue-600 text-[var(--color-text)]'
+                                : 'bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500'
                             }`}
                           >
                             <Tag size={8} className="mr-1" />
@@ -279,7 +279,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                   {/* Other Filters */}
                   <div className="space-y-2">
-                    <label className="flex items-center text-xs text-gray-300">
+                    <label className="flex items-center text-xs text-[var(--color-textSecondary)]">
                       <input 
                         type="checkbox" 
                         className="mr-2 rounded" 
@@ -291,7 +291,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       />
                       Recent connections
                     </label>
-                    <label className="flex items-center text-xs text-gray-300">
+                    <label className="flex items-center text-xs text-[var(--color-textSecondary)]">
                       <input 
                         type="checkbox" 
                         className="mr-2 rounded" 
@@ -306,8 +306,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
 
                   {/* Sort Options */}
-                  <div className="pt-2 border-t border-gray-600">
-                    <label className="block text-xs font-medium text-gray-300 mb-2">
+                  <div className="pt-2 border-t border-[var(--color-border)]">
+                    <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-2">
                       Sort By
                     </label>
                     <div className="flex gap-2">
@@ -317,7 +317,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           type: 'SET_FILTER',
                           payload: { sortBy: e.target.value as 'name' | 'protocol' | 'hostname' | 'createdAt' | 'updatedAt' | 'recentlyUsed' | 'custom' }
                         })}
-                        className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-600 rounded text-gray-300 focus:border-blue-500 focus:outline-none"
+                        className="flex-1 px-2 py-1 text-xs bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] focus:border-blue-500 focus:outline-none"
                       >
                         <option value="name">Name</option>
                         <option value="protocol">Protocol</option>
@@ -336,8 +336,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         })}
                         className={`p-1.5 rounded transition-colors ${
                           state.filter.sortDirection === 'desc' 
-                            ? 'bg-blue-600 text-white' 
-                            : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                            ? 'bg-blue-600 text-[var(--color-text)]' 
+                            : 'bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500'
                         }`}
                         title={state.filter.sortDirection === 'asc' ? 'Ascending' : 'Descending'}
                       >
@@ -350,17 +350,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* Toolbar */}
-            <div className="px-3 py-2 border-b border-gray-700 flex items-center space-x-1">
+            <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center space-x-1">
               <button
                 onClick={onNewConnection}
-                className="p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                className="p-1.5 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded transition-colors"
                 title={t('connections.new')}
               >
                 <Plus size={14} />
               </button>
               <button
                 onClick={handleNewGroup}
-                className="p-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
+                className="p-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors"
                 title={t('connections.newFolder')}
               >
                 <FolderPlus size={14} />
@@ -368,7 +368,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="flex-1" />
               <button
                 onClick={() => setShowBulkEditor(true)}
-                className="p-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
+                className="p-1.5 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors"
                 title="Bulk Edit"
               >
                 <TableProperties size={14} />
@@ -387,7 +387,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               onOpenImport={onOpenImport}
             />
 
-            <div className="border-t border-gray-700 mt-auto" />
+            <div className="border-t border-[var(--color-border)] mt-auto" />
           </>
         )}
       </div>

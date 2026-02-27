@@ -17,9 +17,9 @@ interface RdpDefaultSettingsProps {
 }
 
 const selectClass =
-  'w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm';
+  'w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm';
 const inputClass =
-  'w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm';
+  'w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm';
 
 export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
   settings,
@@ -34,11 +34,11 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
           <MonitorDot className="w-5 h-5" />
           RDP
         </h3>
-        <p className="text-xs text-gray-400 mb-4">
+        <p className="text-xs text-[var(--color-textSecondary)] mb-4">
           Default configuration applied to all new RDP connections. Individual connections can
           override these settings.
         </p>
@@ -46,13 +46,13 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Session Management ─────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-blue-400" />
           Session Management
         </h4>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Session Panel Display Mode</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Session Panel Display Mode</label>
           <select
             value={settings.rdpSessionDisplayMode ?? 'popup'}
             onChange={(e) =>
@@ -69,7 +69,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Tab Close Policy</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Tab Close Policy</label>
           <select
             value={settings.rdpSessionClosePolicy ?? 'ask'}
             onChange={(e) =>
@@ -92,9 +92,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={settings.rdpSessionThumbnailsEnabled ?? true}
             onChange={(e) => updateSettings({ rdpSessionThumbnailsEnabled: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Show session thumbnails
           </span>
         </label>
@@ -102,7 +102,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         {(settings.rdpSessionThumbnailsEnabled ?? true) && (
           <div className="ml-7 space-y-3">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Thumbnail Capture Policy</label>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Thumbnail Capture Policy</label>
               <select
                 value={settings.rdpSessionThumbnailPolicy ?? 'realtime'}
                 onChange={(e) =>
@@ -119,7 +119,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Thumbnail Refresh Interval: {settings.rdpSessionThumbnailInterval ?? 5}s
               </label>
               <input
@@ -144,7 +144,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Security Defaults ─────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Shield className="w-4 h-4 text-red-400" />
           Security Defaults
         </h4>
@@ -154,9 +154,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.useCredSsp ?? true}
             onChange={(e) => update({ useCredSsp: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors font-medium">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors font-medium">
             Use CredSSP
           </span>
         </label>
@@ -169,9 +169,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.enableTls ?? true}
             onChange={(e) => update({ enableTls: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Enable TLS
           </span>
         </label>
@@ -181,12 +181,12 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.enableNla ?? true}
             onChange={(e) => update({ enableNla: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
             disabled={!(rdp.useCredSsp ?? true)}
           />
           <span
             className={`text-sm transition-colors ${
-              !(rdp.useCredSsp ?? true) ? 'text-gray-600' : 'text-gray-300 group-hover:text-white'
+              !(rdp.useCredSsp ?? true) ? 'text-gray-600' : 'text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]'
             }`}
           >
             Enable NLA (Network Level Authentication)
@@ -198,9 +198,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.autoLogon ?? false}
             onChange={(e) => update({ autoLogon: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Auto logon (send credentials in INFO packet)
           </span>
         </label>
@@ -208,7 +208,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Display Defaults ──────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Monitor className="w-4 h-4 text-blue-400" />
           Display Defaults
         </h4>
@@ -232,7 +232,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
           return (
             <>
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Default Resolution</label>
+                <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Resolution</label>
                 <select
                   value={selectedValue}
                   onChange={(e) => {
@@ -252,7 +252,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
               {selectedValue === 'custom' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">Width</label>
+                    <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Width</label>
                     <input
                       type="number"
                       min={640}
@@ -263,7 +263,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-400 mb-1">Height</label>
+                    <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Height</label>
                     <input
                       type="number"
                       min={480}
@@ -280,7 +280,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         })()}
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Default Color Depth</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Color Depth</label>
           <select
             value={rdp.defaultColorDepth ?? 32}
             onChange={(e) =>
@@ -299,9 +299,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.smartSizing ?? true}
             onChange={(e) => update({ smartSizing: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Smart Sizing (scale remote desktop to fit window)
           </span>
         </label>
@@ -309,7 +309,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Gateway Defaults ──────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Network className="w-4 h-4 text-cyan-400" />
           RDP Gateway Defaults
         </h4>
@@ -319,9 +319,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.gatewayEnabled ?? false}
             onChange={(e) => update({ gatewayEnabled: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Enable RDP Gateway by default
           </span>
         </label>
@@ -329,7 +329,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         {(rdp.gatewayEnabled ?? false) && (
           <div className="space-y-3">
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Default Gateway Hostname</label>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Gateway Hostname</label>
               <input
                 type="text"
                 value={rdp.gatewayHostname ?? ''}
@@ -340,7 +340,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Default Gateway Port</label>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Gateway Port</label>
               <input
                 type="number"
                 min={1}
@@ -352,7 +352,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Authentication Method</label>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Authentication Method</label>
               <select
                 value={rdp.gatewayAuthMethod ?? 'ntlm'}
                 onChange={(e) =>
@@ -371,7 +371,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Transport Mode</label>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Transport Mode</label>
               <select
                 value={rdp.gatewayTransportMode ?? 'auto'}
                 onChange={(e) =>
@@ -392,9 +392,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
                 type="checkbox"
                 checked={rdp.gatewayBypassLocal ?? true}
                 onChange={(e) => update({ gatewayBypassLocal: e.target.checked })}
-                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
               />
-              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
                 Bypass gateway for local addresses
               </span>
             </label>
@@ -404,7 +404,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Hyper-V Defaults ──────────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Server className="w-4 h-4 text-violet-400" />
           Hyper-V Defaults
         </h4>
@@ -414,9 +414,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.enhancedSessionMode ?? false}
             onChange={(e) => update({ enhancedSessionMode: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Use Enhanced Session Mode by default
           </span>
         </label>
@@ -427,7 +427,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Negotiation Defaults ──────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Zap className="w-4 h-4 text-amber-400" />
           Connection Negotiation Defaults
         </h4>
@@ -437,9 +437,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.autoDetect ?? false}
             onChange={(e) => update({ autoDetect: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Enable auto-detect negotiation by default
           </span>
         </label>
@@ -448,7 +448,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         </p>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Default Strategy</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Strategy</label>
           <select
             value={rdp.negotiationStrategy ?? 'nla-first'}
             onChange={(e) =>
@@ -468,7 +468,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             Max Retries: {rdp.maxRetries ?? 3}
           </label>
           <input
@@ -487,7 +487,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             Retry Delay: {rdp.retryDelayMs ?? 1000}ms
           </label>
           <input
@@ -508,7 +508,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── TCP / Socket Defaults ─────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Cable className="w-4 h-4 text-emerald-400" />
           TCP / Socket Defaults
         </h4>
@@ -517,7 +517,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         </p>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             Connect Timeout: {rdp.tcpConnectTimeoutSecs ?? 10}s
           </label>
           <input
@@ -540,9 +540,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.tcpNodelay ?? true}
             onChange={(e) => update({ tcpNodelay: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             TCP_NODELAY (disable Nagle&apos;s algorithm)
           </span>
         </label>
@@ -555,16 +555,16 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.tcpKeepAlive ?? true}
             onChange={(e) => update({ tcpKeepAlive: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             TCP Keep-Alive
           </span>
         </label>
 
         {(rdp.tcpKeepAlive ?? true) && (
           <div className="ml-7">
-            <label className="block text-sm text-gray-400 mb-1">
+            <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
               Keep-Alive Interval: {rdp.tcpKeepAliveIntervalSecs ?? 60}s
             </label>
             <input
@@ -585,7 +585,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Receive Buffer (bytes)</label>
+            <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Receive Buffer (bytes)</label>
             <select
               value={rdp.tcpRecvBufferSize ?? 262144}
               onChange={(e) => update({ tcpRecvBufferSize: parseInt(e.target.value) })}
@@ -600,7 +600,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             </select>
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Send Buffer (bytes)</label>
+            <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Send Buffer (bytes)</label>
             <select
               value={rdp.tcpSendBufferSize ?? 262144}
               onChange={(e) => update({ tcpSendBufferSize: parseInt(e.target.value) })}
@@ -619,7 +619,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Render Backend Defaults ─────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Monitor className="w-4 h-4 text-cyan-400" />
           Render Backend Default
         </h4>
@@ -629,7 +629,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         </p>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Default Render Backend</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Render Backend</label>
           <select
             value={rdp.renderBackend ?? 'webview'}
             onChange={(e) => update({ renderBackend: e.target.value as 'auto' | 'softbuffer' | 'wgpu' | 'webview' })}
@@ -647,7 +647,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">Default Frontend Renderer</label>
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">Default Frontend Renderer</label>
           <select
             value={rdp.frontendRenderer ?? 'auto'}
             onChange={(e) => update({ frontendRenderer: e.target.value as 'auto' | 'canvas2d' | 'webgl' | 'webgpu' | 'offscreen-worker' })}
@@ -669,13 +669,13 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Performance / Frame Delivery Defaults ─────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Zap className="w-4 h-4 text-yellow-400" />
           Performance / Frame Delivery Defaults
         </h4>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             Target FPS: {rdp.targetFps ?? 30}
           </label>
           <input
@@ -698,9 +698,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.frameBatching ?? true}
             onChange={(e) => update({ frameBatching: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             Frame Batching (accumulate dirty regions)
           </span>
         </label>
@@ -711,7 +711,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
         {(rdp.frameBatching ?? true) && (
           <div className="ml-7">
-            <label className="block text-sm text-gray-400 mb-1">
+            <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
               Batch Interval: {rdp.frameBatchIntervalMs ?? 33}ms
               ({Math.round(1000 / (rdp.frameBatchIntervalMs || 33))} fps max)
             </label>
@@ -732,7 +732,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         )}
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             Full-Frame Sync Interval: every {rdp.fullFrameSyncInterval ?? 300} frames
           </label>
           <input
@@ -754,7 +754,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
         </div>
 
         <div>
-          <label className="block text-sm text-gray-400 mb-1">
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             PDU Read Timeout: {rdp.readTimeoutMs ?? 16}ms
           </label>
           <input
@@ -778,7 +778,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
       {/* ─── Bitmap Codec Defaults ─────────────────────────────── */}
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Monitor className="w-4 h-4 text-purple-400" />
           Bitmap Codec Negotiation Defaults
         </h4>
@@ -792,9 +792,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
             type="checkbox"
             checked={rdp.codecsEnabled ?? true}
             onChange={(e) => update({ codecsEnabled: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-sm text-gray-300 group-hover:text-white transition-colors font-medium">
+          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors font-medium">
             Enable Bitmap Codec Negotiation
           </span>
         </label>
@@ -806,9 +806,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
                 type="checkbox"
                 checked={rdp.remoteFxEnabled ?? true}
                 onChange={(e) => update({ remoteFxEnabled: e.target.checked })}
-                className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
               />
-              <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
                 RemoteFX (RFX)
               </span>
               <span className="text-xs text-gray-500">— DWT + RLGR entropy, best quality/compression</span>
@@ -816,7 +816,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
             {(rdp.remoteFxEnabled ?? true) && (
               <div className="ml-11 flex items-center gap-2">
-                <span className="text-sm text-gray-400">Entropy Algorithm:</span>
+                <span className="text-sm text-[var(--color-textSecondary)]">Entropy Algorithm:</span>
                 <select
                   value={rdp.remoteFxEntropy ?? 'rlgr3'}
                   onChange={(e) => update({ remoteFxEntropy: e.target.value as 'rlgr1' | 'rlgr3' })}
@@ -835,9 +835,9 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
                   type="checkbox"
                   checked={rdp.gfxEnabled ?? false}
                   onChange={(e) => update({ gfxEnabled: e.target.checked })}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                 />
-                <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
                   RDPGFX (H.264 Hardware Decode)
                 </span>
                 <span className="text-xs text-gray-500">— lowest bandwidth &amp; CPU via GPU decode</span>
@@ -845,7 +845,7 @@ export const RdpDefaultSettings: React.FC<RdpDefaultSettingsProps> = ({
 
               {(rdp.gfxEnabled ?? false) && (
                 <div className="ml-11 flex items-center gap-2 mt-2">
-                  <span className="text-sm text-gray-400">H.264 Decoder:</span>
+                  <span className="text-sm text-[var(--color-textSecondary)]">H.264 Decoder:</span>
                   <select
                     value={rdp.h264Decoder ?? 'auto'}
                     onChange={(e) => update({ h264Decoder: e.target.value as 'auto' | 'media-foundation' | 'openh264' })}

@@ -361,7 +361,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
       case 'connected': return 'text-green-400';
       case 'connecting': return 'text-yellow-400';
       case 'error': return 'text-red-400';
-      default: return 'text-gray-400';
+      default: return 'text-[var(--color-textSecondary)]';
     }
   };
 
@@ -374,12 +374,12 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
   };
 
   return (
-    <div className={`flex flex-col bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
+    <div className={`flex flex-col bg-[var(--color-background)] ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
       {/* VNC Header */}
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
+      <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Monitor size={16} className="text-blue-400" />
-          <span className="text-sm text-gray-300">
+          <span className="text-sm text-[var(--color-textSecondary)]">
             VNC - {session.hostname}
           </span>
           <div className={`flex items-center space-x-1 ${getStatusColor()}`}>
@@ -389,7 +389,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
         </div>
         
         <div className="flex items-center space-x-2">
-          <div className="flex items-center space-x-1 text-xs text-gray-400">
+          <div className="flex items-center space-x-1 text-xs text-[var(--color-textSecondary)]">
             <span>1024x768</span>
             <span>•</span>
             <span>24-bit</span>
@@ -397,7 +397,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
           
           <button
             onClick={sendCtrlAltDel}
-            className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
+            className="px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded transition-colors"
             title="Send Ctrl+Alt+Del"
           >
             Ctrl+Alt+Del
@@ -405,7 +405,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
           
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-1 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title="VNC Settings"
           >
             <Settings size={14} />
@@ -413,7 +413,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
           
           <button
             onClick={toggleFullscreen}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-1 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
             {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -423,7 +423,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
 
       {/* Settings Panel */}
       {showSettings && (
-        <div className="bg-gray-800 border-b border-gray-700 p-4">
+        <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <label className="flex items-center space-x-2">
               <input
@@ -432,7 +432,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
                 onChange={(e) => setSettings({...settings, viewOnly: e.target.checked})}
                 className="rounded"
               />
-              <span className="text-gray-300">View Only</span>
+              <span className="text-[var(--color-textSecondary)]">View Only</span>
             </label>
             
             <label className="flex items-center space-x-2">
@@ -442,7 +442,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
                 onChange={(e) => setSettings({...settings, scaleViewport: e.target.checked})}
                 className="rounded"
               />
-              <span className="text-gray-300">Scale Viewport</span>
+              <span className="text-[var(--color-textSecondary)]">Scale Viewport</span>
             </label>
             
             <label className="flex items-center space-x-2">
@@ -452,7 +452,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
                 onChange={(e) => setSettings({...settings, clipViewport: e.target.checked})}
                 className="rounded"
               />
-              <span className="text-gray-300">Clip Viewport</span>
+              <span className="text-[var(--color-textSecondary)]">Clip Viewport</span>
             </label>
             
             <label className="flex items-center space-x-2">
@@ -462,7 +462,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
                 onChange={(e) => setSettings({...settings, localCursor: e.target.checked})}
                 className="rounded"
               />
-              <span className="text-gray-300">Local Cursor</span>
+              <span className="text-[var(--color-textSecondary)]">Local Cursor</span>
             </label>
           </div>
         </div>
@@ -473,7 +473,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
         {connectionStatus === 'connecting' && (
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
-            <p className="text-gray-400">Connecting to VNC server...</p>
+            <p className="text-[var(--color-textSecondary)]">Connecting to VNC server...</p>
             <p className="text-gray-500 text-sm mt-2">{session.hostname}</p>
           </div>
         )}
@@ -489,7 +489,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
         {connectionStatus === 'connected' && (
           <canvas
             ref={canvasRef}
-            className="border border-gray-600 cursor-crosshair max-w-full max-h-full"
+            className="border border-[var(--color-border)] cursor-crosshair max-w-full max-h-full"
             onClick={handleCanvasClick}
             onKeyDown={handleKeyDown}
             onKeyUp={handleKeyUp}
@@ -503,7 +503,7 @@ export const VNCClient: React.FC<VNCClientProps> = ({ session }) => {
       </div>
 
       {/* Status Bar */}
-      <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between text-xs text-gray-400">
+      <div className="bg-[var(--color-surface)] border-t border-[var(--color-border)] px-4 py-2 flex items-center justify-between text-xs text-[var(--color-textSecondary)]">
         <div className="flex items-center space-x-4">
           <span>Session: {session.id.slice(0, 8)}</span>
           <span>Protocol: VNC</span>

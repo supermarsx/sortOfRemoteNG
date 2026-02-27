@@ -13,7 +13,7 @@ import { MacroManager } from './MacroManager';
 import { RecordingManager } from './RecordingManager';
 import { generateId } from '../utils/id';
 
-export type ToolKey = keyof ToolDisplayModes;
+export type ToolKey = Exclude<keyof ToolDisplayModes, 'globalDefault'>;
 
 /** Protocol prefix for tool tabs in the session system */
 export const TOOL_PROTOCOL_PREFIX = 'tool:';
@@ -70,10 +70,11 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
   const toolKey = getToolKeyFromProtocol(session.protocol);
   if (!toolKey) return null;
 
-  // All tools render with isOpen=true since they're always visible in a tab.
-  // The transform: scale(1) trick contains any fixed-position children.
+  // Tools render as modal dialogs (fixed inset-0 + backdrop). Inside a tab,
+  // the .tool-tab-embedded class strips the backdrop, makes the outer wrapper
+  // fill the tab, and forces the inner dialog to fill it too.
   return (
-    <div className="h-full" style={{ transform: 'scale(1)' }}>
+    <div className="tool-tab-embedded h-full relative overflow-hidden">
       {toolKey === 'performanceMonitor' && <PerformanceMonitor isOpen onClose={onClose} />}
       {toolKey === 'actionLog' && <ActionLogViewer isOpen onClose={onClose} />}
       {toolKey === 'shortcutManager' && <ShortcutManagerDialog isOpen onClose={onClose} />}

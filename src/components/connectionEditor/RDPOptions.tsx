@@ -55,17 +55,17 @@ const Section: React.FC<{
 }> = ({ title, icon, defaultOpen = false, children }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-gray-700 rounded-md overflow-hidden">
+    <div className="border border-[var(--color-border)] rounded-md overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-gray-750 hover:bg-gray-700 transition-colors text-sm font-medium text-gray-200"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-gray-750 hover:bg-[var(--color-border)] transition-colors text-sm font-medium text-gray-200"
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         {icon}
         {title}
       </button>
-      {open && <div className="p-3 space-y-3 border-t border-gray-700">{children}</div>}
+      {open && <div className="p-3 space-y-3 border-t border-[var(--color-border)]">{children}</div>}
     </div>
   );
 };
@@ -215,16 +215,16 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
   });
 
   const selectClass =
-    'w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
+    'w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
   const inputClass = selectClass;
-  const checkboxClass = 'rounded border-gray-600 bg-gray-700 text-blue-600';
-  const labelClass = 'flex items-center space-x-2 text-sm text-gray-300';
+  const checkboxClass = 'rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600';
+  const labelClass = 'flex items-center space-x-2 text-sm text-[var(--color-textSecondary)]';
 
   return (
     <div className="space-y-3">
       {/* Domain */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">Domain</label>
+        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Domain</label>
         <input
           type="text"
           value={formData.domain || ''}
@@ -238,7 +238,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
       <Section title="Display" icon={<Monitor size={14} className="text-blue-400" />} defaultOpen>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Width</label>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Width</label>
             <input
               type="number"
               value={rdp.display?.width ?? 1920}
@@ -249,7 +249,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Height</label>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Height</label>
             <input
               type="number"
               value={rdp.display?.height ?? 1080}
@@ -262,7 +262,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Color Depth</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Color Depth</label>
           <select
             value={rdp.display?.colorDepth ?? 32}
             onChange={(e) => updateRdp('display', { colorDepth: parseInt(e.target.value) as 16 | 24 | 32 })}
@@ -275,7 +275,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Desktop Scale Factor: {rdp.display?.desktopScaleFactor ?? 100}%
           </label>
           <input
@@ -331,7 +331,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
         {rdp.display?.magnifierEnabled && (
           <div>
-            <label className="block text-xs text-gray-400 mb-1">
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
               Magnifier Zoom: {rdp.display?.magnifierZoom ?? 3}x
             </label>
             <input
@@ -350,7 +350,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
       {/* ─── Audio ───────────────────────────────────────────────── */}
       <Section title="Audio" icon={<Volume2 size={14} className="text-green-400" />}>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Audio Playback</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Audio Playback</label>
           <select
             value={rdp.audio?.playbackMode ?? 'local'}
             onChange={(e) => updateRdp('audio', { playbackMode: e.target.value as 'local' | 'remote' | 'disabled' })}
@@ -363,7 +363,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Audio Recording</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Audio Recording</label>
           <select
             value={rdp.audio?.recordingMode ?? 'disabled'}
             onChange={(e) => updateRdp('audio', { recordingMode: e.target.value as 'enabled' | 'disabled' })}
@@ -375,7 +375,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Audio Quality</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Audio Quality</label>
           <select
             value={rdp.audio?.audioQuality ?? 'dynamic'}
             onChange={(e) => updateRdp('audio', { audioQuality: e.target.value as 'dynamic' | 'medium' | 'high' })}
@@ -391,7 +391,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
       {/* ─── Input ───────────────────────────────────────────────── */}
       <Section title="Input" icon={<Mouse size={14} className="text-yellow-400" />}>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Mouse Mode</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Mouse Mode</label>
           <select
             value={rdp.input?.mouseMode ?? 'absolute'}
             onChange={(e) => updateRdp('input', { mouseMode: e.target.value as 'relative' | 'absolute' })}
@@ -413,7 +413,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </label>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Keyboard Layout {rdp.input?.autoDetectLayout !== false && <span className="text-blue-400">(overridden by auto-detect)</span>}
           </label>
           <div className="flex gap-2">
@@ -433,7 +433,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
               type="button"
               onClick={detectKeyboardLayout}
               disabled={detectingLayout}
-              className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs text-gray-300 flex items-center gap-1 disabled:opacity-50"
+              className="px-2 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] rounded text-xs text-[var(--color-textSecondary)] flex items-center gap-1 disabled:opacity-50"
               title="Auto-detect current keyboard layout"
             >
               <ScanSearch size={12} />
@@ -443,7 +443,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Keyboard Type</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Keyboard Type</label>
           <select
             value={rdp.input?.keyboardType ?? 'ibm-enhanced'}
             onChange={(e) => updateRdp('input', { keyboardType: e.target.value as 'ibm-enhanced' })}
@@ -460,7 +460,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Input Priority</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Input Priority</label>
           <select
             value={rdp.input?.inputPriority ?? 'realtime'}
             onChange={(e) => updateRdp('input', { inputPriority: e.target.value as 'realtime' | 'batched' })}
@@ -473,7 +473,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
         {rdp.input?.inputPriority === 'batched' && (
           <div>
-            <label className="block text-xs text-gray-400 mb-1">
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
               Batch Interval: {rdp.input?.batchIntervalMs ?? 16}ms
             </label>
             <input
@@ -585,7 +585,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
       {/* ─── Performance ─────────────────────────────────────────── */}
       <Section title="Performance" icon={<Gauge size={14} className="text-orange-400" />} defaultOpen>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Connection Speed</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Connection Speed</label>
           <select
             value={rdp.performance?.connectionSpeed ?? 'broadband-high'}
             onChange={(e) => {
@@ -758,7 +758,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         <div className="text-xs text-gray-500 font-medium pt-2">Frame Delivery</div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Target FPS: {rdp.performance?.targetFps ?? 30}
           </label>
           <input
@@ -788,7 +788,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
         {rdp.performance?.frameBatching && (
           <div>
-            <label className="block text-xs text-gray-400 mb-1">
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
               Batch Interval: {rdp.performance?.frameBatchIntervalMs ?? 33}ms
               ({Math.round(1000 / (rdp.performance?.frameBatchIntervalMs || 33))} fps max)
             </label>
@@ -850,13 +850,13 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
             {(rdp.performance?.codecs?.remoteFx ?? true) && (
               <div className="ml-8 flex items-center gap-2">
-                <span className="text-xs text-gray-400">Entropy:</span>
+                <span className="text-xs text-[var(--color-textSecondary)]">Entropy:</span>
                 <select
                   value={rdp.performance?.codecs?.remoteFxEntropy ?? 'rlgr3'}
                   onChange={(e) => updateRdp('performance', {
                     codecs: { ...rdp.performance?.codecs, remoteFxEntropy: e.target.value as 'rlgr1' | 'rlgr3' },
                   })}
-                  className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs text-gray-200"
+                  className="bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-0.5 text-xs text-gray-200"
                 >
                   <option value="rlgr1">RLGR1 (faster decoding)</option>
                   <option value="rlgr3">RLGR3 (better compression)</option>
@@ -864,7 +864,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
               </div>
             )}
 
-            <div className="border-t border-gray-700/50 pt-2 mt-2">
+            <div className="border-t border-[var(--color-border)]/50 pt-2 mt-2">
               <label className={`${labelClass}`}>
                 <input
                   type="checkbox"
@@ -880,13 +880,13 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
               {(rdp.performance?.codecs?.enableGfx ?? false) && (
                 <div className="ml-8 flex items-center gap-2 mt-1">
-                  <span className="text-xs text-gray-400">H.264 Decoder:</span>
+                  <span className="text-xs text-[var(--color-textSecondary)]">H.264 Decoder:</span>
                   <select
                     value={rdp.performance?.codecs?.h264Decoder ?? 'auto'}
                     onChange={(e) => updateRdp('performance', {
                       codecs: { ...rdp.performance?.codecs, h264Decoder: e.target.value as 'auto' | 'media-foundation' | 'openh264' },
                     })}
-                    className="bg-gray-700 border border-gray-600 rounded px-2 py-0.5 text-xs text-gray-200"
+                    className="bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-0.5 text-xs text-gray-200"
                   >
                     <option value="auto">Auto (MF hardware → openh264 fallback)</option>
                     <option value="media-foundation">Media Foundation (GPU hardware)</option>
@@ -902,7 +902,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
       {/* ─── Security ────────────────────────────────────────────── */}
       <Section title="Security" icon={<Shield size={14} className="text-red-400" />}>
         {/* CredSSP Master Toggle */}
-        <div className="pb-2 mb-2 border-b border-gray-700/60">
+        <div className="pb-2 mb-2 border-b border-[var(--color-border)]/60">
           <label className={labelClass}>
             <input
               type="checkbox"
@@ -969,8 +969,8 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </label>
 
         {/* ─── CredSSP Remediation ───────────────────────────────── */}
-        <div className="pt-3 mt-2 border-t border-gray-700/60">
-          <div className="flex items-center gap-2 mb-3 text-sm text-gray-300">
+        <div className="pt-3 mt-2 border-t border-[var(--color-border)]/60">
+          <div className="flex items-center gap-2 mb-3 text-sm text-[var(--color-textSecondary)]">
             <ShieldAlert size={14} className="text-amber-400" />
             <span className="font-medium">CredSSP Remediation</span>
             <span className="text-xs text-gray-500 ml-1">(CVE-2018-0886)</span>
@@ -979,7 +979,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
           <div className="space-y-3">
             {/* Oracle Remediation Policy */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                 Encryption Oracle Remediation Policy
               </label>
               <select
@@ -1007,7 +1007,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
             {/* NLA Mode */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">NLA Mode</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">NLA Mode</label>
               <select
                 value={rdp.security?.enableNla === false ? 'disabled' : ''}
                 onChange={(e) => {
@@ -1058,7 +1058,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
             {/* TLS Min Version */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Minimum TLS Version</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Minimum TLS Version</label>
               <select
                 value={rdp.security?.tlsMinVersion ?? ''}
                 onChange={(e) =>
@@ -1079,7 +1079,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
             {/* Authentication Packages */}
             <div className="space-y-1">
-              <span className="block text-xs text-gray-400">Authentication Packages</span>
+              <span className="block text-xs text-[var(--color-textSecondary)]">Authentication Packages</span>
               <label className={labelClass}>
                 <input
                   type="checkbox"
@@ -1143,7 +1143,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
             {/* CredSSP Version */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">CredSSP Version</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">CredSSP Version</label>
               <select
                 value={rdp.security?.credsspVersion?.toString() ?? ''}
                 onChange={(e) =>
@@ -1164,7 +1164,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
             {/* Server Cert Validation */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Server Certificate Validation</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Server Certificate Validation</label>
               <select
                 value={rdp.security?.serverCertValidation ?? ''}
                 onChange={(e) =>
@@ -1184,7 +1184,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
             {/* SSPI Package List Override */}
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                 SSPI Package List Override
               </label>
               <input
@@ -1199,7 +1199,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div className="pt-2">
-          <label className="block text-xs text-gray-400 mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Server Certificate Trust Policy
           </label>
           <select
@@ -1227,7 +1227,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         {hostRecords.length > 0 && (
           <div className="pt-2">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-gray-400 flex items-center gap-1">
+              <span className="text-xs text-[var(--color-textSecondary)] flex items-center gap-1">
                 <Fingerprint size={12} />
                 Trusted Certificates ({hostRecords.length})
               </span>
@@ -1243,10 +1243,10 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
               {hostRecords.map((r) => (
                 <div
                   key={r.identity.fingerprint}
-                  className="bg-gray-900 rounded p-2 text-xs font-mono"
+                  className="bg-[var(--color-background)] rounded p-2 text-xs font-mono"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-300 truncate max-w-[200px]" title={r.identity.fingerprint}>
+                    <span className="text-[var(--color-textSecondary)] truncate max-w-[200px]" title={r.identity.fingerprint}>
                       {r.nickname || formatFingerprint(r.identity.fingerprint).slice(0, 32) + '…'}
                     </span>
                     <div className="flex items-center gap-1">
@@ -1277,7 +1277,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
                         type="text"
                         value={nicknameInput}
                         onChange={(e) => setNicknameInput(e.target.value)}
-                        className="flex-1 px-1 py-0.5 bg-gray-800 border border-gray-600 rounded text-white text-xs"
+                        className="flex-1 px-1 py-0.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs"
                         placeholder="Nickname"
                       />
                       <button
@@ -1317,7 +1317,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         {(rdp.gateway?.enabled ?? false) && (
           <div className="space-y-3 mt-2">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Gateway Hostname</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Gateway Hostname</label>
               <input
                 type="text"
                 value={rdp.gateway?.hostname ?? ''}
@@ -1328,7 +1328,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                 Gateway Port: {rdp.gateway?.port ?? 443}
               </label>
               <input
@@ -1342,7 +1342,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Authentication Method</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Authentication Method</label>
               <select
                 value={rdp.gateway?.authMethod ?? 'ntlm'}
                 onChange={(e) =>
@@ -1369,7 +1369,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Credential Source</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Credential Source</label>
               <select
                 value={rdp.gateway?.credentialSource ?? 'same-as-connection'}
                 onChange={(e) =>
@@ -1392,9 +1392,9 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             </div>
 
             {rdp.gateway?.credentialSource === 'separate' && (
-              <div className="space-y-2 pl-2 border-l-2 border-gray-700">
+              <div className="space-y-2 pl-2 border-l-2 border-[var(--color-border)]">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Gateway Username</label>
+                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Gateway Username</label>
                   <input
                     type="text"
                     value={rdp.gateway?.username ?? ''}
@@ -1404,7 +1404,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Gateway Password</label>
+                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Gateway Password</label>
                   <input
                     type="password"
                     value={rdp.gateway?.password ?? ''}
@@ -1413,7 +1413,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Gateway Domain</label>
+                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Gateway Domain</label>
                   <input
                     type="text"
                     value={rdp.gateway?.domain ?? ''}
@@ -1426,7 +1426,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             )}
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Transport Mode</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Transport Mode</label>
               <select
                 value={rdp.gateway?.transportMode ?? 'auto'}
                 onChange={(e) =>
@@ -1455,7 +1455,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             </label>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Access Token (optional)</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Access Token (optional)</label>
               <input
                 type="text"
                 value={rdp.gateway?.accessToken ?? ''}
@@ -1487,7 +1487,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         {(rdp.hyperv?.useVmId ?? false) && (
           <div className="space-y-3 mt-2">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">VM ID (GUID)</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">VM ID (GUID)</label>
               <input
                 type="text"
                 value={rdp.hyperv?.vmId ?? ''}
@@ -1497,7 +1497,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Hyper-V Host Server</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Hyper-V Host Server</label>
               <input
                 type="text"
                 value={rdp.hyperv?.hostServer ?? ''}
@@ -1510,7 +1510,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
           </div>
         )}
 
-        <div className="pt-2 mt-2 border-t border-gray-700/60">
+        <div className="pt-2 mt-2 border-t border-[var(--color-border)]/60">
           <label className={labelClass}>
             <input
               type="checkbox"
@@ -1544,7 +1544,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         {(rdp.negotiation?.autoDetect ?? false) && (
           <div className="space-y-3 mt-2">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Negotiation Strategy</label>
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Negotiation Strategy</label>
               <select
                 value={rdp.negotiation?.strategy ?? 'nla-first'}
                 onChange={(e) =>
@@ -1573,7 +1573,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                 Max Retries: {rdp.negotiation?.maxRetries ?? 3}
               </label>
               <input
@@ -1592,7 +1592,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             </div>
 
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                 Retry Delay: {rdp.negotiation?.retryDelayMs ?? 1000}ms
               </label>
               <input
@@ -1613,14 +1613,14 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         )}
 
         {/* ─── Load Balancing ────────────────────────────────────── */}
-        <div className="pt-3 mt-2 border-t border-gray-700/60">
-          <div className="flex items-center gap-2 mb-2 text-sm text-gray-300">
+        <div className="pt-3 mt-2 border-t border-[var(--color-border)]/60">
+          <div className="flex items-center gap-2 mb-2 text-sm text-[var(--color-textSecondary)]">
             <ToggleLeft size={14} className="text-blue-400" />
             <span className="font-medium">Load Balancing</span>
           </div>
 
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Load Balancing Info</label>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Load Balancing Info</label>
             <input
               type="text"
               value={rdp.negotiation?.loadBalancingInfo ?? ''}
@@ -1646,9 +1646,9 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
       </Section>
 
       {/* ─── Advanced ────────────────────────────────────────────── */}
-      <Section title="Advanced" icon={<Settings2 size={14} className="text-gray-400" />}>
+      <Section title="Advanced" icon={<Settings2 size={14} className="text-[var(--color-textSecondary)]" />}>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">Client Name</label>
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Client Name</label>
           <input
             type="text"
             value={rdp.advanced?.clientName ?? 'SortOfRemoteNG'}
@@ -1660,7 +1660,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Read Timeout: {rdp.advanced?.readTimeoutMs ?? 16}ms
           </label>
           <input
@@ -1679,7 +1679,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Full-frame Sync Interval: every {rdp.advanced?.fullFrameSyncInterval ?? 300} frames
           </label>
           <input
@@ -1696,7 +1696,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Max Consecutive Errors: {rdp.advanced?.maxConsecutiveErrors ?? 50}
           </label>
           <input
@@ -1713,7 +1713,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Stats Interval: {rdp.advanced?.statsIntervalSecs ?? 1}s
           </label>
           <input
@@ -1737,7 +1737,7 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
         </p>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1">
+          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Connect Timeout: {rdp.tcp?.connectTimeoutSecs ?? 10}s
           </label>
           <input
@@ -1760,9 +1760,9 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             type="checkbox"
             checked={rdp.tcp?.nodelay ?? true}
             onChange={(e) => updateRdp('tcp', { nodelay: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-xs text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-xs text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             TCP_NODELAY (disable Nagle&apos;s algorithm)
           </span>
         </label>
@@ -1772,16 +1772,16 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             type="checkbox"
             checked={rdp.tcp?.keepAlive ?? true}
             onChange={(e) => updateRdp('tcp', { keepAlive: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
           />
-          <span className="text-xs text-gray-300 group-hover:text-white transition-colors">
+          <span className="text-xs text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
             TCP Keep-Alive
           </span>
         </label>
 
         {(rdp.tcp?.keepAlive ?? true) && (
           <div className="ml-6">
-            <label className="block text-xs text-gray-400 mb-1">
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
               Keep-Alive Interval: {rdp.tcp?.keepAliveIntervalSecs ?? 60}s
             </label>
             <input
@@ -1798,11 +1798,11 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
 
         <div className="grid grid-cols-2 gap-3 mt-2">
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Recv Buffer</label>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Recv Buffer</label>
             <select
               value={rdp.tcp?.recvBufferSize ?? 262144}
               onChange={(e) => updateRdp('tcp', { recvBufferSize: parseInt(e.target.value) })}
-              className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
+              className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs"
             >
               <option value={65536}>64 KB</option>
               <option value={131072}>128 KB</option>
@@ -1813,11 +1813,11 @@ export const RDPOptions: React.FC<RDPOptionsProps> = ({ formData, setFormData })
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Send Buffer</label>
+            <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Send Buffer</label>
             <select
               value={rdp.tcp?.sendBufferSize ?? 262144}
               onChange={(e) => updateRdp('tcp', { sendBufferSize: parseInt(e.target.value) })}
-              className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
+              className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs"
             >
               <option value={65536}>64 KB</option>
               <option value={131072}>128 KB</option>

@@ -249,7 +249,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
   };
 
   const providerIcons: Record<CloudSyncProvider, React.ReactNode> = {
-    none: <CloudOff className="w-5 h-5 text-gray-400" />,
+    none: <CloudOff className="w-5 h-5 text-[var(--color-textSecondary)]" />,
     googleDrive: <Cloud className="w-5 h-5 text-green-400" />,
     oneDrive: <Cloud className="w-5 h-5 text-blue-500" />,
     nextcloud: <Cloud className="w-5 h-5 text-cyan-400" />,
@@ -286,7 +286,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
 
   const getSyncStatusIcon = () => {
     if (!cloudSync.enabled || enabledProviders.length === 0) {
-      return <CloudOff className="w-5 h-5 text-gray-400" />;
+      return <CloudOff className="w-5 h-5 text-[var(--color-textSecondary)]" />;
     }
     switch (cloudSync.lastSyncStatus) {
       case 'success':
@@ -335,7 +335,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 onClick={() => {
                   openTokenDialog("googleDrive");
                 }}
-                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 <Globe className="w-4 h-4" />
                 Connect Google Account
@@ -389,7 +389,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
                 onClick={() => {
                   openTokenDialog("oneDrive");
                 }}
-                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 <Globe className="w-4 h-4" />
                 Connect Microsoft Account
@@ -733,20 +733,20 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
           <CloudCog className="w-5 h-5" />
           Cloud Sync
         </h3>
         <button
           onClick={() => handleSyncNow()}
           disabled={!cloudSync.enabled || enabledProviders.length === 0 || isSyncing}
-          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
         >
           <RefreshCw className="w-4 h-4" />
           Sync All
         </button>
       </div>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Synchronize connections and settings across devices using cloud storage providers.
       </p>
 
@@ -1293,7 +1293,7 @@ const CloudSyncSettings: React.FC<CloudSyncSettingsProps> = ({
               <button
                 type="button"
                 onClick={saveTokenDialog}
-                className="px-3 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                className="px-3 py-2 text-sm text-[var(--color-text)] bg-blue-600 hover:bg-blue-700 rounded-lg"
               >
                 Save Tokens
               </button>

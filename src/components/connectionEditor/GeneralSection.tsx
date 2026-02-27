@@ -76,7 +76,7 @@ const ParentFolderSelect: React.FC<{
     <select
       value={formData.parentId || ''}
       onChange={(e) => setFormData({ ...formData, parentId: e.target.value || undefined })}
-      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
     >
       <option value="">Root (No parent)</option>
       {selectableGroups.map(({ group, depth, disabled, reason }) => (
@@ -127,9 +127,9 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
             type="checkbox"
             checked={!!formData.isGroup}
             onChange={(e) => setFormData({ ...formData, isGroup: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 focus:ring-blue-500"
           />
-          <span className="text-gray-300">Create as folder/group</span>
+          <span className="text-[var(--color-textSecondary)]">Create as folder/group</span>
         </label>
         {!formData.isGroup && (
           <label className="flex items-center space-x-2">
@@ -137,28 +137,28 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
               type="checkbox"
               checked={!!formData.favorite}
               onChange={(e) => setFormData({ ...formData, favorite: e.target.checked })}
-              className="rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
+              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 focus:ring-blue-500"
             />
-            <span className="text-gray-300">Mark as favorite</span>
+            <span className="text-[var(--color-textSecondary)]">Mark as favorite</span>
           </label>
         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Name *</label>
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Name *</label>
           <input
             type="text"
             required
             value={formData.name || ''}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder={formData.isGroup ? 'Folder name' : 'Connection name'}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Icon</label>
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Icon</label>
           <div className="grid grid-cols-5 gap-2">
             {iconOptions.map(({ value, label, icon: Icon }) => {
               const isActive = (formData.icon || '') === value;
@@ -170,7 +170,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
                   className={`flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors ${
                     isActive
                       ? 'border-blue-500 bg-blue-500/10 text-blue-200'
-                      : 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      : 'border-[var(--color-border)] bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
                   }`}
                   title={label}
                 >
@@ -183,7 +183,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-2">Parent Folder</label>
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Parent Folder</label>
           <ParentFolderSelect
             formData={formData}
             setFormData={setFormData}
@@ -195,11 +195,11 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
         {!formData.isGroup && (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Protocol</label>
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Protocol</label>
               <select
                 value={formData.protocol ?? 'rdp'}
                 onChange={(e) => handleProtocolChange(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="rdp">RDP (Remote Desktop)</option>
                 <option value="ssh">SSH (Secure Shell)</option>
@@ -222,8 +222,8 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
 
             {formData.protocol === 'ssh' && (
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">SSH Implementation</label>
-                <div className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-400">
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">SSH Implementation</label>
+                <div className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-textSecondary)]">
                   Rust SSH Library
                 </div>
                 <p className="text-xs text-gray-500 mt-1">Using secure Rust-based SSH implementation</p>
@@ -231,24 +231,24 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Hostname/IP *</label>
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Hostname/IP *</label>
               <input
                 type="text"
                 required
                 value={formData.hostname || ''}
                 onChange={(e) => setFormData({ ...formData, hostname: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="192.168.1.100 or server.example.com"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Port</label>
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Port</label>
               <input
                 type="number"
                 value={formData.port || 0}
                 onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 min={1}
                 max={65535}
               />
@@ -256,12 +256,12 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
 
             {formData.protocol === 'rdp' && (
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Domain</label>
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Domain</label>
                 <input
                   type="text"
                   value={formData.domain || ''}
                   onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Domain (optional)"
                 />
               </div>

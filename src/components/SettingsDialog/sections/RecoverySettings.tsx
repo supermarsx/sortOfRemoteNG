@@ -141,19 +141,19 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
 
     return (
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
-        <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-[var(--color-border)] shadow-2xl">
+        <div className="bg-[var(--color-surface)] rounded-xl p-6 max-w-md w-full mx-4 border border-[var(--color-border)] shadow-2xl">
           <div className="flex items-start gap-4">
             <div className={`p-3 rounded-full ${action.danger ? 'bg-red-500/20' : 'bg-yellow-500/20'}`}>
               <AlertTriangle className={`w-6 h-6 ${action.danger ? 'text-red-400' : 'text-yellow-400'}`} />
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-white mb-2">{action.title}</h3>
-              <p className="text-sm text-gray-400 mb-4">{action.description}</p>
+              <h3 className="text-lg font-semibold text-[var(--color-text)] mb-2">{action.title}</h3>
+              <p className="text-sm text-[var(--color-textSecondary)] mb-4">{action.description}</p>
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={() => setConfirmAction(null)}
                   disabled={isLoading}
-                  className="px-4 py-2 text-sm rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors disabled:opacity-50"
+                  className="px-4 py-2 text-sm rounded-lg bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -162,8 +162,8 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
                   disabled={isLoading}
                   className={`px-4 py-2 text-sm rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 ${
                     action.danger
-                      ? 'bg-red-600 text-white hover:bg-red-700'
-                      : 'bg-yellow-600 text-white hover:bg-yellow-700'
+                      ? 'bg-red-600 text-[var(--color-text)] hover:bg-red-700'
+                      : 'bg-yellow-600 text-[var(--color-text)] hover:bg-yellow-700'
                   }`}
                 >
                   {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -179,17 +179,17 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
         <RotateCcw className="w-5 h-5" />
         Recovery
       </h3>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Use these options to troubleshoot issues or reset the application to a clean state.
       </p>
 
       {/* Data Management */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Database className="w-4 h-4 text-blue-400" />
           Data Management
         </h4>
@@ -197,7 +197,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
-              <div className="flex items-center gap-2 text-white font-medium">
+              <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
                 <FolderX className="w-4 h-4 text-orange-400" />
                 Delete App Data
               </div>
@@ -217,7 +217,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
           <div className="border-t border-[var(--color-border)]/50 pt-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
-                <div className="flex items-center gap-2 text-white font-medium">
+                <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
                   <Trash2 className="w-4 h-4 text-red-400" />
                   Delete All Data & Collections
                 </div>
@@ -239,7 +239,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
 
       {/* Reset Settings */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <RotateCcw className="w-4 h-4 text-yellow-400" />
           Reset Options
         </h4>
@@ -247,7 +247,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
-              <div className="flex items-center gap-2 text-white font-medium">
+              <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
                 <RotateCcw className="w-4 h-4 text-yellow-400" />
                 Reset All Settings
               </div>
@@ -268,7 +268,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
 
       {/* Restart Options */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <RefreshCw className="w-4 h-4 text-green-400" />
           Restart Options
         </h4>
@@ -276,7 +276,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
-              <div className="flex items-center gap-2 text-white font-medium">
+              <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
                 <RefreshCw className="w-4 h-4 text-blue-400" />
                 Soft Restart
               </div>
@@ -296,7 +296,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({ onClose }) =
           <div className="border-t border-[var(--color-border)]/50 pt-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1">
-                <div className="flex items-center gap-2 text-white font-medium">
+                <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
                   <Power className="w-4 h-4 text-green-400" />
                   Hard Restart
                 </div>

@@ -187,11 +187,11 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
         <Terminal className="w-5 h-5" />
         SSH Terminal
       </h3>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Terminal line handling, bell, keyboard, font, colors, scrollback, and SSH protocol settings.
       </p>
 
@@ -273,7 +273,7 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
             {sshTerminal.bellOveruseProtection.enabled ? (
               <VolumeX className="w-4 h-4 text-orange-400" />
             ) : (
-              <Volume2 className="w-4 h-4 text-gray-400" />
+              <Volume2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
             )}
             {t('settings.sshTerminal.bellOveruse', 'Bell Overuse Protection')}
           </h5>
@@ -672,7 +672,7 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
       {/* Misc Behavior */}
       <CollapsibleSection
         title={t('settings.sshTerminal.misc', 'Miscellaneous')}
-        icon={<Settings2 className="w-4 h-4 text-gray-400" />}
+        icon={<Settings2 className="w-4 h-4 text-[var(--color-textSecondary)]" />}
         defaultOpen={false}
       >
         <TextInput

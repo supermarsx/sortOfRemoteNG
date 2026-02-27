@@ -28,11 +28,11 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
   const { t } = useTranslation();
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
         <Wifi className="w-5 h-5" />
         Proxy
       </h3>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Configure a global proxy server for routing all connections.
       </p>
 
@@ -43,11 +43,11 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
             type="checkbox"
             checked={settings.globalProxy?.enabled || false}
             onChange={(e) => updateProxy({ enabled: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
           <Shield className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
           <div>
-            <span className="text-gray-300 group-hover:text-white">Enable Global Proxy</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable Global Proxy</span>
             <p className="text-xs text-gray-500">Route all connections through a proxy server</p>
           </div>
         </label>
@@ -57,7 +57,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
         <>
           {/* Proxy Type Section */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Globe className="w-4 h-4 text-blue-400" />
               Proxy Type
             </h4>
@@ -69,13 +69,13 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                   onClick={() => updateProxy({ type: type.value as any })}
                   className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                     settings.globalProxy?.type === type.value
-                      ? 'border-blue-500 bg-blue-600/20 text-white ring-1 ring-blue-500/50'
-                      : 'border-gray-600 bg-gray-700/50 text-gray-300 hover:bg-gray-600 hover:border-gray-500'
+                      ? 'border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50'
+                      : 'border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]'
                   }`}
                 >
                   <Shield className={`w-5 h-5 mb-1 ${settings.globalProxy?.type === type.value ? 'text-blue-400' : ''}`} />
                   <span className="text-sm font-medium">{type.label}</span>
-                  <span className="text-xs text-gray-400 mt-1">{type.description}</span>
+                  <span className="text-xs text-[var(--color-textSecondary)] mt-1">{type.description}</span>
                 </button>
               ))}
             </div>
@@ -83,7 +83,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
 
           {/* Connection Details Section */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Server className="w-4 h-4 text-green-400" />
               Connection Details
             </h4>
@@ -91,7 +91,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-400">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Server className="w-4 h-4" />
                     Proxy Host
                   </label>
@@ -99,13 +99,13 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                     type="text"
                     value={settings.globalProxy?.host || ''}
                     onChange={(e) => updateProxy({ host: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="proxy.example.com"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-400">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Hash className="w-4 h-4" />
                     Proxy Port
                   </label>
@@ -113,7 +113,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                     type="number"
                     value={settings.globalProxy?.port || 8080}
                     onChange={(e) => updateProxy({ port: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     min="1"
                     max="65535"
                   />
@@ -124,7 +124,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
 
           {/* Authentication Section */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Lock className="w-4 h-4 text-yellow-400" />
               Authentication (Optional)
             </h4>
@@ -132,7 +132,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-400">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <User className="w-4 h-4" />
                     Username
                   </label>
@@ -140,20 +140,20 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                     type="text"
                     value={settings.globalProxy?.username || ''}
                     onChange={(e) => updateProxy({ username: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="Optional"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-400">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Lock className="w-4 h-4" />
                     Password
                   </label>
                   <PasswordInput
                     value={settings.globalProxy?.password || ''}
                     onChange={(e) => updateProxy({ password: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="Optional"
                   />
                 </div>

@@ -257,26 +257,26 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl w-full max-w-5xl mx-4 h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700 bg-gray-800/60">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/60">
           <div className="flex items-center gap-3">
             <Disc size={18} className="text-red-400" />
-            <h2 className="text-sm font-semibold text-white">Recording Manager</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">Recording Manager</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded">
+          <button onClick={onClose} className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded">
             <X size={16} />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-700">
+        <div className="flex border-b border-[var(--color-border)]">
           <button
             onClick={() => { setActiveTab('ssh'); setExpandedId(null); }}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'ssh'
                 ? 'border-green-500 text-green-400'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                : 'border-transparent text-[var(--color-textSecondary)] hover:text-gray-200'
             }`}
           >
             <Terminal size={14} />
@@ -287,7 +287,7 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'rdp'
                 ? 'border-blue-500 text-blue-400'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                : 'border-transparent text-[var(--color-textSecondary)] hover:text-gray-200'
             }`}
           >
             <Monitor size={14} />
@@ -298,7 +298,7 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'web'
                 ? 'border-cyan-500 text-cyan-400'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                : 'border-transparent text-[var(--color-textSecondary)] hover:text-gray-200'
             }`}
           >
             <Globe size={14} />
@@ -309,7 +309,7 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'webVideo'
                 ? 'border-purple-500 text-purple-400'
-                : 'border-transparent text-gray-400 hover:text-gray-200'
+                : 'border-transparent text-[var(--color-textSecondary)] hover:text-gray-200'
             }`}
           >
             <Film size={14} />
@@ -318,15 +318,15 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center gap-2 px-4 py-2 bg-gray-800/40 border-b border-gray-700/50">
-          <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-gray-700/40 border border-gray-600/50 rounded-lg">
-            <Search size={14} className="text-gray-400" />
+        <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface)]/40 border-b border-[var(--color-border)]/50">
+          <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-[var(--color-border)]/40 border border-[var(--color-border)]/50 rounded-lg">
+            <Search size={14} className="text-[var(--color-textSecondary)]" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search recordings..."
-              className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 outline-none"
+              className="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-gray-500 outline-none"
             />
           </div>
           {activeTab === 'ssh' && sshRecordings.length > 0 && (
@@ -364,7 +364,7 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
         </div>
 
         {/* Stats bar */}
-        <div className="flex items-center gap-4 px-5 py-1.5 bg-gray-800/20 border-b border-gray-700/30 text-[10px] text-gray-500">
+        <div className="flex items-center gap-4 px-5 py-1.5 bg-[var(--color-surface)]/20 border-b border-[var(--color-border)]/30 text-[10px] text-gray-500">
           {activeTab === 'ssh' && (
             <>
               <span className="flex items-center gap-1"><HardDrive size={10} /> {sshRecordings.length} recording{sshRecordings.length !== 1 ? 's' : ''}</span>
@@ -403,7 +403,7 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
                 {!searchQuery && <p className="text-xs mt-1">Start recording from an SSH session toolbar</p>}
               </div>
             ) : (
-              <div className="divide-y divide-gray-700/50">
+              <div className="divide-y divide-[var(--color-border)]/50">
                 {filteredSsh
                   .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
                   .map((rec) => (
@@ -429,7 +429,7 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
                 {!searchQuery && <p className="text-xs mt-1">Enable auto-save in Recording settings, or save from the RDP toolbar</p>}
               </div>
             ) : (
-              <div className="divide-y divide-gray-700/50">
+              <div className="divide-y divide-[var(--color-border)]/50">
                 {filteredRdp
                   .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
                   .map((rec) => (
@@ -456,7 +456,7 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
                 {!searchQuery && <p className="text-xs mt-1">Start recording HTTP traffic from a web browser session</p>}
               </div>
             ) : (
-              <div className="divide-y divide-gray-700/50">
+              <div className="divide-y divide-[var(--color-border)]/50">
                 {filteredWeb.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime()).map(rec => (
                   <WebHarRecordingRow
                     key={rec.id}
@@ -480,15 +480,15 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
                 {!searchQuery && <p className="text-xs mt-1">Record your web browsing session as video</p>}
               </div>
             ) : (
-              <div className="divide-y divide-gray-700/50">
+              <div className="divide-y divide-[var(--color-border)]/50">
                 {filteredWebVideo
                   .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
                   .map(rec => (
-                    <div key={rec.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-800/60">
+                    <div key={rec.id} className="flex items-center gap-3 px-5 py-3 hover:bg-[var(--color-surface)]/60">
                       <Film size={16} className="text-purple-400 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-white truncate">{rec.name}</div>
-                        <div className="text-[10px] text-gray-400 flex items-center gap-2 flex-wrap">
+                        <div className="text-sm font-medium text-[var(--color-text)] truncate">{rec.name}</div>
+                        <div className="text-[10px] text-[var(--color-textSecondary)] flex items-center gap-2 flex-wrap">
                           {rec.host && (
                             <>
                               <span>{rec.host}</span>
@@ -507,14 +507,14 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({ isOpen, onCl
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => handleExportWebVideo(rec)}
-                          className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white"
+                          className="p-1.5 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                           title="Download"
                         >
                           <Download size={14} />
                         </button>
                         <button
                           onClick={() => handleDeleteWebVideo(rec.id)}
-                          className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-red-400"
+                          className="p-1.5 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-red-400"
                           title="Delete"
                         >
                           <Trash2 size={14} />
@@ -546,15 +546,15 @@ const SshRecordingRow: React.FC<{
   const meta = recording.recording.metadata;
 
   return (
-    <div className={isExpanded ? 'bg-gray-800/30' : ''}>
+    <div className={isExpanded ? 'bg-[var(--color-surface)]/30' : ''}>
       <div
         onClick={onToggle}
-        className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-gray-800/60"
+        className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-[var(--color-surface)]/60"
       >
         <Terminal size={16} className="text-green-400 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-white truncate">{recording.name}</div>
-          <div className="text-[10px] text-gray-400 flex items-center gap-2 flex-wrap">
+          <div className="text-sm font-medium text-[var(--color-text)] truncate">{recording.name}</div>
+          <div className="text-[10px] text-[var(--color-textSecondary)] flex items-center gap-2 flex-wrap">
             <span>{meta.host}</span>
             <span className="text-gray-600">·</span>
             <span>{meta.username}@</span>
@@ -571,13 +571,13 @@ const SshRecordingRow: React.FC<{
         {recording.tags && recording.tags.length > 0 && (
           <div className="flex gap-1">
             {recording.tags.map((tag) => (
-              <span key={tag} className="px-1.5 py-0.5 text-[9px] bg-gray-700 text-gray-300 rounded">
+              <span key={tag} className="px-1.5 py-0.5 text-[9px] bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded">
                 {tag}
               </span>
             ))}
           </div>
         )}
-        {isExpanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+        {isExpanded ? <ChevronUp size={14} className="text-[var(--color-textSecondary)]" /> : <ChevronDown size={14} className="text-[var(--color-textSecondary)]" />}
       </div>
 
       {isExpanded && (
@@ -587,7 +587,7 @@ const SshRecordingRow: React.FC<{
               <input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white outline-none focus:border-blue-500"
+                className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] outline-none focus:border-blue-500"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { onRename(editName); setIsRenaming(false); }
@@ -600,19 +600,19 @@ const SshRecordingRow: React.FC<{
             </div>
           ) : (
             <>
-              <button onClick={() => setIsRenaming(true)} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => setIsRenaming(true)} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Edit2 size={12} /> Rename
               </button>
-              <button onClick={() => onExport('asciicast')} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => onExport('asciicast')} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Download size={12} /> Asciicast
               </button>
-              <button onClick={() => onExport('script')} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => onExport('script')} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Download size={12} /> Script
               </button>
-              <button onClick={() => onExport('json')} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => onExport('json')} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Download size={12} /> JSON
               </button>
-              <button onClick={() => onExport('gif')} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => onExport('gif')} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Film size={12} /> GIF
               </button>
               <div className="flex-1" />
@@ -642,15 +642,15 @@ const RdpRecordingRow: React.FC<{
   const [isRenaming, setIsRenaming] = useState(false);
 
   return (
-    <div className={isExpanded ? 'bg-gray-800/30' : ''}>
+    <div className={isExpanded ? 'bg-[var(--color-surface)]/30' : ''}>
       <div
         onClick={onToggle}
-        className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-gray-800/60"
+        className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-[var(--color-surface)]/60"
       >
         <Monitor size={16} className="text-blue-400 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-white truncate">{recording.name}</div>
-          <div className="text-[10px] text-gray-400 flex items-center gap-2 flex-wrap">
+          <div className="text-sm font-medium text-[var(--color-text)] truncate">{recording.name}</div>
+          <div className="text-[10px] text-[var(--color-textSecondary)] flex items-center gap-2 flex-wrap">
             {recording.host && (
               <>
                 <span>{recording.host}</span>
@@ -674,7 +674,7 @@ const RdpRecordingRow: React.FC<{
             <span>{new Date(recording.savedAt).toLocaleString()}</span>
           </div>
         </div>
-        {isExpanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+        {isExpanded ? <ChevronUp size={14} className="text-[var(--color-textSecondary)]" /> : <ChevronDown size={14} className="text-[var(--color-textSecondary)]" />}
       </div>
 
       {isExpanded && (
@@ -684,7 +684,7 @@ const RdpRecordingRow: React.FC<{
               <input
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white outline-none focus:border-blue-500"
+                className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] outline-none focus:border-blue-500"
                 autoFocus
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { onRename(editName); setIsRenaming(false); }
@@ -697,13 +697,13 @@ const RdpRecordingRow: React.FC<{
             </div>
           ) : (
             <>
-              <button onClick={(e) => { e.stopPropagation(); onPlay(); }} className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded">
+              <button onClick={(e) => { e.stopPropagation(); onPlay(); }} className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded">
                 <Play size={12} /> Play
               </button>
-              <button onClick={() => setIsRenaming(true)} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={() => setIsRenaming(true)} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Edit2 size={12} /> Rename
               </button>
-              <button onClick={(e) => { e.stopPropagation(); onExport(); }} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+              <button onClick={(e) => { e.stopPropagation(); onExport(); }} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                 <Download size={12} /> Save to File
               </button>
               <div className="flex-1" />
@@ -733,15 +733,15 @@ const WebHarRecordingRow: React.FC<{
   const meta = recording.recording.metadata;
 
   return (
-    <div className={isExpanded ? 'bg-gray-800/30' : ''}>
+    <div className={isExpanded ? 'bg-[var(--color-surface)]/30' : ''}>
       <div
         onClick={onToggle}
-        className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-gray-800/60"
+        className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-[var(--color-surface)]/60"
       >
         <Globe size={16} className="text-cyan-400 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-white truncate">{recording.name}</div>
-          <div className="text-[10px] text-gray-400 flex items-center gap-2 flex-wrap">
+          <div className="text-sm font-medium text-[var(--color-text)] truncate">{recording.name}</div>
+          <div className="text-[10px] text-[var(--color-textSecondary)] flex items-center gap-2 flex-wrap">
             {recording.host && (
               <>
                 <span>{recording.host}</span>
@@ -757,7 +757,7 @@ const WebHarRecordingRow: React.FC<{
             <span>{new Date(recording.savedAt).toLocaleString()}</span>
           </div>
         </div>
-        {isExpanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+        {isExpanded ? <ChevronUp size={14} className="text-[var(--color-textSecondary)]" /> : <ChevronDown size={14} className="text-[var(--color-textSecondary)]" />}
       </div>
 
       {isExpanded && (
@@ -768,7 +768,7 @@ const WebHarRecordingRow: React.FC<{
                 <input
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="flex-1 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-sm text-white outline-none focus:border-blue-500"
+                  className="flex-1 px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] outline-none focus:border-blue-500"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') { onRename(editName); setIsRenaming(false); }
@@ -781,13 +781,13 @@ const WebHarRecordingRow: React.FC<{
               </div>
             ) : (
               <>
-                <button onClick={() => setIsRenaming(true)} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+                <button onClick={() => setIsRenaming(true)} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                   <Edit2 size={12} /> Rename
                 </button>
-                <button onClick={() => onExport('har')} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+                <button onClick={() => onExport('har')} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                   <Download size={12} /> HAR
                 </button>
-                <button onClick={() => onExport('json')} className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-white rounded">
+                <button onClick={() => onExport('json')} className="flex items-center gap-1 px-2 py-1 text-xs bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded">
                   <Download size={12} /> JSON
                 </button>
                 <div className="flex-1" />
@@ -798,9 +798,9 @@ const WebHarRecordingRow: React.FC<{
             )}
           </div>
           {/* Request table */}
-          <div className="max-h-60 overflow-y-auto rounded border border-gray-700/50">
+          <div className="max-h-60 overflow-y-auto rounded border border-[var(--color-border)]/50">
             <table className="w-full text-xs">
-              <thead className="text-gray-500 sticky top-0 bg-gray-800">
+              <thead className="text-gray-500 sticky top-0 bg-[var(--color-surface)]">
                 <tr>
                   <th className="text-left py-1 px-2">Method</th>
                   <th className="text-left py-1 px-2">URL</th>
@@ -812,9 +812,9 @@ const WebHarRecordingRow: React.FC<{
               </thead>
               <tbody>
                 {recording.recording.entries.map((entry, i) => (
-                  <tr key={i} className="border-t border-gray-700/50 hover:bg-gray-800/60">
+                  <tr key={i} className="border-t border-[var(--color-border)]/50 hover:bg-[var(--color-surface)]/60">
                     <td className="py-1 px-2 font-mono text-blue-400">{entry.method}</td>
-                    <td className="py-1 px-2 text-gray-300 truncate max-w-[300px]" title={entry.url}>
+                    <td className="py-1 px-2 text-[var(--color-textSecondary)] truncate max-w-[300px]" title={entry.url}>
                       {entry.url.replace(meta.target_url, '') || '/'}
                     </td>
                     <td className={`py-1 px-2 font-mono ${entry.status >= 400 ? 'text-red-400' : entry.status >= 300 ? 'text-yellow-400' : 'text-green-400'}`}>

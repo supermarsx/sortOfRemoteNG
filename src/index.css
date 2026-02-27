@@ -142,7 +142,14 @@ body {
 
 .border-gray-500,
 .border-gray-600,
-.border-gray-700 {
+.border-gray-700,
+.border-gray-800 {
+  border-color: var(--color-border) !important;
+}
+
+.divide-gray-600 > :not([hidden]) ~ :not([hidden]),
+.divide-gray-700 > :not([hidden]) ~ :not([hidden]),
+.divide-gray-800 > :not([hidden]) ~ :not([hidden]) {
   border-color: var(--color-border) !important;
 }
 
@@ -313,4 +320,39 @@ body {
 [data-theme="semilight"] textarea:focus {
   border-color: var(--color-accent) !important;
   outline-color: var(--color-accent) !important;
+}
+
+/* ─── Tool Tab Embedded Mode ─────────────────────────────────────
+   When a tool (which normally renders as a modal dialog) is embedded
+   in a session tab, strip the backdrop overlay and make the dialog
+   content fill the entire tab area.
+   ──────────────────────────────────────────────────────────────── */
+
+/* The outer modal wrapper (fixed inset-0 backdrop) becomes a simple fill container.
+   pointer-events:none prevents the click-to-dismiss handler on the backdrop. */
+.tool-tab-embedded > div[class*="fixed"] {
+  position: absolute !important;
+  inset: 0 !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  z-index: 0 !important;
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  padding: 0 !important;
+  pointer-events: none !important;
+}
+
+/* The inner dialog card fills the tab instead of being a centered box.
+   pointer-events:auto re-enables interaction on the actual content. */
+.tool-tab-embedded > div[class*="fixed"] > div {
+  width: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  pointer-events: auto !important;
 }

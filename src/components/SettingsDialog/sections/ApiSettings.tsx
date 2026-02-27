@@ -98,12 +98,12 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
         <Server className="w-5 h-5" />
         {t('settings.api.title', 'API Server')}
       </h3>
 
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Configure the internal REST API server for remote control and automation.
       </p>
 
@@ -114,11 +114,11 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
             type="checkbox"
             checked={settings.restApi?.enabled || false}
             onChange={(e) => updateRestApi({ enabled: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
           <Power className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
           <div>
-            <span className="text-gray-300 group-hover:text-white">
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               {t('settings.api.enable', 'Enable API Server')}
             </span>
             <p className="text-xs text-gray-500">
@@ -137,11 +137,11 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                 type="checkbox"
                 checked={settings.restApi?.startOnLaunch || false}
                 onChange={(e) => updateRestApi({ startOnLaunch: e.target.checked })}
-                className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
               />
               <Clock className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
               <div>
-                <span className="text-gray-300 group-hover:text-white">
+                <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                   {t('settings.api.startOnLaunch', 'Start on Application Launch')}
                 </span>
                 <p className="text-xs text-gray-500">
@@ -157,7 +157,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
           {/* Server Controls */}
           <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
             <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium text-gray-300 flex items-center gap-2">
+              <h4 className="text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-2">
                 <Settings className="w-4 h-4 text-blue-400" />
                 {t('settings.api.serverControls', 'Server Controls')}
               </h4>
@@ -166,7 +166,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                   ? 'bg-green-500/20 text-green-400' 
                   : serverStatus === 'starting' || serverStatus === 'stopping'
                     ? 'bg-yellow-500/20 text-yellow-400'
-                    : 'bg-gray-600/50 text-gray-400'
+                    : 'bg-gray-600/50 text-[var(--color-textSecondary)]'
               }`}>
                 <div className={`w-2 h-2 rounded-full ${
                   serverStatus === 'running' 
@@ -177,7 +177,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                 }`} />
                 {serverStatus === 'running' ? 'Running' : serverStatus === 'starting' ? 'Starting...' : serverStatus === 'stopping' ? 'Stopping...' : 'Stopped'}
                 {actualPort && serverStatus === 'running' && (
-                  <span className="text-gray-400">:{actualPort}</span>
+                  <span className="text-[var(--color-textSecondary)]">:{actualPort}</span>
                 )}
               </div>
             </div>
@@ -187,7 +187,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                 type="button"
                 onClick={handleStartServer}
                 disabled={serverStatus === 'running' || serverStatus === 'starting' || serverStatus === 'stopping'}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-md transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-500 disabled:bg-[var(--color-border)] disabled:text-gray-500 text-[var(--color-text)] rounded-md transition-colors"
               >
                 <Play className="w-4 h-4" />
                 {t('settings.api.start', 'Start')}
@@ -196,7 +196,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                 type="button"
                 onClick={handleStopServer}
                 disabled={serverStatus === 'stopped' || serverStatus === 'starting' || serverStatus === 'stopping'}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-md transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 disabled:bg-[var(--color-border)] disabled:text-gray-500 text-[var(--color-text)] rounded-md transition-colors"
               >
                 <Square className="w-4 h-4" />
                 {t('settings.api.stop', 'Stop')}
@@ -205,7 +205,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                 type="button"
                 onClick={handleRestartServer}
                 disabled={serverStatus === 'stopped' || serverStatus === 'starting' || serverStatus === 'stopping'}
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-md transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-[var(--color-border)] disabled:text-gray-500 text-[var(--color-text)] rounded-md transition-colors"
               >
                 <RotateCcw className="w-4 h-4" />
                 {t('settings.api.restart', 'Restart')}
@@ -215,7 +215,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* Port Configuration */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Globe className="w-4 h-4 text-blue-400" />
               {t('settings.api.network', 'Network')}
             </h4>
@@ -223,7 +223,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-400">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Server className="w-4 h-4" />
                     {t('settings.api.port', 'Port')}
                   </label>
@@ -235,14 +235,14 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                       value={settings.restApi?.port || 9876}
                       onChange={(e) => updateRestApi({ port: parseInt(e.target.value) || 9876 })}
                       disabled={settings.restApi?.useRandomPort}
-                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-1 px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] disabled:opacity-50 disabled:cursor-not-allowed"
                       placeholder="9876"
                     />
                     <button
                       type="button"
                       onClick={generateRandomPort}
                       disabled={settings.restApi?.useRandomPort}
-                      className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-300 hover:bg-gray-600 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)] disabled:opacity-50 disabled:cursor-not-allowed"
                       title={t('settings.api.randomizePort', 'Randomize Port')}
                     >
                       <Shuffle className="w-4 h-4" />
@@ -253,9 +253,9 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                       type="checkbox"
                       checked={settings.restApi?.useRandomPort || false}
                       onChange={(e) => updateRestApi({ useRandomPort: e.target.checked })}
-                      className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+                      className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
                     />
-                    <span className="text-xs text-gray-400 group-hover:text-gray-300">
+                    <span className="text-xs text-[var(--color-textSecondary)] group-hover:text-[var(--color-textSecondary)]">
                       {t('settings.api.useRandomPort', 'Use random port on each start')}
                     </span>
                   </label>
@@ -270,10 +270,10 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                       type="checkbox"
                       checked={settings.restApi?.allowRemoteConnections || false}
                       onChange={(e) => updateRestApi({ allowRemoteConnections: e.target.checked })}
-                      className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+                      className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
                     />
                     <div>
-                      <span className="text-gray-300 group-hover:text-white flex items-center gap-2">
+                      <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-2">
                         <Globe className="w-4 h-4 text-yellow-500" />
                         {t('settings.api.allowRemote', 'Allow Remote Connections')}
                       </span>
@@ -303,7 +303,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* Authentication */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Shield className="w-4 h-4 text-green-400" />
               {t('settings.api.authentication', 'Authentication')}
             </h4>
@@ -314,11 +314,11 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                   type="checkbox"
                   checked={settings.restApi?.authentication || false}
                   onChange={(e) => updateRestApi({ authentication: e.target.checked })}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
                 />
                 <Key className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
                 <div>
-                  <span className="text-gray-300 group-hover:text-white">
+                  <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                     {t('settings.api.requireAuth', 'Require Authentication')}
                   </span>
                   <p className="text-xs text-gray-500">
@@ -332,7 +332,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
               {settings.restApi?.authentication && (
                 <div className="space-y-2 pt-2 border-t border-[var(--color-border)]">
-                  <label className="flex items-center gap-2 text-sm text-gray-400">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Key className="w-4 h-4" />
                     {t('settings.api.apiKey', 'API Key')}
                   </label>
@@ -341,14 +341,14 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                       type="text"
                       readOnly
                       value={settings.restApi?.apiKey || ''}
-                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white font-mono text-sm"
+                      className="flex-1 px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] font-mono text-sm"
                       placeholder={t('settings.api.noApiKey', 'No API key generated')}
                     />
                     <button
                       type="button"
                       onClick={copyApiKey}
                       disabled={!settings.restApi?.apiKey}
-                      className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-gray-300 hover:bg-gray-600 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)] disabled:opacity-50 disabled:cursor-not-allowed"
                       title={t('settings.api.copyKey', 'Copy API Key')}
                     >
                       <Copy className="w-4 h-4" />
@@ -356,7 +356,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                     <button
                       type="button"
                       onClick={generateApiKey}
-                      className="px-3 py-2 bg-blue-600 border border-blue-500 rounded-md text-white hover:bg-blue-500"
+                      className="px-3 py-2 bg-blue-600 border border-blue-500 rounded-md text-[var(--color-text)] hover:bg-blue-500"
                       title={t('settings.api.generateKey', 'Generate New Key')}
                     >
                       <RefreshCw className="w-4 h-4" />
@@ -375,7 +375,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* SSL/TLS */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <FileKey className="w-4 h-4 text-purple-400" />
               {t('settings.api.ssl', 'SSL/TLS')}
             </h4>
@@ -386,11 +386,11 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                   type="checkbox"
                   checked={settings.restApi?.sslEnabled || false}
                   onChange={(e) => updateRestApi({ sslEnabled: e.target.checked })}
-                  className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
                 />
                 <Shield className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
                 <div>
-                  <span className="text-gray-300 group-hover:text-white">
+                  <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                     {t('settings.api.enableSsl', 'Enable HTTPS')}
                   </span>
                   <p className="text-xs text-gray-500">
@@ -406,14 +406,14 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                 <div className="space-y-4 pt-2 border-t border-[var(--color-border)]">
                   {/* SSL Mode Selection */}
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm text-gray-400">
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                       <Shield className="w-4 h-4" />
                       {t('settings.api.sslMode', 'Certificate Mode')}
                     </label>
                     <select
                       value={settings.restApi?.sslMode || 'manual'}
                       onChange={(e) => updateRestApi({ sslMode: e.target.value as 'manual' | 'self-signed' | 'letsencrypt' })}
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                      className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     >
                       <option value="manual">{t('settings.api.sslManual', 'Manual (Provide Certificate)')}</option>
                       <option value="self-signed">{t('settings.api.sslSelfSigned', 'Auto-Generate Self-Signed')}</option>
@@ -425,7 +425,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                   {settings.restApi?.sslMode === 'manual' && (
                     <>
                       <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm text-gray-400">
+                        <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                           <FileKey className="w-4 h-4" />
                           {t('settings.api.certPath', 'Certificate Path')}
                         </label>
@@ -433,13 +433,13 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                           type="text"
                           value={settings.restApi?.sslCertPath || ''}
                           onChange={(e) => updateRestApi({ sslCertPath: e.target.value })}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                           placeholder="/path/to/certificate.pem"
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm text-gray-400">
+                        <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                           <Key className="w-4 h-4" />
                           {t('settings.api.keyPath', 'Private Key Path')}
                         </label>
@@ -447,7 +447,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                           type="text"
                           value={settings.restApi?.sslKeyPath || ''}
                           onChange={(e) => updateRestApi({ sslKeyPath: e.target.value })}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                           placeholder="/path/to/private-key.pem"
                         />
                       </div>
@@ -481,7 +481,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                       </div>
 
                       <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm text-gray-400">
+                        <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                           <Globe className="w-4 h-4" />
                           {t('settings.api.sslDomain', 'Domain Name')}
                         </label>
@@ -489,7 +489,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                           type="text"
                           value={settings.restApi?.sslDomain || ''}
                           onChange={(e) => updateRestApi({ sslDomain: e.target.value })}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                           placeholder="api.example.com"
                         />
                         <p className="text-xs text-gray-500">
@@ -498,7 +498,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                       </div>
 
                       <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm text-gray-400">
+                        <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                           <Key className="w-4 h-4" />
                           {t('settings.api.sslEmail', 'Email for Certificate Notices')}
                         </label>
@@ -506,7 +506,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                           type="email"
                           value={settings.restApi?.sslEmail || ''}
                           onChange={(e) => updateRestApi({ sslEmail: e.target.value })}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                           placeholder="admin@example.com"
                         />
                         <p className="text-xs text-gray-500">
@@ -522,7 +522,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* Performance & Threading */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Cpu className="w-4 h-4 text-cyan-400" />
               {t('settings.api.performance', 'Performance')}
             </h4>
@@ -530,7 +530,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-400">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Cpu className="w-4 h-4" />
                     {t('settings.api.maxThreads', 'Max Worker Threads')}
                   </label>
@@ -540,7 +540,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                     max={64}
                     value={settings.restApi?.maxThreads || 4}
                     onChange={(e) => updateRestApi({ maxThreads: parseInt(e.target.value) || 4 })}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="4"
                   />
                   <p className="text-xs text-gray-500">
@@ -549,7 +549,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                 </div>
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-400">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                     <Clock className="w-4 h-4" />
                     {t('settings.api.requestTimeout', 'Request Timeout (seconds)')}
                   </label>
@@ -559,7 +559,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                     max={300}
                     value={settings.restApi?.requestTimeout || 30}
                     onChange={(e) => updateRestApi({ requestTimeout: parseInt(e.target.value) || 30 })}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                     placeholder="30"
                   />
                   <p className="text-xs text-gray-500">
@@ -572,14 +572,14 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
 
           {/* Rate Limiting */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
               <Clock className="w-4 h-4 text-orange-400" />
               {t('settings.api.rateLimit', 'Rate Limiting')}
             </h4>
 
             <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
               <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm text-gray-400">
+                <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                   <Clock className="w-4 h-4" />
                   {t('settings.api.maxRequests', 'Max Requests Per Minute')}
                 </label>
@@ -591,7 +591,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({ settings, updateSettin
                   onChange={(e) =>
                     updateRestApi({ maxRequestsPerMinute: parseInt(e.target.value) || 60 })
                   }
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   placeholder="60"
                 />
                 <p className="text-xs text-gray-500">

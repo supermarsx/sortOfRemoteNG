@@ -241,20 +241,20 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-medium text-white flex items-center gap-2">
+        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
           <Archive className="w-5 h-5" />
           Backup
         </h3>
         <button
           onClick={handleRunBackupNow}
           disabled={!backup.destinationPath || isRunningBackup}
-          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+          className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors text-sm"
         >
           <Play className="w-4 h-4" />
           Backup Now
         </button>
       </div>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Automatic and manual backup scheduling, encryption, destination, and retention settings.
       </p>
 
@@ -367,7 +367,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 
       {/* Schedule Settings */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Clock className="w-4 h-4 text-blue-400" />
           Schedule
         </h4>
@@ -456,7 +456,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 
       {/* Differential Backup */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-purple-400" />
           Differential Backups
         </h4>
@@ -507,7 +507,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 
       {/* Format & Content */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <FileArchive className="w-4 h-4 text-orange-400" />
           Format & Content
         </h4>
@@ -545,7 +545,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
                     onClick={() => updateBackup({ maxBackupsToKeep: count })}
                     className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                       backup.maxBackupsToKeep === count
-                        ? "bg-blue-600 text-white"
+                        ? "bg-blue-600 text-[var(--color-text)]"
                         : "bg-[var(--color-surfaceHover)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceActive)]"
                     }`}
                   >
@@ -623,7 +623,7 @@ const BackupSettings: React.FC<BackupSettingsProps> = ({
 
       {/* Encryption */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Lock className="w-4 h-4 text-yellow-400" />
           Encryption
         </h4>

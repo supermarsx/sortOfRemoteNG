@@ -44,24 +44,24 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
 
   if (!connection) {
     return (
-      <div className="flex items-center justify-center h-full bg-gray-900 text-white">
+      <div className="flex items-center justify-center h-full bg-[var(--color-background)] text-[var(--color-text)]">
         <div className="text-center">
           <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
           <h3 className="text-lg font-medium mb-2">Connection Not Found</h3>
-          <p className="text-gray-400">The connection for this session could not be found.</p>
+          <p className="text-[var(--color-textSecondary)]">The connection for this session could not be found.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 text-white">
-      <div className="flex items-center justify-between p-4 border-b border-gray-700">
+    <div className="flex flex-col h-full bg-[var(--color-background)] text-[var(--color-text)]">
+      <div className="flex items-center justify-between p-4 border-b border-[var(--color-border)]">
         <div className="flex items-center space-x-3">
           <Monitor className="h-5 w-5 text-blue-400" />
           <div>
             <h3 className="font-medium">{connection.name}</h3>
-            <p className="text-sm text-gray-400">AnyDesk Connection</p>
+            <p className="text-sm text-[var(--color-textSecondary)]">AnyDesk Connection</p>
           </div>
         </div>
       </div>
@@ -70,14 +70,14 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
         <div className="text-center max-w-md">
           <Monitor className="mx-auto h-16 w-16 text-blue-400 mb-6" />
           <h3 className="text-xl font-medium mb-4">AnyDesk Remote Desktop</h3>
-          <p className="text-gray-400 mb-6">
+          <p className="text-[var(--color-textSecondary)] mb-6">
             AnyDesk provides high-performance remote desktop access.
             Click the button below to launch AnyDesk with the configured connection.
           </p>
 
           {connection.hostname && (
-            <div className="bg-gray-800 rounded-lg p-4 mb-6">
-              <p className="text-sm text-gray-300">
+            <div className="bg-[var(--color-surface)] rounded-lg p-4 mb-6">
+              <p className="text-sm text-[var(--color-textSecondary)]">
                 <span className="font-medium">AnyDesk ID:</span> {connection.hostname}
               </p>
             </div>
@@ -86,7 +86,7 @@ export const AnyDeskClient: React.FC<AnyDeskClientProps> = ({ session }) => {
           <button
             onClick={handleLaunchAnyDesk}
             disabled={isLaunching}
-            className="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white font-medium rounded-lg transition-colors duration-200"
+            className="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-[var(--color-text)] font-medium rounded-lg transition-colors duration-200"
           >
             <ExternalLink className="h-5 w-5 mr-2" />
             {isLaunching ? 'Launching AnyDesk...' : 'Launch AnyDesk'}

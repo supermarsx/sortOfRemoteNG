@@ -19,7 +19,7 @@ export const RDPStatusBar: React.FC<RDPStatusBarProps> = ({
   rdpSessionId, sessionId, isConnected, desktopSize, stats,
   certFingerprint, audioEnabled, clipboardEnabled, magnifierActive,
 }) => (
-  <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between text-xs text-gray-400">
+  <div className="bg-[var(--color-surface)] border-t border-[var(--color-border)] px-4 py-2 flex items-center justify-between text-xs text-[var(--color-textSecondary)]">
     <div className="flex items-center space-x-4">
       <span>Session: {(rdpSessionId || sessionId).slice(0, 8)}</span>
       <span>Protocol: RDP</span>

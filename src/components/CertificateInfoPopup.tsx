@@ -101,7 +101,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
   };
 
   const getTrustStatus = () => {
-    if (!trustRecord) return { label: 'Unknown', color: 'text-gray-400', icon: ShieldAlert };
+    if (!trustRecord) return { label: 'Unknown', color: 'text-[var(--color-textSecondary)]', icon: ShieldAlert };
     if (currentIdentity && trustRecord.identity.fingerprint !== currentIdentity.fingerprint) {
       return { label: 'Changed!', color: 'text-red-400', icon: ShieldAlert };
     }
@@ -117,7 +117,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
   const content = (
     <div
       ref={popupRef}
-      className="fixed w-96 bg-gray-800 border border-gray-600 rounded-lg shadow-2xl"
+      className="fixed w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-2xl"
       style={{
         zIndex: 99999,
         top: pos ? `${pos.top}px` : undefined,
@@ -129,14 +129,14 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
       onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Title bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
         <div className="flex items-center gap-2">
           <TrustIcon size={16} className={trustStatus.color} />
-          <span className="text-sm font-medium text-white">
+          <span className="text-sm font-medium text-[var(--color-text)]">
             {isTls ? 'Certificate Information' : 'Host Key Information'}
           </span>
         </div>
-        <button onClick={onClose} className="text-gray-400 hover:text-white">
+        <button onClick={onClose} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
           <X size={14} />
         </button>
       </div>
@@ -144,8 +144,8 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
       <div className="p-4 space-y-3">
         {/* Connection info */}
         <div className="flex items-center gap-2 text-sm">
-          <Globe size={14} className="text-gray-400 flex-shrink-0" />
-          <span className="text-gray-300">{host}:{port}</span>
+          <Globe size={14} className="text-[var(--color-textSecondary)] flex-shrink-0" />
+          <span className="text-[var(--color-textSecondary)]">{host}:{port}</span>
           <span className={`ml-auto text-xs font-medium ${trustStatus.color}`}>
             {trustStatus.label}
           </span>
@@ -172,7 +172,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                     }
                   }}
                   placeholder="Add a nickname…"
-                  className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+                  className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
                 />
                 <button
                   onClick={() => {
@@ -187,7 +187,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                 </button>
                 <button
                   onClick={() => { setNickDraft(savedNick); setEditingNick(false); }}
-                  className="text-gray-500 hover:text-gray-300 p-0.5"
+                  className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5"
                   title="Cancel"
                 >
                   <X size={12} />
@@ -200,7 +200,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                 </span>
                 <button
                   onClick={() => { setNickDraft(savedNick); setEditingNick(true); }}
-                  className="text-gray-500 hover:text-gray-300 p-0.5"
+                  className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5"
                   title="Edit nickname"
                 >
                   <Pencil size={10} />
@@ -218,12 +218,12 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
         ) : (
           <>
             {/* Fingerprint */}
-            <div className="bg-gray-900 rounded p-3 space-y-1">
+            <div className="bg-[var(--color-background)] rounded p-3 space-y-1">
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <Fingerprint size={12} />
                 <span>Fingerprint (SHA-256)</span>
               </div>
-              <p className="text-xs text-gray-300 font-mono break-all">
+              <p className="text-xs text-[var(--color-textSecondary)] font-mono break-all">
                 {formatFingerprint(identity.fingerprint)}
               </p>
             </div>
@@ -248,24 +248,24 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
                 )}
 
                 {/* Validity */}
-                <div className="bg-gray-900 rounded p-3 space-y-1">
+                <div className="bg-[var(--color-background)] rounded p-3 space-y-1">
                   <div className="flex items-center gap-2 text-xs text-gray-500">
                     <Clock size={12} />
                     <span>Validity</span>
                   </div>
                   {identity.validFrom && (
-                    <p className="text-xs text-gray-400">
-                      From: <span className="text-gray-300">{new Date(identity.validFrom).toLocaleDateString()}</span>
+                    <p className="text-xs text-[var(--color-textSecondary)]">
+                      From: <span className="text-[var(--color-textSecondary)]">{new Date(identity.validFrom).toLocaleDateString()}</span>
                     </p>
                   )}
                   {identity.validTo && (
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-[var(--color-textSecondary)]">
                       To: <span className={
                         isExpired(identity)
                           ? 'text-red-400 font-medium'
                           : isExpiringSoon(identity)
                             ? 'text-yellow-400 font-medium'
-                            : 'text-gray-300'
+                            : 'text-[var(--color-textSecondary)]'
                       }>
                         {new Date(identity.validTo).toLocaleDateString()}
                         {isExpired(identity) && ' (EXPIRED)'}
@@ -290,7 +290,7 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
             )}
 
             {/* First / last seen */}
-            <div className="text-xs text-gray-500 space-y-0.5 pt-1 border-t border-gray-700">
+            <div className="text-xs text-gray-500 space-y-0.5 pt-1 border-t border-[var(--color-border)]">
               {identity.firstSeen && (
                 <p>First seen: {new Date(identity.firstSeen).toLocaleString()}</p>
               )}
@@ -302,14 +302,14 @@ export const CertificateInfoPopup: React.FC<CertificateInfoPopupProps> = ({
             {/* History */}
             {trustRecord?.history && trustRecord.history.length > 0 && (
               <details className="text-xs">
-                <summary className="text-gray-500 cursor-pointer hover:text-gray-400 flex items-center gap-1">
+                <summary className="text-gray-500 cursor-pointer hover:text-[var(--color-textSecondary)] flex items-center gap-1">
                   <AlertTriangle size={10} />
                   <span>{trustRecord.history.length} previous {trustRecord.history.length === 1 ? 'identity' : 'identities'}</span>
                 </summary>
                 <div className="mt-2 space-y-2">
                   {trustRecord.history.map((prev, i) => (
-                    <div key={i} className="bg-gray-900/50 rounded p-2 border border-gray-700/50">
-                      <p className="font-mono text-gray-400 break-all">
+                    <div key={i} className="bg-[var(--color-background)]/50 rounded p-2 border border-[var(--color-border)]/50">
+                      <p className="font-mono text-[var(--color-textSecondary)] break-all">
                         {formatFingerprint(prev.fingerprint)}
                       </p>
                       <p className="text-gray-500 mt-1">
@@ -335,7 +335,7 @@ function Row({ icon, label, value }: { icon: React.ReactNode; label: string; val
     <div className="flex items-start gap-2 text-xs">
       <span className="text-gray-500 flex-shrink-0 mt-0.5">{icon}</span>
       <span className="text-gray-500 flex-shrink-0 w-16">{label}</span>
-      <span className="text-gray-300 break-all">{value}</span>
+      <span className="text-[var(--color-textSecondary)] break-all">{value}</span>
     </div>
   );
 }

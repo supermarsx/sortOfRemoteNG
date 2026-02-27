@@ -195,33 +195,33 @@ export const TotpImportDialog: React.FC<TotpImportDialogProps> = ({
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60">
-      <div className="w-[640px] max-w-[95vw] max-h-[80vh] bg-gray-900 border border-gray-700 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="w-[640px] max-w-[95vw] max-h-[80vh] bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700 bg-gray-800/60">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/60">
           <div className="flex items-center gap-3">
             <Upload size={18} className="text-blue-400" />
-            <h2 className="text-sm font-semibold text-white">Import 2FA / TOTP Entries</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">Import 2FA / TOTP Entries</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded">
+          <button onClick={onClose} className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded">
             <X size={16} />
           </button>
         </div>
 
         {/* Source selector + File picker */}
-        <div className="px-5 py-3 border-b border-gray-700/50 space-y-3">
+        <div className="px-5 py-3 border-b border-[var(--color-border)]/50 space-y-3">
           <div className="flex items-center gap-3">
-            <label className="text-xs text-gray-400 w-16 flex-shrink-0">Source</label>
+            <label className="text-xs text-[var(--color-textSecondary)] w-16 flex-shrink-0">Source</label>
             <div className="relative flex-1">
               <select
                 value={source}
                 onChange={(e) => { setSource(e.target.value as ImportSource); setResult(null); }}
-                className="w-full px-3 py-1.5 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white appearance-none outline-none focus:border-blue-500 pr-8"
+                className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] appearance-none outline-none focus:border-blue-500 pr-8"
               >
                 {IMPORT_SOURCES.map(s => (
                   <option key={s.id} value={s.id}>{s.label}</option>
                 ))}
               </select>
-              <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
             </div>
           </div>
 
@@ -239,11 +239,11 @@ export const TotpImportDialog: React.FC<TotpImportDialogProps> = ({
             className={`flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
               dragOver
                 ? 'border-blue-500 bg-blue-500/10'
-                : 'border-gray-600 hover:border-gray-500 hover:bg-gray-800/40'
+                : 'border-[var(--color-border)] hover:border-[var(--color-border)] hover:bg-[var(--color-surface)]/40'
             }`}
           >
-            <FileUp size={24} className="text-gray-400 mb-2" />
-            <span className="text-sm text-gray-300">
+            <FileUp size={24} className="text-[var(--color-textSecondary)] mb-2" />
+            <span className="text-sm text-[var(--color-textSecondary)]">
               {fileName || 'Drop file here or click to browse'}
             </span>
             <span className="text-[10px] text-gray-500 mt-1">
@@ -273,7 +273,7 @@ export const TotpImportDialog: React.FC<TotpImportDialogProps> = ({
 
           {/* QR preview + error */}
           {qrPreview && !result && (
-            <div className="flex items-center gap-3 p-2 bg-gray-800 rounded-lg">
+            <div className="flex items-center gap-3 p-2 bg-[var(--color-surface)] rounded-lg">
               <img src={qrPreview} alt="QR preview" className="w-16 h-16 object-contain rounded" />
               <div className="flex-1 min-w-0">
                 {qrDecoding && (
@@ -288,7 +288,7 @@ export const TotpImportDialog: React.FC<TotpImportDialogProps> = ({
               </div>
               <button
                 onClick={() => { setQrPreview(null); setQrError(''); }}
-                className="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded flex-shrink-0"
+                className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded flex-shrink-0"
               >
                 <X size={14} />
               </button>
@@ -303,15 +303,15 @@ export const TotpImportDialog: React.FC<TotpImportDialogProps> = ({
         {result && (
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
             {/* Summary bar */}
-            <div className="flex items-center justify-between px-5 py-2 bg-gray-800/40 border-b border-gray-700/50 text-xs">
+            <div className="flex items-center justify-between px-5 py-2 bg-[var(--color-surface)]/40 border-b border-[var(--color-border)]/50 text-xs">
               <div className="flex items-center gap-3">
-                <span className="text-gray-400">
-                  Detected: <span className="text-white font-medium">{result.source}</span>
+                <span className="text-[var(--color-textSecondary)]">
+                  Detected: <span className="text-[var(--color-text)] font-medium">{result.source}</span>
                 </span>
-                <span className="text-gray-400">
-                  Found: <span className="text-white font-medium">{result.entries.length}</span> entries
+                <span className="text-[var(--color-textSecondary)]">
+                  Found: <span className="text-[var(--color-text)] font-medium">{result.entries.length}</span> entries
                 </span>
-                <span className="text-gray-400">
+                <span className="text-[var(--color-textSecondary)]">
                   Selected: <span className="text-blue-400 font-medium">{selected.size}</span>
                 </span>
               </div>
@@ -351,11 +351,11 @@ export const TotpImportDialog: React.FC<TotpImportDialogProps> = ({
                     <div
                       key={i}
                       onClick={() => toggleEntry(i)}
-                      className={`flex items-center gap-3 px-5 py-2.5 border-b border-gray-700/30 cursor-pointer transition-colors ${
-                        isSelected ? 'bg-blue-900/10' : 'hover:bg-gray-800/40'
+                      className={`flex items-center gap-3 px-5 py-2.5 border-b border-[var(--color-border)]/30 cursor-pointer transition-colors ${
+                        isSelected ? 'bg-blue-900/10' : 'hover:bg-[var(--color-surface)]/40'
                       } ${isDuplicate ? 'opacity-50' : ''}`}
                     >
-                      <div className="flex-shrink-0 text-gray-400">
+                      <div className="flex-shrink-0 text-[var(--color-textSecondary)]">
                         {isSelected ? (
                           <CheckSquare size={16} className="text-blue-400" />
                         ) : (
@@ -365,14 +365,14 @@ export const TotpImportDialog: React.FC<TotpImportDialogProps> = ({
                       <Shield size={14} className="text-gray-500 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm text-white font-medium truncate">{entry.issuer}</span>
+                          <span className="text-sm text-[var(--color-text)] font-medium truncate">{entry.issuer}</span>
                           {isDuplicate && (
                             <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded">
                               DUPLICATE
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-gray-400 truncate">
+                        <div className="text-[10px] text-[var(--color-textSecondary)] truncate">
                           {entry.account} · {entry.algorithm.toUpperCase()} · {entry.digits} digits · {entry.period}s
                         </div>
                       </div>
@@ -385,17 +385,17 @@ export const TotpImportDialog: React.FC<TotpImportDialogProps> = ({
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-5 py-3 border-t border-gray-700 bg-gray-800/40">
+        <div className="flex items-center justify-end gap-3 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]/40">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg"
+            className="px-4 py-1.5 text-sm text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded-lg"
           >
             Cancel
           </button>
           <button
             onClick={handleImport}
             disabled={!result || selected.size === 0}
-            className="flex items-center gap-2 px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Check size={14} />
             Import {selected.size > 0 ? `(${selected.size})` : ''}

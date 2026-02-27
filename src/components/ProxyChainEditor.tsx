@@ -217,7 +217,7 @@ export const ProxyChainEditor: React.FC<ProxyChainEditorProps> = ({
               </label>
               <button
                 onClick={handleAddLayer}
-                className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
               >
                 <Plus size={12} />
                 Add Layer
@@ -433,7 +433,7 @@ export const ProxyChainEditor: React.FC<ProxyChainEditorProps> = ({
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+            className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
           >
             {editingChain ? 'Update Chain' : 'Create Chain'}
           </button>

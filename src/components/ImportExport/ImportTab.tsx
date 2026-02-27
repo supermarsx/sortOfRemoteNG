@@ -152,34 +152,34 @@ const ImportTab: React.FC<ImportTabProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-white mb-4">Import Connections</h3>
-        <p className="text-gray-400 mb-4">
+        <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">Import Connections</h3>
+        <p className="text-[var(--color-textSecondary)] mb-4">
           Import connections from various applications and formats.
         </p>
         
         {/* Supported Formats Info */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
             <FileCode className="w-4 h-4 text-blue-400" />
             mRemoteNG
           </div>
-          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
             <FileCode className="w-4 h-4 text-green-400" />
             RDCMan
           </div>
-          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
             <FileCode className="w-4 h-4 text-purple-400" />
             MobaXterm
           </div>
-          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
             <FileCode className="w-4 h-4 text-yellow-400" />
             PuTTY
           </div>
-          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
             <FileCode className="w-4 h-4 text-cyan-400" />
             Termius
           </div>
-          <div className="flex items-center gap-2 p-2 bg-gray-800/50 rounded text-xs text-gray-400">
+          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
             <FileText className="w-4 h-4 text-orange-400" />
             CSV / JSON
           </div>
@@ -187,17 +187,17 @@ const ImportTab: React.FC<ImportTabProps> = ({
       </div>
 
       {!importResult && (
-        <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center">
-          <FolderOpen size={48} className="mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-300 mb-4">Select a file to import connections</p>
+        <div className="border-2 border-dashed border-[var(--color-border)] rounded-lg p-8 text-center">
+          <FolderOpen size={48} className="mx-auto mb-4 text-[var(--color-textSecondary)]" />
+          <p className="text-[var(--color-textSecondary)] mb-4">Select a file to import connections</p>
           <button
             onClick={handleImport}
             disabled={isProcessing}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors flex items-center space-x-2 mx-auto"
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 mx-auto"
           >
             {isProcessing ? (
               <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[var(--color-border)]"></div>
                 <span>Processing...</span>
               </>
             ) : (
@@ -212,19 +212,19 @@ const ImportTab: React.FC<ImportTabProps> = ({
           </p>
           
           {/* Download Templates Section */}
-          <div className="mt-6 pt-4 border-t border-gray-700">
-            <p className="text-sm text-gray-400 mb-3">Download import templates:</p>
+          <div className="mt-6 pt-4 border-t border-[var(--color-border)]">
+            <p className="text-sm text-[var(--color-textSecondary)] mb-3">Download import templates:</p>
             <div className="flex justify-center gap-3">
               <button
                 onClick={() => downloadTemplate('csv')}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-lg transition-colors text-sm"
               >
                 <Download size={14} />
                 <span>CSV Template</span>
               </button>
               <button
                 onClick={() => downloadTemplate('json')}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-lg transition-colors text-sm"
               >
                 <Download size={14} />
                 <span>JSON Template</span>
@@ -256,7 +256,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
             </div>
 
             {importResult.success && (
-              <p className="text-gray-300">Found {importResult.imported} connections ready to import.</p>
+              <p className="text-[var(--color-textSecondary)]">Found {importResult.imported} connections ready to import.</p>
             )}
 
             {importResult.errors.length > 0 && (
@@ -275,13 +275,13 @@ const ImportTab: React.FC<ImportTabProps> = ({
             <div className="flex space-x-3">
               <button
                 onClick={confirmImport}
-                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-lg transition-colors"
               >
                 Import {importResult.imported} Connections
               </button>
               <button
                 onClick={cancelImport}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                className="px-4 py-2 bg-gray-600 hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
               >
                 Cancel
               </button>
@@ -291,7 +291,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
           {!importResult.success && (
             <button
               onClick={cancelImport}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
             >
               Try Again
             </button>

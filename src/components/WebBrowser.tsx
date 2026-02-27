@@ -970,7 +970,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         <button
           type="button"
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowCertPopup(v => !v); }}
-          className="hover:bg-gray-600 rounded p-0.5 transition-colors"
+          className="hover:bg-[var(--color-border)] rounded p-0.5 transition-colors"
           title="View certificate information"
         >
           <Lock size={14} className="text-green-400" />
@@ -989,9 +989,9 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900">
+    <div className="flex flex-col h-full bg-[var(--color-background)]">
       {/* Browser Header */}
-      <div className="bg-gray-800 border-b border-gray-700 p-3">
+      <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-3">
         {/* Navigation Bar */}
         <div className="flex items-center space-x-3 mb-3">
           <div className="flex space-x-1">
@@ -1000,7 +1000,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               disabled={!canGoBack}
               className={`p-2 rounded transition-colors ${
                 canGoBack 
-                  ? 'hover:bg-gray-700 text-gray-400 hover:text-white' 
+                  ? 'hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]' 
                   : 'text-gray-600 cursor-not-allowed'
               }`}
               title="Back"
@@ -1012,7 +1012,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               disabled={!canGoForward}
               className={`p-2 rounded transition-colors ${
                 canGoForward 
-                  ? 'hover:bg-gray-700 text-gray-400 hover:text-white' 
+                  ? 'hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]' 
                   : 'text-gray-600 cursor-not-allowed'
               }`}
               title="Forward"
@@ -1021,7 +1021,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             </button>
             <button
               onClick={handleRefresh}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+              className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               title="Refresh"
             >
               <RotateCcw size={16} />
@@ -1053,14 +1053,14 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   </span>
                 )}
                 {getAuthIcon()}
-                <Globe size={14} className="text-gray-400 flex-shrink-0" />
+                <Globe size={14} className="text-[var(--color-textSecondary)] flex-shrink-0" />
                 <div className="w-px h-4 bg-gray-600 flex-shrink-0" />
               </div>
               <input
                 type="text"
                 value={inputUrl}
                 onChange={(e) => setInputUrl(e.target.value)}
-                className="w-full pr-4 py-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full pr-4 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 style={{ paddingLeft: `${iconPadding}px` }}
                 placeholder="Enter URL..."
               />
@@ -1069,8 +1069,8 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
 
           <button
             onClick={handleAddBookmark}
-            className={`p-2 hover:bg-gray-700 rounded transition-colors ${
-              isCurrentPageBookmarked ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'
+            className={`p-2 hover:bg-[var(--color-border)] rounded transition-colors ${
+              isCurrentPageBookmarked ? 'text-yellow-400' : 'text-[var(--color-textSecondary)] hover:text-yellow-400'
             }`}
             title={isCurrentPageBookmarked ? 'Page is bookmarked' : 'Bookmark this page'}
           >
@@ -1078,21 +1078,21 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           </button>
           <button
             onClick={handleSavePage}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title="Save page as PDF"
           >
             <Download size={16} />
           </button>
           <button
             onClick={handleCopyAll}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title="Copy all page content"
           >
             <ClipboardCopy size={16} />
           </button>
           <button
             onClick={handleOpenInNewTab}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title="Open in new tab"
           >
             <Copy size={16} />
@@ -1102,12 +1102,12 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             <button
               type="button"
               onClick={() => setShowTotpPanel(!showTotpPanel)}
-              className={`p-2 rounded transition-colors relative ${showTotpPanel ? 'text-blue-400 bg-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+              className={`p-2 rounded transition-colors relative ${showTotpPanel ? 'text-blue-400 bg-blue-600/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`}
               title="2FA Codes"
             >
               <Shield size={16} />
               {totpConfigs.length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-[var(--color-text)] text-[8px] font-bold rounded-full flex items-center justify-center">
                   {totpConfigs.length}
                 </span>
               )}
@@ -1132,7 +1132,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             <button
               onClick={handleStartHarRecording}
               disabled={!proxySessionIdRef.current}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
               title="Record HTTP traffic (HAR)"
             >
               <Circle size={16} />
@@ -1142,11 +1142,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               <span className="flex items-center gap-1 px-2 py-1 bg-red-900/40 rounded text-red-400 text-xs font-mono animate-pulse">
                 <Circle size={10} fill="currentColor" />
                 HAR {Math.floor(webRecorder.duration / 60000)}:{String(Math.floor((webRecorder.duration % 60000) / 1000)).padStart(2, '0')}
-                <span className="text-gray-400 ml-1">{webRecorder.entryCount} req</span>
+                <span className="text-[var(--color-textSecondary)] ml-1">{webRecorder.entryCount} req</span>
               </span>
               <button
                 onClick={handleStopHarRecording}
-                className="p-1.5 hover:bg-gray-700 rounded transition-colors text-red-400 hover:text-red-300"
+                className="p-1.5 hover:bg-[var(--color-border)] rounded transition-colors text-red-400 hover:text-red-300"
                 title="Stop HAR recording"
               >
                 <Square size={14} fill="currentColor" />
@@ -1157,7 +1157,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           {!displayRecorder.state.isRecording ? (
             <button
               onClick={handleStartVideoRecording}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-blue-400"
+              className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-blue-400"
               title="Record screen video"
             >
               <Film size={16} />
@@ -1171,7 +1171,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               {displayRecorder.state.isPaused ? (
                 <button
                   onClick={() => displayRecorder.resumeRecording()}
-                  className="p-1.5 hover:bg-gray-700 rounded transition-colors text-blue-400"
+                  className="p-1.5 hover:bg-[var(--color-border)] rounded transition-colors text-blue-400"
                   title="Resume video recording"
                 >
                   <PlayIcon size={14} />
@@ -1179,7 +1179,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               ) : (
                 <button
                   onClick={() => displayRecorder.pauseRecording()}
-                  className="p-1.5 hover:bg-gray-700 rounded transition-colors text-blue-400"
+                  className="p-1.5 hover:bg-[var(--color-border)] rounded transition-colors text-blue-400"
                   title="Pause video recording"
                 >
                   <Pause size={14} />
@@ -1187,7 +1187,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
               )}
               <button
                 onClick={handleStopVideoRecording}
-                className="p-1.5 hover:bg-gray-700 rounded transition-colors text-blue-400 hover:text-blue-300"
+                className="p-1.5 hover:bg-[var(--color-border)] rounded transition-colors text-blue-400 hover:text-blue-300"
                 title="Stop video recording"
               >
                 <Square size={14} fill="currentColor" />
@@ -1196,7 +1196,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
           )}
           <button
             onClick={handleOpenExternal}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title="Open in external browser"
           >
             <ExternalLink size={16} />
@@ -1217,7 +1217,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             </div>
           )}
           <span className="text-gray-500">•</span>
-          <span className="text-gray-400">Connected to {session.hostname}</span>
+          <span className="text-[var(--color-textSecondary)]">Connected to {session.hostname}</span>
           {hasAuth && (
             <>
               <span className="text-gray-500">•</span>
@@ -1564,7 +1564,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
             <button
               onClick={handleRestartProxy}
               disabled={proxyRestarting}
-              className="flex items-center gap-1 px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-white transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-[var(--color-text)] transition-colors disabled:opacity-50"
             >
               <RefreshCw size={12} className={proxyRestarting ? 'animate-spin' : ''} />
               {proxyRestarting ? 'Restarting…' : 'Reconnect proxy'}
@@ -1573,10 +1573,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
         )}
 
         {isLoading && (
-          <div className="absolute inset-0 bg-gray-900 flex items-center justify-center z-10">
+          <div className="absolute inset-0 bg-[var(--color-background)] flex items-center justify-center z-10">
             <div className="text-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
-              <p className="text-gray-400 mb-2">Loading {currentUrl}...</p>
+              <p className="text-[var(--color-textSecondary)] mb-2">Loading {currentUrl}...</p>
               <p className="text-gray-600 text-xs">Taking too long? <button onClick={() => { setIsLoading(false); setLoadError(`Connection timed out. The server at ${currentUrl} did not respond.`); }} className="text-blue-500 hover:text-blue-400 underline">Cancel</button></p>
             </div>
           </div>
@@ -1591,31 +1591,31 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="w-16 h-16 rounded-full bg-orange-900/30 flex items-center justify-center mb-4">
                   <ShieldAlert size={32} className="text-orange-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-1">Certificate Error</h3>
-                <p className="text-gray-400 mb-4 max-w-lg text-sm">The connection to <span className="text-yellow-400">{session.hostname}</span> failed because the server&apos;s SSL/TLS certificate is not trusted.</p>
-                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-gray-300 font-medium mb-2">This usually means:</p>
-                  <ul className="list-disc list-inside text-sm text-gray-400 space-y-1">
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Certificate Error</h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">The connection to <span className="text-yellow-400">{session.hostname}</span> failed because the server&apos;s SSL/TLS certificate is not trusted.</p>
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">This usually means:</p>
+                  <ul className="list-disc list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
                     <li>The server is using a <span className="text-orange-400">self-signed certificate</span></li>
                     <li>The certificate chain is incomplete or issued by an untrusted CA</li>
                     <li>The certificate has expired or is not yet valid</li>
                     <li>The hostname does not match the certificate&apos;s subject</li>
                   </ul>
-                  <p className="text-sm text-gray-300 font-medium mt-3 mb-2">To fix this:</p>
-                  <ol className="list-decimal list-inside text-sm text-gray-400 space-y-1">
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mt-3 mb-2">To fix this:</p>
+                  <ol className="list-decimal list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
                     <li>Edit this connection and <span className="text-blue-400">uncheck &quot;Verify SSL Certificate&quot;</span> to trust self-signed certs</li>
                     <li>Or install the server&apos;s CA certificate into your system trust store</li>
                   </ol>
                 </div>
                 <details className="mb-4 max-w-lg text-left">
-                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-400">Technical details</summary>
-                  <pre className="mt-2 text-xs text-gray-500 bg-gray-800 border border-gray-700 rounded p-3 whitespace-pre-wrap break-all">{loadError}</pre>
+                  <summary className="text-xs text-gray-500 cursor-pointer hover:text-[var(--color-textSecondary)]">Technical details</summary>
+                  <pre className="mt-2 text-xs text-gray-500 bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-3 whitespace-pre-wrap break-all">{loadError}</pre>
                 </details>
                 <div className="flex items-center space-x-3">
-                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
                     <RefreshCw size={14} /> <span>Retry Connection</span>
                   </button>
-                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors">
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
                 </div>
@@ -1626,11 +1626,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="w-16 h-16 rounded-full bg-red-900/30 flex items-center justify-center mb-4">
                   <ServerCrash size={32} className="text-red-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-1">Internal Proxy Error</h3>
-                <p className="text-gray-400 mb-4 max-w-lg text-sm">{loadError}</p>
-                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-gray-300 font-medium mb-2">Troubleshooting steps:</p>
-                  <ol className="list-decimal list-inside text-sm text-gray-400 space-y-1">
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Internal Proxy Error</h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">{loadError}</p>
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">Troubleshooting steps:</p>
+                  <ol className="list-decimal list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
                     <li>Open the <span className="text-blue-400">Internal Proxy Manager</span> from the toolbar and check the proxy status</li>
                     <li>Verify the target host <span className="text-yellow-400">{session.hostname}</span> is reachable on your network</li>
                     <li>Check the proxy error log for detailed failure information</li>
@@ -1638,10 +1638,10 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   </ol>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
                     <RefreshCw size={14} /> <span>Retry Connection</span>
                   </button>
-                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors">
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
                 </div>
@@ -1652,11 +1652,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="w-16 h-16 rounded-full bg-yellow-900/30 flex items-center justify-center mb-4">
                   <WifiOff size={32} className="text-yellow-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-1">Connection Timed Out</h3>
-                <p className="text-gray-400 mb-4 max-w-lg text-sm">{loadError}</p>
-                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-gray-300 font-medium mb-2">Possible causes:</p>
-                  <ul className="list-disc list-inside text-sm text-gray-400 space-y-1">
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Connection Timed Out</h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">{loadError}</p>
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">Possible causes:</p>
+                  <ul className="list-disc list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
                     <li>The server at <span className="text-yellow-400">{session.hostname}</span> is not responding</li>
                     <li>A firewall is blocking the connection</li>
                     <li>The hostname or port may be incorrect</li>
@@ -1665,15 +1665,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   </ul>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
                     <RefreshCw size={14} /> <span>Try Again</span>
                   </button>
                   {hasAuth && (
-                    <button onClick={handleRestartProxy} disabled={proxyRestarting} className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors disabled:opacity-50">
+                    <button onClick={handleRestartProxy} disabled={proxyRestarting} className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] rounded-lg transition-colors disabled:opacity-50">
                       <RefreshCw size={14} className={proxyRestarting ? 'animate-spin' : ''} /> <span>{proxyRestarting ? 'Restarting…' : 'Reconnect Proxy'}</span>
                     </button>
                   )}
-                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors">
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
                 </div>
@@ -1684,18 +1684,18 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="w-16 h-16 rounded-full bg-blue-900/30 flex items-center justify-center mb-4">
                   <Shield size={32} className="text-blue-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-1">Authentication Required</h3>
-                <p className="text-gray-400 mb-4 max-w-lg text-sm">{loadError}</p>
-                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-gray-300 font-medium mb-2">To fix this:</p>
-                  <ol className="list-decimal list-inside text-sm text-gray-400 space-y-1">
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Authentication Required</h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">{loadError}</p>
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">To fix this:</p>
+                  <ol className="list-decimal list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
                     <li>Edit this connection in the sidebar</li>
                     <li>Set Authentication Type to <span className="text-blue-400">Basic Authentication</span></li>
                     <li>Enter the correct username and password</li>
                     <li>Save and reconnect</li>
                   </ol>
                 </div>
-                <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
                   <RefreshCw size={14} /> <span>Try Again</span>
                 </button>
               </>
@@ -1705,11 +1705,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="w-16 h-16 rounded-full bg-yellow-900/30 flex items-center justify-center mb-4">
                   <AlertTriangle size={32} className="text-yellow-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-1">Unable to Load Webpage</h3>
-                <p className="text-gray-400 mb-4 max-w-lg text-sm">{loadError}</p>
-                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 max-w-lg text-left">
-                  <p className="text-sm text-gray-300 font-medium mb-2">Common issues:</p>
-                  <ul className="list-disc list-inside text-sm text-gray-400 space-y-1">
+                <h3 className="text-lg font-semibold text-[var(--color-text)] mb-1">Unable to Load Webpage</h3>
+                <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">{loadError}</p>
+                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                  <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">Common issues:</p>
+                  <ul className="list-disc list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
                     <li>The website blocks embedding (X-Frame-Options)</li>
                     <li>CORS restrictions prevent loading</li>
                     <li>The server is not responding</li>
@@ -1718,15 +1718,15 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   </ul>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                  <button onClick={handleRefresh} className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors">
                     <RefreshCw size={14} /> <span>Try Again</span>
                   </button>
                   {hasAuth && (
-                    <button onClick={handleRestartProxy} disabled={proxyRestarting} className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors disabled:opacity-50">
+                    <button onClick={handleRestartProxy} disabled={proxyRestarting} className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] rounded-lg transition-colors disabled:opacity-50">
                       <RefreshCw size={14} className={proxyRestarting ? 'animate-spin' : ''} /> <span>{proxyRestarting ? 'Restarting…' : 'Reconnect Proxy'}</span>
                     </button>
                   )}
-                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors">
+                  <button onClick={handleOpenExternal} className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors">
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
                 </div>

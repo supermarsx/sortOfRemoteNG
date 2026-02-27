@@ -499,7 +499,7 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                 onClick={() => setViewMode('tabs')}
                 className={`p-1.5 rounded transition-colors ${
                   viewMode === 'tabs' 
-                    ? 'bg-green-600 text-white' 
+                    ? 'bg-green-600 text-[var(--color-text)]' 
                     : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]'
                 }`}
                 title={t('bulkSsh.tabView', 'Tab View')}
@@ -510,7 +510,7 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                 onClick={() => setViewMode('mosaic')}
                 className={`p-1.5 rounded transition-colors ${
                   viewMode === 'mosaic' 
-                    ? 'bg-green-600 text-white' 
+                    ? 'bg-green-600 text-[var(--color-text)]' 
                     : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]'
                 }`}
                 title={t('bulkSsh.mosaicView', 'Mosaic View')}
@@ -569,7 +569,7 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
               {command.trim() && (
                 <button
                   onClick={() => setEditingScript({ id: '', name: '', description: '', script: command, category: 'Custom', createdAt: '', updatedAt: '' })}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-md transition-colors"
                 >
                   <Save size={14} />
                   {t('bulkSsh.saveAsScript', 'Save Current')}
@@ -610,7 +610,7 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                   <button
                     onClick={saveCurrentAsScript}
                     disabled={!newScriptName.trim()}
-                    className="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:opacity-50 text-white rounded-md transition-colors"
+                    className="px-4 py-1.5 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:opacity-50 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     {t('common.save', 'Save')}
                   </button>
@@ -796,11 +796,11 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                   <button
                     onClick={executeCommand}
                     disabled={!command.trim() || selectedCount === 0 || isExecuting}
-                    className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-[var(--color-surfaceHover)] disabled:text-[var(--color-textMuted)] text-white rounded-lg transition-colors flex items-center justify-center gap-2 font-medium"
+                    className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 disabled:bg-[var(--color-surfaceHover)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2 font-medium"
                   >
                     {isExecuting ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-[var(--color-border)]/30 border-t-white rounded-full animate-spin" />
                         {t('bulkSsh.executing', 'Running...')}
                       </>
                     ) : (
@@ -813,7 +813,7 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
                   <button
                     onClick={sendCancel}
                     disabled={selectedCount === 0}
-                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-[var(--color-surfaceHover)] disabled:text-[var(--color-textMuted)] text-white rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-[var(--color-surfaceHover)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center gap-2 text-sm"
                     title={t('bulkSsh.sendCancel', 'Send Ctrl+C')}
                   >
                     <StopCircle size={14} />

@@ -80,7 +80,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isLoading, onLoadCom
         <div className="relative mb-8">
           <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-xl animate-pulse" />
           <div className="relative w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-blue-500/30">
-            <Monitor size={48} className="text-white" />
+            <Monitor size={48} className="text-[var(--color-text)]" />
           </div>
           {/* Rotating ring */}
           <div className="absolute -inset-3 border-2 border-blue-500/30 rounded-3xl animate-spin" style={{ animationDuration: '3s' }} />
@@ -88,14 +88,14 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isLoading, onLoadCom
         </div>
 
         {/* App Name */}
-        <h1 className="text-3xl font-bold text-white mb-2 tracking-wide">
+        <h1 className="text-3xl font-bold text-[var(--color-text)] mb-2 tracking-wide">
           sortOf<span className="text-blue-400">Remote</span>NG
         </h1>
-        <p className="text-gray-400 text-sm mb-8">Remote Connection Manager</p>
+        <p className="text-[var(--color-textSecondary)] text-sm mb-8">Remote Connection Manager</p>
 
         {/* Progress Bar */}
         <div className="w-64 mb-4">
-          <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+          <div className="h-1.5 bg-[var(--color-surface)] rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300 ease-out"
               style={{ width: `${progress}%` }}
@@ -104,7 +104,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isLoading, onLoadCom
         </div>
 
         {/* Status */}
-        <div className="flex items-center space-x-2 text-gray-400 text-sm">
+        <div className="flex items-center space-x-2 text-[var(--color-textSecondary)] text-sm">
           <Loader2 size={14} className={`animate-spin ${!isLoading && progress >= 100 ? 'hidden' : ''}`} />
           <span>{status}</span>
         </div>

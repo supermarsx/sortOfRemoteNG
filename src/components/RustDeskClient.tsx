@@ -52,7 +52,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
       case 'connected': return 'text-green-400';
       case 'connecting': return 'text-yellow-400';
       case 'error': return 'text-red-400';
-      default: return 'text-gray-400';
+      default: return 'text-[var(--color-textSecondary)]';
     }
   };
 
@@ -65,12 +65,12 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
   };
 
   return (
-    <div className={`flex flex-col bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
+    <div className={`flex flex-col bg-[var(--color-background)] ${isFullscreen ? 'fixed inset-0 z-50' : 'h-full'}`}>
       {/* RustDesk Header */}
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex items-center justify-between">
+      <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Monitor size={16} className="text-orange-400" />
-          <span className="text-sm text-gray-300">
+          <span className="text-sm text-[var(--color-textSecondary)]">
             RustDesk - {session.hostname}
           </span>
           <div className={`flex items-center space-x-1 ${getStatusColor()}`}>
@@ -80,13 +80,13 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
         </div>
         
         <div className="flex items-center space-x-2">
-          <div className="flex items-center space-x-1 text-xs text-gray-400">
+          <div className="flex items-center space-x-1 text-xs text-[var(--color-textSecondary)]">
             <span>Quality: {settings.quality}</span>
           </div>
           
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-1 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title="RustDesk Settings"
           >
             <Settings size={14} />
@@ -94,7 +94,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
           
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-1 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           >
             {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -104,14 +104,14 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
 
       {/* Settings Panel */}
       {showSettings && (
-        <div className="bg-gray-800 border-b border-gray-700 p-4">
+        <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
             <div>
-              <label className="block text-gray-300 mb-1">Quality</label>
+              <label className="block text-[var(--color-textSecondary)] mb-1">Quality</label>
               <select
                 value={settings.quality}
                 onChange={(e) => setSettings({...settings, quality: e.target.value})}
-                className="w-full px-2 py-1 bg-gray-700 border border-gray-600 rounded text-white text-xs"
+                className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs"
               >
                 <option value="low">Low</option>
                 <option value="balanced">Balanced</option>
@@ -127,7 +127,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
                 onChange={(e) => setSettings({...settings, viewOnly: e.target.checked})}
                 className="rounded"
               />
-              <span className="text-gray-300">View Only</span>
+              <span className="text-[var(--color-textSecondary)]">View Only</span>
             </label>
             
             <label className="flex items-center space-x-2">
@@ -137,7 +137,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
                 onChange={(e) => setSettings({...settings, showCursor: e.target.checked})}
                 className="rounded"
               />
-              <span className="text-gray-300">Show Cursor</span>
+              <span className="text-[var(--color-textSecondary)]">Show Cursor</span>
             </label>
             
             <label className="flex items-center space-x-2">
@@ -147,7 +147,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
                 onChange={(e) => setSettings({...settings, enableAudio: e.target.checked})}
                 className="rounded"
               />
-              <span className="text-gray-300">Audio</span>
+              <span className="text-[var(--color-textSecondary)]">Audio</span>
             </label>
             
             <label className="flex items-center space-x-2">
@@ -157,7 +157,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
                 onChange={(e) => setSettings({...settings, enableClipboard: e.target.checked})}
                 className="rounded"
               />
-              <span className="text-gray-300">Clipboard</span>
+              <span className="text-[var(--color-textSecondary)]">Clipboard</span>
             </label>
             
             <label className="flex items-center space-x-2">
@@ -167,7 +167,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
                 onChange={(e) => setSettings({...settings, enableFileTransfer: e.target.checked})}
                 className="rounded"
               />
-              <span className="text-gray-300">File Transfer</span>
+              <span className="text-[var(--color-textSecondary)]">File Transfer</span>
             </label>
           </div>
         </div>
@@ -178,7 +178,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
         {connectionStatus === 'connecting' && (
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-400 mx-auto mb-4"></div>
-            <p className="text-gray-400">Connecting to RustDesk...</p>
+            <p className="text-[var(--color-textSecondary)]">Connecting to RustDesk...</p>
             <p className="text-gray-500 text-sm mt-2">{session.hostname}</p>
           </div>
         )}
@@ -192,20 +192,20 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
         )}
         
         {connectionStatus === 'connected' && (
-          <div className="w-full h-full bg-gray-800 flex items-center justify-center">
+          <div className="w-full h-full bg-[var(--color-surface)] flex items-center justify-center">
             <div className="text-center">
               <Monitor size={64} className="text-orange-400 mx-auto mb-4" />
-              <h3 className="text-xl font-medium text-white mb-2">RustDesk Connected</h3>
-              <p className="text-gray-400 mb-4">
+              <h3 className="text-xl font-medium text-[var(--color-text)] mb-2">RustDesk Connected</h3>
+              <p className="text-[var(--color-textSecondary)] mb-4">
                 Remote desktop session active with {session.hostname}
               </p>
-              <div className="bg-gray-700 rounded-lg p-4 max-w-md">
+              <div className="bg-[var(--color-border)] rounded-lg p-4 max-w-md">
                 <p className="text-xs text-gray-500 mb-2">Connection Details:</p>
                 <div className="space-y-1 text-sm text-left">
-                  <div>Host: <span className="text-white">{session.hostname}</span></div>
-                  <div>Protocol: <span className="text-white">RustDesk</span></div>
-                  <div>Quality: <span className="text-white">{settings.quality}</span></div>
-                  <div>Started: <span className="text-white">{session.startTime.toLocaleTimeString()}</span></div>
+                  <div>Host: <span className="text-[var(--color-text)]">{session.hostname}</span></div>
+                  <div>Protocol: <span className="text-[var(--color-text)]">RustDesk</span></div>
+                  <div>Quality: <span className="text-[var(--color-text)]">{settings.quality}</span></div>
+                  <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
                 </div>
                 <div className="mt-3 p-2 bg-orange-900/20 border border-orange-700 rounded text-xs text-orange-300">
                   <p>Note: RustDesk integration requires the RustDesk client to be installed and configured.</p>
@@ -217,7 +217,7 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
       </div>
 
       {/* Status Bar */}
-      <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 flex items-center justify-between text-xs text-gray-400">
+      <div className="bg-[var(--color-surface)] border-t border-[var(--color-border)] px-4 py-2 flex items-center justify-between text-xs text-[var(--color-textSecondary)]">
         <div className="flex items-center space-x-4">
           <span>Session: {session.id.slice(0, 8)}</span>
           <span>Protocol: RustDesk</span>

@@ -212,7 +212,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
           <div className="mb-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   {t("networkDiscovery.ipRange")}
                 </label>
                 <input
@@ -221,13 +221,13 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                   onChange={(e) =>
                     setConfig({ ...config, ipRange: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   placeholder={t("networkDiscovery.ipRangePlaceholder")}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   {t("networkDiscovery.timeout")}
                 </label>
                 <input
@@ -236,14 +236,14 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                   onChange={(e) =>
                     setConfig({ ...config, timeout: parseInt(e.target.value) })
                   }
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   min="1000"
                   max="30000"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   {t("networkDiscovery.maxConcurrent")}
                 </label>
                 <input
@@ -255,7 +255,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                       maxConcurrent: parseInt(e.target.value),
                     })
                   }
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   min="1"
                   max="100"
                 />
@@ -263,14 +263,14 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
             </div>
 
             {showAdvanced && (
-              <div className="bg-gray-700 rounded-lg p-4 mb-4">
-                <h3 className="text-lg font-medium text-white mb-4">
+              <div className="bg-[var(--color-border)] rounded-lg p-4 mb-4">
+                <h3 className="text-lg font-medium text-[var(--color-text)] mb-4">
                   {t("networkDiscovery.advancedConfig")}
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                       {t("networkDiscovery.portRanges")}
                     </label>
                     <input
@@ -284,13 +284,13 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                             .map((p) => p.trim()),
                         })
                       }
-                      className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded-md text-white"
+                      className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                       placeholder={t("networkDiscovery.portRangesPlaceholder")}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                       {t("networkDiscovery.protocols")}
                     </label>
                     <div className="flex flex-wrap gap-2">
@@ -326,9 +326,9 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                                 });
                               }
                             }}
-                            className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                           />
-                          <span className="text-gray-300 text-sm">
+                          <span className="text-[var(--color-textSecondary)] text-sm">
                             {protocol.toUpperCase()}
                           </span>
                         </label>
@@ -343,7 +343,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
               <button
                 onClick={handleScan}
                 disabled={isScanning}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-md transition-colors flex items-center space-x-2"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
               >
                 <Search size={16} />
                 <span>{isScanning ? t("networkDiscovery.scanning") : t("networkDiscovery.scan")}</span>
@@ -352,7 +352,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
               {selectedHosts.size > 0 && (
                 <button
                   onClick={handleCreateConnections}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors flex items-center space-x-2"
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                 >
                   <Plus size={16} />
                   <span>
@@ -366,7 +366,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
 
             {isScanning && (
               <div className="mt-4">
-                <div className="w-full bg-gray-700 rounded-full h-2">
+                <div className="w-full bg-[var(--color-border)] rounded-full h-2">
                   <div
                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                     style={{ width: `${scanProgress}%` }}
@@ -380,7 +380,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
           {discoveredHosts.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-white">
+                <h3 className="text-lg font-medium text-[var(--color-text)]">
                   {t("networkDiscovery.discoveredHosts", {
                     count: filteredHosts.length,
                   })}
@@ -391,11 +391,11 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                     value={filterText}
                     onChange={(e) => setFilterText(e.target.value)}
                     placeholder={t("networkDiscovery.filterPlaceholder")}
-                    className="px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                    className="px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
                   />
                   <button
                     onClick={handleExportCSV}
-                    className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md transition-colors flex items-center space-x-2"
+                    className="px-3 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                   >
                     <Download size={14} />
                     <span>{t("networkDiscovery.exportCsv")}</span>
@@ -407,10 +407,10 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                 {filteredHosts.map((host) => (
                   <div
                     key={host.ip}
-                    className={`bg-gray-700 rounded-lg p-4 border-2 transition-colors cursor-pointer ${
+                    className={`bg-[var(--color-border)] rounded-lg p-4 border-2 transition-colors cursor-pointer ${
                       selectedHosts.has(host.ip)
                         ? "border-blue-500 bg-blue-900/20"
-                        : "border-gray-600 hover:border-gray-500"
+                        : "border-[var(--color-border)] hover:border-[var(--color-border)]"
                     }`}
                     onClick={() => toggleHostSelection(host.ip)}
                   >
@@ -420,20 +420,20 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                           type="checkbox"
                           checked={selectedHosts.has(host.ip)}
                           onChange={() => toggleHostSelection(host.ip)}
-                          className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                          className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                         />
                         <div>
-                          <h4 className="text-white font-medium">
+                          <h4 className="text-[var(--color-text)] font-medium">
                             {host.hostname || host.ip}
                           </h4>
                           {host.hostname && (
-                            <p className="text-gray-400 text-sm">{host.ip}</p>
+                            <p className="text-[var(--color-textSecondary)] text-sm">{host.ip}</p>
                           )}
                         </div>
                       </div>
 
                       <div className="text-right">
-                        <p className="text-gray-400 text-sm">
+                        <p className="text-[var(--color-textSecondary)] text-sm">
                           {t("networkDiscovery.responseTime", {
                             ms: host.responseTime,
                           })}
@@ -458,10 +458,10 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
                           >
                             <ServiceIcon size={20} className="text-blue-400" />
                             <div className="flex-1 min-w-0">
-                              <p className="text-white font-medium">
+                              <p className="text-[var(--color-text)] font-medium">
                                 {service.service.toUpperCase()}
                               </p>
-                              <p className="text-gray-400 text-sm">
+                              <p className="text-[var(--color-textSecondary)] text-sm">
                                 {t("networkDiscovery.port", {
                                   port: service.port,
                                 })}
@@ -485,7 +485,7 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
           {!isScanning && discoveredHosts.length === 0 && (
             <div className="text-center py-12">
               <Search size={48} className="mx-auto text-gray-500 mb-4" />
-              <p className="text-gray-400">{t("networkDiscovery.noHosts")}</p>
+              <p className="text-[var(--color-textSecondary)]">{t("networkDiscovery.noHosts")}</p>
             </div>
           )}
         </div>

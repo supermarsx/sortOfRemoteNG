@@ -28,17 +28,17 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
         <Power className="w-5 h-5" />
         {t("settings.startup.title", "Startup & Tray")}
       </h3>
-      <p className="text-xs text-gray-400 mb-4">
+      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
         Application launch behavior, system tray options, and welcome screen customization.
       </p>
 
       {/* Startup Behavior */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2">
           {t("settings.startup.behavior", "Startup Behavior")}
         </h4>
 
@@ -47,11 +47,11 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.startWithSystem}
             onChange={(e) => handleStartWithSystemChange(e.target.checked)}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
           <div className="flex items-center gap-2">
-            <Play className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-300">
+            <Play className="w-4 h-4 text-[var(--color-textSecondary)]" />
+            <span className="text-[var(--color-textSecondary)]">
               {t("settings.startup.startWithSystem", "Start with system")}
             </span>
           </div>
@@ -62,12 +62,12 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.startMinimized}
             onChange={(e) => updateSettings({ startMinimized: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             disabled={settings.startMaximized}
           />
           <div className="flex items-center gap-2">
-            <Minimize2 className="w-4 h-4 text-gray-400" />
-            <span className={`text-gray-300 ${settings.startMaximized ? 'opacity-50' : ''}`}>
+            <Minimize2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
+            <span className={`text-[var(--color-textSecondary)] ${settings.startMaximized ? 'opacity-50' : ''}`}>
               {t("settings.startup.startMinimized", "Start minimized")}
             </span>
           </div>
@@ -78,12 +78,12 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.startMaximized}
             onChange={(e) => updateSettings({ startMaximized: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             disabled={settings.startMinimized}
           />
           <div className="flex items-center gap-2">
-            <Monitor className="w-4 h-4 text-gray-400" />
-            <span className={`text-gray-300 ${settings.startMinimized ? 'opacity-50' : ''}`}>
+            <Monitor className="w-4 h-4 text-[var(--color-textSecondary)]" />
+            <span className={`text-[var(--color-textSecondary)] ${settings.startMinimized ? 'opacity-50' : ''}`}>
               {t("settings.startup.startMaximized", "Start maximized")}
             </span>
           </div>
@@ -94,11 +94,11 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.reconnectPreviousSessions}
             onChange={(e) => updateSettings({ reconnectPreviousSessions: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
           <div className="flex items-center gap-2">
-            <RefreshCw className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-300">
+            <RefreshCw className="w-4 h-4 text-[var(--color-textSecondary)]" />
+            <span className="text-[var(--color-textSecondary)]">
               {t("settings.startup.reconnectSessions", "Reconnect previous sessions on startup")}
             </span>
           </div>
@@ -109,11 +109,11 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.autoOpenLastCollection}
             onChange={(e) => updateSettings({ autoOpenLastCollection: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
           <div className="flex items-center gap-2">
-            <FolderOpen className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-300">
+            <FolderOpen className="w-4 h-4 text-[var(--color-textSecondary)]" />
+            <span className="text-[var(--color-textSecondary)]">
               {t("settings.startup.autoOpenLastCollection", "Auto-open last used connection collection")}
             </span>
           </div>
@@ -122,7 +122,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Tray Behavior */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2">
           {t("settings.startup.trayBehavior", "System Tray Behavior")}
         </h4>
 
@@ -131,11 +131,11 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.showTrayIcon}
             onChange={(e) => updateSettings({ showTrayIcon: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
           <div className="flex items-center gap-2">
-            <AppWindow className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-300">
+            <AppWindow className="w-4 h-4 text-[var(--color-textSecondary)]" />
+            <span className="text-[var(--color-textSecondary)]">
               {t("settings.startup.showTrayIcon", "Show system tray icon")}
             </span>
           </div>
@@ -146,12 +146,12 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.minimizeToTray}
             onChange={(e) => updateSettings({ minimizeToTray: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             disabled={!settings.showTrayIcon}
           />
           <div className="flex items-center gap-2">
-            <Minimize2 className="w-4 h-4 text-gray-400" />
-            <span className={`text-gray-300 ${!settings.showTrayIcon ? 'opacity-50' : ''}`}>
+            <Minimize2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
+            <span className={`text-[var(--color-textSecondary)] ${!settings.showTrayIcon ? 'opacity-50' : ''}`}>
               {t("settings.startup.minimizeToTray", "Minimize to notification area")}
             </span>
           </div>
@@ -162,12 +162,12 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.closeToTray}
             onChange={(e) => updateSettings({ closeToTray: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
             disabled={!settings.showTrayIcon}
           />
           <div className="flex items-center gap-2">
-            <XIcon className="w-4 h-4 text-gray-400" />
-            <span className={`text-gray-300 ${!settings.showTrayIcon ? 'opacity-50' : ''}`}>
+            <XIcon className="w-4 h-4 text-[var(--color-textSecondary)]" />
+            <span className={`text-[var(--color-textSecondary)] ${!settings.showTrayIcon ? 'opacity-50' : ''}`}>
               {t("settings.startup.closeToTray", "Close to notification area")}
             </span>
           </div>
@@ -178,7 +178,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Welcome Screen */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-gray-300 border-b border-[var(--color-border)] pb-2">
+        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2">
           {t("settings.startup.welcomeScreen", "Welcome Screen")}
         </h4>
 
@@ -187,10 +187,10 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.hideQuickStartMessage ?? false}
             onChange={(e) => updateSettings({ hideQuickStartMessage: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
           <div className="flex items-center gap-2">
-            <EyeOff className="w-4 h-4 text-gray-400" />
+            <EyeOff className="w-4 h-4 text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)]">
               {t("settings.startup.hideQuickStartMessage", "Hide welcome message")}
             </span>
@@ -202,10 +202,10 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
             type="checkbox"
             checked={settings.hideQuickStartButtons ?? false}
             onChange={(e) => updateSettings({ hideQuickStartButtons: e.target.checked })}
-            className="rounded border-gray-600 bg-gray-700 text-blue-600 w-4 h-4"
+            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
           />
           <div className="flex items-center gap-2">
-            <EyeOff className="w-4 h-4 text-gray-400" />
+            <EyeOff className="w-4 h-4 text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)]">
               {t("settings.startup.hideQuickStartButtons", "Hide quick action buttons")}
             </span>
@@ -233,7 +233,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-              <Type className="w-4 h-4 text-gray-400" />
+              <Type className="w-4 h-4 text-[var(--color-textSecondary)]" />
               {t("settings.startup.customTitle", "Custom Title")}
             </label>
             <input
@@ -247,7 +247,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-              <MessageSquare className="w-4 h-4 text-gray-400" />
+              <MessageSquare className="w-4 h-4 text-[var(--color-textSecondary)]" />
               {t("settings.startup.customMessage", "Custom Message")}
             </label>
             <textarea

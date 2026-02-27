@@ -103,28 +103,28 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
   };
 
   return (
-    <div className="border border-gray-700 rounded-lg overflow-hidden">
+    <div className="border border-[var(--color-border)] rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-800/40 hover:bg-gray-800/60 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-surface)]/40 hover:bg-[var(--color-surface)]/60 transition-colors"
       >
         <div className="flex items-center space-x-2">
-          <KeyRound size={16} className="text-gray-400" />
-          <span className="text-sm font-medium text-gray-300">
+          <KeyRound size={16} className="text-[var(--color-textSecondary)]" />
+          <span className="text-sm font-medium text-[var(--color-textSecondary)]">
             Backup / Recovery Codes
           </span>
           {totalBackupCodes > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] bg-gray-700 text-gray-300 rounded-full">
+            <span className="px-1.5 py-0.5 text-[10px] bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-full">
               {totalBackupCodes} codes
             </span>
           )}
         </div>
-        {expanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+        {expanded ? <ChevronUp size={14} className="text-[var(--color-textSecondary)]" /> : <ChevronDown size={14} className="text-[var(--color-textSecondary)]" />}
       </button>
 
       {expanded && (
-        <div className="px-4 py-3 space-y-3 border-t border-gray-700">
+        <div className="px-4 py-3 space-y-3 border-t border-[var(--color-border)]">
           <p className="text-xs text-gray-500">
             Paste recovery codes from your TOTP provider (Google, Microsoft, etc.) to store
             them alongside the connection. You can also generate your own codes.
@@ -138,12 +138,12 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
             const isAddingSingle = addSingleTarget === cfg.secret;
 
             return (
-              <div key={cfg.secret} className="bg-gray-800 rounded-lg p-3 space-y-2">
+              <div key={cfg.secret} className="bg-[var(--color-surface)] rounded-lg p-3 space-y-2">
                 {/* Header */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <KeyRound size={12} className="text-gray-500" />
-                    <span className="text-xs font-medium text-gray-300">{cfg.account}</span>
+                    <span className="text-xs font-medium text-[var(--color-textSecondary)]">{cfg.account}</span>
                     <span className="text-[10px] text-gray-600">({cfg.issuer})</span>
                     {hasCodes && (
                       <span className="text-[10px] text-gray-600">
@@ -160,7 +160,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                         setAddSingleTarget(null);
                         setPasteText('');
                       }}
-                      className={`p-1 rounded transition-colors ${isPasting ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}
+                      className={`p-1 rounded transition-colors ${isPasting ? 'bg-[var(--color-border)] text-[var(--color-text)]' : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]'}`}
                       title="Paste recovery codes"
                     >
                       <ClipboardPaste size={12} />
@@ -173,7 +173,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                         setPasteTarget(null);
                         setSingleCode('');
                       }}
-                      className={`p-1 rounded transition-colors ${isAddingSingle ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-700 hover:text-white'}`}
+                      className={`p-1 rounded transition-colors ${isAddingSingle ? 'bg-[var(--color-border)] text-[var(--color-text)]' : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)]'}`}
                       title="Add a single code"
                     >
                       <Plus size={12} />
@@ -183,7 +183,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                       <button
                         type="button"
                         onClick={() => copyAll(cfg.backupCodes!, copyKey)}
-                        className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+                        className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                         title="Copy all codes"
                       >
                         {copiedKey === copyKey ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
@@ -193,7 +193,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                     <button
                       type="button"
                       onClick={() => generateBackupFor(cfg.secret)}
-                      className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+                      className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                       title="Generate 10 random codes"
                     >
                       <RefreshCw size={12} />
@@ -203,7 +203,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                       <button
                         type="button"
                         onClick={() => clearBackupFor(cfg.secret)}
-                        className="p-1 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
+                        className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                         title="Clear all codes"
                       >
                         <Trash2 size={12} />
@@ -219,7 +219,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                       value={pasteText}
                       onChange={(e) => setPasteText(e.target.value)}
                       placeholder="Paste recovery codes here (one per line, or comma-separated)"
-                      className="w-full h-24 px-2 py-1.5 bg-gray-700 border border-gray-600 rounded text-xs text-white font-mono placeholder-gray-500 resize-none"
+                      className="w-full h-24 px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-gray-500 resize-none"
                       autoFocus
                     />
                     <div className="flex items-center justify-between">
@@ -232,7 +232,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                         <button
                           type="button"
                           onClick={() => { setPasteTarget(null); setPasteText(''); }}
-                          className="px-2 py-1 text-[10px] text-gray-400 hover:text-white"
+                          className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                         >
                           Cancel
                         </button>
@@ -240,7 +240,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                           type="button"
                           onClick={() => handlePasteCodes(cfg.secret)}
                           disabled={parseCodes(pasteText).length === 0}
-                          className="px-2 py-1 text-[10px] bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 disabled:text-gray-600 text-white rounded"
+                          className="px-2 py-1 text-[10px] bg-gray-600 hover:bg-gray-500 disabled:bg-[var(--color-border)] disabled:text-gray-600 text-[var(--color-text)] rounded"
                         >
                           Save codes
                         </button>
@@ -261,21 +261,21 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                         if (e.key === 'Escape') { setAddSingleTarget(null); setSingleCode(''); }
                       }}
                       placeholder="Enter recovery code"
-                      className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs text-white font-mono placeholder-gray-500"
+                      className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-gray-500"
                       autoFocus
                     />
                     <button
                       type="button"
                       onClick={() => handleAddSingleCode(cfg.secret)}
                       disabled={!singleCode.trim()}
-                      className="px-2 py-1 text-[10px] bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 disabled:text-gray-600 text-white rounded"
+                      className="px-2 py-1 text-[10px] bg-gray-600 hover:bg-gray-500 disabled:bg-[var(--color-border)] disabled:text-gray-600 text-[var(--color-text)] rounded"
                     >
                       Add
                     </button>
                     <button
                       type="button"
                       onClick={() => { setAddSingleTarget(null); setSingleCode(''); }}
-                      className="p-1 text-gray-400 hover:text-white"
+                      className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                     >
                       <X size={12} />
                     </button>
@@ -288,7 +288,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
                     {cfg.backupCodes!.map((code, i) => (
                       <div
                         key={i}
-                        className="group flex items-center justify-between font-mono text-[11px] text-gray-300 bg-gray-700/50 rounded px-2 py-0.5"
+                        className="group flex items-center justify-between font-mono text-[11px] text-[var(--color-textSecondary)] bg-[var(--color-border)]/50 rounded px-2 py-0.5"
                       >
                         <span className="select-all">{code}</span>
                         <button

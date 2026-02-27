@@ -236,7 +236,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
               className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg border transition-all ${
                 authMethod === 'password'
                   ? 'border-blue-500 text-blue-400'
-                  : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
+                  : 'bg-[var(--color-border)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]'
               } ${noCollectionSelected ? 'opacity-50 cursor-not-allowed' : ''}`}
               style={authMethod === 'password' ? { backgroundColor: 'rgba(var(--color-primary-rgb, 59, 130, 246), 0.2)' } : {}}
             >
@@ -251,7 +251,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                 className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg border transition-all ${
                   authMethod === 'passkey'
                     ? 'border-blue-500 text-blue-400'
-                    : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
+                    : 'bg-[var(--color-border)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]'
                 } ${noCollectionSelected ? 'opacity-50 cursor-not-allowed' : ''}`}
                 style={authMethod === 'passkey' ? { backgroundColor: 'rgba(var(--color-primary-rgb, 59, 130, 246), 0.2)' } : {}}
               >
@@ -266,7 +266,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
               className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg border transition-all ${
                 authMethod === 'keyfile'
                   ? 'border-blue-500 text-blue-400'
-                  : 'bg-gray-700 border-gray-600 text-gray-400 hover:border-gray-500'
+                  : 'bg-[var(--color-border)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:border-[var(--color-border)]'
               } ${noCollectionSelected ? 'opacity-50 cursor-not-allowed' : ''}`}
               style={authMethod === 'keyfile' ? { backgroundColor: 'rgba(var(--color-primary-rgb, 59, 130, 246), 0.2)' } : {}}
             >
@@ -279,7 +279,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
           {authMethod === 'password' && (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   {mode === 'setup' ? 'Create Password' : 'Enter Password'}
                 </label>
                 <div className="relative">
@@ -289,7 +289,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={noCollectionSelected}
-                    className="w-full px-3 py-2 pr-10 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                    className="w-full px-3 py-2 pr-10 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                     placeholder="Enter password"
                     minLength={4}
                     autoFocus
@@ -297,7 +297,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -306,7 +306,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
 
               {mode === 'setup' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Confirm Password
                   </label>
                   <div className="relative">
@@ -316,14 +316,14 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       disabled={noCollectionSelected}
-                      className="w-full px-3 py-2 pr-10 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+                      className="w-full px-3 py-2 pr-10 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
                       placeholder="Confirm password"
                       minLength={4}
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                     >
                       {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -338,14 +338,14 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="px-4 py-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+                  className="px-4 py-2 text-[var(--color-textSecondary)] bg-[var(--color-border)] hover:bg-[var(--color-border)] rounded-md transition-colors"
                 >
                   {mode === 'setup' ? 'Skip' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
                   disabled={noCollectionSelected || (mode === 'setup' && (password !== confirmPassword || password.length < 4))}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-md transition-colors flex items-center space-x-2"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                 >
                   <Lock size={16} />
                   <span>{mode === 'setup' ? 'Secure' : 'Unlock'}</span>
@@ -357,14 +357,14 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
           {/* Passkey Form */}
           {authMethod === 'passkey' && (
             <div className="space-y-4">
-              <div className="bg-gray-700 rounded-lg p-6 text-center">
+              <div className="bg-[var(--color-border)] rounded-lg p-6 text-center">
                 <Fingerprint size={48} className="mx-auto mb-4 text-blue-400" />
-                <p className="text-gray-300 mb-2">
+                <p className="text-[var(--color-textSecondary)] mb-2">
                   {mode === 'setup'
                     ? 'Use Windows Hello or your device biometrics to secure your data'
                     : 'Authenticate with Windows Hello or device biometrics'}
                 </p>
-                <p className="text-gray-400 text-sm">
+                <p className="text-[var(--color-textSecondary)] text-sm">
                   Your passkey is stored securely on your device
                 </p>
               </div>
@@ -373,7 +373,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="px-4 py-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+                  className="px-4 py-2 text-[var(--color-textSecondary)] bg-[var(--color-border)] hover:bg-[var(--color-border)] rounded-md transition-colors"
                 >
                   Cancel
                 </button>
@@ -381,7 +381,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                   type="button"
                   onClick={handlePasskeyAuth}
                   disabled={noCollectionSelected || passkeyLoading}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-md transition-colors flex items-center space-x-2"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                 >
                   {passkeyLoading ? (
                     <Loader2 size={16} className="animate-spin" />
@@ -398,12 +398,12 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
           {authMethod === 'keyfile' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   {mode === 'setup' ? 'Select Key File' : 'Select Your Key File'}
                 </label>
                 <div
                   onClick={noCollectionSelected ? undefined : handleKeyFileSelect}
-                  className={`border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer hover:border-gray-500 transition-colors ${
+                  className={`border-2 border-dashed border-[var(--color-border)] rounded-lg p-6 text-center cursor-pointer hover:border-[var(--color-border)] transition-colors ${
                     noCollectionSelected ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
                 >
@@ -414,15 +414,15 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                     </div>
                   ) : (
                     <>
-                      <Upload size={32} className="mx-auto mb-2 text-gray-400" />
-                      <p className="text-gray-400 text-sm">
+                      <Upload size={32} className="mx-auto mb-2 text-[var(--color-textSecondary)]" />
+                      <p className="text-[var(--color-textSecondary)] text-sm">
                         Click to select a key file (.key, .pem, .txt)
                       </p>
                     </>
                   )}
                 </div>
                 {mode === 'setup' && (
-                  <p className="text-gray-400 text-xs mt-2">
+                  <p className="text-[var(--color-textSecondary)] text-xs mt-2">
                     Keep your key file safe! You will need it to unlock your connections.
                   </p>
                 )}
@@ -432,7 +432,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="px-4 py-2 text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md transition-colors"
+                  className="px-4 py-2 text-[var(--color-textSecondary)] bg-[var(--color-border)] hover:bg-[var(--color-border)] rounded-md transition-colors"
                 >
                   Cancel
                 </button>
@@ -440,7 +440,7 @@ export const PasswordDialog: React.FC<PasswordDialogProps> = ({
                   type="button"
                   onClick={handleSubmit}
                   disabled={noCollectionSelected || !keyFileContent}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-md transition-colors flex items-center space-x-2"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
                 >
                   <FileKey size={16} />
                   <span>{mode === 'setup' ? 'Secure' : 'Unlock'}</span>

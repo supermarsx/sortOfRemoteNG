@@ -102,7 +102,7 @@ const getStatusColor = (status?: string) => {
     case "error":
       return "text-red-400";
     default:
-      return "text-gray-400";
+      return "text-[var(--color-textSecondary)]";
   }
 };
 
@@ -256,8 +256,8 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
       <div
         data-connection-item="true"
         data-tauri-disable-drag="true"
-        className={`group flex items-center h-8 px-2 cursor-pointer hover:bg-gray-700/50 transition-colors relative ${
-          isSelected ? "bg-blue-600/20 text-blue-400" : "text-gray-300"
+        className={`group flex items-center h-8 px-2 cursor-pointer hover:bg-[var(--color-border)]/50 transition-colors relative ${
+          isSelected ? "bg-blue-600/20 text-blue-400" : "text-[var(--color-textSecondary)]"
         } ${isDragging ? "opacity-50 scale-95" : ""} ${
           isDragOver && dropPosition === 'inside' ? "bg-blue-500/20 ring-2 ring-blue-500/50 ring-inset" : ""
         }`}
@@ -346,7 +346,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         {connection.isGroup && (
           <button
             onClick={handleToggleExpand}
-            className="flex items-center justify-center w-4 h-4 mr-1 hover:bg-gray-600 rounded transition-colors"
+            className="flex items-center justify-center w-4 h-4 mr-1 hover:bg-[var(--color-border)] rounded transition-colors"
           >
             {isExpanded ? (
               <ChevronDown size={12} />
@@ -392,7 +392,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
               {activeSession ? (
                 <button
                   onClick={handleDisconnect}
-                  className="p-1 hover:bg-gray-600 rounded transition-colors"
+                  className="p-1 hover:bg-[var(--color-border)] rounded transition-colors"
                   data-tooltip="Disconnect"
                 >
                   <Power size={12} />
@@ -400,7 +400,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
               ) : (
                 <button
                   onClick={handleConnect}
-                  className="p-1 hover:bg-gray-600 rounded transition-colors"
+                  className="p-1 hover:bg-[var(--color-border)] rounded transition-colors"
                   data-tooltip="Connect"
                 >
                   <Play size={12} />
@@ -418,7 +418,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
               setMenuPosition({ x: Math.max(8, rect.right - 140), y: rect.bottom + 6 });
               setShowMenu((prev) => !prev);
             }}
-            className="p-1 hover:bg-gray-600 rounded transition-colors"
+            className="p-1 hover:bg-[var(--color-border)] rounded transition-colors"
           >
             <MoreVertical size={12} />
           </button>
@@ -427,7 +427,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
         {showMenu && (
           <div
             ref={menuRef}
-            className="fixed bg-gray-800 border border-gray-700 rounded-md shadow-lg z-[9999] min-w-[140px]"
+            className="fixed bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md shadow-lg z-[9999] min-w-[140px]"
             style={menuPosition ? { left: menuPosition.x, top: menuPosition.y } : undefined}
             onClick={(e) => e.stopPropagation()}
           >
@@ -442,7 +442,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                   }
                   setShowMenu(false);
                 }}
-                className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
               >
                 {activeSession ? <Power size={14} className="mr-2" /> : <Play size={14} className="mr-2" />}
                 {activeSession ? "Disconnect" : "Connect"}
@@ -456,7 +456,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                     onConnectWithOptions(connection);
                     setShowMenu(false);
                   }}
-                  className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                  className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
                 >
                   <SlidersHorizontal size={14} className="mr-2" />
                   Connect with options
@@ -467,7 +467,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                     onConnectWithoutCredentials(connection);
                     setShowMenu(false);
                   }}
-                  className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                  className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
                 >
                   <UserX size={14} className="mr-2" />
                   Connect without credentials
@@ -478,7 +478,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                     onExecuteScripts(connection, activeSession?.id);
                     setShowMenu(false);
                   }}
-                  className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                  className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
                 >
                   <Play size={14} className="mr-2" />
                   Execute scripts
@@ -489,7 +489,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                     onDiagnostics(connection);
                     setShowMenu(false);
                   }}
-                  className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                  className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
                 >
                   <Activity size={14} className="mr-2" />
                   Diagnostics
@@ -501,7 +501,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                       onDetachSession(activeSession.id);
                       setShowMenu(false);
                     }}
-                    className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                    className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
                   >
                     <ExternalLink size={14} className="mr-2" />
                     Detach window
@@ -509,14 +509,14 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 )}
               </>
             )}
-            {!connection.isGroup && <hr className="border-gray-700" />}
+            {!connection.isGroup && <hr className="border-[var(--color-border)]" />}
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onEdit(connection);
                 setShowMenu(false);
               }}
-              className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+              className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
             >
               <Edit size={14} className="mr-2" />
               Edit
@@ -527,7 +527,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 onRename(connection);
                 setShowMenu(false);
               }}
-              className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+              className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
             >
               <Edit size={14} className="mr-2" />
               Rename
@@ -542,11 +542,11 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                   });
                   setShowMenu(false);
                 }}
-                className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
               >
                 <Star
                   size={12}
-                  className={`mr-2 ${connection.favorite ? "text-yellow-300" : "text-gray-400"}`}
+                  className={`mr-2 ${connection.favorite ? "text-yellow-300" : "text-[var(--color-textSecondary)]"}`}
                   fill={connection.favorite ? "currentColor" : "none"}
                 />
                 {connection.favorite ? "Remove favorite" : "Add to favorites"}
@@ -559,7 +559,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                   onCopyHostname(connection);
                   setShowMenu(false);
                 }}
-                className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
               >
                 <Copy size={14} className="mr-2" />
                 Copy hostname
@@ -572,7 +572,7 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                   onExport(connection);
                   setShowMenu(false);
                 }}
-                className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+                className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
               >
                 <FileDown size={14} className="mr-2" />
                 Export to file
@@ -589,19 +589,19 @@ const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
                 dispatch({ type: "ADD_CONNECTION", payload: newConnection });
                 setShowMenu(false);
               }}
-              className="flex items-center w-full px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 transition-colors"
+              className="flex items-center w-full px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] transition-colors"
             >
               <Copy size={14} className="mr-2" />
               Duplicate
             </button>
-            <hr className="border-gray-700" />
+            <hr className="border-[var(--color-border)]" />
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(connection);
                 setShowMenu(false);
               }}
-              className="flex items-center w-full px-3 py-2 text-sm text-red-400 hover:bg-gray-700 transition-colors"
+              className="flex items-center w-full px-3 py-2 text-sm text-red-400 hover:bg-[var(--color-border)] transition-colors"
             >
               <Trash2 size={14} className="mr-2" />
               Delete
@@ -1126,7 +1126,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
       {panelMenuPosition && onOpenImport && (
         <div
           ref={panelMenuRef}
-          className="fixed z-[9999] bg-gray-800 border border-gray-600 rounded-lg shadow-xl py-1 min-w-[160px]"
+          className="fixed z-[9999] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 min-w-[160px]"
           style={{ left: panelMenuPosition.x, top: panelMenuPosition.y }}
         >
           <button
@@ -1134,7 +1134,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
               onOpenImport();
               setPanelMenuPosition(null);
             }}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:text-[var(--color-text)] transition-colors"
           >
             <Upload size={14} />
             Import Connections
@@ -1152,21 +1152,21 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
             if (e.key === "Escape") setRenameTarget(null);
           }}
         >
-          <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 relative">
-            <div className="relative h-12 border-b border-gray-700">
-              <h2 className="absolute left-5 top-3 text-sm font-semibold text-white">
+          <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4 relative">
+            <div className="relative h-12 border-b border-[var(--color-border)]">
+              <h2 className="absolute left-5 top-3 text-sm font-semibold text-[var(--color-text)]">
                 Rename Connection
               </h2>
               <button
                 onClick={() => setRenameTarget(null)}
-                className="absolute right-3 top-2 text-gray-400 hover:text-white transition-colors"
+                className="absolute right-3 top-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
                 aria-label="Close"
               >
                 <X size={18} />
               </button>
             </div>
             <div className="p-6">
-              <label className="block text-sm text-gray-400 mb-2">Connection Name</label>
+              <label className="block text-sm text-[var(--color-textSecondary)] mb-2">Connection Name</label>
               <input
                 type="text"
                 autoFocus
@@ -1184,14 +1184,14 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                   });
                   setRenameTarget(null);
                 }}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="New name"
               />
               <div className="flex justify-end space-x-3 mt-6">
                 <button
                   type="button"
                   onClick={() => setRenameTarget(null)}
-                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
+                  className="px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-md transition-colors"
                 >
                   Cancel
                 </button>
@@ -1207,7 +1207,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                     });
                     setRenameTarget(null);
                   }}
-                  className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+                  className="px-4 py-2 text-[var(--color-text)] bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
                 >
                   Save
                 </button>
@@ -1227,15 +1227,15 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
             }
           }}
         >
-          <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden">
-            <div className="border-b border-gray-700 px-4 py-3">
-              <h3 className="text-sm font-semibold text-white">
+          <div className="bg-[var(--color-surface)] rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="border-b border-[var(--color-border)] px-4 py-3">
+              <h3 className="text-sm font-semibold text-[var(--color-text)]">
                 Connect with Options
               </h3>
             </div>
             <div className="p-4 space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   Username
                 </label>
                 <input
@@ -1244,13 +1244,13 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                   onChange={(e) =>
                     setConnectOptionsData({ ...connectOptionsData, username: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
               {connectOptionsTarget.protocol === "ssh" ? (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                       Auth Type
                     </label>
                     <select
@@ -1261,7 +1261,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                           authType: e.target.value as "password" | "key",
                         })
                       }
-                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="password">Password</option>
                       <option value="key">Private Key</option>
@@ -1269,7 +1269,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                   </div>
                   {connectOptionsData.authType === "password" ? (
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                         Password
                       </label>
                       <PasswordInput
@@ -1280,13 +1280,13 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                             password: e.target.value,
                           })
                         }
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </div>
                   ) : (
                     <>
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                           Private Key
                         </label>
                         <textarea
@@ -1298,11 +1298,11 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                             })
                           }
                           rows={3}
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                           Passphrase (optional)
                         </label>
                         <PasswordInput
@@ -1313,7 +1313,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                               passphrase: e.target.value,
                             })
                           }
-                          className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                       </div>
                     </>
@@ -1321,7 +1321,7 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                 </>
               ) : (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Password
                   </label>
                   <PasswordInput
@@ -1332,11 +1332,11 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                         password: e.target.value,
                       })
                     }
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
               )}
-              <label className="flex items-center gap-2 text-sm text-gray-300">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <input
                   type="checkbox"
                   checked={connectOptionsData.saveToConnection}
@@ -1356,14 +1356,14 @@ export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
                     setConnectOptionsTarget(null);
                     setConnectOptionsData(null);
                   }}
-                  className="px-3 py-2 text-sm text-gray-300 bg-gray-700 hover:bg-gray-600 rounded-md"
+                  className="px-3 py-2 text-sm text-[var(--color-textSecondary)] bg-[var(--color-border)] hover:bg-[var(--color-border)] rounded-md"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleConnectOptionsSubmit}
-                  className="px-3 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+                  className="px-3 py-2 text-sm text-[var(--color-text)] bg-blue-600 hover:bg-blue-700 rounded-md"
                 >
                   Connect
                 </button>

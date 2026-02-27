@@ -87,7 +87,7 @@ const getStatusColor = (status: string) => {
     case "error":
       return "text-red-400";
     default:
-      return "text-gray-400";
+      return "text-[var(--color-textSecondary)]";
   }
 };
 
@@ -187,14 +187,14 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
 
   if (sessions.length === 0) {
     return (
-      <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center justify-center">
+      <div className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-center">
         <span className="text-gray-500 text-sm">No active sessions</span>
       </div>
     );
   }
 
   return (
-    <div className="h-10 bg-gray-800 border-b border-gray-700 flex items-center overflow-x-auto" data-tauri-disable-drag="true">
+    <div className="h-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center overflow-x-auto" data-tauri-disable-drag="true">
       {sessions.map((session) => {
         const ProtocolIcon = getProtocolIcon(session.protocol);
         const StatusIcon = getStatusIcon(session.status);
@@ -205,10 +205,10 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
             key={session.id}
             draggable={enableReorder}
             data-tauri-disable-drag="true"
-            className={`flex items-center h-full px-3 cursor-pointer border-r border-gray-700 min-w-0 ${
+            className={`flex items-center h-full px-3 cursor-pointer border-r border-[var(--color-border)] min-w-0 ${
               isActive
-                ? "bg-gray-700 text-white"
-                : "text-gray-300 hover:bg-gray-700/50"
+                ? "bg-[var(--color-border)] text-[var(--color-text)]"
+                : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]/50"
             } ${
               draggedSessionId === session.id ? "opacity-50" : ""
             } ${
@@ -238,20 +238,24 @@ export const SessionTabs: React.FC<SessionTabsProps> = ({
               }
               return null;
             })()}
-            <StatusIcon
-              size={12}
-              className={`mr-2 flex-shrink-0 ${getStatusColor(session.status)}`}
-            />
-            <button
-              onClick={(e) => handleDetachSession(session.id, e)}
-              className="flex-shrink-0 p-1 hover:bg-gray-600 rounded transition-colors"
-              title="Detach"
-            >
-              <ExternalLink size={12} />
-            </button>
+            {!isToolProtocol(session.protocol) && (
+              <>
+                <StatusIcon
+                  size={12}
+                  className={`mr-2 flex-shrink-0 ${getStatusColor(session.status)}`}
+                />
+                <button
+                  onClick={(e) => handleDetachSession(session.id, e)}
+                  className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
+                  title="Detach"
+                >
+                  <ExternalLink size={12} />
+                </button>
+              </>
+            )}
             <button
               onClick={(e) => handleCloseSession(session.id, e)}
-              className="flex-shrink-0 p-1 hover:bg-gray-600 rounded transition-colors"
+              className="flex-shrink-0 p-1 hover:bg-[var(--color-border)] rounded transition-colors"
             >
               <X size={12} />
             </button>

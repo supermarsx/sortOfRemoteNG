@@ -143,13 +143,13 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900">
+    <div className="flex flex-col h-full bg-[var(--color-background)]">
       {/* SMB Header */}
-      <div className="bg-gray-800 border-b border-gray-700 p-4">
+      <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center space-x-3">
             <HardDrive size={20} className="text-blue-400" />
-            <span className="text-white font-medium">SMB Client - {session.hostname}</span>
+            <span className="text-[var(--color-text)] font-medium">SMB Client - {session.hostname}</span>
           </div>
           
           <div className="flex items-center space-x-2">
@@ -159,7 +159,7 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
                 setCurrentShare(e.target.value);
                 setCurrentPath('\\');
               }}
-              className="px-3 py-1 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+              className="px-3 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm"
             >
               {shares.map(share => (
                 <option key={share} value={share}>{share}</option>
@@ -168,7 +168,7 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
             
             <button
               onClick={loadShares}
-              className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+              className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               title="Refresh shares"
             >
               <RefreshCw size={16} />
@@ -180,7 +180,7 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
         <div className="flex items-center space-x-2">
           <button
             onClick={() => navigateToPath('\\')}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title="Root"
           >
             <Home size={16} />
@@ -188,20 +188,20 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
           <button
             onClick={navigateUp}
             disabled={currentPath === '\\'}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white disabled:opacity-50"
+            className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] disabled:opacity-50"
             title="Up"
           >
             <ArrowLeft size={16} />
           </button>
           <button
             onClick={() => loadDirectory(currentPath)}
-            className="p-2 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+            className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             title="Refresh"
           >
             <RefreshCw size={16} />
           </button>
           
-          <div className="flex-1 bg-gray-700 rounded px-3 py-2 text-gray-300 font-mono text-sm">
+          <div className="flex-1 bg-[var(--color-border)] rounded px-3 py-2 text-[var(--color-textSecondary)] font-mono text-sm">
             \\{session.hostname}\{currentShare}{currentPath !== '\\' ? currentPath : ''}
           </div>
         </div>
@@ -211,13 +211,13 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
-            <RefreshCw size={24} className="animate-spin text-gray-400" />
+            <RefreshCw size={24} className="animate-spin text-[var(--color-textSecondary)]" />
           </div>
         ) : (
           <table className="w-full">
-            <thead className="bg-gray-700 sticky top-0">
+            <thead className="bg-[var(--color-border)] sticky top-0">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">
                   <input
                     type="checkbox"
                     checked={selectedFiles.size === files.length && files.length > 0}
@@ -228,28 +228,28 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
                         setSelectedFiles(new Set());
                       }
                     }}
-                    className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                   />
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">
                   Name
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">
                   Size
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">
                   Modified
                 </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase">
+                <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">
                   Permissions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-600">
+            <tbody className="divide-y divide-[var(--color-border)]">
               {files.map(file => (
                 <tr
                   key={file.name}
-                  className={`hover:bg-gray-700 cursor-pointer ${
+                  className={`hover:bg-[var(--color-border)] cursor-pointer ${
                     selectedFiles.has(file.name) ? 'bg-blue-900/20' : ''
                   }`}
                   onClick={() => handleFileSelect(file.name)}
@@ -260,26 +260,26 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
                       type="checkbox"
                       checked={selectedFiles.has(file.name)}
                       onChange={() => handleFileSelect(file.name)}
-                      className="rounded border-gray-600 bg-gray-700 text-blue-600"
+                      className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
                     />
                   </td>
-                  <td className="px-4 py-3 text-sm text-white">
+                  <td className="px-4 py-3 text-sm text-[var(--color-text)]">
                     <div className="flex items-center space-x-2">
                       {file.type === 'directory' ? (
                         <Folder size={16} className="text-blue-400" />
                       ) : (
-                        <File size={16} className="text-gray-400" />
+                        <File size={16} className="text-[var(--color-textSecondary)]" />
                       )}
                       <span>{file.name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-300">
+                  <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)]">
                     {file.type === 'file' ? formatFileSize(file.size) : '-'}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-300">
+                  <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)]">
                     {file.modified.toLocaleDateString()}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-300 font-mono">
+                  <td className="px-4 py-3 text-sm text-[var(--color-textSecondary)] font-mono">
                     {file.permissions || '-'}
                   </td>
                 </tr>
@@ -291,19 +291,19 @@ export const SMBClient: React.FC<SMBClientProps> = ({ session }) => {
 
       {/* Action Bar */}
       {selectedFiles.size > 0 && (
-        <div className="bg-gray-800 border-t border-gray-700 p-4">
+        <div className="bg-[var(--color-surface)] border-t border-[var(--color-border)] p-4">
           <div className="flex items-center justify-between">
-            <span className="text-gray-300 text-sm">
+            <span className="text-[var(--color-textSecondary)] text-sm">
               {selectedFiles.size} item{selectedFiles.size !== 1 ? 's' : ''} selected
             </span>
             
             <div className="flex items-center space-x-2">
-              <button className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors flex items-center space-x-2">
+              <button className="px-3 py-1 bg-green-600 hover:bg-green-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2">
                 <Download size={14} />
                 <span>Download</span>
               </button>
               
-              <button className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors flex items-center space-x-2">
+              <button className="px-3 py-1 bg-red-600 hover:bg-red-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2">
                 <Trash2 size={14} />
                 <span>Delete</span>
               </button>

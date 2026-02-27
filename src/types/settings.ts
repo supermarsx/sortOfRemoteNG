@@ -444,7 +444,7 @@ export interface GlobalSettings {
   rdpSessionClosePolicy: 'disconnect' | 'detach' | 'ask';
 
   // ─── Tool Display Modes ─────────────────────────────────────
-  /** How each tool/manager opens: 'popup' (modal overlay) or 'panel' (side panel) */
+  /** How each tool/manager opens: 'popup' (modal overlay) or 'tab' (connection tab) */
   toolDisplayModes: ToolDisplayModes;
 
   // ─── Backend / Tauri Runtime Settings ────────────────────────
@@ -764,18 +764,22 @@ export interface MacroConfig {
 }
 
 export type ToolDisplayMode = 'popup' | 'tab';
+/** Per-tool override: concrete mode or 'inherit' from global default */
+export type ToolDisplayModeOverride = ToolDisplayMode | 'inherit';
 
 export interface ToolDisplayModes {
-  recordingManager: ToolDisplayMode;
-  macroManager: ToolDisplayMode;
-  scriptManager: ToolDisplayMode;
-  performanceMonitor: ToolDisplayMode;
-  actionLog: ToolDisplayMode;
-  shortcutManager: ToolDisplayMode;
-  bulkSsh: ToolDisplayMode;
-  internalProxy: ToolDisplayMode;
-  proxyChain: ToolDisplayMode;
-  wol: ToolDisplayMode;
+  /** Global default applied to tools set to 'inherit' */
+  globalDefault: ToolDisplayMode;
+  recordingManager: ToolDisplayModeOverride;
+  macroManager: ToolDisplayModeOverride;
+  scriptManager: ToolDisplayModeOverride;
+  performanceMonitor: ToolDisplayModeOverride;
+  actionLog: ToolDisplayModeOverride;
+  shortcutManager: ToolDisplayModeOverride;
+  bulkSsh: ToolDisplayModeOverride;
+  internalProxy: ToolDisplayModeOverride;
+  proxyChain: ToolDisplayModeOverride;
+  wol: ToolDisplayModeOverride;
 }
 
 export interface SettingsDialogConfig {

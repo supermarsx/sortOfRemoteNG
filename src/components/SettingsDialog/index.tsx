@@ -592,7 +592,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                 onClick={handleSave}
                 data-tooltip={t("settings.save")}
                 aria-label={t("settings.save")}
-                className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                className="p-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
               >
                 <Save size={16} />
               </button>
@@ -620,10 +620,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); setHighlightKey(null); }}
                   placeholder="Search settings..."
-                  className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 outline-none"
+                  className="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-gray-500 outline-none"
                 />
                 {searchQuery && (
-                  <button onClick={() => { setSearchQuery(''); setHighlightKey(null); }} className="text-gray-400 hover:text-white">
+                  <button onClick={() => { setSearchQuery(''); setHighlightKey(null); }} className="text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
                     <X size={12} />
                   </button>
                 )}
@@ -640,7 +640,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                       onClick={() => { setActiveTab(tab.id); setHighlightKey(null); }}
                       className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-left transition-colors ${
                         activeTab === tab.id
-                          ? 'bg-blue-600 text-white'
+                          ? 'bg-blue-600 text-[var(--color-text)]'
                           : 'text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]'
                       }`}
                     >
@@ -659,7 +659,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                           <button
                             key={entry.key}
                             onClick={() => { setActiveTab(tab.id); setHighlightKey(entry.key); }}
-                            className="w-full text-left px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-[var(--color-surface)]/50 rounded truncate"
+                            className="w-full text-left px-2 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]/50 rounded truncate"
                           >
                             {entry.label}
                           </button>
@@ -799,10 +799,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
                 <div className="w-20 h-20 rounded-full border-4 border-[var(--color-border)] border-t-blue-500 animate-spin" />
                 <Gauge className="w-8 h-8 text-blue-400 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
               </div>
-              <h3 className="text-lg font-semibold text-white mb-2">
+              <h3 className="text-lg font-semibold text-[var(--color-text)] mb-2">
                 {t("security.benchmarking", "Running Benchmark")}
               </h3>
-              <p className="text-sm text-gray-400 mb-4">
+              <p className="text-sm text-[var(--color-textSecondary)] mb-4">
                 Testing encryption performance to find optimal iteration count...
               </p>
               <div className="flex items-center gap-2 text-xs text-gray-500">

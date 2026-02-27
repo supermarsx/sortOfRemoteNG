@@ -420,11 +420,11 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
         </div>
 
         <div className="flex flex-1 min-h-0">
-          <div className="w-56 bg-gray-900 border-r border-gray-700 p-4 space-y-2">
+          <div className="w-56 bg-[var(--color-background)] border-r border-[var(--color-border)] p-4 space-y-2">
             <button
               onClick={() => setActiveTab("profiles")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === "profiles" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"
+                activeTab === "profiles" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
               <Wifi size={16} />
@@ -433,7 +433,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
             <button
               onClick={() => setActiveTab("chains")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === "chains" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"
+                activeTab === "chains" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
               <Link2 size={16} />
@@ -442,7 +442,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
             <button
               onClick={() => setActiveTab("tunnels")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === "tunnels" ? "bg-blue-600 text-white" : "text-gray-300 hover:bg-gray-700"
+                activeTab === "tunnels" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
               <Route size={16} />
@@ -452,8 +452,8 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
               onClick={() => setActiveTab("associations")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
                 activeTab === "associations"
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-300 hover:bg-gray-700"
+                  ? "bg-blue-600 text-[var(--color-text)]"
+                  : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
             >
               <PlugZap size={16} />
@@ -466,11 +466,11 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
             {activeTab === "profiles" && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-medium text-white">Saved Proxy Profiles</h3>
+                  <h3 className="text-lg font-medium text-[var(--color-text)]">Saved Proxy Profiles</h3>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleImportProfiles}
-                      className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200"
+                      className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
                       title="Import Profiles"
                     >
                       <Upload size={12} />
@@ -478,7 +478,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                     </button>
                     <button
                       onClick={handleExportProfiles}
-                      className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200"
+                      className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
                       title="Export Profiles"
                     >
                       <Download size={12} />
@@ -486,7 +486,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                     </button>
                     <button
                       onClick={handleNewProfile}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
                     >
                       <Plus size={14} />
                       New Profile
@@ -494,26 +494,26 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                   </div>
                 </div>
 
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-[var(--color-textSecondary)]">
                   Create and manage reusable proxy configurations that can be used across connections and chains.
                 </div>
 
                 {/* Search */}
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
                   <input
                     type="text"
                     value={profileSearch}
                     onChange={(e) => setProfileSearch(e.target.value)}
                     placeholder="Search profiles..."
-                    className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+                    className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 {/* Profile List */}
                 <div className="space-y-2">
                   {filteredProfiles.length === 0 ? (
-                    <div className="text-sm text-gray-400 py-8 text-center">
+                    <div className="text-sm text-[var(--color-textSecondary)] py-8 text-center">
                       {profileSearch 
                         ? "No profiles match your search."
                         : "No proxy profiles saved. Click \"New Profile\" to create one."}
@@ -522,11 +522,11 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                     filteredProfiles.map((profile) => (
                       <div
                         key={profile.id}
-                        className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-4 py-3"
+                        className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
                       >
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium text-white">{profile.name}</div>
+                            <div className="text-sm font-medium text-[var(--color-text)]">{profile.name}</div>
                             <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400 uppercase">
                               {profile.config.type}
                             </span>
@@ -536,7 +536,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                               </span>
                             )}
                           </div>
-                          <div className="text-xs text-gray-400 mt-1 font-mono">
+                          <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
                             {profile.config.host}:{profile.config.port}
                             {profile.config.username && ` (${profile.config.username})`}
                           </div>
@@ -556,21 +556,21 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleDuplicateProfile(profile.id)}
-                            className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                            className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
                             title="Duplicate"
                           >
                             <Copy size={14} />
                           </button>
                           <button
                             onClick={() => handleEditProfile(profile)}
-                            className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                            className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
                             title="Edit"
                           >
                             <Edit2 size={14} />
                           </button>
                           <button
                             onClick={() => handleDeleteProfile(profile.id)}
-                            className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-md"
+                            className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md"
                             title="Delete"
                           >
                             <Trash2 size={14} />
@@ -588,36 +588,36 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                 {/* Saved Chains Section */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-white">Saved Chains</h3>
+                    <h3 className="text-lg font-medium text-[var(--color-text)]">Saved Chains</h3>
                     <button
                       onClick={handleNewChain}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
                     >
                       <Plus size={14} />
                       New Chain
                     </button>
                   </div>
 
-                  <div className="text-sm text-gray-400">
+                  <div className="text-sm text-[var(--color-textSecondary)]">
                     Create reusable proxy chains that route traffic through multiple layers.
                   </div>
 
                   {/* Search */}
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
                     <input
                       type="text"
                       value={chainSearch}
                       onChange={(e) => setChainSearch(e.target.value)}
                       placeholder="Search chains..."
-                      className="w-full pl-9 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+                      className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 
                   {/* Saved Chains List */}
                   <div className="space-y-2">
                     {filteredSavedChains.length === 0 ? (
-                      <div className="text-sm text-gray-400 py-6 text-center">
+                      <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
                         {chainSearch 
                           ? "No chains match your search."
                           : "No proxy chains saved. Click \"New Chain\" to create one."}
@@ -626,11 +626,11 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                       filteredSavedChains.map((chain) => (
                         <div
                           key={chain.id}
-                          className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-4 py-3"
+                          className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
                         >
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <div className="text-sm font-medium text-white">{chain.name}</div>
+                              <div className="text-sm font-medium text-[var(--color-text)]">{chain.name}</div>
                               <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">
                                 {chain.layers.length} layer{chain.layers.length !== 1 ? 's' : ''}
                               </span>
@@ -638,7 +638,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                             {chain.description && (
                               <div className="text-xs text-gray-500 mt-1">{chain.description}</div>
                             )}
-                            <div className="text-xs text-gray-400 mt-1 font-mono">
+                            <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
                               {chain.layers.map((layer, i) => {
                                 const profile = layer.proxyProfileId 
                                   ? savedProfiles.find(p => p.id === layer.proxyProfileId)
@@ -666,21 +666,21 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => handleDuplicateChain(chain.id)}
-                              className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                              className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
                               title="Duplicate"
                             >
                               <Copy size={14} />
                             </button>
                             <button
                               onClick={() => handleEditChain(chain)}
-                              className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md"
+                              className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
                               title="Edit"
                             >
                               <Edit2 size={14} />
                             </button>
                             <button
                               onClick={() => handleDeleteChain(chain.id)}
-                              className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-md"
+                              className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md"
                               title="Delete"
                             >
                               <Trash2 size={14} />
@@ -693,25 +693,25 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                 </div>
 
                 {/* Active Chains Section */}
-                <div className="border-t border-gray-700 pt-6 space-y-4">
+                <div className="border-t border-[var(--color-border)] pt-6 space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-white">Active Chains</h3>
-                    {isLoading && <span className="text-xs text-gray-400">Refreshing...</span>}
+                    <h3 className="text-lg font-medium text-[var(--color-text)]">Active Chains</h3>
+                    {isLoading && <span className="text-xs text-[var(--color-textSecondary)]">Refreshing...</span>}
                   </div>
 
-                  <div className="rounded-lg border border-gray-700/70 bg-gray-900/40 p-4">
+                  <div className="rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-background)]/40 p-4">
                     <div className="text-sm font-semibold text-gray-200 mb-3">Connection Chains</div>
                     {connectionChains.length === 0 ? (
-                      <div className="text-sm text-gray-400">No connection chains available.</div>
+                      <div className="text-sm text-[var(--color-textSecondary)]">No connection chains available.</div>
                     ) : (
                       connectionChains.map((chain) => (
                         <div
                           key={chain.id}
-                          className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-3 py-2 mb-2 last:mb-0"
+                          className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-3 py-2 mb-2 last:mb-0"
                         >
                           <div>
-                            <div className="text-sm font-medium text-white">{chain.name}</div>
-                            <div className="text-xs text-gray-400">
+                            <div className="text-sm font-medium text-[var(--color-text)]">{chain.name}</div>
+                            <div className="text-xs text-[var(--color-textSecondary)]">
                               {chain.layers.length} layers · {chain.status}
                             </div>
                           </div>
@@ -719,14 +719,14 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                             {String(chain.status).toLowerCase() === "connected" ? (
                               <button
                                 onClick={() => handleDisconnectChain(chain.id)}
-                                className="px-3 py-1 text-xs rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200"
+                                className="px-3 py-1 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
                               >
                                 Disconnect
                               </button>
                             ) : (
                               <button
                                 onClick={() => handleConnectChain(chain.id)}
-                                className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                                className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
                               >
                                 Connect
                               </button>
@@ -737,19 +737,19 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                     )}
                   </div>
 
-                  <div className="rounded-lg border border-gray-700/70 bg-gray-900/40 p-4">
+                  <div className="rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-background)]/40 p-4">
                     <div className="text-sm font-semibold text-gray-200 mb-3">Proxy Chains</div>
                     {proxyChains.length === 0 ? (
-                      <div className="text-sm text-gray-400">No proxy chains available.</div>
+                      <div className="text-sm text-[var(--color-textSecondary)]">No proxy chains available.</div>
                     ) : (
                       proxyChains.map((chain) => (
                         <div
                           key={chain.id}
-                          className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-3 py-2 mb-2 last:mb-0"
+                          className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-3 py-2 mb-2 last:mb-0"
                         >
                           <div>
-                            <div className="text-sm font-medium text-white">{chain.name}</div>
-                            <div className="text-xs text-gray-400">
+                            <div className="text-sm font-medium text-[var(--color-text)]">{chain.name}</div>
+                            <div className="text-xs text-[var(--color-textSecondary)]">
                               {chain.layers.length} layers · {chain.status}
                             </div>
                           </div>
@@ -757,14 +757,14 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                             {String(chain.status).toLowerCase() === "connected" ? (
                               <button
                                 onClick={() => handleDisconnectProxyChain(chain.id)}
-                                className="px-3 py-1 text-xs rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200"
+                                className="px-3 py-1 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
                               >
                                 Disconnect
                               </button>
                             ) : (
                               <button
                                 onClick={() => handleConnectProxyChain(chain.id)}
-                                className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                                className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
                               >
                                 Connect
                               </button>
@@ -781,23 +781,23 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
             {activeTab === "tunnels" && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-medium text-white">SSH Tunnels</h3>
+                  <h3 className="text-lg font-medium text-[var(--color-text)]">SSH Tunnels</h3>
                   <button
                     onClick={handleNewTunnel}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
                   >
                     <Plus size={14} />
                     New Tunnel
                   </button>
                 </div>
 
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-[var(--color-textSecondary)]">
                   Create SSH tunnels using existing SSH connections to forward ports securely.
                 </div>
 
                 <div className="space-y-2">
                   {sshTunnels.length === 0 ? (
-                    <div className="text-sm text-gray-400 py-8 text-center">
+                    <div className="text-sm text-[var(--color-textSecondary)] py-8 text-center">
                       No SSH tunnels configured. Click "New Tunnel" to create one.
                     </div>
                   ) : (
@@ -830,11 +830,11 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                       return (
                         <div
                           key={tunnel.id}
-                          className="flex items-center justify-between rounded-md border border-gray-700 bg-gray-800/60 px-4 py-3"
+                          className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
                         >
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <div className="text-sm font-medium text-white">{tunnel.name}</div>
+                              <div className="text-sm font-medium text-[var(--color-text)]">{tunnel.name}</div>
                               <span className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-400">
                                 {getTypeLabel()}
                               </span>
@@ -842,15 +842,15 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                                 tunnel.status === 'connected' ? 'bg-green-500/20 text-green-400' :
                                 tunnel.status === 'connecting' ? 'bg-yellow-500/20 text-yellow-400' :
                                 tunnel.status === 'error' ? 'bg-red-500/20 text-red-400' :
-                                'bg-gray-500/20 text-gray-400'
+                                'bg-gray-500/20 text-[var(--color-textSecondary)]'
                               }`}>
                                 {tunnel.status}
                               </span>
                             </div>
-                            <div className="text-xs text-gray-400 mt-1">
+                            <div className="text-xs text-[var(--color-textSecondary)] mt-1">
                               <span className="text-gray-500">via</span> {sshConn?.name || 'Unknown SSH'}
                             </div>
-                            <div className="text-xs text-gray-300 mt-0.5 font-mono">
+                            <div className="text-xs text-[var(--color-textSecondary)] mt-0.5 font-mono">
                               {getTunnelInfo()}
                             </div>
                             {tunnel.error && (
@@ -861,7 +861,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                             {tunnel.status === 'connected' ? (
                               <button
                                 onClick={() => handleDisconnectTunnel(tunnel.id)}
-                                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-md"
+                                className="p-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded-md"
                                 title="Disconnect"
                               >
                                 <Square size={14} />
@@ -870,7 +870,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                               <button
                                 onClick={() => handleConnectTunnel(tunnel.id)}
                                 disabled={tunnel.status === 'connecting'}
-                                className="p-2 text-gray-400 hover:text-green-400 hover:bg-gray-700 rounded-md disabled:opacity-50"
+                                className="p-2 text-[var(--color-textSecondary)] hover:text-green-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
                                 title="Connect"
                               >
                                 <Play size={14} />
@@ -879,7 +879,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                             <button
                               onClick={() => handleEditTunnel(tunnel)}
                               disabled={tunnel.status === 'connected'}
-                              className="p-2 text-gray-400 hover:text-blue-400 hover:bg-gray-700 rounded-md disabled:opacity-50"
+                              className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
                               title="Edit"
                             >
                               <Edit2 size={14} />
@@ -887,7 +887,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                             <button
                               onClick={() => handleDeleteTunnel(tunnel.id)}
                               disabled={tunnel.status === 'connected'}
-                              className="p-2 text-gray-400 hover:text-red-400 hover:bg-gray-700 rounded-md disabled:opacity-50"
+                              className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
                               title="Delete"
                             >
                               <Trash2 size={14} />
@@ -903,27 +903,27 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
 
             {activeTab === "associations" && (
               <div className="space-y-4">
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-[var(--color-textSecondary)]">
                   Associate chains with individual connections. These choices will be used when launching sessions.
                 </div>
                 <div className="space-y-3">
                   {connectionOptions.map((connection) => (
                     <div
                       key={connection.id}
-                      className="rounded-lg border border-gray-700 bg-gray-900/40 p-3"
+                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-3"
                     >
-                      <div className="text-sm font-medium text-white mb-2">
+                      <div className="text-sm font-medium text-[var(--color-text)] mb-2">
                         {connection.name}
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs text-gray-400 mb-1">
+                          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                             Connection Chain
                           </label>
                           <select
                             value={connection.connectionChainId || ""}
                             onChange={(e) => updateConnectionChain(connection.id, e.target.value)}
-                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
                           >
                             <option value="">None</option>
                             {connectionChains.map((chain) => (
@@ -934,11 +934,11 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                           </select>
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-400 mb-1">Proxy Chain</label>
+                          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Proxy Chain</label>
                           <select
                             value={connection.proxyChainId || ""}
                             onChange={(e) => updateProxyChain(connection.id, e.target.value)}
-                            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm"
+                            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
                           >
                             <option value="">None</option>
                             {proxyChains.map((chain) => (
@@ -952,7 +952,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({ isOpen, onClose 
                     </div>
                   ))}
                   {connectionOptions.length === 0 && (
-                    <div className="text-sm text-gray-400">No connections available.</div>
+                    <div className="text-sm text-[var(--color-textSecondary)]">No connections available.</div>
                   )}
                 </div>
               </div>

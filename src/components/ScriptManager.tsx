@@ -692,7 +692,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
           {/* New script button */}
           <button
             onClick={handleNewScript}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] rounded-lg transition-colors"
           >
             <Plus size={14} />
             {t('scriptManager.newScript', 'New Script')}
@@ -1002,7 +1002,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
                   <p className="text-sm mt-1">{t('scriptManager.selectScriptHint', 'Choose a script from the list to view or edit')}</p>
                   <button
                     onClick={handleNewScript}
-                    className="inline-flex items-center gap-2 px-4 py-2 mt-4 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 mt-4 text-sm bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] rounded-lg transition-colors"
                   >
                     <Plus size={14} />
                     {t('scriptManager.createNew', 'Create New Script')}
@@ -1023,7 +1023,7 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
                 <button
                   onClick={handleSaveScript}
                   disabled={!editName.trim() || !editScript.trim()}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
                 >
                   <Save size={14} />
                   {t('common.save', 'Save')}

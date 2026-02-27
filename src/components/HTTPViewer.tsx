@@ -263,10 +263,10 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
 
   if (status === 'error') {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-gray-900 text-white p-8">
+      <div className="flex flex-col items-center justify-center h-full bg-[var(--color-background)] text-[var(--color-text)] p-8">
         <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
         <h2 className="text-xl font-semibold mb-2">Connection Failed</h2>
-        <p className="text-gray-400 mb-4 text-center max-w-md">{error}</p>
+        <p className="text-[var(--color-textSecondary)] mb-4 text-center max-w-md">{error}</p>
         <button
           onClick={initProxy}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center gap-2"
@@ -280,24 +280,24 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
 
   if (status === 'connecting') {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-gray-900 text-white">
+      <div className="flex flex-col items-center justify-center h-full bg-[var(--color-background)] text-[var(--color-text)]">
         <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
         <h2 className="text-lg font-medium">Connecting...</h2>
-        <p className="text-gray-400 text-sm mt-2">{buildTargetUrl()}</p>
+        <p className="text-[var(--color-textSecondary)] text-sm mt-2">{buildTargetUrl()}</p>
       </div>
     );
   }
 
   return (
-    <div className={`flex flex-col h-full bg-gray-900 ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+    <div className={`flex flex-col h-full bg-[var(--color-background)] ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
       {/* Navigation Bar */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 border-b border-gray-700">
+      <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surface)] border-b border-[var(--color-border)]">
         {/* Navigation Buttons */}
         <div className="flex items-center gap-1">
           <button
             onClick={goBack}
             disabled={historyIndex <= 0}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded disabled:opacity-50 disabled:cursor-not-allowed"
             title="Back"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -305,21 +305,21 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
           <button
             onClick={goForward}
             disabled={historyIndex >= history.length - 1}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded disabled:opacity-50 disabled:cursor-not-allowed"
             title="Forward"
           >
             <ArrowRight className="w-4 h-4" />
           </button>
           <button
             onClick={refresh}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded"
             title="Refresh"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
           <button
             onClick={goHome}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded"
             title="Home"
           >
             <Home className="w-4 h-4" />
@@ -327,13 +327,13 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
         </div>
 
         {/* URL Bar */}
-        <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-gray-700/50 border border-gray-600 rounded-lg">
+        <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-[var(--color-border)]/50 border border-[var(--color-border)] rounded-lg">
           {isSecure ? (
             <Lock className="w-4 h-4 text-green-500 flex-shrink-0" />
           ) : (
             <Unlock className="w-4 h-4 text-yellow-500 flex-shrink-0" />
           )}
-          <span className="text-gray-300 text-sm truncate flex-1">{currentUrl}</span>
+          <span className="text-[var(--color-textSecondary)] text-sm truncate flex-1">{currentUrl}</span>
           {resolveCredentials() && (
             <span className="flex items-center gap-1 text-xs text-blue-400 flex-shrink-0">
               <Shield className="w-3 h-3" />
@@ -346,7 +346,7 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
         <div className="flex items-center gap-1">
           <button
             onClick={openExternal}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded"
             title="Open in Browser"
           >
             <ExternalLink className="w-4 h-4" />
@@ -356,12 +356,12 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
             <button
               type="button"
               onClick={() => setShowTotpPanel(!showTotpPanel)}
-              className={`p-1.5 rounded relative ${showTotpPanel ? 'text-blue-400 bg-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+              className={`p-1.5 rounded relative ${showTotpPanel ? 'text-blue-400 bg-blue-600/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`}
               title="2FA Codes"
             >
               <Shield className="w-4 h-4" />
               {totpConfigs.length > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gray-500 text-[var(--color-text)] text-[8px] font-bold rounded-full flex items-center justify-center">
                   {totpConfigs.length}
                 </span>
               )}
@@ -381,14 +381,14 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
           </div>
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className={`p-1.5 rounded ${showSettings ? 'text-blue-400 bg-blue-600/20' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+            className={`p-1.5 rounded ${showSettings ? 'text-blue-400 bg-blue-600/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`}
             title="Settings"
           >
             <Settings className="w-4 h-4" />
           </button>
           <button
             onClick={toggleFullscreen}
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded"
             title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
@@ -398,32 +398,32 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
 
       {/* Settings Panel */}
       {showSettings && (
-        <div className="px-4 py-3 bg-gray-800/80 border-b border-gray-700">
+        <div className="px-4 py-3 bg-[var(--color-surface)]/80 border-b border-[var(--color-border)]">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-white">Connection Settings</h3>
+            <h3 className="text-sm font-medium text-[var(--color-text)]">Connection Settings</h3>
             <button
               onClick={() => setShowSettings(false)}
-              className="p-1 text-gray-400 hover:text-white"
+              className="p-1 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <span className="text-gray-400">Target URL:</span>
-              <p className="text-white truncate">{buildTargetUrl()}</p>
+              <span className="text-[var(--color-textSecondary)]">Target URL:</span>
+              <p className="text-[var(--color-text)] truncate">{buildTargetUrl()}</p>
             </div>
             <div>
-              <span className="text-gray-400">Proxy Session:</span>
-              <p className="text-white font-mono text-xs truncate">{proxySessionId || 'Direct'}</p>
+              <span className="text-[var(--color-textSecondary)]">Proxy Session:</span>
+              <p className="text-[var(--color-text)] font-mono text-xs truncate">{proxySessionId || 'Direct'}</p>
             </div>
             <div>
-              <span className="text-gray-400">Authentication:</span>
-              <p className="text-white">{resolveCredentials() ? 'Basic Auth' : 'None'}</p>
+              <span className="text-[var(--color-textSecondary)]">Authentication:</span>
+              <p className="text-[var(--color-text)]">{resolveCredentials() ? 'Basic Auth' : 'None'}</p>
             </div>
             <div>
-              <span className="text-gray-400">Protocol:</span>
-              <p className="text-white">{session.protocol.toUpperCase()}</p>
+              <span className="text-[var(--color-textSecondary)]">Protocol:</span>
+              <p className="text-[var(--color-text)]">{session.protocol.toUpperCase()}</p>
             </div>
           </div>
         </div>
@@ -444,7 +444,7 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
       </div>
 
       {/* Status Bar */}
-      <div className="flex items-center justify-between px-3 py-1 bg-gray-800 border-t border-gray-700 text-xs text-gray-400">
+      <div className="flex items-center justify-between px-3 py-1 bg-[var(--color-surface)] border-t border-[var(--color-border)] text-xs text-[var(--color-textSecondary)]">
         <div className="flex items-center gap-2">
           <Globe className="w-3 h-3" />
           <span>{connection?.name || session.hostname}</span>
