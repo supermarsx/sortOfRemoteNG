@@ -1025,6 +1025,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 defaultDigits={settings.totpDigits}
                 defaultPeriod={settings.totpPeriod}
                 defaultAlgorithm={settings.totpAlgorithm}
+                anchorRef={totpBtnRef}
               />
             )}
           </div>

@@ -1265,7 +1265,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
         color: "var(--color-text)",
       }}
     >
-      <div className="app-bar border-b relative z-20">
+      <div className="app-bar border-b relative z-20 overflow-visible">
         <div className="flex items-start justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold">
@@ -1377,6 +1377,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
                   defaultDigits={settings.totpDigits}
                   defaultPeriod={settings.totpPeriod}
                   defaultAlgorithm={settings.totpAlgorithm}
+                  anchorRef={totpBtnRef}
                 />
               )}
             </div>

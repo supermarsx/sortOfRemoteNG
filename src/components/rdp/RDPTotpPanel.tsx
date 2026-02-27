@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X, Plus, Trash2, Copy, Shield, Check, Eye, EyeOff,
   Pencil, Download, Upload, Keyboard, KeyRound, QrCode,
@@ -15,6 +16,10 @@ interface RDPTotpPanelProps {
   defaultDigits?: number;
   defaultPeriod?: number;
   defaultAlgorithm?: string;
+  /** Ref to the trigger button's wrapper — when provided the panel renders via
+   *  a portal at document.body with fixed positioning so it escapes any
+   *  overflow-hidden ancestors. */
+  anchorRef?: React.RefObject<HTMLElement | null>;
 }
 
 // ── Inline QR display ──────────────────────────────────────────────
@@ -147,6 +152,7 @@ export default function RDPTotpPanel({
   defaultDigits = 6,
   defaultPeriod = 30,
   defaultAlgorithm = 'sha1',
+  anchorRef,
 }: RDPTotpPanelProps) {
   // Add form state
   const [showAdd, setShowAdd] = useState(false);
@@ -168,9 +174,23 @@ export default function RDPTotpPanel({
   const [qrConfig, setQrConfig] = useState<TOTPConfig | null>(null);
   const [showImport, setShowImport] = useState(false);
 
+  const panelRef = useRef<HTMLDivElement>(null);
   const totpService = useMemo(() => new TOTPService(), []);
   const configsRef = useRef(configs);
   configsRef.current = configs;
+
+  // Click-outside handler for portal mode
+  useEffect(() => {
+    if (!anchorRef) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target)) return;
+      if (anchorRef.current?.contains(target)) return;
+      onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [anchorRef, onClose]);
 
   const refreshCodes = useCallback(() => {
     const c: Record<string, string> = {};
@@ -301,8 +321,22 @@ export default function RDPTotpPanel({
     } catch { /* handled in ImportModal */ }
   };
 
-  return (
-    <div className="absolute right-0 top-full mt-1 z-50 w-96 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden">
+  // When anchorRef is provided, compute fixed position and render via portal
+  const fixedStyle = useMemo<React.CSSProperties | undefined>(() => {
+    if (!anchorRef?.current) return undefined;
+    const rect = anchorRef.current.getBoundingClientRect();
+    const panelWidth = 384; // w-96 = 24rem = 384px
+    let left = rect.right - panelWidth;
+    if (left < 4) left = 4;
+    return { position: 'fixed' as const, top: rect.bottom + 4, left, zIndex: 9999 };
+  }, [anchorRef]);
+
+  const panel = (
+    <div
+      ref={panelRef}
+      className={`${anchorRef ? '' : 'absolute right-0 top-full mt-1 z-50 '}w-96 bg-gray-800 border border-gray-600 rounded-lg shadow-xl overflow-hidden`}
+      style={fixedStyle}
+    >
       {/* ── Header ────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700 bg-gray-800/80">
         <div className="flex items-center space-x-2">
@@ -614,4 +648,9 @@ export default function RDPTotpPanel({
       </div>
     </div>
   );
+
+  if (anchorRef) {
+    return createPortal(panel, document.body);
+  }
+  return panel;
 }
