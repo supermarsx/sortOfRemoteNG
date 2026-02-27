@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PasswordInput } from './ui/PasswordInput';
 import { Clock, Play, Trash2, X, Zap } from 'lucide-react';
 import { QuickConnectHistoryEntry } from '../types/settings';
+import { Modal } from './ui/Modal';
 
 interface QuickConnectProps {
   isOpen: boolean;
@@ -110,20 +111,6 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
     setHttpVerifySsl(true);
   };
 
-  // Handle ESC key to close dialog
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
-
   useEffect(() => {
     if (!isOpen) {
       setShowHistory(false);
@@ -144,14 +131,15 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      data-testid="quick-connect-modal"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      closeOnBackdrop
+      closeOnEscape
+      dataTestId="quick-connect-modal"
+      backdropClassName="bg-black/50"
+      panelClassName="max-w-md mx-4 overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-xl"
     >
-      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden flex flex-col border border-[var(--color-border)]">
         <form onSubmit={handleSubmit} className="flex flex-col flex-1" role="form">
           <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between bg-[var(--color-surface)]">
             <div className="flex items-center space-x-3">
@@ -480,7 +468,6 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           )}
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 };

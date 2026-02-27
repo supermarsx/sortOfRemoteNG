@@ -19,6 +19,7 @@ import { useConnections } from "../contexts/useConnections";
 import { generateId } from "../utils/id";
 import { discoveredHostsToCsv } from "../utils/discoveredHostsCsv";
 import { invoke } from "@tauri-apps/api/core";
+import { Modal } from "./ui/Modal";
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
@@ -174,13 +175,15 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      closeOnBackdrop
+      closeOnEscape
+      backdropClassName="bg-black/50"
+      panelClassName="max-w-6xl mx-4 max-h-[90vh] bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-xl"
     >
-      <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-6xl mx-4 max-h-[90vh] overflow-hidden border border-[var(--color-border)]">
+      <div className="overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-purple-500/20 rounded-lg">
@@ -490,6 +493,6 @@ export const NetworkDiscovery: React.FC<NetworkDiscoveryProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };
