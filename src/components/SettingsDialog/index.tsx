@@ -23,6 +23,9 @@ import {
   Globe,
   MonitorDot,
   Cpu,
+  Circle,
+  ListVideo,
+  Search,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { GlobalSettings, ProxyConfig, defaultSSHTerminalConfig } from '../../types/settings';
@@ -44,6 +47,10 @@ import { TrustVerificationSettings } from './sections/TrustVerificationSettings'
 import WebBrowserSettings from './sections/WebBrowserSettings';
 import RdpDefaultSettings from './sections/RdpDefaultSettings';
 import BackendSettings from './sections/BackendSettings';
+import RecordingSettings from './sections/RecordingSettings';
+import MacroSettings from './sections/MacroSettings';
+import { useSettingsSearch } from './useSettingsSearch';
+import { useSettingHighlight } from './useSettingHighlight';
 import { SettingsManager } from '../../utils/settingsManager';
 import { ThemeManager } from '../../utils/themeManager';
 import { loadLanguage } from '../../i18n';
@@ -227,6 +234,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
   const [activeTab, setActiveTab] = useState('general');
   const [settings, setSettings] = useState<GlobalSettings | null>(null);
   const [isBenchmarking, setIsBenchmarking] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [highlightKey, setHighlightKey] = useState<string | null>(null);
+  const searchResult = useSettingsSearch(searchQuery);
+  useSettingHighlight(highlightKey);
   const { toast } = useToastContext();
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const settingsManager = SettingsManager.getInstance();
@@ -477,6 +488,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
     { id: 'cloudSync', label: 'Cloud Sync', icon: CloudCog },
     { id: 'proxy', label: 'Proxy', icon: Wifi },
     { id: 'sshTerminal', label: t('settings.sshTerminal.tab', 'SSH Terminal'), icon: Terminal },
+    { id: 'recording', label: 'Recording', icon: Circle },
+    { id: 'macros', label: 'Macros', icon: ListVideo },
     { id: 'webBrowser', label: 'Web Browser', icon: Globe },
     { id: 'backend', label: 'Backend', icon: Cpu },
     { id: 'api', label: 'API Server', icon: Server },
@@ -531,25 +544,68 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
         <div className="flex flex-1 min-h-0">
           {/* Sidebar */}
-          <div className="w-64 bg-gray-900 border-r border-gray-700">
-            <div className="p-4">
-              {tabs.map(tab => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-left transition-colors ${
-                      activeTab === tab.id
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-300 hover:bg-gray-700'
-                    }`}
-                  >
-                    <Icon size={16} />
-                    <span>{tab.label}</span>
+          <div className="w-64 bg-gray-900 border-r border-gray-700 flex flex-col">
+            {/* Search */}
+            <div className="p-3 border-b border-gray-700/50">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-800 border border-gray-600/50 rounded-lg">
+                <Search size={14} className="text-gray-400 flex-shrink-0" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setHighlightKey(null); }}
+                  placeholder="Search settings..."
+                  className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 outline-none"
+                />
+                {searchQuery && (
+                  <button onClick={() => { setSearchQuery(''); setHighlightKey(null); }} className="text-gray-400 hover:text-white">
+                    <X size={12} />
                   </button>
+                )}
+              </div>
+            </div>
+            {/* Tab list */}
+            <div className="flex-1 overflow-y-auto p-3">
+              {(searchQuery ? tabs.filter(t => searchResult.matchedSections.has(t.id)) : tabs).map(tab => {
+                const Icon = tab.icon;
+                const sectionResults = searchResult.resultsBySection.get(tab.id);
+                return (
+                  <div key={tab.id}>
+                    <button
+                      onClick={() => { setActiveTab(tab.id); setHighlightKey(null); }}
+                      className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-left transition-colors ${
+                        activeTab === tab.id
+                          ? 'bg-blue-600 text-white'
+                          : 'text-gray-300 hover:bg-gray-700'
+                      }`}
+                    >
+                      <Icon size={16} />
+                      <span className="text-sm">{tab.label}</span>
+                      {searchQuery && sectionResults && (
+                        <span className="ml-auto text-[10px] bg-blue-500/30 text-blue-300 px-1.5 py-0.5 rounded-full">
+                          {sectionResults.length}
+                        </span>
+                      )}
+                    </button>
+                    {/* Show matched settings under active section when searching */}
+                    {searchQuery && sectionResults && activeTab === tab.id && (
+                      <div className="ml-7 mt-0.5 mb-1 space-y-0.5">
+                        {sectionResults.map(entry => (
+                          <button
+                            key={entry.key}
+                            onClick={() => { setActiveTab(tab.id); setHighlightKey(entry.key); }}
+                            className="w-full text-left px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-700/50 rounded truncate"
+                          >
+                            {entry.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
+              {searchQuery && searchResult.matchedSections.size === 0 && (
+                <div className="p-4 text-center text-xs text-gray-500">No settings match "{searchQuery}"</div>
+              )}
             </div>
           </div>
 
@@ -614,6 +670,14 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ isOpen, onClose 
 
               {activeTab === 'sshTerminal' && (
                 <SSHTerminalSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'recording' && (
+                <RecordingSettings settings={settings} updateSettings={updateSettings} />
+              )}
+
+              {activeTab === 'macros' && (
+                <MacroSettings settings={settings} updateSettings={updateSettings} />
               )}
 
               {activeTab === 'webBrowser' && (

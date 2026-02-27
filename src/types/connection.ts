@@ -160,7 +160,10 @@ export interface Connection {
 
   // SSH Terminal Config Override (inherits from global settings)
   sshTerminalConfigOverride?: Partial<SSHTerminalConfig>;
-  
+
+  // Recording Config Override (per-connection)
+  recordingConfigOverride?: Partial<import('../types/settings').RecordingConfig>;
+
   // SSH Connection Config Override (protocol-level settings)
   sshConnectionConfigOverride?: Partial<SSHConnectionConfig>;
 

@@ -1261,8 +1261,7 @@ export const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) =
     try {
       await terminalRecorder.startRecording(
         sshSessionId.current,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (settings as any).recording?.recordInput ?? false,
+        settings.recording?.recordInput ?? false,
         cols,
         rows,
       );

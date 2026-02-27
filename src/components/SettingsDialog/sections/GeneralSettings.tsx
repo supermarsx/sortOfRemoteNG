@@ -42,7 +42,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
         </h4>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
+          <div data-setting-key="language" className="space-y-2">
             <label className="flex items-center gap-2 text-sm text-gray-400">
               <Globe className="w-4 h-4" />
               {t("settings.language")}
@@ -87,7 +87,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
         </h4>
 
         <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
-          <label className="flex items-center space-x-3 cursor-pointer group">
+          <label data-setting-key="autoSaveEnabled" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.autoSaveEnabled}
@@ -100,7 +100,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             <span className="text-gray-300 group-hover:text-white">Enable autosave</span>
           </label>
 
-          <div className={`space-y-2 ${!settings.autoSaveEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div data-setting-key="autoSaveIntervalMinutes" className={`space-y-2 ${!settings.autoSaveEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
             <label className="flex items-center gap-2 text-sm text-gray-400">
               <Clock className="w-4 h-4" />
               Autosave Interval (minutes)
@@ -127,7 +127,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
         </h4>
 
         <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
-          <label className="flex items-center space-x-3 cursor-pointer group">
+          <label data-setting-key="warnOnClose" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.warnOnClose}
@@ -138,7 +138,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             <span className="text-gray-300 group-hover:text-white">{t("connections.warnOnClose")}</span>
           </label>
 
-          <label className="flex items-center space-x-3 cursor-pointer group">
+          <label data-setting-key="warnOnDetachClose" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.warnOnDetachClose}
@@ -153,7 +153,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
             </span>
           </label>
 
-          <label className="flex items-center space-x-3 cursor-pointer group">
+          <label data-setting-key="warnOnExit" className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.warnOnExit}
@@ -192,7 +192,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
         <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <label className="flex items-center space-x-3 cursor-pointer group">
+            <label data-setting-key="quickConnectHistoryEnabled" className="flex items-center space-x-3 cursor-pointer group">
               <input
                 type="checkbox"
                 checked={settings.quickConnectHistoryEnabled}

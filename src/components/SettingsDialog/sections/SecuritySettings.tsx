@@ -131,7 +131,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
         <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-4">
           {/* Compact Algorithm Selection */}
-          <div className="flex items-center gap-3">
+          <div data-setting-key="encryptionAlgorithm" className="flex items-center gap-3">
             <Lock className="w-5 h-5 text-blue-400 flex-shrink-0" />
             <div className="flex-1">
               <select
@@ -972,7 +972,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           </p>
         </div>
 
-        <label className="flex items-center space-x-3 cursor-pointer group">
+        <label data-setting-key="totpEnabled" className="flex items-center space-x-3 cursor-pointer group">
           <input
             type="checkbox"
             checked={settings.totpEnabled}
@@ -984,7 +984,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
           </span>
         </label>
 
-        <div>
+        <div data-setting-key="totpIssuer">
           <label className="block text-sm text-gray-400 mb-1">Default Issuer</label>
           <input
             type="text"
@@ -996,7 +996,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
         </div>
 
         <div className="grid grid-cols-3 gap-3">
-          <div>
+          <div data-setting-key="totpDigits">
             <label className="block text-sm text-gray-400 mb-1">Default Digits</label>
             <select
               value={settings.totpDigits}
@@ -1008,7 +1008,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
             </select>
           </div>
 
-          <div>
+          <div data-setting-key="totpPeriod">
             <label className="block text-sm text-gray-400 mb-1">Default Period</label>
             <select
               value={settings.totpPeriod}
@@ -1021,7 +1021,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
             </select>
           </div>
 
-          <div>
+          <div data-setting-key="totpAlgorithm">
             <label className="block text-sm text-gray-400 mb-1">Default Algorithm</label>
             <select
               value={settings.totpAlgorithm}
