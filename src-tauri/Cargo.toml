@@ -11,6 +11,7 @@ members = [
   "crates/sorng-cloud",
   "crates/sorng-remote-mgmt",
   "crates/sorng-gpo",
+  "crates/sorng-ard",
 ]
 
 [workspace.dependencies]
@@ -57,6 +58,7 @@ sorng-vpn = { path = "crates/sorng-vpn" }
 sorng-cloud = { path = "crates/sorng-cloud" }
 sorng-remote-mgmt = { path = "crates/sorng-remote-mgmt" }
 sorng-gpo = { path = "crates/sorng-gpo" }
+sorng-ard = { path = "crates/sorng-ard" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
