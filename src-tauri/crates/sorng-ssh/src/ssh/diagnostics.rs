@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::io::Read;
 use ssh2::Session;
 
-use crate::diagnostics::{self, DiagnosticReport, DiagnosticStep};
+use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 use super::types::*;
 
 /// Retrieve the host key information for an active SSH session.

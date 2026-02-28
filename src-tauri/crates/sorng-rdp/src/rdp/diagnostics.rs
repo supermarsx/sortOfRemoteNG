@@ -9,12 +9,12 @@ use super::network::{BlockingNetworkClient, extract_cert_fingerprint, tls_upgrad
 use super::settings::ResolvedSettings;
 use super::RdpServiceState;
 
-use crate::diagnostics::{self, DiagnosticReport, DiagnosticStep};
+use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 
 use super::settings::RdpSettingsPayload;
 
 // Re-export shared types so the frontend API stays unchanged.
-pub use crate::diagnostics::{DiagnosticStep as DiagStep, DiagnosticReport as DiagReport};
+pub use sorng_core::diagnostics::{DiagnosticStep as DiagStep, DiagnosticReport as DiagReport};
 
 /// Run a deep diagnostic probe against an RDP server.
 /// This performs each connection phase independently and reports

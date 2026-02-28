@@ -1354,7 +1354,7 @@ pub async fn get_tls_certificate_info(
 
 // ─── Deep HTTP/HTTPS Connection Diagnostics ─────────────────────────────────
 
-use crate::diagnostics::{self, DiagnosticReport, DiagnosticStep};
+use sorng_core::diagnostics::{self, DiagnosticReport, DiagnosticStep};
 
 /// Run a deep diagnostic probe against an HTTP/HTTPS endpoint.
 ///

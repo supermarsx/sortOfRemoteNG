@@ -1,0 +1,36 @@
+[package]
+name = "sorng-auth"
+version = "0.1.0"
+edition = "2021"
+description = "Authentication, security, and credential management"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.9.5", features = ["devtools"] }
+bcrypt = "0.15"
+jsonwebtoken = "9"
+totp-rs = "5.4"
+aes-gcm = "0.10.3"
+rand = "0.8"
+base64 = "0.21"
+chrono = { version = "0.4", features = ["serde"] }
+x509-parser = "0.15"
+rustls-pemfile = "1.0"
+image = "0.24"
+qrcode = "0.13"
+reqwest = { version = "0.11", features = ["json", "cookies", "blocking"] }
+oauth2 = "4.4"
+url = "2.5"
+sha2 = "0.10"
+regex = "1.10"
+log = "0.4"
+uuid = { version = "1.0", features = ["v4"] }
+data-encoding = "2.5"
+hex = "0.4"
+serde_urlencoded = "0.7"
+hostname = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Security_Credentials", "Win32_Foundation", "Win32_System_Registry"] }

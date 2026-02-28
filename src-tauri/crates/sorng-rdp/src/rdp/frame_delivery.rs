@@ -9,7 +9,7 @@ use tauri::ipc::{Channel, InvokeResponseBody};
 
 use super::frame_store::SharedFrameStore;
 use super::stats::RdpSessionStats;
-use crate::native_renderer;
+use sorng_core::native_renderer;
 
 use std::sync::atomic::Ordering;
 

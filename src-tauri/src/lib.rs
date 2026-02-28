@@ -6,95 +6,101 @@
 //!
 //! ## Architecture
 //!
-//! The application is structured around service-based architecture where each connectivity
-//! protocol is handled by a dedicated service. Services are managed through Tauri's state
-//! management system and exposed to the frontend via Tauri commands.
+//! The application is structured as a Cargo workspace of focused crates:
 //!
-//! ## Services
+//! - **sorng-core** — Shared types and diagnostics infrastructure
+//! - **sorng-auth** — Authentication, security, and credential management
+//! - **sorng-storage** — Encrypted data persistence, backups, and GPO
+//! - **sorng-network** — Network utilities, Wake-on-LAN, and QR codes
+//! - **sorng-ssh** — SSH, SSH3, and script execution
+//! - **sorng-rdp** — RDP connectivity and graphics pipeline
+//! - **sorng-protocols** — VNC, Telnet, Serial, FTP, DB, HTTP, and more
+//! - **sorng-vpn** — VPN services, proxy, and connection chaining
+//! - **sorng-cloud** — Cloud provider integrations
+//! - **sorng-remote-mgmt** — Remote management tools (WMI, RPC, AnyDesk, etc.)
 //!
-//! - **AuthService**: User authentication and authorization
-//! - **SecureStorage**: Encrypted data persistence
-//! - **SshService**: SSH connection management
-//! - **RdpService**: RDP connection management
-//! - **VncService**: VNC connection management
-//! - **DbService**: Database connectivity (MySQL, PostgreSQL, etc.)
-//! - **FtpService**: FTP/SFTP file transfer
-//! - **NetworkService**: Network utilities (ping, scanning)
-//! - **SecurityService**: Security utilities (TOTP, encryption)
-//! - **WolService**: Wake-on-LAN functionality
-//! - **ScriptService**: User script execution
-//! - **OpenVPNService**: OpenVPN connection management
-//! - **ProxyService**: Proxy server management and chaining
-//! - **WireGuardService**: WireGuard VPN management
-//! - **ZeroTierService**: ZeroTier network management
-//! - **TailscaleService**: Tailscale VPN management
-//! - **ChainingService**: Connection chaining and routing
-//!
-//! ## Features
-//!
-//! - Multi-protocol remote connectivity
-//! - Secure credential storage with encryption
-//! - Connection chaining and proxy routing
-//! - User authentication and access control
-//! - Network discovery and scanning
-//! - File transfer capabilities
-//! - Script execution and automation
+//! This crate (the app) is the thin Tauri integration layer that wires
+//! everything together through re-exports and the command handler.
 
-pub mod auth;
-pub mod storage;
-pub mod ssh;
-pub mod rdp;
-pub mod native_renderer;
-pub mod vnc;
-pub mod db;
-pub mod ftp;
-pub mod network;
-pub mod security;
-pub mod wol;
-pub mod script;
-pub mod openvpn;
-pub mod proxy;
-pub mod wireguard;
-pub mod zerotier;
-pub mod tailscale;
-pub mod chaining;
-pub mod qr;
-pub mod anydesk;
+// ── Re-export crate modules under their original names ──────────────
+// This preserves path compatibility for tauri::generate_handler![]
+
+// Core
+pub use sorng_core::diagnostics;
+pub use sorng_core::native_renderer;
+
+// Auth
+pub use sorng_auth::auth;
+pub use sorng_auth::security;
+pub use sorng_auth::cert_auth;
+pub use sorng_auth::two_factor;
+pub use sorng_auth::bearer_auth;
+pub use sorng_auth::passkey;
+pub use sorng_auth::login_detection;
+pub use sorng_auth::auto_lock;
+
+// Storage
+pub use sorng_storage::storage;
+pub use sorng_storage::backup;
+pub use sorng_storage::gpo;
+
+// Network
+pub use sorng_network::network;
+pub use sorng_network::wol;
+pub use sorng_network::qr;
+
+// SSH
+pub use sorng_ssh::ssh;
+pub use sorng_ssh::ssh3;
+pub use sorng_ssh::script;
+
+// RDP
+pub use sorng_rdp::rdp;
+pub use sorng_rdp::gfx;
+pub use sorng_rdp::h264;
+
+// Protocols
+pub use sorng_protocols::vnc;
+pub use sorng_protocols::telnet;
+pub use sorng_protocols::serial;
+pub use sorng_protocols::rlogin;
+pub use sorng_protocols::raw_socket;
+pub use sorng_protocols::ftp;
+pub use sorng_protocols::db;
+pub use sorng_protocols::http;
+
+// VPN
+pub use sorng_vpn::openvpn;
+pub use sorng_vpn::wireguard;
+pub use sorng_vpn::zerotier;
+pub use sorng_vpn::tailscale;
+pub use sorng_vpn::proxy;
+pub use sorng_vpn::chaining;
+
+// Cloud
+pub use sorng_cloud::aws;
+pub use sorng_cloud::gcp;
+pub use sorng_cloud::azure;
+pub use sorng_cloud::ibm;
+pub use sorng_cloud::digital_ocean;
+pub use sorng_cloud::heroku;
+pub use sorng_cloud::scaleway;
+pub use sorng_cloud::linode;
+pub use sorng_cloud::ovh;
+pub use sorng_cloud::vercel;
+pub use sorng_cloud::cloudflare;
+
+// Remote Management
+pub use sorng_remote_mgmt::wmi;
+pub use sorng_remote_mgmt::rpc;
+pub use sorng_remote_mgmt::meshcentral;
+pub use sorng_remote_mgmt::agent;
+pub use sorng_remote_mgmt::commander;
+pub use sorng_remote_mgmt::anydesk;
+pub use sorng_remote_mgmt::rustdesk;
+
+// App-level module: REST API gateway (stays in the main crate)
 pub mod api;
-pub mod rustdesk;
-pub mod wmi;
-pub mod rpc;
-pub mod meshcentral;
-pub mod agent;
-pub mod commander;
-pub mod aws;
-pub mod vercel;
-pub mod cloudflare;
-pub mod cert_auth;
-pub mod two_factor;
-pub mod bearer_auth;
-pub mod auto_lock;
-pub mod gpo;
-pub mod login_detection;
-pub mod telnet;
-pub mod serial;
-pub mod rlogin;
-pub mod backup;
-pub mod raw_socket;
-pub mod gcp;
-pub mod azure;
-pub mod ibm;
-pub mod digital_ocean;
-pub mod heroku;
-pub mod scaleway;
-pub mod linode;
-pub mod ovh;
-pub mod http;
-pub mod passkey;
-pub mod ssh3;
-pub mod diagnostics;
-pub mod h264;
-pub mod gfx;
 
 #[cfg(test)]
 mod tests {

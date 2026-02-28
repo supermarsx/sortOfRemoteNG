@@ -22,7 +22,7 @@ use super::network::{BlockingNetworkClient, extract_cert_fingerprint, tls_upgrad
 use super::settings::{build_bitmap_codecs, ResolvedSettings};
 use super::stats::RdpSessionStats;
 use super::types::{RdpCommand, RdpPointerEvent, RdpStatusEvent};
-use crate::native_renderer::{self, FrameCompositor, RenderBackend};
+use sorng_core::native_renderer::{self, FrameCompositor, RenderBackend};
 
 // ---- Deactivation-Reactivation Sequence handler ----
 

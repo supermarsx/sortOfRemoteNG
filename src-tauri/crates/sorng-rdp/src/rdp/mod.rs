@@ -26,7 +26,7 @@ pub use types::{
 pub use settings::RdpSettingsPayload;
 
 // Re-export shared diagnostics types so the frontend API stays unchanged.
-pub use crate::diagnostics::{DiagnosticStep, DiagnosticReport};
+pub use sorng_core::diagnostics::{DiagnosticStep, DiagnosticReport};
 
 // ---- Re-exports: all Tauri commands + hidden __cmd__ symbols ----
 // Wildcard re-export is needed because #[tauri::command] generates
