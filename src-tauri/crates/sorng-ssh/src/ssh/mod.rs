@@ -29,17 +29,17 @@ lazy_static::lazy_static! {
 
 // Global storage for active FTP tunnels
 lazy_static::lazy_static! {
-    pub(crate) static ref FTP_TUNNELS: StdMutex<HashMap<String, types::FtpTunnelStatus>> = StdMutex::new(HashMap::new());
+    pub static ref FTP_TUNNELS: StdMutex<HashMap<String, types::FtpTunnelStatus>> = StdMutex::new(HashMap::new());
 }
 
 // Global storage for active RDP tunnels
 lazy_static::lazy_static! {
-    pub(crate) static ref RDP_TUNNELS: StdMutex<HashMap<String, types::RdpTunnelStatus>> = StdMutex::new(HashMap::new());
+    pub static ref RDP_TUNNELS: StdMutex<HashMap<String, types::RdpTunnelStatus>> = StdMutex::new(HashMap::new());
 }
 
 // Global storage for active VNC tunnels
 lazy_static::lazy_static! {
-    pub(crate) static ref VNC_TUNNELS: StdMutex<HashMap<String, types::VncTunnelStatus>> = StdMutex::new(HashMap::new());
+    pub static ref VNC_TUNNELS: StdMutex<HashMap<String, types::VncTunnelStatus>> = StdMutex::new(HashMap::new());
 }
 
 // Re-export everything so that `use crate::ssh::*` still works.
@@ -51,7 +51,7 @@ pub use types::*;
 // Service struct and helpers
 pub use service::SshService;
 #[allow(unused_imports)]
-pub(crate) use service::generate_totp_code;
+pub use service::generate_totp_code;
 
 // All tauri commands (glob re-exports include __cmd__ items)
 pub use commands::*;

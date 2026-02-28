@@ -17,7 +17,7 @@ use super::automation::process_automation_output;
 use super::{TERMINAL_BUFFERS, MAX_BUFFER_SIZE};
 
 /// Generate a TOTP code from a secret
-pub(crate) fn generate_totp_code(secret: &str) -> Result<String, String> {
+pub fn generate_totp_code(secret: &str) -> Result<String, String> {
     use totp_rs::{Algorithm, TOTP};
 
     // Try to decode the secret (it might be base32 encoded)

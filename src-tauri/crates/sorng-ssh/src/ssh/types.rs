@@ -10,17 +10,17 @@ use super::service::SshService;
 // Default value helpers
 // ===============================
 
-pub(crate) fn default_true() -> bool { true }
-pub(crate) fn default_keepalive_probes() -> u32 { 2 }
+pub fn default_true() -> bool { true }
+pub fn default_keepalive_probes() -> u32 { 2 }
 pub(crate) fn default_ip_protocol() -> String { "auto".to_string() }
 pub(crate) fn default_compression_level() -> u32 { 6 }
 pub(crate) fn default_ssh_version() -> String { "auto".to_string() }
 pub(crate) fn default_proxy_timeout() -> u64 { 10000 }
 pub(crate) fn default_automation_timeout() -> u64 { 30000 }
-pub(crate) fn default_ftp_port() -> u16 { 21 }
+pub fn default_ftp_port() -> u16 { 21 }
 pub(crate) fn default_passive_port_count() -> u16 { 10 }
-pub(crate) fn default_rdp_port() -> u16 { 3389 }
-pub(crate) fn default_vnc_port() -> u16 { 5900 }
+pub fn default_rdp_port() -> u16 { 3389 }
+pub fn default_vnc_port() -> u16 { 5900 }
 
 // ===============================
 // SSH Connection Types
