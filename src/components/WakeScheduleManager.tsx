@@ -250,13 +250,11 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
               </div>
 
               <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  MAC Address
-                </label>
+                <label className="sor-form-label-xs">MAC Address</label>
                 <input
                   type="text"
                   placeholder="00:11:22:33:44:55"
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] font-mono text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="sor-form-input font-mono"
                   value={form.macAddress}
                   onChange={(e) =>
                     setForm({ ...form, macAddress: formatMac(e.target.value) })
@@ -265,12 +263,10 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
               </div>
 
               <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  Wake Time
-                </label>
+                <label className="sor-form-label-xs">Wake Time</label>
                 <input
                   type="datetime-local"
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="sor-form-input"
                   value={form.wakeTime}
                   onChange={(e) =>
                     setForm({ ...form, wakeTime: e.target.value })
@@ -280,13 +276,11 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                    Broadcast Address
-                  </label>
+                  <label className="sor-form-label-xs">Broadcast Address</label>
                   <input
                     type="text"
                     placeholder="255.255.255.255"
-                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="sor-form-input"
                     value={form.broadcastAddress ?? ""}
                     onChange={(e) =>
                       setForm({ ...form, broadcastAddress: e.target.value })
@@ -294,12 +288,10 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                    UDP Port
-                  </label>
+                  <label className="sor-form-label-xs">UDP Port</label>
                   <input
                     type="number"
-                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                    className="sor-form-input"
                     value={form.port}
                     onChange={(e) =>
                       setForm({
@@ -312,11 +304,9 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
               </div>
 
               <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  Recurrence
-                </label>
+                <label className="sor-form-label-xs">Recurrence</label>
                 <select
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  className="sor-form-select"
                   value={form.recurrence ?? ""}
                   onChange={(e) =>
                     setForm({

@@ -63,7 +63,12 @@ describe("WakeScheduleManager", () => {
     render(<WakeScheduleManager isOpen onClose={() => {}} />);
 
     fireEvent.click(await screen.findByText("New Schedule"));
-    fireEvent.change(screen.getByPlaceholderText("00:11:22:33:44:55"), {
+    const macInput = screen.getByPlaceholderText("00:11:22:33:44:55");
+    const recurrenceSelect = screen.getByRole("combobox");
+    expect(macInput.className).toContain("sor-form-input");
+    expect(recurrenceSelect.className).toContain("sor-form-select");
+
+    fireEvent.change(macInput, {
       target: { value: "AA:BB:CC:DD:EE:FF" },
     });
 

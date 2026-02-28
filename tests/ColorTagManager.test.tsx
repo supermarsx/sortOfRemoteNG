@@ -42,7 +42,13 @@ describe("ColorTagManager", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Add Tag/i }));
-    fireEvent.change(screen.getByPlaceholderText("Enter tag name"), {
+    const nameInput = screen.getByPlaceholderText("Enter tag name");
+    const globalCheckbox = screen.getByRole("checkbox");
+
+    expect(nameInput.className).toContain("sor-form-input");
+    expect(globalCheckbox.className).toContain("sor-form-checkbox");
+
+    fireEvent.change(nameInput, {
       target: { value: "Production" },
     });
 

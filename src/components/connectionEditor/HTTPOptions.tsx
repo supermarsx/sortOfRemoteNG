@@ -120,7 +120,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
           onChange={(e) =>
             setFormData({ ...formData, authType: e.target.value as any })
           }
-          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="sor-form-select"
         >
           <option value="basic">Basic Authentication</option>
           <option value="header">Custom Headers</option>
@@ -139,7 +139,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
               onChange={(e) =>
                 setFormData({ ...formData, basicAuthUsername: e.target.value })
               }
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="sor-form-input"
               placeholder="Username"
             />
           </div>
@@ -153,7 +153,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
               onChange={(e) =>
                 setFormData({ ...formData, basicAuthPassword: e.target.value })
               }
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="sor-form-input"
               placeholder="Password"
             />
           </div>
@@ -168,7 +168,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
               onChange={(e) =>
                 setFormData({ ...formData, basicAuthRealm: e.target.value })
               }
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="sor-form-input"
               placeholder="Authentication realm"
             />
           </div>
@@ -184,7 +184,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
               onChange={(e) =>
                 setFormData({ ...formData, httpVerifySsl: e.target.checked })
               }
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 focus:ring-blue-500"
+              className="sor-form-checkbox"
             />
             <span>Verify TLS certificates</span>
           </label>
@@ -233,7 +233,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
                         | "strict"),
               })
             }
-            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:ring-2 focus:ring-blue-500 text-sm"
+            className="sor-form-select text-sm"
           >
             <option value="">Use global default</option>
             <option value="tofu">Trust On First Use (TOFU)</option>
@@ -352,7 +352,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
                       },
                     })
                   }
-                  className="flex-1 px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                  className="sor-form-input flex-1"
                 />
                 <button
                   type="button"
@@ -531,7 +531,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
                       handleSaveBookmark();
                     }
                   }}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                   placeholder="e.g. Status Page"
                 />
               </div>
@@ -549,7 +549,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
                       handleSaveBookmark();
                     }
                   }}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                   placeholder="e.g. /status-log.asp"
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -609,7 +609,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
                       handleAddHeader();
                     }
                   }}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                   placeholder="e.g. Authorization"
                 />
               </div>
@@ -627,7 +627,7 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
                       handleAddHeader();
                     }
                   }}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                   placeholder="e.g. Bearer token123"
                 />
               </div>

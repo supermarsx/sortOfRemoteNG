@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { Key, Fingerprint, Trash2, Pencil } from 'lucide-react';
-import { readTextFile } from '@tauri-apps/plugin-fs';
-import { PasswordInput } from '../ui/PasswordInput';
-import { Connection } from '../../types/connection';
-import { SSHKeyManager } from '../SSHKeyManager';
-import { SSHTerminalOverrides } from './SSHTerminalOverrides';
-import { SSHConnectionOverrides } from './SSHConnectionOverrides';
+import React, { useState } from "react";
+import { Key, Fingerprint, Trash2, Pencil } from "lucide-react";
+import { readTextFile } from "@tauri-apps/plugin-fs";
+import { PasswordInput } from "../ui/PasswordInput";
+import { Connection } from "../../types/connection";
+import { SSHKeyManager } from "../SSHKeyManager";
+import { SSHTerminalOverrides } from "./SSHTerminalOverrides";
+import { SSHConnectionOverrides } from "./SSHConnectionOverrides";
 import {
   getAllTrustRecords,
   removeIdentity,
@@ -13,155 +13,197 @@ import {
   formatFingerprint,
   updateTrustRecordNickname,
   type TrustRecord,
-} from '../../utils/trustStore';
+} from "../../utils/trustStore";
 
 interface SSHOptionsProps {
   formData: Partial<Connection>;
   setFormData: React.Dispatch<React.SetStateAction<Partial<Connection>>>;
 }
 
-export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData }) => {
+export const SSHOptions: React.FC<SSHOptionsProps> = ({
+  formData,
+  setFormData,
+}) => {
   const [showKeyManager, setShowKeyManager] = useState(false);
-  
-  const isHttpProtocol = ['http', 'https'].includes(formData.protocol || '');
+
+  const isHttpProtocol = ["http", "https"].includes(formData.protocol || "");
   if (formData.isGroup || isHttpProtocol) return null;
 
-  const handlePrivateKeyFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePrivateKeyFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
     if (file) {
       const text = await file.text();
-      setFormData(prev => ({ ...prev, privateKey: text }));
+      setFormData((prev) => ({ ...prev, privateKey: text }));
     }
   };
-  
+
   const handleSelectKey = async (keyPath: string) => {
     try {
       const keyContent = await readTextFile(keyPath);
-      setFormData(prev => ({ ...prev, privateKey: keyContent }));
+      setFormData((prev) => ({ ...prev, privateKey: keyContent }));
     } catch (err) {
-      console.error('Failed to read selected key:', err);
+      console.error("Failed to read selected key:", err);
     }
   };
 
   return (
     <>
       <div>
-        <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Username</label>
+        <label className="sor-form-label">Username</label>
         <input
           type="text"
-          value={formData.username || ''}
-          onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-          className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={formData.username || ""}
+          onChange={(e) =>
+            setFormData({ ...formData, username: e.target.value })
+          }
+          className="sor-form-input"
           placeholder="Username"
         />
       </div>
 
-      {formData.protocol === 'ssh' && (
+      {formData.protocol === "ssh" && (
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Authentication Type</label>
+            <label className="sor-form-label">Authentication Type</label>
             <select
-              value={formData.authType ?? 'password'}
-              onChange={(e) => setFormData({ ...formData, authType: e.target.value as any })}
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={formData.authType ?? "password"}
+              onChange={(e) =>
+                setFormData({ ...formData, authType: e.target.value as any })
+              }
+              className="sor-form-select"
             >
               <option value="password">Password</option>
               <option value="key">Private Key</option>
             </select>
           </div>
-          <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)]">
+          <label className="sor-form-inline-check">
             <input
               type="checkbox"
               checked={formData.ignoreSshSecurityErrors ?? true}
               onChange={(e) =>
-                setFormData({ ...formData, ignoreSshSecurityErrors: e.target.checked })
+                setFormData({
+                  ...formData,
+                  ignoreSshSecurityErrors: e.target.checked,
+                })
               }
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+              className="sor-form-checkbox"
             />
             <span>Ignore SSH security errors (host keys/certs)</span>
           </label>
           <div>
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-              Host Key Trust Policy
-            </label>
+            <label className="sor-form-label">Host Key Trust Policy</label>
             <select
-              value={formData.sshTrustPolicy ?? ''}
+              value={formData.sshTrustPolicy ?? ""}
               onChange={(e) =>
                 setFormData({
                   ...formData,
-                  sshTrustPolicy: e.target.value === '' ? undefined : (e.target.value as 'tofu' | 'always-ask' | 'always-trust' | 'strict'),
+                  sshTrustPolicy:
+                    e.target.value === ""
+                      ? undefined
+                      : (e.target.value as
+                          | "tofu"
+                          | "always-ask"
+                          | "always-trust"
+                          | "strict"),
                 })
               }
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:ring-2 focus:ring-blue-500 text-sm"
+              className="sor-form-select text-sm"
             >
               <option value="">Use global default</option>
               <option value="tofu">Trust On First Use (TOFU)</option>
               <option value="always-ask">Always Ask</option>
-              <option value="always-trust">Always Trust (skip verification)</option>
-              <option value="strict">Strict (reject unless pre-approved)</option>
+              <option value="always-trust">
+                Always Trust (skip verification)
+              </option>
+              <option value="strict">
+                Strict (reject unless pre-approved)
+              </option>
             </select>
             <p className="text-xs text-gray-500 mt-1">
               How to handle host key verification for this connection.
             </p>
           </div>
           {/* Per-connection stored SSH host keys */}
-          {formData.id && (() => {
-            const records = getAllTrustRecords(formData.id).filter(r => r.type === 'ssh');
-            if (records.length === 0) return null;
-            return (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
-                    <Fingerprint size={14} className="text-green-400" />
-                    Stored Host Keys ({records.length})
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearAllTrustRecords(formData.id);
-                      setFormData({ ...formData }); // force re-render
-                    }}
-                    className="text-xs text-gray-500 hover:text-red-400 transition-colors"
-                  >
-                    Clear all
-                  </button>
-                </div>
-                <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {records.map((record, i) => {
-                    const [host, portStr] = record.host.split(':');
-                    return (
-                      <div key={i} className="flex items-center gap-2 bg-[var(--color-border)]/50 border border-[var(--color-border)]/50 rounded px-3 py-1.5 text-xs">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-[var(--color-textSecondary)] truncate">{record.nickname || record.host}</p>
-                            {record.nickname && <p className="text-gray-500 truncate">({record.host})</p>}
-                          </div>
-                          <p className="font-mono text-gray-500 truncate">{formatFingerprint(record.identity.fingerprint)}</p>
-                        </div>
-                        <NicknameEditButton record={record} connectionId={formData.id} onSaved={() => setFormData({ ...formData })} />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            removeIdentity(host, parseInt(portStr, 10), record.type, formData.id);
-                            setFormData({ ...formData }); // force re-render
-                          }}
-                          className="text-gray-500 hover:text-red-400 p-0.5 transition-colors flex-shrink-0"
-                          title="Remove"
+          {formData.id &&
+            (() => {
+              const records = getAllTrustRecords(formData.id).filter(
+                (r) => r.type === "ssh",
+              );
+              if (records.length === 0) return null;
+              return (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
+                      <Fingerprint size={14} className="text-green-400" />
+                      Stored Host Keys ({records.length})
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearAllTrustRecords(formData.id);
+                        setFormData({ ...formData }); // force re-render
+                      }}
+                      className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {records.map((record, i) => {
+                      const [host, portStr] = record.host.split(":");
+                      return (
+                        <div
+                          key={i}
+                          className="flex items-center gap-2 bg-[var(--color-border)]/50 border border-[var(--color-border)]/50 rounded px-3 py-1.5 text-xs"
                         >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    );
-                  })}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-[var(--color-textSecondary)] truncate">
+                                {record.nickname || record.host}
+                              </p>
+                              {record.nickname && (
+                                <p className="text-gray-500 truncate">
+                                  ({record.host})
+                                </p>
+                              )}
+                            </div>
+                            <p className="font-mono text-gray-500 truncate">
+                              {formatFingerprint(record.identity.fingerprint)}
+                            </p>
+                          </div>
+                          <NicknameEditButton
+                            record={record}
+                            connectionId={formData.id}
+                            onSaved={() => setFormData({ ...formData })}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              removeIdentity(
+                                host,
+                                parseInt(portStr, 10),
+                                record.type,
+                                formData.id,
+                              );
+                              setFormData({ ...formData }); // force re-render
+                            }}
+                            className="text-gray-500 hover:text-red-400 p-0.5 transition-colors flex-shrink-0"
+                            title="Remove"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Connect Timeout (sec)
-              </label>
+              <label className="sor-form-label">Connect Timeout (sec)</label>
               <input
                 type="number"
                 min={5}
@@ -173,13 +215,11 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
                     sshConnectTimeout: Number(e.target.value) || 30,
                   })
                 }
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="sor-form-input"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Keep Alive (sec)
-              </label>
+              <label className="sor-form-label">Keep Alive (sec)</label>
               <input
                 type="number"
                 min={10}
@@ -191,20 +231,21 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
                     sshKeepAliveInterval: Number(e.target.value) || 60,
                   })
                 }
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="sor-form-input"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                Known Hosts Path
-              </label>
+              <label className="sor-form-label">Known Hosts Path</label>
               <input
                 type="text"
-                value={formData.sshKnownHostsPath || ''}
+                value={formData.sshKnownHostsPath || ""}
                 onChange={(e) =>
-                  setFormData({ ...formData, sshKnownHostsPath: e.target.value })
+                  setFormData({
+                    ...formData,
+                    sshKnownHostsPath: e.target.value,
+                  })
                 }
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="sor-form-input"
                 placeholder="C:\\Users\\me\\.ssh\\known_hosts"
               />
             </div>
@@ -212,23 +253,27 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
         </div>
       )}
 
-      {formData.authType === 'password' && (
+      {formData.authType === "password" && (
         <div>
-          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Password</label>
+          <label className="sor-form-label">Password</label>
           <PasswordInput
-            value={formData.password || ''}
-            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            value={formData.password || ""}
+            onChange={(e) =>
+              setFormData({ ...formData, password: e.target.value })
+            }
+            className="sor-form-input"
             placeholder="Password"
           />
         </div>
       )}
 
-      {formData.protocol === 'ssh' && formData.authType === 'key' && (
+      {formData.protocol === "ssh" && formData.authType === "key" && (
         <>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)]">Private Key</label>
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)]">
+                Private Key
+              </label>
               <button
                 type="button"
                 onClick={() => setShowKeyManager(true)}
@@ -239,10 +284,12 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
               </button>
             </div>
             <textarea
-              value={formData.privateKey || ''}
-              onChange={(e) => setFormData({ ...formData, privateKey: e.target.value })}
+              value={formData.privateKey || ""}
+              onChange={(e) =>
+                setFormData({ ...formData, privateKey: e.target.value })
+              }
               rows={4}
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="sor-form-textarea resize-none"
               placeholder="-----BEGIN PRIVATE KEY-----"
             />
             <input
@@ -253,17 +300,19 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Passphrase (optional)</label>
+            <label className="sor-form-label">Passphrase (optional)</label>
             <PasswordInput
-              value={formData.passphrase || ''}
-              onChange={(e) => setFormData({ ...formData, passphrase: e.target.value })}
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={formData.passphrase || ""}
+              onChange={(e) =>
+                setFormData({ ...formData, passphrase: e.target.value })
+              }
+              className="sor-form-input"
               placeholder="Passphrase"
             />
           </div>
         </>
       )}
-      
+
       <SSHKeyManager
         isOpen={showKeyManager}
         onClose={() => setShowKeyManager(false)}
@@ -271,12 +320,12 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
       />
 
       {/* SSH Terminal Settings Override */}
-      {formData.protocol === 'ssh' && (
+      {formData.protocol === "ssh" && (
         <SSHTerminalOverrides formData={formData} setFormData={setFormData} />
       )}
 
       {/* SSH Connection Settings Override */}
-      {formData.protocol === 'ssh' && (
+      {formData.protocol === "ssh" && (
         <SSHConnectionOverrides formData={formData} setFormData={setFormData} />
       )}
     </>
@@ -284,9 +333,17 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({ formData, setFormData })
 };
 
 /** Inline nickname edit button for trust record rows */
-function NicknameEditButton({ record, connectionId, onSaved }: { record: TrustRecord; connectionId?: string; onSaved: () => void }) {
+function NicknameEditButton({
+  record,
+  connectionId,
+  onSaved,
+}: {
+  record: TrustRecord;
+  connectionId?: string;
+  onSaved: () => void;
+}) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(record.nickname ?? '');
+  const [draft, setDraft] = useState(record.nickname ?? "");
   if (editing) {
     return (
       <input
@@ -295,30 +352,48 @@ function NicknameEditButton({ record, connectionId, onSaved }: { record: TrustRe
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            const [h, p] = record.host.split(':');
-            updateTrustRecordNickname(h, parseInt(p, 10), record.type, draft.trim(), connectionId);
+          if (e.key === "Enter") {
+            const [h, p] = record.host.split(":");
+            updateTrustRecordNickname(
+              h,
+              parseInt(p, 10),
+              record.type,
+              draft.trim(),
+              connectionId,
+            );
             setEditing(false);
             onSaved();
-          } else if (e.key === 'Escape') { setDraft(record.nickname ?? ''); setEditing(false); }
+          } else if (e.key === "Escape") {
+            setDraft(record.nickname ?? "");
+            setEditing(false);
+          }
         }}
         onBlur={() => {
-          const [h, p] = record.host.split(':');
-          updateTrustRecordNickname(h, parseInt(p, 10), record.type, draft.trim(), connectionId);
+          const [h, p] = record.host.split(":");
+          updateTrustRecordNickname(
+            h,
+            parseInt(p, 10),
+            record.type,
+            draft.trim(),
+            connectionId,
+          );
           setEditing(false);
           onSaved();
         }}
         placeholder="Nickname…"
-        className="w-24 px-1.5 py-0.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-gray-200 placeholder-gray-500 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="sor-form-input-xs w-24 text-gray-200"
       />
     );
   }
   return (
     <button
       type="button"
-      onClick={() => { setDraft(record.nickname ?? ''); setEditing(true); }}
+      onClick={() => {
+        setDraft(record.nickname ?? "");
+        setEditing(true);
+      }}
       className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5 transition-colors flex-shrink-0"
-      title={record.nickname ? `Nickname: ${record.nickname}` : 'Add nickname'}
+      title={record.nickname ? `Nickname: ${record.nickname}` : "Add nickname"}
     >
       <Pencil size={10} />
     </button>

@@ -1,15 +1,22 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Network, RotateCcw, Plus, X } from 'lucide-react';
-import { Connection } from '../../types/connection';
-import { 
-  SSHConnectionConfig, 
+import React, { useState } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Network,
+  RotateCcw,
+  Plus,
+  X,
+} from "lucide-react";
+import { Connection } from "../../types/connection";
+import {
+  SSHConnectionConfig,
   defaultSSHConnectionConfig,
   SSHVersion,
   SSHAuthMethod,
   SSHAuthMethods,
   IPProtocol,
-} from '../../types/settings';
-import { useSettings } from '../../contexts/SettingsContext';
+} from "../../types/settings";
+import { useSettings } from "../../contexts/SettingsContext";
 
 interface SSHConnectionOverridesProps {
   formData: Partial<Connection>;
@@ -22,28 +29,33 @@ type OverrideKey = keyof SSHConnectionConfig;
  * Component for overriding global SSH connection settings per-connection.
  * Controls protocol-level settings like timeouts, authentication, ciphers, etc.
  */
-export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({ 
-  formData, 
-  setFormData 
+export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
+  formData,
+  setFormData,
 }) => {
   const { settings } = useSettings();
   // Use global SSH connection config if available, otherwise use defaults
-  const globalConfig = (settings as any).sshConnection || defaultSSHConnectionConfig;
+  const globalConfig =
+    (settings as any).sshConnection || defaultSSHConnectionConfig;
   const [isExpanded, setIsExpanded] = useState(false);
   const overrides = formData.sshConnectionConfigOverride || {};
 
   // Check if any overrides exist
   const hasOverrides = Object.keys(overrides).length > 0;
 
-  const updateOverride = <K extends OverrideKey>(key: K, value: SSHConnectionConfig[K] | undefined) => {
-    setFormData(prev => {
+  const updateOverride = <K extends OverrideKey>(
+    key: K,
+    value: SSHConnectionConfig[K] | undefined,
+  ) => {
+    setFormData((prev) => {
       const currentOverrides = prev.sshConnectionConfigOverride || {};
       if (value === undefined) {
         // Remove the override (revert to global)
         const { [key]: _, ...rest } = currentOverrides;
         return {
           ...prev,
-          sshConnectionConfigOverride: Object.keys(rest).length > 0 ? rest : undefined,
+          sshConnectionConfigOverride:
+            Object.keys(rest).length > 0 ? rest : undefined,
         };
       }
       return {
@@ -57,18 +69,18 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
   };
 
   const clearAllOverrides = () => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       sshConnectionConfigOverride: undefined,
     }));
   };
 
   const isOverridden = (key: OverrideKey) => key in overrides;
-  const getValue = <K extends OverrideKey>(key: K): SSHConnectionConfig[K] => 
+  const getValue = <K extends OverrideKey>(key: K): SSHConnectionConfig[K] =>
     (overrides[key] as SSHConnectionConfig[K]) ?? globalConfig[key];
 
   // Only show for SSH protocol
-  if (formData.protocol !== 'ssh' || formData.isGroup) return null;
+  if (formData.protocol !== "ssh" || formData.isGroup) return null;
 
   return (
     <div className="border border-[var(--color-border)] rounded-lg overflow-hidden">
@@ -98,8 +110,8 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
       {isExpanded && (
         <div className="p-4 space-y-4 bg-[var(--color-surface)]/50">
           <p className="text-xs text-[var(--color-textSecondary)]">
-            Override global SSH connection settings for this connection. 
-            These settings control the SSH protocol layer.
+            Override global SSH connection settings for this connection. These
+            settings control the SSH protocol layer.
           </p>
 
           {hasOverrides && (
@@ -115,58 +127,89 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* Connection Behavior */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Connection</h4>
-            
+            <h4 className="sor-form-section-heading">Connection</h4>
+
             <OverrideToggle
               label="Connect Timeout"
-              isOverridden={isOverridden('connectTimeout')}
+              isOverridden={isOverridden("connectTimeout")}
               globalValue={`${globalConfig.connectTimeout}s`}
-              onToggle={(enabled) => updateOverride('connectTimeout', enabled ? globalConfig.connectTimeout : undefined)}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "connectTimeout",
+                  enabled ? globalConfig.connectTimeout : undefined,
+                )
+              }
             >
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   min={5}
                   max={300}
-                  value={getValue('connectTimeout')}
-                  onChange={(e) => updateOverride('connectTimeout', Number(e.target.value))}
-                  className="w-20 px-2 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+                  value={getValue("connectTimeout")}
+                  onChange={(e) =>
+                    updateOverride("connectTimeout", Number(e.target.value))
+                  }
+                  className="sor-form-input-sm w-20"
                 />
-                <span className="text-sm text-[var(--color-textSecondary)]">seconds</span>
+                <span className="text-sm text-[var(--color-textSecondary)]">
+                  seconds
+                </span>
               </div>
             </OverrideToggle>
 
             <OverrideToggle
               label="Keep Alive Interval"
-              isOverridden={isOverridden('keepAliveInterval')}
-              globalValue={globalConfig.keepAliveInterval === 0 ? 'Disabled' : `${globalConfig.keepAliveInterval}s`}
-              onToggle={(enabled) => updateOverride('keepAliveInterval', enabled ? globalConfig.keepAliveInterval : undefined)}
+              isOverridden={isOverridden("keepAliveInterval")}
+              globalValue={
+                globalConfig.keepAliveInterval === 0
+                  ? "Disabled"
+                  : `${globalConfig.keepAliveInterval}s`
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "keepAliveInterval",
+                  enabled ? globalConfig.keepAliveInterval : undefined,
+                )
+              }
             >
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   min={0}
                   max={600}
-                  value={getValue('keepAliveInterval')}
-                  onChange={(e) => updateOverride('keepAliveInterval', Number(e.target.value))}
-                  className="w-20 px-2 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+                  value={getValue("keepAliveInterval")}
+                  onChange={(e) =>
+                    updateOverride("keepAliveInterval", Number(e.target.value))
+                  }
+                  className="sor-form-input-sm w-20"
                 />
-                <span className="text-sm text-[var(--color-textSecondary)]">seconds (0 = disabled)</span>
+                <span className="text-sm text-[var(--color-textSecondary)]">
+                  seconds (0 = disabled)
+                </span>
               </div>
             </OverrideToggle>
 
             <OverrideToggle
               label="Host Key Checking"
-              isOverridden={isOverridden('strictHostKeyChecking')}
-              globalValue={globalConfig.strictHostKeyChecking ? 'Strict' : 'Disabled'}
-              onToggle={(enabled) => updateOverride('strictHostKeyChecking', enabled ? !globalConfig.strictHostKeyChecking : undefined)}
+              isOverridden={isOverridden("strictHostKeyChecking")}
+              globalValue={
+                globalConfig.strictHostKeyChecking ? "Strict" : "Disabled"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "strictHostKeyChecking",
+                  enabled ? !globalConfig.strictHostKeyChecking : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('strictHostKeyChecking')}
-                  onChange={(e) => updateOverride('strictHostKeyChecking', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("strictHostKeyChecking")}
+                  onChange={(e) =>
+                    updateOverride("strictHostKeyChecking", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Strict host key verification
               </label>
@@ -175,32 +218,46 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* Authentication */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Authentication</h4>
-            
+            <h4 className="sor-form-section-heading">Authentication</h4>
+
             <OverrideToggle
               label="Auth Methods"
-              isOverridden={isOverridden('preferredAuthMethods')}
-              globalValue={globalConfig.preferredAuthMethods.join(', ')}
-              onToggle={(enabled) => updateOverride('preferredAuthMethods', enabled ? [...globalConfig.preferredAuthMethods] : undefined)}
+              isOverridden={isOverridden("preferredAuthMethods")}
+              globalValue={globalConfig.preferredAuthMethods.join(", ")}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "preferredAuthMethods",
+                  enabled ? [...globalConfig.preferredAuthMethods] : undefined,
+                )
+              }
             >
               <AuthMethodSelector
-                value={getValue('preferredAuthMethods')}
-                onChange={(methods) => updateOverride('preferredAuthMethods', methods)}
+                value={getValue("preferredAuthMethods")}
+                onChange={(methods) =>
+                  updateOverride("preferredAuthMethods", methods)
+                }
               />
             </OverrideToggle>
 
             <OverrideToggle
               label="Try Public Key First"
-              isOverridden={isOverridden('tryPublicKeyFirst')}
-              globalValue={globalConfig.tryPublicKeyFirst ? 'Yes' : 'No'}
-              onToggle={(enabled) => updateOverride('tryPublicKeyFirst', enabled ? !globalConfig.tryPublicKeyFirst : undefined)}
+              isOverridden={isOverridden("tryPublicKeyFirst")}
+              globalValue={globalConfig.tryPublicKeyFirst ? "Yes" : "No"}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "tryPublicKeyFirst",
+                  enabled ? !globalConfig.tryPublicKeyFirst : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('tryPublicKeyFirst')}
-                  onChange={(e) => updateOverride('tryPublicKeyFirst', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("tryPublicKeyFirst")}
+                  onChange={(e) =>
+                    updateOverride("tryPublicKeyFirst", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Attempt public key auth first
               </label>
@@ -208,16 +265,25 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
             <OverrideToggle
               label="Agent Forwarding"
-              isOverridden={isOverridden('agentForwarding')}
-              globalValue={globalConfig.agentForwarding ? 'Enabled' : 'Disabled'}
-              onToggle={(enabled) => updateOverride('agentForwarding', enabled ? !globalConfig.agentForwarding : undefined)}
+              isOverridden={isOverridden("agentForwarding")}
+              globalValue={
+                globalConfig.agentForwarding ? "Enabled" : "Disabled"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "agentForwarding",
+                  enabled ? !globalConfig.agentForwarding : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('agentForwarding')}
-                  onChange={(e) => updateOverride('agentForwarding', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("agentForwarding")}
+                  onChange={(e) =>
+                    updateOverride("agentForwarding", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Enable SSH agent forwarding
               </label>
@@ -226,18 +292,25 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* SSH Protocol */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Protocol</h4>
-            
+            <h4 className="sor-form-section-heading">Protocol</h4>
+
             <OverrideToggle
               label="SSH Version"
-              isOverridden={isOverridden('sshVersion')}
+              isOverridden={isOverridden("sshVersion")}
               globalValue={globalConfig.sshVersion}
-              onToggle={(enabled) => updateOverride('sshVersion', enabled ? globalConfig.sshVersion : undefined)}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "sshVersion",
+                  enabled ? globalConfig.sshVersion : undefined,
+                )
+              }
             >
               <select
-                value={getValue('sshVersion')}
-                onChange={(e) => updateOverride('sshVersion', e.target.value as SSHVersion)}
-                className="w-32 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+                value={getValue("sshVersion")}
+                onChange={(e) =>
+                  updateOverride("sshVersion", e.target.value as SSHVersion)
+                }
+                className="sor-form-select-sm w-32"
               >
                 <option value="auto">Auto</option>
                 <option value="2">SSH-2 only</option>
@@ -247,30 +320,48 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
             <OverrideToggle
               label="Compression"
-              isOverridden={isOverridden('enableCompression')}
-              globalValue={globalConfig.enableCompression ? `Level ${globalConfig.compressionLevel}` : 'Disabled'}
-              onToggle={(enabled) => updateOverride('enableCompression', enabled ? !globalConfig.enableCompression : undefined)}
+              isOverridden={isOverridden("enableCompression")}
+              globalValue={
+                globalConfig.enableCompression
+                  ? `Level ${globalConfig.compressionLevel}`
+                  : "Disabled"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "enableCompression",
+                  enabled ? !globalConfig.enableCompression : undefined,
+                )
+              }
             >
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+                <label className="sor-form-inline-check">
                   <input
                     type="checkbox"
-                    checked={getValue('enableCompression')}
-                    onChange={(e) => updateOverride('enableCompression', e.target.checked)}
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                    checked={getValue("enableCompression")}
+                    onChange={(e) =>
+                      updateOverride("enableCompression", e.target.checked)
+                    }
+                    className="sor-form-checkbox"
                   />
                   Enable
                 </label>
-                {getValue('enableCompression') && (
+                {getValue("enableCompression") && (
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-[var(--color-textSecondary)]">Level:</span>
+                    <span className="text-sm text-[var(--color-textSecondary)]">
+                      Level:
+                    </span>
                     <input
                       type="number"
                       min={1}
                       max={9}
-                      value={getValue('compressionLevel')}
-                      onChange={(e) => updateOverride('compressionLevel', Number(e.target.value))}
-                      className="w-16 px-2 py-1 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+                      value={getValue("compressionLevel")}
+                      onChange={(e) =>
+                        updateOverride(
+                          "compressionLevel",
+                          Number(e.target.value),
+                        )
+                      }
+                      className="sor-form-input-xs w-16"
                     />
                   </div>
                 )}
@@ -279,14 +370,19 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
             <OverrideToggle
               label="PTY Type"
-              isOverridden={isOverridden('ptyType')}
+              isOverridden={isOverridden("ptyType")}
               globalValue={globalConfig.ptyType}
-              onToggle={(enabled) => updateOverride('ptyType', enabled ? globalConfig.ptyType : undefined)}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "ptyType",
+                  enabled ? globalConfig.ptyType : undefined,
+                )
+              }
             >
               <select
-                value={getValue('ptyType')}
-                onChange={(e) => updateOverride('ptyType', e.target.value)}
-                className="w-40 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+                value={getValue("ptyType")}
+                onChange={(e) => updateOverride("ptyType", e.target.value)}
+                className="sor-form-select-sm w-40"
               >
                 <option value="xterm-256color">xterm-256color</option>
                 <option value="xterm">xterm</option>
@@ -300,20 +396,27 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* TCP/IP Settings */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">TCP/IP</h4>
-            
+            <h4 className="sor-form-section-heading">TCP/IP</h4>
+
             <OverrideToggle
               label="TCP No Delay"
-              isOverridden={isOverridden('tcpNoDelay')}
-              globalValue={globalConfig.tcpNoDelay ? 'Enabled' : 'Disabled'}
-              onToggle={(enabled) => updateOverride('tcpNoDelay', enabled ? !globalConfig.tcpNoDelay : undefined)}
+              isOverridden={isOverridden("tcpNoDelay")}
+              globalValue={globalConfig.tcpNoDelay ? "Enabled" : "Disabled"}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "tcpNoDelay",
+                  enabled ? !globalConfig.tcpNoDelay : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('tcpNoDelay')}
-                  onChange={(e) => updateOverride('tcpNoDelay', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("tcpNoDelay")}
+                  onChange={(e) =>
+                    updateOverride("tcpNoDelay", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Disable Nagle algorithm
               </label>
@@ -321,16 +424,23 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
             <OverrideToggle
               label="TCP Keep Alive"
-              isOverridden={isOverridden('tcpKeepAlive')}
-              globalValue={globalConfig.tcpKeepAlive ? 'Enabled' : 'Disabled'}
-              onToggle={(enabled) => updateOverride('tcpKeepAlive', enabled ? !globalConfig.tcpKeepAlive : undefined)}
+              isOverridden={isOverridden("tcpKeepAlive")}
+              globalValue={globalConfig.tcpKeepAlive ? "Enabled" : "Disabled"}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "tcpKeepAlive",
+                  enabled ? !globalConfig.tcpKeepAlive : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('tcpKeepAlive')}
-                  onChange={(e) => updateOverride('tcpKeepAlive', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("tcpKeepAlive")}
+                  onChange={(e) =>
+                    updateOverride("tcpKeepAlive", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Enable TCP keep-alive
               </label>
@@ -338,14 +448,21 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
             <OverrideToggle
               label="IP Protocol"
-              isOverridden={isOverridden('ipProtocol')}
+              isOverridden={isOverridden("ipProtocol")}
               globalValue={globalConfig.ipProtocol}
-              onToggle={(enabled) => updateOverride('ipProtocol', enabled ? globalConfig.ipProtocol : undefined)}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "ipProtocol",
+                  enabled ? globalConfig.ipProtocol : undefined,
+                )
+              }
             >
               <select
-                value={getValue('ipProtocol')}
-                onChange={(e) => updateOverride('ipProtocol', e.target.value as IPProtocol)}
-                className="w-32 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+                value={getValue("ipProtocol")}
+                onChange={(e) =>
+                  updateOverride("ipProtocol", e.target.value as IPProtocol)
+                }
+                className="sor-form-select-sm w-32"
               >
                 <option value="auto">Auto</option>
                 <option value="ipv4">IPv4 only</option>
@@ -356,20 +473,29 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* Port Forwarding */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Forwarding</h4>
-            
+            <h4 className="sor-form-section-heading">Forwarding</h4>
+
             <OverrideToggle
               label="TCP Forwarding"
-              isOverridden={isOverridden('enableTcpForwarding')}
-              globalValue={globalConfig.enableTcpForwarding ? 'Enabled' : 'Disabled'}
-              onToggle={(enabled) => updateOverride('enableTcpForwarding', enabled ? !globalConfig.enableTcpForwarding : undefined)}
+              isOverridden={isOverridden("enableTcpForwarding")}
+              globalValue={
+                globalConfig.enableTcpForwarding ? "Enabled" : "Disabled"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "enableTcpForwarding",
+                  enabled ? !globalConfig.enableTcpForwarding : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('enableTcpForwarding')}
-                  onChange={(e) => updateOverride('enableTcpForwarding', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("enableTcpForwarding")}
+                  onChange={(e) =>
+                    updateOverride("enableTcpForwarding", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Allow TCP port forwarding
               </label>
@@ -377,16 +503,25 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
             <OverrideToggle
               label="X11 Forwarding"
-              isOverridden={isOverridden('enableX11Forwarding')}
-              globalValue={globalConfig.enableX11Forwarding ? 'Enabled' : 'Disabled'}
-              onToggle={(enabled) => updateOverride('enableX11Forwarding', enabled ? !globalConfig.enableX11Forwarding : undefined)}
+              isOverridden={isOverridden("enableX11Forwarding")}
+              globalValue={
+                globalConfig.enableX11Forwarding ? "Enabled" : "Disabled"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "enableX11Forwarding",
+                  enabled ? !globalConfig.enableX11Forwarding : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('enableX11Forwarding')}
-                  onChange={(e) => updateOverride('enableX11Forwarding', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("enableX11Forwarding")}
+                  onChange={(e) =>
+                    updateOverride("enableX11Forwarding", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Enable X11 forwarding
               </label>
@@ -395,20 +530,27 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* SFTP/SCP */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">File Transfer</h4>
-            
+            <h4 className="sor-form-section-heading">File Transfer</h4>
+
             <OverrideToggle
               label="SFTP"
-              isOverridden={isOverridden('sftpEnabled')}
-              globalValue={globalConfig.sftpEnabled ? 'Enabled' : 'Disabled'}
-              onToggle={(enabled) => updateOverride('sftpEnabled', enabled ? !globalConfig.sftpEnabled : undefined)}
+              isOverridden={isOverridden("sftpEnabled")}
+              globalValue={globalConfig.sftpEnabled ? "Enabled" : "Disabled"}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "sftpEnabled",
+                  enabled ? !globalConfig.sftpEnabled : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('sftpEnabled')}
-                  onChange={(e) => updateOverride('sftpEnabled', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("sftpEnabled")}
+                  onChange={(e) =>
+                    updateOverride("sftpEnabled", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Enable SFTP subsystem
               </label>
@@ -416,16 +558,23 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
             <OverrideToggle
               label="SCP"
-              isOverridden={isOverridden('scpEnabled')}
-              globalValue={globalConfig.scpEnabled ? 'Enabled' : 'Disabled'}
-              onToggle={(enabled) => updateOverride('scpEnabled', enabled ? !globalConfig.scpEnabled : undefined)}
+              isOverridden={isOverridden("scpEnabled")}
+              globalValue={globalConfig.scpEnabled ? "Enabled" : "Disabled"}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "scpEnabled",
+                  enabled ? !globalConfig.scpEnabled : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('scpEnabled')}
-                  onChange={(e) => updateOverride('scpEnabled', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("scpEnabled")}
+                  onChange={(e) =>
+                    updateOverride("scpEnabled", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Enable SCP transfers
               </label>
@@ -433,76 +582,125 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
             <OverrideToggle
               label="SFTP Start Path"
-              isOverridden={isOverridden('sftpStartPath')}
-              globalValue={globalConfig.sftpStartPath || 'Home directory'}
-              onToggle={(enabled) => updateOverride('sftpStartPath', enabled ? globalConfig.sftpStartPath || '' : undefined)}
+              isOverridden={isOverridden("sftpStartPath")}
+              globalValue={globalConfig.sftpStartPath || "Home directory"}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "sftpStartPath",
+                  enabled ? globalConfig.sftpStartPath || "" : undefined,
+                )
+              }
             >
               <input
                 type="text"
                 placeholder="/path/to/start"
-                value={getValue('sftpStartPath') || ''}
-                onChange={(e) => updateOverride('sftpStartPath', e.target.value || undefined)}
-                className="w-full px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+                value={getValue("sftpStartPath") || ""}
+                onChange={(e) =>
+                  updateOverride("sftpStartPath", e.target.value || undefined)
+                }
+                className="sor-form-input-sm w-full"
               />
             </OverrideToggle>
           </div>
 
           {/* Ciphers & Algorithms */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Ciphers & Algorithms</h4>
-            
+            <h4 className="sor-form-section-heading">Ciphers & Algorithms</h4>
+
             <OverrideToggle
               label="Preferred Ciphers"
-              isOverridden={isOverridden('preferredCiphers')}
-              globalValue={globalConfig.preferredCiphers.length ? globalConfig.preferredCiphers.join(', ') : 'Default'}
-              onToggle={(enabled) => updateOverride('preferredCiphers', enabled ? [...globalConfig.preferredCiphers] : undefined)}
+              isOverridden={isOverridden("preferredCiphers")}
+              globalValue={
+                globalConfig.preferredCiphers.length
+                  ? globalConfig.preferredCiphers.join(", ")
+                  : "Default"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "preferredCiphers",
+                  enabled ? [...globalConfig.preferredCiphers] : undefined,
+                )
+              }
             >
               <CipherSelector
                 label="Ciphers"
-                value={getValue('preferredCiphers')}
-                onChange={(ciphers) => updateOverride('preferredCiphers', ciphers)}
+                value={getValue("preferredCiphers")}
+                onChange={(ciphers) =>
+                  updateOverride("preferredCiphers", ciphers)
+                }
                 options={CIPHER_OPTIONS}
               />
             </OverrideToggle>
 
             <OverrideToggle
               label="Preferred MACs"
-              isOverridden={isOverridden('preferredMACs')}
-              globalValue={globalConfig.preferredMACs.length ? globalConfig.preferredMACs.join(', ') : 'Default'}
-              onToggle={(enabled) => updateOverride('preferredMACs', enabled ? [...globalConfig.preferredMACs] : undefined)}
+              isOverridden={isOverridden("preferredMACs")}
+              globalValue={
+                globalConfig.preferredMACs.length
+                  ? globalConfig.preferredMACs.join(", ")
+                  : "Default"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "preferredMACs",
+                  enabled ? [...globalConfig.preferredMACs] : undefined,
+                )
+              }
             >
               <CipherSelector
                 label="MACs"
-                value={getValue('preferredMACs')}
-                onChange={(macs) => updateOverride('preferredMACs', macs)}
+                value={getValue("preferredMACs")}
+                onChange={(macs) => updateOverride("preferredMACs", macs)}
                 options={MAC_OPTIONS}
               />
             </OverrideToggle>
 
             <OverrideToggle
               label="Key Exchanges"
-              isOverridden={isOverridden('preferredKeyExchanges')}
-              globalValue={globalConfig.preferredKeyExchanges.length ? globalConfig.preferredKeyExchanges.join(', ') : 'Default'}
-              onToggle={(enabled) => updateOverride('preferredKeyExchanges', enabled ? [...globalConfig.preferredKeyExchanges] : undefined)}
+              isOverridden={isOverridden("preferredKeyExchanges")}
+              globalValue={
+                globalConfig.preferredKeyExchanges.length
+                  ? globalConfig.preferredKeyExchanges.join(", ")
+                  : "Default"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "preferredKeyExchanges",
+                  enabled ? [...globalConfig.preferredKeyExchanges] : undefined,
+                )
+              }
             >
               <CipherSelector
                 label="Key Exchange"
-                value={getValue('preferredKeyExchanges')}
-                onChange={(kex) => updateOverride('preferredKeyExchanges', kex)}
+                value={getValue("preferredKeyExchanges")}
+                onChange={(kex) => updateOverride("preferredKeyExchanges", kex)}
                 options={KEX_OPTIONS}
               />
             </OverrideToggle>
 
             <OverrideToggle
               label="Host Key Algorithms"
-              isOverridden={isOverridden('preferredHostKeyAlgorithms')}
-              globalValue={globalConfig.preferredHostKeyAlgorithms.length ? globalConfig.preferredHostKeyAlgorithms.join(', ') : 'Default'}
-              onToggle={(enabled) => updateOverride('preferredHostKeyAlgorithms', enabled ? [...globalConfig.preferredHostKeyAlgorithms] : undefined)}
+              isOverridden={isOverridden("preferredHostKeyAlgorithms")}
+              globalValue={
+                globalConfig.preferredHostKeyAlgorithms.length
+                  ? globalConfig.preferredHostKeyAlgorithms.join(", ")
+                  : "Default"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "preferredHostKeyAlgorithms",
+                  enabled
+                    ? [...globalConfig.preferredHostKeyAlgorithms]
+                    : undefined,
+                )
+              }
             >
               <CipherSelector
                 label="Host Key"
-                value={getValue('preferredHostKeyAlgorithms')}
-                onChange={(algs) => updateOverride('preferredHostKeyAlgorithms', algs)}
+                value={getValue("preferredHostKeyAlgorithms")}
+                onChange={(algs) =>
+                  updateOverride("preferredHostKeyAlgorithms", algs)
+                }
                 options={HOST_KEY_OPTIONS}
               />
             </OverrideToggle>
@@ -510,20 +708,27 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
           {/* Banner & Misc */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Banner & Misc</h4>
-            
+            <h4 className="sor-form-section-heading">Banner & Misc</h4>
+
             <OverrideToggle
               label="Show Banner"
-              isOverridden={isOverridden('showBanner')}
-              globalValue={globalConfig.showBanner ? 'Yes' : 'No'}
-              onToggle={(enabled) => updateOverride('showBanner', enabled ? !globalConfig.showBanner : undefined)}
+              isOverridden={isOverridden("showBanner")}
+              globalValue={globalConfig.showBanner ? "Yes" : "No"}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "showBanner",
+                  enabled ? !globalConfig.showBanner : undefined,
+                )
+              }
             >
-              <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+              <label className="sor-form-inline-check">
                 <input
                   type="checkbox"
-                  checked={getValue('showBanner')}
-                  onChange={(e) => updateOverride('showBanner', e.target.checked)}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                  checked={getValue("showBanner")}
+                  onChange={(e) =>
+                    updateOverride("showBanner", e.target.checked)
+                  }
+                  className="sor-form-checkbox"
                 />
                 Display server banner
               </label>
@@ -531,37 +736,60 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
             <OverrideToggle
               label="Banner Timeout"
-              isOverridden={isOverridden('bannerTimeout')}
+              isOverridden={isOverridden("bannerTimeout")}
               globalValue={`${globalConfig.bannerTimeout}s`}
-              onToggle={(enabled) => updateOverride('bannerTimeout', enabled ? globalConfig.bannerTimeout : undefined)}
+              onToggle={(enabled) =>
+                updateOverride(
+                  "bannerTimeout",
+                  enabled ? globalConfig.bannerTimeout : undefined,
+                )
+              }
             >
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   min={1}
                   max={60}
-                  value={getValue('bannerTimeout')}
-                  onChange={(e) => updateOverride('bannerTimeout', Number(e.target.value))}
-                  className="w-20 px-2 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+                  value={getValue("bannerTimeout")}
+                  onChange={(e) =>
+                    updateOverride("bannerTimeout", Number(e.target.value))
+                  }
+                  className="sor-form-input-sm w-20"
                 />
-                <span className="text-sm text-[var(--color-textSecondary)]">seconds</span>
+                <span className="text-sm text-[var(--color-textSecondary)]">
+                  seconds
+                </span>
               </div>
             </OverrideToggle>
           </div>
 
           {/* Environment Variables */}
           <div className="space-y-3">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-1">Environment Variables</h4>
-            
+            <h4 className="sor-form-section-heading">Environment Variables</h4>
+
             <OverrideToggle
               label="Custom Environment"
-              isOverridden={isOverridden('environment')}
-              globalValue={Object.keys(globalConfig.environment || {}).length ? `${Object.keys(globalConfig.environment || {}).length} vars` : 'None'}
-              onToggle={(enabled) => updateOverride('environment', enabled ? { ...(globalConfig.environment || {}) } : undefined)}
+              isOverridden={isOverridden("environment")}
+              globalValue={
+                Object.keys(globalConfig.environment || {}).length
+                  ? `${Object.keys(globalConfig.environment || {}).length} vars`
+                  : "None"
+              }
+              onToggle={(enabled) =>
+                updateOverride(
+                  "environment",
+                  enabled ? { ...(globalConfig.environment || {}) } : undefined,
+                )
+              }
             >
               <EnvironmentEditor
-                value={getValue('environment') || {}}
-                onChange={(env) => updateOverride('environment', Object.keys(env).length > 0 ? env : undefined)}
+                value={getValue("environment") || {}}
+                onChange={(env) =>
+                  updateOverride(
+                    "environment",
+                    Object.keys(env).length > 0 ? env : undefined,
+                  )
+                }
               />
             </OverrideToggle>
           </div>
@@ -573,48 +801,48 @@ export const SSHConnectionOverrides: React.FC<SSHConnectionOverridesProps> = ({
 
 // Common cipher/algorithm options
 const CIPHER_OPTIONS = [
-  'aes256-gcm@openssh.com',
-  'chacha20-poly1305@openssh.com',
-  'aes256-ctr',
-  'aes192-ctr',
-  'aes128-ctr',
-  'aes256-cbc',
-  'aes192-cbc',
-  'aes128-cbc',
-  '3des-cbc',
+  "aes256-gcm@openssh.com",
+  "chacha20-poly1305@openssh.com",
+  "aes256-ctr",
+  "aes192-ctr",
+  "aes128-ctr",
+  "aes256-cbc",
+  "aes192-cbc",
+  "aes128-cbc",
+  "3des-cbc",
 ];
 
 const MAC_OPTIONS = [
-  'hmac-sha2-512-etm@openssh.com',
-  'hmac-sha2-256-etm@openssh.com',
-  'hmac-sha2-512',
-  'hmac-sha2-256',
-  'hmac-sha1',
-  'hmac-md5',
+  "hmac-sha2-512-etm@openssh.com",
+  "hmac-sha2-256-etm@openssh.com",
+  "hmac-sha2-512",
+  "hmac-sha2-256",
+  "hmac-sha1",
+  "hmac-md5",
 ];
 
 const KEX_OPTIONS = [
-  'curve25519-sha256',
-  'curve25519-sha256@libssh.org',
-  'ecdh-sha2-nistp521',
-  'ecdh-sha2-nistp384',
-  'ecdh-sha2-nistp256',
-  'diffie-hellman-group18-sha512',
-  'diffie-hellman-group16-sha512',
-  'diffie-hellman-group14-sha256',
-  'diffie-hellman-group14-sha1',
-  'diffie-hellman-group-exchange-sha256',
+  "curve25519-sha256",
+  "curve25519-sha256@libssh.org",
+  "ecdh-sha2-nistp521",
+  "ecdh-sha2-nistp384",
+  "ecdh-sha2-nistp256",
+  "diffie-hellman-group18-sha512",
+  "diffie-hellman-group16-sha512",
+  "diffie-hellman-group14-sha256",
+  "diffie-hellman-group14-sha1",
+  "diffie-hellman-group-exchange-sha256",
 ];
 
 const HOST_KEY_OPTIONS = [
-  'ssh-ed25519',
-  'ecdsa-sha2-nistp521',
-  'ecdsa-sha2-nistp384',
-  'ecdsa-sha2-nistp256',
-  'rsa-sha2-512',
-  'rsa-sha2-256',
-  'ssh-rsa',
-  'ssh-dss',
+  "ssh-ed25519",
+  "ecdsa-sha2-nistp521",
+  "ecdsa-sha2-nistp384",
+  "ecdsa-sha2-nistp256",
+  "rsa-sha2-512",
+  "rsa-sha2-256",
+  "ssh-rsa",
+  "ssh-dss",
 ];
 
 interface OverrideToggleProps {
@@ -639,9 +867,11 @@ const OverrideToggle: React.FC<OverrideToggleProps> = ({
           type="checkbox"
           checked={isOverridden}
           onChange={(e) => onToggle(e.target.checked)}
-          className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+          className="sor-form-checkbox"
         />
-        <span className="text-sm text-[var(--color-textSecondary)]">{label}</span>
+        <span className="text-sm text-[var(--color-textSecondary)]">
+          {label}
+        </span>
       </label>
       <div className="flex-1">
         {isOverridden ? (
@@ -661,10 +891,13 @@ interface AuthMethodSelectorProps {
   onChange: (methods: SSHAuthMethod[]) => void;
 }
 
-const AuthMethodSelector: React.FC<AuthMethodSelectorProps> = ({ value, onChange }) => {
+const AuthMethodSelector: React.FC<AuthMethodSelectorProps> = ({
+  value,
+  onChange,
+}) => {
   const toggleMethod = (method: SSHAuthMethod) => {
     if (value.includes(method)) {
-      onChange(value.filter(m => m !== method));
+      onChange(value.filter((m) => m !== method));
     } else {
       onChange([...value, method]);
     }
@@ -673,20 +906,23 @@ const AuthMethodSelector: React.FC<AuthMethodSelectorProps> = ({ value, onChange
   const moveUp = (index: number) => {
     if (index === 0) return;
     const newValue = [...value];
-    [newValue[index - 1], newValue[index]] = [newValue[index], newValue[index - 1]];
+    [newValue[index - 1], newValue[index]] = [
+      newValue[index],
+      newValue[index - 1],
+    ];
     onChange(newValue);
   };
 
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {SSHAuthMethods.map(method => (
+        {SSHAuthMethods.map((method) => (
           <label
             key={method}
             className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded cursor-pointer transition-colors ${
               value.includes(method)
-                ? 'bg-green-600 text-[var(--color-text)]'
-                : 'bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500'
+                ? "bg-green-600 text-[var(--color-text)]"
+                : "bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500"
             }`}
           >
             <input
@@ -701,7 +937,8 @@ const AuthMethodSelector: React.FC<AuthMethodSelectorProps> = ({ value, onChange
       </div>
       {value.length > 0 && (
         <div className="text-xs text-[var(--color-textSecondary)]">
-          Order: {value.map((m, i) => (
+          Order:{" "}
+          {value.map((m, i) => (
             <button
               key={m}
               type="button"
@@ -725,12 +962,16 @@ interface CipherSelectorProps {
   options: string[];
 }
 
-const CipherSelector: React.FC<CipherSelectorProps> = ({ value, onChange, options }) => {
+const CipherSelector: React.FC<CipherSelectorProps> = ({
+  value,
+  onChange,
+  options,
+}) => {
   const [showAll, setShowAll] = useState(false);
 
   const toggleOption = (option: string) => {
     if (value.includes(option)) {
-      onChange(value.filter(v => v !== option));
+      onChange(value.filter((v) => v !== option));
     } else {
       onChange([...value, option]);
     }
@@ -741,18 +982,18 @@ const CipherSelector: React.FC<CipherSelectorProps> = ({ value, onChange, option
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-1.5">
-        {visibleOptions.map(option => (
+        {visibleOptions.map((option) => (
           <button
             key={option}
             type="button"
             onClick={() => toggleOption(option)}
             className={`px-2 py-0.5 text-xs rounded transition-colors ${
               value.includes(option)
-                ? 'bg-blue-600 text-[var(--color-text)]'
-                : 'bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500'
+                ? "bg-blue-600 text-[var(--color-text)]"
+                : "bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500"
             }`}
           >
-            {option.split('@')[0]}
+            {option.split("@")[0]}
           </button>
         ))}
         {options.length > 4 && (
@@ -761,7 +1002,7 @@ const CipherSelector: React.FC<CipherSelectorProps> = ({ value, onChange, option
             onClick={() => setShowAll(!showAll)}
             className="px-2 py-0.5 text-xs bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded hover:bg-[var(--color-border)]"
           >
-            {showAll ? 'Less...' : `+${options.length - 4} more...`}
+            {showAll ? "Less..." : `+${options.length - 4} more...`}
           </button>
         )}
       </div>
@@ -779,15 +1020,18 @@ interface EnvironmentEditorProps {
   onChange: (env: Record<string, string>) => void;
 }
 
-const EnvironmentEditor: React.FC<EnvironmentEditorProps> = ({ value, onChange }) => {
-  const [newKey, setNewKey] = useState('');
-  const [newValue, setNewValue] = useState('');
+const EnvironmentEditor: React.FC<EnvironmentEditorProps> = ({
+  value,
+  onChange,
+}) => {
+  const [newKey, setNewKey] = useState("");
+  const [newValue, setNewValue] = useState("");
 
   const addVariable = () => {
     if (newKey && newValue) {
       onChange({ ...value, [newKey]: newValue });
-      setNewKey('');
-      setNewValue('');
+      setNewKey("");
+      setNewValue("");
     }
   };
 
@@ -800,9 +1044,13 @@ const EnvironmentEditor: React.FC<EnvironmentEditorProps> = ({ value, onChange }
     <div className="space-y-2">
       {Object.entries(value).map(([key, val]) => (
         <div key={key} className="flex items-center gap-2">
-          <code className="px-2 py-1 text-xs bg-[var(--color-border)] rounded text-green-400">{key}</code>
+          <code className="px-2 py-1 text-xs bg-[var(--color-border)] rounded text-green-400">
+            {key}
+          </code>
           <span className="text-gray-500">=</span>
-          <code className="px-2 py-1 text-xs bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] flex-1 truncate">{val}</code>
+          <code className="px-2 py-1 text-xs bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] flex-1 truncate">
+            {val}
+          </code>
           <button
             type="button"
             onClick={() => removeVariable(key)}
@@ -818,7 +1066,7 @@ const EnvironmentEditor: React.FC<EnvironmentEditorProps> = ({ value, onChange }
           placeholder="KEY"
           value={newKey}
           onChange={(e) => setNewKey(e.target.value.toUpperCase())}
-          className="w-24 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+          className="sor-form-input-xs w-24"
         />
         <span className="text-gray-500">=</span>
         <input
@@ -826,7 +1074,7 @@ const EnvironmentEditor: React.FC<EnvironmentEditorProps> = ({ value, onChange }
           placeholder="value"
           value={newValue}
           onChange={(e) => setNewValue(e.target.value)}
-          className="flex-1 px-2 py-1 text-xs bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
+          className="sor-form-input-xs flex-1"
         />
         <button
           type="button"

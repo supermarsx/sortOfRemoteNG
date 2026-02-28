@@ -809,6 +809,110 @@ body {
   font-size: 0.75rem;
 }
 
+.sor-form-input,
+.sor-form-select,
+.sor-form-textarea {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+.sor-form-input-sm,
+.sor-form-select-sm,
+.sor-form-textarea-sm {
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  padding: 0.375rem 0.625rem;
+}
+
+.sor-form-input-xs,
+.sor-form-select-xs,
+.sor-form-textarea-xs {
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: var(--color-text);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.sor-form-input-sm::placeholder,
+.sor-form-textarea-sm::placeholder,
+.sor-form-input-xs::placeholder,
+.sor-form-textarea-xs::placeholder {
+  color: #9ca3af;
+}
+
+.sor-form-input::placeholder,
+.sor-form-textarea::placeholder {
+  color: #9ca3af;
+}
+
+.sor-form-input:focus,
+.sor-form-select:focus,
+.sor-form-textarea:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px rgb(59 130 246 / 45%);
+}
+
+.sor-form-input-sm:focus,
+.sor-form-select-sm:focus,
+.sor-form-textarea-sm:focus,
+.sor-form-input-xs:focus,
+.sor-form-select-xs:focus,
+.sor-form-textarea-xs:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px rgb(59 130 246 / 45%);
+}
+
+.sor-form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.sor-form-label-xs {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--color-textSecondary);
+  font-size: 0.75rem;
+}
+
+.sor-form-inline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+}
+
+.sor-form-section-heading {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.25rem;
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.sor-form-checkbox {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: #2563eb;
+}
+
 .sor-settings-tile {
   display: flex;
   align-items: center;

@@ -1,8 +1,23 @@
-import React, { useMemo } from 'react';
-import { Cloud, Database, Folder, Globe, HardDrive, Monitor, Server, Shield, Star, Terminal } from 'lucide-react';
-import { Connection } from '../../types/connection';
-import { getDefaultPort } from '../../utils/defaultPorts';
-import { getConnectionDepth, getMaxDescendantDepth, MAX_NESTING_DEPTH } from '../../utils/dragDropManager';
+import React, { useMemo } from "react";
+import {
+  Cloud,
+  Database,
+  Folder,
+  Globe,
+  HardDrive,
+  Monitor,
+  Server,
+  Shield,
+  Star,
+  Terminal,
+} from "lucide-react";
+import { Connection } from "../../types/connection";
+import { getDefaultPort } from "../../utils/defaultPorts";
+import {
+  getConnectionDepth,
+  getMaxDescendantDepth,
+  MAX_NESTING_DEPTH,
+} from "../../utils/dragDropManager";
 
 interface GeneralSectionProps {
   formData: Partial<Connection>;
@@ -15,15 +30,15 @@ interface GeneralSectionProps {
 function getFolderPath(groupId: string, connections: Connection[]): string {
   const parts: string[] = [];
   let currentId: string | undefined = groupId;
-  
+
   while (currentId) {
-    const group = connections.find(c => c.id === currentId);
+    const group = connections.find((c) => c.id === currentId);
     if (!group) break;
     parts.unshift(group.name);
     currentId = group.parentId;
   }
-  
-  return parts.join(' / ');
+
+  return parts.join(" / ");
 }
 
 /** Dropdown for selecting parent folder with depth indication */
@@ -38,84 +53,106 @@ const ParentFolderSelect: React.FC<{
     // If editing an existing group, we need to check descendant depth
     const currentId = formData.id;
     const isGroup = formData.isGroup;
-    const descendantDepth = currentId && isGroup 
-      ? getMaxDescendantDepth(currentId, allConnections) 
-      : 0;
-    
-    return availableGroups.map(group => {
+    const descendantDepth =
+      currentId && isGroup
+        ? getMaxDescendantDepth(currentId, allConnections)
+        : 0;
+
+    return availableGroups.map((group) => {
       // Don't allow selecting self or descendants as parent
       if (currentId && group.id === currentId) {
-        return { group, depth: 0, disabled: true, reason: 'Cannot be its own parent' };
+        return {
+          group,
+          depth: 0,
+          disabled: true,
+          reason: "Cannot be its own parent",
+        };
       }
-      
+
       // Check if this group is a descendant of the current item
       if (currentId) {
         let checkId: string | undefined = group.id;
         while (checkId) {
-          const parent = allConnections.find(c => c.id === checkId);
+          const parent = allConnections.find((c) => c.id === checkId);
           if (parent?.parentId === currentId) {
-            return { group, depth: 0, disabled: true, reason: 'Cannot move into own descendant' };
+            return {
+              group,
+              depth: 0,
+              disabled: true,
+              reason: "Cannot move into own descendant",
+            };
           }
           checkId = parent?.parentId;
         }
       }
-      
+
       const groupDepth = getConnectionDepth(group.id, allConnections) + 1; // +1 because we'd be placing inside this group
-      const wouldExceedDepth = (groupDepth + descendantDepth) >= MAX_NESTING_DEPTH;
-      
+      const wouldExceedDepth =
+        groupDepth + descendantDepth >= MAX_NESTING_DEPTH;
+
       return {
         group,
         depth: groupDepth,
         disabled: wouldExceedDepth,
-        reason: wouldExceedDepth ? `Max depth (${MAX_NESTING_DEPTH}) exceeded` : undefined,
+        reason: wouldExceedDepth
+          ? `Max depth (${MAX_NESTING_DEPTH}) exceeded`
+          : undefined,
       };
     });
   }, [availableGroups, allConnections, formData.id, formData.isGroup]);
 
   return (
     <select
-      value={formData.parentId || ''}
-      onChange={(e) => setFormData({ ...formData, parentId: e.target.value || undefined })}
-      className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      value={formData.parentId || ""}
+      onChange={(e) =>
+        setFormData({ ...formData, parentId: e.target.value || undefined })
+      }
+      className="sor-form-select"
     >
       <option value="">Root (No parent)</option>
       {selectableGroups.map(({ group, depth, disabled, reason }) => (
-        <option 
-          key={group.id} 
+        <option
+          key={group.id}
           value={group.id}
           disabled={disabled}
           title={reason}
         >
-          {'─'.repeat(depth)} {getFolderPath(group.id, allConnections)}
-          {disabled ? ` (${reason})` : ''}
+          {"─".repeat(depth)} {getFolderPath(group.id, allConnections)}
+          {disabled ? ` (${reason})` : ""}
         </option>
       ))}
     </select>
   );
 };
 
-export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFormData, availableGroups, allConnections = [] }) => {
+export const GeneralSection: React.FC<GeneralSectionProps> = ({
+  formData,
+  setFormData,
+  availableGroups,
+  allConnections = [],
+}) => {
   const iconOptions = [
-    { value: '', label: 'Default', icon: Monitor },
-    { value: 'terminal', label: 'Terminal', icon: Terminal },
-    { value: 'globe', label: 'Web', icon: Globe },
-    { value: 'database', label: 'Database', icon: Database },
-    { value: 'server', label: 'Server', icon: Server },
-    { value: 'shield', label: 'Shield', icon: Shield },
-    { value: 'cloud', label: 'Cloud', icon: Cloud },
-    { value: 'folder', label: 'Folder', icon: Folder },
-    { value: 'star', label: 'Star', icon: Star },
-    { value: 'drive', label: 'Drive', icon: HardDrive },
+    { value: "", label: "Default", icon: Monitor },
+    { value: "terminal", label: "Terminal", icon: Terminal },
+    { value: "globe", label: "Web", icon: Globe },
+    { value: "database", label: "Database", icon: Database },
+    { value: "server", label: "Server", icon: Server },
+    { value: "shield", label: "Shield", icon: Shield },
+    { value: "cloud", label: "Cloud", icon: Cloud },
+    { value: "folder", label: "Folder", icon: Folder },
+    { value: "star", label: "Star", icon: Star },
+    { value: "drive", label: "Drive", icon: HardDrive },
   ];
 
   const handleProtocolChange = (protocol: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      protocol: protocol as Connection['protocol'],
+      protocol: protocol as Connection["protocol"],
       port: getDefaultPort(protocol),
-      authType: ['http', 'https'].includes(protocol) ? 'basic' : 'password',
-      httpVerifySsl:
-        ['http', 'https'].includes(protocol) ? (prev.httpVerifySsl ?? true) : prev.httpVerifySsl,
+      authType: ["http", "https"].includes(protocol) ? "basic" : "password",
+      httpVerifySsl: ["http", "https"].includes(protocol)
+        ? (prev.httpVerifySsl ?? true)
+        : prev.httpVerifySsl,
     }));
   };
 
@@ -126,56 +163,72 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
           <input
             type="checkbox"
             checked={!!formData.isGroup}
-            onChange={(e) => setFormData({ ...formData, isGroup: e.target.checked })}
-            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 focus:ring-blue-500"
+            onChange={(e) =>
+              setFormData({ ...formData, isGroup: e.target.checked })
+            }
+            className="sor-form-checkbox"
           />
-          <span className="text-[var(--color-textSecondary)]">Create as folder/group</span>
+          <span className="text-[var(--color-textSecondary)]">
+            Create as folder/group
+          </span>
         </label>
         {!formData.isGroup && (
           <label className="flex items-center space-x-2">
             <input
               type="checkbox"
               checked={!!formData.favorite}
-              onChange={(e) => setFormData({ ...formData, favorite: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 focus:ring-blue-500"
+              onChange={(e) =>
+                setFormData({ ...formData, favorite: e.target.checked })
+              }
+              className="sor-form-checkbox"
             />
-            <span className="text-[var(--color-textSecondary)]">Mark as favorite</span>
+            <span className="text-[var(--color-textSecondary)]">
+              Mark as favorite
+            </span>
           </label>
         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Name *</label>
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+            Name *
+          </label>
           <input
             type="text"
             required
-            value={formData.name || ''}
+            value={formData.name || ""}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder={formData.isGroup ? 'Folder name' : 'Connection name'}
+            className="sor-form-input"
+            placeholder={formData.isGroup ? "Folder name" : "Connection name"}
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Icon</label>
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+            Icon
+          </label>
           <div className="grid grid-cols-5 gap-2">
             {iconOptions.map(({ value, label, icon: Icon }) => {
-              const isActive = (formData.icon || '') === value;
+              const isActive = (formData.icon || "") === value;
               return (
                 <button
-                  key={value || 'default'}
+                  key={value || "default"}
                   type="button"
-                  onClick={() => setFormData({ ...formData, icon: value || undefined })}
+                  onClick={() =>
+                    setFormData({ ...formData, icon: value || undefined })
+                  }
                   className={`flex flex-col items-center gap-1 rounded-md border px-2 py-2 text-xs transition-colors ${
                     isActive
-                      ? 'border-blue-500 bg-blue-500/10 text-blue-200'
-                      : 'border-[var(--color-border)] bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]'
+                      ? "border-blue-500 bg-blue-500/10 text-blue-200"
+                      : "border-[var(--color-border)] bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
                   }`}
                   title={label}
                 >
                   <Icon size={16} />
-                  <span className="text-[10px] uppercase tracking-wide">{label}</span>
+                  <span className="text-[10px] uppercase tracking-wide">
+                    {label}
+                  </span>
                 </button>
               );
             })}
@@ -183,7 +236,9 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Parent Folder</label>
+          <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+            Parent Folder
+          </label>
           <ParentFolderSelect
             formData={formData}
             setFormData={setFormData}
@@ -195,11 +250,13 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
         {!formData.isGroup && (
           <>
             <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Protocol</label>
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                Protocol
+              </label>
               <select
-                value={formData.protocol ?? 'rdp'}
+                value={formData.protocol ?? "rdp"}
                 onChange={(e) => handleProtocolChange(e.target.value)}
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="sor-form-select"
               >
                 <option value="rdp">RDP (Remote Desktop)</option>
                 <option value="ssh">SSH (Secure Shell)</option>
@@ -220,48 +277,67 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({ formData, setFor
               </select>
             </div>
 
-            {formData.protocol === 'ssh' && (
+            {formData.protocol === "ssh" && (
               <div>
-                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">SSH Implementation</label>
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                  SSH Implementation
+                </label>
                 <div className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-textSecondary)]">
                   Rust SSH Library
                 </div>
-                <p className="text-xs text-gray-500 mt-1">Using secure Rust-based SSH implementation</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Using secure Rust-based SSH implementation
+                </p>
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Hostname/IP *</label>
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                Hostname/IP *
+              </label>
               <input
                 type="text"
                 required
-                value={formData.hostname || ''}
-                onChange={(e) => setFormData({ ...formData, hostname: e.target.value })}
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={formData.hostname || ""}
+                onChange={(e) =>
+                  setFormData({ ...formData, hostname: e.target.value })
+                }
+                className="sor-form-input"
                 placeholder="192.168.1.100 or server.example.com"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Port</label>
+              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                Port
+              </label>
               <input
                 type="number"
                 value={formData.port || 0}
-                onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    port: parseInt(e.target.value) || 0,
+                  })
+                }
+                className="sor-form-input"
                 min={1}
                 max={65535}
               />
             </div>
 
-            {formData.protocol === 'rdp' && (
+            {formData.protocol === "rdp" && (
               <div>
-                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Domain</label>
+                <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                  Domain
+                </label>
                 <input
                   type="text"
-                  value={formData.domain || ''}
-                  onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={formData.domain || ""}
+                  onChange={(e) =>
+                    setFormData({ ...formData, domain: e.target.value })
+                  }
+                  className="sor-form-input"
                   placeholder="Domain (optional)"
                 />
               </div>

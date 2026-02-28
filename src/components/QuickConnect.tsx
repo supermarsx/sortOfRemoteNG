@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { PasswordInput } from './ui/PasswordInput';
-import { Clock, Play, Trash2, X, Zap } from 'lucide-react';
-import { QuickConnectHistoryEntry } from '../types/settings';
-import { Modal } from './ui/Modal';
+import React, { useState, useEffect } from "react";
+import { PasswordInput } from "./ui/PasswordInput";
+import { Clock, Play, Trash2, X, Zap } from "lucide-react";
+import { QuickConnectHistoryEntry } from "../types/settings";
+import { Modal } from "./ui/Modal";
 
 interface QuickConnectProps {
   isOpen: boolean;
@@ -33,25 +33,25 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
   onClearHistory,
   onConnect,
 }) => {
-  const [hostname, setHostname] = useState('');
-  const [protocol, setProtocol] = useState('rdp');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [domain, setDomain] = useState('');
-  const [authType, setAuthType] = useState<'password' | 'key'>('password');
-  const [privateKey, setPrivateKey] = useState('');
-  const [passphrase, setPassphrase] = useState('');
-  const [basicAuthUsername, setBasicAuthUsername] = useState('');
-  const [basicAuthPassword, setBasicAuthPassword] = useState('');
+  const [hostname, setHostname] = useState("");
+  const [protocol, setProtocol] = useState("rdp");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [domain, setDomain] = useState("");
+  const [authType, setAuthType] = useState<"password" | "key">("password");
+  const [privateKey, setPrivateKey] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [basicAuthUsername, setBasicAuthUsername] = useState("");
+  const [basicAuthPassword, setBasicAuthPassword] = useState("");
   const [httpVerifySsl, setHttpVerifySsl] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
 
-  const isSsh = protocol === 'ssh';
-  const isRdp = protocol === 'rdp';
-  const isVnc = protocol === 'vnc';
-  const isHttp = protocol === 'http' || protocol === 'https';
-  const isHttps = protocol === 'https';
-  const isTelnet = protocol === 'telnet';
+  const isSsh = protocol === "ssh";
+  const isRdp = protocol === "rdp";
+  const isVnc = protocol === "vnc";
+  const isHttp = protocol === "http" || protocol === "https";
+  const isHttps = protocol === "https";
+  const isTelnet = protocol === "telnet";
   const historyItems = historyEnabled ? history : [];
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -61,8 +61,8 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
     // Validate SSH-specific fields
     if (isSsh) {
       if (!username.trim()) return;
-      if (authType === 'password' && !password) return;
-      if (authType === 'key' && !privateKey.trim()) return;
+      if (authType === "password" && !password) return;
+      if (authType === "key" && !privateKey.trim()) return;
     }
 
     const payload: Parameters<typeof onConnect>[0] = {
@@ -73,7 +73,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
     if (isSsh) {
       payload.username = username.trim();
       payload.authType = authType;
-      if (authType === 'password') {
+      if (authType === "password") {
         payload.password = password;
       } else {
         payload.privateKey = privateKey.trim();
@@ -86,7 +86,8 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
     } else if (isVnc) {
       if (password) payload.password = password;
     } else if (isHttp) {
-      if (basicAuthUsername.trim()) payload.basicAuthUsername = basicAuthUsername.trim();
+      if (basicAuthUsername.trim())
+        payload.basicAuthUsername = basicAuthUsername.trim();
       if (basicAuthPassword) payload.basicAuthPassword = basicAuthPassword;
       if (isHttps) payload.httpVerifySsl = httpVerifySsl;
     } else if (isTelnet) {
@@ -100,14 +101,14 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
   };
 
   const resetFields = () => {
-    setHostname('');
-    setUsername('');
-    setPassword('');
-    setDomain('');
-    setPrivateKey('');
-    setPassphrase('');
-    setBasicAuthUsername('');
-    setBasicAuthPassword('');
+    setHostname("");
+    setUsername("");
+    setPassword("");
+    setDomain("");
+    setPrivateKey("");
+    setPassphrase("");
+    setBasicAuthUsername("");
+    setBasicAuthPassword("");
     setHttpVerifySsl(true);
   };
 
@@ -120,11 +121,11 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
   const handleHistorySelect = (entry: QuickConnectHistoryEntry) => {
     setHostname(entry.hostname);
     setProtocol(entry.protocol);
-    setUsername(entry.username ?? '');
-    setAuthType(entry.authType ?? 'password');
-    setPassword('');
-    setPrivateKey('');
-    setPassphrase('');
+    setUsername(entry.username ?? "");
+    setAuthType(entry.authType ?? "password");
+    setPassword("");
+    setPrivateKey("");
+    setPassphrase("");
     setShowHistory(false);
   };
 
@@ -140,39 +141,48 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
       backdropClassName="bg-black/50"
       panelClassName="max-w-md mx-4 overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-xl"
     >
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1" role="form">
-          <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between bg-[var(--color-surface)]">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-green-500/20 rounded-lg">
-                <Zap size={16} className="text-green-500" />
-              </div>
-              <h2 className="text-lg font-semibold text-[var(--color-text)]">Quick Connect</h2>
+      <form
+        onSubmit={handleSubmit}
+        className="flex flex-col flex-1"
+        role="form"
+      >
+        <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-4 py-3 flex items-center justify-between bg-[var(--color-surface)]">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-green-500/20 rounded-lg">
+              <Zap size={16} className="text-green-500" />
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="submit"
-                data-tooltip="Connect"
-                aria-label="Connect"
-                className="p-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
-              >
-                <Play size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                data-tooltip="Close"
-                aria-label="Close"
-                className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              >
-                <X size={16} />
-              </button>
-            </div>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">
+              Quick Connect
+            </h2>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              data-tooltip="Connect"
+              aria-label="Connect"
+              className="p-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+            >
+              <Play size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              data-tooltip="Close"
+              aria-label="Close"
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
 
-          <div className="p-4 space-y-4">
+        <div className="p-4 space-y-4">
           <div className="relative">
             <div className="flex items-center justify-between">
-              <label htmlFor="hostname" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+              <label
+                htmlFor="hostname"
+                className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+              >
                 Hostname or IP Address
               </label>
               {historyItems.length > 0 && (
@@ -192,7 +202,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
               required
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="sor-form-input"
               placeholder="192.168.1.100 or server.example.com"
               autoFocus
             />
@@ -222,7 +232,9 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                 </div>
                 <div className="border-t border-[var(--color-border)] px-3 py-2 flex items-center justify-between">
                   <span className="text-[11px] text-[var(--color-textSecondary)]">
-                    {historyEnabled ? "Saved Quick Connects" : "History disabled"}
+                    {historyEnabled
+                      ? "Saved Quick Connects"
+                      : "History disabled"}
                   </span>
                   <button
                     type="button"
@@ -241,14 +253,17 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           </div>
 
           <div>
-            <label htmlFor="protocol" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+            <label
+              htmlFor="protocol"
+              className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+            >
               Protocol
             </label>
             <select
               id="protocol"
               value={protocol}
               onChange={(e) => setProtocol(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="sor-form-select"
             >
               <option value="rdp">RDP (Remote Desktop)</option>
               <option value="ssh">SSH (Secure Shell)</option>
@@ -262,7 +277,10 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {isRdp && (
             <>
               <div>
-                <label htmlFor="rdp-username" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                <label
+                  htmlFor="rdp-username"
+                  className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                >
                   Username (optional)
                 </label>
                 <input
@@ -270,23 +288,29 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                   placeholder="Administrator"
                 />
               </div>
               <div>
-                <label htmlFor="rdp-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                <label
+                  htmlFor="rdp-password"
+                  className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                >
                   Password (optional)
                 </label>
                 <PasswordInput
                   id="rdp-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                 />
               </div>
               <div>
-                <label htmlFor="rdp-domain" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                <label
+                  htmlFor="rdp-domain"
+                  className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                >
                   Domain (optional)
                 </label>
                 <input
@@ -294,7 +318,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   type="text"
                   value={domain}
                   onChange={(e) => setDomain(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                   placeholder="DOMAIN"
                 />
               </div>
@@ -305,7 +329,10 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {isSsh && (
             <>
               <div>
-                <label htmlFor="ssh-username" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                <label
+                  htmlFor="ssh-username"
+                  className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                >
                   Username
                 </label>
                 <input
@@ -314,27 +341,35 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                   placeholder="root"
                 />
               </div>
               <div>
-                <label htmlFor="ssh-auth" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                <label
+                  htmlFor="ssh-auth"
+                  className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                >
                   Auth Method
                 </label>
                 <select
                   id="ssh-auth"
                   value={authType}
-                  onChange={(e) => setAuthType(e.target.value as 'password' | 'key')}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onChange={(e) =>
+                    setAuthType(e.target.value as "password" | "key")
+                  }
+                  className="sor-form-select"
                 >
                   <option value="password">Password</option>
                   <option value="key">Private Key</option>
                 </select>
               </div>
-              {authType === 'password' ? (
+              {authType === "password" ? (
                 <div>
-                  <label htmlFor="ssh-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                  <label
+                    htmlFor="ssh-password"
+                    className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                  >
                     Password
                   </label>
                   <PasswordInput
@@ -342,13 +377,16 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="sor-form-input"
                   />
                 </div>
               ) : (
                 <>
                   <div>
-                    <label htmlFor="ssh-key" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                    <label
+                      htmlFor="ssh-key"
+                      className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                    >
                       Private Key Path
                     </label>
                     <input
@@ -357,19 +395,22 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                       required
                       value={privateKey}
                       onChange={(e) => setPrivateKey(e.target.value)}
-                      className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="sor-form-input"
                       placeholder="C:\\Users\\me\\.ssh\\id_rsa"
                     />
                   </div>
                   <div>
-                    <label htmlFor="ssh-passphrase" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                    <label
+                      htmlFor="ssh-passphrase"
+                      className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                    >
                       Passphrase (optional)
                     </label>
                     <PasswordInput
                       id="ssh-passphrase"
                       value={passphrase}
                       onChange={(e) => setPassphrase(e.target.value)}
-                      className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="sor-form-input"
                     />
                   </div>
                 </>
@@ -380,14 +421,17 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {/* VNC credentials */}
           {isVnc && (
             <div>
-              <label htmlFor="vnc-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+              <label
+                htmlFor="vnc-password"
+                className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+              >
                 Password (optional)
               </label>
               <PasswordInput
                 id="vnc-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="sor-form-input"
               />
             </div>
           )}
@@ -396,7 +440,10 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {isHttp && (
             <>
               <div>
-                <label htmlFor="http-username" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                <label
+                  htmlFor="http-username"
+                  className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                >
                   Basic Auth Username (optional)
                 </label>
                 <input
@@ -404,19 +451,22 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   type="text"
                   value={basicAuthUsername}
                   onChange={(e) => setBasicAuthUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                   placeholder="admin"
                 />
               </div>
               <div>
-                <label htmlFor="http-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                <label
+                  htmlFor="http-password"
+                  className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                >
                   Basic Auth Password (optional)
                 </label>
                 <PasswordInput
                   id="http-password"
                   value={basicAuthPassword}
                   onChange={(e) => setBasicAuthPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                 />
               </div>
               {isHttps && (
@@ -426,7 +476,7 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                       type="checkbox"
                       checked={httpVerifySsl}
                       onChange={(e) => setHttpVerifySsl(e.target.checked)}
-                      className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 focus:ring-blue-500"
+                      className="sor-form-checkbox"
                     />
                     <span>Verify TLS certificates</span>
                   </label>
@@ -442,7 +492,10 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
           {isTelnet && (
             <>
               <div>
-                <label htmlFor="telnet-username" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                <label
+                  htmlFor="telnet-username"
+                  className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                >
                   Username (optional)
                 </label>
                 <input
@@ -450,24 +503,27 @@ export const QuickConnect: React.FC<QuickConnectProps> = ({
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                 />
               </div>
               <div>
-                <label htmlFor="telnet-password" className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+                <label
+                  htmlFor="telnet-password"
+                  className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2"
+                >
                   Password (optional)
                 </label>
                 <PasswordInput
                   id="telnet-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="sor-form-input"
                 />
               </div>
             </>
           )}
-          </div>
-        </form>
+        </div>
+      </form>
     </Modal>
   );
 };

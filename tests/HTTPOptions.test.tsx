@@ -23,7 +23,11 @@ const Wrapper = () => {
 
 describe("HTTPOptions", () => {
   it("adds a custom header via modal", async () => {
-    render(<Wrapper />);
+    const { container } = render(<Wrapper />);
+
+    expect(container.querySelector("select")?.className).toContain(
+      "sor-form-select",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Add Header" }));
     expect(await screen.findByText("Add HTTP Header")).toBeInTheDocument();
@@ -31,6 +35,9 @@ describe("HTTPOptions", () => {
     fireEvent.change(screen.getByPlaceholderText("e.g. Authorization"), {
       target: { value: "X-Test" },
     });
+    expect(
+      screen.getByPlaceholderText("e.g. Authorization").className,
+    ).toContain("sor-form-input");
     fireEvent.change(screen.getByPlaceholderText("e.g. Bearer token123"), {
       target: { value: "abc123" },
     });

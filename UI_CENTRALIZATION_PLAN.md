@@ -96,6 +96,8 @@ Consolidate reusable UI structure and CSS for:
   - web error/help list primitives: `.sor-web-error-panel`, `.sor-guidance-list*`
   - performance card shells: `.sor-metric-card*`, `.sor-metric-summary-card`, `.sor-metric-table-shell`
   - shared settings form primitives: `.sor-settings-input*`, `.sor-settings-select`, `.sor-settings-range-*`, `.sor-settings-tile*`
+  - shared editor/connect form primitives: `.sor-form-input`, `.sor-form-select`, `.sor-form-textarea`, `.sor-form-checkbox`
+  - shared form composition primitives: `.sor-form-label*`, `.sor-form-inline-check`, `.sor-form-section-heading`, `.sor-form-input-*`, `.sor-form-select-*`, `.sor-form-textarea-*`
   - toolbar status popup primitives: `.sor-toolbar-popover-*`, `.sor-status-item`
 - Migrated components adopted these classes where behavior/style stacks were duplicated.
   - latest adoption: `InternalProxyManager` stats/log cards and `WebBrowser` categorized error help cards
@@ -105,6 +107,9 @@ Consolidate reusable UI structure and CSS for:
   - latest adoption: `WebBrowser` error guidance lists via shared list primitives
   - latest adoption: `PerformanceSettings`, `ThemeSettings`, `ProxySettings`, and `StartupSettings` cards/inputs/selects/checkboxes/ranges
   - latest adoption: `AdvancedSettings`, `LayoutSettings`, `ApiSettings`, `SecuritySettings`, `RecoverySettings`, and `TrustVerificationSettings` cards/inputs/selects/checkboxes/ranges
+  - latest adoption: `QuickConnect`, `connectionEditor/GeneralSection`, `connectionEditor/CloudProviderOptions`, `connectionEditor/SSHOptions`, `connectionEditor/HTTPOptions`, and `connectionEditor/RDPOptions` form controls/checkboxes
+  - latest adoption: `connectionEditor/SSHTerminalOverrides`, `connectionEditor/SSHConnectionOverrides`, and `connectionEditor/TOTPOptions` override/input/checkbox control stacks
+  - latest adoption: `ProxyProfileEditor`, `ColorTagManager`, and `WakeScheduleManager` modal form labels/inputs/selects/checkboxes
 
 ### Test Coverage Added/Updated
 
@@ -130,12 +135,19 @@ Consolidate reusable UI structure and CSS for:
   - `tests/SettingsCoreSections.test.tsx`
   - `tests/SettingsSecondarySections.test.tsx`
   - `tests/SettingsExtendedSections.test.tsx`
+  - `tests/SSHOverridesSections.test.tsx`
 - Updated:
   - `tests/BulkSSHCommander.test.tsx`
+  - `tests/ConnectionEditorSections.test.tsx`
   - `tests/ConnectionTree.test.tsx`
+  - `tests/HTTPOptions.test.tsx`
+  - `tests/QuickConnect.test.tsx`
   - `tests/SettingsDialog.test.tsx`
   - `tests/WebTerminal.test.tsx`
   - `tests/PerformanceMonitor.test.tsx`
+  - `tests/ProxyProfileEditor.test.tsx`
+  - `tests/ColorTagManager.test.tsx`
+  - `tests/WakeScheduleManager.test.tsx`
 
 ## Remaining Scope
 

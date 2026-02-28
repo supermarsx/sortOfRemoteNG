@@ -32,9 +32,16 @@ describe("QuickConnect", () => {
     it("should display form elements", () => {
       render(<QuickConnect {...mockProps} />);
 
-      expect(screen.getByLabelText("Hostname or IP Address")).toBeInTheDocument();
-      expect(screen.getByLabelText("Protocol")).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /connect/i })).toBeInTheDocument();
+      const hostnameInput = screen.getByLabelText("Hostname or IP Address");
+      const protocolSelect = screen.getByLabelText("Protocol");
+
+      expect(hostnameInput).toBeInTheDocument();
+      expect(protocolSelect).toBeInTheDocument();
+      expect(hostnameInput.className).toContain("sor-form-input");
+      expect(protocolSelect.className).toContain("sor-form-select");
+      expect(
+        screen.getByRole("button", { name: /connect/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -43,25 +50,25 @@ describe("QuickConnect", () => {
       render(<QuickConnect {...mockProps} />);
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
-      fireEvent.change(hostnameInput, { target: { value: '192.168.1.100' } });
+      fireEvent.change(hostnameInput, { target: { value: "192.168.1.100" } });
 
-      expect(hostnameInput).toHaveValue('192.168.1.100');
+      expect(hostnameInput).toHaveValue("192.168.1.100");
     });
 
     it("should update protocol when selecting", () => {
       render(<QuickConnect {...mockProps} />);
 
       const protocolSelect = screen.getByLabelText("Protocol");
-      fireEvent.change(protocolSelect, { target: { value: 'ssh' } });
+      fireEvent.change(protocolSelect, { target: { value: "ssh" } });
 
-      expect(protocolSelect).toHaveValue('ssh');
+      expect(protocolSelect).toHaveValue("ssh");
     });
 
     it("should have RDP as default protocol", () => {
       render(<QuickConnect {...mockProps} />);
 
       const protocolSelect = screen.getByLabelText("Protocol");
-      expect(protocolSelect).toHaveValue('rdp');
+      expect(protocolSelect).toHaveValue("rdp");
     });
   });
 
@@ -71,20 +78,24 @@ describe("QuickConnect", () => {
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
       const protocolSelect = screen.getByLabelText("Protocol");
-      const connectButton = screen.getByRole('button', { name: /connect/i });
+      const connectButton = screen.getByRole("button", { name: /connect/i });
 
-      fireEvent.change(hostnameInput, { target: { value: '192.168.1.100' } });
-      fireEvent.change(protocolSelect, { target: { value: 'ssh' } });
-      fireEvent.change(screen.getByLabelText("Username"), { target: { value: 'root' } });
-      fireEvent.change(screen.getByLabelText("Password"), { target: { value: 'secret' } });
+      fireEvent.change(hostnameInput, { target: { value: "192.168.1.100" } });
+      fireEvent.change(protocolSelect, { target: { value: "ssh" } });
+      fireEvent.change(screen.getByLabelText("Username"), {
+        target: { value: "root" },
+      });
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "secret" },
+      });
       fireEvent.click(connectButton);
 
       expect(mockProps.onConnect).toHaveBeenCalledWith({
-        hostname: '192.168.1.100',
-        protocol: 'ssh',
-        username: 'root',
-        authType: 'password',
-        password: 'secret',
+        hostname: "192.168.1.100",
+        protocol: "ssh",
+        username: "root",
+        authType: "password",
+        password: "secret",
         privateKey: undefined,
         passphrase: undefined,
       });
@@ -94,9 +105,9 @@ describe("QuickConnect", () => {
       render(<QuickConnect {...mockProps} />);
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
-      const connectButton = screen.getByRole('button', { name: /connect/i });
+      const connectButton = screen.getByRole("button", { name: /connect/i });
 
-      fireEvent.change(hostnameInput, { target: { value: '192.168.1.100' } });
+      fireEvent.change(hostnameInput, { target: { value: "192.168.1.100" } });
       fireEvent.click(connectButton);
 
       expect(mockProps.onClose).toHaveBeenCalled();
@@ -106,14 +117,16 @@ describe("QuickConnect", () => {
       render(<QuickConnect {...mockProps} />);
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
-      const connectButton = screen.getByRole('button', { name: /connect/i });
+      const connectButton = screen.getByRole("button", { name: /connect/i });
 
-      fireEvent.change(hostnameInput, { target: { value: '  192.168.1.100  ' } });
+      fireEvent.change(hostnameInput, {
+        target: { value: "  192.168.1.100  " },
+      });
       fireEvent.click(connectButton);
 
       expect(mockProps.onConnect).toHaveBeenCalledWith({
-        hostname: '192.168.1.100',
-        protocol: 'rdp',
+        hostname: "192.168.1.100",
+        protocol: "rdp",
         username: undefined,
         authType: undefined,
         password: undefined,
@@ -125,7 +138,7 @@ describe("QuickConnect", () => {
     it("should not submit with empty hostname", () => {
       render(<QuickConnect {...mockProps} />);
 
-      const connectButton = screen.getByRole('button', { name: /connect/i });
+      const connectButton = screen.getByRole("button", { name: /connect/i });
       fireEvent.click(connectButton);
 
       expect(mockProps.onConnect).not.toHaveBeenCalled();
@@ -136,9 +149,9 @@ describe("QuickConnect", () => {
       render(<QuickConnect {...mockProps} />);
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
-      const connectButton = screen.getByRole('button', { name: /connect/i });
+      const connectButton = screen.getByRole("button", { name: /connect/i });
 
-      fireEvent.change(hostnameInput, { target: { value: '   ' } });
+      fireEvent.change(hostnameInput, { target: { value: "   " } });
       fireEvent.click(connectButton);
 
       expect(mockProps.onConnect).not.toHaveBeenCalled();
@@ -152,14 +165,14 @@ describe("QuickConnect", () => {
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
 
-      fireEvent.change(hostnameInput, { target: { value: '192.168.1.100' } });
-      
-      const form = screen.getByRole('form');
+      fireEvent.change(hostnameInput, { target: { value: "192.168.1.100" } });
+
+      const form = screen.getByRole("form");
       fireEvent.submit(form);
 
       expect(mockProps.onConnect).toHaveBeenCalledWith({
-        hostname: '192.168.1.100',
-        protocol: 'rdp',
+        hostname: "192.168.1.100",
+        protocol: "rdp",
         username: undefined,
         authType: undefined,
         password: undefined,
@@ -173,7 +186,7 @@ describe("QuickConnect", () => {
     it("should call onClose when close button is clicked", () => {
       render(<QuickConnect {...mockProps} />);
 
-      const closeButton = screen.getByRole('button', { name: /close/i });
+      const closeButton = screen.getByRole("button", { name: /close/i });
       fireEvent.click(closeButton);
 
       expect(mockProps.onClose).toHaveBeenCalled();
@@ -182,7 +195,7 @@ describe("QuickConnect", () => {
     it("should call onClose when clicking outside modal", () => {
       render(<QuickConnect {...mockProps} />);
 
-      const backdrop = screen.getByTestId('quick-connect-modal');
+      const backdrop = screen.getByTestId("quick-connect-modal");
       fireEvent.click(backdrop);
 
       expect(mockProps.onClose).toHaveBeenCalled();
@@ -192,9 +205,9 @@ describe("QuickConnect", () => {
       render(<QuickConnect {...mockProps} />);
 
       const hostnameInput = screen.getByLabelText("Hostname or IP Address");
-      fireEvent.change(hostnameInput, { target: { value: '192.168.1.100' } });
+      fireEvent.change(hostnameInput, { target: { value: "192.168.1.100" } });
 
-      const closeButton = screen.getByRole('button', { name: /close/i });
+      const closeButton = screen.getByRole("button", { name: /close/i });
       fireEvent.click(closeButton);
 
       expect(mockProps.onClose).toHaveBeenCalled();
@@ -206,12 +219,16 @@ describe("QuickConnect", () => {
     it("should have multiple protocol options", () => {
       render(<QuickConnect {...mockProps} />);
 
-      const protocolSelect = screen.getByLabelText("Protocol") as HTMLSelectElement;
-      const options = Array.from(protocolSelect.options).map(option => option.value);
+      const protocolSelect = screen.getByLabelText(
+        "Protocol",
+      ) as HTMLSelectElement;
+      const options = Array.from(protocolSelect.options).map(
+        (option) => option.value,
+      );
 
-      expect(options).toContain('rdp');
-      expect(options).toContain('ssh');
-      expect(options).toContain('vnc');
+      expect(options).toContain("rdp");
+      expect(options).toContain("ssh");
+      expect(options).toContain("vnc");
       expect(options.length).toBeGreaterThan(1);
     });
   });
@@ -220,7 +237,7 @@ describe("QuickConnect", () => {
     it("should disable connect button when hostname is empty", () => {
       render(<QuickConnect {...mockProps} />);
 
-      const connectButton = screen.getByRole('button', { name: /connect/i });
+      const connectButton = screen.getByRole("button", { name: /connect/i });
 
       // Button should be enabled by default (validation happens on submit)
       expect(connectButton).toBeEnabled();

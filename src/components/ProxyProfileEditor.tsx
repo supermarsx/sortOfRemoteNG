@@ -197,7 +197,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My SOCKS5 Proxy"
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm focus:ring-2 focus:ring-blue-500"
+                className="sor-form-input"
               />
             </div>
 
@@ -210,14 +210,14 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional description..."
                 rows={2}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm resize-none"
+                className="sor-form-textarea resize-none"
               />
             </div>
           </div>
 
           {/* Proxy Type */}
           <div>
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
+            <label className="sor-form-label">
               <Server className="w-4 h-4 inline mr-1" />
               Proxy Type
             </label>
@@ -253,21 +253,17 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  Host *
-                </label>
+                <label className="sor-form-label-xs">Host *</label>
                 <input
                   type="text"
                   value={config.host}
                   onChange={(e) => updateConfig({ host: e.target.value })}
                   placeholder="proxy.example.com"
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                  className="sor-form-input"
                 />
               </div>
               <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  Port *
-                </label>
+                <label className="sor-form-label-xs">Port *</label>
                 <input
                   type="number"
                   value={config.port}
@@ -275,7 +271,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                     updateConfig({ port: parseInt(e.target.value) || 1080 })
                   }
                   placeholder="1080"
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                  className="sor-form-input"
                 />
               </div>
             </div>
@@ -295,9 +291,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                      Username
-                    </label>
+                    <label className="sor-form-label-xs">Username</label>
                     <input
                       type="text"
                       value={config.username || ""}
@@ -305,20 +299,18 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                         updateConfig({ username: e.target.value || undefined })
                       }
                       placeholder="username"
-                      className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                      className="sor-form-input"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                      Password
-                    </label>
+                    <label className="sor-form-label-xs">Password</label>
                     <PasswordInput
                       value={config.password || ""}
                       onChange={(e) =>
                         updateConfig({ password: e.target.value || undefined })
                       }
                       placeholder="••••••••"
-                      className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                      className="sor-form-input"
                     />
                   </div>
                 </div>
@@ -329,15 +321,13 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
             {config.type === "shadowsocks" && (
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                    Encryption Method
-                  </label>
+                  <label className="sor-form-label-xs">Encryption Method</label>
                   <select
                     value={config.shadowsocksMethod || "aes-256-gcm"}
                     onChange={(e) =>
                       updateConfig({ shadowsocksMethod: e.target.value })
                     }
-                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                    className="sor-form-select"
                   >
                     <option value="aes-256-gcm">AES-256-GCM</option>
                     <option value="aes-128-gcm">AES-128-GCM</option>
@@ -352,9 +342,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                    Plugin (Optional)
-                  </label>
+                  <label className="sor-form-label-xs">Plugin (Optional)</label>
                   <input
                     type="text"
                     value={config.shadowsocksPlugin || ""}
@@ -364,7 +352,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                       })
                     }
                     placeholder="v2ray-plugin, simple-obfs"
-                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                    className="sor-form-input"
                   />
                 </div>
               </div>
@@ -374,7 +362,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
             {config.type === "ssh" && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  <label className="sor-form-label-xs">
                     SSH Key File (Optional)
                   </label>
                   <input
@@ -384,11 +372,11 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                       updateConfig({ sshKeyFile: e.target.value || undefined })
                     }
                     placeholder="/path/to/private/key"
-                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                    className="sor-form-input"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  <label className="sor-form-label-xs">
                     Key Passphrase (if encrypted)
                   </label>
                   <PasswordInput
@@ -399,7 +387,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                       })
                     }
                     placeholder="••••••••"
-                    className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                    className="sor-form-input"
                   />
                 </div>
               </div>
@@ -408,9 +396,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
             {/* WebSocket specific */}
             {config.type === "websocket" && (
               <div>
-                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                  WebSocket Path
-                </label>
+                <label className="sor-form-label-xs">WebSocket Path</label>
                 <input
                   type="text"
                   value={config.websocketPath || ""}
@@ -418,7 +404,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                     updateConfig({ websocketPath: e.target.value || undefined })
                   }
                   placeholder="/ws"
-                  className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+                  className="sor-form-input"
                 />
               </div>
             )}
@@ -471,7 +457,7 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
               type="checkbox"
               checked={isDefault}
               onChange={(e) => setIsDefault(e.target.checked)}
-              className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
+              className="sor-form-checkbox w-4 h-4"
             />
             <div>
               <div className="text-sm font-medium text-[var(--color-text)] flex items-center gap-1">

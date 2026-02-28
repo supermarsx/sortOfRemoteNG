@@ -47,13 +47,22 @@ describe("ProxyProfileEditor", () => {
       />,
     );
 
-    fireEvent.change(screen.getByPlaceholderText("My SOCKS5 Proxy"), {
+    const nameInput = screen.getByPlaceholderText("My SOCKS5 Proxy");
+    const hostInput = screen.getByPlaceholderText("proxy.example.com");
+    const portInput = screen.getByPlaceholderText("1080");
+    const defaultCheckbox = screen.getByRole("checkbox");
+
+    expect(nameInput.className).toContain("sor-form-input");
+    expect(hostInput.className).toContain("sor-form-input");
+    expect(defaultCheckbox.className).toContain("sor-form-checkbox");
+
+    fireEvent.change(nameInput, {
       target: { value: "Office Proxy" },
     });
-    fireEvent.change(screen.getByPlaceholderText("proxy.example.com"), {
+    fireEvent.change(hostInput, {
       target: { value: "proxy.local" },
     });
-    fireEvent.change(screen.getByPlaceholderText("1080"), {
+    fireEvent.change(portInput, {
       target: { value: "3128" },
     });
 

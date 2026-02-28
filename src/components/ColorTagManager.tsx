@@ -140,24 +140,20 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Tag Name
-                  </label>
+                  <label className="sor-form-label">Tag Name</label>
                   <input
                     type="text"
                     value={newTag.name || ""}
                     onChange={(e) =>
                       setNewTag({ ...newTag, name: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                    className="sor-form-input"
                     placeholder="Enter tag name"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Color
-                  </label>
+                  <label className="sor-form-label">Color</label>
                   <div className="flex items-center space-x-3">
                     <input
                       type="color"
@@ -191,7 +187,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                     onChange={(e) =>
                       setNewTag({ ...newTag, global: e.target.checked })
                     }
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                    className="sor-form-checkbox"
                   />
                   <span className="text-[var(--color-textSecondary)]">
                     Global tag (available for all connections)
@@ -225,23 +221,19 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Tag Name
-                  </label>
+                  <label className="sor-form-label">Tag Name</label>
                   <input
                     type="text"
                     value={editingTag.name}
                     onChange={(e) =>
                       setEditingTag({ ...editingTag, name: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                    className="sor-form-input"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
-                    Color
-                  </label>
+                  <label className="sor-form-label">Color</label>
                   <div className="flex items-center space-x-3">
                     <input
                       type="color"
@@ -277,7 +269,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                     onChange={(e) =>
                       setEditingTag({ ...editingTag, global: e.target.checked })
                     }
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                    className="sor-form-checkbox"
                   />
                   <span className="text-[var(--color-textSecondary)]">
                     Global tag
