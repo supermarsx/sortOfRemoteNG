@@ -615,6 +615,71 @@ body {
   border-radius: 0.5rem;
 }
 
+.sor-web-error-panel {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  max-width: 32rem;
+}
+
+.sor-guidance-list {
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+}
+
+.sor-guidance-list > li + li {
+  margin-top: 0.25rem;
+}
+
+.sor-guidance-list-disc {
+  list-style: disc;
+  list-style-position: inside;
+}
+
+.sor-guidance-list-decimal {
+  list-style: decimal;
+  list-style-position: inside;
+}
+
+.sor-metric-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  transition: border-color 150ms ease;
+}
+
+.sor-metric-card-blue:hover {
+  border-color: color-mix(in srgb, #3b82f6 30%, var(--color-border));
+}
+
+.sor-metric-card-green:hover {
+  border-color: color-mix(in srgb, #22c55e 30%, var(--color-border));
+}
+
+.sor-metric-card-yellow:hover {
+  border-color: color-mix(in srgb, #eab308 30%, var(--color-border));
+}
+
+.sor-metric-card-purple:hover {
+  border-color: color-mix(in srgb, #a855f7 30%, var(--color-border));
+}
+
+.sor-metric-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--color-surfaceHover) 50%, transparent);
+}
+
+.sor-metric-table-shell {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
 .sor-manager-panel {
   max-width: 64rem;
   height: 85vh;
@@ -703,6 +768,11 @@ body {
 
 .sor-settings-range-wide {
   width: 8rem;
+}
+
+.sor-settings-range-full {
+  width: 100%;
+  accent-color: #3b82f6;
 }
 
 .sor-settings-slider-value {

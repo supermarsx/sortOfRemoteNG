@@ -1,5 +1,5 @@
-import React from 'react';
-import { GlobalSettings, BackendConfig } from '../../../types/settings';
+import React from "react";
+import { GlobalSettings, BackendConfig } from "../../../types/settings";
 import {
   Server,
   Cpu,
@@ -8,33 +8,31 @@ import {
   Shield,
   Globe,
   Layers,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface BackendSettingsProps {
   settings: GlobalSettings;
   updateSettings: (updates: Partial<GlobalSettings>) => void;
 }
 
-const selectClass =
-  'w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm';
-const inputClass =
-  'w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm';
-const labelClass = 'block text-sm font-medium text-[var(--color-textSecondary)] mb-1';
-const descClass = 'text-xs text-gray-500 mt-0.5';
+const selectClass = "sor-settings-select w-full";
+const inputClass = "sor-settings-input w-full";
+const labelClass = "block sor-settings-row-label mb-1";
+const descClass = "text-xs text-gray-500 mt-0.5";
 
 const DEFAULT_BACKEND: BackendConfig = {
-  logLevel: 'info',
+  logLevel: "info",
   maxConcurrentRdpSessions: 10,
-  rdpServerRenderer: 'auto',
-  rdpCodecPreference: 'auto',
+  rdpServerRenderer: "auto",
+  rdpCodecPreference: "auto",
   tcpDefaultBufferSize: 65536,
   tcpKeepAliveSeconds: 30,
   connectionTimeoutSeconds: 15,
   tempFileCleanupEnabled: true,
   tempFileCleanupIntervalMinutes: 60,
   cacheSizeMb: 256,
-  tlsMinVersion: '1.2',
-  certValidationMode: 'tofu',
+  tlsMinVersion: "1.2",
+  certValidationMode: "tofu",
   allowedCipherSuites: [],
   enableInternalApi: false,
   internalApiPort: 9876,
@@ -62,12 +60,13 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           Backend
         </h3>
         <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-          Tauri runtime and backend service configuration. Changes may require an application restart.
+          Tauri runtime and backend service configuration. Changes may require
+          an application restart.
         </p>
       </div>
 
       {/* ─── Runtime ─────────────────────────────────────────── */}
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+      <div className="sor-settings-card">
         <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Cpu className="w-4 h-4 text-blue-400" />
           Runtime
@@ -79,7 +78,11 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
             <select
               className={selectClass}
               value={cfg.logLevel}
-              onChange={(e) => update({ logLevel: e.target.value as BackendConfig['logLevel'] })}
+              onChange={(e) =>
+                update({
+                  logLevel: e.target.value as BackendConfig["logLevel"],
+                })
+              }
             >
               <option value="trace">Trace</option>
               <option value="debug">Debug</option>
@@ -98,15 +101,21 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
               value={cfg.maxConcurrentRdpSessions}
               min={1}
               max={50}
-              onChange={(e) => update({ maxConcurrentRdpSessions: parseInt(e.target.value) || 10 })}
+              onChange={(e) =>
+                update({
+                  maxConcurrentRdpSessions: parseInt(e.target.value) || 10,
+                })
+              }
             />
-            <p className={descClass}>Maximum number of simultaneous RDP connections</p>
+            <p className={descClass}>
+              Maximum number of simultaneous RDP connections
+            </p>
           </div>
         </div>
       </div>
 
       {/* ─── RDP Engine ──────────────────────────────────────── */}
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+      <div className="sor-settings-card">
         <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Layers className="w-4 h-4 text-cyan-400" />
           RDP Engine
@@ -118,14 +127,21 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
             <select
               className={selectClass}
               value={cfg.rdpServerRenderer}
-              onChange={(e) => update({ rdpServerRenderer: e.target.value as BackendConfig['rdpServerRenderer'] })}
+              onChange={(e) =>
+                update({
+                  rdpServerRenderer: e.target
+                    .value as BackendConfig["rdpServerRenderer"],
+                })
+              }
             >
               <option value="auto">Auto-detect</option>
               <option value="softbuffer">Softbuffer (CPU)</option>
               <option value="wgpu">wgpu (GPU)</option>
               <option value="webview">WebView (default)</option>
             </select>
-            <p className={descClass}>Rendering backend for server-side frame compositing</p>
+            <p className={descClass}>
+              Rendering backend for server-side frame compositing
+            </p>
           </div>
 
           <div>
@@ -133,7 +149,12 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
             <select
               className={selectClass}
               value={cfg.rdpCodecPreference}
-              onChange={(e) => update({ rdpCodecPreference: e.target.value as BackendConfig['rdpCodecPreference'] })}
+              onChange={(e) =>
+                update({
+                  rdpCodecPreference: e.target
+                    .value as BackendConfig["rdpCodecPreference"],
+                })
+              }
             >
               <option value="auto">Auto-negotiate</option>
               <option value="remotefx">RemoteFX</option>
@@ -147,7 +168,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       </div>
 
       {/* ─── Network ─────────────────────────────────────────── */}
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+      <div className="sor-settings-card">
         <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Network className="w-4 h-4 text-green-400" />
           Network
@@ -163,7 +184,11 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
               min={4096}
               max={1048576}
               step={4096}
-              onChange={(e) => update({ tcpDefaultBufferSize: parseInt(e.target.value) || 65536 })}
+              onChange={(e) =>
+                update({
+                  tcpDefaultBufferSize: parseInt(e.target.value) || 65536,
+                })
+              }
             />
           </div>
 
@@ -175,7 +200,9 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
               value={cfg.tcpKeepAliveSeconds}
               min={5}
               max={300}
-              onChange={(e) => update({ tcpKeepAliveSeconds: parseInt(e.target.value) || 30 })}
+              onChange={(e) =>
+                update({ tcpKeepAliveSeconds: parseInt(e.target.value) || 30 })
+              }
             />
           </div>
 
@@ -187,14 +214,18 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
               value={cfg.connectionTimeoutSeconds}
               min={5}
               max={120}
-              onChange={(e) => update({ connectionTimeoutSeconds: parseInt(e.target.value) || 15 })}
+              onChange={(e) =>
+                update({
+                  connectionTimeoutSeconds: parseInt(e.target.value) || 15,
+                })
+              }
             />
           </div>
         </div>
       </div>
 
       {/* ─── Storage ─────────────────────────────────────────── */}
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+      <div className="sor-settings-card">
         <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-amber-400" />
           Storage
@@ -209,27 +240,41 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
               value={cfg.cacheSizeMb}
               min={32}
               max={2048}
-              onChange={(e) => update({ cacheSizeMb: parseInt(e.target.value) || 256 })}
+              onChange={(e) =>
+                update({ cacheSizeMb: parseInt(e.target.value) || 256 })
+              }
             />
-            <p className={descClass}>Maximum memory for frame and bitmap caching</p>
+            <p className={descClass}>
+              Maximum memory for frame and bitmap caching
+            </p>
           </div>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <label className="text-sm font-medium text-[var(--color-textSecondary)]">Temp File Cleanup</label>
-                <p className={descClass}>Auto-delete temporary files (screenshots, recordings)</p>
+                <label className="text-sm font-medium text-[var(--color-textSecondary)]">
+                  Temp File Cleanup
+                </label>
+                <p className={descClass}>
+                  Auto-delete temporary files (screenshots, recordings)
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => update({ tempFileCleanupEnabled: !cfg.tempFileCleanupEnabled })}
+                onClick={() =>
+                  update({
+                    tempFileCleanupEnabled: !cfg.tempFileCleanupEnabled,
+                  })
+                }
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                  cfg.tempFileCleanupEnabled ? 'bg-blue-600' : 'bg-gray-600'
+                  cfg.tempFileCleanupEnabled ? "bg-blue-600" : "bg-gray-600"
                 }`}
               >
                 <span
                   className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                    cfg.tempFileCleanupEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                    cfg.tempFileCleanupEnabled
+                      ? "translate-x-4.5"
+                      : "translate-x-0.5"
                   }`}
                 />
               </button>
@@ -244,7 +289,12 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
                   value={cfg.tempFileCleanupIntervalMinutes}
                   min={5}
                   max={1440}
-                  onChange={(e) => update({ tempFileCleanupIntervalMinutes: parseInt(e.target.value) || 60 })}
+                  onChange={(e) =>
+                    update({
+                      tempFileCleanupIntervalMinutes:
+                        parseInt(e.target.value) || 60,
+                    })
+                  }
                 />
               </div>
             )}
@@ -253,7 +303,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
       </div>
 
       {/* ─── Security ────────────────────────────────────────── */}
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+      <div className="sor-settings-card">
         <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Shield className="w-4 h-4 text-red-400" />
           Security
@@ -265,12 +315,19 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
             <select
               className={selectClass}
               value={cfg.tlsMinVersion}
-              onChange={(e) => update({ tlsMinVersion: e.target.value as BackendConfig['tlsMinVersion'] })}
+              onChange={(e) =>
+                update({
+                  tlsMinVersion: e.target
+                    .value as BackendConfig["tlsMinVersion"],
+                })
+              }
             >
               <option value="1.2">TLS 1.2</option>
               <option value="1.3">TLS 1.3</option>
             </select>
-            <p className={descClass}>Minimum TLS version for all outgoing connections</p>
+            <p className={descClass}>
+              Minimum TLS version for all outgoing connections
+            </p>
           </div>
 
           <div>
@@ -278,19 +335,26 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
             <select
               className={selectClass}
               value={cfg.certValidationMode}
-              onChange={(e) => update({ certValidationMode: e.target.value as BackendConfig['certValidationMode'] })}
+              onChange={(e) =>
+                update({
+                  certValidationMode: e.target
+                    .value as BackendConfig["certValidationMode"],
+                })
+              }
             >
               <option value="strict">Strict (require valid CA chain)</option>
               <option value="tofu">Trust on First Use</option>
               <option value="permissive">Permissive (accept all)</option>
             </select>
-            <p className={descClass}>How the backend validates remote server certificates</p>
+            <p className={descClass}>
+              How the backend validates remote server certificates
+            </p>
           </div>
         </div>
       </div>
 
       {/* ─── Internal API Server ─────────────────────────────── */}
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+      <div className="sor-settings-card">
         <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
           <Globe className="w-4 h-4 text-purple-400" />
           Internal API Server
@@ -298,19 +362,25 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
         <div className="flex items-center justify-between mb-2">
           <div>
-            <label className="text-sm font-medium text-[var(--color-textSecondary)]">Enable Internal API</label>
-            <p className={descClass}>Expose a local REST API for automation and integrations</p>
+            <label className="text-sm font-medium text-[var(--color-textSecondary)]">
+              Enable Internal API
+            </label>
+            <p className={descClass}>
+              Expose a local REST API for automation and integrations
+            </p>
           </div>
           <button
             type="button"
-            onClick={() => update({ enableInternalApi: !cfg.enableInternalApi })}
+            onClick={() =>
+              update({ enableInternalApi: !cfg.enableInternalApi })
+            }
             className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              cfg.enableInternalApi ? 'bg-blue-600' : 'bg-gray-600'
+              cfg.enableInternalApi ? "bg-blue-600" : "bg-gray-600"
             }`}
           >
             <span
               className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                cfg.enableInternalApi ? 'translate-x-4.5' : 'translate-x-0.5'
+                cfg.enableInternalApi ? "translate-x-4.5" : "translate-x-0.5"
               }`}
             />
           </button>
@@ -326,7 +396,9 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
                 value={cfg.internalApiPort}
                 min={1024}
                 max={65535}
-                onChange={(e) => update({ internalApiPort: parseInt(e.target.value) || 9876 })}
+                onChange={(e) =>
+                  update({ internalApiPort: parseInt(e.target.value) || 9876 })
+                }
               />
             </div>
 
@@ -338,7 +410,11 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
                 value={cfg.internalApiRateLimit}
                 min={10}
                 max={10000}
-                onChange={(e) => update({ internalApiRateLimit: parseInt(e.target.value) || 100 })}
+                onChange={(e) =>
+                  update({
+                    internalApiRateLimit: parseInt(e.target.value) || 100,
+                  })
+                }
               />
             </div>
 
@@ -348,30 +424,42 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
                   <input
                     type="checkbox"
                     checked={cfg.internalApiAuth}
-                    onChange={(e) => update({ internalApiAuth: e.target.checked })}
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                    onChange={(e) =>
+                      update({ internalApiAuth: e.target.checked })
+                    }
+                    className="sor-settings-checkbox"
                   />
-                  <span className="text-sm text-[var(--color-textSecondary)]">Require Auth</span>
+                  <span className="text-sm text-[var(--color-textSecondary)]">
+                    Require Auth
+                  </span>
                 </label>
 
                 <label className="flex items-center space-x-2">
                   <input
                     type="checkbox"
                     checked={cfg.internalApiCors}
-                    onChange={(e) => update({ internalApiCors: e.target.checked })}
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                    onChange={(e) =>
+                      update({ internalApiCors: e.target.checked })
+                    }
+                    className="sor-settings-checkbox"
                   />
-                  <span className="text-sm text-[var(--color-textSecondary)]">Enable CORS</span>
+                  <span className="text-sm text-[var(--color-textSecondary)]">
+                    Enable CORS
+                  </span>
                 </label>
 
                 <label className="flex items-center space-x-2">
                   <input
                     type="checkbox"
                     checked={cfg.internalApiSsl}
-                    onChange={(e) => update({ internalApiSsl: e.target.checked })}
-                    className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
+                    onChange={(e) =>
+                      update({ internalApiSsl: e.target.checked })
+                    }
+                    className="sor-settings-checkbox"
                   />
-                  <span className="text-sm text-[var(--color-textSecondary)]">Enable SSL</span>
+                  <span className="text-sm text-[var(--color-textSecondary)]">
+                    Enable SSL
+                  </span>
                 </label>
               </div>
             </div>

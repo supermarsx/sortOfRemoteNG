@@ -1,6 +1,6 @@
-import React from 'react';
-import { useTranslation } from 'react-i18next';
-import { GlobalSettings, StatusCheckMethod } from '../../../types/settings';
+import React from "react";
+import { useTranslation } from "react-i18next";
+import { GlobalSettings, StatusCheckMethod } from "../../../types/settings";
 import {
   Activity,
   RefreshCw,
@@ -12,7 +12,7 @@ import {
   Radio,
   Zap,
   History,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface PerformanceSettingsProps {
   settings: GlobalSettings;
@@ -20,12 +20,25 @@ interface PerformanceSettingsProps {
 }
 
 const STATUS_CHECK_METHODS = [
-  { value: 'socket', label: 'Socket', icon: Radio, description: 'Direct TCP connection check' },
-  { value: 'http', label: 'HTTP', icon: Globe, description: 'HTTP request check' },
-  { value: 'ping', label: 'Ping', icon: Wifi, description: 'ICMP ping check' },
+  {
+    value: "socket",
+    label: "Socket",
+    icon: Radio,
+    description: "Direct TCP connection check",
+  },
+  {
+    value: "http",
+    label: "HTTP",
+    icon: Globe,
+    description: "HTTP request check",
+  },
+  { value: "ping", label: "Ping", icon: Wifi, description: "ICMP ping check" },
 ];
 
-export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settings, updateSettings }) => {
+export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
+  settings,
+  updateSettings,
+}) => {
   const { t } = useTranslation();
   return (
     <div className="space-y-6">
@@ -34,7 +47,8 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
         Performance
       </h3>
       <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Connection retry, performance monitoring, status checking, and action logging.
+        Connection retry, performance monitoring, status checking, and action
+        logging.
       </p>
 
       {/* Retry Settings Section */}
@@ -44,7 +58,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
           Connection Retry
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
+        <div className="sor-settings-card">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
@@ -54,8 +68,10 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
               <input
                 type="number"
                 value={settings.retryAttempts}
-                onChange={(e) => updateSettings({ retryAttempts: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                onChange={(e) =>
+                  updateSettings({ retryAttempts: parseInt(e.target.value) })
+                }
+                className="sor-settings-input w-full"
                 min="0"
                 max="10"
               />
@@ -69,8 +85,10 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
               <input
                 type="number"
                 value={settings.retryDelay}
-                onChange={(e) => updateSettings({ retryDelay: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                onChange={(e) =>
+                  updateSettings({ retryDelay: parseInt(e.target.value) })
+                }
+                className="sor-settings-input w-full"
                 min="1000"
                 max="60000"
                 step="1000"
@@ -87,19 +105,25 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
           Performance Monitoring
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.enablePerformanceTracking}
-              onChange={(e) => updateSettings({ enablePerformanceTracking: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ enablePerformanceTracking: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Activity className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable Performance Tracking</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Enable Performance Tracking
+            </span>
           </label>
 
-          <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${!settings.enablePerformanceTracking ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div
+            className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${!settings.enablePerformanceTracking ? "opacity-50 pointer-events-none" : ""}`}
+          >
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Clock className="w-4 h-4" />
@@ -110,10 +134,11 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
                 value={Math.round(settings.performancePollIntervalMs / 1000)}
                 onChange={(e) =>
                   updateSettings({
-                    performancePollIntervalMs: Math.max(1, parseInt(e.target.value || '0')) * 1000,
+                    performancePollIntervalMs:
+                      Math.max(1, parseInt(e.target.value || "0")) * 1000,
                   })
                 }
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                className="sor-settings-input w-full"
                 min="1"
                 max="120"
               />
@@ -128,9 +153,11 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
                 type="text"
                 value={settings.performanceLatencyTarget}
                 onChange={(e) =>
-                  updateSettings({ performanceLatencyTarget: e.target.value || "1.1.1.1" })
+                  updateSettings({
+                    performanceLatencyTarget: e.target.value || "1.1.1.1",
+                  })
                 }
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                className="sor-settings-input w-full"
                 placeholder="1.1.1.1"
               />
             </div>
@@ -145,19 +172,25 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
           Status Checking
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.enableStatusChecking}
-              onChange={(e) => updateSettings({ enableStatusChecking: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ enableStatusChecking: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Zap className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable Status Checking</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Enable Status Checking
+            </span>
           </label>
 
-          <div className={`space-y-4 ${!settings.enableStatusChecking ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div
+            className={`space-y-4 ${!settings.enableStatusChecking ? "opacity-50 pointer-events-none" : ""}`}
+          >
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
                 <Clock className="w-4 h-4" />
@@ -166,8 +199,12 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
               <input
                 type="number"
                 value={settings.statusCheckInterval}
-                onChange={(e) => updateSettings({ statusCheckInterval: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                onChange={(e) =>
+                  updateSettings({
+                    statusCheckInterval: parseInt(e.target.value),
+                  })
+                }
+                className="sor-settings-input w-full"
                 min="10"
                 max="300"
               />
@@ -184,16 +221,26 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
                   return (
                     <button
                       key={method.value}
-                      onClick={() => updateSettings({ statusCheckMethod: method.value as StatusCheckMethod })}
+                      onClick={() =>
+                        updateSettings({
+                          statusCheckMethod: method.value as StatusCheckMethod,
+                        })
+                      }
                       className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                         settings.statusCheckMethod === method.value
-                          ? 'border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50'
-                          : 'border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]'
+                          ? "border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50"
+                          : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
                       }`}
                     >
-                      <Icon className={`w-5 h-5 mb-1 ${settings.statusCheckMethod === method.value ? 'text-purple-400' : ''}`} />
-                      <span className="text-sm font-medium">{method.label}</span>
-                      <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">{method.description}</span>
+                      <Icon
+                        className={`w-5 h-5 mb-1 ${settings.statusCheckMethod === method.value ? "text-purple-400" : ""}`}
+                      />
+                      <span className="text-sm font-medium">
+                        {method.label}
+                      </span>
+                      <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">
+                        {method.description}
+                      </span>
                     </button>
                   );
                 })}
@@ -210,19 +257,25 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
           Action Logging
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.enableActionLog}
-              onChange={(e) => updateSettings({ enableActionLog: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ enableActionLog: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <History className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable Action Logging</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Enable Action Logging
+            </span>
           </label>
 
-          <div className={`space-y-2 ${!settings.enableActionLog ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div
+            className={`space-y-2 ${!settings.enableActionLog ? "opacity-50 pointer-events-none" : ""}`}
+          >
             <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
               <FileText className="w-4 h-4" />
               Max Log Entries
@@ -230,8 +283,10 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({ settin
             <input
               type="number"
               value={settings.maxLogEntries}
-              onChange={(e) => updateSettings({ maxLogEntries: parseInt(e.target.value) })}
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+              onChange={(e) =>
+                updateSettings({ maxLogEntries: parseInt(e.target.value) })
+              }
+              className="sor-settings-input w-full"
               min="100"
               max="10000"
               step="100"

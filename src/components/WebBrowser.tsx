@@ -1916,11 +1916,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   failed because the server&apos;s SSL/TLS certificate is not
                   trusted.
                 </p>
-                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card sor-web-error-panel text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     This usually means:
                   </p>
-                  <ul className="list-disc list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
+                  <ul className="sor-guidance-list sor-guidance-list-disc">
                     <li>
                       The server is using a{" "}
                       <span className="text-orange-400">
@@ -1939,7 +1939,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mt-3 mb-2">
                     To fix this:
                   </p>
-                  <ol className="list-decimal list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
+                  <ol className="sor-guidance-list sor-guidance-list-decimal">
                     <li>
                       Edit this connection and{" "}
                       <span className="text-blue-400">
@@ -1990,11 +1990,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
                   {loadError}
                 </p>
-                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card sor-web-error-panel text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     Troubleshooting steps:
                   </p>
-                  <ol className="list-decimal list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
+                  <ol className="sor-guidance-list sor-guidance-list-decimal">
                     <li>
                       Open the{" "}
                       <span className="text-blue-400">
@@ -2042,11 +2042,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
                   {loadError}
                 </p>
-                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card sor-web-error-panel text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     Possible causes:
                   </p>
-                  <ul className="list-disc list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
+                  <ul className="sor-guidance-list sor-guidance-list-disc">
                     <li>
                       The server at{" "}
                       <span className="text-yellow-400">
@@ -2104,11 +2104,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
                   {loadError}
                 </p>
-                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card sor-web-error-panel text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     To fix this:
                   </p>
-                  <ol className="list-decimal list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
+                  <ol className="sor-guidance-list sor-guidance-list-decimal">
                     <li>Edit this connection in the sidebar</li>
                     <li>
                       Set Authentication Type to{" "}
@@ -2139,11 +2139,11 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
                   {loadError}
                 </p>
-                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card sor-web-error-panel text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     Common issues:
                   </p>
-                  <ul className="list-disc list-inside text-sm text-[var(--color-textSecondary)] space-y-1">
+                  <ul className="sor-guidance-list sor-guidance-list-disc">
                     <li>The website blocks embedding (X-Frame-Options)</li>
                     <li>CORS restrictions prevent loading</li>
                     <li>The server is not responding</li>

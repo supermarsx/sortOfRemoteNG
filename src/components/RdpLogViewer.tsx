@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   AlertCircle,
   Info,
@@ -7,7 +7,7 @@ import {
   XCircle,
   Search,
   ArrowDown,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface RdpLogEntry {
   timestamp: number;
@@ -22,35 +22,43 @@ interface RdpLogViewerProps {
   sessionFilter?: string | null;
 }
 
-const LEVEL_CONFIG: Record<string, { icon: React.ElementType; color: string }> = {
-  info: { icon: Info, color: 'text-blue-400' },
-  warn: { icon: AlertTriangle, color: 'text-yellow-400' },
-  error: { icon: AlertCircle, color: 'text-red-400' },
-  debug: { icon: Info, color: 'text-gray-500' },
-};
+const LEVEL_CONFIG: Record<string, { icon: React.ElementType; color: string }> =
+  {
+    info: { icon: Info, color: "text-blue-400" },
+    warn: { icon: AlertTriangle, color: "text-yellow-400" },
+    error: { icon: AlertCircle, color: "text-red-400" },
+    debug: { icon: Info, color: "text-gray-500" },
+  };
 
 function formatTimestamp(ms: number): string {
   const d = new Date(ms);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
-export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFilter }) => {
+export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({
+  isVisible,
+  sessionFilter,
+}) => {
   const [logs, setLogs] = useState<RdpLogEntry[]>([]);
-  const [filter, setFilter] = useState('');
-  const [levelFilter, setLevelFilter] = useState<string>('all');
-  const [sessionIdFilter, setSessionIdFilter] = useState<string>('all');
+  const [filter, setFilter] = useState("");
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [sessionIdFilter, setSessionIdFilter] = useState<string>("all");
   const [autoScroll, setAutoScroll] = useState(true);
   const lastTimestamp = useRef<number>(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const fetchLogs = useCallback(async () => {
     try {
-      const newLogs = await invoke<RdpLogEntry[]>('get_rdp_logs', {
+      const newLogs = await invoke<RdpLogEntry[]>("get_rdp_logs", {
         sinceTimestamp: lastTimestamp.current || null,
       });
       if (newLogs.length > 0) {
         lastTimestamp.current = newLogs[newLogs.length - 1].timestamp;
-        setLogs(prev => [...prev, ...newLogs].slice(-1000));
+        setLogs((prev) => [...prev, ...newLogs].slice(-1000));
       }
     } catch {
       // Service may not be ready yet
@@ -81,12 +89,16 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
   }, [sessionFilter]);
 
   // Collect unique session IDs for the dropdown
-  const sessionIds = Array.from(new Set(logs.map(e => e.session_id).filter(Boolean))) as string[];
+  const sessionIds = Array.from(
+    new Set(logs.map((e) => e.session_id).filter(Boolean)),
+  ) as string[];
 
-  const filteredLogs = logs.filter(entry => {
-    if (levelFilter !== 'all' && entry.level !== levelFilter) return false;
-    if (sessionIdFilter !== 'all' && entry.session_id !== sessionIdFilter) return false;
-    if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase())) return false;
+  const filteredLogs = logs.filter((entry) => {
+    if (levelFilter !== "all" && entry.level !== levelFilter) return false;
+    if (sessionIdFilter !== "all" && entry.session_id !== sessionIdFilter)
+      return false;
+    if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase()))
+      return false;
     return true;
   });
 
@@ -95,19 +107,22 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
       {/* Filter bar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--color-border)] flex-shrink-0">
         <div className="relative flex-1">
-          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500" />
+          <Search
+            size={12}
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500"
+          />
           <input
             type="text"
             value={filter}
-            onChange={e => setFilter(e.target.value)}
+            onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter logs..."
-            className="w-full pl-7 pr-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+            className="sor-settings-input sor-settings-input-compact sor-settings-input-sm w-full pl-7 pr-2 placeholder-gray-500"
           />
         </div>
         <select
           value={levelFilter}
-          onChange={e => setLevelFilter(e.target.value)}
-          className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] focus:outline-none focus:border-indigo-500"
+          onChange={(e) => setLevelFilter(e.target.value)}
+          className="sor-settings-select sor-settings-input-sm"
         >
           <option value="all">All</option>
           <option value="info">Info</option>
@@ -117,27 +132,32 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
         {sessionIds.length > 0 && (
           <select
             value={sessionIdFilter}
-            onChange={e => setSessionIdFilter(e.target.value)}
-            className="px-2 py-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] focus:outline-none focus:border-indigo-500 max-w-[80px]"
+            onChange={(e) => setSessionIdFilter(e.target.value)}
+            className="sor-settings-select sor-settings-input-sm max-w-[80px]"
             data-tooltip="Filter by session"
           >
             <option value="all">All sessions</option>
-            {sessionIds.map(sid => (
-              <option key={sid} value={sid}>{sid.slice(0, 8)}</option>
+            {sessionIds.map((sid) => (
+              <option key={sid} value={sid}>
+                {sid.slice(0, 8)}
+              </option>
             ))}
           </select>
         )}
         <button
           onClick={() => setAutoScroll(!autoScroll)}
-          className={`p-1 rounded transition-colors ${autoScroll ? 'text-indigo-400 bg-indigo-900/30' : 'text-gray-500 hover:text-[var(--color-textSecondary)]'}`}
-          data-tooltip={autoScroll ? 'Auto-scroll ON' : 'Auto-scroll OFF'}
+          className={`p-1 rounded transition-colors ${autoScroll ? "text-indigo-400 bg-indigo-900/30" : "text-gray-500 hover:text-[var(--color-textSecondary)]"}`}
+          data-tooltip={autoScroll ? "Auto-scroll ON" : "Auto-scroll OFF"}
         >
           <ArrowDown size={12} />
         </button>
       </div>
 
       {/* Log entries */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 space-y-0.5 font-mono text-[10px]">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto p-2 space-y-0.5 font-mono text-[10px]"
+      >
         {filteredLogs.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-500 text-xs">
             No log entries
@@ -151,16 +171,24 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({ isVisible, sessionFi
                 key={`${entry.timestamp}-${i}`}
                 className="flex items-start gap-1.5 px-1.5 py-0.5 hover:bg-[var(--color-surface)]/50 rounded"
               >
-                <Icon size={10} className={`${config.color} flex-shrink-0 mt-0.5`} />
+                <Icon
+                  size={10}
+                  className={`${config.color} flex-shrink-0 mt-0.5`}
+                />
                 <span className="text-gray-500 flex-shrink-0">
                   {formatTimestamp(entry.timestamp)}
                 </span>
                 {entry.session_id && (
-                  <span className="text-gray-600 flex-shrink-0" title={entry.session_id}>
+                  <span
+                    className="text-gray-600 flex-shrink-0"
+                    title={entry.session_id}
+                  >
                     [{entry.session_id.slice(0, 6)}]
                   </span>
                 )}
-                <span className="text-[var(--color-textSecondary)] break-all">{entry.message}</span>
+                <span className="text-[var(--color-textSecondary)] break-all">
+                  {entry.message}
+                </span>
               </div>
             );
           })

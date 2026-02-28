@@ -1,16 +1,8 @@
-import React from 'react';
-import { useTranslation } from 'react-i18next';
-import { PasswordInput } from '../../ui/PasswordInput';
-import { GlobalSettings, ProxyConfig } from '../../../types/settings';
-import {
-  Shield,
-  Globe,
-  Server,
-  Hash,
-  User,
-  Lock,
-  Wifi,
-} from 'lucide-react';
+import React from "react";
+import { useTranslation } from "react-i18next";
+import { PasswordInput } from "../../ui/PasswordInput";
+import { GlobalSettings, ProxyConfig } from "../../../types/settings";
+import { Shield, Globe, Server, Hash, User, Lock, Wifi } from "lucide-react";
 
 interface ProxySettingsProps {
   settings: GlobalSettings;
@@ -18,13 +10,16 @@ interface ProxySettingsProps {
 }
 
 const PROXY_TYPES = [
-  { value: 'http', label: 'HTTP', description: 'Standard HTTP proxy' },
-  { value: 'https', label: 'HTTPS', description: 'Secure HTTP proxy' },
-  { value: 'socks4', label: 'SOCKS4', description: 'SOCKS4 protocol' },
-  { value: 'socks5', label: 'SOCKS5', description: 'SOCKS5 with auth' },
+  { value: "http", label: "HTTP", description: "Standard HTTP proxy" },
+  { value: "https", label: "HTTPS", description: "Secure HTTP proxy" },
+  { value: "socks4", label: "SOCKS4", description: "SOCKS4 protocol" },
+  { value: "socks5", label: "SOCKS5", description: "SOCKS5 with auth" },
 ];
 
-export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updateProxy }) => {
+export const ProxySettings: React.FC<ProxySettingsProps> = ({
+  settings,
+  updateProxy,
+}) => {
   const { t } = useTranslation();
   return (
     <div className="space-y-6">
@@ -37,18 +32,22 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
       </p>
 
       {/* Enable Global Proxy */}
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
+      <div className="sor-settings-card">
         <label className="flex items-center space-x-3 cursor-pointer group">
           <input
             type="checkbox"
             checked={settings.globalProxy?.enabled || false}
             onChange={(e) => updateProxy({ enabled: e.target.checked })}
-            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+            className="sor-settings-checkbox"
           />
           <Shield className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
           <div>
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable Global Proxy</span>
-            <p className="text-xs text-gray-500">Route all connections through a proxy server</p>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Enable Global Proxy
+            </span>
+            <p className="text-xs text-gray-500">
+              Route all connections through a proxy server
+            </p>
           </div>
         </label>
       </div>
@@ -69,13 +68,17 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                   onClick={() => updateProxy({ type: type.value as any })}
                   className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                     settings.globalProxy?.type === type.value
-                      ? 'border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50'
-                      : 'border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]'
+                      ? "border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50"
+                      : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
                   }`}
                 >
-                  <Shield className={`w-5 h-5 mb-1 ${settings.globalProxy?.type === type.value ? 'text-blue-400' : ''}`} />
+                  <Shield
+                    className={`w-5 h-5 mb-1 ${settings.globalProxy?.type === type.value ? "text-blue-400" : ""}`}
+                  />
                   <span className="text-sm font-medium">{type.label}</span>
-                  <span className="text-xs text-[var(--color-textSecondary)] mt-1">{type.description}</span>
+                  <span className="text-xs text-[var(--color-textSecondary)] mt-1">
+                    {type.description}
+                  </span>
                 </button>
               ))}
             </div>
@@ -88,7 +91,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
               Connection Details
             </h4>
 
-            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
+            <div className="sor-settings-card">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
@@ -97,9 +100,9 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                   </label>
                   <input
                     type="text"
-                    value={settings.globalProxy?.host || ''}
+                    value={settings.globalProxy?.host || ""}
                     onChange={(e) => updateProxy({ host: e.target.value })}
-                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                    className="sor-settings-input w-full"
                     placeholder="proxy.example.com"
                   />
                 </div>
@@ -112,8 +115,10 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                   <input
                     type="number"
                     value={settings.globalProxy?.port || 8080}
-                    onChange={(e) => updateProxy({ port: parseInt(e.target.value) })}
-                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                    onChange={(e) =>
+                      updateProxy({ port: parseInt(e.target.value) })
+                    }
+                    className="sor-settings-input w-full"
                     min="1"
                     max="65535"
                   />
@@ -129,7 +134,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
               Authentication (Optional)
             </h4>
 
-            <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
+            <div className="sor-settings-card">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
@@ -138,9 +143,9 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                   </label>
                   <input
                     type="text"
-                    value={settings.globalProxy?.username || ''}
+                    value={settings.globalProxy?.username || ""}
                     onChange={(e) => updateProxy({ username: e.target.value })}
-                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                    className="sor-settings-input w-full"
                     placeholder="Optional"
                   />
                 </div>
@@ -151,9 +156,9 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({ settings, updatePr
                     Password
                   </label>
                   <PasswordInput
-                    value={settings.globalProxy?.password || ''}
+                    value={settings.globalProxy?.password || ""}
                     onChange={(e) => updateProxy({ password: e.target.value })}
-                    className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+                    className="sor-settings-input w-full"
                     placeholder="Optional"
                   />
                 </div>

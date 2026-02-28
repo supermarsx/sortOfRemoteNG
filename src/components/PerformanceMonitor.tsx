@@ -447,7 +447,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
                   onChange={(e) =>
                     handlePollIntervalChange(parseInt(e.target.value || "0"))
                   }
-                  className="w-12 bg-[var(--color-input)] border border-[var(--color-border)] rounded px-2 py-1 text-[var(--color-text)] text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="sor-settings-input sor-settings-input-compact sor-settings-input-sm w-12 text-center"
                 />
                 <span>s</span>
               </div>
@@ -483,7 +483,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
                 </h3>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Latency Card */}
-                  <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hover:border-blue-500/30 transition-colors">
+                  <div className="sor-metric-card sor-metric-card-blue">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <div className="p-1.5 bg-blue-500/20 rounded-lg">
@@ -521,7 +521,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
                   </div>
 
                   {/* Throughput Card */}
-                  <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hover:border-green-500/30 transition-colors">
+                  <div className="sor-metric-card sor-metric-card-green">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <div className="p-1.5 bg-green-500/20 rounded-lg">
@@ -559,7 +559,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
                   </div>
 
                   {/* CPU Usage Card */}
-                  <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hover:border-yellow-500/30 transition-colors">
+                  <div className="sor-metric-card sor-metric-card-yellow">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <div className="p-1.5 bg-yellow-500/20 rounded-lg">
@@ -608,7 +608,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
                   </div>
 
                   {/* Memory Usage Card */}
-                  <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl p-4 hover:border-purple-500/30 transition-colors">
+                  <div className="sor-metric-card sor-metric-card-purple">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <div className="p-1.5 bg-purple-500/20 rounded-lg">
@@ -665,7 +665,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
                 {t("performance.summary", "Summary Statistics")}
               </h3>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="bg-[var(--color-surfaceHover)]/50 rounded-lg p-3 flex items-center gap-3">
+                <div className="sor-metric-summary-card">
                   <div className="p-2 bg-blue-500/10 rounded-lg">
                     <Wifi className="text-blue-400" size={16} />
                   </div>
@@ -678,7 +678,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
                     </div>
                   </div>
                 </div>
-                <div className="bg-[var(--color-surfaceHover)]/50 rounded-lg p-3 flex items-center gap-3">
+                <div className="sor-metric-summary-card">
                   <div className="p-2 bg-green-500/10 rounded-lg">
                     <Activity className="text-green-400" size={16} />
                   </div>
@@ -691,7 +691,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
                     </div>
                   </div>
                 </div>
-                <div className="bg-[var(--color-surfaceHover)]/50 rounded-lg p-3 flex items-center gap-3">
+                <div className="sor-metric-summary-card">
                   <div className="p-2 bg-yellow-500/10 rounded-lg">
                     <Cpu className="text-yellow-400" size={16} />
                   </div>
@@ -704,7 +704,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
                     </div>
                   </div>
                 </div>
-                <div className="bg-[var(--color-surfaceHover)]/50 rounded-lg p-3 flex items-center gap-3">
+                <div className="sor-metric-summary-card">
                   <div className="p-2 bg-purple-500/10 rounded-lg">
                     <HardDrive className="text-purple-400" size={16} />
                   </div>
@@ -725,7 +725,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
               <h3 className="text-sm font-medium text-[var(--color-textSecondary)] uppercase tracking-wide mb-3">
                 {t("performance.recentMetrics", "Recent Metrics")}
               </h3>
-              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl overflow-hidden">
+              <div className="sor-metric-table-shell">
                 <div className="overflow-x-auto">
                   <table className="sor-data-table w-full">
                     <thead className="bg-[var(--color-surfaceHover)]">

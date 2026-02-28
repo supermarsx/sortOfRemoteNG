@@ -371,7 +371,7 @@ export default function RDPTotpPanel({
   };
 
   const panel = (
-    <div className="w-96 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl overflow-hidden">
+    <div className="sor-popover-panel w-96 overflow-hidden">
       {/* ── Header ────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]/80">
         <div className="flex items-center space-x-2">

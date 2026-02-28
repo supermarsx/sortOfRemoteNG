@@ -78,6 +78,7 @@ Consolidate reusable UI structure and CSS for:
   - `rdp/RDPClientHeader` (send keys + host info)
   - `WebTerminal` (macro replay list)
   - `TabLayoutManager` (custom-grid popup)
+  - `rdp/RDPTotpPanel` panel shell aligned to shared `sor-popover-panel`
   - shared toolbar popover shell/header extracted into `ToolbarPopover`
   - shared option list/group/items extracted into `OptionList`
 
@@ -92,11 +93,17 @@ Consolidate reusable UI structure and CSS for:
   - popover shell primitives: `.sor-popover-panel`, `.sor-popover-panel-strong`
   - option grouping primitives: `.sor-option-group`, `.sor-option-group-label`, `.sor-option-empty`, `.sor-option-item-*`
   - shared surface cards: `.sor-surface-card`
-  - shared settings form primitives: `.sor-settings-input*`, `.sor-settings-select`, `.sor-settings-range-wide`, `.sor-settings-tile*`
+  - web error/help list primitives: `.sor-web-error-panel`, `.sor-guidance-list*`
+  - performance card shells: `.sor-metric-card*`, `.sor-metric-summary-card`, `.sor-metric-table-shell`
+  - shared settings form primitives: `.sor-settings-input*`, `.sor-settings-select`, `.sor-settings-range-*`, `.sor-settings-tile*`
   - toolbar status popup primitives: `.sor-toolbar-popover-*`, `.sor-status-item`
 - Migrated components adopted these classes where behavior/style stacks were duplicated.
   - latest adoption: `InternalProxyManager` stats/log cards and `WebBrowser` categorized error help cards
   - latest adoption: `RecordingSettings`, `MacroSettings`, and `WebBrowserSettings` form controls/tile shells
+  - latest adoption: `PerformanceMonitor` metric/table cards, `RdpLogViewer` filter controls, and `RecordingManager` inline rename fields
+  - latest adoption: `GeneralSettings`, `BackendSettings`, and `RdpDefaultSettings` cards/inputs/selects/checkboxes
+  - latest adoption: `WebBrowser` error guidance lists via shared list primitives
+  - latest adoption: `PerformanceSettings`, `ThemeSettings`, `ProxySettings`, and `StartupSettings` cards/inputs/selects/checkboxes/ranges
 
 ### Test Coverage Added/Updated
 
@@ -118,11 +125,15 @@ Consolidate reusable UI structure and CSS for:
   - `tests/TrustWarningDialog.test.tsx`
   - `tests/SettingsSections.test.tsx`
   - `tests/TabLayoutManager.test.tsx`
+  - `tests/RdpLogViewer.test.tsx`
+  - `tests/SettingsCoreSections.test.tsx`
+  - `tests/SettingsSecondarySections.test.tsx`
 - Updated:
   - `tests/BulkSSHCommander.test.tsx`
   - `tests/ConnectionTree.test.tsx`
   - `tests/SettingsDialog.test.tsx`
   - `tests/WebTerminal.test.tsx`
+  - `tests/PerformanceMonitor.test.tsx`
 
 ## Remaining Scope
 

@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { GlobalSettings, Theme, ColorScheme } from "../../../types/settings";
 import { ThemeManager } from "../../../utils/themeManager";
@@ -38,7 +44,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
       color:
         scheme === "custom"
           ? accent
-          : themeManager.getColorSchemeConfig(scheme)?.primary ?? "#3b82f6",
+          : (themeManager.getColorSchemeConfig(scheme)?.primary ?? "#3b82f6"),
     }));
   }, [schemes, settings.primaryAccentColor, themeManager]);
 
@@ -59,7 +65,10 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
   const highlightCss = useCallback(
     (code: string) => {
       let html = escapeHtml(code);
-      html = html.replace(/\/\*[\s\S]*?\*\//g, '<span class="css-token-comment">$&</span>');
+      html = html.replace(
+        /\/\*[\s\S]*?\*\//g,
+        '<span class="css-token-comment">$&</span>',
+      );
       html = html.replace(
         /(^|\n)(\s*)([^\n{}]+)(\s*\{)/g,
         '$1$2<span class="css-token-selector">$3</span>$4',
@@ -100,7 +109,8 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
         Theme
       </h3>
       <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Color scheme, background glow, window transparency, animations, and custom CSS.
+        Color scheme, background glow, window transparency, animations, and
+        custom CSS.
       </p>
 
       {/* Theme & Color Scheme Section */}
@@ -113,11 +123,15 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Theme Selection */}
           <div className="space-y-2">
-            <label className="text-sm text-[var(--color-textSecondary)]">{t("settings.theme")}</label>
+            <label className="text-sm text-[var(--color-textSecondary)]">
+              {t("settings.theme")}
+            </label>
             <select
               value={settings.theme}
-              onChange={(e) => updateSettings({ theme: e.target.value as Theme })}
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
+              onChange={(e) =>
+                updateSettings({ theme: e.target.value as Theme })
+              }
+              className="sor-settings-select w-full"
             >
               {themes.map((theme) => (
                 <option key={theme} value={theme}>
@@ -129,7 +143,9 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
 
           {/* Custom Accent Color */}
           <div className="space-y-2">
-            <label className="text-sm text-[var(--color-textSecondary)]">Custom Accent</label>
+            <label className="text-sm text-[var(--color-textSecondary)]">
+              Custom Accent
+            </label>
             <div className="flex items-center gap-2">
               <input
                 type="color"
@@ -146,7 +162,9 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
 
         {/* Color Scheme Grid */}
         <div className="space-y-2">
-          <label className="text-sm text-[var(--color-textSecondary)]">Color Scheme</label>
+          <label className="text-sm text-[var(--color-textSecondary)]">
+            Color Scheme
+          </label>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
             {schemeOptions.map((option) => (
               <button
@@ -178,7 +196,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
           {t("settings.theme.backgroundGlow", "Background Glow")}
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer">
             <input
               type="checkbox"
@@ -186,26 +204,40 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
               onChange={(e) =>
                 updateSettings({ backgroundGlowEnabled: e.target.checked })
               }
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              className="sor-settings-checkbox"
             />
-            <span className="text-sm text-[var(--color-textSecondary)]">Enable background glow effect</span>
+            <span className="text-sm text-[var(--color-textSecondary)]">
+              Enable background glow effect
+            </span>
           </label>
 
-          <label className={`flex items-center space-x-3 cursor-pointer ${!settings.backgroundGlowEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+          <label
+            className={`flex items-center space-x-3 cursor-pointer ${!settings.backgroundGlowEnabled ? "opacity-50 pointer-events-none" : ""}`}
+          >
             <input
               type="checkbox"
               checked={settings.backgroundGlowFollowsColorScheme}
               onChange={(e) =>
-                updateSettings({ backgroundGlowFollowsColorScheme: e.target.checked })
+                updateSettings({
+                  backgroundGlowFollowsColorScheme: e.target.checked,
+                })
               }
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              className="sor-settings-checkbox"
             />
-            <span className="text-sm text-[var(--color-textSecondary)]">Glow follows color scheme</span>
+            <span className="text-sm text-[var(--color-textSecondary)]">
+              Glow follows color scheme
+            </span>
           </label>
 
-          <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 ${!settings.backgroundGlowEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            <div className={`space-y-1 ${settings.backgroundGlowFollowsColorScheme ? 'opacity-50 pointer-events-none' : ''}`}>
-              <label className="text-xs text-[var(--color-textSecondary)]">Color {settings.backgroundGlowFollowsColorScheme && '(auto)'}</label>
+          <div
+            className={`grid grid-cols-2 md:grid-cols-4 gap-4 ${!settings.backgroundGlowEnabled ? "opacity-50 pointer-events-none" : ""}`}
+          >
+            <div
+              className={`space-y-1 ${settings.backgroundGlowFollowsColorScheme ? "opacity-50 pointer-events-none" : ""}`}
+            >
+              <label className="text-xs text-[var(--color-textSecondary)]">
+                Color {settings.backgroundGlowFollowsColorScheme && "(auto)"}
+              </label>
               <input
                 type="color"
                 value={settings.backgroundGlowColor || "#2563eb"}
@@ -216,7 +248,9 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-[var(--color-textSecondary)]">Opacity</label>
+              <label className="text-xs text-[var(--color-textSecondary)]">
+                Opacity
+              </label>
               <input
                 type="number"
                 step="0.05"
@@ -231,11 +265,13 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
                     ),
                   })
                 }
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
+                className="sor-settings-input w-full"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-[var(--color-textSecondary)]">Radius (px)</label>
+              <label className="text-xs text-[var(--color-textSecondary)]">
+                Radius (px)
+              </label>
               <input
                 type="number"
                 min="200"
@@ -249,11 +285,13 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
                     ),
                   })
                 }
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
+                className="sor-settings-input w-full"
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-[var(--color-textSecondary)]">Blur (px)</label>
+              <label className="text-xs text-[var(--color-textSecondary)]">
+                Blur (px)
+              </label>
               <input
                 type="number"
                 min="40"
@@ -267,12 +305,13 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
                     ),
                   })
                 }
-                className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
+                className="sor-settings-input w-full"
               />
             </div>
           </div>
           <p className="text-xs text-gray-500">
-            The glow effect appears centered in the main content area for an exquisite visual experience.
+            The glow effect appears centered in the main content area for an
+            exquisite visual experience.
           </p>
         </div>
       </div>
@@ -288,28 +327,42 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
         </h4>
 
         <p className="text-xs text-gray-500">
-          Window transparency is experimental and may cause visual artifacts on some platforms or compositors.
-          Disabled by default.
+          Window transparency is experimental and may cause visual artifacts on
+          some platforms or compositors. Disabled by default.
         </p>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
-          <label data-setting-key="windowTransparencyEnabled" className="flex items-center space-x-3 cursor-pointer group">
+        <div className="sor-settings-card">
+          <label
+            data-setting-key="windowTransparencyEnabled"
+            className="flex items-center space-x-3 cursor-pointer group"
+          >
             <input
               type="checkbox"
               checked={settings.windowTransparencyEnabled}
               onChange={(e) =>
                 updateSettings({ windowTransparencyEnabled: e.target.checked })
               }
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              className="sor-settings-checkbox"
             />
             <div>
-              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable window transparency</span>
-              <p className="text-[10px] text-gray-500">Make the application window semi-transparent</p>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+                Enable window transparency
+              </span>
+              <p className="text-[10px] text-gray-500">
+                Make the application window semi-transparent
+              </p>
             </div>
           </label>
 
-          <div className={`space-y-2 ${!settings.windowTransparencyEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            <label data-setting-key="windowTransparencyOpacity" className="text-xs text-[var(--color-textSecondary)]">Opacity Level</label>
+          <div
+            className={`space-y-2 ${!settings.windowTransparencyEnabled ? "opacity-50 pointer-events-none" : ""}`}
+          >
+            <label
+              data-setting-key="windowTransparencyOpacity"
+              className="text-xs text-[var(--color-textSecondary)]"
+            >
+              Opacity Level
+            </label>
             <div className="flex items-center gap-3">
               <input
                 type="range"
@@ -325,7 +378,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
                     ),
                   })
                 }
-                className="flex-1 accent-blue-500"
+                className="sor-settings-range-full flex-1"
               />
               <input
                 type="number"
@@ -346,16 +399,25 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
             </div>
           </div>
 
-          <label data-setting-key="showTransparencyToggle" className="flex items-center space-x-3 cursor-pointer group">
+          <label
+            data-setting-key="showTransparencyToggle"
+            className="flex items-center space-x-3 cursor-pointer group"
+          >
             <input
               type="checkbox"
               checked={settings.showTransparencyToggle ?? false}
-              onChange={(e) => updateSettings({ showTransparencyToggle: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showTransparencyToggle: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <div>
-              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Show transparency toggle in title bar</span>
-              <p className="text-[10px] text-gray-500">Add a quick-toggle button to the window title bar</p>
+              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+                Show transparency toggle in title bar
+              </span>
+              <p className="text-[10px] text-gray-500">
+                Add a quick-toggle button to the window title bar
+              </p>
             </div>
           </label>
         </div>
@@ -368,16 +430,21 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
           {t("settings.theme.animations", "Animations")}
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer">
             <input
               type="checkbox"
               checked={settings.animationsEnabled}
-              onChange={(e) => updateSettings({ animationsEnabled: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ animationsEnabled: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <span className="text-sm text-[var(--color-textSecondary)]">
-              {t("settings.theme.enableAnimations", "Enable animations and transitions")}
+              {t(
+                "settings.theme.enableAnimations",
+                "Enable animations and transitions",
+              )}
             </span>
           </label>
 
@@ -385,16 +452,25 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
             <input
               type="checkbox"
               checked={settings.reduceMotion}
-              onChange={(e) => updateSettings({ reduceMotion: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ reduceMotion: e.target.checked })
+              }
+              className="sor-settings-checkbox"
               disabled={!settings.animationsEnabled}
             />
-            <span className={`text-sm text-[var(--color-textSecondary)] ${!settings.animationsEnabled ? 'opacity-50' : ''}`}>
-              {t("settings.theme.reduceMotion", "Reduce motion (minimal animations)")}
+            <span
+              className={`text-sm text-[var(--color-textSecondary)] ${!settings.animationsEnabled ? "opacity-50" : ""}`}
+            >
+              {t(
+                "settings.theme.reduceMotion",
+                "Reduce motion (minimal animations)",
+              )}
             </span>
           </label>
 
-          <div className={`space-y-2 ${!settings.animationsEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div
+            className={`space-y-2 ${!settings.animationsEnabled ? "opacity-50 pointer-events-none" : ""}`}
+          >
             <label className="text-xs text-[var(--color-textSecondary)]">
               {t("settings.theme.animationDuration", "Animation duration")}
             </label>
@@ -405,8 +481,12 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
                 max="500"
                 step="25"
                 value={settings.animationDuration || 200}
-                onChange={(e) => updateSettings({ animationDuration: parseInt(e.target.value) })}
-                className="flex-1 accent-blue-500"
+                onChange={(e) =>
+                  updateSettings({
+                    animationDuration: parseInt(e.target.value),
+                  })
+                }
+                className="sor-settings-range-full flex-1"
               />
               <span className="text-[var(--color-textSecondary)] text-sm w-16 text-right">
                 {settings.animationDuration || 200}ms
@@ -429,7 +509,8 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
             className="css-editor-highlight"
             aria-hidden="true"
             dangerouslySetInnerHTML={{
-              __html: highlightedCss + (highlightedCss.endsWith("\n") ? "" : "\n"),
+              __html:
+                highlightedCss + (highlightedCss.endsWith("\n") ? "" : "\n"),
             }}
           />
           <textarea

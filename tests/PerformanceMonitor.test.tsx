@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  render,
-  screen,
-  waitFor,
-  cleanup,
-} from "@testing-library/react";
+import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import { PerformanceMonitor } from "../src/components/PerformanceMonitor";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -81,11 +76,21 @@ describe("PerformanceMonitor", () => {
   });
 
   it("renders with current and summary sections", async () => {
-    render(<PerformanceMonitor isOpen onClose={() => {}} />);
+    const { container } = render(
+      <PerformanceMonitor isOpen onClose={() => {}} />,
+    );
 
     expect(await screen.findByText("performance.title")).toBeInTheDocument();
     expect(screen.getByText("Current Performance")).toBeInTheDocument();
     expect(screen.getByText("Summary Statistics")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".sor-metric-card").length).toBe(4);
+      expect(
+        container.querySelectorAll(".sor-metric-summary-card").length,
+      ).toBe(4);
+      expect(container.querySelector(".sor-metric-table-shell")).toBeTruthy();
+    });
   });
 
   it("records refreshed metrics from backend", async () => {
