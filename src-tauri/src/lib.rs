@@ -10,7 +10,8 @@
 //!
 //! - **sorng-core** — Shared types and diagnostics infrastructure
 //! - **sorng-auth** — Authentication, security, and credential management
-//! - **sorng-storage** — Encrypted data persistence, backups, and GPO
+//! - **sorng-storage** — Encrypted data persistence and backups
+//! - **sorng-gpo** — Windows Group Policy Object management
 //! - **sorng-network** — Network utilities, Wake-on-LAN, and QR codes
 //! - **sorng-ssh** — SSH, SSH3, and script execution
 //! - **sorng-rdp** — RDP connectivity and graphics pipeline
@@ -42,7 +43,9 @@ pub use sorng_auth::auto_lock;
 // Storage
 pub use sorng_storage::storage;
 pub use sorng_storage::backup;
-pub use sorng_storage::gpo;
+
+// GPO
+pub use sorng_gpo::gpo;
 
 // Network
 pub use sorng_network::network;

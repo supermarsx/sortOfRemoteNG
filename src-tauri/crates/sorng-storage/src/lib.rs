@@ -1,7 +1,6 @@
 //! # SortOfRemote NG – Storage
 //!
-//! Secure encrypted storage, backup management, and Group Policy configuration.
+//! Secure encrypted storage and backup management.
 
 pub mod storage;
 pub mod backup;
-pub mod gpo;

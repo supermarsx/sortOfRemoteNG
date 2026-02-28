@@ -190,6 +190,7 @@ dependencies = [
  "sorng-auth",
  "sorng-cloud",
  "sorng-core",
+ "sorng-gpo",
  "sorng-network",
  "sorng-protocols",
  "sorng-rdp",
@@ -7366,6 +7367,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-gpo"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "sorng-network"
 version = "0.1.0"
 dependencies = [
@@ -7519,7 +7531,6 @@ dependencies = [
  "tauri",
  "tokio",
  "uuid",
- "windows 0.62.2",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@
 name = "sorng-storage"
 version = "0.1.0"
 edition = "2021"
-description = "Secure storage, backup, and GPO policy management"
+description = "Secure storage and backup management"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -18,6 +18,3 @@ base64 = "0.21"
 log = "0.4"
 dirs = "5.0"
 uuid = { version = "1.0", features = ["v4"] }
-
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_System_Registry", "Win32_Foundation", "Win32_Security"] }
