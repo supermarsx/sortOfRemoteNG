@@ -3,8 +3,8 @@ import { GlobalSettings } from "../../../types/settings";
 import {
   LayoutGrid,
   Maximize2,
-  Move, 
-  PanelLeft, 
+  Move,
+  PanelLeft,
   ArrowLeftRight,
   FoldVertical,
   GripVertical,
@@ -49,7 +49,8 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
         Layout
       </h3>
       <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Window persistence, sidebar behavior, tab reordering, and secondary bar icon visibility.
+        Window persistence, sidebar behavior, tab reordering, and secondary bar
+        icon visibility.
       </p>
 
       {/* Window Persistence Section */}
@@ -63,34 +64,48 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             <input
               type="checkbox"
               checked={settings.persistWindowSize}
-              onChange={(e) => updateSettings({ persistWindowSize: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ persistWindowSize: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Maximize2 className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Remember window size</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Remember window size
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.persistWindowPosition}
-              onChange={(e) => updateSettings({ persistWindowPosition: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ persistWindowPosition: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Move className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Remember window position</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Remember window position
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.autoRepatriateWindow}
-              onChange={(e) => updateSettings({ autoRepatriateWindow: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ autoRepatriateWindow: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <ScreenShare className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-repatriate window if off-screen</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Auto-repatriate window if off-screen
+            </span>
           </label>
           <p className="text-xs text-gray-500 ml-7">
-            When enabled, automatically brings window back to a visible monitor if the saved position is off-screen (e.g., after disconnecting an external monitor).
+            When enabled, automatically brings window back to a visible monitor
+            if the saved position is off-screen (e.g., after disconnecting an
+            external monitor).
           </p>
         </div>
       </div>
@@ -106,31 +121,43 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             <input
               type="checkbox"
               checked={settings.persistSidebarWidth}
-              onChange={(e) => updateSettings({ persistSidebarWidth: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ persistSidebarWidth: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <ArrowLeftRight className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Remember sidebar width</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Remember sidebar width
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.persistSidebarPosition}
-              onChange={(e) => updateSettings({ persistSidebarPosition: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ persistSidebarPosition: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Move className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Remember sidebar position</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Remember sidebar position
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.persistSidebarCollapsed}
-              onChange={(e) => updateSettings({ persistSidebarCollapsed: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ persistSidebarCollapsed: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <FoldVertical className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Remember sidebar collapsed state</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Remember sidebar collapsed state
+            </span>
           </label>
         </div>
       </div>
@@ -146,21 +173,29 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             <input
               type="checkbox"
               checked={settings.enableTabReorder}
-              onChange={(e) => updateSettings({ enableTabReorder: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ enableTabReorder: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <FileStack className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Allow tab reordering</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Allow tab reordering
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.enableConnectionReorder}
-              onChange={(e) => updateSettings({ enableConnectionReorder: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ enableConnectionReorder: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Network className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Allow connection reordering</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Allow connection reordering
+            </span>
           </label>
         </div>
       </div>
@@ -176,211 +211,295 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
             <input
               type="checkbox"
               checked={settings.showQuickConnectIcon}
-              onChange={(e) => updateSettings({ showQuickConnectIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showQuickConnectIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Zap className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Quick Connect</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Quick Connect
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showCollectionSwitcherIcon}
-              onChange={(e) => updateSettings({ showCollectionSwitcherIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showCollectionSwitcherIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <FolderSync className="w-4 h-4 text-blue-500 group-hover:text-blue-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Collection Switcher</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Collection Switcher
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showImportExportIcon}
-              onChange={(e) => updateSettings({ showImportExportIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showImportExportIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <FileStack className="w-4 h-4 text-green-500 group-hover:text-green-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Import/Export</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Import/Export
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showSettingsIcon}
-              onChange={(e) => updateSettings({ showSettingsIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showSettingsIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Settings className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Settings</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Settings
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showProxyMenuIcon}
-              onChange={(e) => updateSettings({ showProxyMenuIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showProxyMenuIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Shield className="w-4 h-4 text-indigo-500 group-hover:text-indigo-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Proxy/VPN Menu</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Proxy/VPN Menu
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showInternalProxyIcon}
-              onChange={(e) => updateSettings({ showInternalProxyIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showInternalProxyIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <ArrowUpDown className="w-4 h-4 text-cyan-500 group-hover:text-cyan-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Internal Proxy Manager</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Internal Proxy Manager
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showShortcutManagerIcon}
-              onChange={(e) => updateSettings({ showShortcutManagerIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showShortcutManagerIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Keyboard className="w-4 h-4 text-pink-500 group-hover:text-pink-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Shortcut Manager</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Shortcut Manager
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showPerformanceMonitorIcon}
-              onChange={(e) => updateSettings({ showPerformanceMonitorIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showPerformanceMonitorIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Activity className="w-4 h-4 text-red-500 group-hover:text-red-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Performance Monitor</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Performance Monitor
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showActionLogIcon}
-              onChange={(e) => updateSettings({ showActionLogIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showActionLogIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <FileStack className="w-4 h-4 text-cyan-500 group-hover:text-cyan-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Action Log</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Action Log
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showDevtoolsIcon}
-              onChange={(e) => updateSettings({ showDevtoolsIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showDevtoolsIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Code className="w-4 h-4 text-amber-500 group-hover:text-amber-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Devtools</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Devtools
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showSecurityIcon}
-              onChange={(e) => updateSettings({ showSecurityIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showSecurityIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <ShieldCheck className="w-4 h-4 text-emerald-500 group-hover:text-emerald-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Security</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Security
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showWolIcon}
-              onChange={(e) => updateSettings({ showWolIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showWolIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Power className="w-4 h-4 text-orange-500 group-hover:text-orange-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Wake-on-LAN</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Wake-on-LAN
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showBulkSSHIcon}
-              onChange={(e) => updateSettings({ showBulkSSHIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showBulkSSHIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Terminal className="w-4 h-4 text-green-500 group-hover:text-green-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Bulk SSH Commander</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Bulk SSH Commander
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showScriptManagerIcon}
-              onChange={(e) => updateSettings({ showScriptManagerIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showScriptManagerIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <FileCode className="w-4 h-4 text-purple-500 group-hover:text-purple-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Script Manager</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Script Manager
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showMacroManagerIcon}
-              onChange={(e) => updateSettings({ showMacroManagerIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showMacroManagerIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <ListVideo className="w-4 h-4 text-orange-500 group-hover:text-orange-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Macro Manager</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Macro Manager
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showRecordingManagerIcon}
-              onChange={(e) => updateSettings({ showRecordingManagerIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showRecordingManagerIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Disc className="w-4 h-4 text-red-500 group-hover:text-red-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Recording Manager</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Recording Manager
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showErrorLogBar}
-              onChange={(e) => updateSettings({ showErrorLogBar: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showErrorLogBar: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Bug className="w-4 h-4 text-red-500 group-hover:text-red-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Error Log Bar</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Error Log Bar
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showBackupStatusIcon}
-              onChange={(e) => updateSettings({ showBackupStatusIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showBackupStatusIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <HardDrive className="w-4 h-4 text-blue-500 group-hover:text-blue-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Backup Status</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Backup Status
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showCloudSyncStatusIcon}
-              onChange={(e) => updateSettings({ showCloudSyncStatusIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showCloudSyncStatusIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Cloud className="w-4 h-4 text-cyan-500 group-hover:text-cyan-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Cloud Sync Status</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Cloud Sync Status
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showSyncBackupStatusIcon}
-              onChange={(e) => updateSettings({ showSyncBackupStatusIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showSyncBackupStatusIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <RefreshCw className="w-4 h-4 text-yellow-500 group-hover:text-yellow-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Sync &amp; Backup (Combined)</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              Sync &amp; Backup (Combined)
+            </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.showRdpSessionsIcon}
-              onChange={(e) => updateSettings({ showRdpSessionsIcon: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ showRdpSessionsIcon: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Cpu className="w-4 h-4 text-indigo-500 group-hover:text-indigo-400" />
-            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">RDP Sessions</span>
+            <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              RDP Sessions
+            </span>
           </label>
         </div>
       </div>

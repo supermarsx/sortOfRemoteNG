@@ -1,6 +1,6 @@
-import React from 'react';
-import { useTranslation } from 'react-i18next';
-import { GlobalSettings } from '../../../types/settings';
+import React from "react";
+import { useTranslation } from "react-i18next";
+import { GlobalSettings } from "../../../types/settings";
 import {
   Code,
   Layers,
@@ -14,7 +14,7 @@ import {
   Settings,
   Save,
   RotateCcw,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface AdvancedSettingsProps {
   settings: GlobalSettings;
@@ -22,20 +22,59 @@ interface AdvancedSettingsProps {
 }
 
 const LOG_LEVEL_CONFIG = [
-  { value: 'debug', label: 'Debug', icon: Bug, color: 'text-purple-400', description: 'All messages including debug info' },
-  { value: 'info', label: 'Info', icon: Info, color: 'text-blue-400', description: 'Informational messages and above' },
-  { value: 'warn', label: 'Warning', icon: AlertCircle, color: 'text-yellow-400', description: 'Warnings and errors only' },
-  { value: 'error', label: 'Error', icon: AlertCircle, color: 'text-red-400', description: 'Errors only' },
+  {
+    value: "debug",
+    label: "Debug",
+    icon: Bug,
+    color: "text-purple-400",
+    description: "All messages including debug info",
+  },
+  {
+    value: "info",
+    label: "Info",
+    icon: Info,
+    color: "text-blue-400",
+    description: "Informational messages and above",
+  },
+  {
+    value: "warn",
+    label: "Warning",
+    icon: AlertCircle,
+    color: "text-yellow-400",
+    description: "Warnings and errors only",
+  },
+  {
+    value: "error",
+    label: "Error",
+    icon: AlertCircle,
+    color: "text-red-400",
+    description: "Errors only",
+  },
 ];
 
 const TAB_GROUPING_CONFIG = [
-  { value: 'none', label: 'None', description: 'No grouping' },
-  { value: 'protocol', label: 'By Protocol', description: 'Group by SSH, RDP, etc.' },
-  { value: 'status', label: 'By Status', description: 'Group by connection state' },
-  { value: 'hostname', label: 'By Hostname', description: 'Group by server name' },
+  { value: "none", label: "None", description: "No grouping" },
+  {
+    value: "protocol",
+    label: "By Protocol",
+    description: "Group by SSH, RDP, etc.",
+  },
+  {
+    value: "status",
+    label: "By Status",
+    description: "Group by connection state",
+  },
+  {
+    value: "hostname",
+    label: "By Hostname",
+    description: "Group by server name",
+  },
 ];
 
-export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, updateSettings }) => {
+export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
+  settings,
+  updateSettings,
+}) => {
   const { t } = useTranslation();
   return (
     <div className="space-y-6">
@@ -54,21 +93,25 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
           Tab Grouping
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
+        <div className="sor-settings-card">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {TAB_GROUPING_CONFIG.map((option) => (
               <button
                 key={option.value}
-                onClick={() => updateSettings({ tabGrouping: option.value as any })}
+                onClick={() =>
+                  updateSettings({ tabGrouping: option.value as any })
+                }
                 className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                   settings.tabGrouping === option.value
-                    ? 'border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50'
-                    : 'border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]'
+                    ? "border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50"
+                    : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
                 }`}
               >
                 <Layers className="w-5 h-5 mb-1" />
                 <span className="text-sm font-medium">{option.label}</span>
-                <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">{option.description}</span>
+                <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">
+                  {option.description}
+                </span>
               </button>
             ))}
           </div>
@@ -82,24 +125,32 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
           Logging
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
-          <label className="block text-sm text-[var(--color-textSecondary)] mb-3">Log Level</label>
+        <div className="sor-settings-card">
+          <label className="block text-sm text-[var(--color-textSecondary)] mb-3">
+            Log Level
+          </label>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {LOG_LEVEL_CONFIG.map((level) => {
               const Icon = level.icon;
               return (
                 <button
                   key={level.value}
-                  onClick={() => updateSettings({ logLevel: level.value as any })}
+                  onClick={() =>
+                    updateSettings({ logLevel: level.value as any })
+                  }
                   className={`flex flex-col items-center p-3 rounded-lg border transition-all ${
                     settings.logLevel === level.value
-                      ? 'border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50'
-                      : 'border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]'
+                      ? "border-blue-500 bg-blue-600/20 text-[var(--color-text)] ring-1 ring-blue-500/50"
+                      : "border-[var(--color-border)] bg-[var(--color-border)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-border)] hover:border-[var(--color-textSecondary)]"
                   }`}
                 >
-                  <Icon className={`w-5 h-5 mb-1 ${settings.logLevel === level.value ? level.color : ''}`} />
+                  <Icon
+                    className={`w-5 h-5 mb-1 ${settings.logLevel === level.value ? level.color : ""}`}
+                  />
                   <span className="text-sm font-medium">{level.label}</span>
-                  <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">{level.description}</span>
+                  <span className="text-xs text-[var(--color-textSecondary)] mt-1 text-center">
+                    {level.description}
+                  </span>
                 </button>
               );
             })}
@@ -114,19 +165,24 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
           Tab Naming
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
+        <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.hostnameOverride}
-              onChange={(e) => updateSettings({ hostnameOverride: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ hostnameOverride: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <Terminal className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Override tab names with hostname</span>
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+                Override tab names with hostname
+              </span>
               <p className="text-xs text-gray-500 mt-0.5">
-                Display the server hostname instead of the connection name in tabs
+                Display the server hostname instead of the connection name in
+                tabs
               </p>
             </div>
           </label>
@@ -140,17 +196,21 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
           Diagnostics
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-3">
+        <div className="sor-settings-card space-y-3">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <input
               type="checkbox"
               checked={settings.detectUnexpectedClose ?? true}
-              onChange={(e) => updateSettings({ detectUnexpectedClose: e.target.checked })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({ detectUnexpectedClose: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
             <ShieldAlert className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Detect unexpected app close</span>
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+                Detect unexpected app close
+              </span>
               <p className="text-xs text-gray-500 mt-0.5">
                 Show recovery options if the app was closed unexpectedly
               </p>
@@ -166,51 +226,100 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({ settings, up
           Settings Dialog
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-3">
-          <label data-setting-key="settingsDialog.autoSave" className="flex items-center space-x-3 cursor-pointer group">
+        <div className="sor-settings-card space-y-3">
+          <label
+            data-setting-key="settingsDialog.autoSave"
+            className="flex items-center space-x-3 cursor-pointer group"
+          >
             <input
               type="checkbox"
               checked={settings.settingsDialog?.autoSave ?? true}
-              onChange={(e) => updateSettings({ settingsDialog: { ...settings.settingsDialog, showSaveButton: settings.settingsDialog?.showSaveButton ?? false, confirmBeforeReset: settings.settingsDialog?.confirmBeforeReset ?? true, autoSave: e.target.checked } })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({
+                  settingsDialog: {
+                    ...settings.settingsDialog,
+                    showSaveButton:
+                      settings.settingsDialog?.showSaveButton ?? false,
+                    confirmBeforeReset:
+                      settings.settingsDialog?.confirmBeforeReset ?? true,
+                    autoSave: e.target.checked,
+                  },
+                })
+              }
+              className="sor-settings-checkbox"
             />
             <Save className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-save settings</span>
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+                Auto-save settings
+              </span>
               <p className="text-xs text-gray-500 mt-0.5">
-                Automatically save changes as you make them (debounced). Disable to require an explicit Save click.
+                Automatically save changes as you make them (debounced). Disable
+                to require an explicit Save click.
               </p>
             </div>
           </label>
 
-          <label data-setting-key="settingsDialog.showSaveButton" className="flex items-center space-x-3 cursor-pointer group">
+          <label
+            data-setting-key="settingsDialog.showSaveButton"
+            className="flex items-center space-x-3 cursor-pointer group"
+          >
             <input
               type="checkbox"
               checked={settings.settingsDialog?.showSaveButton ?? false}
-              onChange={(e) => updateSettings({ settingsDialog: { ...settings.settingsDialog, autoSave: settings.settingsDialog?.autoSave ?? true, confirmBeforeReset: settings.settingsDialog?.confirmBeforeReset ?? true, showSaveButton: e.target.checked } })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({
+                  settingsDialog: {
+                    ...settings.settingsDialog,
+                    autoSave: settings.settingsDialog?.autoSave ?? true,
+                    confirmBeforeReset:
+                      settings.settingsDialog?.confirmBeforeReset ?? true,
+                    showSaveButton: e.target.checked,
+                  },
+                })
+              }
+              className="sor-settings-checkbox"
             />
             <Save className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Show save button</span>
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+                Show save button
+              </span>
               <p className="text-xs text-gray-500 mt-0.5">
-                Show a manual save button in the settings header. Useful when auto-save is disabled.
+                Show a manual save button in the settings header. Useful when
+                auto-save is disabled.
               </p>
             </div>
           </label>
 
-          <label data-setting-key="settingsDialog.confirmBeforeReset" className="flex items-center space-x-3 cursor-pointer group">
+          <label
+            data-setting-key="settingsDialog.confirmBeforeReset"
+            className="flex items-center space-x-3 cursor-pointer group"
+          >
             <input
               type="checkbox"
               checked={settings.settingsDialog?.confirmBeforeReset ?? true}
-              onChange={(e) => updateSettings({ settingsDialog: { ...settings.settingsDialog, autoSave: settings.settingsDialog?.autoSave ?? true, showSaveButton: settings.settingsDialog?.showSaveButton ?? false, confirmBeforeReset: e.target.checked } })}
-              className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600 w-4 h-4"
+              onChange={(e) =>
+                updateSettings({
+                  settingsDialog: {
+                    ...settings.settingsDialog,
+                    autoSave: settings.settingsDialog?.autoSave ?? true,
+                    showSaveButton:
+                      settings.settingsDialog?.showSaveButton ?? false,
+                    confirmBeforeReset: e.target.checked,
+                  },
+                })
+              }
+              className="sor-settings-checkbox"
             />
             <RotateCcw className="w-4 h-4 text-gray-500 group-hover:text-orange-400" />
             <div>
-              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Confirm before reset</span>
+              <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+                Confirm before reset
+              </span>
               <p className="text-xs text-gray-500 mt-0.5">
-                Show a confirmation dialog before resetting a tab's settings to defaults.
+                Show a confirmation dialog before resetting a tab's settings to
+                defaults.
               </p>
             </div>
           </label>

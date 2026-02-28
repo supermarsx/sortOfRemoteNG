@@ -223,7 +223,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           Data Management
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <div className="sor-settings-card space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
@@ -275,7 +275,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           Reset Options
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4">
+        <div className="sor-settings-card">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">
@@ -305,7 +305,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
           Restart Options
         </h4>
 
-        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]/40 p-4 space-y-4">
+        <div className="sor-settings-card space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 text-[var(--color-text)] font-medium">

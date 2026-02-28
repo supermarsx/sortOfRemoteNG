@@ -104,6 +104,7 @@ Consolidate reusable UI structure and CSS for:
   - latest adoption: `GeneralSettings`, `BackendSettings`, and `RdpDefaultSettings` cards/inputs/selects/checkboxes
   - latest adoption: `WebBrowser` error guidance lists via shared list primitives
   - latest adoption: `PerformanceSettings`, `ThemeSettings`, `ProxySettings`, and `StartupSettings` cards/inputs/selects/checkboxes/ranges
+  - latest adoption: `AdvancedSettings`, `LayoutSettings`, `ApiSettings`, `SecuritySettings`, `RecoverySettings`, and `TrustVerificationSettings` cards/inputs/selects/checkboxes/ranges
 
 ### Test Coverage Added/Updated
 
@@ -128,6 +129,7 @@ Consolidate reusable UI structure and CSS for:
   - `tests/RdpLogViewer.test.tsx`
   - `tests/SettingsCoreSections.test.tsx`
   - `tests/SettingsSecondarySections.test.tsx`
+  - `tests/SettingsExtendedSections.test.tsx`
 - Updated:
   - `tests/BulkSSHCommander.test.tsx`
   - `tests/ConnectionTree.test.tsx`
