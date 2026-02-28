@@ -433,3 +433,188 @@ pub async fn invoke_lambda_function(
     let aws = state.lock().await;
     aws.invoke_lambda_function(&session_id, &function_name, payload).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config() -> AwsConnectionConfig {
+        AwsConnectionConfig {
+            region: "us-east-1".to_string(),
+            access_key_id: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            secret_access_key: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string(),
+            session_token: None,
+            profile_name: None,
+            role_arn: None,
+            mfa_serial: None,
+            mfa_code: None,
+        }
+    }
+
+    // ── Serde ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn aws_connection_config_serde() {
+        let cfg = test_config();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: AwsConnectionConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.region, "us-east-1");
+        assert_eq!(back.access_key_id, "AKIAIOSFODNN7EXAMPLE");
+    }
+
+    #[test]
+    fn ec2_instance_serde() {
+        let instance = Ec2Instance {
+            instance_id: "i-1234".to_string(),
+            instance_type: "t3.micro".to_string(),
+            state: "running".to_string(),
+            public_ip: Some("1.2.3.4".to_string()),
+            private_ip: Some("10.0.0.1".to_string()),
+            launch_time: "2024-01-01T00:00:00Z".to_string(),
+            availability_zone: "us-east-1a".to_string(),
+            tags: HashMap::from([("Name".to_string(), "test".to_string())]),
+        };
+        let json = serde_json::to_string(&instance).unwrap();
+        let back: Ec2Instance = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.instance_id, "i-1234");
+        assert_eq!(back.tags["Name"], "test");
+    }
+
+    #[test]
+    fn s3_bucket_serde() {
+        let bucket = S3Bucket {
+            name: "my-bucket".to_string(),
+            creation_date: "2024-01-01".to_string(),
+            region: "us-west-2".to_string(),
+            objects_count: Some(100),
+            total_size: Some(1048576),
+        };
+        let json = serde_json::to_string(&bucket).unwrap();
+        let back: S3Bucket = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.name, "my-bucket");
+    }
+
+    #[test]
+    fn aws_session_serde() {
+        let session = AwsSession {
+            id: "s1".to_string(),
+            config: test_config(),
+            connected_at: Utc::now(),
+            last_activity: Utc::now(),
+            is_connected: true,
+            services: vec![],
+        };
+        let json = serde_json::to_string(&session).unwrap();
+        let back: AwsSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "s1");
+        assert!(back.is_connected);
+    }
+
+    // ── Session CRUD ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn connect_aws_returns_session_id() {
+        let state = AwsService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_aws(test_config()).await.unwrap();
+        assert_eq!(id.len(), 36); // UUID
+    }
+
+    #[tokio::test]
+    async fn connect_aws_creates_session() {
+        let state = AwsService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_aws(test_config()).await.unwrap();
+        let session = svc.get_aws_session(&id).await.unwrap();
+        assert!(session.is_connected);
+        assert_eq!(session.config.region, "us-east-1");
+        assert!(!session.services.is_empty());
+    }
+
+    #[tokio::test]
+    async fn connect_aws_has_default_services() {
+        let state = AwsService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_aws(test_config()).await.unwrap();
+        let session = svc.get_aws_session(&id).await.unwrap();
+        let svc_names: Vec<String> = session.services.iter().map(|s| s.service_name.clone()).collect();
+        assert!(svc_names.contains(&"EC2".to_string()));
+        assert!(svc_names.contains(&"S3".to_string()));
+        assert!(svc_names.contains(&"RDS".to_string()));
+        assert!(svc_names.contains(&"Lambda".to_string()));
+        assert!(svc_names.contains(&"CloudWatch".to_string()));
+    }
+
+    #[tokio::test]
+    async fn disconnect_aws_marks_disconnected() {
+        let state = AwsService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_aws(test_config()).await.unwrap();
+        svc.disconnect_aws(&id).await.unwrap();
+        let session = svc.get_aws_session(&id).await.unwrap();
+        assert!(!session.is_connected);
+    }
+
+    #[tokio::test]
+    async fn disconnect_nonexistent_fails() {
+        let state = AwsService::new();
+        let mut svc = state.lock().await;
+        let result = svc.disconnect_aws("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn list_sessions_empty() {
+        let state = AwsService::new();
+        let svc = state.lock().await;
+        assert!(svc.list_aws_sessions().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_sessions_after_connect() {
+        let state = AwsService::new();
+        let mut svc = state.lock().await;
+        svc.connect_aws(test_config()).await.unwrap();
+        svc.connect_aws(test_config()).await.unwrap();
+        assert_eq!(svc.list_aws_sessions().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_session_not_found() {
+        let state = AwsService::new();
+        let svc = state.lock().await;
+        assert!(svc.get_aws_session("nonexistent").await.is_none());
+    }
+
+    // ── Mock data listing ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn list_ec2_instances_returns_mock_data() {
+        let state = AwsService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_aws(test_config()).await.unwrap();
+        let instances = svc.list_ec2_instances(&id).await.unwrap();
+        assert!(!instances.is_empty());
+        assert!(instances.iter().any(|i| i.state == "running"));
+    }
+
+    #[tokio::test]
+    async fn list_ec2_instances_nonexistent_session() {
+        let state = AwsService::new();
+        let svc = state.lock().await;
+        let result = svc.list_ec2_instances("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn service_endpoints_contain_region() {
+        let state = AwsService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_aws(test_config()).await.unwrap();
+        let session = svc.get_aws_session(&id).await.unwrap();
+        for svc_info in &session.services {
+            assert!(svc_info.endpoint.contains("us-east-1"), 
+                "Endpoint {} should contain region", svc_info.endpoint);
+        }
+    }
+}

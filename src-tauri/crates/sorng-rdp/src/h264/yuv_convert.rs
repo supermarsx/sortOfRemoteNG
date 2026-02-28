@@ -351,3 +351,272 @@ pub fn yuv420_planar_to_rgba_inner_into(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Helper: build a solid-color NV12 frame ──────────────────────────
+
+    fn make_nv12(y: u8, u: u8, v: u8, w: usize, h: usize) -> Vec<u8> {
+        let y_size = w * h;
+        let uv_rows = (h + 1) / 2;
+        let uv_size = w * uv_rows;
+        let mut buf = vec![y; y_size];
+        for _ in 0..uv_size / 2 {
+            buf.push(u);
+            buf.push(v);
+        }
+        if buf.len() < y_size + uv_size {
+            buf.resize(y_size + uv_size, 0);
+        }
+        buf
+    }
+
+    fn make_i420(y: u8, u: u8, v: u8, w: usize, h: usize) -> Vec<u8> {
+        let y_size = w * h;
+        let uv_w = w / 2;
+        let uv_h = h / 2;
+        let uv_size = uv_w * uv_h;
+        let mut buf = vec![y; y_size];
+        buf.extend(vec![u; uv_size]);
+        buf.extend(vec![v; uv_size]);
+        buf
+    }
+
+    // ── nv12_to_rgba basic ──────────────────────────────────────────────
+
+    #[test]
+    fn nv12_pure_black() {
+        let nv12 = make_nv12(0, 128, 128, 4, 4);
+        let rgba = nv12_to_rgba(&nv12, 4, 4);
+        assert_eq!(rgba.len(), 4 * 4 * 4);
+        for pixel in rgba.chunks_exact(4) {
+            assert_eq!(pixel[0], 0, "R should be 0");
+            assert_eq!(pixel[1], 0, "G should be 0");
+            assert_eq!(pixel[2], 0, "B should be 0");
+            assert_eq!(pixel[3], 255, "A should be 255");
+        }
+    }
+
+    #[test]
+    fn nv12_pure_white() {
+        let nv12 = make_nv12(255, 128, 128, 4, 4);
+        let rgba = nv12_to_rgba(&nv12, 4, 4);
+        for pixel in rgba.chunks_exact(4) {
+            assert_eq!(pixel[0], 255);
+            assert_eq!(pixel[1], 255);
+            assert_eq!(pixel[2], 255);
+            assert_eq!(pixel[3], 255);
+        }
+    }
+
+    #[test]
+    fn nv12_mid_gray() {
+        let nv12 = make_nv12(128, 128, 128, 2, 2);
+        let rgba = nv12_to_rgba(&nv12, 2, 2);
+        for pixel in rgba.chunks_exact(4) {
+            assert!((pixel[0] as i32 - 128).abs() <= 1);
+            assert!((pixel[1] as i32 - 128).abs() <= 1);
+            assert!((pixel[2] as i32 - 128).abs() <= 1);
+            assert_eq!(pixel[3], 255);
+        }
+    }
+
+    #[test]
+    fn nv12_alpha_always_opaque() {
+        let nv12 = make_nv12(100, 200, 50, 6, 6);
+        let rgba = nv12_to_rgba(&nv12, 6, 6);
+        for pixel in rgba.chunks_exact(4) {
+            assert_eq!(pixel[3], 255);
+        }
+    }
+
+    // ── Edge cases: zero size, odd dimensions ───────────────────────────
+
+    #[test]
+    fn nv12_zero_width() {
+        let rgba = nv12_to_rgba(&[], 0, 4);
+        assert!(rgba.is_empty());
+    }
+
+    #[test]
+    fn nv12_zero_height() {
+        let rgba = nv12_to_rgba(&[], 4, 0);
+        assert!(rgba.is_empty());
+    }
+
+    #[test]
+    fn nv12_odd_height() {
+        let nv12 = make_nv12(128, 128, 128, 4, 3);
+        let rgba = nv12_to_rgba(&nv12, 4, 3);
+        assert_eq!(rgba.len(), 4 * 3 * 4);
+        for pixel in rgba.chunks_exact(4) {
+            assert!((pixel[0] as i32 - 128).abs() <= 1);
+            assert_eq!(pixel[3], 255);
+        }
+    }
+
+    #[test]
+    fn nv12_undersized_input_returns_zeroed() {
+        let nv12 = vec![0u8; 2];
+        let rgba = nv12_to_rgba(&nv12, 4, 4);
+        assert_eq!(rgba.len(), 4 * 4 * 4);
+        assert!(rgba.iter().all(|&b| b == 0));
+    }
+
+    // ── nv12_to_rgba_into reuses buffer ─────────────────────────────────
+
+    #[test]
+    fn nv12_into_resizes_buffer() {
+        let nv12 = make_nv12(128, 128, 128, 4, 4);
+        let mut buf = Vec::new();
+        nv12_to_rgba_into(&nv12, 4, 4, &mut buf);
+        assert_eq!(buf.len(), 4 * 4 * 4);
+    }
+
+    #[test]
+    fn nv12_into_shrinks_buffer() {
+        let nv12 = make_nv12(128, 128, 128, 2, 2);
+        let mut buf = vec![0u8; 10000];
+        nv12_to_rgba_into(&nv12, 2, 2, &mut buf);
+        assert_eq!(buf.len(), 2 * 2 * 4);
+    }
+
+    // ── nv12_strided ────────────────────────────────────────────────────
+
+    #[test]
+    fn nv12_strided_matches_non_strided_when_stride_equals_width() {
+        let nv12 = make_nv12(200, 100, 150, 4, 4);
+        let a = nv12_to_rgba(&nv12, 4, 4);
+        let b = nv12_strided_to_rgba(&nv12, 4, 4, 4);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn nv12_strided_zero_dimensions() {
+        let rgba = nv12_strided_to_rgba(&[], 0, 0, 0);
+        assert!(rgba.is_empty());
+    }
+
+    #[test]
+    fn nv12_strided_zero_stride() {
+        let rgba = nv12_strided_to_rgba(&[0; 100], 0, 4, 4);
+        assert_eq!(rgba.len(), 4 * 4 * 4);
+        assert!(rgba.iter().all(|&b| b == 0));
+    }
+
+    // ── i420_to_rgba ────────────────────────────────────────────────────
+
+    #[test]
+    fn i420_pure_black() {
+        let yuv = make_i420(0, 128, 128, 4, 4);
+        let rgba = i420_to_rgba(&yuv, 4, 4);
+        assert_eq!(rgba.len(), 4 * 4 * 4);
+        for pixel in rgba.chunks_exact(4) {
+            assert_eq!(pixel[0], 0);
+            assert_eq!(pixel[1], 0);
+            assert_eq!(pixel[2], 0);
+            assert_eq!(pixel[3], 255);
+        }
+    }
+
+    #[test]
+    fn i420_pure_white() {
+        let yuv = make_i420(255, 128, 128, 4, 4);
+        let rgba = i420_to_rgba(&yuv, 4, 4);
+        for pixel in rgba.chunks_exact(4) {
+            assert_eq!(pixel[0], 255);
+            assert_eq!(pixel[1], 255);
+            assert_eq!(pixel[2], 255);
+            assert_eq!(pixel[3], 255);
+        }
+    }
+
+    #[test]
+    fn i420_undersized_returns_zeroed() {
+        let rgba = i420_to_rgba(&[0u8; 3], 4, 4);
+        assert_eq!(rgba.len(), 4 * 4 * 4);
+        assert!(rgba.iter().all(|&b| b == 0));
+    }
+
+    // ── yuv420_planar_to_rgba ───────────────────────────────────────────
+
+    #[test]
+    fn yuv420_planar_zero_dimensions() {
+        let mut buf = Vec::new();
+        yuv420_planar_to_rgba_inner_into(&[], &[], &[], 0, 0, 0, 0, 0, &mut buf);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn yuv420_planar_undersized_planes() {
+        let mut buf = Vec::new();
+        yuv420_planar_to_rgba_inner_into(&[0; 2], &[0; 1], &[0; 1], 4, 2, 2, 4, 4, &mut buf);
+        assert_eq!(buf.len(), 4 * 4 * 4);
+        assert!(buf.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn yuv420_planar_explicit_strides() {
+        let w = 4usize;
+        let h = 4usize;
+        let y_stride = 8;
+        let u_stride = 4;
+        let v_stride = 4;
+        let mut y = vec![0u8; y_stride * h];
+        let u = vec![128u8; u_stride * (h / 2)];
+        let v = vec![128u8; v_stride * (h / 2)];
+        for row in 0..h {
+            for col in 0..w {
+                y[row * y_stride + col] = 128;
+            }
+        }
+        let rgba = yuv420_planar_to_rgba(&y, &u, &v, y_stride, u_stride, v_stride, w as u32, h as u32);
+        assert_eq!(rgba.len(), w * h * 4);
+        for pixel in rgba.chunks_exact(4) {
+            assert!((pixel[0] as i32 - 128).abs() <= 1);
+            assert_eq!(pixel[3], 255);
+        }
+    }
+
+    #[test]
+    fn yuv420_planar_odd_height() {
+        let w = 4;
+        let h = 3;
+        let y = vec![128u8; w * h];
+        let u = vec![128u8; (w / 2) * ((h + 1) / 2)];
+        let v = vec![128u8; (w / 2) * ((h + 1) / 2)];
+        let rgba = yuv420_planar_to_rgba(&y, &u, &v, w, w / 2, w / 2, w as u32, h as u32);
+        assert_eq!(rgba.len(), w * h * 4);
+        for pixel in rgba.chunks_exact(4) {
+            assert_eq!(pixel[3], 255);
+        }
+    }
+
+    // ── YUV → RGB color accuracy ────────────────────────────────────────
+
+    #[test]
+    fn nv12_red_ish() {
+        // BT.601: Pure red is approximately Y=82, U=90, V=240
+        let nv12 = make_nv12(82, 90, 240, 2, 2);
+        let rgba = nv12_to_rgba(&nv12, 2, 2);
+        let r = rgba[0] as i32;
+        let g = rgba[1] as i32;
+        let b = rgba[2] as i32;
+        assert!(r > 200, "Red channel should be high, got {r}");
+        assert!(g < 50, "Green channel should be low, got {g}");
+        assert!(b < 50, "Blue channel should be low, got {b}");
+    }
+
+    #[test]
+    fn nv12_values_always_clamped() {
+        let nv12 = make_nv12(255, 0, 255, 2, 2);
+        let rgba = nv12_to_rgba(&nv12, 2, 2);
+        for pixel in rgba.chunks_exact(4) {
+            assert!(pixel[0] <= 255);
+            assert!(pixel[1] <= 255);
+            assert!(pixel[2] <= 255);
+        }
+    }
+}

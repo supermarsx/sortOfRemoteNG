@@ -702,3 +702,426 @@ pub async fn backup_delete(
     let mut service = state.lock().await;
     service.delete_backup(&backup_id).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── BackupConfig Default ────────────────────────────────────────────
+
+    #[test]
+    fn backup_config_default_values() {
+        let cfg = BackupConfig::default();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.frequency, BackupFrequency::Daily);
+        assert_eq!(cfg.scheduled_time, "03:00");
+        assert_eq!(cfg.weekly_day, DayOfWeek::Sunday);
+        assert_eq!(cfg.monthly_day, 1);
+        assert!(cfg.destination_path.is_empty());
+        assert!(cfg.differential_enabled);
+        assert_eq!(cfg.full_backup_interval, 7);
+        assert_eq!(cfg.max_backups_to_keep, 30);
+        assert_eq!(cfg.format, BackupFormat::Json);
+        assert!(!cfg.include_passwords);
+        assert!(cfg.encrypt_backups);
+        assert_eq!(cfg.encryption_algorithm, "AES-256-GCM");
+        assert!(cfg.encryption_password.is_none());
+        assert!(cfg.include_settings);
+        assert!(!cfg.include_ssh_keys);
+        assert!(!cfg.backup_on_close);
+        assert!(cfg.notify_on_backup);
+        assert!(cfg.compress_backups);
+    }
+
+    // ── Enum serde round-trips ──────────────────────────────────────────
+
+    #[test]
+    fn backup_frequency_serde_roundtrip() {
+        let variants = vec![
+            BackupFrequency::Manual,
+            BackupFrequency::Hourly,
+            BackupFrequency::Daily,
+            BackupFrequency::Weekly,
+            BackupFrequency::Monthly,
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: BackupFrequency = serde_json::from_str(&json).unwrap();
+            assert_eq!(v, back);
+        }
+    }
+
+    #[test]
+    fn backup_frequency_rename_all_lowercase() {
+        let json = serde_json::to_string(&BackupFrequency::Daily).unwrap();
+        assert_eq!(json, "\"daily\"");
+    }
+
+    #[test]
+    fn backup_format_serde_roundtrip() {
+        let variants = vec![
+            BackupFormat::Json,
+            BackupFormat::Xml,
+            BackupFormat::EncryptedJson,
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: BackupFormat = serde_json::from_str(&json).unwrap();
+            assert_eq!(v, back);
+        }
+    }
+
+    #[test]
+    fn backup_format_rename_all_kebab() {
+        let json = serde_json::to_string(&BackupFormat::EncryptedJson).unwrap();
+        assert_eq!(json, "\"encrypted-json\"");
+    }
+
+    #[test]
+    fn day_of_week_serde_roundtrip() {
+        let days = vec![
+            DayOfWeek::Sunday, DayOfWeek::Monday, DayOfWeek::Tuesday,
+            DayOfWeek::Wednesday, DayOfWeek::Thursday, DayOfWeek::Friday,
+            DayOfWeek::Saturday,
+        ];
+        for d in days {
+            let json = serde_json::to_string(&d).unwrap();
+            let back: DayOfWeek = serde_json::from_str(&json).unwrap();
+            assert_eq!(d, back);
+        }
+    }
+
+    #[test]
+    fn day_of_week_rename_all_lowercase() {
+        assert_eq!(serde_json::to_string(&DayOfWeek::Wednesday).unwrap(), "\"wednesday\"");
+    }
+
+    // ── BackupConfig serde ──────────────────────────────────────────────
+
+    #[test]
+    fn backup_config_serde_roundtrip() {
+        let cfg = BackupConfig::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: BackupConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.frequency, cfg.frequency);
+        assert_eq!(back.scheduled_time, cfg.scheduled_time);
+        assert_eq!(back.max_backups_to_keep, cfg.max_backups_to_keep);
+    }
+
+    #[test]
+    fn backup_config_camel_case_keys() {
+        let cfg = BackupConfig::default();
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("scheduledTime"));
+        assert!(json.contains("maxBackupsToKeep"));
+        assert!(json.contains("includePasswords"));
+        assert!(json.contains("encryptBackups"));
+        assert!(!json.contains("scheduled_time"));
+    }
+
+    // ── BackupMetadata serde ────────────────────────────────────────────
+
+    #[test]
+    fn backup_metadata_serde_roundtrip() {
+        let meta = BackupMetadata {
+            id: "abc-123".to_string(),
+            created_at: 1700000000,
+            backup_type: "full".to_string(),
+            version: "1.0.0".to_string(),
+            checksum: "deadbeef".to_string(),
+            encrypted: true,
+            compressed: true,
+            size_bytes: 4096,
+            connections_count: 10,
+            parent_backup_id: Some("parent-1".to_string()),
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        let back: BackupMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "abc-123");
+        assert_eq!(back.connections_count, 10);
+        assert_eq!(back.parent_backup_id, Some("parent-1".to_string()));
+    }
+
+    #[test]
+    fn backup_metadata_camel_case_keys() {
+        let meta = BackupMetadata {
+            id: "x".to_string(),
+            created_at: 0,
+            backup_type: "full".to_string(),
+            version: "0".to_string(),
+            checksum: "".to_string(),
+            encrypted: false,
+            compressed: false,
+            size_bytes: 0,
+            connections_count: 0,
+            parent_backup_id: None,
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        assert!(json.contains("createdAt"));
+        assert!(json.contains("sizeBytes"));
+        assert!(json.contains("parentBackupId"));
+    }
+
+    // ── BackupStatus serde ──────────────────────────────────────────────
+
+    #[test]
+    fn backup_status_serde_roundtrip() {
+        let status = BackupStatus {
+            is_running: false,
+            last_backup_time: Some(1700000000),
+            last_backup_type: Some("full".to_string()),
+            last_backup_status: Some("success".to_string()),
+            last_error: None,
+            next_scheduled_time: Some(1700003600),
+            backup_count: 5,
+            total_size_bytes: 10240,
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        let back: BackupStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.backup_count, 5);
+        assert_eq!(back.last_backup_time, Some(1700000000));
+    }
+
+    // ── BackupListItem serde ────────────────────────────────────────────
+
+    #[test]
+    fn backup_list_item_serde_roundtrip() {
+        let item = BackupListItem {
+            id: "b1".to_string(),
+            filename: "backup_full_b1.json.gz".to_string(),
+            created_at: 1700000000,
+            backup_type: "full".to_string(),
+            size_bytes: 5120,
+            encrypted: false,
+            compressed: true,
+        };
+        let json = serde_json::to_string(&item).unwrap();
+        let back: BackupListItem = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "b1");
+        assert!(back.compressed);
+    }
+
+    // ── BackupService ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn backup_service_new_defaults() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let svc = state.lock().await;
+        let cfg = svc.get_config();
+        assert!(!cfg.enabled);
+        assert_eq!(cfg.frequency, BackupFrequency::Daily);
+        let status = svc.get_status();
+        assert!(!status.is_running);
+        assert_eq!(status.backup_count, 0);
+    }
+
+    #[tokio::test]
+    async fn backup_service_update_and_get_config() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let mut svc = state.lock().await;
+        let mut cfg = BackupConfig::default();
+        cfg.enabled = true;
+        cfg.frequency = BackupFrequency::Hourly;
+        cfg.max_backups_to_keep = 10;
+        svc.update_config(cfg);
+        let retrieved = svc.get_config();
+        assert!(retrieved.enabled);
+        assert_eq!(retrieved.frequency, BackupFrequency::Hourly);
+        assert_eq!(retrieved.max_backups_to_keep, 10);
+    }
+
+    #[tokio::test]
+    async fn backup_service_manual_no_next_time() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let mut svc = state.lock().await;
+        let mut cfg = BackupConfig::default();
+        cfg.enabled = true;
+        cfg.frequency = BackupFrequency::Manual;
+        svc.update_config(cfg);
+        let status = svc.get_status();
+        assert!(status.next_scheduled_time.is_none());
+    }
+
+    #[tokio::test]
+    async fn backup_service_enabled_daily_has_next_time() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let mut svc = state.lock().await;
+        let mut cfg = BackupConfig::default();
+        cfg.enabled = true;
+        cfg.frequency = BackupFrequency::Daily;
+        svc.update_config(cfg);
+        let status = svc.get_status();
+        assert!(status.next_scheduled_time.is_some());
+    }
+
+    #[tokio::test]
+    async fn backup_service_disabled_no_next_time() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let mut svc = state.lock().await;
+        let mut cfg = BackupConfig::default();
+        cfg.enabled = false;
+        cfg.frequency = BackupFrequency::Daily;
+        svc.update_config(cfg);
+        let status = svc.get_status();
+        assert!(status.next_scheduled_time.is_none());
+    }
+
+    // ── Encryption round-trip ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn encrypt_decrypt_roundtrip() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let svc = state.lock().await;
+        let plaintext = b"Hello, World!";
+        let password = "secret123";
+        let encrypted = svc.encrypt_backup_data(plaintext, password).unwrap();
+        assert_ne!(encrypted, plaintext);
+        assert!(svc.is_encrypted_backup(&encrypted));
+        let decrypted = svc.decrypt_backup_data(&encrypted, password).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[tokio::test]
+    async fn is_encrypted_backup_false_for_plain_data() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let svc = state.lock().await;
+        assert!(!svc.is_encrypted_backup(b"plain text data"));
+        assert!(!svc.is_encrypted_backup(b"SORNG")); // Too short prefix
+        assert!(!svc.is_encrypted_backup(b"")); // Empty
+    }
+
+    #[tokio::test]
+    async fn decrypt_rejects_invalid_header() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let svc = state.lock().await;
+        let result = svc.decrypt_backup_data(b"INVALID_HEADER", "password");
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn decrypt_wrong_password_fails() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let svc = state.lock().await;
+        let encrypted = svc.encrypt_backup_data(b"secret data", "correct").unwrap();
+        let result = svc.decrypt_backup_data(&encrypted, "wrong");
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn derive_key_deterministic() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let svc = state.lock().await;
+        let k1 = svc.derive_key("password");
+        let k2 = svc.derive_key("password");
+        assert_eq!(k1, k2);
+    }
+
+    #[tokio::test]
+    async fn derive_key_different_passwords() {
+        let state = BackupService::new("/tmp/test".to_string());
+        let svc = state.lock().await;
+        let k1 = svc.derive_key("password1");
+        let k2 = svc.derive_key("password2");
+        assert_ne!(k1, k2);
+    }
+
+    // ── Full backup round-trip with temp dir ────────────────────────────
+
+    #[tokio::test]
+    async fn run_backup_and_restore() {
+        let tmp = std::env::temp_dir().join("sorng_backup_test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = BackupConfig::default();
+        cfg.destination_path = tmp.to_string_lossy().to_string();
+        cfg.encrypt_backups = false;
+        cfg.compress_backups = false;
+        svc.update_config(cfg);
+
+        let data = serde_json::json!({"connections": [{"name": "test"}]});
+        let meta = svc.run_backup("full", &data).await.unwrap();
+
+        assert_eq!(meta.backup_type, "full");
+        assert!(!meta.encrypted);
+        assert!(!meta.compressed);
+        assert_eq!(meta.connections_count, 1);
+        assert!(!meta.checksum.is_empty());
+
+        let status = svc.get_status();
+        assert_eq!(status.last_backup_status, Some("success".to_string()));
+        assert!(status.last_backup_time.is_some());
+
+        // Restore
+        let restored = svc.restore_backup(&meta.id).await.unwrap();
+        assert_eq!(restored["connections"][0]["name"], "test");
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn run_backup_compressed() {
+        let tmp = std::env::temp_dir().join("sorng_backup_test_gz");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = BackupConfig::default();
+        cfg.destination_path = tmp.to_string_lossy().to_string();
+        cfg.encrypt_backups = false;
+        cfg.compress_backups = true;
+        svc.update_config(cfg);
+
+        let data = serde_json::json!({"connections": []});
+        let meta = svc.run_backup("full", &data).await.unwrap();
+        assert!(meta.compressed);
+
+        let restored = svc.restore_backup(&meta.id).await.unwrap();
+        assert_eq!(restored["connections"], serde_json::json!([]));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn run_backup_encrypted_and_compressed() {
+        let tmp = std::env::temp_dir().join("sorng_backup_test_enc");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let state = BackupService::new(tmp.to_string_lossy().to_string());
+        let mut svc = state.lock().await;
+
+        let mut cfg = BackupConfig::default();
+        cfg.destination_path = tmp.to_string_lossy().to_string();
+        cfg.encrypt_backups = true;
+        cfg.encryption_password = Some("test_password".to_string());
+        cfg.compress_backups = true;
+        svc.update_config(cfg);
+
+        let data = serde_json::json!({"connections": [{"name": "secure"}]});
+        let meta = svc.run_backup("full", &data).await.unwrap();
+        assert!(meta.encrypted);
+        assert!(meta.compressed);
+
+        let restored = svc.restore_backup(&meta.id).await.unwrap();
+        assert_eq!(restored["connections"][0]["name"], "secure");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[tokio::test]
+    async fn backup_already_running_rejects() {
+        let state = BackupService::new("/tmp/test_running".to_string());
+        let mut svc = state.lock().await;
+        svc.status.is_running = true;
+        let result = svc.run_backup("full", &serde_json::json!({})).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("already in progress"));
+    }
+}

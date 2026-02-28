@@ -218,3 +218,207 @@ impl AutoLockService {
         self.config.idle_timeout_minutes
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn make_service() -> AutoLockService {
+        AutoLockService {
+            config: AutoLockConfig {
+                idle_timeout_minutes: 30,
+                warning_minutes: 5,
+                enabled: true,
+                lock_on_session_lock: true,
+                require_password: true,
+            },
+            state: LockState::Unlocked,
+            last_activity: Instant::now(),
+            lock_task: None,
+        }
+    }
+
+    // ── Default state ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn new_service_is_unlocked() {
+        let svc = make_service().await;
+        assert!(matches!(svc.get_lock_state().await, LockState::Unlocked));
+    }
+
+    #[tokio::test]
+    async fn default_config_values() {
+        let svc = make_service().await;
+        let cfg = svc.get_config().await;
+        assert_eq!(cfg.idle_timeout_minutes, 30);
+        assert_eq!(cfg.warning_minutes, 5);
+        assert!(cfg.enabled);
+        assert!(cfg.require_password);
+    }
+
+    // ── Lock / unlock cycle ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn lock_application_sets_locked_state() {
+        let mut svc = make_service().await;
+        svc.lock_application().await;
+        assert!(matches!(svc.get_lock_state().await, LockState::Locked));
+    }
+
+    #[tokio::test]
+    async fn unlock_after_lock_returns_to_unlocked() {
+        let mut svc = make_service().await;
+        svc.lock_application().await;
+        svc.unlock_application().await.unwrap();
+        assert!(matches!(svc.get_lock_state().await, LockState::Unlocked));
+    }
+
+    #[tokio::test]
+    async fn force_lock_locks_immediately() {
+        let mut svc = make_service().await;
+        svc.force_lock().await;
+        assert!(matches!(svc.get_lock_state().await, LockState::Locked));
+    }
+
+    // ── Activity recording ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn record_activity_clears_warning_state() {
+        let mut svc = make_service().await;
+        svc.state = LockState::Warning;
+        svc.record_activity().await;
+        assert!(matches!(svc.get_lock_state().await, LockState::Unlocked));
+    }
+
+    #[tokio::test]
+    async fn record_activity_does_not_unlock_locked() {
+        let mut svc = make_service().await;
+        svc.lock_application().await;
+        svc.record_activity().await;
+        // record_activity only clears Warning, not Locked
+        assert!(matches!(svc.get_lock_state().await, LockState::Locked));
+    }
+
+    // ── should_lock ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn should_lock_false_when_just_active() {
+        let svc = make_service().await;
+        assert!(!svc.should_lock().await);
+    }
+
+    #[tokio::test]
+    async fn should_lock_false_when_disabled() {
+        let mut svc = make_service().await;
+        svc.config.enabled = false;
+        assert!(!svc.should_lock().await);
+    }
+
+    // ── get_time_until_lock ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn time_until_lock_returns_some_when_enabled() {
+        let svc = make_service().await;
+        let time = svc.get_time_until_lock().await;
+        assert!(time.is_some());
+        // Should be roughly 30 * 60 = 1800 seconds (minus a few ms)
+        assert!(time.unwrap() > 1700);
+    }
+
+    #[tokio::test]
+    async fn time_until_lock_none_when_disabled() {
+        let mut svc = make_service().await;
+        svc.config.enabled = false;
+        assert!(svc.get_time_until_lock().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn time_until_lock_none_when_locked() {
+        let mut svc = make_service().await;
+        svc.lock_application().await;
+        assert!(svc.get_time_until_lock().await.is_none());
+    }
+
+    // ── set / get lock timeout ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn set_lock_timeout_updates_config() {
+        let mut svc = make_service().await;
+        svc.set_lock_timeout(10).await.unwrap();
+        assert_eq!(svc.get_lock_timeout().await, 10);
+    }
+
+    #[tokio::test]
+    async fn set_lock_timeout_zero_is_allowed() {
+        let mut svc = make_service().await;
+        svc.set_lock_timeout(0).await.unwrap();
+        assert_eq!(svc.get_lock_timeout().await, 0);
+    }
+
+    // ── update_config ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn update_config_applies_new_values() {
+        let mut svc = make_service().await;
+        let new_config = AutoLockConfig {
+            idle_timeout_minutes: 5,
+            warning_minutes: 1,
+            enabled: false,
+            lock_on_session_lock: false,
+            require_password: false,
+        };
+        svc.update_config(new_config).await.unwrap();
+        let cfg = svc.get_config().await;
+        assert_eq!(cfg.idle_timeout_minutes, 5);
+        assert_eq!(cfg.warning_minutes, 1);
+        assert!(!cfg.enabled);
+        assert!(!cfg.lock_on_session_lock);
+        assert!(!cfg.require_password);
+    }
+
+    // ── LockState serde ─────────────────────────────────────────────────
+
+    #[test]
+    fn lock_state_serde_roundtrip() {
+        for state in [LockState::Unlocked, LockState::Locked, LockState::Warning] {
+            let json = serde_json::to_string(&state).unwrap();
+            let back: LockState = serde_json::from_str(&json).unwrap();
+            assert_eq!(format!("{:?}", state), format!("{:?}", back));
+        }
+    }
+
+    // ── AutoLockConfig serde ────────────────────────────────────────────
+
+    #[test]
+    fn auto_lock_config_serde_roundtrip() {
+        let cfg = AutoLockConfig {
+            idle_timeout_minutes: 15,
+            warning_minutes: 3,
+            enabled: true,
+            lock_on_session_lock: false,
+            require_password: true,
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: AutoLockConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.idle_timeout_minutes, 15);
+        assert_eq!(back.warning_minutes, 3);
+    }
+
+    // ── Edge cases ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn double_lock_stays_locked() {
+        let mut svc = make_service().await;
+        svc.lock_application().await;
+        svc.lock_application().await;
+        assert!(matches!(svc.get_lock_state().await, LockState::Locked));
+    }
+
+    #[tokio::test]
+    async fn unlock_when_already_unlocked_succeeds() {
+        let mut svc = make_service().await;
+        let result = svc.unlock_application().await;
+        assert!(result.is_ok());
+        assert!(matches!(svc.get_lock_state().await, LockState::Unlocked));
+    }
+}

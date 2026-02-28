@@ -241,3 +241,329 @@ pub async fn batch_rpc_calls(
     let rpc = state.lock().await;
     rpc.batch_rpc_calls(&session_id, requests).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config() -> RpcConnectionConfig {
+        RpcConnectionConfig {
+            host: "localhost".to_string(),
+            port: 8080,
+            protocol: RpcProtocol::JsonRpc,
+            auth_method: None,
+            timeout: Some(5000),
+            use_ssl: false,
+        }
+    }
+
+    // ── Serde ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn rpc_protocol_serde_roundtrip() {
+        let variants = vec![
+            RpcProtocol::JsonRpc,
+            RpcProtocol::XmlRpc,
+            RpcProtocol::Custom("grpc".to_string()),
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: RpcProtocol = serde_json::from_str(&json).unwrap();
+            assert_eq!(format!("{:?}", v), format!("{:?}", back));
+        }
+    }
+
+    #[test]
+    fn rpc_auth_method_serde_roundtrip() {
+        let variants: Vec<RpcAuthMethod> = vec![
+            RpcAuthMethod::None,
+            RpcAuthMethod::Basic { username: "user".to_string(), password: "pass".to_string() },
+            RpcAuthMethod::Bearer { token: "tok123".to_string() },
+            RpcAuthMethod::Custom { 
+                method: "hmac".to_string(), 
+                credentials: serde_json::json!({"key": "value"}) 
+            },
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: RpcAuthMethod = serde_json::from_str(&json).unwrap();
+            assert_eq!(format!("{:?}", v), format!("{:?}", back));
+        }
+    }
+
+    #[test]
+    fn rpc_session_serde_roundtrip() {
+        let session = RpcSession {
+            id: "s1".to_string(),
+            host: "localhost".to_string(),
+            port: 8080,
+            protocol: RpcProtocol::JsonRpc,
+            connected_at: Utc::now(),
+            authenticated: true,
+        };
+        let json = serde_json::to_string(&session).unwrap();
+        let back: RpcSession = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "s1");
+        assert!(back.authenticated);
+    }
+
+    #[test]
+    fn rpc_request_serde() {
+        let req = RpcRequest {
+            method: "test.method".to_string(),
+            params: serde_json::json!({"key": "value"}),
+            id: Some(serde_json::json!(1)),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let back: RpcRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.method, "test.method");
+    }
+
+    #[test]
+    fn rpc_response_serde() {
+        let resp = RpcResponse {
+            result: Some(serde_json::json!({"status": "ok"})),
+            error: None,
+            id: Some(serde_json::json!(1)),
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let back: RpcResponse = serde_json::from_str(&json).unwrap();
+        assert!(back.error.is_none());
+        assert_eq!(back.result.unwrap()["status"], "ok");
+    }
+
+    #[test]
+    fn rpc_error_serde() {
+        let err = RpcError {
+            code: -32601,
+            message: "Method not found".to_string(),
+            data: Some(serde_json::json!({"details": "unknown method"})),
+        };
+        let json = serde_json::to_string(&err).unwrap();
+        let back: RpcError = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.code, -32601);
+        assert_eq!(back.message, "Method not found");
+    }
+
+    #[test]
+    fn rpc_connection_config_serde() {
+        let cfg = test_config();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: RpcConnectionConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.host, "localhost");
+        assert_eq!(back.port, 8080);
+        assert!(!back.use_ssl);
+    }
+
+    // ── Session CRUD ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn connect_rpc_returns_session_id() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        assert_eq!(id.len(), 36);
+    }
+
+    #[tokio::test]
+    async fn connect_rpc_unauthenticated_when_no_auth() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let session = svc.get_rpc_session(&id).await.unwrap();
+        assert!(!session.authenticated);
+    }
+
+    #[tokio::test]
+    async fn connect_rpc_authenticated_with_auth() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let mut cfg = test_config();
+        cfg.auth_method = Some(RpcAuthMethod::Basic {
+            username: "admin".to_string(),
+            password: "secret".to_string(),
+        });
+        let id = svc.connect_rpc(cfg).await.unwrap();
+        let session = svc.get_rpc_session(&id).await.unwrap();
+        assert!(session.authenticated);
+    }
+
+    #[tokio::test]
+    async fn disconnect_rpc_removes_session() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        svc.disconnect_rpc(&id).await.unwrap();
+        assert!(svc.get_rpc_session(&id).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn disconnect_nonexistent_fails() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let result = svc.disconnect_rpc("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn list_sessions_empty() {
+        let state = RpcService::new();
+        let svc = state.lock().await;
+        assert!(svc.list_rpc_sessions().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_sessions_after_connect() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        svc.connect_rpc(test_config()).await.unwrap();
+        svc.connect_rpc(test_config()).await.unwrap();
+        assert_eq!(svc.list_rpc_sessions().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_session_not_found() {
+        let state = RpcService::new();
+        let svc = state.lock().await;
+        assert!(svc.get_rpc_session("nonexistent").await.is_none());
+    }
+
+    // ── Method dispatch ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn call_system_list_methods() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let resp = svc.call_rpc_method(&id, RpcRequest {
+            method: "system.listMethods".to_string(),
+            params: serde_json::json!(null),
+            id: Some(serde_json::json!(1)),
+        }).await.unwrap();
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert!(result.as_array().unwrap().len() > 0);
+    }
+
+    #[tokio::test]
+    async fn call_system_describe() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let resp = svc.call_rpc_method(&id, RpcRequest {
+            method: "system.describe".to_string(),
+            params: serde_json::json!(null),
+            id: Some(serde_json::json!(2)),
+        }).await.unwrap();
+        let result = resp.result.unwrap();
+        assert!(result["service"].is_string());
+    }
+
+    #[tokio::test]
+    async fn call_unknown_method_returns_success() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let resp = svc.call_rpc_method(&id, RpcRequest {
+            method: "custom.method".to_string(),
+            params: serde_json::json!({}),
+            id: Some(serde_json::json!(3)),
+        }).await.unwrap();
+        assert!(resp.error.is_none());
+        let result = resp.result.unwrap();
+        assert_eq!(result["method"], "custom.method");
+    }
+
+    #[tokio::test]
+    async fn call_on_nonexistent_session_fails() {
+        let state = RpcService::new();
+        let svc = state.lock().await;
+        let result = svc.call_rpc_method("nonexistent", RpcRequest {
+            method: "test".to_string(),
+            params: serde_json::json!(null),
+            id: None,
+        }).await;
+        assert!(result.is_err());
+    }
+
+    // ── Discover methods ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn discover_methods_returns_list() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let methods = svc.discover_rpc_methods(&id).await.unwrap();
+        assert!(!methods.is_empty());
+        assert!(methods.contains(&"system.listMethods".to_string()));
+    }
+
+    #[tokio::test]
+    async fn discover_methods_nonexistent_session() {
+        let state = RpcService::new();
+        let svc = state.lock().await;
+        let result = svc.discover_rpc_methods("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    // ── Batch calls ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn batch_calls_returns_same_count() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let requests = vec![
+            RpcRequest { method: "m1".to_string(), params: serde_json::json!(null), id: Some(serde_json::json!(1)) },
+            RpcRequest { method: "m2".to_string(), params: serde_json::json!(null), id: Some(serde_json::json!(2)) },
+            RpcRequest { method: "m3".to_string(), params: serde_json::json!(null), id: Some(serde_json::json!(3)) },
+        ];
+        let responses = svc.batch_rpc_calls(&id, requests).await.unwrap();
+        assert_eq!(responses.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn batch_calls_empty() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let responses = svc.batch_rpc_calls(&id, vec![]).await.unwrap();
+        assert!(responses.is_empty());
+    }
+
+    #[tokio::test]
+    async fn batch_calls_nonexistent_session() {
+        let state = RpcService::new();
+        let svc = state.lock().await;
+        let result = svc.batch_rpc_calls("nonexistent", vec![]).await;
+        assert!(result.is_err());
+    }
+
+    // ── Response ID preservation ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn response_preserves_request_id() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let resp = svc.call_rpc_method(&id, RpcRequest {
+            method: "test".to_string(),
+            params: serde_json::json!(null),
+            id: Some(serde_json::json!("my-id-42")),
+        }).await.unwrap();
+        assert_eq!(resp.id, Some(serde_json::json!("my-id-42")));
+    }
+
+    #[tokio::test]
+    async fn response_preserves_null_id() {
+        let state = RpcService::new();
+        let mut svc = state.lock().await;
+        let id = svc.connect_rpc(test_config()).await.unwrap();
+        let resp = svc.call_rpc_method(&id, RpcRequest {
+            method: "test".to_string(),
+            params: serde_json::json!(null),
+            id: None,
+        }).await.unwrap();
+        assert!(resp.id.is_none());
+    }
+}

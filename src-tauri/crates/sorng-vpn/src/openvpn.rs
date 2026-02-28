@@ -729,3 +729,326 @@ pub async fn validate_ovpn_config(
     let service = state.lock().await;
     service.validate_ovpn_config(&ovpn_content).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_config() -> OpenVPNConfig {
+        OpenVPNConfig {
+            config_file: None,
+            auth_file: None,
+            ca_cert: None,
+            client_cert: None,
+            client_key: None,
+            username: None,
+            password: None,
+            remote_host: Some("vpn.example.com".to_string()),
+            remote_port: Some(1194),
+            protocol: Some("udp".to_string()),
+            cipher: None,
+            auth: None,
+            tls_auth: None,
+            tls_crypt: None,
+            compression: None,
+            mss_fix: None,
+            tun_mtu: None,
+            fragment: None,
+            mtu_discover: None,
+            keep_alive: None,
+            route_no_pull: None,
+            routes: Vec::new(),
+            dns_servers: Vec::new(),
+            custom_options: Vec::new(),
+        }
+    }
+
+    // ── Serde ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn openvpn_status_serde_roundtrip() {
+        let variants: Vec<OpenVPNStatus> = vec![
+            OpenVPNStatus::Disconnected,
+            OpenVPNStatus::Connecting,
+            OpenVPNStatus::Connected,
+            OpenVPNStatus::Disconnecting,
+            OpenVPNStatus::Error("test error".to_string()),
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: OpenVPNStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(format!("{:?}", v), format!("{:?}", back));
+        }
+    }
+
+    #[test]
+    fn openvpn_config_serde_roundtrip() {
+        let cfg = default_config();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: OpenVPNConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.remote_host, Some("vpn.example.com".to_string()));
+        assert_eq!(back.remote_port, Some(1194));
+    }
+
+    #[test]
+    fn openvpn_connection_serde_roundtrip() {
+        let conn = OpenVPNConnection {
+            id: "abc".to_string(),
+            name: "Test VPN".to_string(),
+            config: default_config(),
+            status: OpenVPNStatus::Disconnected,
+            created_at: Utc::now(),
+            connected_at: None,
+            process_id: None,
+            local_ip: None,
+            remote_ip: None,
+        };
+        let json = serde_json::to_string(&conn).unwrap();
+        let back: OpenVPNConnection = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "abc");
+        assert_eq!(back.name, "Test VPN");
+    }
+
+    // ── Connection CRUD ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn create_connection_returns_uuid() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        assert!(!id.is_empty());
+        // UUID format check
+        assert_eq!(id.len(), 36);
+    }
+
+    #[tokio::test]
+    async fn create_connection_initial_status_disconnected() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert!(matches!(conn.status, OpenVPNStatus::Disconnected));
+    }
+
+    #[tokio::test]
+    async fn list_connections_empty() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        assert!(svc.list_connections().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_connections_after_create() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        svc.create_connection("VPN1".to_string(), default_config()).await.unwrap();
+        svc.create_connection("VPN2".to_string(), default_config()).await.unwrap();
+        assert_eq!(svc.list_connections().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_connection_not_found() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let result = svc.get_connection("nonexistent").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn delete_connection_removes_it() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        svc.delete_connection(&id).await.unwrap();
+        assert!(svc.get_connection(&id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn is_connection_active_false_when_disconnected() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        assert!(!svc.is_connection_active(&id).await);
+    }
+
+    #[tokio::test]
+    async fn is_connection_active_false_for_nonexistent() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        assert!(!svc.is_connection_active("nonexistent").await);
+    }
+
+    #[tokio::test]
+    async fn get_status_not_found() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        assert!(svc.get_status("nonexistent").await.is_err());
+    }
+
+    // ── Auth / key file updates ─────────────────────────────────────────
+
+    #[tokio::test]
+    async fn update_connection_auth() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        svc.update_connection_auth(&id, Some("user".to_string()), Some("pass".to_string())).await.unwrap();
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.config.username, Some("user".to_string()));
+        assert_eq!(conn.config.password, Some("pass".to_string()));
+    }
+
+    #[tokio::test]
+    async fn update_connection_auth_not_found() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let result = svc.update_connection_auth("nope", None, None).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn set_connection_key_files() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let id = svc.create_connection("Test".to_string(), default_config()).await.unwrap();
+        svc.set_connection_key_files(&id, Some("ca.pem".into()), Some("cert.pem".into()), Some("key.pem".into()), Some("ta.key".into())).await.unwrap();
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.config.ca_cert, Some("ca.pem".to_string()));
+        assert_eq!(conn.config.tls_auth, Some(true));
+    }
+
+    // ── .ovpn parsing ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn parse_ovpn_minimal() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote vpn.example.com 443\nproto tcp\ncipher AES-256-GCM\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.remote_host, Some("vpn.example.com".to_string()));
+        assert_eq!(cfg.remote_port, Some(443));
+        assert_eq!(cfg.protocol, Some("tcp".to_string()));
+        assert_eq!(cfg.cipher, Some("AES-256-GCM".to_string()));
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_with_keepalive() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\nkeepalive 10 120\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        let ka = cfg.keep_alive.unwrap();
+        assert_eq!(ka.interval, 10);
+        assert_eq!(ka.timeout, 120);
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_with_routes_and_dns() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\nroute 10.0.0.0 255.255.0.0\ndhcp-option DNS 8.8.8.8\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.routes.len(), 1);
+        assert_eq!(cfg.routes[0].network, "10.0.0.0");
+        assert_eq!(cfg.dns_servers.len(), 1);
+        assert_eq!(cfg.dns_servers[0].server, "8.8.8.8");
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_skips_comments() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "# This is a comment\n; Another comment\nremote host 1194\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.remote_host, Some("host".to_string()));
+        assert!(cfg.custom_options.is_empty());
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_inline_certs() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\n<ca>\nMIIC...\n</ca>\n<cert>\nMIID...\n</cert>\n<key>\nMIIE...\n</key>\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.ca_cert, Some("inline_ca_cert".to_string()));
+        assert_eq!(cfg.client_cert, Some("inline_client_cert".to_string()));
+        assert_eq!(cfg.client_key, Some("inline_client_key".to_string()));
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_empty() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let cfg = svc.parse_ovpn_file("").await.unwrap();
+        assert!(cfg.remote_host.is_none());
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_route_no_pull() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\nroute-no-pull\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.route_no_pull, Some(true));
+    }
+
+    #[tokio::test]
+    async fn parse_ovpn_mtu_settings() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let ovpn = "remote host 1194\ntun-mtu 1500\nmssfix 1400\nfragment 1300\nmtu-disc yes\n";
+        let cfg = svc.parse_ovpn_file(ovpn).await.unwrap();
+        assert_eq!(cfg.tun_mtu, Some(1500));
+        assert_eq!(cfg.mss_fix, Some(1400));
+        assert_eq!(cfg.fragment, Some(1300));
+        assert_eq!(cfg.mtu_discover, Some(true));
+    }
+
+    // ── Config validation ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn validate_ovpn_no_remote_fails() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let result = svc.validate_ovpn_config("cipher AES-256-GCM\n").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No remote"));
+    }
+
+    #[tokio::test]
+    async fn validate_ovpn_with_remote_ok() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let result = svc.validate_ovpn_config("remote vpn.example.com 1194\n<ca>\n</ca>\n<cert>\n</cert>\n<key>\n</key>\n").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn validate_ovpn_unsupported_cipher_warns() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let result = svc.validate_ovpn_config("remote host 1194\ncipher CHACHA20\n").await.unwrap();
+        assert!(result.iter().any(|w| w.contains("unsupported cipher")));
+    }
+
+    #[tokio::test]
+    async fn validate_ovpn_no_certs_warns() {
+        let state = OpenVPNService::new();
+        let svc = state.lock().await;
+        let warnings = svc.validate_ovpn_config("remote host 1194\n").await.unwrap();
+        assert!(!warnings.is_empty(), "Should produce warnings about missing certs");
+    }
+
+    // ── create_connection_from_ovpn ─────────────────────────────────────
+
+    #[tokio::test]
+    async fn create_from_ovpn() {
+        let state = OpenVPNService::new();
+        let mut svc = state.lock().await;
+        let ovpn = "remote myserver.com 443\nproto tcp\ncipher AES-256-GCM\n";
+        let id = svc.create_connection_from_ovpn("MyVPN".to_string(), ovpn.to_string()).await.unwrap();
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert_eq!(conn.name, "MyVPN");
+        assert_eq!(conn.config.remote_host, Some("myserver.com".to_string()));
+    }
+}

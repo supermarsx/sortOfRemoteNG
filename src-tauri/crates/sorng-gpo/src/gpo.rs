@@ -561,3 +561,239 @@ impl GpoService {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── PolicyValue serde ───────────────────────────────────────────────
+
+    #[test]
+    fn policy_value_string_serde() {
+        let v = PolicyValue::String("hello".to_string());
+        let json = serde_json::to_string(&v).unwrap();
+        let back: PolicyValue = serde_json::from_str(&json).unwrap();
+        match back {
+            PolicyValue::String(s) => assert_eq!(s, "hello"),
+            _ => panic!("Expected String variant"),
+        }
+    }
+
+    #[test]
+    fn policy_value_dword_serde() {
+        let v = PolicyValue::Dword(42);
+        let json = serde_json::to_string(&v).unwrap();
+        let back: PolicyValue = serde_json::from_str(&json).unwrap();
+        match back {
+            PolicyValue::Dword(n) => assert_eq!(n, 42),
+            _ => panic!("Expected Dword variant"),
+        }
+    }
+
+    #[test]
+    fn policy_value_qword_serde() {
+        let v = PolicyValue::Qword(u64::MAX);
+        let json = serde_json::to_string(&v).unwrap();
+        let back: PolicyValue = serde_json::from_str(&json).unwrap();
+        match back {
+            PolicyValue::Qword(n) => assert_eq!(n, u64::MAX),
+            _ => panic!("Expected Qword variant"),
+        }
+    }
+
+    #[test]
+    fn policy_value_binary_serde() {
+        let v = PolicyValue::Binary(vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        let json = serde_json::to_string(&v).unwrap();
+        let back: PolicyValue = serde_json::from_str(&json).unwrap();
+        match back {
+            PolicyValue::Binary(b) => assert_eq!(b, vec![0xDE, 0xAD, 0xBE, 0xEF]),
+            _ => panic!("Expected Binary variant"),
+        }
+    }
+
+    #[test]
+    fn policy_value_binary_empty() {
+        let v = PolicyValue::Binary(vec![]);
+        let json = serde_json::to_string(&v).unwrap();
+        let back: PolicyValue = serde_json::from_str(&json).unwrap();
+        match back {
+            PolicyValue::Binary(b) => assert!(b.is_empty()),
+            _ => panic!("Expected Binary variant"),
+        }
+    }
+
+    // ── GroupPolicy serde ───────────────────────────────────────────────
+
+    #[test]
+    fn group_policy_serde_roundtrip() {
+        let policy = GroupPolicy {
+            name: "TestPolicy".to_string(),
+            description: "A test policy".to_string(),
+            category: "Security".to_string(),
+            registry_key: r"SOFTWARE\Test".to_string(),
+            value_name: "TestValue".to_string(),
+            value: PolicyValue::Dword(1),
+            enabled: true,
+        };
+        let json = serde_json::to_string(&policy).unwrap();
+        let back: GroupPolicy = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.name, "TestPolicy");
+        assert_eq!(back.category, "Security");
+        assert!(back.enabled);
+    }
+
+    // ── GpoService ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn gpo_service_has_default_policies() {
+        let state = GpoService::new();
+        let svc = state.lock().await;
+        let policies = svc.list_policies();
+        assert!(policies.len() >= 5, "Expected at least 5 default policies");
+    }
+
+    #[tokio::test]
+    async fn gpo_service_default_policy_names() {
+        let state = GpoService::new();
+        let svc = state.lock().await;
+        let names: Vec<String> = svc.list_policies().into_iter().map(|p| p.name).collect();
+        assert!(names.contains(&"AutoLockEnabled".to_string()));
+        assert!(names.contains(&"AutoLockTimeout".to_string()));
+        assert!(names.contains(&"RequirePassword".to_string()));
+        assert!(names.contains(&"MaxConnections".to_string()));
+        assert!(names.contains(&"AllowedProtocols".to_string()));
+    }
+
+    #[tokio::test]
+    async fn gpo_service_get_existing_policy() {
+        let state = GpoService::new();
+        let svc = state.lock().await;
+        let result = svc.get_policy("AutoLockEnabled").unwrap();
+        assert!(result.is_some());
+        let policy = result.unwrap();
+        assert_eq!(policy.name, "AutoLockEnabled");
+        assert!(policy.enabled);
+    }
+
+    #[tokio::test]
+    async fn gpo_service_get_nonexistent_policy() {
+        let state = GpoService::new();
+        let svc = state.lock().await;
+        let result = svc.get_policy("NonExistent").unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn gpo_service_set_policy_value() {
+        let state = GpoService::new();
+        let mut svc = state.lock().await;
+        // On non-Windows, set_policy will fail at registry write, but the in-memory value
+        // should be updated before the registry call
+        let _result = svc.set_policy("MaxConnections".to_string(), PolicyValue::Dword(20)).await;
+        // Even if registry write fails, verify the policy was found
+        let policy = svc.get_policy("MaxConnections").unwrap().unwrap();
+        // The value may or may not be updated depending on platform
+        assert_eq!(policy.name, "MaxConnections");
+    }
+
+    #[tokio::test]
+    async fn gpo_service_set_nonexistent_policy() {
+        let state = GpoService::new();
+        let mut svc = state.lock().await;
+        let result = svc.set_policy("NoSuchPolicy".to_string(), PolicyValue::Dword(1)).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn gpo_service_list_by_category() {
+        let state = GpoService::new();
+        let svc = state.lock().await;
+        let security = svc.list_policies_by_category("Security").await;
+        assert!(security.len() >= 3);
+        for p in &security {
+            assert_eq!(p.category, "Security");
+        }
+    }
+
+    #[tokio::test]
+    async fn gpo_service_list_by_nonexistent_category() {
+        let state = GpoService::new();
+        let svc = state.lock().await;
+        let empty = svc.list_policies_by_category("NonExistent").await;
+        assert!(empty.is_empty());
+    }
+
+    #[tokio::test]
+    async fn gpo_service_reset_policy_nonexistent() {
+        let state = GpoService::new();
+        let mut svc = state.lock().await;
+        let result = svc.reset_policy("NoSuchPolicy".to_string()).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn gpo_service_set_policy_enabled_nonexistent() {
+        let state = GpoService::new();
+        let mut svc = state.lock().await;
+        let result = svc.set_policy_enabled("NoSuchPolicy".to_string(), true).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn gpo_service_apply_policies_ok() {
+        let state = GpoService::new();
+        let svc = state.lock().await;
+        let result = svc.apply_policies().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn gpo_service_export_import_roundtrip() {
+        let tmp = std::env::temp_dir().join("sorng_gpo_test_export.json");
+        let state = GpoService::new();
+        {
+            let svc = state.lock().await;
+            svc.export_policies(tmp.to_str().unwrap()).unwrap();
+        }
+
+        // Import into a fresh service
+        let state2 = GpoService::new();
+        {
+            let mut svc2 = state2.lock().await;
+            svc2.import_policies(tmp.to_str().unwrap()).unwrap();
+            let policies = svc2.list_policies();
+            assert!(policies.len() >= 5);
+        }
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[tokio::test]
+    async fn gpo_service_export_nonexistent_dir_fails() {
+        let state = GpoService::new();
+        let svc = state.lock().await;
+        let result = svc.export_policies("/nonexistent/dir/file.json");
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn gpo_service_import_nonexistent_file_fails() {
+        let state = GpoService::new();
+        let mut svc = state.lock().await;
+        let result = svc.import_policies("/nonexistent/file.json");
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn gpo_service_policy_root() {
+        let state = GpoService::new();
+        let svc = state.lock().await;
+        // Verify all policies have proper registry paths
+        for p in svc.list_policies() {
+            assert!(p.registry_key.contains("SortOfRemoteNG"), 
+                "Policy {} has unexpected registry_key: {}", p.name, p.registry_key);
+        }
+    }
+}

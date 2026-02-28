@@ -308,3 +308,152 @@ pub async fn update_wol_schedule(state: tauri::State<'_, WolServiceState>, sched
     let mut wol = state.lock().await;
     wol.update_schedule(schedule)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_schedule(id: &str) -> WolSchedule {
+        WolSchedule {
+            id: id.to_string(),
+            mac_address: "AA:BB:CC:DD:EE:FF".to_string(),
+            name: Some("Test".to_string()),
+            broadcast_address: "255.255.255.255".to_string(),
+            port: 9,
+            password: None,
+            wake_time: "08:00".to_string(),
+            recurrence: None,
+            enabled: true,
+        }
+    }
+
+    // ── WolDevice / WolSchedule serde ───────────────────────────────────
+
+    #[test]
+    fn wol_device_serde_roundtrip() {
+        let dev = WolDevice {
+            ip: "192.168.1.100".to_string(),
+            mac: "aa:bb:cc:dd:ee:ff".to_string(),
+            hostname: Some("myhost".to_string()),
+            last_seen: None,
+        };
+        let json = serde_json::to_string(&dev).unwrap();
+        let back: WolDevice = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.ip, "192.168.1.100");
+        assert_eq!(back.hostname, Some("myhost".to_string()));
+    }
+
+    #[test]
+    fn wol_schedule_serde_roundtrip() {
+        let sched = make_schedule("s1");
+        let json = serde_json::to_string(&sched).unwrap();
+        let back: WolSchedule = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "s1");
+        assert_eq!(back.mac_address, "AA:BB:CC:DD:EE:FF");
+        assert!(back.enabled);
+    }
+
+    // ── Schedule CRUD ───────────────────────────────────────────────────
+
+    #[test]
+    fn add_schedule_returns_id() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = WolService::new();
+            let mut svc = state.lock().await;
+            let id = svc.add_schedule(make_schedule("s1")).unwrap();
+            assert_eq!(id, "s1");
+        });
+    }
+
+    #[test]
+    fn list_schedules_empty() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = WolService::new();
+            let svc = state.lock().await;
+            assert!(svc.list_schedules().is_empty());
+        });
+    }
+
+    #[test]
+    fn add_and_list_schedules() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = WolService::new();
+            let mut svc = state.lock().await;
+            svc.add_schedule(make_schedule("s1")).unwrap();
+            svc.add_schedule(make_schedule("s2")).unwrap();
+            assert_eq!(svc.list_schedules().len(), 2);
+        });
+    }
+
+    #[test]
+    fn remove_schedule_success() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = WolService::new();
+            let mut svc = state.lock().await;
+            svc.add_schedule(make_schedule("s1")).unwrap();
+            svc.remove_schedule("s1").unwrap();
+            assert!(svc.list_schedules().is_empty());
+        });
+    }
+
+    #[test]
+    fn remove_schedule_not_found() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = WolService::new();
+            let mut svc = state.lock().await;
+            let result = svc.remove_schedule("nonexistent");
+            assert!(result.is_err());
+            assert!(result.unwrap_err().contains("not found"));
+        });
+    }
+
+    #[test]
+    fn update_schedule_success() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = WolService::new();
+            let mut svc = state.lock().await;
+            svc.add_schedule(make_schedule("s1")).unwrap();
+            let mut updated = make_schedule("s1");
+            updated.wake_time = "09:00".to_string();
+            updated.enabled = false;
+            svc.update_schedule(updated).unwrap();
+            let schedules = svc.list_schedules();
+            assert_eq!(schedules[0].wake_time, "09:00");
+            assert!(!schedules[0].enabled);
+        });
+    }
+
+    #[test]
+    fn update_schedule_not_found() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = WolService::new();
+            let mut svc = state.lock().await;
+            let result = svc.update_schedule(make_schedule("nonexistent"));
+            assert!(result.is_err());
+        });
+    }
+
+    #[test]
+    fn remove_only_matching_schedule() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let state = WolService::new();
+            let mut svc = state.lock().await;
+            svc.add_schedule(make_schedule("s1")).unwrap();
+            svc.add_schedule(make_schedule("s2")).unwrap();
+            svc.add_schedule(make_schedule("s3")).unwrap();
+            svc.remove_schedule("s2").unwrap();
+            let remaining: Vec<String> = svc.list_schedules().into_iter().map(|s| s.id).collect();
+            assert_eq!(remaining.len(), 2);
+            assert!(remaining.contains(&"s1".to_string()));
+            assert!(remaining.contains(&"s3".to_string()));
+        });
+    }
+}

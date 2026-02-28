@@ -360,3 +360,263 @@ struct InterfaceInfo {
     local_ip: Option<String>,
     peer_ip: Option<String>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_wg_config() -> WireGuardConfig {
+        WireGuardConfig {
+            private_key: Some("cHJpdmF0ZWtleQ==".to_string()),
+            public_key: Some("cHVibGlja2V5".to_string()),
+            preshared_key: None,
+            endpoint: Some("vpn.example.com:51820".to_string()),
+            allowed_ips: vec!["0.0.0.0/0".to_string()],
+            persistent_keepalive: Some(25),
+            listen_port: None,
+            dns_servers: vec!["1.1.1.1".to_string()],
+            mtu: Some(1420),
+            table: None,
+            fwmark: None,
+            config_file: None,
+            interface_name: None,
+        }
+    }
+
+    // ── Serde ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn wireguard_status_serde_roundtrip() {
+        let variants: Vec<WireGuardStatus> = vec![
+            WireGuardStatus::Disconnected,
+            WireGuardStatus::Connecting,
+            WireGuardStatus::Connected,
+            WireGuardStatus::Disconnecting,
+            WireGuardStatus::Error("test".to_string()),
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: WireGuardStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(format!("{:?}", v), format!("{:?}", back));
+        }
+    }
+
+    #[test]
+    fn wireguard_config_serde_roundtrip() {
+        let cfg = default_wg_config();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let back: WireGuardConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.endpoint, Some("vpn.example.com:51820".to_string()));
+        assert_eq!(back.mtu, Some(1420));
+        assert_eq!(back.allowed_ips, vec!["0.0.0.0/0"]);
+    }
+
+    #[test]
+    fn wireguard_connection_serde_roundtrip() {
+        let conn = WireGuardConnection {
+            id: "wg1".to_string(),
+            name: "Test WG".to_string(),
+            config: default_wg_config(),
+            status: WireGuardStatus::Disconnected,
+            created_at: Utc::now(),
+            connected_at: None,
+            interface_name: None,
+            local_ip: None,
+            peer_ip: None,
+            process_id: None,
+        };
+        let json = serde_json::to_string(&conn).unwrap();
+        let back: WireGuardConnection = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.id, "wg1");
+        assert_eq!(back.name, "Test WG");
+    }
+
+    // ── Connection CRUD ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn create_connection_returns_uuid() {
+        let state = WireGuardService::new();
+        let mut svc = state.lock().await;
+        let id = svc.create_connection("Test WG".to_string(), default_wg_config()).await.unwrap();
+        assert_eq!(id.len(), 36);
+    }
+
+    #[tokio::test]
+    async fn create_connection_default_status() {
+        let state = WireGuardService::new();
+        let mut svc = state.lock().await;
+        let id = svc.create_connection("Test".to_string(), default_wg_config()).await.unwrap();
+        let conn = svc.get_connection(&id).await.unwrap();
+        assert!(matches!(conn.status, WireGuardStatus::Disconnected));
+        assert!(conn.connected_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_connections_empty() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        assert!(svc.list_connections().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_connections_after_create() {
+        let state = WireGuardService::new();
+        let mut svc = state.lock().await;
+        svc.create_connection("WG1".to_string(), default_wg_config()).await.unwrap();
+        svc.create_connection("WG2".to_string(), default_wg_config()).await.unwrap();
+        assert_eq!(svc.list_connections().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn get_connection_not_found() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        assert!(svc.get_connection("nonexistent").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn delete_connection_removes_it() {
+        let state = WireGuardService::new();
+        let mut svc = state.lock().await;
+        let id = svc.create_connection("Test".to_string(), default_wg_config()).await.unwrap();
+        svc.delete_connection(&id).await.unwrap();
+        assert!(svc.get_connection(&id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn delete_nonexistent_is_ok() {
+        let state = WireGuardService::new();
+        let mut svc = state.lock().await;
+        // delete_connection just removes from HashMap, doesn't error on missing
+        svc.delete_connection("nonexistent").await.unwrap();
+    }
+
+    // ── Config generation ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn generate_config_has_interface_section() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let cfg = default_wg_config();
+        let content = svc.generate_config(&cfg, "wg0").unwrap();
+        assert!(content.contains("[Interface]"));
+        assert!(content.contains("[Peer]"));
+    }
+
+    #[tokio::test]
+    async fn generate_config_with_keys() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let cfg = default_wg_config();
+        let content = svc.generate_config(&cfg, "wg0").unwrap();
+        assert!(content.contains("PrivateKey = cHJpdmF0ZWtleQ=="));
+        assert!(content.contains("PublicKey = cHVibGlja2V5"));
+    }
+
+    #[tokio::test]
+    async fn generate_config_with_endpoint() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let cfg = default_wg_config();
+        let content = svc.generate_config(&cfg, "wg0").unwrap();
+        assert!(content.contains("Endpoint = vpn.example.com:51820"));
+    }
+
+    #[tokio::test]
+    async fn generate_config_with_dns() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let cfg = default_wg_config();
+        let content = svc.generate_config(&cfg, "wg0").unwrap();
+        assert!(content.contains("DNS = 1.1.1.1"));
+    }
+
+    #[tokio::test]
+    async fn generate_config_with_mtu() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let cfg = default_wg_config();
+        let content = svc.generate_config(&cfg, "wg0").unwrap();
+        assert!(content.contains("MTU = 1420"));
+    }
+
+    #[tokio::test]
+    async fn generate_config_with_keepalive() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let cfg = default_wg_config();
+        let content = svc.generate_config(&cfg, "wg0").unwrap();
+        assert!(content.contains("PersistentKeepalive = 25"));
+    }
+
+    #[tokio::test]
+    async fn generate_config_with_allowed_ips() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let cfg = default_wg_config();
+        let content = svc.generate_config(&cfg, "wg0").unwrap();
+        assert!(content.contains("AllowedIPs = 0.0.0.0/0"));
+    }
+
+    #[tokio::test]
+    async fn generate_config_minimal() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let cfg = WireGuardConfig {
+            private_key: None,
+            public_key: None,
+            preshared_key: None,
+            endpoint: None,
+            allowed_ips: Vec::new(),
+            persistent_keepalive: None,
+            listen_port: None,
+            dns_servers: Vec::new(),
+            mtu: None,
+            table: None,
+            fwmark: None,
+            config_file: None,
+            interface_name: None,
+        };
+        let content = svc.generate_config(&cfg, "wg0").unwrap();
+        assert!(content.contains("[Interface]"));
+        assert!(content.contains("[Peer]"));
+        // Should not contain optional fields
+        assert!(!content.contains("PrivateKey"));
+    }
+
+    // ── Helper methods ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn extract_ip_from_output_valid() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let output = "3: wg0: <POINTOPOINT,NOARP,UP,LOWER_UP> mtu 1420\n    inet 10.0.0.1/24 scope global wg0\n";
+        let ip = svc.extract_ip_from_output(output).unwrap();
+        assert_eq!(ip, "10.0.0.1");
+    }
+
+    #[tokio::test]
+    async fn extract_ip_from_output_no_ip() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let result = svc.extract_ip_from_output("no ip info here");
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn extract_peer_ip_from_wg_valid() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let output = "interface: wg0\n  public key: abc=\n  peer: xyz=\n    endpoint: 1.2.3.4:51820\n";
+        let peer = svc.extract_peer_ip_from_wg(output);
+        assert!(peer.is_some());
+    }
+
+    #[tokio::test]
+    async fn extract_peer_ip_from_wg_none() {
+        let state = WireGuardService::new();
+        let svc = state.lock().await;
+        let peer = svc.extract_peer_ip_from_wg("no endpoint here");
+        assert!(peer.is_none());
+    }
+}

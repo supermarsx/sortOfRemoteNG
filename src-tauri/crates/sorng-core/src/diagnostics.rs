@@ -316,3 +316,233 @@ pub fn probe_ports_parallel(
         detail: None,
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    // ── DiagnosticStep & DiagnosticReport serde ─────────────────────────
+
+    #[test]
+    fn diagnostic_step_serializes_camel_case() {
+        let step = DiagnosticStep {
+            name: "DNS Resolution".into(),
+            status: "pass".into(),
+            message: "ok".into(),
+            duration_ms: 42,
+            detail: None,
+        };
+        let json = serde_json::to_string(&step).unwrap();
+        assert!(json.contains("\"durationMs\""));
+        assert!(!json.contains("\"duration_ms\""));
+    }
+
+    #[test]
+    fn diagnostic_step_roundtrip_with_detail() {
+        let step = DiagnosticStep {
+            name: "TCP Connect".into(),
+            status: "fail".into(),
+            message: "timeout".into(),
+            duration_ms: 5000,
+            detail: Some("firewall".into()),
+        };
+        let json = serde_json::to_string(&step).unwrap();
+        let deserialized: DiagnosticStep = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "TCP Connect");
+        assert_eq!(deserialized.detail.as_deref(), Some("firewall"));
+    }
+
+    #[test]
+    fn diagnostic_step_roundtrip_without_detail() {
+        let step = DiagnosticStep {
+            name: "Banner".into(),
+            status: "info".into(),
+            message: "no banner".into(),
+            duration_ms: 0,
+            detail: None,
+        };
+        let json = serde_json::to_string(&step).unwrap();
+        let deserialized: DiagnosticStep = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.detail.is_none());
+    }
+
+    #[test]
+    fn diagnostic_report_roundtrip() {
+        let report = DiagnosticReport {
+            host: "example.com".into(),
+            port: 22,
+            protocol: "SSH".into(),
+            resolved_ip: Some("93.184.216.34".into()),
+            steps: vec![],
+            summary: "all good".into(),
+            root_cause_hint: None,
+            total_duration_ms: 100,
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        let deserialized: DiagnosticReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.host, "example.com");
+        assert_eq!(deserialized.port, 22);
+        assert_eq!(deserialized.protocol, "SSH");
+        assert!(json.contains("\"totalDurationMs\""));
+        assert!(json.contains("\"rootCauseHint\""));
+    }
+
+    // ── probe_dns ───────────────────────────────────────────────────────
+
+    #[test]
+    fn probe_dns_resolves_localhost() {
+        let mut steps = Vec::new();
+        let (addr, ip, all) = probe_dns("localhost", 80, &mut steps);
+        assert!(addr.is_some(), "localhost should resolve");
+        assert!(ip.is_some());
+        assert!(!all.is_empty());
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].status, "pass");
+    }
+
+    #[test]
+    fn probe_dns_fails_for_invalid_host() {
+        let mut steps = Vec::new();
+        let (addr, ip, all) = probe_dns("this.host.does.not.exist.invalid", 80, &mut steps);
+        assert!(addr.is_none());
+        assert!(ip.is_none());
+        assert!(all.is_empty());
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].status, "fail");
+        assert!(steps[0].message.contains("DNS"));
+    }
+
+    #[test]
+    fn probe_dns_appends_to_existing_steps() {
+        let mut steps = vec![DiagnosticStep {
+            name: "pre-existing".into(),
+            status: "info".into(),
+            message: "setup".into(),
+            duration_ms: 0,
+            detail: None,
+        }];
+        let _ = probe_dns("localhost", 80, &mut steps);
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[0].name, "pre-existing");
+        assert_eq!(steps[1].name, "DNS Resolution");
+    }
+
+    // ── probe_tcp ───────────────────────────────────────────────────────
+
+    #[test]
+    fn probe_tcp_fails_on_closed_port() {
+        // Port 1 is very unlikely to be open
+        let addr: std::net::SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let mut steps = Vec::new();
+        let stream = probe_tcp(addr, Duration::from_millis(200), true, &mut steps);
+        assert!(stream.is_none());
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].status, "fail");
+    }
+
+    #[test]
+    fn probe_tcp_records_duration() {
+        let addr: std::net::SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let mut steps = Vec::new();
+        let _ = probe_tcp(addr, Duration::from_millis(100), false, &mut steps);
+        // Duration should be > 0 but we mainly check it's set
+        assert!(steps[0].duration_ms <= 5000); // sanity
+    }
+
+    // ── finish_report ───────────────────────────────────────────────────
+
+    #[test]
+    fn finish_report_all_pass() {
+        let steps = vec![
+            DiagnosticStep { name: "A".into(), status: "pass".into(), message: "ok".into(), duration_ms: 1, detail: None },
+            DiagnosticStep { name: "B".into(), status: "info".into(), message: "ok".into(), duration_ms: 2, detail: None },
+        ];
+        let report = finish_report("host", 22, "SSH", Some("1.2.3.4".into()), steps, Instant::now());
+        assert!(report.summary.contains("All diagnostic probes passed"));
+        assert!(report.root_cause_hint.is_none());
+        assert_eq!(report.host, "host");
+        assert_eq!(report.port, 22);
+        assert_eq!(report.protocol, "SSH");
+        assert_eq!(report.resolved_ip.as_deref(), Some("1.2.3.4"));
+    }
+
+    #[test]
+    fn finish_report_with_failure() {
+        let steps = vec![
+            DiagnosticStep { name: "DNS".into(), status: "pass".into(), message: "ok".into(), duration_ms: 1, detail: None },
+            DiagnosticStep { name: "TCP".into(), status: "fail".into(), message: "refused".into(), duration_ms: 2, detail: None },
+        ];
+        let report = finish_report("host", 22, "SSH", None, steps, Instant::now());
+        assert!(report.summary.contains("TCP"));
+        assert!(report.summary.contains("refused"));
+    }
+
+    #[test]
+    fn finish_report_with_warning_only() {
+        let steps = vec![
+            DiagnosticStep { name: "Banner".into(), status: "warn".into(), message: "no banner".into(), duration_ms: 1, detail: None },
+        ];
+        let report = finish_report("host", 80, "HTTP", None, steps, Instant::now());
+        assert!(report.summary.contains("warnings"));
+    }
+
+    #[test]
+    fn finish_report_extracts_root_cause() {
+        let steps = vec![
+            DiagnosticStep { name: "DNS".into(), status: "pass".into(), message: "ok".into(), duration_ms: 1, detail: None },
+            DiagnosticStep { name: "Root Cause Analysis".into(), status: "info".into(), message: "hint".into(), duration_ms: 1, detail: Some("firewall is blocking".into()) },
+        ];
+        let report = finish_report("host", 22, "SSH", None, steps, Instant::now());
+        assert_eq!(report.root_cause_hint.as_deref(), Some("firewall is blocking"));
+    }
+
+    #[test]
+    fn finish_report_no_resolved_ip() {
+        let steps = vec![];
+        let report = finish_report("host", 22, "SSH", None, steps, Instant::now());
+        assert!(report.resolved_ip.is_none());
+    }
+
+    #[test]
+    fn finish_report_empty_steps() {
+        let steps = vec![];
+        let report = finish_report("host", 80, "HTTP", None, steps, Instant::now());
+        assert!(report.summary.contains("All diagnostic probes passed"));
+    }
+
+    // ── probe_ports_parallel ────────────────────────────────────────────
+
+    #[test]
+    fn probe_ports_parallel_empty_list() {
+        let mut steps = Vec::new();
+        probe_ports_parallel("localhost", &[], Duration::from_millis(100), &mut steps);
+        assert!(steps.is_empty(), "empty port list should produce no steps");
+    }
+
+    #[test]
+    fn probe_ports_parallel_single_closed_port() {
+        let mut steps = Vec::new();
+        probe_ports_parallel("127.0.0.1", &[1], Duration::from_millis(200), &mut steps);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].name, "Port Scan");
+        assert!(steps[0].message.contains("1 port"));
+    }
+
+    #[test]
+    fn probe_ports_parallel_invalid_host() {
+        let mut steps = Vec::new();
+        probe_ports_parallel("this.host.does.not.exist.invalid", &[80, 443], Duration::from_millis(100), &mut steps);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].status, "fail");
+        assert!(steps[0].message.contains("Cannot resolve"));
+    }
+
+    #[test]
+    fn probe_ports_parallel_multiple_ports() {
+        let mut steps = Vec::new();
+        probe_ports_parallel("127.0.0.1", &[1, 2, 3], Duration::from_millis(200), &mut steps);
+        assert_eq!(steps.len(), 1);
+        assert!(steps[0].message.contains("3 ports"));
+    }
+}

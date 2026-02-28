@@ -417,3 +417,355 @@ impl std::fmt::Display for GfxParseError {
 }
 
 impl std::error::Error for GfxParseError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── GfxHeader ───────────────────────────────────────────────────────
+
+    #[test]
+    fn gfx_header_parse_valid() {
+        let data = [
+            0x09, 0x00, // cmdId = CreateSurface (0x0009)
+            0x00, 0x00, // flags = 0
+            0x0F, 0x00, 0x00, 0x00, // pduLength = 15
+        ];
+        let hdr = GfxHeader::parse(&data).unwrap();
+        assert_eq!(hdr.cmd_id, GfxCmdId::CreateSurface as u16);
+        assert_eq!(hdr.flags, 0);
+        assert_eq!(hdr.pdu_length, 15);
+    }
+
+    #[test]
+    fn gfx_header_parse_too_short() {
+        let data = [0x09, 0x00, 0x00]; // Only 3 bytes
+        assert!(GfxHeader::parse(&data).is_err());
+    }
+
+    #[test]
+    fn gfx_header_parse_exact_minimum() {
+        let data = [0x01, 0x00, 0x03, 0x00, 0x08, 0x00, 0x00, 0x00];
+        let hdr = GfxHeader::parse(&data).unwrap();
+        assert_eq!(hdr.cmd_id, GfxCmdId::WireToSurface1 as u16);
+        assert_eq!(hdr.flags, 3);
+        assert_eq!(hdr.pdu_length, RDPGFX_HEADER_SIZE as u32);
+    }
+
+    #[test]
+    fn gfx_header_parse_extra_data_ignored() {
+        let mut data = vec![0x0B, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00];
+        data.extend_from_slice(&[0xFF; 8]); // Extra bytes
+        let hdr = GfxHeader::parse(&data).unwrap();
+        assert_eq!(hdr.cmd_id, GfxCmdId::StartFrame as u16);
+    }
+
+    // ── GfxRect16 ───────────────────────────────────────────────────────
+
+    #[test]
+    fn gfx_rect16_parse_valid() {
+        let data: [u8; 8] = [10, 0, 20, 0, 110, 0, 120, 0];
+        let r = GfxRect16::parse(&data).unwrap();
+        assert_eq!(r.left, 10);
+        assert_eq!(r.top, 20);
+        assert_eq!(r.right, 110);
+        assert_eq!(r.bottom, 120);
+    }
+
+    #[test]
+    fn gfx_rect16_parse_too_short() {
+        assert!(GfxRect16::parse(&[0; 7]).is_err());
+    }
+
+    #[test]
+    fn gfx_rect16_zero_rect() {
+        let r = GfxRect16::parse(&[0u8; 8]).unwrap();
+        assert_eq!(r.left, 0);
+        assert_eq!(r.top, 0);
+        assert_eq!(r.right, 0);
+        assert_eq!(r.bottom, 0);
+    }
+
+    #[test]
+    fn gfx_rect16_max_values() {
+        let data = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
+        let r = GfxRect16::parse(&data).unwrap();
+        assert_eq!(r.left, u16::MAX);
+        assert_eq!(r.right, u16::MAX);
+    }
+
+    // ── CreateSurface ───────────────────────────────────────────────────
+
+    #[test]
+    fn create_surface_parse_valid() {
+        let body = [
+            0x01, 0x00, // surface_id = 1
+            0x00, 0x04, // width = 1024
+            0x00, 0x03, // height = 768
+            0x20,       // pixel_format = 32 (XRGB)
+        ];
+        let cs = CreateSurface::parse(&body).unwrap();
+        assert_eq!(cs.surface_id, 1);
+        assert_eq!(cs.width, 1024);
+        assert_eq!(cs.height, 768);
+        assert_eq!(cs.pixel_format, 0x20);
+    }
+
+    #[test]
+    fn create_surface_parse_too_short() {
+        assert!(CreateSurface::parse(&[0; 6]).is_err());
+    }
+
+    // ── DeleteSurface ───────────────────────────────────────────────────
+
+    #[test]
+    fn delete_surface_parse_valid() {
+        let body = [0x05, 0x00];
+        let ds = DeleteSurface::parse(&body).unwrap();
+        assert_eq!(ds.surface_id, 5);
+    }
+
+    #[test]
+    fn delete_surface_parse_too_short() {
+        assert!(DeleteSurface::parse(&[0x05]).is_err());
+    }
+
+    // ── MapSurfaceToOutput ──────────────────────────────────────────────
+
+    #[test]
+    fn map_surface_to_output_parse_valid() {
+        let body = [
+            0x01, 0x00, // surface_id = 1
+            0x00, 0x00, // reserved
+            0x64, 0x00, 0x00, 0x00, // x = 100
+            0xC8, 0x00, 0x00, 0x00, // y = 200
+        ];
+        let m = MapSurfaceToOutput::parse(&body).unwrap();
+        assert_eq!(m.surface_id, 1);
+        assert_eq!(m.output_origin_x, 100);
+        assert_eq!(m.output_origin_y, 200);
+    }
+
+    #[test]
+    fn map_surface_to_output_parse_too_short() {
+        assert!(MapSurfaceToOutput::parse(&[0; 11]).is_err());
+    }
+
+    // ── StartFrame / EndFrame ───────────────────────────────────────────
+
+    #[test]
+    fn start_frame_parse_valid() {
+        let body = [
+            0x00, 0x10, 0x00, 0x00, // timestamp = 4096
+            0x42, 0x00, 0x00, 0x00, // frame_id = 66
+        ];
+        let sf = StartFrame::parse(&body).unwrap();
+        assert_eq!(sf.timestamp, 4096);
+        assert_eq!(sf.frame_id, 66);
+    }
+
+    #[test]
+    fn start_frame_parse_too_short() {
+        assert!(StartFrame::parse(&[0; 7]).is_err());
+    }
+
+    #[test]
+    fn end_frame_parse_valid() {
+        let body = [0x42, 0x00, 0x00, 0x00];
+        let ef = EndFrame::parse(&body).unwrap();
+        assert_eq!(ef.frame_id, 66);
+    }
+
+    #[test]
+    fn end_frame_parse_too_short() {
+        assert!(EndFrame::parse(&[0; 3]).is_err());
+    }
+
+    // ── ResetGraphics ───────────────────────────────────────────────────
+
+    #[test]
+    fn reset_graphics_parse_valid() {
+        let body = [
+            0x00, 0x04, 0x00, 0x00, // width = 1024
+            0x00, 0x03, 0x00, 0x00, // height = 768
+            0x01, 0x00, 0x00, 0x00, // monitor_count = 1
+        ];
+        let rg = ResetGraphics::parse(&body).unwrap();
+        assert_eq!(rg.width, 1024);
+        assert_eq!(rg.height, 768);
+        assert_eq!(rg.monitor_count, 1);
+    }
+
+    #[test]
+    fn reset_graphics_parse_too_short() {
+        assert!(ResetGraphics::parse(&[0; 11]).is_err());
+    }
+
+    // ── CapsConfirm ─────────────────────────────────────────────────────
+
+    #[test]
+    fn caps_confirm_parse_with_flags() {
+        let body = [
+            0x04, 0x00, 0x08, 0x00, // version = CAPVERSION_8
+            0x04, 0x00, 0x00, 0x00, // capsDataLength = 4
+            0x01, 0x00, 0x00, 0x00, // flags = 1
+        ];
+        let cc = CapsConfirm::parse(&body).unwrap();
+        assert_eq!(cc.version, CAPVERSION_8);
+        assert_eq!(cc.flags, 1);
+    }
+
+    #[test]
+    fn caps_confirm_parse_without_flags() {
+        let body = [
+            0x02, 0x00, 0x0A, 0x00, // version = CAPVERSION_10
+            0x00, 0x00, 0x00, 0x00, // capsDataLength = 0
+        ];
+        let cc = CapsConfirm::parse(&body).unwrap();
+        assert_eq!(cc.version, CAPVERSION_10);
+        assert_eq!(cc.flags, 0);
+    }
+
+    #[test]
+    fn caps_confirm_parse_too_short() {
+        assert!(CapsConfirm::parse(&[0; 7]).is_err());
+    }
+
+    // ── WireToSurface1 ─────────────────────────────────────────────────
+
+    #[test]
+    fn wire_to_surface1_parse_with_bitmap_data() {
+        let mut body = vec![
+            0x01, 0x00, // surface_id = 1
+            0x03, 0x00, // codec_id = CODEC_CAVIDEO
+            0x20,       // pixel_format
+            // dest_rect (8 bytes)
+            0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x30, 0x00,
+        ];
+        body.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]); // bitmap data
+        let wts = WireToSurface1::parse(&body).unwrap();
+        assert_eq!(wts.surface_id, 1);
+        assert_eq!(wts.codec_id, CODEC_CAVIDEO);
+        assert_eq!(wts.pixel_format, 0x20);
+        assert_eq!(wts.bitmap_data, vec![0xDE, 0xAD, 0xBE, 0xEF]);
+    }
+
+    #[test]
+    fn wire_to_surface1_parse_empty_bitmap() {
+        let body = [
+            0x01, 0x00, 0x00, 0x00, 0x20,
+            0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00,
+        ];
+        let wts = WireToSurface1::parse(&body).unwrap();
+        assert!(wts.bitmap_data.is_empty());
+    }
+
+    #[test]
+    fn wire_to_surface1_parse_too_short() {
+        assert!(WireToSurface1::parse(&[0; 12]).is_err());
+    }
+
+    // ── Avc420BitmapStream ──────────────────────────────────────────────
+
+    #[test]
+    fn avc420_parse_zero_regions() {
+        let body = [0x00, 0x00, 0x00, 0x00]; // numRegions = 0
+        let stream = Avc420BitmapStream::parse(&body).unwrap();
+        assert!(stream.region_rects.is_empty());
+        assert!(stream.quant_qual_vals.is_empty());
+        assert!(stream.h264_data.is_empty());
+    }
+
+    #[test]
+    fn avc420_parse_one_region() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&1u32.to_le_bytes()); // numRegions = 1
+        // region rect (8 bytes)
+        body.extend_from_slice(&[0, 0, 0, 0, 64, 0, 48, 0]);
+        // quant/quality (2 bytes)
+        body.push(85);  // quality
+        body.push(1);   // progressive
+        // h264 data
+        body.extend_from_slice(b"h264");
+        let stream = Avc420BitmapStream::parse(&body).unwrap();
+        assert_eq!(stream.region_rects.len(), 1);
+        assert_eq!(stream.quant_qual_vals.len(), 1);
+        assert_eq!(stream.quant_qual_vals[0].quality_val, 85);
+        assert_eq!(stream.quant_qual_vals[0].progressive_val, 1);
+        assert_eq!(stream.h264_data, b"h264");
+    }
+
+    #[test]
+    fn avc420_parse_too_short() {
+        assert!(Avc420BitmapStream::parse(&[0; 3]).is_err());
+    }
+
+    #[test]
+    fn avc420_parse_truncated_rects() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&2u32.to_le_bytes()); // numRegions = 2
+        body.extend_from_slice(&[0; 8]); // Only 1 rect, not 2
+        assert!(Avc420BitmapStream::parse(&body).is_err());
+    }
+
+    #[test]
+    fn avc420_parse_truncated_quant() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&1u32.to_le_bytes());
+        body.extend_from_slice(&[0; 8]); // 1 rect
+        // Missing quant/quality bytes
+        assert!(Avc420BitmapStream::parse(&body).is_err());
+    }
+
+    // ── Constants ───────────────────────────────────────────────────────
+
+    #[test]
+    fn header_size_is_8() {
+        assert_eq!(RDPGFX_HEADER_SIZE, 8);
+    }
+
+    #[test]
+    fn codec_ids_are_distinct() {
+        let ids = [CODEC_UNCOMPRESSED, CODEC_PLANAR, CODEC_CAVIDEO, CODEC_CLEARCODEC, CODEC_ALPHA, CODEC_AVC444, CODEC_AVC444V2];
+        for (i, a) in ids.iter().enumerate() {
+            for (j, b) in ids.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "Codec IDs at positions {i} and {j} collide");
+                }
+            }
+        }
+    }
+
+    // ── GfxParseError ───────────────────────────────────────────────────
+
+    #[test]
+    fn gfx_parse_error_display() {
+        let err = GfxParseError("test error");
+        assert_eq!(format!("{err}"), "GFX parse error: test error");
+    }
+
+    #[test]
+    fn gfx_parse_error_is_error() {
+        let err = GfxParseError("something");
+        let _: &dyn std::error::Error = &err; // Compiles = implements Error
+    }
+
+    // ── CapsAdvertisePdu ────────────────────────────────────────────────
+
+    #[test]
+    fn caps_advertise_pdu_size() {
+        let pdu = CapsAdvertisePdu::new_avc420();
+        // Header(8) + capsSetCount(2) + 2 × capSet(version(4) + capsDataLength(4) + flags(4)) = 8 + 2 + 24 = 34
+        assert_eq!(pdu.size(), RDPGFX_HEADER_SIZE + 2 + 24);
+    }
+
+    #[test]
+    fn frame_acknowledge_pdu_size() {
+        let pdu = FrameAcknowledgePdu {
+            queue_depth: 1,
+            frame_id: 42,
+            total_frames_decoded: 100,
+        };
+        assert_eq!(pdu.size(), RDPGFX_HEADER_SIZE + 12);
+    }
+}

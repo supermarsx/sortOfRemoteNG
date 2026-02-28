@@ -7,3 +7,7 @@ description = "Shared types and diagnostics infrastructure"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
+
+[dev-dependencies]
+serde_json = "1.0"
+tokio = { version = "1", features = ["rt", "macros"] }

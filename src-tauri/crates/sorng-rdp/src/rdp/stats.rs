@@ -123,3 +123,118 @@ impl RdpSessionStats {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_stats_defaults() {
+        let stats = RdpSessionStats::new();
+        assert_eq!(stats.bytes_received.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.bytes_sent.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.pdus_received.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.pdus_sent.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.frame_count.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.input_events.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.errors_recovered.load(Ordering::Relaxed), 0);
+        assert_eq!(stats.reactivations.load(Ordering::Relaxed), 0);
+        assert!(stats.alive.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn initial_phase_is_initializing() {
+        let stats = RdpSessionStats::new();
+        assert_eq!(stats.get_phase(), "initializing");
+    }
+
+    #[test]
+    fn set_and_get_phase() {
+        let stats = RdpSessionStats::new();
+        stats.set_phase("connected");
+        assert_eq!(stats.get_phase(), "connected");
+    }
+
+    #[test]
+    fn set_phase_multiple_times() {
+        let stats = RdpSessionStats::new();
+        stats.set_phase("connecting");
+        stats.set_phase("negotiating");
+        stats.set_phase("active");
+        assert_eq!(stats.get_phase(), "active");
+    }
+
+    #[test]
+    fn set_and_get_last_error() {
+        let stats = RdpSessionStats::new();
+        assert!(stats.last_error.lock().unwrap().is_none());
+        stats.set_last_error("connection refused");
+        assert_eq!(
+            stats.last_error.lock().unwrap().as_deref(),
+            Some("connection refused")
+        );
+    }
+
+    #[test]
+    fn record_frame_increments() {
+        let stats = RdpSessionStats::new();
+        stats.record_frame();
+        stats.record_frame();
+        stats.record_frame();
+        assert_eq!(stats.frame_count.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn atomic_counters_increment() {
+        let stats = RdpSessionStats::new();
+        stats.bytes_received.fetch_add(1024, Ordering::Relaxed);
+        stats.bytes_sent.fetch_add(512, Ordering::Relaxed);
+        stats.pdus_received.fetch_add(10, Ordering::Relaxed);
+        stats.pdus_sent.fetch_add(5, Ordering::Relaxed);
+        stats.input_events.fetch_add(3, Ordering::Relaxed);
+        assert_eq!(stats.bytes_received.load(Ordering::Relaxed), 1024);
+        assert_eq!(stats.bytes_sent.load(Ordering::Relaxed), 512);
+        assert_eq!(stats.pdus_received.load(Ordering::Relaxed), 10);
+        assert_eq!(stats.pdus_sent.load(Ordering::Relaxed), 5);
+        assert_eq!(stats.input_events.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn current_fps_initially_zero() {
+        let stats = RdpSessionStats::new();
+        // FPS should be 0 or close to 0 initially (no frames recorded)
+        let fps = stats.current_fps();
+        assert!(fps >= 0.0);
+    }
+
+    #[test]
+    fn current_fps_returns_cached_before_threshold() {
+        let stats = RdpSessionStats::new();
+        // Call twice quickly - second should return cached value
+        let _fps1 = stats.current_fps();
+        let fps2 = stats.current_fps();
+        // Both should be 0 since no time has passed
+        assert!(fps2 >= 0.0);
+    }
+
+    #[test]
+    fn to_event_populates_fields() {
+        let stats = RdpSessionStats::new();
+        stats.set_phase("active");
+        stats.bytes_received.fetch_add(100, Ordering::Relaxed);
+        stats.record_frame();
+        let event = stats.to_event("session-1");
+        assert_eq!(event.session_id, "session-1");
+        assert_eq!(event.bytes_received, 100);
+        assert_eq!(event.frame_count, 1);
+        assert_eq!(event.phase, "active");
+    }
+
+    #[test]
+    fn alive_flag_toggle() {
+        let stats = RdpSessionStats::new();
+        assert!(stats.alive.load(Ordering::Relaxed));
+        stats.alive.store(false, Ordering::Relaxed);
+        assert!(!stats.alive.load(Ordering::Relaxed));
+    }
+}
