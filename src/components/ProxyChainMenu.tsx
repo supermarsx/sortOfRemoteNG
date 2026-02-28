@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React from "react";
 import {
   X,
   RefreshCw,
@@ -17,435 +17,22 @@ import {
   Download,
   Upload,
 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
-import { useConnections } from "../contexts/useConnections";
-import { ProxyOpenVPNManager } from "../utils/proxyOpenVPNManager";
-import { proxyCollectionManager } from "../utils/proxyCollectionManager";
-import {
-  sshTunnelService,
-  SSHTunnelConfig,
-  SSHTunnelCreateParams,
-} from "../utils/sshTunnelService";
 import { SSHTunnelDialog } from "./SSHTunnelDialog";
 import { ProxyProfileEditor } from "./ProxyProfileEditor";
 import { ProxyChainEditor } from "./ProxyChainEditor";
-import { SavedProxyProfile, SavedProxyChain } from "../types/settings";
 import { Modal } from "./ui/Modal";
+import { useProxyChainManager } from "../hooks/useProxyChainManager";
 
 interface ProxyChainMenuProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-interface ConnectionChainSummary {
-  id: string;
-  name: string;
-  status: string;
-  layers: Array<unknown>;
-}
-
-interface ProxyChainSummary {
-  id: string;
-  name: string;
-  status: string;
-  layers: Array<unknown>;
-}
-
 export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { state, dispatch } = useConnections();
-  const proxyManager = ProxyOpenVPNManager.getInstance();
-  const [activeTab, setActiveTab] = useState<
-    "profiles" | "chains" | "tunnels" | "associations"
-  >("profiles");
-  const [connectionChains, setConnectionChains] = useState<
-    ConnectionChainSummary[]
-  >([]);
-  const [proxyChains, setProxyChains] = useState<ProxyChainSummary[]>([]);
-  const [sshTunnels, setSshTunnels] = useState<SSHTunnelConfig[]>([]);
-  const [savedProfiles, setSavedProfiles] = useState<SavedProxyProfile[]>([]);
-  const [savedChains, setSavedChains] = useState<SavedProxyChain[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [profileSearch, setProfileSearch] = useState("");
-  const [chainSearch, setChainSearch] = useState("");
-
-  // SSH Tunnel dialog state
-  const [showTunnelDialog, setShowTunnelDialog] = useState(false);
-  const [editingTunnel, setEditingTunnel] = useState<SSHTunnelConfig | null>(
-    null,
-  );
-
-  // Profile editor dialog state
-  const [showProfileEditor, setShowProfileEditor] = useState(false);
-  const [editingProfile, setEditingProfile] =
-    useState<SavedProxyProfile | null>(null);
-
-  // Chain editor dialog state
-  const [showChainEditor, setShowChainEditor] = useState(false);
-  const [editingChain, setEditingChain] = useState<SavedProxyChain | null>(
-    null,
-  );
-
-  const sshConnections = useMemo(
-    () =>
-      state.connections.filter(
-        (conn) => conn.protocol === "ssh" && !conn.isGroup,
-      ),
-    [state.connections],
-  );
-
-  const reloadChains = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [chains, proxies] = await Promise.all([
-        proxyManager.listConnectionChains(),
-        invoke<ProxyChainSummary[]>("list_proxy_chains"),
-      ]);
-      setConnectionChains(
-        chains.map((chain: any) => ({
-          id: chain.id,
-          name: chain.name,
-          status: chain.status,
-          layers: chain.layers ?? [],
-        })),
-      );
-      setProxyChains(
-        (proxies ?? []).map((chain) => ({
-          id: chain.id,
-          name: chain.name,
-          status: chain.status,
-          layers: chain.layers ?? [],
-        })),
-      );
-      setSshTunnels(sshTunnelService.getTunnels());
-      setSavedProfiles(proxyCollectionManager.getProfiles());
-      setSavedChains(proxyCollectionManager.getChains());
-    } catch (error) {
-      console.error("Failed to load proxy/vpn chains:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [proxyManager]);
-
-  useEffect(() => {
-    if (isOpen) {
-      reloadChains();
-    }
-  }, [isOpen, reloadChains]);
-
-  // Subscribe to SSH tunnel changes
-  useEffect(() => {
-    const unsubscribe = sshTunnelService.subscribe(() => {
-      setSshTunnels(sshTunnelService.getTunnels());
-    });
-    return unsubscribe;
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (showTunnelDialog) {
-          setShowTunnelDialog(false);
-          setEditingTunnel(null);
-        } else if (showProfileEditor) {
-          setShowProfileEditor(false);
-          setEditingProfile(null);
-        } else if (showChainEditor) {
-          setShowChainEditor(false);
-          setEditingChain(null);
-        } else {
-          onClose();
-        }
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, showTunnelDialog, showProfileEditor, showChainEditor]);
-
-  const handleConnectChain = async (chainId: string) => {
-    await proxyManager.connectConnectionChain(chainId);
-    reloadChains();
-  };
-
-  const handleDisconnectChain = async (chainId: string) => {
-    await proxyManager.disconnectConnectionChain(chainId);
-    reloadChains();
-  };
-
-  const handleConnectProxyChain = async (chainId: string) => {
-    const targetHost = prompt("Target host for this proxy chain:");
-    if (!targetHost) return;
-    const rawPort = prompt("Target port for this proxy chain:", "22");
-    const targetPort = rawPort ? parseInt(rawPort, 10) : 0;
-    if (!targetPort || Number.isNaN(targetPort)) return;
-    await invoke("connect_proxy_chain", {
-      chainId,
-      targetHost,
-      targetPort,
-    });
-    reloadChains();
-  };
-
-  const handleDisconnectProxyChain = async (chainId: string) => {
-    await invoke("disconnect_proxy_chain", { chainId });
-    reloadChains();
-  };
-
-  // SSH Tunnel handlers
-  const handleSaveTunnel = async (params: SSHTunnelCreateParams) => {
-    try {
-      if (editingTunnel) {
-        await sshTunnelService.updateTunnel(editingTunnel.id, params);
-      } else {
-        await sshTunnelService.createTunnel(params);
-      }
-      setShowTunnelDialog(false);
-      setEditingTunnel(null);
-    } catch (error) {
-      console.error("Failed to create/update SSH tunnel:", error);
-    }
-  };
-
-  const handleEditTunnel = (tunnel: SSHTunnelConfig) => {
-    setEditingTunnel(tunnel);
-    setShowTunnelDialog(true);
-  };
-
-  const handleNewTunnel = () => {
-    setEditingTunnel(null);
-    setShowTunnelDialog(true);
-  };
-
-  const handleDeleteTunnel = async (tunnelId: string) => {
-    if (confirm("Are you sure you want to delete this SSH tunnel?")) {
-      await sshTunnelService.deleteTunnel(tunnelId);
-    }
-  };
-
-  const handleConnectTunnel = async (tunnelId: string) => {
-    const tunnel = sshTunnelService.getTunnel(tunnelId);
-    if (!tunnel) return;
-
-    const sshConnection = state.connections.find(
-      (c) => c.id === tunnel.sshConnectionId,
-    );
-    if (!sshConnection) {
-      alert("SSH connection not found for this tunnel");
-      return;
-    }
-
-    try {
-      await sshTunnelService.connectTunnel(tunnelId, sshConnection);
-    } catch (error) {
-      console.error("Failed to connect SSH tunnel:", error);
-    }
-  };
-
-  const handleDisconnectTunnel = async (tunnelId: string) => {
-    await sshTunnelService.disconnectTunnel(tunnelId);
-  };
-
-  // Proxy Profile handlers
-  const handleNewProfile = () => {
-    setEditingProfile(null);
-    setShowProfileEditor(true);
-  };
-
-  const handleEditProfile = (profile: SavedProxyProfile) => {
-    setEditingProfile(profile);
-    setShowProfileEditor(true);
-  };
-
-  const handleSaveProfile = async (
-    profileData: Omit<SavedProxyProfile, "id" | "createdAt" | "updatedAt">,
-  ) => {
-    try {
-      if (editingProfile) {
-        await proxyCollectionManager.updateProfile(
-          editingProfile.id,
-          profileData,
-        );
-      } else {
-        await proxyCollectionManager.createProfile(
-          profileData.name,
-          profileData.config,
-          {
-            description: profileData.description,
-            tags: profileData.tags,
-            isDefault: profileData.isDefault,
-          },
-        );
-      }
-      setShowProfileEditor(false);
-      setEditingProfile(null);
-      setSavedProfiles(proxyCollectionManager.getProfiles());
-    } catch (error) {
-      console.error("Failed to save proxy profile:", error);
-    }
-  };
-
-  const handleDeleteProfile = async (profileId: string) => {
-    if (confirm("Are you sure you want to delete this proxy profile?")) {
-      try {
-        await proxyCollectionManager.deleteProfile(profileId);
-        setSavedProfiles(proxyCollectionManager.getProfiles());
-      } catch (error) {
-        alert(
-          error instanceof Error ? error.message : "Failed to delete profile",
-        );
-      }
-    }
-  };
-
-  const handleDuplicateProfile = async (profileId: string) => {
-    try {
-      await proxyCollectionManager.duplicateProfile(profileId);
-      setSavedProfiles(proxyCollectionManager.getProfiles());
-    } catch (error) {
-      console.error("Failed to duplicate profile:", error);
-    }
-  };
-
-  const handleExportProfiles = async () => {
-    try {
-      const data = await proxyCollectionManager.exportData();
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "proxy-profiles.json";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Failed to export profiles:", error);
-    }
-  };
-
-  const handleImportProfiles = async () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json";
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        try {
-          const text = await file.text();
-          await proxyCollectionManager.importData(text, true);
-          setSavedProfiles(proxyCollectionManager.getProfiles());
-          setSavedChains(proxyCollectionManager.getChains());
-        } catch (error) {
-          alert(
-            "Failed to import profiles: " +
-              (error instanceof Error ? error.message : "Unknown error"),
-          );
-        }
-      }
-    };
-    input.click();
-  };
-
-  // Saved Chain handlers
-  const handleNewChain = () => {
-    setEditingChain(null);
-    setShowChainEditor(true);
-  };
-
-  const handleEditChain = (chain: SavedProxyChain) => {
-    setEditingChain(chain);
-    setShowChainEditor(true);
-  };
-
-  const handleSaveChain = async (
-    chainData: Omit<SavedProxyChain, "id" | "createdAt" | "updatedAt">,
-  ) => {
-    try {
-      if (editingChain) {
-        await proxyCollectionManager.updateChain(editingChain.id, chainData);
-      } else {
-        await proxyCollectionManager.createChain(
-          chainData.name,
-          chainData.layers,
-          {
-            description: chainData.description,
-            tags: chainData.tags,
-          },
-        );
-      }
-      setShowChainEditor(false);
-      setEditingChain(null);
-      setSavedChains(proxyCollectionManager.getChains());
-    } catch (error) {
-      console.error("Failed to save proxy chain:", error);
-    }
-  };
-
-  const handleDeleteChain = async (chainId: string) => {
-    if (confirm("Are you sure you want to delete this proxy chain?")) {
-      try {
-        await proxyCollectionManager.deleteChain(chainId);
-        setSavedChains(proxyCollectionManager.getChains());
-      } catch (error) {
-        alert(
-          error instanceof Error ? error.message : "Failed to delete chain",
-        );
-      }
-    }
-  };
-
-  const handleDuplicateChain = async (chainId: string) => {
-    try {
-      await proxyCollectionManager.duplicateChain(chainId);
-      setSavedChains(proxyCollectionManager.getChains());
-    } catch (error) {
-      console.error("Failed to duplicate chain:", error);
-    }
-  };
-
-  const filteredProfiles = useMemo(() => {
-    if (!profileSearch.trim()) return savedProfiles;
-    return proxyCollectionManager.searchProfiles(profileSearch);
-  }, [savedProfiles, profileSearch]);
-
-  const filteredSavedChains = useMemo(() => {
-    if (!chainSearch.trim()) return savedChains;
-    return proxyCollectionManager.searchChains(chainSearch);
-  }, [savedChains, chainSearch]);
-
-  const connectionOptions = useMemo(
-    () => state.connections.filter((conn) => !conn.isGroup),
-    [state.connections],
-  );
-
-  const updateConnectionChain = (connectionId: string, value: string) => {
-    const connection = state.connections.find(
-      (conn) => conn.id === connectionId,
-    );
-    if (!connection) return;
-    dispatch({
-      type: "UPDATE_CONNECTION",
-      payload: {
-        ...connection,
-        connectionChainId: value || undefined,
-      },
-    });
-  };
-
-  const updateProxyChain = (connectionId: string, value: string) => {
-    const connection = state.connections.find(
-      (conn) => conn.id === connectionId,
-    );
-    if (!connection) return;
-    dispatch({
-      type: "UPDATE_CONNECTION",
-      payload: {
-        ...connection,
-        proxyChainId: value || undefined,
-      },
-    });
-  };
+  const mgr = useProxyChainManager(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -459,6 +46,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
       dataTestId="proxy-chain-menu-modal"
     >
       <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
+        {/* Header */}
         <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-blue-500/20 rounded-lg">
@@ -470,7 +58,7 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={reloadChains}
+              onClick={mgr.reloadChains}
               className="p-2 text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
               data-tooltip="Refresh"
               aria-label="Refresh"
@@ -489,11 +77,12 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
         </div>
 
         <div className="flex flex-1 min-h-0">
+          {/* Sidebar */}
           <div className="w-56 bg-[var(--color-background)] border-r border-[var(--color-border)] p-4 space-y-2">
             <button
-              onClick={() => setActiveTab("profiles")}
+              onClick={() => mgr.setActiveTab("profiles")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === "profiles"
+                mgr.activeTab === "profiles"
                   ? "bg-blue-600 text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
@@ -502,9 +91,9 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
               Profiles
             </button>
             <button
-              onClick={() => setActiveTab("chains")}
+              onClick={() => mgr.setActiveTab("chains")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === "chains"
+                mgr.activeTab === "chains"
                   ? "bg-blue-600 text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
@@ -513,9 +102,9 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
               Chains
             </button>
             <button
-              onClick={() => setActiveTab("tunnels")}
+              onClick={() => mgr.setActiveTab("tunnels")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === "tunnels"
+                mgr.activeTab === "tunnels"
                   ? "bg-blue-600 text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
@@ -524,9 +113,9 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
               SSH Tunnels
             </button>
             <button
-              onClick={() => setActiveTab("associations")}
+              onClick={() => mgr.setActiveTab("associations")}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${
-                activeTab === "associations"
+                mgr.activeTab === "associations"
                   ? "bg-blue-600 text-[var(--color-text)]"
                   : "text-[var(--color-textSecondary)] hover:bg-[var(--color-border)]"
               }`}
@@ -536,621 +125,622 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
             </button>
           </div>
 
+          {/* Tab Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* Profiles Tab */}
-            {activeTab === "profiles" && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-medium text-[var(--color-text)]">
-                    Saved Proxy Profiles
-                  </h3>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleImportProfiles}
-                      className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
-                      title="Import Profiles"
-                    >
-                      <Upload size={12} />
-                      Import
-                    </button>
-                    <button
-                      onClick={handleExportProfiles}
-                      className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
-                      title="Export Profiles"
-                    >
-                      <Download size={12} />
-                      Export
-                    </button>
-                    <button
-                      onClick={handleNewProfile}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
-                    >
-                      <Plus size={14} />
-                      New Profile
-                    </button>
-                  </div>
-                </div>
-
-                <div className="text-sm text-[var(--color-textSecondary)]">
-                  Create and manage reusable proxy configurations that can be
-                  used across connections and chains.
-                </div>
-
-                {/* Search */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
-                  <input
-                    type="text"
-                    value={profileSearch}
-                    onChange={(e) => setProfileSearch(e.target.value)}
-                    placeholder="Search profiles..."
-                    className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {/* Profile List */}
-                <div className="space-y-2">
-                  {filteredProfiles.length === 0 ? (
-                    <div className="text-sm text-[var(--color-textSecondary)] py-8 text-center">
-                      {profileSearch
-                        ? "No profiles match your search."
-                        : 'No proxy profiles saved. Click "New Profile" to create one.'}
-                    </div>
-                  ) : (
-                    filteredProfiles.map((profile) => (
-                      <div
-                        key={profile.id}
-                        className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium text-[var(--color-text)]">
-                              {profile.name}
-                            </div>
-                            <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400 uppercase">
-                              {profile.config.type}
-                            </span>
-                            {profile.isDefault && (
-                              <span className="px-2 py-0.5 text-xs rounded-full bg-yellow-500/20 text-yellow-400">
-                                Default
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
-                            {profile.config.host}:{profile.config.port}
-                            {profile.config.username &&
-                              ` (${profile.config.username})`}
-                          </div>
-                          {profile.description && (
-                            <div className="text-xs text-gray-500 mt-1">
-                              {profile.description}
-                            </div>
-                          )}
-                          {profile.tags && profile.tags.length > 0 && (
-                            <div className="flex gap-1 mt-2">
-                              {profile.tags.map((tag) => (
-                                <span
-                                  key={tag}
-                                  className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleDuplicateProfile(profile.id)}
-                            className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
-                            title="Duplicate"
-                          >
-                            <Copy size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleEditProfile(profile)}
-                            className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
-                            title="Edit"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteProfile(profile.id)}
-                            className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md"
-                            title="Delete"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+            {mgr.activeTab === "profiles" && (
+              <ProfilesTab mgr={mgr} />
             )}
-
-            {activeTab === "chains" && (
-              <div className="space-y-6">
-                {/* Saved Chains Section */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-[var(--color-text)]">
-                      Saved Chains
-                    </h3>
-                    <button
-                      onClick={handleNewChain}
-                      className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
-                    >
-                      <Plus size={14} />
-                      New Chain
-                    </button>
-                  </div>
-
-                  <div className="text-sm text-[var(--color-textSecondary)]">
-                    Create reusable proxy chains that route traffic through
-                    multiple layers.
-                  </div>
-
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
-                    <input
-                      type="text"
-                      value={chainSearch}
-                      onChange={(e) => setChainSearch(e.target.value)}
-                      placeholder="Search chains..."
-                      className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* Saved Chains List */}
-                  <div className="space-y-2">
-                    {filteredSavedChains.length === 0 ? (
-                      <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
-                        {chainSearch
-                          ? "No chains match your search."
-                          : 'No proxy chains saved. Click "New Chain" to create one.'}
-                      </div>
-                    ) : (
-                      filteredSavedChains.map((chain) => (
-                        <div
-                          key={chain.id}
-                          className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <div className="text-sm font-medium text-[var(--color-text)]">
-                                {chain.name}
-                              </div>
-                              <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">
-                                {chain.layers.length} layer
-                                {chain.layers.length !== 1 ? "s" : ""}
-                              </span>
-                            </div>
-                            {chain.description && (
-                              <div className="text-xs text-gray-500 mt-1">
-                                {chain.description}
-                              </div>
-                            )}
-                            <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
-                              {chain.layers.map((layer, i) => {
-                                const profile = layer.proxyProfileId
-                                  ? savedProfiles.find(
-                                      (p) => p.id === layer.proxyProfileId,
-                                    )
-                                  : null;
-                                return (
-                                  <span key={i}>
-                                    {i > 0 && " → "}
-                                    {layer.type === "proxy" && profile
-                                      ? `${profile.name}`
-                                      : layer.type}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                            {chain.tags && chain.tags.length > 0 && (
-                              <div className="flex gap-1 mt-2">
-                                {chain.tags.map((tag) => (
-                                  <span
-                                    key={tag}
-                                    className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300"
-                                  >
-                                    {tag}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleDuplicateChain(chain.id)}
-                              className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
-                              title="Duplicate"
-                            >
-                              <Copy size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleEditChain(chain)}
-                              className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
-                              title="Edit"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteChain(chain.id)}
-                              className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md"
-                              title="Delete"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Active Chains Section */}
-                <div className="border-t border-[var(--color-border)] pt-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-[var(--color-text)]">
-                      Active Chains
-                    </h3>
-                    {isLoading && (
-                      <span className="text-xs text-[var(--color-textSecondary)]">
-                        Refreshing...
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-background)]/40 p-4">
-                    <div className="text-sm font-semibold text-gray-200 mb-3">
-                      Connection Chains
-                    </div>
-                    {connectionChains.length === 0 ? (
-                      <div className="text-sm text-[var(--color-textSecondary)]">
-                        No connection chains available.
-                      </div>
-                    ) : (
-                      connectionChains.map((chain) => (
-                        <div
-                          key={chain.id}
-                          className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-3 py-2 mb-2 last:mb-0"
-                        >
-                          <div>
-                            <div className="text-sm font-medium text-[var(--color-text)]">
-                              {chain.name}
-                            </div>
-                            <div className="text-xs text-[var(--color-textSecondary)]">
-                              {chain.layers.length} layers · {chain.status}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {String(chain.status).toLowerCase() ===
-                            "connected" ? (
-                              <button
-                                onClick={() => handleDisconnectChain(chain.id)}
-                                className="px-3 py-1 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
-                              >
-                                Disconnect
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleConnectChain(chain.id)}
-                                className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
-                              >
-                                Connect
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-background)]/40 p-4">
-                    <div className="text-sm font-semibold text-gray-200 mb-3">
-                      Proxy Chains
-                    </div>
-                    {proxyChains.length === 0 ? (
-                      <div className="text-sm text-[var(--color-textSecondary)]">
-                        No proxy chains available.
-                      </div>
-                    ) : (
-                      proxyChains.map((chain) => (
-                        <div
-                          key={chain.id}
-                          className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-3 py-2 mb-2 last:mb-0"
-                        >
-                          <div>
-                            <div className="text-sm font-medium text-[var(--color-text)]">
-                              {chain.name}
-                            </div>
-                            <div className="text-xs text-[var(--color-textSecondary)]">
-                              {chain.layers.length} layers · {chain.status}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {String(chain.status).toLowerCase() ===
-                            "connected" ? (
-                              <button
-                                onClick={() =>
-                                  handleDisconnectProxyChain(chain.id)
-                                }
-                                className="px-3 py-1 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
-                              >
-                                Disconnect
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() =>
-                                  handleConnectProxyChain(chain.id)
-                                }
-                                className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
-                              >
-                                Connect
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
+            {mgr.activeTab === "chains" && (
+              <ChainsTab mgr={mgr} />
             )}
-
-            {activeTab === "tunnels" && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-medium text-[var(--color-text)]">
-                    SSH Tunnels
-                  </h3>
-                  <button
-                    onClick={handleNewTunnel}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
-                  >
-                    <Plus size={14} />
-                    New Tunnel
-                  </button>
-                </div>
-
-                <div className="text-sm text-[var(--color-textSecondary)]">
-                  Create SSH tunnels using existing SSH connections to forward
-                  ports securely.
-                </div>
-
-                <div className="space-y-2">
-                  {sshTunnels.length === 0 ? (
-                    <div className="text-sm text-[var(--color-textSecondary)] py-8 text-center">
-                      No SSH tunnels configured. Click "New Tunnel" to create
-                      one.
-                    </div>
-                  ) : (
-                    sshTunnels.map((tunnel) => {
-                      const sshConn = state.connections.find(
-                        (c) => c.id === tunnel.sshConnectionId,
-                      );
-                      const localPort =
-                        tunnel.actualLocalPort || tunnel.localPort || "?";
-
-                      // Format tunnel info based on type
-                      const getTunnelInfo = () => {
-                        switch (tunnel.type) {
-                          case "dynamic":
-                            return `SOCKS5 proxy on localhost:${localPort}`;
-                          case "remote":
-                            return `${tunnel.remoteHost}:${tunnel.remotePort} → localhost:${localPort}`;
-                          case "local":
-                          default:
-                            return `localhost:${localPort} → ${tunnel.remoteHost}:${tunnel.remotePort}`;
-                        }
-                      };
-
-                      const getTypeLabel = () => {
-                        switch (tunnel.type) {
-                          case "dynamic":
-                            return "Dynamic";
-                          case "remote":
-                            return "Remote";
-                          case "local":
-                          default:
-                            return "Local";
-                        }
-                      };
-
-                      return (
-                        <div
-                          key={tunnel.id}
-                          className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <div className="text-sm font-medium text-[var(--color-text)]">
-                                {tunnel.name}
-                              </div>
-                              <span className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-400">
-                                {getTypeLabel()}
-                              </span>
-                              <span
-                                className={`px-2 py-0.5 text-xs rounded-full ${
-                                  tunnel.status === "connected"
-                                    ? "bg-green-500/20 text-green-400"
-                                    : tunnel.status === "connecting"
-                                      ? "bg-yellow-500/20 text-yellow-400"
-                                      : tunnel.status === "error"
-                                        ? "bg-red-500/20 text-red-400"
-                                        : "bg-gray-500/20 text-[var(--color-textSecondary)]"
-                                }`}
-                              >
-                                {tunnel.status}
-                              </span>
-                            </div>
-                            <div className="text-xs text-[var(--color-textSecondary)] mt-1">
-                              <span className="text-gray-500">via</span>{" "}
-                              {sshConn?.name || "Unknown SSH"}
-                            </div>
-                            <div className="text-xs text-[var(--color-textSecondary)] mt-0.5 font-mono">
-                              {getTunnelInfo()}
-                            </div>
-                            {tunnel.error && (
-                              <div className="text-xs text-red-400 mt-1">
-                                {tunnel.error}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {tunnel.status === "connected" ? (
-                              <button
-                                onClick={() =>
-                                  handleDisconnectTunnel(tunnel.id)
-                                }
-                                className="p-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded-md"
-                                title="Disconnect"
-                              >
-                                <Square size={14} />
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleConnectTunnel(tunnel.id)}
-                                disabled={tunnel.status === "connecting"}
-                                className="p-2 text-[var(--color-textSecondary)] hover:text-green-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
-                                title="Connect"
-                              >
-                                <Play size={14} />
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleEditTunnel(tunnel)}
-                              disabled={tunnel.status === "connected"}
-                              className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
-                              title="Edit"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteTunnel(tunnel.id)}
-                              disabled={tunnel.status === "connected"}
-                              className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
-                              title="Delete"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
+            {mgr.activeTab === "tunnels" && (
+              <TunnelsTab mgr={mgr} />
             )}
-
-            {activeTab === "associations" && (
-              <div className="space-y-4">
-                <div className="text-sm text-[var(--color-textSecondary)]">
-                  Associate chains with individual connections. These choices
-                  will be used when launching sessions.
-                </div>
-                <div className="space-y-3">
-                  {connectionOptions.map((connection) => (
-                    <div
-                      key={connection.id}
-                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-3"
-                    >
-                      <div className="text-sm font-medium text-[var(--color-text)] mb-2">
-                        {connection.name}
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                            Connection Chain
-                          </label>
-                          <select
-                            value={connection.connectionChainId || ""}
-                            onChange={(e) =>
-                              updateConnectionChain(
-                                connection.id,
-                                e.target.value,
-                              )
-                            }
-                            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
-                          >
-                            <option value="">None</option>
-                            {connectionChains.map((chain) => (
-                              <option key={chain.id} value={chain.id}>
-                                {chain.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
-                            Proxy Chain
-                          </label>
-                          <select
-                            value={connection.proxyChainId || ""}
-                            onChange={(e) =>
-                              updateProxyChain(connection.id, e.target.value)
-                            }
-                            className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
-                          >
-                            <option value="">None</option>
-                            {proxyChains.map((chain) => (
-                              <option key={chain.id} value={chain.id}>
-                                {chain.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {connectionOptions.length === 0 && (
-                    <div className="text-sm text-[var(--color-textSecondary)]">
-                      No connections available.
-                    </div>
-                  )}
-                </div>
-              </div>
+            {mgr.activeTab === "associations" && (
+              <AssociationsTab mgr={mgr} />
             )}
           </div>
         </div>
       </div>
 
-      {/* SSH Tunnel Dialog */}
+      {/* Sub-dialogs */}
       <SSHTunnelDialog
-        isOpen={showTunnelDialog}
-        onClose={() => {
-          setShowTunnelDialog(false);
-          setEditingTunnel(null);
-        }}
-        onSave={handleSaveTunnel}
-        sshConnections={sshConnections}
-        editingTunnel={editingTunnel}
+        isOpen={mgr.showTunnelDialog}
+        onClose={mgr.closeTunnelDialog}
+        onSave={mgr.handleSaveTunnel}
+        sshConnections={mgr.sshConnections}
+        editingTunnel={mgr.editingTunnel}
       />
-
-      {/* Proxy Profile Editor Dialog */}
       <ProxyProfileEditor
-        isOpen={showProfileEditor}
-        onClose={() => {
-          setShowProfileEditor(false);
-          setEditingProfile(null);
-        }}
-        onSave={handleSaveProfile}
-        editingProfile={editingProfile}
+        isOpen={mgr.showProfileEditor}
+        onClose={mgr.closeProfileEditor}
+        onSave={mgr.handleSaveProfile}
+        editingProfile={mgr.editingProfile}
       />
-
-      {/* Proxy Chain Editor Dialog */}
       <ProxyChainEditor
-        isOpen={showChainEditor}
-        onClose={() => {
-          setShowChainEditor(false);
-          setEditingChain(null);
-        }}
-        onSave={handleSaveChain}
-        editingChain={editingChain}
+        isOpen={mgr.showChainEditor}
+        onClose={mgr.closeChainEditor}
+        onSave={mgr.handleSaveChain}
+        editingChain={mgr.editingChain}
       />
     </Modal>
   );
 };
+
+// ─── Tab sub-components ──────────────────────────────────────────
+
+type Mgr = ReturnType<typeof useProxyChainManager>;
+
+function ProfilesTab({ mgr }: { mgr: Mgr }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-medium text-[var(--color-text)]">
+          Saved Proxy Profiles
+        </h3>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={mgr.handleImportProfiles}
+            className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
+            title="Import Profiles"
+          >
+            <Upload size={12} />
+            Import
+          </button>
+          <button
+            onClick={mgr.handleExportProfiles}
+            className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
+            title="Export Profiles"
+          >
+            <Download size={12} />
+            Export
+          </button>
+          <button
+            onClick={mgr.handleNewProfile}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
+          >
+            <Plus size={14} />
+            New Profile
+          </button>
+        </div>
+      </div>
+
+      <div className="text-sm text-[var(--color-textSecondary)]">
+        Create and manage reusable proxy configurations that can be used across
+        connections and chains.
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
+        <input
+          type="text"
+          value={mgr.profileSearch}
+          onChange={(e) => mgr.setProfileSearch(e.target.value)}
+          placeholder="Search profiles..."
+          className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      {/* Profile List */}
+      <div className="space-y-2">
+        {mgr.filteredProfiles.length === 0 ? (
+          <div className="text-sm text-[var(--color-textSecondary)] py-8 text-center">
+            {mgr.profileSearch
+              ? "No profiles match your search."
+              : 'No proxy profiles saved. Click "New Profile" to create one.'}
+          </div>
+        ) : (
+          mgr.filteredProfiles.map((profile) => (
+            <div
+              key={profile.id}
+              className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
+            >
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-medium text-[var(--color-text)]">
+                    {profile.name}
+                  </div>
+                  <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400 uppercase">
+                    {profile.config.type}
+                  </span>
+                  {profile.isDefault && (
+                    <span className="px-2 py-0.5 text-xs rounded-full bg-yellow-500/20 text-yellow-400">
+                      Default
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
+                  {profile.config.host}:{profile.config.port}
+                  {profile.config.username &&
+                    ` (${profile.config.username})`}
+                </div>
+                {profile.description && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    {profile.description}
+                  </div>
+                )}
+                {profile.tags && profile.tags.length > 0 && (
+                  <div className="flex gap-1 mt-2">
+                    {profile.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => mgr.handleDuplicateProfile(profile.id)}
+                  className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
+                  title="Duplicate"
+                >
+                  <Copy size={14} />
+                </button>
+                <button
+                  onClick={() => mgr.handleEditProfile(profile)}
+                  className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
+                  title="Edit"
+                >
+                  <Edit2 size={14} />
+                </button>
+                <button
+                  onClick={() => mgr.handleDeleteProfile(profile.id)}
+                  className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md"
+                  title="Delete"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChainsTab({ mgr }: { mgr: Mgr }) {
+  return (
+    <div className="space-y-6">
+      {/* Saved Chains Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-medium text-[var(--color-text)]">
+            Saved Chains
+          </h3>
+          <button
+            onClick={mgr.handleNewChain}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
+          >
+            <Plus size={14} />
+            New Chain
+          </button>
+        </div>
+
+        <div className="text-sm text-[var(--color-textSecondary)]">
+          Create reusable proxy chains that route traffic through multiple
+          layers.
+        </div>
+
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-textSecondary)]" />
+          <input
+            type="text"
+            value={mgr.chainSearch}
+            onChange={(e) => mgr.setChainSearch(e.target.value)}
+            placeholder="Search chains..."
+            className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm placeholder:text-gray-500 focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* Saved Chains List */}
+        <div className="space-y-2">
+          {mgr.filteredSavedChains.length === 0 ? (
+            <div className="text-sm text-[var(--color-textSecondary)] py-6 text-center">
+              {mgr.chainSearch
+                ? "No chains match your search."
+                : 'No proxy chains saved. Click "New Chain" to create one.'}
+            </div>
+          ) : (
+            mgr.filteredSavedChains.map((chain) => (
+              <div
+                key={chain.id}
+                className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium text-[var(--color-text)]">
+                      {chain.name}
+                    </div>
+                    <span className="px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">
+                      {chain.layers.length} layer
+                      {chain.layers.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  {chain.description && (
+                    <div className="text-xs text-gray-500 mt-1">
+                      {chain.description}
+                    </div>
+                  )}
+                  <div className="text-xs text-[var(--color-textSecondary)] mt-1 font-mono">
+                    {chain.layers.map((layer, i) => {
+                      const profile = layer.proxyProfileId
+                        ? mgr.savedProfiles.find(
+                            (p) => p.id === layer.proxyProfileId,
+                          )
+                        : null;
+                      return (
+                        <span key={i}>
+                          {i > 0 && " → "}
+                          {layer.type === "proxy" && profile
+                            ? `${profile.name}`
+                            : layer.type}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {chain.tags && chain.tags.length > 0 && (
+                    <div className="flex gap-1 mt-2">
+                      {chain.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-300"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => mgr.handleDuplicateChain(chain.id)}
+                    className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
+                    title="Duplicate"
+                  >
+                    <Copy size={14} />
+                  </button>
+                  <button
+                    onClick={() => mgr.handleEditChain(chain)}
+                    className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md"
+                    title="Edit"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    onClick={() => mgr.handleDeleteChain(chain.id)}
+                    className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md"
+                    title="Delete"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Active Chains Section */}
+      <div className="border-t border-[var(--color-border)] pt-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-medium text-[var(--color-text)]">
+            Active Chains
+          </h3>
+          {mgr.isLoading && (
+            <span className="text-xs text-[var(--color-textSecondary)]">
+              Refreshing...
+            </span>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-background)]/40 p-4">
+          <div className="text-sm font-semibold text-gray-200 mb-3">
+            Connection Chains
+          </div>
+          {mgr.connectionChains.length === 0 ? (
+            <div className="text-sm text-[var(--color-textSecondary)]">
+              No connection chains available.
+            </div>
+          ) : (
+            mgr.connectionChains.map((chain) => (
+              <div
+                key={chain.id}
+                className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-3 py-2 mb-2 last:mb-0"
+              >
+                <div>
+                  <div className="text-sm font-medium text-[var(--color-text)]">
+                    {chain.name}
+                  </div>
+                  <div className="text-xs text-[var(--color-textSecondary)]">
+                    {chain.layers.length} layers · {chain.status}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {String(chain.status).toLowerCase() === "connected" ? (
+                    <button
+                      onClick={() => mgr.handleDisconnectChain(chain.id)}
+                      className="px-3 py-1 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
+                    >
+                      Disconnect
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => mgr.handleConnectChain(chain.id)}
+                      className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
+                    >
+                      Connect
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-background)]/40 p-4">
+          <div className="text-sm font-semibold text-gray-200 mb-3">
+            Proxy Chains
+          </div>
+          {mgr.proxyChains.length === 0 ? (
+            <div className="text-sm text-[var(--color-textSecondary)]">
+              No proxy chains available.
+            </div>
+          ) : (
+            mgr.proxyChains.map((chain) => (
+              <div
+                key={chain.id}
+                className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-3 py-2 mb-2 last:mb-0"
+              >
+                <div>
+                  <div className="text-sm font-medium text-[var(--color-text)]">
+                    {chain.name}
+                  </div>
+                  <div className="text-xs text-[var(--color-textSecondary)]">
+                    {chain.layers.length} layers · {chain.status}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {String(chain.status).toLowerCase() === "connected" ? (
+                    <button
+                      onClick={() =>
+                        mgr.handleDisconnectProxyChain(chain.id)
+                      }
+                      className="px-3 py-1 text-xs rounded-md bg-[var(--color-border)] hover:bg-[var(--color-border)] text-gray-200"
+                    >
+                      Disconnect
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => mgr.handleConnectProxyChain(chain.id)}
+                      className="px-3 py-1 text-xs rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
+                    >
+                      Connect
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TunnelsTab({ mgr }: { mgr: Mgr }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-medium text-[var(--color-text)]">
+          SSH Tunnels
+        </h3>
+        <button
+          onClick={mgr.handleNewTunnel}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]"
+        >
+          <Plus size={14} />
+          New Tunnel
+        </button>
+      </div>
+
+      <div className="text-sm text-[var(--color-textSecondary)]">
+        Create SSH tunnels using existing SSH connections to forward ports
+        securely.
+      </div>
+
+      <div className="space-y-2">
+        {mgr.sshTunnels.length === 0 ? (
+          <div className="text-sm text-[var(--color-textSecondary)] py-8 text-center">
+            No SSH tunnels configured. Click "New Tunnel" to create one.
+          </div>
+        ) : (
+          mgr.sshTunnels.map((tunnel) => {
+            const sshConn = mgr.connections.find(
+              (c) => c.id === tunnel.sshConnectionId,
+            );
+            const localPort =
+              tunnel.actualLocalPort || tunnel.localPort || "?";
+
+            const getTunnelInfo = () => {
+              switch (tunnel.type) {
+                case "dynamic":
+                  return `SOCKS5 proxy on localhost:${localPort}`;
+                case "remote":
+                  return `${tunnel.remoteHost}:${tunnel.remotePort} → localhost:${localPort}`;
+                case "local":
+                default:
+                  return `localhost:${localPort} → ${tunnel.remoteHost}:${tunnel.remotePort}`;
+              }
+            };
+
+            const getTypeLabel = () => {
+              switch (tunnel.type) {
+                case "dynamic":
+                  return "Dynamic";
+                case "remote":
+                  return "Remote";
+                case "local":
+                default:
+                  return "Local";
+              }
+            };
+
+            return (
+              <div
+                key={tunnel.id}
+                className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-3"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium text-[var(--color-text)]">
+                      {tunnel.name}
+                    </div>
+                    <span className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-400">
+                      {getTypeLabel()}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 text-xs rounded-full ${
+                        tunnel.status === "connected"
+                          ? "bg-green-500/20 text-green-400"
+                          : tunnel.status === "connecting"
+                            ? "bg-yellow-500/20 text-yellow-400"
+                            : tunnel.status === "error"
+                              ? "bg-red-500/20 text-red-400"
+                              : "bg-gray-500/20 text-[var(--color-textSecondary)]"
+                      }`}
+                    >
+                      {tunnel.status}
+                    </span>
+                  </div>
+                  <div className="text-xs text-[var(--color-textSecondary)] mt-1">
+                    <span className="text-gray-500">via</span>{" "}
+                    {sshConn?.name || "Unknown SSH"}
+                  </div>
+                  <div className="text-xs text-[var(--color-textSecondary)] mt-0.5 font-mono">
+                    {getTunnelInfo()}
+                  </div>
+                  {tunnel.error && (
+                    <div className="text-xs text-red-400 mt-1">
+                      {tunnel.error}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {tunnel.status === "connected" ? (
+                    <button
+                      onClick={() => mgr.handleDisconnectTunnel(tunnel.id)}
+                      className="p-2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded-md"
+                      title="Disconnect"
+                    >
+                      <Square size={14} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => mgr.handleConnectTunnel(tunnel.id)}
+                      disabled={tunnel.status === "connecting"}
+                      className="p-2 text-[var(--color-textSecondary)] hover:text-green-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
+                      title="Connect"
+                    >
+                      <Play size={14} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => mgr.handleEditTunnel(tunnel)}
+                    disabled={tunnel.status === "connected"}
+                    className="p-2 text-[var(--color-textSecondary)] hover:text-blue-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
+                    title="Edit"
+                  >
+                    <Edit2 size={14} />
+                  </button>
+                  <button
+                    onClick={() => mgr.handleDeleteTunnel(tunnel.id)}
+                    disabled={tunnel.status === "connected"}
+                    className="p-2 text-[var(--color-textSecondary)] hover:text-red-400 hover:bg-[var(--color-border)] rounded-md disabled:opacity-50"
+                    title="Delete"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AssociationsTab({ mgr }: { mgr: Mgr }) {
+  return (
+    <div className="space-y-4">
+      <div className="text-sm text-[var(--color-textSecondary)]">
+        Associate chains with individual connections. These choices will be used
+        when launching sessions.
+      </div>
+      <div className="space-y-3">
+        {mgr.connectionOptions.map((connection) => (
+          <div
+            key={connection.id}
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/40 p-3"
+          >
+            <div className="text-sm font-medium text-[var(--color-text)] mb-2">
+              {connection.name}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  Connection Chain
+                </label>
+                <select
+                  value={connection.connectionChainId || ""}
+                  onChange={(e) =>
+                    mgr.updateConnectionChain(connection.id, e.target.value)
+                  }
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
+                >
+                  <option value="">None</option>
+                  {mgr.connectionChains.map((chain) => (
+                    <option key={chain.id} value={chain.id}>
+                      {chain.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
+                  Proxy Chain
+                </label>
+                <select
+                  value={connection.proxyChainId || ""}
+                  onChange={(e) =>
+                    mgr.updateProxyChain(connection.id, e.target.value)
+                  }
+                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
+                >
+                  <option value="">None</option>
+                  {mgr.proxyChains.map((chain) => (
+                    <option key={chain.id} value={chain.id}>
+                      {chain.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        ))}
+        {mgr.connectionOptions.length === 0 && (
+          <div className="text-sm text-[var(--color-textSecondary)]">
+            No connections available.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React from 'react';
 import {
   X, Plus, Edit2, Trash2, Save, Copy, Search,
   FileCode, FolderOpen, Check,
@@ -7,11 +7,17 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from './ui/Modal';
+import { HighlightedCode } from './ui/HighlightedCode';
+import { detectLanguage } from '../utils/scriptSyntax';
+import { defaultScripts } from '../data/defaultScripts';
+import { useScriptManager, type ScriptManagerMgr } from '../hooks/useScriptManager';
 
 interface ScriptManagerProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+// ── Exported types & constants (used by other components) ──────────
 
 export type OSTag = 'windows' | 'linux' | 'macos' | 'agnostic' | 'multiplatform' | 'cisco-ios';
 
@@ -49,317 +55,9 @@ export const OS_TAG_ICONS: Record<OSTag, string> = {
 
 export const SCRIPTS_STORAGE_KEY = 'managedScripts';
 
-// Default script templates
-const defaultScripts: ManagedScript[] = [
-  {
-    id: 'default-1',
-    name: 'System Info (Linux)',
-    description: 'Get basic system information on Linux',
-    script: '#!/bin/bash\nuname -a\ncat /etc/os-release 2>/dev/null || cat /etc/redhat-release 2>/dev/null\nhostname',
-    language: 'bash',
-    category: 'System',
-    osTags: ['linux'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'default-2',
-    name: 'Disk Usage (Linux)',
-    description: 'Check disk space usage',
-    script: '#!/bin/bash\ndf -h\necho ""\necho "Largest directories:"\ndu -sh /* 2>/dev/null | sort -rh | head -10',
-    language: 'bash',
-    category: 'System',
-    osTags: ['linux'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'default-3',
-    name: 'Memory Usage (Linux)',
-    description: 'Check memory usage',
-    script: '#!/bin/bash\nfree -h\necho ""\necho "Top memory consumers:"\nps aux --sort=-%mem | head -10',
-    language: 'bash',
-    category: 'System',
-    osTags: ['linux'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'default-4',
-    name: 'Network Connections (Linux)',
-    description: 'Show active network connections',
-    script: '#!/bin/bash\nnetstat -tuln 2>/dev/null || ss -tuln\necho ""\necho "IP addresses:"\nip addr show | grep -E "inet |inet6 "',
-    language: 'bash',
-    category: 'Network',
-    osTags: ['linux'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'default-5',
-    name: 'System Info (Windows)',
-    description: 'Get system information on Windows',
-    script: 'systeminfo | findstr /B /C:"OS Name" /C:"OS Version" /C:"System Type" /C:"Total Physical Memory"\nhostname\nipconfig /all | findstr /C:"IPv4"',
-    language: 'powershell',
-    category: 'System',
-    osTags: ['windows'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'default-6',
-    name: 'Disk Usage (Windows)',
-    description: 'Check disk space on Windows',
-    script: 'Get-PSDrive -PSProvider FileSystem | Format-Table Name, @{N="Used(GB)";E={[math]::Round($_.Used/1GB,2)}}, @{N="Free(GB)";E={[math]::Round($_.Free/1GB,2)}}, @{N="Total(GB)";E={[math]::Round(($_.Used+$_.Free)/1GB,2)}} -AutoSize',
-    language: 'powershell',
-    category: 'System',
-    osTags: ['windows'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'default-7',
-    name: 'Service Status (Linux)',
-    description: 'Check common service statuses',
-    script: '#!/bin/bash\nfor service in nginx apache2 httpd mysql mariadb postgresql docker; do\n  if systemctl is-active --quiet $service 2>/dev/null; then\n    echo "$service: RUNNING"\n  elif systemctl is-enabled --quiet $service 2>/dev/null; then\n    echo "$service: STOPPED (enabled)"\n  fi\ndone',
-    language: 'bash',
-    category: 'Services',
-    osTags: ['linux'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'default-8',
-    name: 'Service Status (Windows)',
-    description: 'Check important Windows services',
-    script: 'Get-Service | Where-Object {$_.Status -eq "Running"} | Sort-Object DisplayName | Format-Table DisplayName, Status -AutoSize | Select-Object -First 20',
-    language: 'powershell',
-    category: 'Services',
-    osTags: ['windows'],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
-
-// Export function to get default scripts (for use in other components)
 export const getDefaultScripts = (): ManagedScript[] => [...defaultScripts];
 
-// Language detection based on script content
-const detectLanguage = (script: string): ScriptLanguage => {
-  const trimmed = script.trim().toLowerCase();
-  
-  // Check shebang
-  if (trimmed.startsWith('#!/bin/bash') || trimmed.startsWith('#!/usr/bin/env bash')) return 'bash';
-  if (trimmed.startsWith('#!/bin/sh') || trimmed.startsWith('#!/usr/bin/env sh')) return 'sh';
-  
-  // Check for PowerShell specific patterns
-  const psPatterns = [
-    /\$[a-z_][a-z0-9_]*\s*=/i,        // Variable assignment
-    /get-|set-|new-|remove-|invoke-/i, // PowerShell cmdlets
-    /\|\s*where-object|\|\s*select-object|\|\s*format-table/i, // Pipeline cmdlets
-    /\[math\]::|@\{|@\(/i,             // PowerShell specific syntax
-    /param\s*\(/i,                     // PowerShell param block
-    /-eq\s|-ne\s|-gt\s|-lt\s|-match\s/i, // PowerShell operators
-  ];
-  
-  // Check for Batch specific patterns
-  const batchPatterns = [
-    /^@echo\s+off/im,
-    /^echo\./im,
-    /^set\s+[a-z_][a-z0-9_]*=/im,
-    /%[a-z_][a-z0-9_]*%/i,
-    /^goto\s+:/im,
-    /^if\s+(not\s+)?(exist|defined|errorlevel)/im,
-    /^for\s+%%/im,
-    /^::[^\n]*/m,  // Batch comments
-  ];
-  
-  // Check for Bash/Shell specific patterns
-  const bashPatterns = [
-    /\$\([^)]+\)/,                    // Command substitution
-    /\$\{[^}]+\}/,                    // Parameter expansion
-    /\[\[\s+.*\s+\]\]/,               // Bash test construct
-    /\bfunction\s+\w+\s*\(\)/,        // Function definition
-    /\|\s*grep\s|\|\s*awk\s|\|\s*sed\s/i, // Unix pipe commands
-    /\becho\s+-[ne]/i,                // echo with flags
-    /\bsudo\s/i,                      // sudo command
-    /\bchmod\s|\bchown\s/i,           // Unix file commands
-    /\/dev\/null/,                    // Unix null device
-  ];
-
-  let psScore = 0;
-  let batchScore = 0;
-  let bashScore = 0;
-
-  for (const pattern of psPatterns) {
-    if (pattern.test(script)) psScore++;
-  }
-  for (const pattern of batchPatterns) {
-    if (pattern.test(script)) batchScore++;
-  }
-  for (const pattern of bashPatterns) {
-    if (pattern.test(script)) bashScore++;
-  }
-
-  // Return the highest scoring language
-  if (psScore > batchScore && psScore > bashScore) return 'powershell';
-  if (batchScore > psScore && batchScore > bashScore) return 'batch';
-  if (bashScore > 0) return 'bash';
-  
-  // Default to bash for Unix-like systems
-  return 'bash';
-};
-
-// Syntax highlighting tokens
-interface Token {
-  type: 'keyword' | 'string' | 'comment' | 'variable' | 'operator' | 'number' | 'function' | 'text';
-  value: string;
-}
-
-// Simple tokenizer for syntax highlighting
-const tokenize = (code: string, language: ScriptLanguage): Token[] => {
-  const tokens: Token[] = [];
-  const actualLang = language === 'auto' ? detectLanguage(code) : language;
-  
-  // Language-specific keywords
-  const keywords: Record<string, string[]> = {
-    bash: ['if', 'then', 'else', 'elif', 'fi', 'for', 'do', 'done', 'while', 'until', 'case', 'esac', 'function', 'return', 'exit', 'break', 'continue', 'in', 'select', 'local', 'export', 'readonly', 'declare', 'typeset', 'unset', 'shift', 'source', 'true', 'false'],
-    sh: ['if', 'then', 'else', 'elif', 'fi', 'for', 'do', 'done', 'while', 'until', 'case', 'esac', 'return', 'exit', 'break', 'continue', 'in', 'export', 'unset', 'shift', 'true', 'false'],
-    powershell: ['if', 'else', 'elseif', 'switch', 'while', 'for', 'foreach', 'do', 'until', 'break', 'continue', 'return', 'exit', 'throw', 'try', 'catch', 'finally', 'function', 'filter', 'param', 'begin', 'process', 'end', 'class', 'enum', 'using', 'workflow', 'parallel', 'sequence', 'inlinescript', 'true', 'false', 'null'],
-    batch: ['if', 'else', 'for', 'do', 'in', 'goto', 'call', 'exit', 'echo', 'set', 'setlocal', 'endlocal', 'pushd', 'popd', 'rem', 'pause', 'cls', 'copy', 'move', 'del', 'mkdir', 'rmdir', 'cd', 'dir', 'type', 'find', 'findstr', 'sort', 'more', 'errorlevel', 'exist', 'not', 'defined', 'equ', 'neq', 'lss', 'leq', 'gtr', 'geq', 'nul', 'con', 'prn', 'aux', 'off', 'on'],
-  };
-
-  const langKeywords = new Set(keywords[actualLang] || keywords.bash);
-  
-  // Simple regex-based tokenization
-  let remaining = code;
-  
-  while (remaining.length > 0) {
-    let matched = false;
-    
-    // Comments
-    if (actualLang === 'batch' && remaining.match(/^::[^\n]*/)) {
-      const match = remaining.match(/^::[^\n]*/)!;
-      tokens.push({ type: 'comment', value: match[0] });
-      remaining = remaining.slice(match[0].length);
-      matched = true;
-    } else if (actualLang === 'batch' && remaining.match(/^(?:rem\s)[^\n]*/i)) {
-      const match = remaining.match(/^(?:rem\s)[^\n]*/i)!;
-      tokens.push({ type: 'comment', value: match[0] });
-      remaining = remaining.slice(match[0].length);
-      matched = true;
-    } else if ((actualLang === 'bash' || actualLang === 'sh' || actualLang === 'powershell') && remaining.match(/^#[^\n]*/)) {
-      const match = remaining.match(/^#[^\n]*/)!;
-      tokens.push({ type: 'comment', value: match[0] });
-      remaining = remaining.slice(match[0].length);
-      matched = true;
-    }
-    
-    // Strings (double quotes)
-    if (!matched && remaining.match(/^"(?:[^"\\]|\\.)*"/)) {
-      const match = remaining.match(/^"(?:[^"\\]|\\.)*"/)!;
-      tokens.push({ type: 'string', value: match[0] });
-      remaining = remaining.slice(match[0].length);
-      matched = true;
-    }
-    
-    // Strings (single quotes)
-    if (!matched && remaining.match(/^'(?:[^'\\]|\\.)*'/)) {
-      const match = remaining.match(/^'(?:[^'\\]|\\.)*'/)!;
-      tokens.push({ type: 'string', value: match[0] });
-      remaining = remaining.slice(match[0].length);
-      matched = true;
-    }
-    
-    // Variables
-    if (!matched) {
-      let varMatch = null;
-      if (actualLang === 'powershell' && remaining.match(/^\$[a-zA-Z_][a-zA-Z0-9_]*/)) {
-        varMatch = remaining.match(/^\$[a-zA-Z_][a-zA-Z0-9_]*/)!;
-      } else if ((actualLang === 'bash' || actualLang === 'sh') && remaining.match(/^\$\{?[a-zA-Z_][a-zA-Z0-9_]*\}?/)) {
-        varMatch = remaining.match(/^\$\{?[a-zA-Z_][a-zA-Z0-9_]*\}?/)!;
-      } else if (actualLang === 'batch' && remaining.match(/^%[a-zA-Z_][a-zA-Z0-9_]*%/)) {
-        varMatch = remaining.match(/^%[a-zA-Z_][a-zA-Z0-9_]*%/)!;
-      } else if (actualLang === 'batch' && remaining.match(/^%%[a-zA-Z]/)) {
-        varMatch = remaining.match(/^%%[a-zA-Z]/)!;
-      }
-      if (varMatch) {
-        tokens.push({ type: 'variable', value: varMatch[0] });
-        remaining = remaining.slice(varMatch[0].length);
-        matched = true;
-      }
-    }
-    
-    // Numbers
-    if (!matched && remaining.match(/^\d+(\.\d+)?/)) {
-      const match = remaining.match(/^\d+(\.\d+)?/)!;
-      tokens.push({ type: 'number', value: match[0] });
-      remaining = remaining.slice(match[0].length);
-      matched = true;
-    }
-    
-    // Keywords and identifiers
-    if (!matched && remaining.match(/^[a-zA-Z_][a-zA-Z0-9_-]*/)) {
-      const match = remaining.match(/^[a-zA-Z_][a-zA-Z0-9_-]*/)!;
-      const word = match[0];
-      const isKeyword = langKeywords.has(word.toLowerCase());
-      
-      // Check if it looks like a function/command
-      const isFunction = !isKeyword && (
-        (actualLang === 'powershell' && /^[A-Z][a-z]+-[A-Z][a-z]+/.test(word)) || // PowerShell cmdlets
-        ((actualLang === 'bash' || actualLang === 'sh') && /^[a-z]+$/.test(word) && ['ls', 'cd', 'cat', 'grep', 'awk', 'sed', 'find', 'sort', 'uniq', 'head', 'tail', 'cut', 'tr', 'wc', 'xargs', 'tee', 'chmod', 'chown', 'sudo', 'apt', 'yum', 'dnf', 'systemctl', 'docker', 'git', 'curl', 'wget', 'ssh', 'scp', 'rsync', 'tar', 'gzip', 'gunzip', 'zip', 'unzip', 'ps', 'top', 'htop', 'kill', 'pkill', 'pgrep', 'df', 'du', 'free', 'mount', 'umount', 'fdisk', 'lsblk', 'ip', 'ifconfig', 'netstat', 'ss', 'ping', 'traceroute', 'nslookup', 'dig', 'hostname', 'uname', 'uptime', 'date', 'cal', 'who', 'whoami', 'id', 'passwd', 'useradd', 'userdel', 'groupadd', 'groupdel', 'su', 'env', 'printenv', 'alias', 'history', 'man', 'info', 'help', 'which', 'whereis', 'locate', 'touch', 'mkdir', 'rmdir', 'rm', 'cp', 'mv', 'ln', 'file', 'stat', 'basename', 'dirname', 'realpath', 'read', 'printf', 'test', 'expr'].includes(word))
-      );
-      
-      tokens.push({ type: isKeyword ? 'keyword' : isFunction ? 'function' : 'text', value: word });
-      remaining = remaining.slice(word.length);
-      matched = true;
-    }
-    
-    // Operators
-    if (!matched && remaining.match(/^[|&;<>=!+\-*/%\\(){}\[\]@^]/)) {
-      const match = remaining.match(/^[|&;<>=!+\-*/%\\(){}\[\]@^]+/)!;
-      tokens.push({ type: 'operator', value: match[0] });
-      remaining = remaining.slice(match[0].length);
-      matched = true;
-    }
-    
-    // Whitespace and other characters
-    if (!matched) {
-      tokens.push({ type: 'text', value: remaining[0] });
-      remaining = remaining.slice(1);
-    }
-  }
-  
-  return tokens;
-};
-
-// Render highlighted code
-const HighlightedCode: React.FC<{ code: string; language: ScriptLanguage }> = ({ code, language }) => {
-  const tokens = useMemo(() => tokenize(code, language), [code, language]);
-  
-  const colorMap: Record<Token['type'], string> = {
-    keyword: 'text-purple-400',
-    string: 'text-green-400',
-    comment: 'text-gray-500 italic',
-    variable: 'text-cyan-400',
-    operator: 'text-yellow-400',
-    number: 'text-orange-400',
-    function: 'text-blue-400',
-    text: 'text-[var(--color-text)]',
-  };
-  
-  return (
-    <code className="font-mono text-sm whitespace-pre-wrap break-all">
-      {tokens.map((token, index) => (
-        <span key={index} className={colorMap[token.type]}>
-          {token.value}
-        </span>
-      ))}
-    </code>
-  );
-};
-
-const languageLabels: Record<ScriptLanguage, string> = {
+export const languageLabels: Record<ScriptLanguage, string> = {
   auto: 'Auto Detect',
   bash: 'Bash',
   sh: 'Shell (sh)',
@@ -367,7 +65,7 @@ const languageLabels: Record<ScriptLanguage, string> = {
   batch: 'Batch (cmd)',
 };
 
-const languageIcons: Record<ScriptLanguage, string> = {
+export const languageIcons: Record<ScriptLanguage, string> = {
   auto: '🔍',
   bash: '🐚',
   sh: '📜',
@@ -375,204 +73,482 @@ const languageIcons: Record<ScriptLanguage, string> = {
   batch: '🪟',
 };
 
-export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose }) => {
-  const { t } = useTranslation();
-  
-  const [scripts, setScripts] = useState<ManagedScript[]>([]);
-  const [selectedScript, setSelectedScript] = useState<ManagedScript | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [searchFilter, setSearchFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('');
-  const [languageFilter, setLanguageFilter] = useState<ScriptLanguage | ''>('');
-  const [osTagFilter, setOsTagFilter] = useState<OSTag | ''>('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  
-  // Edit form state
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editScript, setEditScript] = useState('');
-  const [editLanguage, setEditLanguage] = useState<ScriptLanguage>('auto');
-  const [editCategory, setEditCategory] = useState('Custom');
-  const [editOsTags, setEditOsTags] = useState<OSTag[]>(['agnostic']);
-  
-  // Load scripts from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(SCRIPTS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Handle new format with customScripts, modifiedDefaults, deletedDefaultIds
-        if (parsed && typeof parsed === 'object' && 'customScripts' in parsed) {
-          const { customScripts = [], modifiedDefaults = [], deletedDefaultIds = [] } = parsed;
-          // Start with modified defaults (or original defaults if not modified)
-          const activeDefaults = defaultScripts
-            .filter(d => !deletedDefaultIds.includes(d.id))
-            .map(d => modifiedDefaults.find((m: ManagedScript) => m.id === d.id) || d);
-          setScripts([...activeDefaults, ...customScripts]);
-        } else if (Array.isArray(parsed)) {
-          // Handle old format (just an array of custom scripts)
-          setScripts([...defaultScripts, ...parsed]);
-        } else {
-          setScripts(defaultScripts);
-        }
-      } else {
-        setScripts(defaultScripts);
-      }
-    } catch {
-      setScripts(defaultScripts);
-    }
-  }, []);
-  
-  // Save scripts to localStorage
-  // We store: custom scripts + modified default scripts + list of deleted default script IDs
-  const saveScripts = useCallback((newScripts: ManagedScript[]) => {
-    // Find which default scripts have been deleted
-    const defaultIds = defaultScripts.map(s => s.id);
-    const remainingDefaultIds = newScripts.filter(s => s.id.startsWith('default-')).map(s => s.id);
-    const deletedDefaultIds = defaultIds.filter(id => !remainingDefaultIds.includes(id));
-    
-    // Get custom scripts (non-default)
-    const customScripts = newScripts.filter(s => !s.id.startsWith('default-'));
-    
-    // Get modified default scripts (defaults that exist but may have been edited)
-    const modifiedDefaults = newScripts.filter(s => s.id.startsWith('default-'));
-    
-    // Store everything
-    localStorage.setItem(SCRIPTS_STORAGE_KEY, JSON.stringify({
-      customScripts,
-      modifiedDefaults,
-      deletedDefaultIds
-    }));
-    setScripts(newScripts);
-  }, []);
-  
-  // Get unique categories
-  const categories = useMemo(() => {
-    const cats = new Set(scripts.map(s => s.category));
-    return Array.from(cats).sort();
-  }, [scripts]);
-  
-  // Filter scripts
-  const filteredScripts = useMemo(() => {
-    return scripts.filter(script => {
-      const matchesSearch = !searchFilter || 
-        script.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-        script.description.toLowerCase().includes(searchFilter.toLowerCase()) ||
-        script.script.toLowerCase().includes(searchFilter.toLowerCase());
-      const matchesCategory = !categoryFilter || script.category === categoryFilter;
-      const matchesLanguage = !languageFilter || script.language === languageFilter;
-      const matchesOsTag = !osTagFilter || (script.osTags && script.osTags.includes(osTagFilter));
-      return matchesSearch && matchesCategory && matchesLanguage && matchesOsTag;
-    });
-  }, [scripts, searchFilter, categoryFilter, languageFilter, osTagFilter]);
-  
-  // Start creating new script
-  const handleNewScript = useCallback(() => {
-    setSelectedScript(null);
-    setEditName('');
-    setEditDescription('');
-    setEditScript('');
-    setEditLanguage('auto');
-    setEditCategory('Custom');
-    setEditOsTags(['agnostic']);
-    setIsEditing(true);
-  }, []);
-  
-  // Start editing existing script
-  const handleEditScript = useCallback((script: ManagedScript) => {
-    setSelectedScript(script);
-    setEditName(script.name);
-    setEditDescription(script.description);
-    setEditScript(script.script);
-    setEditLanguage(script.language);
-    setEditCategory(script.category);
-    setEditOsTags(script.osTags || ['agnostic']);
-    setIsEditing(true);
-  }, []);
-  
-  // Save script (create or update)
-  const handleSaveScript = useCallback(() => {
-    if (!editName.trim() || !editScript.trim()) return;
-    
-    const finalLanguage = editLanguage === 'auto' ? detectLanguage(editScript) : editLanguage;
-    
-    if (selectedScript) {
-      // Update existing
-      const updated = scripts.map(s => 
-        s.id === selectedScript.id
-          ? {
-              ...s,
-              name: editName.trim(),
-              description: editDescription.trim(),
-              script: editScript,
-              language: finalLanguage,
-              category: editCategory,
-              osTags: editOsTags,
-              updatedAt: new Date().toISOString(),
-            }
-          : s
-      );
-      saveScripts(updated);
-    } else {
-      // Create new
-      const newScript: ManagedScript = {
-        id: Date.now().toString(),
-        name: editName.trim(),
-        description: editDescription.trim(),
-        script: editScript,
-        language: finalLanguage,
-        category: editCategory,
-        osTags: editOsTags,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      saveScripts([...scripts, newScript]);
-    }
-    
-    setIsEditing(false);
-    setSelectedScript(null);
-  }, [editName, editDescription, editScript, editLanguage, editCategory, editOsTags, selectedScript, scripts, saveScripts]);
-  
-  // Delete script
-  const handleDeleteScript = useCallback((scriptId: string) => {
-    saveScripts(scripts.filter(s => s.id !== scriptId));
-    if (selectedScript?.id === scriptId) {
-      setSelectedScript(null);
-      setIsEditing(false);
-    }
-  }, [scripts, selectedScript, saveScripts]);
-  
-  // Copy script to clipboard
-  const handleCopyScript = useCallback(async (script: ManagedScript) => {
-    try {
-      await navigator.clipboard.writeText(script.script);
-      setCopiedId(script.id);
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch (error) {
-      console.error('Failed to copy script:', error);
-    }
-  }, []);
-  
-  // Cancel editing
-  const handleCancelEdit = useCallback(() => {
-    setIsEditing(false);
-    setSelectedScript(null);
-  }, []);
+// ── Sub-components ─────────────────────────────────────────────────
 
-  // Duplicate script
-  const handleDuplicateScript = useCallback((script: ManagedScript) => {
-    setSelectedScript(null);
-    setEditName(script.name + ' (Copy)');
-    setEditDescription(script.description);
-    setEditScript(script.script);
-    setEditLanguage(script.language);
-    setEditCategory(script.category);
-    setEditOsTags(script.osTags || ['agnostic']);
-    setIsEditing(true);
-  }, []);
-  
+function ScriptManagerHeader({ mgr }: { mgr: ScriptManagerMgr }) {
+  const { t } = useTranslation();
+  return (
+    <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
+      <div className="flex items-center space-x-3">
+        <div className="p-2 bg-purple-500/20 rounded-lg">
+          <FileCode size={16} className="text-purple-600 dark:text-purple-400" />
+        </div>
+        <h2 className="text-lg font-semibold text-[var(--color-text)]">
+          {t('scriptManager.title', 'Script Manager')}
+        </h2>
+        <span className="text-sm text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] px-2 py-0.5 rounded">
+          {mgr.filteredScripts.length} {t('scriptManager.scripts', 'scripts')}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={mgr.onClose}
+          className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          aria-label={t('common.close', 'Close')}
+        >
+          <X size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
+  const { t } = useTranslation();
+  return (
+    <div className="border-b border-[var(--color-border)] px-5 py-3 flex items-center gap-4 bg-[var(--color-surfaceHover)]/30">
+      {/* Search */}
+      <div className="flex-1 relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]" />
+        <input
+          type="text"
+          value={mgr.searchFilter}
+          onChange={(e) => mgr.setSearchFilter(e.target.value)}
+          placeholder={t('scriptManager.searchPlaceholder', 'Search scripts...')}
+          className="w-full pl-9 pr-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+        />
+      </div>
+
+      {/* Category filter */}
+      <div className="relative">
+        <select
+          value={mgr.categoryFilter}
+          onChange={(e) => mgr.setCategoryFilter(e.target.value)}
+          className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
+        >
+          <option value="">{t('scriptManager.allCategories', 'All Categories')}</option>
+          {mgr.categories.map(cat => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
+        </select>
+        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
+      </div>
+
+      {/* Language filter */}
+      <div className="relative">
+        <select
+          value={mgr.languageFilter}
+          onChange={(e) => mgr.setLanguageFilter(e.target.value as ScriptLanguage | '')}
+          className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
+        >
+          <option value="">{t('scriptManager.allLanguages', 'All Languages')}</option>
+          <option value="bash">Bash</option>
+          <option value="sh">Shell (sh)</option>
+          <option value="powershell">PowerShell</option>
+          <option value="batch">Batch (cmd)</option>
+        </select>
+        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
+      </div>
+
+      {/* OS Tag filter */}
+      <div className="relative">
+        <select
+          value={mgr.osTagFilter}
+          onChange={(e) => mgr.setOsTagFilter(e.target.value as OSTag | '')}
+          className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
+        >
+          <option value="">{t('scriptManager.allPlatforms', 'All Platforms')}</option>
+          <option value="windows">🪟 Windows</option>
+          <option value="linux">🐧 Linux</option>
+          <option value="macos">🍎 macOS</option>
+          <option value="agnostic">🌐 Agnostic</option>
+          <option value="multiplatform">🔀 Multi-Platform</option>
+          <option value="cisco-ios">🔌 Cisco IOS</option>
+        </select>
+        <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
+      </div>
+
+      {/* New script button */}
+      <button
+        onClick={mgr.handleNewScript}
+        className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] rounded-lg transition-colors"
+      >
+        <Plus size={14} />
+        {t('scriptManager.newScript', 'New Script')}
+      </button>
+    </div>
+  );
+}
+
+function ScriptListItem({ script, mgr }: { script: ManagedScript; mgr: ScriptManagerMgr }) {
+  return (
+    <div
+      onClick={() => mgr.handleSelectScript(script)}
+      className={`p-3 rounded-lg cursor-pointer transition-colors group ${
+        mgr.selectedScript?.id === script.id
+          ? 'bg-purple-500/20 border border-purple-500/40'
+          : 'hover:bg-[var(--color-surfaceHover)] border border-transparent'
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        <span className="text-lg flex-shrink-0">{languageIcons[script.language]}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium text-[var(--color-text)] truncate">
+              {script.name}
+            </span>
+            {script.id.startsWith('default-') && (
+              <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/20 text-[var(--color-textSecondary)] rounded uppercase tracking-wide flex-shrink-0">
+                Default
+              </span>
+            )}
+          </div>
+          {script.description && (
+            <p className="text-xs text-[var(--color-textSecondary)] truncate mt-0.5">
+              {script.description}
+            </p>
+          )}
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)] rounded">
+              {script.category}
+            </span>
+            <span className="text-[10px] text-[var(--color-textMuted)]">
+              {languageLabels[script.language]}
+            </span>
+            {script.osTags && script.osTags.length > 0 && (
+              <div className="flex items-center gap-0.5">
+                {script.osTags.slice(0, 3).map(tag => (
+                  <span key={tag} className="text-[10px]" title={OS_TAG_LABELS[tag]}>
+                    {OS_TAG_ICONS[tag]}
+                  </span>
+                ))}
+                {script.osTags.length > 3 && (
+                  <span className="text-[10px] text-[var(--color-textMuted)]">+{script.osTags.length - 3}</span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScriptList({ mgr }: { mgr: ScriptManagerMgr }) {
+  const { t } = useTranslation();
+  return (
+    <div className="w-80 border-r border-[var(--color-border)] flex flex-col bg-[var(--color-surface)]">
+      <div className="flex-1 overflow-y-auto">
+        {mgr.filteredScripts.length === 0 ? (
+          <div className="p-8 text-center text-[var(--color-textSecondary)]">
+            <FileCode size={32} className="mx-auto mb-3 opacity-40" />
+            <p className="text-sm">{t('scriptManager.noScripts', 'No scripts found')}</p>
+          </div>
+        ) : (
+          <div className="p-2 space-y-1">
+            {mgr.filteredScripts.map(script => (
+              <ScriptListItem key={script.id} script={script} mgr={mgr} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex-1 overflow-y-auto p-5">
+      <div className="space-y-4 max-w-3xl">
+        {/* Name */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+            {t('scriptManager.name', 'Script Name')} *
+          </label>
+          <input
+            type="text"
+            value={mgr.editName}
+            onChange={(e) => mgr.setEditName(e.target.value)}
+            placeholder={t('scriptManager.namePlaceholder', 'Enter script name')}
+            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+          />
+        </div>
+
+        {/* Language + Category */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+              {t('scriptManager.language', 'Language')}
+            </label>
+            <select
+              value={mgr.editLanguage}
+              onChange={(e) => mgr.setEditLanguage(e.target.value as ScriptLanguage)}
+              className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+            >
+              <option value="auto">🔍 Auto Detect</option>
+              <option value="bash">🐚 Bash</option>
+              <option value="sh">📜 Shell (sh)</option>
+              <option value="powershell">⚡ PowerShell</option>
+              <option value="batch">🪟 Batch (cmd)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+              {t('scriptManager.category', 'Category')}
+            </label>
+            <input
+              type="text"
+              value={mgr.editCategory}
+              onChange={(e) => mgr.setEditCategory(e.target.value)}
+              placeholder="Custom"
+              list="script-categories"
+              className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+            />
+            <datalist id="script-categories">
+              {mgr.categories.map(cat => (
+                <option key={cat} value={cat} />
+              ))}
+            </datalist>
+          </div>
+        </div>
+
+        {/* OS Tags */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+            {t('scriptManager.osTags', 'Platform Tags')}
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {(Object.keys(OS_TAG_LABELS) as OSTag[]).map(tag => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => mgr.toggleOsTag(tag)}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                  mgr.editOsTags.includes(tag)
+                    ? 'bg-purple-500/20 border-purple-500/50 text-purple-600 dark:text-purple-400'
+                    : 'bg-[var(--color-surfaceHover)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]'
+                }`}
+              >
+                <span>{OS_TAG_ICONS[tag]}</span>
+                <span>{OS_TAG_LABELS[tag]}</span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-[var(--color-textMuted)]">
+            {t('scriptManager.osTagsHint', 'Select the platforms this script is compatible with')}
+          </p>
+        </div>
+
+        {/* Description */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+            {t('scriptManager.description', 'Description')}
+          </label>
+          <input
+            type="text"
+            value={mgr.editDescription}
+            onChange={(e) => mgr.setEditDescription(e.target.value)}
+            placeholder={t('scriptManager.descriptionPlaceholder', 'Brief description of what this script does')}
+            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
+          />
+        </div>
+
+        {/* Script textarea */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+            {t('scriptManager.script', 'Script')} *
+          </label>
+          <div className="relative">
+            <textarea
+              value={mgr.editScript}
+              onChange={(e) => mgr.setEditScript(e.target.value)}
+              placeholder={t('scriptManager.scriptPlaceholder', 'Enter your script here...')}
+              className="w-full h-64 px-4 py-3 text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono resize-y"
+              spellCheck={false}
+            />
+          </div>
+          {mgr.editScript && mgr.editLanguage === 'auto' && (
+            <p className="mt-1.5 text-xs text-[var(--color-textSecondary)]">
+              {t('scriptManager.detectedLanguage', 'Detected language')}: {languageLabels[detectLanguage(mgr.editScript)]}
+            </p>
+          )}
+        </div>
+
+        {/* Syntax Preview */}
+        {mgr.editScript && (
+          <div>
+            <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
+              {t('scriptManager.preview', 'Syntax Preview')}
+            </label>
+            <div className="p-4 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg overflow-x-auto max-h-48 overflow-y-auto">
+              <HighlightedCode code={mgr.editScript} language={mgr.editLanguage} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
+  const { t } = useTranslation();
+  const script = mgr.selectedScript!;
+  return (
+    <div className="flex-1 overflow-y-auto p-5">
+      <div className="max-w-3xl">
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">{languageIcons[script.language]}</span>
+              <h3 className="text-xl font-semibold text-[var(--color-text)]">
+                {script.name}
+              </h3>
+            </div>
+            {script.description && (
+              <p className="text-sm text-[var(--color-textSecondary)] mt-1">
+                {script.description}
+              </p>
+            )}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span className="text-xs px-2 py-1 bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)] rounded">
+                {script.category}
+              </span>
+              <span className="text-xs px-2 py-1 bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded">
+                {languageLabels[script.language]}
+              </span>
+              {script.id.startsWith('default-') && (
+                <span className="text-xs px-2 py-1 bg-gray-500/20 text-[var(--color-textSecondary)] rounded">
+                  Default
+                </span>
+              )}
+            </div>
+            {script.osTags && script.osTags.length > 0 && (
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                {script.osTags.map(tag => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full"
+                  >
+                    <span>{OS_TAG_ICONS[tag]}</span>
+                    <span>{OS_TAG_LABELS[tag]}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => mgr.handleCopyScript(script)}
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              title={t('scriptManager.copyToClipboard', 'Copy to Clipboard')}
+            >
+              {mgr.copiedId === script.id ? (
+                <Check size={16} className="text-green-500" />
+              ) : (
+                <Copy size={16} />
+              )}
+            </button>
+            <button
+              onClick={() => mgr.handleDuplicateScript(script)}
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              title={t('scriptManager.duplicate', 'Duplicate Script')}
+            >
+              <CopyPlus size={16} />
+            </button>
+            <button
+              onClick={() => mgr.handleEditScript(script)}
+              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              title={t('common.edit', 'Edit')}
+            >
+              <Edit2 size={16} />
+            </button>
+            <button
+              onClick={() => mgr.handleDeleteScript(script.id)}
+              className="p-2 hover:bg-red-500/20 rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-red-500"
+              title={t('common.delete', 'Delete')}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg overflow-x-auto">
+          <HighlightedCode code={script.script} language={script.language} />
+        </div>
+
+        <div className="mt-4 text-xs text-[var(--color-textMuted)]">
+          {t('scriptManager.lastUpdated', 'Last updated')}: {new Date(script.updatedAt).toLocaleString()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ mgr }: { mgr: ScriptManagerMgr }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="text-center text-[var(--color-textSecondary)]">
+        <FolderOpen size={48} className="mx-auto mb-4 opacity-30" />
+        <p className="text-lg font-medium">{t('scriptManager.selectScript', 'Select a script')}</p>
+        <p className="text-sm mt-1">{t('scriptManager.selectScriptHint', 'Choose a script from the list to view or edit')}</p>
+        <button
+          onClick={mgr.handleNewScript}
+          className="inline-flex items-center gap-2 px-4 py-2 mt-4 text-sm bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] rounded-lg transition-colors"
+        >
+          <Plus size={14} />
+          {t('scriptManager.createNew', 'Create New Script')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EditFooter({ mgr }: { mgr: ScriptManagerMgr }) {
+  const { t } = useTranslation();
+  return (
+    <div className="border-t border-[var(--color-border)] px-5 py-3 flex items-center justify-end gap-3 bg-[var(--color-surface)]">
+      <button
+        onClick={mgr.handleCancelEdit}
+        className="px-4 py-2 text-sm bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+      >
+        {t('common.cancel', 'Cancel')}
+      </button>
+      <button
+        onClick={mgr.handleSaveScript}
+        disabled={!mgr.editName.trim() || !mgr.editScript.trim()}
+        className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
+      >
+        <Save size={14} />
+        {t('common.save', 'Save')}
+      </button>
+    </div>
+  );
+}
+
+function DetailPane({ mgr }: { mgr: ScriptManagerMgr }) {
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {mgr.isEditing ? (
+        <ScriptEditForm mgr={mgr} />
+      ) : mgr.selectedScript ? (
+        <ScriptDetailView mgr={mgr} />
+      ) : (
+        <EmptyState mgr={mgr} />
+      )}
+      {mgr.isEditing && <EditFooter mgr={mgr} />}
+    </div>
+  );
+}
+
+// ── Root component ─────────────────────────────────────────────────
+
+export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose }) => {
+  const mgr = useScriptManager(onClose);
+
   if (!isOpen) return null;
-  
+
   return (
     <Modal
       isOpen={isOpen}
@@ -590,435 +566,11 @@ export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose })
       </div>
 
       <div className="relative z-10 flex h-full min-h-0 flex-col overflow-hidden bg-[var(--color-surface)]">
-        {/* Header */}
-        <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-purple-500/20 rounded-lg">
-              <FileCode size={16} className="text-purple-600 dark:text-purple-400" />
-            </div>
-            <h2 className="text-lg font-semibold text-[var(--color-text)]">
-              {t('scriptManager.title', 'Script Manager')}
-            </h2>
-            <span className="text-sm text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] px-2 py-0.5 rounded">
-              {filteredScripts.length} {t('scriptManager.scripts', 'scripts')}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              aria-label={t('common.close', 'Close')}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Secondary toolbar */}
-        <div className="border-b border-[var(--color-border)] px-5 py-3 flex items-center gap-4 bg-[var(--color-surfaceHover)]/30">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)]" />
-            <input
-              type="text"
-              value={searchFilter}
-              onChange={(e) => setSearchFilter(e.target.value)}
-              placeholder={t('scriptManager.searchPlaceholder', 'Search scripts...')}
-              className="w-full pl-9 pr-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
-            />
-          </div>
-          
-          {/* Category filter */}
-          <div className="relative">
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
-            >
-              <option value="">{t('scriptManager.allCategories', 'All Categories')}</option>
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
-          </div>
-          
-          {/* Language filter */}
-          <div className="relative">
-            <select
-              value={languageFilter}
-              onChange={(e) => setLanguageFilter(e.target.value as ScriptLanguage | '')}
-              className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
-            >
-              <option value="">{t('scriptManager.allLanguages', 'All Languages')}</option>
-              <option value="bash">Bash</option>
-              <option value="sh">Shell (sh)</option>
-              <option value="powershell">PowerShell</option>
-              <option value="batch">Batch (cmd)</option>
-            </select>
-            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
-          </div>
-          
-          {/* OS Tag filter */}
-          <div className="relative">
-            <select
-              value={osTagFilter}
-              onChange={(e) => setOsTagFilter(e.target.value as OSTag | '')}
-              className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
-            >
-              <option value="">{t('scriptManager.allPlatforms', 'All Platforms')}</option>
-              <option value="windows">🪟 Windows</option>
-              <option value="linux">🐧 Linux</option>
-              <option value="macos">🍎 macOS</option>
-              <option value="agnostic">🌐 Agnostic</option>
-              <option value="multiplatform">🔀 Multi-Platform</option>
-              <option value="cisco-ios">🔌 Cisco IOS</option>
-            </select>
-            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
-          </div>
-          
-          {/* New script button */}
-          <button
-            onClick={handleNewScript}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] rounded-lg transition-colors"
-          >
-            <Plus size={14} />
-            {t('scriptManager.newScript', 'New Script')}
-          </button>
-        </div>
-
+        <ScriptManagerHeader mgr={mgr} />
+        <FilterToolbar mgr={mgr} />
         <div className="flex-1 flex overflow-hidden">
-          {/* Script list */}
-          <div className="w-80 border-r border-[var(--color-border)] flex flex-col bg-[var(--color-surface)]">
-            <div className="flex-1 overflow-y-auto">
-              {filteredScripts.length === 0 ? (
-                <div className="p-8 text-center text-[var(--color-textSecondary)]">
-                  <FileCode size={32} className="mx-auto mb-3 opacity-40" />
-                  <p className="text-sm">{t('scriptManager.noScripts', 'No scripts found')}</p>
-                </div>
-              ) : (
-                <div className="p-2 space-y-1">
-                  {filteredScripts.map(script => (
-                    <div
-                      key={script.id}
-                      onClick={() => { setSelectedScript(script); setIsEditing(false); }}
-                      className={`p-3 rounded-lg cursor-pointer transition-colors group ${
-                        selectedScript?.id === script.id
-                          ? 'bg-purple-500/20 border border-purple-500/40'
-                          : 'hover:bg-[var(--color-surfaceHover)] border border-transparent'
-                      }`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <span className="text-lg flex-shrink-0">{languageIcons[script.language]}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-sm font-medium text-[var(--color-text)] truncate">
-                              {script.name}
-                            </span>
-                            {script.id.startsWith('default-') && (
-                              <span className="text-[10px] px-1.5 py-0.5 bg-gray-500/20 text-[var(--color-textSecondary)] rounded uppercase tracking-wide flex-shrink-0">
-                                Default
-                              </span>
-                            )}
-                          </div>
-                          {script.description && (
-                            <p className="text-xs text-[var(--color-textSecondary)] truncate mt-0.5">
-                              {script.description}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <span className="text-[10px] px-1.5 py-0.5 bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)] rounded">
-                              {script.category}
-                            </span>
-                            <span className="text-[10px] text-[var(--color-textMuted)]">
-                              {languageLabels[script.language]}
-                            </span>
-                            {script.osTags && script.osTags.length > 0 && (
-                              <div className="flex items-center gap-0.5">
-                                {script.osTags.slice(0, 3).map(tag => (
-                                  <span key={tag} className="text-[10px]" title={OS_TAG_LABELS[tag]}>
-                                    {OS_TAG_ICONS[tag]}
-                                  </span>
-                                ))}
-                                {script.osTags.length > 3 && (
-                                  <span className="text-[10px] text-[var(--color-textMuted)]">+{script.osTags.length - 3}</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Script detail / editor */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {isEditing ? (
-              /* Edit form */
-              <div className="flex-1 overflow-y-auto p-5">
-                <div className="space-y-4 max-w-3xl">
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-                      {t('scriptManager.name', 'Script Name')} *
-                    </label>
-                    <input
-                      type="text"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      placeholder={t('scriptManager.namePlaceholder', 'Enter script name')}
-                      className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-                        {t('scriptManager.language', 'Language')}
-                      </label>
-                      <select
-                        value={editLanguage}
-                        onChange={(e) => setEditLanguage(e.target.value as ScriptLanguage)}
-                        className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      >
-                        <option value="auto">🔍 Auto Detect</option>
-                        <option value="bash">🐚 Bash</option>
-                        <option value="sh">📜 Shell (sh)</option>
-                        <option value="powershell">⚡ PowerShell</option>
-                        <option value="batch">🪟 Batch (cmd)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-                        {t('scriptManager.category', 'Category')}
-                      </label>
-                      <input
-                        type="text"
-                        value={editCategory}
-                        onChange={(e) => setEditCategory(e.target.value)}
-                        placeholder="Custom"
-                        list="script-categories"
-                        className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      />
-                      <datalist id="script-categories">
-                        {categories.map(cat => (
-                          <option key={cat} value={cat} />
-                        ))}
-                      </datalist>
-                    </div>
-                  </div>
-                  
-                  {/* OS Tags */}
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-                      {t('scriptManager.osTags', 'Platform Tags')}
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {(Object.keys(OS_TAG_LABELS) as OSTag[]).map(tag => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => {
-                            if (editOsTags.includes(tag)) {
-                              setEditOsTags(editOsTags.filter(t => t !== tag));
-                            } else {
-                              setEditOsTags([...editOsTags, tag]);
-                            }
-                          }}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-full border transition-colors ${
-                            editOsTags.includes(tag)
-                              ? 'bg-purple-500/20 border-purple-500/50 text-purple-600 dark:text-purple-400'
-                              : 'bg-[var(--color-surfaceHover)] border-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-[var(--color-surface)]'
-                          }`}
-                        >
-                          <span>{OS_TAG_ICONS[tag]}</span>
-                          <span>{OS_TAG_LABELS[tag]}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-1 text-xs text-[var(--color-textMuted)]">
-                      {t('scriptManager.osTagsHint', 'Select the platforms this script is compatible with')}
-                    </p>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-                      {t('scriptManager.description', 'Description')}
-                    </label>
-                    <input
-                      type="text"
-                      value={editDescription}
-                      onChange={(e) => setEditDescription(e.target.value)}
-                      placeholder={t('scriptManager.descriptionPlaceholder', 'Brief description of what this script does')}
-                      className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-                      {t('scriptManager.script', 'Script')} *
-                    </label>
-                    <div className="relative">
-                      <textarea
-                        value={editScript}
-                        onChange={(e) => setEditScript(e.target.value)}
-                        placeholder={t('scriptManager.scriptPlaceholder', 'Enter your script here...')}
-                        className="w-full h-64 px-4 py-3 text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-purple-500 font-mono resize-y"
-                        spellCheck={false}
-                      />
-                    </div>
-                    {editScript && editLanguage === 'auto' && (
-                      <p className="mt-1.5 text-xs text-[var(--color-textSecondary)]">
-                        {t('scriptManager.detectedLanguage', 'Detected language')}: {languageLabels[detectLanguage(editScript)]}
-                      </p>
-                    )}
-                  </div>
-                  
-                  {/* Preview */}
-                  {editScript && (
-                    <div>
-                      <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
-                        {t('scriptManager.preview', 'Syntax Preview')}
-                      </label>
-                      <div className="p-4 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg overflow-x-auto max-h-48 overflow-y-auto">
-                        <HighlightedCode code={editScript} language={editLanguage} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : selectedScript ? (
-              /* View script details */
-              <div className="flex-1 overflow-y-auto p-5">
-                <div className="max-w-3xl">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">{languageIcons[selectedScript.language]}</span>
-                        <h3 className="text-xl font-semibold text-[var(--color-text)]">
-                          {selectedScript.name}
-                        </h3>
-                      </div>
-                      {selectedScript.description && (
-                        <p className="text-sm text-[var(--color-textSecondary)] mt-1">
-                          {selectedScript.description}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span className="text-xs px-2 py-1 bg-[var(--color-surfaceHover)] text-[var(--color-textMuted)] rounded">
-                          {selectedScript.category}
-                        </span>
-                        <span className="text-xs px-2 py-1 bg-purple-500/20 text-purple-600 dark:text-purple-400 rounded">
-                          {languageLabels[selectedScript.language]}
-                        </span>
-                        {selectedScript.id.startsWith('default-') && (
-                          <span className="text-xs px-2 py-1 bg-gray-500/20 text-[var(--color-textSecondary)] rounded">
-                            Default
-                          </span>
-                        )}
-                      </div>
-                      {selectedScript.osTags && selectedScript.osTags.length > 0 && (
-                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                          {selectedScript.osTags.map(tag => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full"
-                            >
-                              <span>{OS_TAG_ICONS[tag]}</span>
-                              <span>{OS_TAG_LABELS[tag]}</span>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {/* Copy to clipboard */}
-                      <button
-                        onClick={() => handleCopyScript(selectedScript)}
-                        className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title={t('scriptManager.copyToClipboard', 'Copy to Clipboard')}
-                      >
-                        {copiedId === selectedScript.id ? (
-                          <Check size={16} className="text-green-500" />
-                        ) : (
-                          <Copy size={16} />
-                        )}
-                      </button>
-                      {/* Duplicate script (create copy) */}
-                      <button
-                        onClick={() => handleDuplicateScript(selectedScript)}
-                        className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title={t('scriptManager.duplicate', 'Duplicate Script')}
-                      >
-                        <CopyPlus size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleEditScript(selectedScript)}
-                        className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-                        title={t('common.edit', 'Edit')}
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteScript(selectedScript.id)}
-                        className="p-2 hover:bg-red-500/20 rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-red-500"
-                        title={t('common.delete', 'Delete')}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="p-4 bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg overflow-x-auto">
-                    <HighlightedCode code={selectedScript.script} language={selectedScript.language} />
-                  </div>
-                  
-                  <div className="mt-4 text-xs text-[var(--color-textMuted)]">
-                    {t('scriptManager.lastUpdated', 'Last updated')}: {new Date(selectedScript.updatedAt).toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* Empty state */
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center text-[var(--color-textSecondary)]">
-                  <FolderOpen size={48} className="mx-auto mb-4 opacity-30" />
-                  <p className="text-lg font-medium">{t('scriptManager.selectScript', 'Select a script')}</p>
-                  <p className="text-sm mt-1">{t('scriptManager.selectScriptHint', 'Choose a script from the list to view or edit')}</p>
-                  <button
-                    onClick={handleNewScript}
-                    className="inline-flex items-center gap-2 px-4 py-2 mt-4 text-sm bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] rounded-lg transition-colors"
-                  >
-                    <Plus size={14} />
-                    {t('scriptManager.createNew', 'Create New Script')}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Footer actions when editing */}
-            {isEditing && (
-              <div className="border-t border-[var(--color-border)] px-5 py-3 flex items-center justify-end gap-3 bg-[var(--color-surface)]">
-                <button
-                  onClick={handleCancelEdit}
-                  className="px-4 py-2 text-sm bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
-                >
-                  {t('common.cancel', 'Cancel')}
-                </button>
-                <button
-                  onClick={handleSaveScript}
-                  disabled={!editName.trim() || !editScript.trim()}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:opacity-50 text-[var(--color-text)] rounded-lg transition-colors"
-                >
-                  <Save size={14} />
-                  {t('common.save', 'Save')}
-                </button>
-              </div>
-            )}
-          </div>
+          <ScriptList mgr={mgr} />
+          <DetailPane mgr={mgr} />
         </div>
       </div>
     </Modal>
