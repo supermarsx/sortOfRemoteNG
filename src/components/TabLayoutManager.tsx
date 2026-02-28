@@ -1,7 +1,15 @@
 import React, { useMemo, useRef, useState } from "react";
-import { Columns, Grid3X3, LayoutGrid, Minimize2, Rows, Settings2 } from "lucide-react";
+import {
+  Columns,
+  Grid3X3,
+  LayoutGrid,
+  Minimize2,
+  Rows,
+  Settings2,
+} from "lucide-react";
 import { ConnectionSession, TabLayout } from "../types/connection";
 import { Resizable } from "react-resizable";
+import { PopoverSurface } from "./ui/PopoverSurface";
 
 interface TabLayoutManagerProps {
   sessions: ConnectionSession[];
@@ -16,11 +24,17 @@ interface TabLayoutManagerProps {
   middleClickCloseTab?: boolean;
 }
 
-const orderSessions = (sessions: ConnectionSession[], activeSessionId?: string) => {
+const orderSessions = (
+  sessions: ConnectionSession[],
+  activeSessionId?: string,
+) => {
   if (!activeSessionId) return sessions;
   const active = sessions.find((session) => session.id === activeSessionId);
   if (!active) return sessions;
-  return [active, ...sessions.filter((session) => session.id !== activeSessionId)];
+  return [
+    active,
+    ...sessions.filter((session) => session.id !== activeSessionId),
+  ];
 };
 
 const buildGridLayout = (
@@ -64,6 +78,7 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   middleClickCloseTab = true,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const customGridButtonRef = useRef<HTMLDivElement>(null);
   const [showCustomGrid, setShowCustomGrid] = useState(false);
   const [customCols, setCustomCols] = useState(2);
   const [customRows, setCustomRows] = useState(2);
@@ -84,7 +99,12 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
   const handleCustomGridApply = () => {
     const maxSessions = customCols * customRows;
     const sessionsToUse = orderedSessions.slice(0, maxSessions);
-    const customLayout = buildGridLayout("customGrid" as TabLayout["mode"], sessionsToUse, customCols, customRows);
+    const customLayout = buildGridLayout(
+      "customGrid" as TabLayout["mode"],
+      sessionsToUse,
+      customCols,
+      customRows,
+    );
     onLayoutChange({ ...customLayout, mode: "mosaic" as TabLayout["mode"] });
     setShowCustomGrid(false);
   };
@@ -106,15 +126,30 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         break;
       }
       case "grid2": {
-        updatedLayout = buildGridLayout(mode, orderedSessions.slice(0, 2), 2, 1);
+        updatedLayout = buildGridLayout(
+          mode,
+          orderedSessions.slice(0, 2),
+          2,
+          1,
+        );
         break;
       }
       case "grid4": {
-        updatedLayout = buildGridLayout(mode, orderedSessions.slice(0, 4), 2, 2);
+        updatedLayout = buildGridLayout(
+          mode,
+          orderedSessions.slice(0, 4),
+          2,
+          2,
+        );
         break;
       }
       case "grid6": {
-        updatedLayout = buildGridLayout(mode, orderedSessions.slice(0, 6), 3, 2);
+        updatedLayout = buildGridLayout(
+          mode,
+          orderedSessions.slice(0, 6),
+          3,
+          2,
+        );
         break;
       }
       case "sideBySide": {
@@ -139,8 +174,14 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
     onLayoutChange(updatedLayout);
   };
 
-  const handleSessionResize = (sessionId: string, width: number, height: number) => {
-    const sessionLayout = layout.sessions.find((s) => s.sessionId === sessionId);
+  const handleSessionResize = (
+    sessionId: string,
+    width: number,
+    height: number,
+  ) => {
+    const sessionLayout = layout.sessions.find(
+      (s) => s.sessionId === sessionId,
+    );
     if (!sessionLayout) return;
 
     const containerWidth = containerRef.current?.clientWidth || 1;
@@ -211,7 +252,8 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
               key={session.id}
               className="absolute inset-0"
               style={{
-                visibility: session.id === activeSessionId ? "visible" : "hidden",
+                visibility:
+                  session.id === activeSessionId ? "visible" : "hidden",
                 zIndex: session.id === activeSessionId ? 1 : 0,
               }}
             >
@@ -242,8 +284,14 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
         return (
           <Resizable
             key={session.id}
-            width={(sessionLayout.position.width / 100) * (containerRef.current?.clientWidth || 1)}
-            height={(sessionLayout.position.height / 100) * (containerRef.current?.clientHeight || 1)}
+            width={
+              (sessionLayout.position.width / 100) *
+              (containerRef.current?.clientWidth || 1)
+            }
+            height={
+              (sessionLayout.position.height / 100) *
+              (containerRef.current?.clientHeight || 1)
+            }
             onResize={(event, { size }) => {
               handleSessionResize(session.id, size.width, size.height);
             }}
@@ -257,7 +305,9 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
               onClick={() => onSessionSelect(session.id)}
             >
               <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] px-2 py-1 flex items-center justify-between">
-                <span className="text-[var(--color-text)] text-sm truncate">{session.name}</span>
+                <span className="text-[var(--color-text)] text-sm truncate">
+                  {session.name}
+                </span>
                 <div className="flex items-center space-x-1">
                   <button
                     onClick={(event) => {
@@ -300,7 +350,9 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           }`}
           onClick={() => onSessionSelect(session.id)}
         >
-          <div className="bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] truncate">{session.name}</div>
+          <div className="bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-text)] truncate">
+            {session.name}
+          </div>
           <div className="h-full bg-[var(--color-background)] flex items-center justify-center">
             <span className="text-gray-500 text-xs">Preview</span>
           </div>
@@ -316,7 +368,9 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <button
             onClick={() => handleLayoutModeChange("tabs")}
             className={`p-2 rounded transition-colors ${
-              layout.mode === "tabs" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              layout.mode === "tabs"
+                ? "bg-blue-600 text-[var(--color-text)]"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="Tabs"
           >
@@ -347,7 +401,9 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <button
             onClick={() => handleLayoutModeChange("grid2")}
             className={`p-2 rounded transition-colors ${
-              layout.mode === "grid2" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              layout.mode === "grid2"
+                ? "bg-blue-600 text-[var(--color-text)]"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="2 side by side"
           >
@@ -356,7 +412,9 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <button
             onClick={() => handleLayoutModeChange("grid4")}
             className={`p-2 rounded transition-colors ${
-              layout.mode === "grid4" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              layout.mode === "grid4"
+                ? "bg-blue-600 text-[var(--color-text)]"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="4 squares"
           >
@@ -365,90 +423,113 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           <button
             onClick={() => handleLayoutModeChange("grid6")}
             className={`p-2 rounded transition-colors ${
-              layout.mode === "grid6" ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+              layout.mode === "grid6"
+                ? "bg-blue-600 text-[var(--color-text)]"
+                : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
             }`}
             title="6 squares"
           >
             <Grid3X3 size={16} />
           </button>
-          
+
           {/* Custom Grid Button */}
-          <div className="relative">
+          <div className="relative" ref={customGridButtonRef}>
             <button
               onClick={() => setShowCustomGrid(!showCustomGrid)}
               className={`p-2 rounded transition-colors ${
-                showCustomGrid ? "bg-blue-600 text-[var(--color-text)]" : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                showCustomGrid
+                  ? "bg-blue-600 text-[var(--color-text)]"
+                  : "text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
               }`}
               title="Custom grid layout"
             >
               <Settings2 size={16} />
             </button>
-            
-            {showCustomGrid && (
-              <div className="absolute top-full left-0 mt-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 z-[9999] shadow-lg min-w-[200px]">
-                <div className="text-[var(--color-text)] text-sm font-medium mb-3">Custom Grid Layout</div>
-                
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-[var(--color-textSecondary)] text-xs block mb-1">Columns</label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="range"
-                        min="1"
-                        max="4"
-                        value={customCols}
-                        onChange={(e) => setCustomCols(parseInt(e.target.value))}
-                        className="flex-1 accent-blue-500"
-                      />
-                      <span className="text-[var(--color-text)] text-sm w-6">{customCols}</span>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="text-[var(--color-textSecondary)] text-xs block mb-1">Rows</label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="range"
-                        min="1"
-                        max="4"
-                        value={customRows}
-                        onChange={(e) => setCustomRows(parseInt(e.target.value))}
-                        className="flex-1 accent-blue-500"
-                      />
-                      <span className="text-[var(--color-text)] text-sm w-6">{customRows}</span>
-                    </div>
-                  </div>
-                  
-                  {/* Grid Preview */}
-                  <div className="border border-[var(--color-border)] rounded p-2">
-                    <div 
-                      className="grid gap-1"
-                      style={{ 
-                        gridTemplateColumns: `repeat(${customCols}, 1fr)`,
-                        gridTemplateRows: `repeat(${customRows}, 1fr)`,
-                      }}
-                    >
-                      {Array.from({ length: customCols * customRows }).map((_, i) => (
-                        <div 
-                          key={i} 
-                          className={`h-4 rounded ${i < sessions.length ? 'bg-blue-500' : 'bg-gray-600'}`}
-                        />
-                      ))}
-                    </div>
-                    <div className="text-gray-500 text-xs mt-1 text-center">
-                      {customCols * customRows} tiles ({Math.min(sessions.length, customCols * customRows)} sessions)
-                    </div>
-                  </div>
-                  
-                  <button
-                    onClick={handleCustomGridApply}
-                    className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded text-sm transition-colors"
-                  >
-                    Apply Layout
-                  </button>
-                </div>
+
+            <PopoverSurface
+              isOpen={showCustomGrid}
+              onClose={() => setShowCustomGrid(false)}
+              anchorRef={customGridButtonRef}
+              align="start"
+              className="sor-popover-panel p-4 min-w-[200px]"
+              dataTestId="tab-layout-custom-grid-popover"
+            >
+              <div className="text-[var(--color-text)] text-sm font-medium mb-3">
+                Custom Grid Layout
               </div>
-            )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[var(--color-textSecondary)] text-xs block mb-1">
+                    Columns
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="range"
+                      min="1"
+                      max="4"
+                      value={customCols}
+                      onChange={(e) => setCustomCols(parseInt(e.target.value))}
+                      className="sor-settings-range flex-1"
+                    />
+                    <span className="text-[var(--color-text)] text-sm w-6">
+                      {customCols}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[var(--color-textSecondary)] text-xs block mb-1">
+                    Rows
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="range"
+                      min="1"
+                      max="4"
+                      value={customRows}
+                      onChange={(e) => setCustomRows(parseInt(e.target.value))}
+                      className="sor-settings-range flex-1"
+                    />
+                    <span className="text-[var(--color-text)] text-sm w-6">
+                      {customRows}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Grid Preview */}
+                <div className="border border-[var(--color-border)] rounded p-2">
+                  <div
+                    className="grid gap-1"
+                    style={{
+                      gridTemplateColumns: `repeat(${customCols}, 1fr)`,
+                      gridTemplateRows: `repeat(${customRows}, 1fr)`,
+                    }}
+                  >
+                    {Array.from({ length: customCols * customRows }).map(
+                      (_, i) => (
+                        <div
+                          key={i}
+                          className={`h-4 rounded ${i < sessions.length ? "bg-blue-500" : "bg-gray-600"}`}
+                        />
+                      ),
+                    )}
+                  </div>
+                  <div className="text-gray-500 text-xs mt-1 text-center">
+                    {customCols * customRows} tiles (
+                    {Math.min(sessions.length, customCols * customRows)}{" "}
+                    sessions)
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCustomGridApply}
+                  className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded text-sm transition-colors"
+                >
+                  Apply Layout
+                </button>
+              </div>
+            </PopoverSurface>
           </div>
         </div>
 
@@ -465,7 +546,8 @@ export const TabLayoutManager: React.FC<TabLayoutManagerProps> = ({
           layout.mode === "splitHorizontal" ||
           layout.mode === "grid2" ||
           layout.mode === "grid4" ||
-          layout.mode === "grid6") && renderMosaicLayout()}
+          layout.mode === "grid6") &&
+          renderMosaicLayout()}
         {layout.mode === "miniMosaic" && renderMiniMosaicLayout()}
       </div>
     </div>

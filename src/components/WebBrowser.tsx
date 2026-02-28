@@ -1168,6 +1168,12 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
     return null;
   };
 
+  const errorActionBaseClass =
+    "flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors";
+  const errorPrimaryActionClass = `${errorActionBaseClass} bg-blue-600 hover:bg-blue-700 text-[var(--color-text)]`;
+  const errorSecondaryActionClass = `${errorActionBaseClass} bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)]`;
+  const errorWarningActionClass = `${errorActionBaseClass} bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] disabled:opacity-50`;
+
   return (
     <div className="flex flex-col h-full bg-[var(--color-background)]">
       {/* Browser Header */}
@@ -1910,7 +1916,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   failed because the server&apos;s SSL/TLS certificate is not
                   trusted.
                 </p>
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     This usually means:
                   </p>
@@ -1958,13 +1964,13 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={handleRefresh}
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                    className={errorPrimaryActionClass}
                   >
                     <RefreshCw size={14} /> <span>Retry Connection</span>
                   </button>
                   <button
                     onClick={handleOpenExternal}
-                    className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+                    className={errorSecondaryActionClass}
                   >
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
@@ -1984,7 +1990,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
                   {loadError}
                 </p>
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     Troubleshooting steps:
                   </p>
@@ -2012,13 +2018,13 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={handleRefresh}
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                    className={errorPrimaryActionClass}
                   >
                     <RefreshCw size={14} /> <span>Retry Connection</span>
                   </button>
                   <button
                     onClick={handleOpenExternal}
-                    className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+                    className={errorSecondaryActionClass}
                   >
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
@@ -2036,7 +2042,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
                   {loadError}
                 </p>
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     Possible causes:
                   </p>
@@ -2059,7 +2065,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={handleRefresh}
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                    className={errorPrimaryActionClass}
                   >
                     <RefreshCw size={14} /> <span>Try Again</span>
                   </button>
@@ -2067,7 +2073,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                     <button
                       onClick={handleRestartProxy}
                       disabled={proxyRestarting}
-                      className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] rounded-lg transition-colors disabled:opacity-50"
+                      className={errorWarningActionClass}
                     >
                       <RefreshCw
                         size={14}
@@ -2080,7 +2086,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   )}
                   <button
                     onClick={handleOpenExternal}
-                    className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+                    className={errorSecondaryActionClass}
                   >
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>
@@ -2098,7 +2104,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
                   {loadError}
                 </p>
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     To fix this:
                   </p>
@@ -2116,7 +2122,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 </div>
                 <button
                   onClick={handleRefresh}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                  className={errorPrimaryActionClass}
                 >
                   <RefreshCw size={14} /> <span>Try Again</span>
                 </button>
@@ -2133,7 +2139,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <p className="text-[var(--color-textSecondary)] mb-4 max-w-lg text-sm">
                   {loadError}
                 </p>
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 mb-4 max-w-lg text-left">
+                <div className="sor-surface-card p-4 mb-4 max-w-lg text-left">
                   <p className="text-sm text-[var(--color-textSecondary)] font-medium mb-2">
                     Common issues:
                   </p>
@@ -2148,7 +2154,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={handleRefresh}
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-lg transition-colors"
+                    className={errorPrimaryActionClass}
                   >
                     <RefreshCw size={14} /> <span>Try Again</span>
                   </button>
@@ -2156,7 +2162,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                     <button
                       onClick={handleRestartProxy}
                       disabled={proxyRestarting}
-                      className="flex items-center space-x-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-[var(--color-text)] rounded-lg transition-colors disabled:opacity-50"
+                      className={errorWarningActionClass}
                     >
                       <RefreshCw
                         size={14}
@@ -2169,7 +2175,7 @@ export const WebBrowser: React.FC<WebBrowserProps> = ({ session }) => {
                   )}
                   <button
                     onClick={handleOpenExternal}
-                    className="flex items-center space-x-2 px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+                    className={errorSecondaryActionClass}
                   >
                     <ExternalLink size={14} /> <span>Open Externally</span>
                   </button>

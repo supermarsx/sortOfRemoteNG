@@ -73,14 +73,17 @@ describe("InternalProxyManager", () => {
     expect(await screen.findByText("https://example.com")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Request Log"));
-    expect(
-      await screen.findByText("https://example.com/api/status"),
-    ).toBeInTheDocument();
+    const logUrl = await screen.findByText("https://example.com/api/status");
+    expect(logUrl).toBeInTheDocument();
+    const logTable = logUrl.closest("table");
+    expect(logTable?.parentElement?.className).toContain("sor-surface-card");
 
     fireEvent.click(screen.getByText("Statistics"));
     expect(
       await screen.findByText("Per-Session Breakdown"),
     ).toBeInTheDocument();
+    const summaryCards = document.querySelectorAll(".sor-surface-card");
+    expect(summaryCards.length).toBeGreaterThan(0);
   });
 
   it("stops all sessions when Stop All is clicked", async () => {

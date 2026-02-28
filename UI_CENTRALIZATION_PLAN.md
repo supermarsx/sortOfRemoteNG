@@ -77,6 +77,7 @@ Consolidate reusable UI structure and CSS for:
   - `rdp/RDPTotpPanel` (anchored mode)
   - `rdp/RDPClientHeader` (send keys + host info)
   - `WebTerminal` (macro replay list)
+  - `TabLayoutManager` (custom-grid popup)
   - shared toolbar popover shell/header extracted into `ToolbarPopover`
   - shared option list/group/items extracted into `OptionList`
 
@@ -90,8 +91,12 @@ Consolidate reusable UI structure and CSS for:
   - popover/list primitives: `.sor-popover-surface`, `.sor-option-list`, `.sor-option-item`
   - popover shell primitives: `.sor-popover-panel`, `.sor-popover-panel-strong`
   - option grouping primitives: `.sor-option-group`, `.sor-option-group-label`, `.sor-option-empty`, `.sor-option-item-*`
+  - shared surface cards: `.sor-surface-card`
+  - shared settings form primitives: `.sor-settings-input*`, `.sor-settings-select`, `.sor-settings-range-wide`, `.sor-settings-tile*`
   - toolbar status popup primitives: `.sor-toolbar-popover-*`, `.sor-status-item`
 - Migrated components adopted these classes where behavior/style stacks were duplicated.
+  - latest adoption: `InternalProxyManager` stats/log cards and `WebBrowser` categorized error help cards
+  - latest adoption: `RecordingSettings`, `MacroSettings`, and `WebBrowserSettings` form controls/tile shells
 
 ### Test Coverage Added/Updated
 
@@ -111,6 +116,8 @@ Consolidate reusable UI structure and CSS for:
   - `tests/ProxyProfileEditor.test.tsx`
   - `tests/SSHTunnelDialog.test.tsx`
   - `tests/TrustWarningDialog.test.tsx`
+  - `tests/SettingsSections.test.tsx`
+  - `tests/TabLayoutManager.test.tsx`
 - Updated:
   - `tests/BulkSSHCommander.test.tsx`
   - `tests/ConnectionTree.test.tsx`

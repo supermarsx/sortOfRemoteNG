@@ -609,6 +609,12 @@ body {
   color: var(--color-textSecondary);
 }
 
+.sor-surface-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+}
+
 .sor-manager-panel {
   max-width: 64rem;
   height: 85vh;
@@ -695,6 +701,10 @@ body {
   accent-color: #3b82f6;
 }
 
+.sor-settings-range-wide {
+  width: 8rem;
+}
+
 .sor-settings-slider-value {
   width: 3.5rem;
   text-align: right;
@@ -705,13 +715,43 @@ body {
     "Courier New", monospace;
 }
 
+.sor-settings-input,
 .sor-settings-select {
   padding: 0.25rem 0.5rem;
   border-radius: 0.375rem;
   border: 1px solid var(--color-border);
-  background: var(--color-border);
+  background: var(--color-surface);
   color: var(--color-text);
   font-size: 0.875rem;
+  outline: none;
+}
+
+.sor-settings-input:focus,
+.sor-settings-select:focus {
+  border-color: #3b82f6;
+}
+
+.sor-settings-input-compact {
+  padding: 0.25rem 0.5rem;
+}
+
+.sor-settings-input-sm {
+  font-size: 0.75rem;
+}
+
+.sor-settings-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-surfaceHover);
+}
+
+.sor-settings-tile-disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .sor-settings-collapsible {

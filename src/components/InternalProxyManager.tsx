@@ -420,7 +420,7 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
                   </p>
                 </div>
               ) : (
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+                <div className="sor-surface-card overflow-hidden">
                   <table className="sor-data-table w-full text-xs">
                     <thead>
                       <tr className="border-b border-[var(--color-border)] text-[var(--color-textSecondary)]">
@@ -476,7 +476,7 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
             <div className="space-y-4">
               {/* Summary cards */}
               <div className="grid grid-cols-4 gap-3">
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 text-center">
+                <div className="sor-surface-card p-4 text-center">
                   <Activity size={20} className="mx-auto mb-2 text-cyan-400" />
                   <p className="text-2xl font-bold text-[var(--color-text)]">
                     {sessions.length}
@@ -485,7 +485,7 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
                     Active Sessions
                   </p>
                 </div>
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 text-center">
+                <div className="sor-surface-card p-4 text-center">
                   <ArrowUpDown
                     size={20}
                     className="mx-auto mb-2 text-blue-400"
@@ -497,7 +497,7 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
                     Total Requests
                   </p>
                 </div>
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 text-center">
+                <div className="sor-surface-card p-4 text-center">
                   <ServerCrash
                     size={20}
                     className="mx-auto mb-2 text-red-400"
@@ -509,7 +509,7 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
                     Total Errors
                   </p>
                 </div>
-                <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg p-4 text-center">
+                <div className="sor-surface-card p-4 text-center">
                   <CheckCircle2
                     size={20}
                     className="mx-auto mb-2 text-green-400"
@@ -529,7 +529,7 @@ export const InternalProxyManager: React.FC<InternalProxyManagerProps> = ({
                   <h3 className="text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                     Per-Session Breakdown
                   </h3>
-                  <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg overflow-hidden">
+                  <div className="sor-surface-card overflow-hidden">
                     <table className="sor-data-table w-full text-xs">
                       <thead>
                         <tr className="border-b border-[var(--color-border)] text-[var(--color-textSecondary)]">

@@ -1,6 +1,6 @@
-import React from 'react';
-import { Globe, Wifi, Bookmark, RefreshCw, Trash2 } from 'lucide-react';
-import { GlobalSettings } from '../../../types/settings';
+import React from "react";
+import { Globe, Wifi, Bookmark, RefreshCw, Trash2 } from "lucide-react";
+import { GlobalSettings } from "../../../types/settings";
 
 interface WebBrowserSettingsProps {
   settings: GlobalSettings;
@@ -18,7 +18,8 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
         Web Browser
       </h3>
       <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Internal proxy keepalive, bookmarks, and web browser connection settings.
+        Internal proxy keepalive, bookmarks, and web browser connection
+        settings.
       </p>
 
       {/* ── Proxy Keepalive ── */}
@@ -28,15 +29,18 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
           Internal Proxy Keepalive
         </h4>
         <p className="text-sm text-[var(--color-textSecondary)] mb-4">
-          When the web browser connects through an internal authentication proxy, these settings
-          control how dead proxy sessions are detected and recovered.
+          When the web browser connects through an internal authentication
+          proxy, these settings control how dead proxy sessions are detected and
+          recovered.
         </p>
 
         <div className="space-y-4">
           {/* Enable keepalive */}
-          <label className="flex items-center justify-between p-3 bg-[var(--color-surfaceHover)] rounded-lg">
+          <label className="sor-settings-tile">
             <div>
-              <span className="text-sm text-[var(--color-text)]">Enable proxy health checks</span>
+              <span className="text-sm text-[var(--color-text)]">
+                Enable proxy health checks
+              </span>
               <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
                 Periodically verify the local proxy is still alive
               </p>
@@ -44,16 +48,22 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
             <input
               type="checkbox"
               checked={settings.proxyKeepaliveEnabled}
-              onChange={(e) => updateSettings({ proxyKeepaliveEnabled: e.target.checked })}
-              className="w-4 h-4 accent-blue-500"
+              onChange={(e) =>
+                updateSettings({ proxyKeepaliveEnabled: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
           </label>
 
           {/* Interval */}
-          <div className={`p-3 bg-[var(--color-surfaceHover)] rounded-lg ${!settings.proxyKeepaliveEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div
+            className={`sor-settings-tile ${!settings.proxyKeepaliveEnabled ? "sor-settings-tile-disabled" : ""}`}
+          >
             <label className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-[var(--color-text)]">Health-check interval</span>
+                <span className="text-sm text-[var(--color-text)]">
+                  Health-check interval
+                </span>
                 <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
                   How often to probe the proxy port (seconds)
                 </p>
@@ -66,18 +76,25 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                   value={settings.proxyKeepaliveIntervalSeconds}
                   onChange={(e) =>
                     updateSettings({
-                      proxyKeepaliveIntervalSeconds: Math.max(3, Math.min(120, Number(e.target.value) || 10)),
+                      proxyKeepaliveIntervalSeconds: Math.max(
+                        3,
+                        Math.min(120, Number(e.target.value) || 10),
+                      ),
                     })
                   }
-                  className="w-20 px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] text-right"
+                  className="sor-settings-input w-20 text-right"
                 />
-                <span className="text-xs text-[var(--color-textSecondary)]">sec</span>
+                <span className="text-xs text-[var(--color-textSecondary)]">
+                  sec
+                </span>
               </div>
             </label>
           </div>
 
           {/* Auto-restart */}
-          <label className={`flex items-center justify-between p-3 bg-[var(--color-surfaceHover)] rounded-lg ${!settings.proxyKeepaliveEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+          <label
+            className={`sor-settings-tile ${!settings.proxyKeepaliveEnabled ? "sor-settings-tile-disabled" : ""}`}
+          >
             <div>
               <span className="text-sm text-[var(--color-text)] flex items-center gap-1.5">
                 <RefreshCw size={14} className="text-green-400" />
@@ -90,16 +107,22 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
             <input
               type="checkbox"
               checked={settings.proxyAutoRestart}
-              onChange={(e) => updateSettings({ proxyAutoRestart: e.target.checked })}
-              className="w-4 h-4 accent-blue-500"
+              onChange={(e) =>
+                updateSettings({ proxyAutoRestart: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
           </label>
 
           {/* Max auto-restarts */}
-          <div className={`p-3 bg-[var(--color-surfaceHover)] rounded-lg ${!settings.proxyKeepaliveEnabled || !settings.proxyAutoRestart ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div
+            className={`sor-settings-tile ${!settings.proxyKeepaliveEnabled || !settings.proxyAutoRestart ? "sor-settings-tile-disabled" : ""}`}
+          >
             <label className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-[var(--color-text)]">Max consecutive auto-restarts</span>
+                <span className="text-sm text-[var(--color-text)]">
+                  Max consecutive auto-restarts
+                </span>
                 <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
                   Stop auto-restarting after this many attempts (0 = unlimited)
                 </p>
@@ -111,10 +134,13 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                 value={settings.proxyMaxAutoRestarts}
                 onChange={(e) =>
                   updateSettings({
-                    proxyMaxAutoRestarts: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                    proxyMaxAutoRestarts: Math.max(
+                      0,
+                      Math.min(100, Number(e.target.value) || 0),
+                    ),
                   })
                 }
-                className="w-20 px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)] text-right"
+                className="sor-settings-input w-20 text-right"
               />
             </label>
           </div>
@@ -130,21 +156,24 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
 
         <div className="space-y-4">
           {/* Confirm delete all */}
-          <label className="flex items-center justify-between p-3 bg-[var(--color-surfaceHover)] rounded-lg">
+          <label className="sor-settings-tile">
             <div>
               <span className="text-sm text-[var(--color-text)] flex items-center gap-1.5">
                 <Trash2 size={14} className="text-red-400" />
                 Confirm before deleting all bookmarks
               </span>
               <p className="text-xs text-[var(--color-textSecondary)] mt-0.5">
-                Show a confirmation dialog before clearing all bookmarks for a connection
+                Show a confirmation dialog before clearing all bookmarks for a
+                connection
               </p>
             </div>
             <input
               type="checkbox"
               checked={settings.confirmDeleteAllBookmarks}
-              onChange={(e) => updateSettings({ confirmDeleteAllBookmarks: e.target.checked })}
-              className="w-4 h-4 accent-blue-500"
+              onChange={(e) =>
+                updateSettings({ confirmDeleteAllBookmarks: e.target.checked })
+              }
+              className="sor-settings-checkbox"
             />
           </label>
         </div>
