@@ -1,0 +1,23 @@
+[package]
+name = "sorng-mssql"
+version = "0.1.0"
+edition = "2021"
+description = "Microsoft SQL Server connection management, query execution, schema introspection, import/export, and session lifecycle."
+
+[dependencies]
+sorng-core = { path = "../sorng-core" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+tauri = { version = "2.9.5", features = ["devtools"] }
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+tiberius = { version = "0.12", default-features = false, features = ["tds73", "chrono", "rustls"] }
+ssh2 = "0.9"
+thiserror = "1"
+
+[dev-dependencies]
+serde_json = "1.0"
+tokio = { version = "1", features = ["full", "test-util"] }
