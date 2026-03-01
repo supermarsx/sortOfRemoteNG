@@ -421,10 +421,17 @@ async fn connect_ftp(
     Json(req): Json<FtpConnectRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let mut ftp = services.ftp_service.lock().await;
-    match ftp.connect_ftp(req.host, req.port, req.username, req.password).await {
-        Ok(session_id) => Ok(Json(serde_json::json!({
+    let config = crate::ftp::FtpConnectionConfig {
+        host: req.host,
+        port: req.port,
+        username: req.username,
+        password: req.password,
+        ..Default::default()
+    };
+    match ftp.connect(config).await {
+        Ok(info) => Ok(Json(serde_json::json!({
             "success": true,
-            "session_id": session_id
+            "session_id": info.id
         }))),
         Err(_) => Err(StatusCode::BAD_REQUEST),
     }
@@ -438,7 +445,7 @@ async fn list_ftp_files(
     let mut ftp = services.ftp_service.lock().await;
     let path = params.get("path").unwrap_or(&"/".to_string()).clone();
 
-    match ftp.list_files(session_id, path).await {
+    match ftp.list_directory(&session_id, Some(&path), None).await {
         Ok(files) => Ok(Json(serde_json::json!({
             "files": files
         }))),

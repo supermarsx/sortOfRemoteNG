@@ -1,0 +1,20 @@
+[package]
+name = "sorng-ftp"
+version = "0.1.0"
+edition = "2021"
+description = "Comprehensive FTP/FTPS client — full RFC 959/2228/4217/3659 implementation with TLS, transfer queuing, progress tracking, and LIST parsing"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tokio-native-tls = "0.3"
+native-tls = "0.2"
+tauri = { version = "2.9.5", features = ["devtools"] }
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+lazy_static = "1.4"
+regex = "1.10"
+glob = "0.3"
+url = "2.5"

@@ -197,6 +197,7 @@ dependencies = [
  "sorng-cloud",
  "sorng-core",
  "sorng-dashlane",
+ "sorng-ftp",
  "sorng-google-passwords",
  "sorng-gpo",
  "sorng-keepass",
@@ -8135,6 +8136,25 @@ dependencies = [
  "tauri",
  "thiserror 1.0.69",
  "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-ftp"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "glob",
+ "lazy_static",
+ "log",
+ "native-tls",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio",
+ "tokio-native-tls",
  "url",
  "uuid",
 ]

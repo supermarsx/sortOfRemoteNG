@@ -14,6 +14,7 @@ members = [
   "crates/sorng-gpo",
   "crates/sorng-ard",
   "crates/sorng-telnet",
+  "crates/sorng-ftp",
   "crates/sorng-sftp",
   "crates/sorng-vnc",
   "crates/sorng-rustdesk",
@@ -83,6 +84,7 @@ sorng-aws = { path = "crates/sorng-aws" }
 sorng-remote-mgmt = { path = "crates/sorng-remote-mgmt" }
 sorng-gpo = { path = "crates/sorng-gpo" }
 sorng-ard = { path = "crates/sorng-ard" }
+sorng-ftp = { path = "crates/sorng-ftp" }
 sorng-sftp = { path = "crates/sorng-sftp" }
 sorng-telnet = { path = "crates/sorng-telnet" }
 sorng-vnc = { path = "crates/sorng-vnc" }
