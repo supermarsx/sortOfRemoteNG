@@ -1168,7 +1168,7 @@ pub fn nextcloud_backup_get_history(
     state: State<'_, NextcloudServiceState>,
 ) -> Result<serde_json::Value, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
-    let hist = svc.backup_manager.get_history();
+    let hist = svc.backup_manager.history();
     serde_json::to_value(hist).map_err(|e| e.to_string())
 }
 
@@ -1177,7 +1177,8 @@ pub fn nextcloud_backup_total_size(
     state: State<'_, NextcloudServiceState>,
 ) -> Result<u64, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
-    Ok(svc.backup_manager.total_backup_size())
+    let total = svc.backup_manager.history().iter().filter_map(|r| r.bytes_written).sum();
+    Ok(total)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
