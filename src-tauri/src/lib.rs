@@ -143,6 +143,15 @@ pub use sorng_google_passwords::google_passwords;
 // Dashlane (dedicated crate)
 pub use sorng_dashlane::dashlane;
 
+// Hyper-V (dedicated crate)
+pub use sorng_hyperv as hyperv;
+
+// VMware / vSphere (dedicated crate)
+pub use sorng_vmware as vmware;
+
+// MeshCentral (dedicated crate)
+pub use sorng_meshcentral::meshcentral as meshcentral_dedicated;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -215,6 +224,9 @@ use onepassword::service::OnePasswordServiceState;
 use lastpass::service::LastPassServiceState;
 use google_passwords::service::GooglePasswordsServiceState;
 use dashlane::service::DashlaneServiceState;
+use hyperv::service::HyperVServiceState;
+use vmware::service::VmwareServiceState;
+use meshcentral_dedicated::MeshCentralService;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -585,6 +597,18 @@ pub fn run() {
       // Initialize Dashlane service
       let dashlane_service: DashlaneServiceState = Arc::new(Mutex::new(dashlane::service::DashlaneService::new()));
       app.manage(dashlane_service);
+
+      // Initialize Hyper-V service
+      let hyperv_service: HyperVServiceState = Arc::new(Mutex::new(hyperv::service::HyperVService::new()));
+      app.manage(hyperv_service);
+
+      // Initialize VMware / vSphere service
+      let vmware_service: VmwareServiceState = Arc::new(Mutex::new(vmware::service::VmwareService::new()));
+      app.manage(vmware_service);
+
+      // Initialize MeshCentral service
+      let meshcentral_service = MeshCentralService::new();
+      app.manage(meshcentral_service);
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -1990,6 +2014,221 @@ pub fn run() {
         dashlane::dl_export_json,
         dashlane::dl_import_csv,
         dashlane::dl_get_stats,
+        // Hyper-V commands — Config / Module
+        hyperv::commands::hyperv_check_module,
+        hyperv::commands::hyperv_get_config,
+        hyperv::commands::hyperv_set_config,
+        // Hyper-V commands — VM Lifecycle
+        hyperv::commands::hyperv_list_vms,
+        hyperv::commands::hyperv_list_vms_summary,
+        hyperv::commands::hyperv_get_vm,
+        hyperv::commands::hyperv_get_vm_by_id,
+        hyperv::commands::hyperv_create_vm,
+        hyperv::commands::hyperv_start_vm,
+        hyperv::commands::hyperv_stop_vm,
+        hyperv::commands::hyperv_restart_vm,
+        hyperv::commands::hyperv_pause_vm,
+        hyperv::commands::hyperv_resume_vm,
+        hyperv::commands::hyperv_save_vm,
+        hyperv::commands::hyperv_remove_vm,
+        hyperv::commands::hyperv_update_vm,
+        hyperv::commands::hyperv_rename_vm,
+        hyperv::commands::hyperv_export_vm,
+        hyperv::commands::hyperv_import_vm,
+        hyperv::commands::hyperv_live_migrate,
+        hyperv::commands::hyperv_get_integration_services,
+        hyperv::commands::hyperv_set_integration_service,
+        hyperv::commands::hyperv_add_dvd_drive,
+        hyperv::commands::hyperv_set_dvd_drive,
+        hyperv::commands::hyperv_remove_dvd_drive,
+        hyperv::commands::hyperv_add_hard_drive,
+        hyperv::commands::hyperv_remove_hard_drive,
+        // Hyper-V commands — Snapshots / Checkpoints
+        hyperv::commands::hyperv_list_checkpoints,
+        hyperv::commands::hyperv_get_checkpoint,
+        hyperv::commands::hyperv_create_checkpoint,
+        hyperv::commands::hyperv_restore_checkpoint,
+        hyperv::commands::hyperv_restore_checkpoint_by_id,
+        hyperv::commands::hyperv_remove_checkpoint,
+        hyperv::commands::hyperv_remove_checkpoint_tree,
+        hyperv::commands::hyperv_remove_all_checkpoints,
+        hyperv::commands::hyperv_rename_checkpoint,
+        hyperv::commands::hyperv_export_checkpoint,
+        // Hyper-V commands — Networking
+        hyperv::commands::hyperv_list_switches,
+        hyperv::commands::hyperv_get_switch,
+        hyperv::commands::hyperv_create_switch,
+        hyperv::commands::hyperv_remove_switch,
+        hyperv::commands::hyperv_rename_switch,
+        hyperv::commands::hyperv_list_physical_adapters,
+        hyperv::commands::hyperv_list_vm_adapters,
+        hyperv::commands::hyperv_add_vm_adapter,
+        hyperv::commands::hyperv_remove_vm_adapter,
+        hyperv::commands::hyperv_connect_adapter,
+        hyperv::commands::hyperv_disconnect_adapter,
+        hyperv::commands::hyperv_set_adapter_vlan,
+        hyperv::commands::hyperv_set_adapter_vlan_trunk,
+        hyperv::commands::hyperv_remove_adapter_vlan,
+        // Hyper-V commands — Storage (VHD/VHDX)
+        hyperv::commands::hyperv_get_vhd,
+        hyperv::commands::hyperv_test_vhd,
+        hyperv::commands::hyperv_create_vhd,
+        hyperv::commands::hyperv_resize_vhd,
+        hyperv::commands::hyperv_convert_vhd,
+        hyperv::commands::hyperv_compact_vhd,
+        hyperv::commands::hyperv_optimize_vhd,
+        hyperv::commands::hyperv_merge_vhd,
+        hyperv::commands::hyperv_mount_vhd,
+        hyperv::commands::hyperv_dismount_vhd,
+        hyperv::commands::hyperv_delete_vhd,
+        hyperv::commands::hyperv_list_vm_hard_drives,
+        // Hyper-V commands — Metrics / Monitoring
+        hyperv::commands::hyperv_get_vm_metrics,
+        hyperv::commands::hyperv_get_all_vm_metrics,
+        hyperv::commands::hyperv_enable_metering,
+        hyperv::commands::hyperv_disable_metering,
+        hyperv::commands::hyperv_reset_metering,
+        hyperv::commands::hyperv_get_metering_report,
+        hyperv::commands::hyperv_get_host_info,
+        hyperv::commands::hyperv_get_events,
+        hyperv::commands::hyperv_set_host_paths,
+        hyperv::commands::hyperv_set_live_migration,
+        hyperv::commands::hyperv_set_numa_spanning,
+        // Hyper-V commands — Replication
+        hyperv::commands::hyperv_get_replication,
+        hyperv::commands::hyperv_list_replicated_vms,
+        hyperv::commands::hyperv_enable_replication,
+        hyperv::commands::hyperv_disable_replication,
+        hyperv::commands::hyperv_start_initial_replication,
+        hyperv::commands::hyperv_suspend_replication,
+        hyperv::commands::hyperv_resume_replication,
+        hyperv::commands::hyperv_planned_failover,
+        hyperv::commands::hyperv_unplanned_failover,
+        hyperv::commands::hyperv_complete_failover,
+        hyperv::commands::hyperv_cancel_failover,
+        hyperv::commands::hyperv_reverse_replication,
+        hyperv::commands::hyperv_start_test_failover,
+        hyperv::commands::hyperv_stop_test_failover,
+        // MeshCentral commands — Connection
+        meshcentral_dedicated::mc_connect,
+        meshcentral_dedicated::mc_disconnect,
+        meshcentral_dedicated::mc_disconnect_all,
+        meshcentral_dedicated::mc_get_session_info,
+        meshcentral_dedicated::mc_list_sessions,
+        meshcentral_dedicated::mc_ping,
+        // MeshCentral commands — Server
+        meshcentral_dedicated::mc_get_server_info,
+        meshcentral_dedicated::mc_get_server_version,
+        meshcentral_dedicated::mc_health_check,
+        // MeshCentral commands — Devices
+        meshcentral_dedicated::mc_list_devices,
+        meshcentral_dedicated::mc_get_device_info,
+        meshcentral_dedicated::mc_add_local_device,
+        meshcentral_dedicated::mc_add_amt_device,
+        meshcentral_dedicated::mc_edit_device,
+        meshcentral_dedicated::mc_remove_devices,
+        meshcentral_dedicated::mc_move_device_to_group,
+        // MeshCentral commands — Device Groups
+        meshcentral_dedicated::mc_list_device_groups,
+        meshcentral_dedicated::mc_create_device_group,
+        meshcentral_dedicated::mc_edit_device_group,
+        meshcentral_dedicated::mc_remove_device_group,
+        // MeshCentral commands — Users
+        meshcentral_dedicated::mc_list_users,
+        meshcentral_dedicated::mc_add_user,
+        meshcentral_dedicated::mc_edit_user,
+        meshcentral_dedicated::mc_remove_user,
+        // MeshCentral commands — User Groups
+        meshcentral_dedicated::mc_list_user_groups,
+        meshcentral_dedicated::mc_create_user_group,
+        meshcentral_dedicated::mc_remove_user_group,
+        // MeshCentral commands — Power
+        meshcentral_dedicated::mc_power_action,
+        meshcentral_dedicated::mc_wake_devices,
+        // MeshCentral commands — Remote Commands
+        meshcentral_dedicated::mc_run_commands,
+        meshcentral_dedicated::mc_run_command_on_device,
+        // MeshCentral commands — File Transfer
+        meshcentral_dedicated::mc_upload_file,
+        meshcentral_dedicated::mc_download_file,
+        meshcentral_dedicated::mc_get_transfer_progress,
+        meshcentral_dedicated::mc_get_active_transfers,
+        meshcentral_dedicated::mc_cancel_transfer,
+        // MeshCentral commands — Events
+        meshcentral_dedicated::mc_list_events,
+        // MeshCentral commands — Sharing
+        meshcentral_dedicated::mc_create_device_share,
+        meshcentral_dedicated::mc_list_device_shares,
+        meshcentral_dedicated::mc_remove_device_share,
+        // MeshCentral commands — Messaging
+        meshcentral_dedicated::mc_send_toast,
+        meshcentral_dedicated::mc_send_message_box,
+        meshcentral_dedicated::mc_send_open_url,
+        meshcentral_dedicated::mc_broadcast_message,
+        // MeshCentral commands — Agents
+        meshcentral_dedicated::mc_download_agent_to_file,
+        meshcentral_dedicated::mc_send_invite_email,
+        meshcentral_dedicated::mc_generate_invite_link,
+        // MeshCentral commands — Reports & Relay
+        meshcentral_dedicated::mc_generate_report,
+        meshcentral_dedicated::mc_create_web_relay,
+        // VMware commands — Connection
+        vmware::commands::vmware_connect,
+        vmware::commands::vmware_disconnect,
+        vmware::commands::vmware_check_session,
+        vmware::commands::vmware_is_connected,
+        vmware::commands::vmware_get_config,
+        // VMware commands — VM Lifecycle
+        vmware::commands::vmware_list_vms,
+        vmware::commands::vmware_list_running_vms,
+        vmware::commands::vmware_get_vm,
+        vmware::commands::vmware_create_vm,
+        vmware::commands::vmware_delete_vm,
+        vmware::commands::vmware_power_on,
+        vmware::commands::vmware_power_off,
+        vmware::commands::vmware_suspend,
+        vmware::commands::vmware_reset,
+        vmware::commands::vmware_shutdown_guest,
+        vmware::commands::vmware_reboot_guest,
+        vmware::commands::vmware_get_guest_identity,
+        vmware::commands::vmware_update_cpu,
+        vmware::commands::vmware_update_memory,
+        vmware::commands::vmware_clone_vm,
+        vmware::commands::vmware_relocate_vm,
+        vmware::commands::vmware_find_vm_by_name,
+        vmware::commands::vmware_get_power_state,
+        // VMware commands — Snapshots
+        vmware::commands::vmware_list_snapshots,
+        vmware::commands::vmware_create_snapshot,
+        vmware::commands::vmware_revert_snapshot,
+        vmware::commands::vmware_delete_snapshot,
+        vmware::commands::vmware_delete_all_snapshots,
+        // VMware commands — Network
+        vmware::commands::vmware_list_networks,
+        vmware::commands::vmware_get_network,
+        // VMware commands — Storage
+        vmware::commands::vmware_list_datastores,
+        vmware::commands::vmware_get_datastore,
+        // VMware commands — Hosts
+        vmware::commands::vmware_list_hosts,
+        vmware::commands::vmware_get_host,
+        vmware::commands::vmware_disconnect_host,
+        vmware::commands::vmware_reconnect_host,
+        vmware::commands::vmware_list_clusters,
+        vmware::commands::vmware_list_datacenters,
+        vmware::commands::vmware_list_folders,
+        vmware::commands::vmware_list_resource_pools,
+        // VMware commands — Metrics
+        vmware::commands::vmware_get_vm_stats,
+        vmware::commands::vmware_get_all_vm_stats,
+        vmware::commands::vmware_get_inventory_summary,
+        // VMware commands — VMRC / Horizon
+        vmware::commands::vmware_launch_vmrc,
+        vmware::commands::vmware_list_vmrc_sessions,
+        vmware::commands::vmware_close_vmrc_session,
+        vmware::commands::vmware_close_all_vmrc_sessions,
+        vmware::commands::vmware_is_vmrc_available,
+        vmware::commands::vmware_is_horizon_available,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

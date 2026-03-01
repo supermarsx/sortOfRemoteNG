@@ -35,6 +35,11 @@ members = [
   "crates/sorng-google-passwords",
   "crates/sorng-dashlane",
   "crates/sorng-winmgmt",
+  "crates/sorng-serial",
+  "crates/sorng-hyperv",
+  "crates/sorng-meshcentral",
+  "crates/sorng-openvpn",
+  "crates/sorng-vmware",
 ]
 
 [workspace.dependencies]
@@ -106,6 +111,11 @@ sorng-lastpass = { path = "crates/sorng-lastpass" }
 sorng-google-passwords = { path = "crates/sorng-google-passwords" }
 sorng-dashlane = { path = "crates/sorng-dashlane" }
 sorng-winmgmt = { path = "crates/sorng-winmgmt" }
+sorng-serial = { path = "crates/sorng-serial" }
+sorng-hyperv = { path = "crates/sorng-hyperv" }
+sorng-meshcentral = { path = "crates/sorng-meshcentral" }
+sorng-openvpn = { path = "crates/sorng-openvpn" }
+sorng-vmware = { path = "crates/sorng-vmware" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"

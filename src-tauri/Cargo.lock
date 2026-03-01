@@ -200,12 +200,15 @@ dependencies = [
  "sorng-ftp",
  "sorng-google-passwords",
  "sorng-gpo",
+ "sorng-hyperv",
  "sorng-keepass",
  "sorng-lastpass",
+ "sorng-meshcentral",
  "sorng-mongodb",
  "sorng-mssql",
  "sorng-mysql",
  "sorng-network",
+ "sorng-openvpn",
  "sorng-passbolt",
  "sorng-postgres",
  "sorng-powershell",
@@ -215,11 +218,13 @@ dependencies = [
  "sorng-remote-mgmt",
  "sorng-rustdesk",
  "sorng-scp",
+ "sorng-serial",
  "sorng-sftp",
  "sorng-sqlite",
  "sorng-ssh",
  "sorng-storage",
  "sorng-telnet",
+ "sorng-vmware",
  "sorng-vnc",
  "sorng-vpn",
  "sorng-winmgmt",
@@ -8191,6 +8196,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-hyperv"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "futures",
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-keepass"
 version = "0.1.0"
 dependencies = [
@@ -8233,6 +8254,22 @@ dependencies = [
  "tauri",
  "tempfile",
  "thiserror 1.0.69",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-meshcentral"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
  "tokio",
  "url",
  "uuid",
@@ -8309,6 +8346,24 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-core",
+ "tauri",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-openvpn"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "hex",
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "tauri",
  "tokio",
  "uuid",
@@ -8529,6 +8584,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-serial"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "bytes",
+ "chrono",
+ "crc",
+ "hex",
+ "log",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-sftp"
 version = "0.1.0"
 dependencies = [
@@ -8633,6 +8707,24 @@ dependencies = [
  "sorng-core",
  "tauri",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-vmware"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "futures",
+ "log",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio",
+ "url",
  "uuid",
 ]
 
