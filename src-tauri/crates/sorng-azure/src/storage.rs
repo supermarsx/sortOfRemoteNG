@@ -7,7 +7,7 @@ use log::debug;
 
 use crate::client::AzureClient;
 use crate::types::{
-    ArmList, AzureResult, BlobContainer, CreateStorageAccountRequest, StorageAccount,
+    AzureResult, BlobContainer, CreateStorageAccountRequest, StorageAccount,
     StorageAccountKey, StorageKeyList,
 };
 

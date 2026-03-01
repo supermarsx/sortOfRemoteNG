@@ -5,7 +5,7 @@ use log::debug;
 
 use crate::client::AzureClient;
 use crate::types::{
-    ArmList, AzureError, AzureErrorKind, AzureResult, NetworkInterface, NicProperties,
+    ArmList, AzureResult, NetworkInterface, NicProperties,
     VirtualMachine, VmInstanceView, VmSize, VmSummary,
 };
 

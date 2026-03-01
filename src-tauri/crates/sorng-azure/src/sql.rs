@@ -196,7 +196,7 @@ mod tests {
         let s: SqlServer = serde_json::from_str(json).unwrap();
         assert_eq!(s.name, "srv1");
         let p = s.properties.unwrap();
-        assert_eq!(p.fqdn, Some("srv1.database.windows.net".into()));
+        assert_eq!(p.fully_qualified_domain_name, Some("srv1.database.windows.net".into()));
         assert_eq!(p.state, Some("Ready".into()));
     }
 

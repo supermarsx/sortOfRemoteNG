@@ -5,7 +5,7 @@ use log::debug;
 
 use crate::client::AzureClient;
 use crate::types::{
-    ArmList, AzureResource, AzureResult, CreateResourceGroupRequest, ResourceGroup,
+    AzureResource, AzureResult, CreateResourceGroupRequest, ResourceGroup,
 };
 
 /// List all resource groups in the subscription.
@@ -135,6 +135,7 @@ pub async fn exists(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::ArmList;
     use crate::types::AzureCredentials;
 
     #[test]

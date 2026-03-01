@@ -1269,16 +1269,31 @@ pub struct ResourceSearchRequest {
     pub query: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subscriptions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<ResourceSearchOptions>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResourceSearchOptions {
+    #[serde(rename = "$top", skip_serializing_if = "Option::is_none")]
+    pub top: Option<i32>,
+    #[serde(rename = "$skip", skip_serializing_if = "Option::is_none")]
+    pub skip: Option<i32>,
+    #[serde(rename = "resultFormat", skip_serializing_if = "Option::is_none")]
+    pub result_format: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResourceSearchResponse {
+    #[serde(default, rename = "totalRecords")]
+    pub total_records: u64,
     #[serde(default)]
     pub count: u64,
     #[serde(default)]
-    pub data: ResourceSearchData,
+    pub data: serde_json::Value,
 }
 
+/// Legacy typed search data (for table-format responses).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResourceSearchData {
     #[serde(default)]
@@ -1305,7 +1320,8 @@ pub struct AzureConfig {
     pub api_version_storage: String,
     pub api_version_web: String,
     pub api_version_sql: String,
-    pub api_version_keyvault: String,
+    pub api_version_keyvault_mgmt: String,
+    pub api_version_keyvault_data: String,
     pub api_version_container: String,
     pub api_version_monitor: String,
     pub api_version_cost: String,
@@ -1322,7 +1338,8 @@ impl AzureConfig {
             api_version_storage: "2023-05-01".into(),
             api_version_web: "2023-12-01".into(),
             api_version_sql: "2023-05-01-preview".into(),
-            api_version_keyvault: "2023-07-01".into(),
+            api_version_keyvault_mgmt: "2023-07-01".into(),
+            api_version_keyvault_data: "7.4".into(),
             api_version_container: "2023-05-01".into(),
             api_version_monitor: "2024-02-01".into(),
             api_version_cost: "2023-11-01".into(),
@@ -1598,6 +1615,7 @@ mod tests {
         let r = ResourceSearchRequest {
             query: "Resources | where type == 'microsoft.compute/virtualmachines'".into(),
             subscriptions: vec!["sub1".into()],
+            options: None,
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("Resources"));

@@ -56,7 +56,7 @@ pub async fn start_web_app(
         name, api
     ))?;
     debug!("start_web_app({}/{}) → {}", rg, name, url);
-    client.post_action(&url, &json!({})).await
+    client.post_action(&url).await
 }
 
 pub async fn stop_web_app(
@@ -70,7 +70,7 @@ pub async fn stop_web_app(
         name, api
     ))?;
     debug!("stop_web_app({}/{}) → {}", rg, name, url);
-    client.post_action(&url, &json!({})).await
+    client.post_action(&url).await
 }
 
 pub async fn restart_web_app(
@@ -84,7 +84,7 @@ pub async fn restart_web_app(
         name, api
     ))?;
     debug!("restart_web_app({}/{}) → {}", rg, name, url);
-    client.post_action(&url, &json!({})).await
+    client.post_action(&url).await
 }
 
 pub async fn delete_web_app(
@@ -148,7 +148,8 @@ pub async fn swap_slot(
         "preserveVnet": true
     });
     debug!("swap_slot({}/{} → {}) → {}", rg, app_name, target_slot, url);
-    client.post_action(&url, &body).await
+    let _: serde_json::Value = client.post_json(&url, &body).await?;
+    Ok(())
 }
 
 pub async fn start_slot(
@@ -163,7 +164,7 @@ pub async fn start_slot(
         app_name, slot_name, api
     ))?;
     debug!("start_slot({}/{}/{}) → {}", rg, app_name, slot_name, url);
-    client.post_action(&url, &json!({})).await
+    client.post_action(&url).await
 }
 
 pub async fn stop_slot(
@@ -178,7 +179,7 @@ pub async fn stop_slot(
         app_name, slot_name, api
     ))?;
     debug!("stop_slot({}/{}/{}) → {}", rg, app_name, slot_name, url);
-    client.post_action(&url, &json!({})).await
+    client.post_action(&url).await
 }
 
 pub async fn restart_slot(
@@ -193,7 +194,7 @@ pub async fn restart_slot(
         app_name, slot_name, api
     ))?;
     debug!("restart_slot({}/{}/{}) → {}", rg, app_name, slot_name, url);
-    client.post_action(&url, &json!({})).await
+    client.post_action(&url).await
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────

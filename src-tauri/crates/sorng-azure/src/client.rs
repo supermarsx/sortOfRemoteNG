@@ -141,7 +141,8 @@ impl AzureClient {
         &self,
         url: &str,
     ) -> AzureResult<T> {
-        self.get_json_with_query(url, &[]).await
+        let empty: &[(&str, &str)] = &[];
+        self.get_json_with_query(url, empty).await
     }
 
     pub async fn get_json_with_query<T: serde::de::DeserializeOwned>(
@@ -235,11 +236,12 @@ impl AzureClient {
         ))
     }
 
-    /// POST that accepts 200/201/202 and returns the status code + response body.
+    /// POST that accepts 200/201/202 and returns Ok(()) on success.
+    /// Used for actions like VM start/stop, app service restart, etc.
     pub async fn post_action(
         &self,
         url: &str,
-    ) -> AzureResult<(u16, String)> {
+    ) -> AzureResult<()> {
         let headers = self.auth_headers()?;
         self.last_request_at
             .store(now_millis(), Ordering::Relaxed);
@@ -255,9 +257,8 @@ impl AzureClient {
                 .map_err(|e| AzureError::new(AzureErrorKind::Network, format!("{e}")))?;
 
             let status = resp.status().as_u16();
-            if (200..=202).contains(&status) {
-                let body = resp.text().await.unwrap_or_default();
-                return Ok((status, body));
+            if (200..=204).contains(&status) {
+                return Ok(());
             }
 
             if should_retry(status) && attempt < MAX_RETRIES {
@@ -403,7 +404,7 @@ impl AzureClient {
     // ── Pagination helper ────────────────────────────────────────────
 
     /// Follow `nextLink` to collect **all** items from a paginated ARM list endpoint.
-    pub async fn get_all_pages<T: serde::de::DeserializeOwned + Clone>(
+    pub async fn get_all_pages<T: serde::de::DeserializeOwned + Clone + Default>(
         &self,
         initial_url: &str,
     ) -> AzureResult<Vec<T>> {
