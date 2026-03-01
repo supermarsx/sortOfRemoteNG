@@ -1,18 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
-interface RdpLogEntry {
+interface RDPLogEntry {
   timestamp: number;
   session_id?: string;
   level: string;
   message: string;
 }
 
-export function useRdpLogViewer(
+export function useRDPLogViewer(
   isVisible: boolean,
   sessionFilter?: string | null,
 ) {
-  const [logs, setLogs] = useState<RdpLogEntry[]>([]);
+  const [logs, setLogs] = useState<RDPLogEntry[]>([]);
   const [filter, setFilter] = useState('');
   const [levelFilter, setLevelFilter] = useState<string>('all');
   const [sessionIdFilter, setSessionIdFilter] = useState<string>('all');
@@ -22,7 +22,7 @@ export function useRdpLogViewer(
 
   const fetchLogs = useCallback(async () => {
     try {
-      const newLogs = await invoke<RdpLogEntry[]>('get_rdp_logs', {
+      const newLogs = await invoke<RDPLogEntry[]>('get_rdp_logs', {
         sinceTimestamp: lastTimestamp.current || null,
       });
       if (newLogs.length > 0) {

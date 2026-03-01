@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { debugLog } from '../../utils/debugLogger';
 import { ConnectionSession, Connection } from '../../types/connection';
-import { RdpConnectionSettings, DEFAULT_RDP_SETTINGS } from '../../types/connection';
+import { RDPConnectionSettings, DEFAULT_RDP_SETTINGS } from '../../types/connection';
 import { mergeRdpSettings } from '../../utils/rdpSettingsMerge';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
@@ -17,10 +17,10 @@ import {
   type CertIdentity,
   type TrustVerifyResult,
 } from '../../utils/trustStore';
-import { FrameBuffer } from '../../components/rdpCanvas';
-import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from '../../components/rdpRenderers';
+import { FrameBuffer } from '../../components/rdp/rdpCanvas';
+import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from '../../components/rdp/rdpRenderers';
 import { useSessionRecorder } from '../recording/useSessionRecorder';
-import type { RdpStatusEvent, RdpPointerEvent, RdpStatsEvent, RdpCertFingerprintEvent, RdpTimingEvent } from '../../types/rdpEvents';
+import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent } from '../../types/rdpEvents';
 import { mouseButtonCode, keyToScancode } from '../../utils/rdpKeyboard';
 
 // ─── Hook ────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ export function useRDPClient(session: ConnectionSession) {
   const [desktopSize, setDesktopSize] = useState({ width: 1920, height: 1080 });
   const [pointerStyle, setPointerStyle] = useState<string>('default');
   const [showInternals, setShowInternals] = useState(false);
-  const [stats, setStats] = useState<RdpStatsEvent | null>(null);
+  const [stats, setStats] = useState<RDPStatsEvent | null>(null);
   const [magnifierActive, setMagnifierActive] = useState(false);
   /** Ref mirror of magnifierActive — accessible in the render callback closure. */
   const magnifierActiveRef = useRef(false);
@@ -148,7 +148,7 @@ export function useRDPClient(session: ConnectionSession) {
   const [certFingerprint, setCertFingerprint] = useState<string | null>(null);
   const [certIdentity, setCertIdentity] = useState<CertIdentity | null>(null);
   const [trustPrompt, setTrustPrompt] = useState<TrustVerifyResult | null>(null);
-  const [connectTiming, setConnectTiming] = useState<RdpTimingEvent | null>(null);
+  const [connectTiming, setConnectTiming] = useState<RDPTimingEvent | null>(null);
   /** Which render backend the session is actually using (set from Rust event). */
   const [activeRenderBackend, setActiveRenderBackend] = useState<string>('webview');
   /** Which frontend renderer is actually active (may differ from config if fallback). */
@@ -164,7 +164,7 @@ export function useRDPClient(session: ConnectionSession) {
 
   const connection = state.connections.find(c => c.id === session.connectionId);
 
-  const rdpSettings: RdpConnectionSettings = useMemo(
+  const rdpSettings: RDPConnectionSettings = useMemo(
     () => mergeRdpSettings(connection?.rdpSettings, settings.rdpDefaults),
     [connection?.rdpSettings, settings.rdpDefaults],
   );
@@ -633,7 +633,7 @@ export function useRDPClient(session: ConnectionSession) {
   useEffect(() => {
     const unlisteners: UnlistenFn[] = [];
 
-    listen<RdpStatusEvent>('rdp://status', (event) => {
+    listen<RDPStatusEvent>('rdp://status', (event) => {
       const status = event.payload;
       if (status.session_id !== sessionIdRef.current) return;
 
@@ -681,7 +681,7 @@ export function useRDPClient(session: ConnectionSession) {
       }
     }).then(fn => unlisteners.push(fn));
 
-    listen<RdpPointerEvent>('rdp://pointer', (event) => {
+    listen<RDPPointerEvent>('rdp://pointer', (event) => {
       const ptr = event.payload;
       if (ptr.session_id !== sessionIdRef.current) return;
 
@@ -697,7 +697,7 @@ export function useRDPClient(session: ConnectionSession) {
       }
     }).then(fn => unlisteners.push(fn));
 
-    listen<RdpStatsEvent>('rdp://stats', (event) => {
+    listen<RDPStatsEvent>('rdp://stats', (event) => {
       const s = event.payload;
       if (s.session_id !== sessionIdRef.current) return;
       setStats(s);
@@ -737,7 +737,7 @@ export function useRDPClient(session: ConnectionSession) {
       setTrustPrompt(result);
     }).then(fn => unlisteners.push(fn));
 
-    listen<RdpTimingEvent>('rdp://timing', (event) => {
+    listen<RDPTimingEvent>('rdp://timing', (event) => {
       const t = event.payload;
       if (t.session_id !== sessionIdRef.current) return;
       setConnectTiming(t);

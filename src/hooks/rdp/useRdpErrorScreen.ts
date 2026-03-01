@@ -1,15 +1,15 @@
 import { useState, useMemo, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { RdpConnectionSettings } from '../../types/connection';
+import type { RDPConnectionSettings } from '../../types/connection';
 import {
   classifyRdpError,
   buildRdpDiagnostics,
   RDP_ERROR_CATEGORY_LABELS,
-  type RdpErrorCategory,
+  type RDPErrorCategory,
   type DiagnosticReportResult,
 } from '../../utils/rdpErrorClassifier';
 
-interface UseRdpErrorScreenParams {
+interface UseRDPErrorScreenParams {
   sessionId: string;
   hostname: string;
   errorMessage: string;
@@ -18,16 +18,16 @@ interface UseRdpErrorScreenParams {
     username: string;
     password: string;
     domain?: string;
-    rdpSettings?: RdpConnectionSettings;
+    rdpSettings?: RDPConnectionSettings;
   };
 }
 
-export function useRdpErrorScreen({
+export function useRDPErrorScreen({
   sessionId,
   hostname,
   errorMessage,
   connectionDetails,
-}: UseRdpErrorScreenParams) {
+}: UseRDPErrorScreenParams) {
   const [copied, setCopied] = useState(false);
   const [showRawError, setShowRawError] = useState(false);
   const [expandedCause, setExpandedCause] = useState<number | null>(0);
@@ -123,4 +123,4 @@ export function useRdpErrorScreen({
 }
 
 export { RDP_ERROR_CATEGORY_LABELS };
-export type { RdpErrorCategory, DiagnosticReportResult };
+export type { RDPErrorCategory, DiagnosticReportResult };

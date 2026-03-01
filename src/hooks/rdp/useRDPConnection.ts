@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { debugLog } from '../../utils/debugLogger';
-import { ConnectionSession, Connection, DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../../types/connection';
+import { ConnectionSession, Connection, DEFAULT_RDP_SETTINGS, RDPConnectionSettings } from '../../types/connection';
 import { invoke, Channel } from '@tauri-apps/api/core';
-import { FrameBuffer } from '../../components/rdpCanvas';
-import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from '../../components/rdpRenderers';
+import { FrameBuffer } from '../../components/rdp/rdpCanvas';
+import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from '../../components/rdp/rdpRenderers';
 
 interface UseRDPConnectionArgs {
   session: ConnectionSession;
   connection: Connection | undefined;
-  rdpSettings: RdpConnectionSettings;
+  rdpSettings: RDPConnectionSettings;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   frameBufferRef: React.MutableRefObject<FrameBuffer | null>;
   rendererRef: React.MutableRefObject<FrameRenderer | null>;

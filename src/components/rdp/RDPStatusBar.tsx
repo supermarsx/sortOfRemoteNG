@@ -2,14 +2,14 @@ import React from 'react';
 import { MousePointer, Keyboard, Volume2, Copy, Search } from 'lucide-react';
 import { formatBytes } from '../../utils/rdpFormatters';
 import { StatusBar } from '../ui/display';
-import type { RdpStatsEvent } from '../../types/rdpEvents';
+import type { RDPStatsEvent } from '../../types/rdpEvents';
 
 interface RDPStatusBarProps {
   rdpSessionId: string | null;
   sessionId: string;
   isConnected: boolean;
   desktopSize: { width: number; height: number };
-  stats: RdpStatsEvent | null;
+  stats: RDPStatsEvent | null;
   certFingerprint: string | null;
   audioEnabled: boolean;
   clipboardEnabled: boolean;

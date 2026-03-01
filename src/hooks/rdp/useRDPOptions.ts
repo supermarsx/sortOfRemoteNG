@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   Connection,
   DEFAULT_RDP_SETTINGS,
-  RdpConnectionSettings,
+  RDPConnectionSettings,
 } from "../../types/connection";
 import {
   getAllTrustRecords,
@@ -45,7 +45,7 @@ export const KEYBOARD_LAYOUTS: { label: string; value: number }[] = [
 
 export const PERFORMANCE_PRESETS: Record<
   string,
-  Partial<NonNullable<RdpConnectionSettings["performance"]>>
+  Partial<NonNullable<RDPConnectionSettings["performance"]>>
 > = {
   modem: {
     disableWallpaper: true,
@@ -170,13 +170,13 @@ export function useRDPOptions(
   }, [formData.isGroup, formData.protocol, formData.id]);
 
   /* Derived */
-  const rdp: RdpConnectionSettings =
+  const rdp: RDPConnectionSettings =
     formData.rdpSettings ?? DEFAULT_RDP_SETTINGS;
 
   const updateRdp = useCallback(
-    <K extends keyof RdpConnectionSettings>(
+    <K extends keyof RDPConnectionSettings>(
       section: K,
-      patch: Partial<NonNullable<RdpConnectionSettings[K]>>,
+      patch: Partial<NonNullable<RDPConnectionSettings[K]>>,
     ) => {
       setFormData((prev) => ({
         ...prev,

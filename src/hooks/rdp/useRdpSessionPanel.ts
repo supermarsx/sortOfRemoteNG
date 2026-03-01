@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Connection } from '../../types/connection';
 import { useSessionThumbnails } from './useSessionThumbnails';
 
-export interface RdpSessionInfo {
+export interface RDPSessionInfo {
   id: string;
   connection_id?: string;
   host: string;
@@ -16,7 +16,7 @@ export interface RdpSessionInfo {
   viewer_attached?: boolean;
 }
 
-export interface RdpStats {
+export interface RDPStats {
   session_id: string;
   uptime_secs: number;
   bytes_received: number;
@@ -51,7 +51,7 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-interface UseRdpSessionPanelParams {
+interface UseRDPSessionPanelParams {
   isVisible: boolean;
   connections: Connection[];
   activeBackendSessionIds?: string[];
@@ -60,16 +60,16 @@ interface UseRdpSessionPanelParams {
   thumbnailInterval?: number;
 }
 
-export function useRdpSessionPanel({
+export function useRDPSessionPanel({
   isVisible,
   connections,
   activeBackendSessionIds = [],
   thumbnailsEnabled = true,
   thumbnailPolicy = 'realtime',
   thumbnailInterval = 5,
-}: UseRdpSessionPanelParams) {
-  const [sessions, setSessions] = useState<RdpSessionInfo[]>([]);
-  const [statsMap, setStatsMap] = useState<Record<string, RdpStats>>({});
+}: UseRDPSessionPanelParams) {
+  const [sessions, setSessions] = useState<RDPSessionInfo[]>([]);
+  const [statsMap, setStatsMap] = useState<Record<string, RDPStats>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -96,12 +96,12 @@ export function useRdpSessionPanel({
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const list = await invoke<RdpSessionInfo[]>('list_rdp_sessions');
+      const list = await invoke<RDPSessionInfo[]>('list_rdp_sessions');
       setSessions(list);
-      const newStats: Record<string, RdpStats> = {};
+      const newStats: Record<string, RDPStats> = {};
       for (const s of list) {
         try {
-          const st = await invoke<RdpStats>('get_rdp_stats', {
+          const st = await invoke<RDPStats>('get_rdp_stats', {
             sessionId: s.id,
           });
           newStats[s.id] = st;
@@ -193,7 +193,7 @@ export function useRdpSessionPanel({
 
   const getSessionDisplayName = useCallback(
     (
-      session: RdpSessionInfo,
+      session: RDPSessionInfo,
     ): { name: string; subtitle: string } => {
       let conn = session.connection_id
         ? connections.find((c) => c.id === session.connection_id)
@@ -221,7 +221,7 @@ export function useRdpSessionPanel({
   );
 
   const isSessionDetached = useCallback(
-    (session: RdpSessionInfo): boolean => {
+    (session: RDPSessionInfo): boolean => {
       const hasFrontendViewer =
         activeBackendSessionIds.includes(session.id) ||
         (session.connection_id != null &&

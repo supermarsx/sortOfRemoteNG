@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { TOTPConfig } from '../../types/settings';
 import { TOTPService } from '../../utils/totpService';
-import { TotpImportDialog } from '../TotpImportDialog';
+import { TotpImportDialog } from '../security/TotpImportDialog';
 import { PopoverSurface } from '../ui/overlays/PopoverSurface';
 import { useRDPTotpPanel, type RDPTotpPanelMgr } from '../../hooks/rdp/useRDPTotpPanel';
 import { Select } from '../ui/forms';
@@ -69,7 +69,7 @@ function QRDisplay({
         <img src={qrUrl} alt="TOTP QR Code" className="w-40 h-40 rounded" />
       ) : (
         <div className="w-40 h-40 bg-[var(--color-border)] rounded flex items-center justify-center">
-          <QrCode size={32} className="text-gray-500 animate-pulse" />
+          <QrCode size={32} className="text-[var(--color-textMuted)] animate-pulse" />
         </div>
       )}
       <p className="text-[10px] text-[var(--color-textSecondary)] text-center">
@@ -160,7 +160,7 @@ function ImportModal({
           setError('');
         }}
         placeholder='[{"secret":"...","account":"...","issuer":"...","digits":6,"period":30,"algorithm":"sha1"}]'
-        className="w-full h-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[10px] text-[var(--color-text)] font-mono placeholder-gray-500 resize-none"
+        className="w-full h-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[10px] text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)] resize-none"
       />
       {error && <div className="text-[10px] text-red-400">{error}</div>}
       <div className="flex justify-end space-x-2">
@@ -198,19 +198,19 @@ const PanelHeader: React.FC<{
       )}
     </div>
     <div className="flex items-center space-x-1">
-      <button onClick={mgr.handleExport} className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors" title="Export configs to clipboard">
+      <button onClick={mgr.handleExport} className="sor-icon-btn-sm" title="Export configs to clipboard">
         <Download size={12} />
       </button>
-      <button onClick={() => mgr.setShowFileImport(true)} className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors" title="Import from authenticator app">
+      <button onClick={() => mgr.setShowFileImport(true)} className="sor-icon-btn-sm" title="Import from authenticator app">
         <FileUp size={12} />
       </button>
-      <button onClick={() => mgr.setShowImport(!mgr.showImport)} className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors" title="Import from JSON">
+      <button onClick={() => mgr.setShowImport(!mgr.showImport)} className="sor-icon-btn-sm" title="Import from JSON">
         <Upload size={12} />
       </button>
-      <button onClick={() => mgr.setShowAdd(!mgr.showAdd)} className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors" title="Add TOTP">
+      <button onClick={() => mgr.setShowAdd(!mgr.showAdd)} className="sor-icon-btn-sm" title="Add TOTP">
         <Plus size={12} />
       </button>
-      <button onClick={onClose} className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors">
+      <button onClick={onClose} className="sor-icon-btn-sm">
         <X size={12} />
       </button>
     </div>
@@ -226,14 +226,14 @@ const AddForm: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
       value={mgr.newAccount}
       onChange={(e) => mgr.setNewAccount(e.target.value)}
       placeholder="Account name (e.g. admin@server)"
-      className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500"
+      className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-[var(--color-textMuted)]"
     />
     <input
       type="text"
       value={mgr.newIssuer}
       onChange={(e) => mgr.setNewIssuer(e.target.value)}
       placeholder="Issuer"
-      className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500"
+      className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-[var(--color-textMuted)]"
     />
     <div className="relative">
       <input
@@ -241,7 +241,7 @@ const AddForm: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
         value={mgr.newSecret}
         onChange={(e) => mgr.setNewSecret(e.target.value)}
         placeholder="Secret (auto-generated if empty)"
-        className="w-full px-2 py-1 pr-7 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500 font-mono"
+        className="w-full px-2 py-1 pr-7 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-[var(--color-textMuted)] font-mono"
       />
       <button
         type="button"
@@ -252,9 +252,9 @@ const AddForm: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
       </button>
     </div>
     <div className="flex space-x-2">
-      <Select value={mgr.newDigits} onChange={(v: string) => mgr.setNewDigits(parseInt(v))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
-      <Select value={mgr.newPeriod} onChange={(v: string) => mgr.setNewPeriod(parseInt(v))} options={[{ value: "15", label: "15s" }, { value: "30", label: "30s" }, { value: "60", label: "60s" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
-      <Select value={mgr.newAlgorithm} onChange={(v: string) => mgr.setNewAlgorithm(v)} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
+      <Select value={mgr.newDigits} onChange={(v: string) => mgr.setNewDigits(parseInt(v))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="sor-form-input-xs flex-1" />
+      <Select value={mgr.newPeriod} onChange={(v: string) => mgr.setNewPeriod(parseInt(v))} options={[{ value: "15", label: "15s" }, { value: "30", label: "30s" }, { value: "60", label: "60s" }]} className="sor-form-input-xs flex-1" />
+      <Select value={mgr.newAlgorithm} onChange={(v: string) => mgr.setNewAlgorithm(v)} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="sor-form-input-xs flex-1" />
     </div>
     <div className="flex justify-end space-x-2">
       <button onClick={() => mgr.setShowAdd(false)} className="px-2 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors">
@@ -270,25 +270,25 @@ const AddForm: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
 // ─── Edit row ────────────────────────────────────────────────────────
 
 const TotpEditRow: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
-  <div className="px-3 py-2 border-b border-[var(--color-border)]/50 space-y-1.5 bg-gray-750">
+  <div className="px-3 py-2 border-b border-[var(--color-border)]/50 space-y-1.5 bg-[var(--color-surfaceHover)]">
     <input
       type="text"
       value={mgr.editData.account ?? ''}
       onChange={(e) => mgr.setEditData((d) => ({ ...d, account: e.target.value }))}
       placeholder="Account"
-      className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
+      className="sor-form-input-xs"
     />
     <input
       type="text"
       value={mgr.editData.issuer ?? ''}
       onChange={(e) => mgr.setEditData((d) => ({ ...d, issuer: e.target.value }))}
       placeholder="Issuer"
-      className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
+      className="sor-form-input-xs"
     />
     <div className="flex space-x-2">
-      <Select value={mgr.editData.digits ?? 6} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, digits: parseInt(v) }))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
-      <Select value={mgr.editData.period ?? 30} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, period: parseInt(v) }))} options={[{ value: "15", label: "15s" }, { value: "30", label: "30s" }, { value: "60", label: "60s" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
-      <Select value={mgr.editData.algorithm ?? 'sha1'} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, algorithm: v as TOTPConfig['algorithm'] }))} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
+      <Select value={mgr.editData.digits ?? 6} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, digits: parseInt(v) }))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="sor-form-input-xs flex-1" />
+      <Select value={mgr.editData.period ?? 30} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, period: parseInt(v) }))} options={[{ value: "15", label: "15s" }, { value: "30", label: "30s" }, { value: "60", label: "60s" }]} className="sor-form-input-xs flex-1" />
+      <Select value={mgr.editData.algorithm ?? 'sha1'} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, algorithm: v as TOTPConfig['algorithm'] }))} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="sor-form-input-xs flex-1" />
     </div>
     <div className="flex justify-end space-x-2">
       <button onClick={mgr.cancelEdit} className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
@@ -324,7 +324,7 @@ const TotpEntryRow: React.FC<{
             <span className="text-[10px] text-[var(--color-textSecondary)] truncate">
               {cfg.account}
             </span>
-            <span className="text-[10px] text-gray-600">
+            <span className="text-[10px] text-[var(--color-textMuted)]">
               ({cfg.issuer})
             </span>
           </div>
@@ -341,17 +341,17 @@ const TotpEntryRow: React.FC<{
                   style={{ width: `${progress * 100}%` }}
                 />
               </div>
-              <span className="text-[10px] text-gray-500 w-4 text-right">
+              <span className="text-[10px] text-[var(--color-textMuted)] w-4 text-right">
                 {remaining}
               </span>
             </div>
           </div>
           {isRevealed && (
-            <div className="mt-0.5 font-mono text-[10px] text-gray-500 break-all select-all">
+            <div className="mt-0.5 font-mono text-[10px] text-[var(--color-textMuted)] break-all select-all">
               {cfg.secret}
             </div>
           )}
-          <div className="text-[9px] text-gray-600 mt-0.5">
+          <div className="text-[9px] text-[var(--color-textMuted)] mt-0.5">
             {cfg.digits}d · {cfg.period}s · {cfg.algorithm.toUpperCase()}
             {cfg.createdAt &&
               ` · ${new Date(cfg.createdAt).toLocaleDateString()}`}
@@ -364,20 +364,20 @@ const TotpEntryRow: React.FC<{
                 const code = mgr.codes[cfg.secret];
                 if (code) onAutoType(code);
               }}
-              className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+              className="sor-icon-btn-sm"
               title="Type code into RDP session"
             >
               <Keyboard size={12} />
             </button>
           )}
-          <button onClick={() => mgr.copyCode(cfg.secret)} className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors" title="Copy code">
+          <button onClick={() => mgr.copyCode(cfg.secret)} className="sor-icon-btn-sm" title="Copy code">
             {mgr.copiedSecret === cfg.secret ? (
               <Check size={12} className="text-green-400" />
             ) : (
               <Copy size={12} />
             )}
           </button>
-          <button onClick={() => mgr.toggleReveal(cfg.secret)} className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors" title={isRevealed ? 'Hide secret' : 'Show secret'}>
+          <button onClick={() => mgr.toggleReveal(cfg.secret)} className="sor-icon-btn-sm" title={isRevealed ? 'Hide secret' : 'Show secret'}>
             {isRevealed ? <EyeOff size={12} /> : <Eye size={12} />}
           </button>
           <button
@@ -388,12 +388,12 @@ const TotpEntryRow: React.FC<{
                 mgr.generateBackup(cfg.secret);
               }
             }}
-            className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+            className="sor-icon-btn-sm"
             title="Backup codes"
           >
             <KeyRound size={12} />
           </button>
-          <button onClick={() => mgr.startEdit(cfg)} className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors" title="Edit">
+          <button onClick={() => mgr.startEdit(cfg)} className="sor-icon-btn-sm" title="Edit">
             <Pencil size={12} />
           </button>
           <button onClick={() => mgr.handleDelete(cfg.secret)} className="p-1 hover:bg-[var(--color-border)] rounded text-red-400 hover:text-red-300 transition-colors" title="Remove">
@@ -420,7 +420,7 @@ const TotpList: React.FC<{
 }> = ({ configs, mgr, onAutoType }) => (
   <div className="max-h-80 overflow-y-auto">
     {configs.length === 0 ? (
-      <div className="p-4 text-center text-xs text-gray-500">
+      <div className="p-4 text-center text-xs text-[var(--color-textMuted)]">
         No 2FA codes configured
       </div>
     ) : (

@@ -1,13 +1,13 @@
 import React from 'react';
 import { Activity, X } from 'lucide-react';
 import { formatBytes, formatUptime } from '../../utils/rdpFormatters';
-import type { RdpStatsEvent, RdpTimingEvent } from '../../types/rdpEvents';
-import type { RdpConnectionSettings } from '../../types/connection';
+import type { RDPStatsEvent, RDPTimingEvent } from '../../types/rdpEvents';
+import type { RDPConnectionSettings } from '../../types/connection';
 
 interface RDPInternalsPanelProps {
-  stats: RdpStatsEvent | null;
-  connectTiming: RdpTimingEvent | null;
-  rdpSettings: RdpConnectionSettings;
+  stats: RDPStatsEvent | null;
+  connectTiming: RDPTimingEvent | null;
+  rdpSettings: RDPConnectionSettings;
   activeRenderBackend: string;
   activeFrontendRenderer: string;
   onClose: () => void;
@@ -18,7 +18,7 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
 }) => (
   <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
     <div className="flex items-center justify-between mb-3">
-      <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+      <h3 className="text-sm font-semibold text-[var(--color-textSecondary)] flex items-center gap-2">
         <Activity size={14} className="text-green-400" />
         RDP Session Internals
       </h3>
@@ -29,91 +29,91 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
     {stats ? (
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Phase</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Phase</div>
           <div className="text-[var(--color-text)] font-mono capitalize">{stats.phase}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Uptime</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Uptime</div>
           <div className="text-[var(--color-text)] font-mono">{formatUptime(stats.uptime_secs)}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">FPS</div>
+          <div className="text-[var(--color-textMuted)] mb-1">FPS</div>
           <div className={`font-mono font-bold ${stats.fps >= 20 ? 'text-green-400' : stats.fps >= 10 ? 'text-yellow-400' : 'text-red-400'}`}>
             {stats.fps.toFixed(1)}
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Frames</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Frames</div>
           <div className="text-[var(--color-text)] font-mono">{stats.frame_count.toLocaleString()}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Received</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Received</div>
           <div className="text-cyan-400 font-mono">{formatBytes(stats.bytes_received)}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Sent</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Sent</div>
           <div className="text-orange-400 font-mono">{formatBytes(stats.bytes_sent)}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">PDUs In</div>
+          <div className="text-[var(--color-textMuted)] mb-1">PDUs In</div>
           <div className="text-[var(--color-text)] font-mono">{stats.pdus_received.toLocaleString()}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">PDUs Out</div>
+          <div className="text-[var(--color-textMuted)] mb-1">PDUs Out</div>
           <div className="text-[var(--color-text)] font-mono">{stats.pdus_sent.toLocaleString()}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Input Events</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Input Events</div>
           <div className="text-[var(--color-text)] font-mono">{stats.input_events.toLocaleString()}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Reactivations</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Reactivations</div>
           <div className="text-[var(--color-text)] font-mono">{stats.reactivations}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Errors (Recovered)</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Errors (Recovered)</div>
           <div className={`font-mono ${stats.errors_recovered > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
             {stats.errors_recovered}
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Bandwidth</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Bandwidth</div>
           <div className="text-[var(--color-text)] font-mono">
             {stats.uptime_secs > 0 ? formatBytes(Math.round(stats.bytes_received / stats.uptime_secs)) : '0 B'}/s
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Avg Frame Size</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Avg Frame Size</div>
           <div className="text-[var(--color-text)] font-mono">
             {stats.frame_count > 0 ? formatBytes(Math.round(stats.bytes_received / stats.frame_count)) : '\u2013'}
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">PDU Rate</div>
+          <div className="text-[var(--color-textMuted)] mb-1">PDU Rate</div>
           <div className="text-[var(--color-text)] font-mono">
             {stats.uptime_secs > 0 ? `${(stats.pdus_received / stats.uptime_secs).toFixed(0)}/s` : '\u2013'}
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Frame Batching</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Frame Batching</div>
           <div className={`font-mono ${rdpSettings.performance?.frameBatching ? 'text-green-400' : 'text-yellow-400'}`}>
             {rdpSettings.performance?.frameBatching ? `On @ ${rdpSettings.performance?.frameBatchIntervalMs ?? 33}ms` : 'Off'}
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Read Timeout</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Read Timeout</div>
           <div className="text-[var(--color-text)] font-mono">{rdpSettings.advanced?.readTimeoutMs ?? 16}ms</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Target FPS</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Target FPS</div>
           <div className="text-[var(--color-text)] font-mono">{rdpSettings.performance?.targetFps ?? 30}</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Sync Interval</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Sync Interval</div>
           <div className="text-[var(--color-text)] font-mono">every {rdpSettings.advanced?.fullFrameSyncInterval ?? 300} frames</div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Render Backend</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Render Backend</div>
           <div className={`font-mono font-bold ${
             activeRenderBackend === 'wgpu' ? 'text-purple-400' :
             activeRenderBackend === 'softbuffer' ? 'text-blue-400' : 'text-[var(--color-textSecondary)]'
@@ -122,7 +122,7 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
           </div>
         </div>
         <div className="bg-[var(--color-background)] rounded p-2">
-          <div className="text-gray-500 mb-1">Frontend Renderer</div>
+          <div className="text-[var(--color-textMuted)] mb-1">Frontend Renderer</div>
           <div className={`font-mono font-bold ${
             activeFrontendRenderer.includes('WebGPU') ? 'text-purple-400' :
             activeFrontendRenderer.includes('WebGL') ? 'text-green-400' :
@@ -133,13 +133,13 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
         </div>
         {stats.last_error && (
           <div className="bg-[var(--color-background)] rounded p-2 col-span-2 md:col-span-4 lg:col-span-6">
-            <div className="text-gray-500 mb-1">Last Error</div>
+            <div className="text-[var(--color-textMuted)] mb-1">Last Error</div>
             <div className="text-red-400 font-mono truncate" title={stats.last_error}>{stats.last_error}</div>
           </div>
         )}
       </div>
     ) : (
-      <p className="text-gray-500 text-xs">Waiting for session statistics...</p>
+      <p className="text-[var(--color-textMuted)] text-xs">Waiting for session statistics...</p>
     )}
 
     {connectTiming && (
@@ -166,7 +166,7 @@ export const RDPInternalsPanel: React.FC<RDPInternalsPanelProps> = ({
             );
           })}
         </div>
-        <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
+        <div className="flex items-center gap-3 mt-1 text-xs text-[var(--color-textMuted)]">
           {[
             { label: 'DNS', color: 'bg-purple-500' },
             { label: 'TCP', color: 'bg-blue-500' },
