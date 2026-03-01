@@ -35,7 +35,7 @@ export const ConnectingSpinner: React.FC<ConnectingSpinnerProps> = ({
       )}
     />
     <p className="text-[var(--color-textSecondary)]">{message}</p>
-    {detail && <p className="text-gray-500 text-sm mt-2">{detail}</p>}
-    {statusMessage && <p className="text-gray-600 text-xs mt-1">{statusMessage}</p>}
+    {detail && <p className="text-[var(--color-textMuted)] text-sm mt-2">{detail}</p>}
+    {statusMessage && <p className="text-[var(--color-textMuted)] text-xs mt-1">{statusMessage}</p>}
   </div>
 );

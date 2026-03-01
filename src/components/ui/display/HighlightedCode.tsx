@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { ScriptLanguage } from '../../ScriptManager';
+import type { ScriptLanguage } from '../../recording/ScriptManager';
 import { tokenize, SYNTAX_COLORS } from '../../../utils/scriptSyntax';
 
 /**

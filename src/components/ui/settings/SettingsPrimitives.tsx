@@ -171,3 +171,12 @@ export const SettingsCollapsibleSection: React.FC<{
     </div>
   );
 };
+
+/* ── Short aliases (used by behavior/ sub-files) ── */
+export {
+  SettingsCard as Card,
+  SettingsSectionHeader as SectionHeader,
+  SettingsToggleRow as Toggle,
+  SettingsSliderRow as SliderRow,
+  SettingsSelectRow as SelectRow,
+};

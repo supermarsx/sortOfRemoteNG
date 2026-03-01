@@ -114,7 +114,7 @@ export const CheckboxField: React.FC<CheckboxFieldProps> = ({
                 {label}
               </span>
               {description && (
-                <p className="text-[10px] text-gray-500 mt-0.5">{description}</p>
+                <p className="text-[10px] text-[var(--color-textMuted)] mt-0.5">{description}</p>
               )}
             </div>
           </div>
@@ -124,7 +124,7 @@ export const CheckboxField: React.FC<CheckboxFieldProps> = ({
         <>
           {checkbox}
           {icon && (
-            <div className="w-4 h-4 text-gray-500 group-hover:text-blue-400 flex items-center">
+            <div className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-blue-400 flex items-center">
               {icon}
             </div>
           )}
@@ -132,7 +132,7 @@ export const CheckboxField: React.FC<CheckboxFieldProps> = ({
             {label}
           </span>
           {description && (
-            <p className="text-[10px] text-gray-500 mt-0.5">{description}</p>
+            <p className="text-[10px] text-[var(--color-textMuted)] mt-0.5">{description}</p>
           )}
         </>
       )}

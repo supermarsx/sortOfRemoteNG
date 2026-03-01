@@ -23,7 +23,7 @@ export interface TabBarProps {
 }
 
 const DEFAULT_ACTIVE = 'border-blue-500 text-blue-400';
-const INACTIVE = 'border-transparent text-[var(--color-textSecondary)] hover:text-gray-200';
+const INACTIVE = 'border-transparent text-[var(--color-textSecondary)] hover:text-[var(--color-text)]';
 
 /**
  * Horizontal tab bar with optional icons and counts.
