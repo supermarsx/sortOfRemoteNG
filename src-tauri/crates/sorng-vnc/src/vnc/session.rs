@@ -308,6 +308,54 @@ async fn session_task(
             }
             auth::parse_security_result(&result_buf)?;
         }
+        SecurityType::AppleRemoteDesktop => {
+            // ARD (Diffie-Hellman Authentication, security type 30).
+            // Server sends: generator(2) + key_length(2) + prime(key_length) + pub_key(key_length).
+            // Read the 4-byte header first to learn key_length.
+            let mut ard_header = [0u8; 4];
+            stream.read_exact(&mut ard_header).await?;
+            let key_length = u16::from_be_bytes([ard_header[2], ard_header[3]]) as usize;
+            {
+                let mut st = state.lock().await;
+                st.bytes_received += 4;
+            }
+
+            // Read prime + server public key.
+            let mut ard_keys = vec![0u8; key_length * 2];
+            stream.read_exact(&mut ard_keys).await?;
+            {
+                let mut st = state.lock().await;
+                st.bytes_received += (key_length * 2) as u64;
+            }
+
+            // Combine into a single buffer for parsing.
+            let mut ard_data = Vec::with_capacity(4 + key_length * 2);
+            ard_data.extend_from_slice(&ard_header);
+            ard_data.extend_from_slice(&ard_keys);
+
+            let params = auth::parse_ard_server_params(&ard_data)?;
+
+            let username = config.username.as_deref().unwrap_or("");
+            let password = config.password.as_deref().unwrap_or("");
+            let ard_response = auth::handle_ard_auth(&params, username, password)?;
+
+            // Client sends: encrypted_credentials(128) + client_public_key(key_length).
+            stream.write_all(&ard_response.encrypted_credentials).await?;
+            stream.write_all(&ard_response.client_public_key).await?;
+            {
+                let mut st = state.lock().await;
+                st.bytes_sent += (128 + key_length) as u64;
+            }
+
+            // Read SecurityResult.
+            let mut result_buf = [0u8; 4];
+            stream.read_exact(&mut result_buf).await?;
+            {
+                let mut st = state.lock().await;
+                st.bytes_received += 4;
+            }
+            auth::parse_security_result(&result_buf)?;
+        }
         _ => {
             return Err(VncError::new(
                 VncErrorKind::AuthUnsupported,

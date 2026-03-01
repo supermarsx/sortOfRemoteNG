@@ -1,0 +1,18 @@
+[package]
+name = "sorng-recording"
+version = "0.1.0"
+edition = "2021"
+description = "Comprehensive session recording, encoding, compression, and storage engine for SortOfRemote NG – fully threaded recording of SSH terminals, RDP screen sessions, HTTP/HAR traffic, VNC sessions, Telnet, serial ports, and database queries with asciicast/script/HAR/JSON/frame-sequence encoders, gzip/zstd/deflate compression, file-based persistence, recording library management, macro capture + replay, and auto-cleanup."
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.9.5", features = ["devtools"] }
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+base64 = "0.21"
+sha2 = "0.10"
+flate2 = "1.0"
+zstd = "0.13"

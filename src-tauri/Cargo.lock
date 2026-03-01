@@ -197,7 +197,9 @@ dependencies = [
  "sorng-cloud",
  "sorng-core",
  "sorng-dashlane",
+ "sorng-dropbox",
  "sorng-ftp",
+ "sorng-gdrive",
  "sorng-google-passwords",
  "sorng-gpo",
  "sorng-hyperv",
@@ -209,12 +211,14 @@ dependencies = [
  "sorng-mssql",
  "sorng-mysql",
  "sorng-network",
+ "sorng-onedrive",
  "sorng-openvpn",
  "sorng-passbolt",
  "sorng-postgres",
  "sorng-powershell",
  "sorng-protocols",
  "sorng-rdp",
+ "sorng-recording",
  "sorng-redis",
  "sorng-remote-mgmt",
  "sorng-rustdesk",
@@ -224,11 +228,14 @@ dependencies = [
  "sorng-sqlite",
  "sorng-ssh",
  "sorng-storage",
+ "sorng-telegram",
  "sorng-telnet",
+ "sorng-termserv",
  "sorng-totp",
  "sorng-vmware",
  "sorng-vnc",
  "sorng-vpn",
+ "sorng-whatsapp",
  "sorng-winmgmt",
  "tauri",
  "tauri-build",
@@ -5955,7 +5962,7 @@ dependencies = [
  "spki 0.8.0-rc.4",
  "thiserror 2.0.17",
  "universal-hash 0.6.0-rc.2",
- "x25519-dalek",
+ "x25519-dalek 3.0.0-pre.1",
  "zeroize",
 ]
 
@@ -8180,6 +8187,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-dropbox"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "futures",
+ "hex",
+ "log",
+ "rand 0.8.5",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-ftp"
 version = "0.1.0"
 dependencies = [
@@ -8194,6 +8222,23 @@ dependencies = [
  "tauri",
  "tokio",
  "tokio-native-tls",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-gdrive"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log",
+ "mime_guess",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio",
  "url",
  "uuid",
 ]
@@ -8409,6 +8454,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-onedrive"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "futures-util",
+ "log",
+ "mime_guess",
+ "percent-encoding",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "tokio-util",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-openvpn"
 version = "0.1.0"
 dependencies = [
@@ -8560,6 +8627,23 @@ dependencies = [
  "wgpu",
  "windows 0.62.2",
  "x509-cert",
+]
+
+[[package]]
+name = "sorng-recording"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "flate2",
+ "log",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -8753,6 +8837,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-telegram"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "futures",
+ "hex",
+ "hmac 0.12.1",
+ "log",
+ "rand 0.8.5",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-telnet"
 version = "0.1.0"
 dependencies = [
@@ -8765,6 +8872,21 @@ dependencies = [
  "tauri",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "sorng-termserv"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+ "windows 0.58.0",
 ]
 
 [[package]]
@@ -8817,12 +8939,18 @@ dependencies = [
 name = "sorng-vnc"
 version = "0.1.0"
 dependencies = [
+ "aes 0.8.4",
  "byteorder",
  "bytes",
  "chrono",
  "cipher 0.4.4",
  "des 0.8.1",
  "log",
+ "md-5 0.10.6",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "sorng-core",
@@ -8847,6 +8975,34 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "uuid",
+]
+
+[[package]]
+name = "sorng-whatsapp"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "base64 0.21.7",
+ "chrono",
+ "curve25519-dalek 4.1.3",
+ "futures-util",
+ "hex",
+ "hkdf 0.12.4",
+ "hmac 0.12.1",
+ "image 0.25.9",
+ "log",
+ "qrcode 0.14.1",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
+ "uuid",
+ "x25519-dalek 2.0.1",
 ]
 
 [[package]]
@@ -10209,7 +10365,9 @@ checksum = "c83b561d025642014097b66e6c1bb422783339e0909e4429cde4749d1990bc38"
 dependencies = [
  "futures-util",
  "log",
+ "native-tls",
  "tokio",
+ "tokio-native-tls",
  "tungstenite",
 ]
 
@@ -10481,6 +10639,7 @@ dependencies = [
  "http 1.4.0",
  "httparse",
  "log",
+ "native-tls",
  "rand 0.8.5",
  "sha1 0.10.6",
  "thiserror 1.0.69",
@@ -12031,6 +12190,18 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "x25519-dalek"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7e468321c81fb07fa7f4c636c3972b9100f0346e5b6a9f2bd0603a52f7ed277"
+dependencies = [
+ "curve25519-dalek 4.1.3",
+ "rand_core 0.6.4",
+ "serde",
+ "zeroize",
+]
+
+[[package]]
+name = "x25519-dalek"
 version = "3.0.0-pre.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a45998121837fd8c92655d2334aa8f3e5ef0645cdfda5b321b13760c548fd55"
@@ -12273,6 +12444,34 @@ name = "zmij"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "de9211a9f64b825911bdf0240f58b7a8dac217fe260fc61f080a07f61372fbd5"
+
+[[package]]
+name = "zstd"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.0.16+zstd.1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91e19ebc2adc8f83e43039e79776e3fda8ca919132d68a1fed6a5faca2683748"
+dependencies = [
+ "cc",
+ "pkg-config",
+]
 
 [[package]]
 name = "zune-core"

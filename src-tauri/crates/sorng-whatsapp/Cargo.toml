@@ -1,0 +1,29 @@
+[package]
+name = "sorng-whatsapp"
+version = "0.1.0"
+edition = "2021"
+description = "WhatsApp Business Cloud API + unofficial WhatsApp Web multi-device integration for SortOfRemote NG – messaging, media, templates, contacts, webhooks, groups, business profiles, interactive messages, QR pairing, and phone-number linking."
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.9.5", features = ["devtools"] }
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+reqwest = { version = "0.11", features = ["json", "multipart", "stream"] }
+base64 = "0.21"
+url = "2.5"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+rand = "0.8"
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png"] }
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"
+aes-gcm = "0.10"
+hkdf = "0.12"
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+curve25519-dalek = "4.1"

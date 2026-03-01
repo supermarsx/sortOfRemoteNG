@@ -155,6 +155,24 @@ pub use sorng_meshcentral::meshcentral as meshcentral_dedicated;
 // mRemoteNG import/export (dedicated crate)
 pub use sorng_mremoteng::mremoteng as mremoteng_dedicated;
 
+// Terminal Services management (dedicated crate)
+pub use sorng_termserv as termserv;
+
+// WhatsApp Cloud API & Web integration (dedicated crate)
+pub use sorng_whatsapp as whatsapp;
+
+// Telegram Bot API integration (dedicated crate)
+pub use sorng_telegram as telegram;
+
+// Dropbox API v2 integration (dedicated crate)
+pub use sorng_dropbox as dropbox;
+
+// Google Drive API v3 integration (dedicated crate)
+pub use sorng_gdrive as gdrive;
+
+// Recording engine – session capture, encoding, compression, storage (dedicated crate)
+pub use sorng_recording as recording;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -231,6 +249,11 @@ use hyperv::service::HyperVServiceState;
 use vmware::service::VmwareServiceState;
 use meshcentral_dedicated::MeshCentralService;
 use mremoteng_dedicated::MremotengService;
+use termserv::service::TermServServiceState;
+use whatsapp::WhatsAppServiceState;
+use telegram::TelegramServiceState;
+use dropbox::DropboxServiceState;
+use recording::RecordingServiceState;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -617,6 +640,33 @@ pub fn run() {
       // Initialize mRemoteNG import/export service
       let mremoteng_service = MremotengService::new();
       app.manage(mremoteng_service);
+
+      // Initialize Terminal Services management service
+      let termserv_state = termserv::service::TermServService::new_state();
+      app.manage(termserv_state);
+
+      // Initialize WhatsApp Cloud API & Web service
+      let whatsapp_state: WhatsAppServiceState = std::sync::Arc::new(tokio::sync::Mutex::new(
+          whatsapp::service::WhatsAppService::new(),
+      ));
+      app.manage(whatsapp_state);
+
+      // Initialize Telegram Bot API service
+      let telegram_state = telegram::service::TelegramService::new();
+      app.manage(telegram_state);
+
+      // Initialize Dropbox API v2 integration service
+      let dropbox_state = dropbox::service::DropboxService::new();
+      app.manage(dropbox_state);
+
+      // Initialize Google Drive API v3 integration service
+      let gdrive_state = gdrive::service::GDriveService::new();
+      app.manage(gdrive_state);
+
+      // Initialize Recording engine service
+      let rec_app_dir = app_dir.to_string_lossy().to_string();
+      let rec_state: RecordingServiceState = recording::service::new_service_state(&rec_app_dir);
+      app.manage(rec_state);
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -2274,6 +2324,450 @@ pub fn run() {
         // mRemoteNG commands — Configuration
         mremoteng_dedicated::mrng_set_password,
         mremoteng_dedicated::mrng_set_kdf_iterations,
+        // Terminal Services commands — Config
+        termserv::commands::ts_get_config,
+        termserv::commands::ts_set_config,
+        // Terminal Services commands — Server handles
+        termserv::commands::ts_open_server,
+        termserv::commands::ts_close_server,
+        termserv::commands::ts_close_all_servers,
+        termserv::commands::ts_list_open_servers,
+        // Terminal Services commands — Sessions
+        termserv::commands::ts_list_sessions,
+        termserv::commands::ts_list_user_sessions,
+        termserv::commands::ts_get_session_detail,
+        termserv::commands::ts_get_all_session_details,
+        termserv::commands::ts_disconnect_session,
+        termserv::commands::ts_logoff_session,
+        termserv::commands::ts_connect_session,
+        termserv::commands::ts_logoff_disconnected,
+        termserv::commands::ts_find_sessions_by_user,
+        termserv::commands::ts_server_summary,
+        termserv::commands::ts_get_console_session_id,
+        termserv::commands::ts_get_current_session_id,
+        termserv::commands::ts_is_remote_session,
+        termserv::commands::ts_get_idle_seconds,
+        // Terminal Services commands — Processes
+        termserv::commands::ts_list_processes,
+        termserv::commands::ts_list_session_processes,
+        termserv::commands::ts_find_processes_by_name,
+        termserv::commands::ts_terminate_process,
+        termserv::commands::ts_terminate_processes_by_name,
+        termserv::commands::ts_process_count_per_session,
+        termserv::commands::ts_top_process_names,
+        // Terminal Services commands — Messaging
+        termserv::commands::ts_send_message,
+        termserv::commands::ts_send_info,
+        termserv::commands::ts_broadcast_message,
+        // Terminal Services commands — Shadow / Remote Control
+        termserv::commands::ts_start_shadow,
+        termserv::commands::ts_stop_shadow,
+        // Terminal Services commands — Server discovery & control
+        termserv::commands::ts_enumerate_domain_servers,
+        termserv::commands::ts_shutdown_server,
+        termserv::commands::ts_list_listeners,
+        // Terminal Services commands — User config, encryption, address
+        termserv::commands::ts_query_user_config,
+        termserv::commands::ts_set_user_config,
+        termserv::commands::ts_get_encryption_level,
+        termserv::commands::ts_get_session_address,
+        // Terminal Services commands — Filtered sessions & batch ops
+        termserv::commands::ts_list_sessions_filtered,
+        termserv::commands::ts_batch_disconnect,
+        termserv::commands::ts_batch_logoff,
+        termserv::commands::ts_batch_send_message,
+        // Terminal Services commands — Event monitoring
+        termserv::commands::ts_wait_system_event,
+        // WhatsApp commands — Configuration
+        whatsapp::commands::wa_configure,
+        whatsapp::commands::wa_configure_unofficial,
+        whatsapp::commands::wa_is_configured,
+        // WhatsApp commands — Messaging (Official Cloud API)
+        whatsapp::commands::wa_send_text,
+        whatsapp::commands::wa_send_image,
+        whatsapp::commands::wa_send_document,
+        whatsapp::commands::wa_send_video,
+        whatsapp::commands::wa_send_audio,
+        whatsapp::commands::wa_send_location,
+        whatsapp::commands::wa_send_reaction,
+        whatsapp::commands::wa_send_template,
+        whatsapp::commands::wa_mark_as_read,
+        // WhatsApp commands — Media
+        whatsapp::commands::wa_upload_media,
+        whatsapp::commands::wa_upload_media_file,
+        whatsapp::commands::wa_get_media_url,
+        whatsapp::commands::wa_download_media,
+        whatsapp::commands::wa_delete_media,
+        // WhatsApp commands — Templates
+        whatsapp::commands::wa_create_template,
+        whatsapp::commands::wa_list_templates,
+        whatsapp::commands::wa_delete_template,
+        // WhatsApp commands — Contacts
+        whatsapp::commands::wa_check_contact,
+        whatsapp::commands::wa_me_link,
+        // WhatsApp commands — Groups
+        whatsapp::commands::wa_create_group,
+        whatsapp::commands::wa_get_group_info,
+        // WhatsApp commands — Business Profile & Phone Numbers
+        whatsapp::commands::wa_get_business_profile,
+        whatsapp::commands::wa_list_phone_numbers,
+        // WhatsApp commands — Webhooks
+        whatsapp::commands::wa_webhook_verify,
+        whatsapp::commands::wa_webhook_process,
+        // WhatsApp commands — Sessions
+        whatsapp::commands::wa_list_sessions,
+        // WhatsApp commands — Unofficial (WA Web)
+        whatsapp::commands::wa_unofficial_connect,
+        whatsapp::commands::wa_unofficial_disconnect,
+        whatsapp::commands::wa_unofficial_state,
+        whatsapp::commands::wa_unofficial_send_text,
+        // WhatsApp commands — Pairing
+        whatsapp::commands::wa_pairing_start_qr,
+        whatsapp::commands::wa_pairing_refresh_qr,
+        whatsapp::commands::wa_pairing_start_phone,
+        whatsapp::commands::wa_pairing_state,
+        whatsapp::commands::wa_pairing_cancel,
+        // WhatsApp commands — Chat History
+        whatsapp::commands::wa_get_messages,
+        whatsapp::commands::wa_send_auto,
+        // Telegram Bot API commands — Bot management
+        telegram::commands::telegram_add_bot,
+        telegram::commands::telegram_remove_bot,
+        telegram::commands::telegram_list_bots,
+        telegram::commands::telegram_validate_bot,
+        telegram::commands::telegram_set_bot_enabled,
+        telegram::commands::telegram_update_bot_token,
+        // Telegram commands — Messaging
+        telegram::commands::telegram_send_message,
+        telegram::commands::telegram_send_photo,
+        telegram::commands::telegram_send_document,
+        telegram::commands::telegram_send_video,
+        telegram::commands::telegram_send_audio,
+        telegram::commands::telegram_send_voice,
+        telegram::commands::telegram_send_location,
+        telegram::commands::telegram_send_contact,
+        telegram::commands::telegram_send_poll,
+        telegram::commands::telegram_send_dice,
+        telegram::commands::telegram_send_sticker,
+        telegram::commands::telegram_send_chat_action,
+        // Telegram commands — Message management
+        telegram::commands::telegram_edit_message_text,
+        telegram::commands::telegram_edit_message_caption,
+        telegram::commands::telegram_edit_message_reply_markup,
+        telegram::commands::telegram_delete_message,
+        telegram::commands::telegram_forward_message,
+        telegram::commands::telegram_copy_message,
+        telegram::commands::telegram_pin_message,
+        telegram::commands::telegram_unpin_message,
+        telegram::commands::telegram_unpin_all_messages,
+        telegram::commands::telegram_answer_callback_query,
+        // Telegram commands — Chat management
+        telegram::commands::telegram_get_chat,
+        telegram::commands::telegram_get_chat_member_count,
+        telegram::commands::telegram_get_chat_member,
+        telegram::commands::telegram_get_chat_administrators,
+        telegram::commands::telegram_set_chat_title,
+        telegram::commands::telegram_set_chat_description,
+        telegram::commands::telegram_ban_chat_member,
+        telegram::commands::telegram_unban_chat_member,
+        telegram::commands::telegram_restrict_chat_member,
+        telegram::commands::telegram_promote_chat_member,
+        telegram::commands::telegram_leave_chat,
+        telegram::commands::telegram_export_chat_invite_link,
+        telegram::commands::telegram_create_invite_link,
+        // Telegram commands — Files
+        telegram::commands::telegram_get_file,
+        telegram::commands::telegram_download_file,
+        telegram::commands::telegram_upload_file,
+        // Telegram commands — Webhooks & Updates
+        telegram::commands::telegram_get_updates,
+        telegram::commands::telegram_set_webhook,
+        telegram::commands::telegram_delete_webhook,
+        telegram::commands::telegram_get_webhook_info,
+        // Telegram commands — Notification rules
+        telegram::commands::telegram_add_notification_rule,
+        telegram::commands::telegram_remove_notification_rule,
+        telegram::commands::telegram_list_notification_rules,
+        telegram::commands::telegram_set_notification_rule_enabled,
+        telegram::commands::telegram_process_connection_event,
+        // Telegram commands — Monitoring
+        telegram::commands::telegram_add_monitoring_check,
+        telegram::commands::telegram_remove_monitoring_check,
+        telegram::commands::telegram_list_monitoring_checks,
+        telegram::commands::telegram_set_monitoring_check_enabled,
+        telegram::commands::telegram_monitoring_summary,
+        telegram::commands::telegram_record_monitoring_result,
+        // Telegram commands — Templates
+        telegram::commands::telegram_add_template,
+        telegram::commands::telegram_remove_template,
+        telegram::commands::telegram_list_templates,
+        telegram::commands::telegram_render_template,
+        telegram::commands::telegram_validate_template_body,
+        telegram::commands::telegram_send_template,
+        // Telegram commands — Scheduled messages
+        telegram::commands::telegram_schedule_message,
+        telegram::commands::telegram_cancel_scheduled_message,
+        telegram::commands::telegram_list_scheduled_messages,
+        telegram::commands::telegram_process_scheduled_messages,
+        // Telegram commands — Broadcast & Digests
+        telegram::commands::telegram_broadcast,
+        telegram::commands::telegram_add_digest,
+        telegram::commands::telegram_remove_digest,
+        telegram::commands::telegram_list_digests,
+        // Telegram commands — Stats & Logs
+        telegram::commands::telegram_stats,
+        telegram::commands::telegram_message_log,
+        telegram::commands::telegram_clear_message_log,
+        telegram::commands::telegram_notification_history,
+        telegram::commands::telegram_monitoring_history,
+        // Dropbox commands — Configuration & Connection
+        dropbox::commands::dropbox_configure,
+        dropbox::commands::dropbox_set_token,
+        dropbox::commands::dropbox_disconnect,
+        dropbox::commands::dropbox_is_connected,
+        dropbox::commands::dropbox_masked_token,
+        // Dropbox commands — OAuth 2.0 PKCE
+        dropbox::commands::dropbox_start_auth,
+        dropbox::commands::dropbox_finish_auth,
+        dropbox::commands::dropbox_refresh_token,
+        dropbox::commands::dropbox_revoke_token,
+        // Dropbox commands — File operations
+        dropbox::commands::dropbox_upload,
+        dropbox::commands::dropbox_download,
+        dropbox::commands::dropbox_get_metadata,
+        dropbox::commands::dropbox_move_file,
+        dropbox::commands::dropbox_copy_file,
+        dropbox::commands::dropbox_delete,
+        dropbox::commands::dropbox_delete_batch,
+        dropbox::commands::dropbox_move_batch,
+        dropbox::commands::dropbox_copy_batch,
+        dropbox::commands::dropbox_search,
+        dropbox::commands::dropbox_search_continue,
+        dropbox::commands::dropbox_list_revisions,
+        dropbox::commands::dropbox_restore,
+        dropbox::commands::dropbox_get_thumbnail,
+        dropbox::commands::dropbox_content_hash,
+        dropbox::commands::dropbox_guess_mime,
+        dropbox::commands::dropbox_upload_session_start,
+        dropbox::commands::dropbox_upload_session_append,
+        dropbox::commands::dropbox_upload_session_finish,
+        dropbox::commands::dropbox_check_job_status,
+        // Dropbox commands — Folder operations
+        dropbox::commands::dropbox_create_folder,
+        dropbox::commands::dropbox_list_folder,
+        dropbox::commands::dropbox_list_folder_continue,
+        dropbox::commands::dropbox_get_latest_cursor,
+        dropbox::commands::dropbox_create_folder_batch,
+        dropbox::commands::dropbox_breadcrumbs,
+        dropbox::commands::dropbox_parent_path,
+        // Dropbox commands — Sharing
+        dropbox::commands::dropbox_create_shared_link,
+        dropbox::commands::dropbox_list_shared_links,
+        dropbox::commands::dropbox_revoke_shared_link,
+        dropbox::commands::dropbox_share_folder,
+        dropbox::commands::dropbox_unshare_folder,
+        dropbox::commands::dropbox_list_folder_members,
+        dropbox::commands::dropbox_list_shared_folders,
+        dropbox::commands::dropbox_mount_folder,
+        dropbox::commands::dropbox_get_shared_link_metadata,
+        dropbox::commands::dropbox_shared_link_to_direct,
+        // Dropbox commands — Account
+        dropbox::commands::dropbox_get_current_account,
+        dropbox::commands::dropbox_get_space_usage,
+        dropbox::commands::dropbox_format_space_usage,
+        dropbox::commands::dropbox_is_space_critical,
+        dropbox::commands::dropbox_get_account,
+        dropbox::commands::dropbox_get_features,
+        // Dropbox commands — Team
+        dropbox::commands::dropbox_get_team_info,
+        dropbox::commands::dropbox_team_members_list,
+        dropbox::commands::dropbox_team_members_list_continue,
+        dropbox::commands::dropbox_team_members_get_info,
+        dropbox::commands::dropbox_team_member_suspend,
+        dropbox::commands::dropbox_team_member_unsuspend,
+        // Dropbox commands — Paper
+        dropbox::commands::dropbox_paper_create,
+        dropbox::commands::dropbox_paper_update,
+        dropbox::commands::dropbox_paper_list,
+        dropbox::commands::dropbox_paper_archive,
+        // Dropbox commands — Sync manager
+        dropbox::commands::dropbox_sync_create,
+        dropbox::commands::dropbox_sync_remove,
+        dropbox::commands::dropbox_sync_list,
+        dropbox::commands::dropbox_sync_set_enabled,
+        dropbox::commands::dropbox_sync_set_interval,
+        dropbox::commands::dropbox_sync_set_exclude_patterns,
+        // Dropbox commands — Backup manager
+        dropbox::commands::dropbox_backup_create,
+        dropbox::commands::dropbox_backup_remove,
+        dropbox::commands::dropbox_backup_list,
+        dropbox::commands::dropbox_backup_set_enabled,
+        dropbox::commands::dropbox_backup_set_max_revisions,
+        dropbox::commands::dropbox_backup_set_interval,
+        dropbox::commands::dropbox_backup_get_history,
+        dropbox::commands::dropbox_backup_total_size,
+        // Dropbox commands — File watcher
+        dropbox::commands::dropbox_watch_create,
+        dropbox::commands::dropbox_watch_remove,
+        dropbox::commands::dropbox_watch_list,
+        dropbox::commands::dropbox_watch_set_enabled,
+
+        dropbox::commands::dropbox_watch_get_changes,
+        dropbox::commands::dropbox_watch_clear_changes,
+        dropbox::commands::dropbox_watch_total_pending,
+        // Dropbox commands — Activity & Stats
+        dropbox::commands::dropbox_get_activity_log,
+        dropbox::commands::dropbox_clear_activity_log,
+        dropbox::commands::dropbox_get_stats,
+        dropbox::commands::dropbox_reset_stats,
+        // Dropbox commands — Longpoll
+        dropbox::commands::dropbox_longpoll,
+        // Google Drive commands — Auth & Configuration
+        gdrive::commands::gdrive_set_credentials,
+        gdrive::commands::gdrive_get_auth_url,
+        gdrive::commands::gdrive_exchange_code,
+        gdrive::commands::gdrive_refresh_token,
+        gdrive::commands::gdrive_set_token,
+        gdrive::commands::gdrive_get_token,
+        gdrive::commands::gdrive_revoke,
+        gdrive::commands::gdrive_is_authenticated,
+        gdrive::commands::gdrive_connection_summary,
+        gdrive::commands::gdrive_get_about,
+        // Google Drive commands — Files
+        gdrive::commands::gdrive_get_file,
+        gdrive::commands::gdrive_list_files,
+        gdrive::commands::gdrive_create_file,
+        gdrive::commands::gdrive_update_file,
+        gdrive::commands::gdrive_copy_file,
+        gdrive::commands::gdrive_delete_file,
+        gdrive::commands::gdrive_trash_file,
+        gdrive::commands::gdrive_untrash_file,
+        gdrive::commands::gdrive_empty_trash,
+        gdrive::commands::gdrive_star_file,
+        gdrive::commands::gdrive_rename_file,
+        gdrive::commands::gdrive_move_file,
+        gdrive::commands::gdrive_generate_ids,
+        // Google Drive commands — Folders
+        gdrive::commands::gdrive_create_folder,
+        gdrive::commands::gdrive_list_children,
+        gdrive::commands::gdrive_list_subfolders,
+        gdrive::commands::gdrive_find_folder,
+        // Google Drive commands — Upload & Download
+        gdrive::commands::gdrive_upload_file,
+        gdrive::commands::gdrive_download_file,
+        gdrive::commands::gdrive_export_file,
+        // Google Drive commands — Sharing
+        gdrive::commands::gdrive_share_with_user,
+        gdrive::commands::gdrive_share_with_anyone,
+        gdrive::commands::gdrive_list_permissions,
+        gdrive::commands::gdrive_delete_permission,
+        gdrive::commands::gdrive_unshare_all,
+        // Google Drive commands — Revisions
+        gdrive::commands::gdrive_list_revisions,
+        gdrive::commands::gdrive_pin_revision,
+        // Google Drive commands — Comments
+        gdrive::commands::gdrive_list_comments,
+        gdrive::commands::gdrive_create_comment,
+        gdrive::commands::gdrive_resolve_comment,
+        gdrive::commands::gdrive_create_reply,
+        // Google Drive commands — Shared Drives
+        gdrive::commands::gdrive_list_drives,
+        gdrive::commands::gdrive_create_drive,
+        gdrive::commands::gdrive_delete_drive,
+        // Google Drive commands — Changes
+        gdrive::commands::gdrive_get_start_page_token,
+        gdrive::commands::gdrive_poll_changes,
+        // Google Drive commands — Search
+        gdrive::commands::gdrive_search,
+        // ── Recording engine commands ────────────────────────────────
+        // Config
+        recording::commands::rec_get_config,
+        recording::commands::rec_update_config,
+        // Terminal recording (SSH, Telnet, etc.)
+        recording::commands::rec_start_terminal,
+        recording::commands::rec_stop_terminal,
+        recording::commands::rec_terminal_status,
+        recording::commands::rec_is_terminal_recording,
+        recording::commands::rec_append_terminal_output,
+        recording::commands::rec_append_terminal_input,
+        recording::commands::rec_append_terminal_resize,
+        // Screen recording (RDP, VNC)
+        recording::commands::rec_start_screen,
+        recording::commands::rec_stop_screen,
+        recording::commands::rec_screen_status,
+        recording::commands::rec_is_screen_recording,
+        recording::commands::rec_append_screen_frame,
+        // HTTP / HAR recording
+        recording::commands::rec_start_http,
+        recording::commands::rec_stop_http,
+        recording::commands::rec_http_status,
+        recording::commands::rec_is_http_recording,
+        recording::commands::rec_append_http_entry,
+        // Telnet recording
+        recording::commands::rec_start_telnet,
+        recording::commands::rec_stop_telnet,
+        recording::commands::rec_telnet_status,
+        recording::commands::rec_is_telnet_recording,
+        recording::commands::rec_append_telnet_entry,
+        // Serial recording
+        recording::commands::rec_start_serial,
+        recording::commands::rec_stop_serial,
+        recording::commands::rec_serial_status,
+        recording::commands::rec_is_serial_recording,
+        recording::commands::rec_append_serial_entry,
+        // Database query recording
+        recording::commands::rec_start_db,
+        recording::commands::rec_stop_db,
+        recording::commands::rec_db_status,
+        recording::commands::rec_is_db_recording,
+        recording::commands::rec_append_db_entry,
+        // Macro recording & CRUD
+        recording::commands::rec_start_macro,
+        recording::commands::rec_macro_input,
+        recording::commands::rec_stop_macro,
+        recording::commands::rec_is_macro_recording,
+        recording::commands::rec_list_macros,
+        recording::commands::rec_get_macro,
+        recording::commands::rec_update_macro,
+        recording::commands::rec_delete_macro,
+        recording::commands::rec_import_macro,
+        // Encoding
+        recording::commands::rec_encode_asciicast,
+        recording::commands::rec_encode_script,
+        recording::commands::rec_encode_har,
+        recording::commands::rec_encode_db_csv,
+        recording::commands::rec_encode_http_csv,
+        recording::commands::rec_encode_telnet_asciicast,
+        recording::commands::rec_encode_serial_raw,
+        recording::commands::rec_encode_frame_manifest,
+        // Compression
+        recording::commands::rec_compress,
+        recording::commands::rec_decompress,
+        // Combined encode + compress + save
+        recording::commands::rec_save_terminal,
+        recording::commands::rec_save_http,
+        recording::commands::rec_save_screen,
+        // Library
+        recording::commands::rec_library_list,
+        recording::commands::rec_library_get,
+        recording::commands::rec_library_by_protocol,
+        recording::commands::rec_library_search,
+        recording::commands::rec_library_rename,
+        recording::commands::rec_library_update_tags,
+        recording::commands::rec_library_delete,
+        recording::commands::rec_library_clear,
+        recording::commands::rec_library_summary,
+        // Aggregate / status
+        recording::commands::rec_list_active,
+        recording::commands::rec_active_count,
+        recording::commands::rec_stop_all,
+        // Jobs
+        recording::commands::rec_list_jobs,
+        recording::commands::rec_get_job,
+        recording::commands::rec_clear_jobs,
+        // Cleanup & storage
+        recording::commands::rec_run_cleanup,
+        recording::commands::rec_storage_size,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
