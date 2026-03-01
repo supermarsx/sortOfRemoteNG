@@ -65,40 +65,67 @@ pub enum H264DecoderPreference {
 /// Reusable buffer pool to avoid per-frame Vec allocations.
 ///
 /// At 1080p 30fps, RGBA output = ~8 MB/frame = ~249 MB/s heap churn.
-/// This pool recycles up to `max_buffers` Vecs so the allocator only
-/// allocates once and subsequent frames reuse the same memory.
+/// This pool recycles up to `max_buffers` Vecs, using size-bucketed
+/// bins so that a 720p buffer isn't returned for a 1080p request.
+///
+/// Buckets (by capacity):
+///   - Small:  ≤ 2 MB  (up to ~720×700)
+///   - Medium: ≤ 8 MB  (up to 1080p)
+///   - Large:  > 8 MB  (4K and above)
 pub struct FrameBufferPool {
-    buffers: Vec<Vec<u8>>,
-    max_buffers: usize,
+    small: Vec<Vec<u8>>,
+    medium: Vec<Vec<u8>>,
+    large: Vec<Vec<u8>>,
+    max_per_bucket: usize,
 }
 
+const SMALL_THRESHOLD: usize = 2 * 1024 * 1024;
+const MEDIUM_THRESHOLD: usize = 8 * 1024 * 1024;
+
 impl FrameBufferPool {
-    pub fn new(max_buffers: usize) -> Self {
+    pub fn new(max_per_bucket: usize) -> Self {
         Self {
-            buffers: Vec::with_capacity(max_buffers),
-            max_buffers,
+            small: Vec::with_capacity(max_per_bucket),
+            medium: Vec::with_capacity(max_per_bucket),
+            large: Vec::with_capacity(max_per_bucket),
+            max_per_bucket,
         }
     }
 
     /// Acquire a buffer with at least `min_size` bytes capacity.
-    /// Reuses a pooled buffer if available, otherwise allocates.
+    /// Reuses a pooled buffer from the matching bucket if available.
     pub fn acquire(&mut self, min_size: usize) -> Vec<u8> {
-        if let Some(mut buf) = self.buffers.pop() {
+        let bucket = self.bucket_for(min_size);
+        if let Some(mut buf) = bucket.pop() {
             if buf.capacity() >= min_size {
                 buf.clear();
                 return buf;
             }
-            // Buffer too small — drop it and allocate fresh.
+            // Buffer too small (rare edge case after resolution change)
+            // — drop it and allocate fresh.
         }
         Vec::with_capacity(min_size)
     }
 
     /// Return a buffer to the pool for reuse.
     pub fn release(&mut self, buf: Vec<u8>) {
-        if self.buffers.len() < self.max_buffers {
-            self.buffers.push(buf);
+        let cap = buf.capacity();
+        let max = self.max_per_bucket;
+        let bucket = self.bucket_for(cap);
+        if bucket.len() < max {
+            bucket.push(buf);
         }
-        // Otherwise drop it — pool is full.
+        // Otherwise drop it — bucket is full.
+    }
+
+    fn bucket_for(&mut self, size: usize) -> &mut Vec<Vec<u8>> {
+        if size <= SMALL_THRESHOLD {
+            &mut self.small
+        } else if size <= MEDIUM_THRESHOLD {
+            &mut self.medium
+        } else {
+            &mut self.large
+        }
     }
 }
 

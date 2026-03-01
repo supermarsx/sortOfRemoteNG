@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import React from "react";
 import {
   AlertCircle,
   Info,
@@ -8,6 +7,9 @@ import {
   Search,
   ArrowDown,
 } from "lucide-react";
+import { useRdpLogViewer } from "../hooks/useRdpLogViewer";
+
+type Mgr = ReturnType<typeof useRdpLogViewer>;
 
 interface RdpLogEntry {
   timestamp: number;
@@ -43,64 +45,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({
   isVisible,
   sessionFilter,
 }) => {
-  const [logs, setLogs] = useState<RdpLogEntry[]>([]);
-  const [filter, setFilter] = useState("");
-  const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [sessionIdFilter, setSessionIdFilter] = useState<string>("all");
-  const [autoScroll, setAutoScroll] = useState(true);
-  const lastTimestamp = useRef<number>(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const fetchLogs = useCallback(async () => {
-    try {
-      const newLogs = await invoke<RdpLogEntry[]>("get_rdp_logs", {
-        sinceTimestamp: lastTimestamp.current || null,
-      });
-      if (newLogs.length > 0) {
-        lastTimestamp.current = newLogs[newLogs.length - 1].timestamp;
-        setLogs((prev) => [...prev, ...newLogs].slice(-1000));
-      }
-    } catch {
-      // Service may not be ready yet
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isVisible) return;
-    // Reset and fetch all on first open
-    lastTimestamp.current = 0;
-    setLogs([]);
-    fetchLogs();
-    const timer = setInterval(fetchLogs, 2000);
-    return () => clearInterval(timer);
-  }, [isVisible, fetchLogs]);
-
-  useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs, autoScroll]);
-
-  // Apply sessionFilter prop when it changes
-  useEffect(() => {
-    if (sessionFilter) {
-      setSessionIdFilter(sessionFilter);
-    }
-  }, [sessionFilter]);
-
-  // Collect unique session IDs for the dropdown
-  const sessionIds = Array.from(
-    new Set(logs.map((e) => e.session_id).filter(Boolean)),
-  ) as string[];
-
-  const filteredLogs = logs.filter((entry) => {
-    if (levelFilter !== "all" && entry.level !== levelFilter) return false;
-    if (sessionIdFilter !== "all" && entry.session_id !== sessionIdFilter)
-      return false;
-    if (filter && !entry.message.toLowerCase().includes(filter.toLowerCase()))
-      return false;
-    return true;
-  });
+  const mgr = useRdpLogViewer(isVisible, sessionFilter);
 
   return (
     <div className="flex flex-col h-full">
@@ -113,15 +58,15 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({
           />
           <input
             type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            value={mgr.filter}
+            onChange={(e) => mgr.setFilter(e.target.value)}
             placeholder="Filter logs..."
             className="sor-settings-input sor-settings-input-compact sor-settings-input-sm w-full pl-7 pr-2 placeholder-gray-500"
           />
         </div>
         <select
-          value={levelFilter}
-          onChange={(e) => setLevelFilter(e.target.value)}
+          value={mgr.levelFilter}
+          onChange={(e) => mgr.setLevelFilter(e.target.value)}
           className="sor-settings-select sor-settings-input-sm"
         >
           <option value="all">All</option>
@@ -129,15 +74,15 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({
           <option value="warn">Warn</option>
           <option value="error">Error</option>
         </select>
-        {sessionIds.length > 0 && (
+        {mgr.sessionIds.length > 0 && (
           <select
-            value={sessionIdFilter}
-            onChange={(e) => setSessionIdFilter(e.target.value)}
+            value={mgr.sessionIdFilter}
+            onChange={(e) => mgr.setSessionIdFilter(e.target.value)}
             className="sor-settings-select sor-settings-input-sm max-w-[80px]"
             data-tooltip="Filter by session"
           >
             <option value="all">All sessions</option>
-            {sessionIds.map((sid) => (
+            {mgr.sessionIds.map((sid) => (
               <option key={sid} value={sid}>
                 {sid.slice(0, 8)}
               </option>
@@ -145,9 +90,9 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({
           </select>
         )}
         <button
-          onClick={() => setAutoScroll(!autoScroll)}
-          className={`p-1 rounded transition-colors ${autoScroll ? "text-indigo-400 bg-indigo-900/30" : "text-gray-500 hover:text-[var(--color-textSecondary)]"}`}
-          data-tooltip={autoScroll ? "Auto-scroll ON" : "Auto-scroll OFF"}
+          onClick={() => mgr.setAutoScroll(!mgr.autoScroll)}
+          className={`p-1 rounded transition-colors ${mgr.autoScroll ? "text-indigo-400 bg-indigo-900/30" : "text-gray-500 hover:text-[var(--color-textSecondary)]"}`}
+          data-tooltip={mgr.autoScroll ? "Auto-scroll ON" : "Auto-scroll OFF"}
         >
           <ArrowDown size={12} />
         </button>
@@ -155,15 +100,15 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({
 
       {/* Log entries */}
       <div
-        ref={scrollRef}
+        ref={mgr.scrollRef}
         className="flex-1 overflow-y-auto p-2 space-y-0.5 font-mono text-[10px]"
       >
-        {filteredLogs.length === 0 ? (
+        {mgr.filteredLogs.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-500 text-xs">
             No log entries
           </div>
         ) : (
-          filteredLogs.map((entry, i) => {
+          mgr.filteredLogs.map((entry, i) => {
             const config = LEVEL_CONFIG[entry.level] || LEVEL_CONFIG.info;
             const Icon = config.icon;
             return (
@@ -197,7 +142,7 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({
 
       {/* Status bar */}
       <div className="px-3 py-1 border-t border-[var(--color-border)] text-[10px] text-gray-500 flex-shrink-0">
-        {filteredLogs.length} / {logs.length} entries
+        {mgr.filteredLogs.length} / {mgr.logs.length} entries
       </div>
     </div>
   );

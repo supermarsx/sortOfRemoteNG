@@ -1,10 +1,14 @@
 use ironrdp::pdu::input::fast_path::FastPathInputEvent;
+use smallvec::{SmallVec, smallvec};
 
 use super::types::RdpInputAction;
 
+/// Inline capacity — 95%+ of input events produce exactly 1 `FastPathInputEvent`.
+pub(crate) type InputEvents = SmallVec<[FastPathInputEvent; 2]>;
+
 // ---- Convert frontend input to IronRDP FastPathInputEvent ----
 
-pub(crate) fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> {
+pub(crate) fn convert_input(action: &RdpInputAction) -> InputEvents {
     use ironrdp::pdu::input::fast_path::KeyboardFlags;
     use ironrdp::pdu::input::mouse::PointerFlags;
     use ironrdp::pdu::input::mouse_x::PointerXFlags;
@@ -12,7 +16,7 @@ pub(crate) fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> 
 
     match action {
         RdpInputAction::MouseMove { x, y } => {
-            vec![FastPathInputEvent::MouseEvent(MousePdu {
+            smallvec![FastPathInputEvent::MouseEvent(MousePdu {
                 flags: PointerFlags::MOVE,
                 number_of_wheel_rotation_units: 0,
                 x_position: *x,
@@ -30,7 +34,7 @@ pub(crate) fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> 
                 1 => (false, PointerFlags::MIDDLE_BUTTON_OR_WHEEL),
                 2 => (false, PointerFlags::RIGHT_BUTTON),
                 3 => {
-                    return vec![FastPathInputEvent::MouseEventEx(MouseXPdu {
+                    return smallvec![FastPathInputEvent::MouseEventEx(MouseXPdu {
                         flags: if *pressed {
                             PointerXFlags::DOWN | PointerXFlags::BUTTON1
                         } else {
@@ -41,7 +45,7 @@ pub(crate) fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> 
                     })]
                 }
                 4 => {
-                    return vec![FastPathInputEvent::MouseEventEx(MouseXPdu {
+                    return smallvec![FastPathInputEvent::MouseEventEx(MouseXPdu {
                         flags: if *pressed {
                             PointerXFlags::DOWN | PointerXFlags::BUTTON2
                         } else {
@@ -58,7 +62,7 @@ pub(crate) fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> 
             } else {
                 flags
             };
-            vec![FastPathInputEvent::MouseEvent(MousePdu {
+            smallvec![FastPathInputEvent::MouseEvent(MousePdu {
                 flags: mouse_flags,
                 number_of_wheel_rotation_units: 0,
                 x_position: *x,
@@ -73,7 +77,7 @@ pub(crate) fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> 
             } else {
                 PointerFlags::VERTICAL_WHEEL
             };
-            vec![FastPathInputEvent::MouseEvent(MousePdu {
+            smallvec![FastPathInputEvent::MouseEvent(MousePdu {
                 flags,
                 number_of_wheel_rotation_units: *delta,
                 x_position: *x,
@@ -93,7 +97,7 @@ pub(crate) fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> 
             if *extended {
                 flags |= KeyboardFlags::EXTENDED;
             }
-            vec![FastPathInputEvent::KeyboardEvent(flags, *scancode as u8)]
+            smallvec![FastPathInputEvent::KeyboardEvent(flags, *scancode as u8)]
         }
         RdpInputAction::Unicode { code, pressed } => {
             let flags = if *pressed {
@@ -101,7 +105,7 @@ pub(crate) fn convert_input(action: &RdpInputAction) -> Vec<FastPathInputEvent> 
             } else {
                 KeyboardFlags::RELEASE
             };
-            vec![FastPathInputEvent::UnicodeKeyboardEvent(flags, *code)]
+            smallvec![FastPathInputEvent::UnicodeKeyboardEvent(flags, *code)]
         }
     }
 }

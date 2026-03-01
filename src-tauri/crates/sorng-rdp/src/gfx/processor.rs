@@ -254,16 +254,9 @@ impl GfxProcessor {
             return;
         }
 
-        // Convert BGRX/BGRA -> RGBA
-        let mut rgba = vec![0u8; expected_len];
-        for i in 0..pixel_count {
-            let src = i * 4;
-            let dst = i * 4;
-            rgba[dst] = wts.bitmap_data[src + 2]; // R
-            rgba[dst + 1] = wts.bitmap_data[src + 1]; // G
-            rgba[dst + 2] = wts.bitmap_data[src]; // B
-            rgba[dst + 3] = 255; // A
-        }
+        // Convert BGRX/BGRA -> RGBA using SIMD-dispatched conversion.
+        let mut rgba = wts.bitmap_data[..expected_len].to_vec();
+        crate::h264::yuv_convert::bgra_to_rgba_inplace(&mut rgba);
 
         self.surfaces.blit_to_surface(
             wts.surface_id,

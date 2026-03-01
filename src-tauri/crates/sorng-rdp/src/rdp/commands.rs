@@ -420,9 +420,10 @@ pub fn rdp_get_thumbnail(
     thumb_height: u32,
 ) -> Result<tauri::ipc::Response, String> {
     let slots = frame_store.slots.read().unwrap();
-    let slot = slots
+    let slot_arc = slots
         .get(&session_id)
         .ok_or_else(|| format!("No framebuffer for session {session_id}"))?;
+    let slot = slot_arc.inner.read().unwrap();
 
     let src_w = slot.width as u32;
     let src_h = slot.height as u32;
@@ -451,9 +452,10 @@ pub fn rdp_save_screenshot(
     file_path: String,
 ) -> Result<(), String> {
     let slots = frame_store.slots.read().unwrap();
-    let slot = slots
+    let slot_arc = slots
         .get(&session_id)
         .ok_or_else(|| format!("No framebuffer for session {session_id}"))?;
+    let slot = slot_arc.inner.read().unwrap();
 
     let src_w = slot.width as u32;
     let src_h = slot.height as u32;
@@ -521,6 +523,6 @@ pub async fn get_rdp_logs(
             .cloned()
             .collect())
     } else {
-        Ok(service.log_buffer.clone())
+        Ok(service.log_buffer.iter().cloned().collect())
     }
 }

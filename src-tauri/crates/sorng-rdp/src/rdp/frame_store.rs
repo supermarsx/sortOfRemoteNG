@@ -1,17 +1,25 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-/// Per-session framebuffer slot.
-#[allow(dead_code)]
+/// Per-session framebuffer slot with its own lock for per-session
+/// concurrency — update_region only blocks the target session.
 pub(crate) struct FrameSlot {
+    pub(crate) inner: RwLock<FrameSlotInner>,
+}
+
+#[allow(dead_code)]
+pub(crate) struct FrameSlotInner {
     pub(crate) data: Vec<u8>,
     pub(crate) width: u16,
     pub(crate) height: u16,
 }
 
 /// Thread-safe store of framebuffers for all active RDP sessions.
+/// Uses a two-level locking scheme: a top-level RwLock<HashMap> for
+/// session add/remove (rare), and per-slot RwLock for pixel updates
+/// (frequent) so sessions never contend with each other.
 pub struct SharedFrameStore {
-    pub(crate) slots: RwLock<HashMap<String, FrameSlot>>,
+    pub(crate) slots: RwLock<HashMap<String, Arc<FrameSlot>>>,
 }
 
 pub type SharedFrameStoreState = Arc<SharedFrameStore>;
@@ -26,20 +34,21 @@ impl SharedFrameStore {
     /// Create or reset a slot for the given session.
     pub(crate) fn init(&self, session_id: &str, width: u16, height: u16) {
         let size = width as usize * height as usize * 4;
-        let mut slots = self.slots.write().unwrap();
-        slots.insert(
-            session_id.to_string(),
-            FrameSlot {
+        let slot = Arc::new(FrameSlot {
+            inner: RwLock::new(FrameSlotInner {
                 data: vec![0u8; size],
                 width,
                 height,
-            },
-        );
+            }),
+        });
+        let mut slots = self.slots.write().unwrap();
+        slots.insert(session_id.to_string(), slot);
     }
 
     /// Copy a dirty region from the IronRDP DecodedImage framebuffer into
-    /// the shared slot.  This is a fast row-by-row memcpy -- much cheaper
-    /// than the old base64 encoding path.
+    /// the shared slot.  Only takes a read-lock on the top-level map, then
+    /// a write-lock on the individual session slot, so other sessions are
+    /// never blocked.
     pub(crate) fn update_region(
         &self,
         session_id: &str,
@@ -47,8 +56,9 @@ impl SharedFrameStore {
         fb_width: u16,
         region: &ironrdp::pdu::geometry::InclusiveRectangle,
     ) {
-        let mut slots = self.slots.write().unwrap();
-        if let Some(slot) = slots.get_mut(session_id) {
+        let slots = self.slots.read().unwrap();
+        if let Some(slot_arc) = slots.get(session_id) {
+            let mut slot = slot_arc.inner.write().unwrap();
             let bpp = 4usize;
             let stride = fb_width as usize * bpp;
             let left = region.left as usize;
@@ -78,7 +88,8 @@ impl SharedFrameStore {
         h: u16,
     ) -> Option<Vec<u8>> {
         let slots = self.slots.read().unwrap();
-        let slot = slots.get(session_id)?;
+        let slot_arc = slots.get(session_id)?;
+        let slot = slot_arc.inner.read().unwrap();
         let bpp = 4usize;
         let stride = slot.width as usize * bpp;
         let mut rgba = Vec::with_capacity(w as usize * h as usize * bpp);
@@ -121,7 +132,8 @@ mod tests {
         let store = SharedFrameStore::new();
         store.init("s1", 100, 50);
         let slots = store.slots.read().unwrap();
-        let slot = slots.get("s1").unwrap();
+        let slot_arc = slots.get("s1").unwrap();
+        let slot = slot_arc.inner.read().unwrap();
         assert_eq!(slot.width, 100);
         assert_eq!(slot.height, 50);
         assert_eq!(slot.data.len(), 100 * 50 * 4);
@@ -132,7 +144,7 @@ mod tests {
         let store = SharedFrameStore::new();
         store.init("s1", 4, 4);
         let slots = store.slots.read().unwrap();
-        let slot = slots.get("s1").unwrap();
+        let slot = slots.get("s1").unwrap().inner.read().unwrap();
         assert!(slot.data.iter().all(|&b| b == 0));
     }
 
@@ -141,7 +153,7 @@ mod tests {
         let store = SharedFrameStore::new();
         store.init("s1", 0, 0);
         let slots = store.slots.read().unwrap();
-        let slot = slots.get("s1").unwrap();
+        let slot = slots.get("s1").unwrap().inner.read().unwrap();
         assert!(slot.data.is_empty());
     }
 
@@ -151,8 +163,8 @@ mod tests {
         store.init("s1", 4, 4);
         // Fill the framebuffer with a pattern
         {
-            let mut slots = store.slots.write().unwrap();
-            let slot = slots.get_mut("s1").unwrap();
+            let slots = store.slots.read().unwrap();
+            let mut slot = slots.get("s1").unwrap().inner.write().unwrap();
             for (i, byte) in slot.data.iter_mut().enumerate() {
                 *byte = (i % 256) as u8;
             }
@@ -170,8 +182,8 @@ mod tests {
         let store = SharedFrameStore::new();
         store.init("s1", 8, 8);
         {
-            let mut slots = store.slots.write().unwrap();
-            let slot = slots.get_mut("s1").unwrap();
+            let slots = store.slots.read().unwrap();
+            let mut slot = slots.get("s1").unwrap().inner.write().unwrap();
             // Fill with 0xFF
             for byte in slot.data.iter_mut() {
                 *byte = 0xFF;
@@ -194,14 +206,14 @@ mod tests {
         let store = SharedFrameStore::new();
         store.init("s1", 4, 4);
         {
-            let mut slots = store.slots.write().unwrap();
-            let slot = slots.get_mut("s1").unwrap();
+            let slots = store.slots.read().unwrap();
+            let mut slot = slots.get("s1").unwrap().inner.write().unwrap();
             slot.data[0] = 0xAA;
         }
         // Reinit with different dimensions
         store.reinit("s1", 8, 8);
         let slots = store.slots.read().unwrap();
-        let slot = slots.get("s1").unwrap();
+        let slot = slots.get("s1").unwrap().inner.read().unwrap();
         assert_eq!(slot.width, 8);
         assert_eq!(slot.height, 8);
         assert_eq!(slot.data.len(), 8 * 8 * 4);
@@ -230,14 +242,14 @@ mod tests {
         store.init("s1", 4, 4);
         store.init("s2", 8, 8);
         {
-            let mut slots = store.slots.write().unwrap();
-            let slot = slots.get_mut("s1").unwrap();
+            let slots = store.slots.read().unwrap();
+            let mut slot = slots.get("s1").unwrap().inner.write().unwrap();
             slot.data[0] = 0xBB;
         }
         // s2 should be untouched
         let slots = store.slots.read().unwrap();
-        assert_eq!(slots.get("s2").unwrap().data[0], 0);
-        assert_eq!(slots.get("s1").unwrap().data[0], 0xBB);
+        assert_eq!(slots.get("s2").unwrap().inner.read().unwrap().data[0], 0);
+        assert_eq!(slots.get("s1").unwrap().inner.read().unwrap().data[0], 0xBB);
     }
 
     #[test]
@@ -254,7 +266,7 @@ mod tests {
         store.init("s1", 4, 4);
         store.init("s1", 2, 2);
         let slots = store.slots.read().unwrap();
-        let slot = slots.get("s1").unwrap();
+        let slot = slots.get("s1").unwrap().inner.read().unwrap();
         assert_eq!(slot.width, 2);
         assert_eq!(slot.data.len(), 2 * 2 * 4);
     }

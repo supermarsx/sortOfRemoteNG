@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -27,7 +27,7 @@ pub struct RdpStatusEvent {
 #[derive(Clone, Serialize)]
 pub struct RdpPointerEvent {
     pub session_id: String,
-    pub pointer_type: String, // "default", "hidden", "position", "bitmap"
+    pub pointer_type: &'static str, // "default", "hidden", "position", "bitmap"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub x: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -141,8 +141,8 @@ pub struct RdpService {
     /// Has a short connect + request timeout so it doesn't hang waiting for an
     /// unreachable KDC.
     pub(crate) cached_http_client: Option<Arc<reqwest::blocking::Client>>,
-    /// Ring buffer of the last 1000 RDP log entries.
-    pub(crate) log_buffer: Vec<RdpLogEntry>,
+    /// Ring buffer of the last 1000 RDP log entries (VecDeque for O(1) pop_front).
+    pub(crate) log_buffer: VecDeque<RdpLogEntry>,
 }
 
 impl RdpService {
@@ -169,7 +169,7 @@ impl RdpService {
             connections: HashMap::new(),
             cached_tls_connector: tls_connector,
             cached_http_client: http_client,
-            log_buffer: Vec::with_capacity(1024),
+            log_buffer: VecDeque::with_capacity(1024),
         }))
     }
 
@@ -184,9 +184,9 @@ impl RdpService {
             level: level.to_string(),
             message,
         };
-        self.log_buffer.push(entry);
-        if self.log_buffer.len() > 1000 {
-            self.log_buffer.drain(..self.log_buffer.len() - 1000);
+        self.log_buffer.push_back(entry);
+        while self.log_buffer.len() > 1000 {
+            self.log_buffer.pop_front();
         }
     }
 }

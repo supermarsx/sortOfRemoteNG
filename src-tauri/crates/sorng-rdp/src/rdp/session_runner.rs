@@ -160,6 +160,10 @@ pub(crate) fn run_rdp_session(
     frame_store: SharedFrameStoreState,
     frame_channel: Channel<InvokeResponseBody>,
 ) {
+    // Log CPU SIMD capabilities once (first session only).
+    static LOG_FEATURES: std::sync::Once = std::sync::Once::new();
+    LOG_FEATURES.call_once(|| crate::h264::yuv_convert::log_cpu_features());
+
     let result = if settings.auto_detect {
         // -- Auto-detect negotiation: try different protocol combos --
         run_rdp_session_auto_detect(
@@ -1005,8 +1009,8 @@ fn run_active_session_loop(
 
     let mut last_stats_emit = Instant::now();
     let stats_interval = settings.stats_interval;
-    #[allow(unused_assignments)]
-    let mut consecutive_errors: u32 = 0;
+    // The authoritative consecutive-error counter is now in
+    // stats.consecutive_pdu_errors.
     let max_consecutive_errors = settings.max_consecutive_errors;
     let full_frame_sync_interval = settings.full_frame_sync_interval;
 
@@ -1028,11 +1032,16 @@ fn run_active_session_loop(
     let mut last_data_received = Instant::now();
     let mut current_timeout = timeout_active;
 
+    /// Maximum input events coalesced per loop iteration.  Prevents
+    /// unbounded growth when the consumer falls behind the producer.
+    const INPUT_BACKLOG_LIMIT: usize = 512;
+
     loop {
         // - Drain ALL pending commands (input coalescing) -
         merged_inputs.clear();
         let mut should_break = false;
         let mut should_reconnect = false;
+        let mut input_dropped = 0u64;
         loop {
             match cmd_rx.try_recv() {
                 Ok(RdpCommand::Shutdown) => {
@@ -1051,7 +1060,11 @@ fn run_active_session_loop(
                     break;
                 }
                 Ok(RdpCommand::Input(events)) => {
-                    merged_inputs.extend(events);
+                    if merged_inputs.len() < INPUT_BACKLOG_LIMIT {
+                        merged_inputs.extend(events);
+                    } else {
+                        input_dropped += events.len() as u64;
+                    }
                 }
                 Ok(RdpCommand::AttachViewer(new_channel)) => {
                     log::info!(
@@ -1061,7 +1074,8 @@ fn run_active_session_loop(
                     // immediately sees the screen
                     {
                         let slots = frame_store.slots.read().unwrap();
-                        if let Some(slot) = slots.get(session_id) {
+                        if let Some(slot_arc) = slots.get(session_id) {
+                            let slot = slot_arc.inner.read().unwrap();
                             let w = slot.width;
                             let h = slot.height;
                             let total = 8 + slot.data.len();
@@ -1148,12 +1162,16 @@ fn run_active_session_loop(
         if should_reconnect {
             return SessionLoopExit::ReconnectRequested;
         }
+        if input_dropped > 0 {
+            log::warn!(
+                "RDP session {session_id}: dropped {input_dropped} input events (backlog > {INPUT_BACKLOG_LIMIT})"
+            );
+        }
 
         // Send all coalesced input in a single batch
         if !merged_inputs.is_empty() {
-            stats
-                .input_events
-                .fetch_add(merged_inputs.len() as u64, Ordering::Relaxed);
+            // Single batch update — avoids N separate Instant::now() calls.
+            stats.record_input_sent_batch(merged_inputs.len() as u64);
             let active_ch = if !viewer_detached {
                 attached_channel.as_ref().unwrap_or(frame_channel)
             } else {
@@ -1206,6 +1224,33 @@ fn run_active_session_loop(
         if last_stats_emit.elapsed() >= stats_interval {
             let _ = app_handle.emit("rdp://stats", stats.to_event(session_id));
             last_stats_emit = Instant::now();
+
+            // -- RDP-level keepalive guard --
+            //
+            // Dual-timestamp model: only send a keepalive when BOTH
+            // received-data and sent-input have been idle for the threshold.
+            // Minimum interval between keepalives is 5 seconds.
+            //
+            // Piggy-backs on the stats interval (~1s) so we don't need
+            // a separate timer.
+            let keepalive_idle = Duration::from_secs(10);
+            let keepalive_min_interval = Duration::from_secs(5);
+            if stats.should_send_keepalive(keepalive_idle, keepalive_min_interval) {
+                // Send a zero-length FastPath input frame as a keepalive
+                // (the server treats any valid PDU as proof of life).
+                if let Ok(outputs) = est.active_stage.process_fastpath_input(
+                    &mut est.image,
+                    &[],
+                ) {
+                    for output in &outputs {
+                        if let ActiveStageOutput::ResponseFrame(data) = output {
+                            let _ = est.tls_framed.write_all(data);
+                        }
+                    }
+                }
+                stats.record_keepalive_sent();
+                log::trace!("RDP session {session_id}: keepalive sent");
+            }
         }
 
         // - Flush batched frame updates -
@@ -1233,14 +1278,26 @@ fn run_active_session_loop(
         }
 
         // - Drain GFX decoded frames (H.264 via RDPGFX DVC) -
+        //
+        // High/low watermark flow control.  When the queue exceeds
+        // HIGH_WATERMARK, older frames are dropped, keeping (count / 3) + 1
+        // of the most recent ones.
         if let Some(ref gfx_rx) = est.gfx_frame_rx {
             gfx_frames.clear();
             while let Ok(gfx_frame) = gfx_rx.try_recv() {
                 gfx_frames.push(gfx_frame);
             }
-            if gfx_frames.len() > 4 {
-                let skip = gfx_frames.len() - 2;
+            let queue_len = gfx_frames.len();
+            const HIGH_WATERMARK: usize = 6;
+            if queue_len > HIGH_WATERMARK {
+                // Low watermark: keep (count / 3) + 1 recent frames
+                let keep = (queue_len / 3) + 1;
+                let skip = queue_len - keep;
                 gfx_frames.drain(..skip);
+                log::debug!(
+                    "GFX flow control: queue {queue_len} > HWM {HIGH_WATERMARK}, \
+                     dropped {skip}, kept {keep}"
+                );
             }
             for gfx_frame in gfx_frames.drain(..) {
                 stats.record_frame();
@@ -1248,12 +1305,20 @@ fn run_active_session_loop(
                     continue;
                 }
                 let active_ch = attached_channel.as_ref().unwrap_or(frame_channel);
+                // Pre-reserve 8 bytes at the front of the RGBA buffer so
+                // we can write the header in-place — zero extra allocation
+                // and zero extra memcpy of the full RGBA payload.
                 let mut payload = gfx_frame.rgba;
-                payload.reserve(8);
-                let len = payload.len();
+                let hdr_len = 8usize;
+                let rgba_len = payload.len();
+                payload.reserve(hdr_len);
+                // Shift existing RGBA data right by 8 bytes.
+                // SAFETY: we just reserved hdr_len extra bytes, and the
+                // source range [0..rgba_len] is valid.
                 unsafe {
-                    payload.set_len(len + 8);
-                    std::ptr::copy(payload.as_ptr(), payload.as_mut_ptr().add(8), len);
+                    let ptr = payload.as_mut_ptr();
+                    std::ptr::copy(ptr, ptr.add(hdr_len), rgba_len);
+                    payload.set_len(rgba_len + hdr_len);
                 }
                 payload[0..2].copy_from_slice(&gfx_frame.screen_x.to_le_bytes());
                 payload[2..4].copy_from_slice(&gfx_frame.screen_y.to_le_bytes());
@@ -1277,13 +1342,31 @@ fn run_active_session_loop(
 
             match est.tls_framed.read_pdu() {
                 Ok((action, payload)) => {
-                    consecutive_errors = 0;
+                    // Successful PDU — reset consecutive error counters.
+                    stats.record_successful_pdu();
                     last_data_received = Instant::now();
                     if current_timeout != timeout_active {
                         current_timeout = timeout_active;
                         set_read_timeout_on_framed(&est.tls_framed, Some(current_timeout));
                     }
                     let payload_len = payload.len() as u64;
+
+                    // Zero-byte PDU detection — catches broken connections
+                    // that slip through the OS TCP stack without errors.
+                    if payload_len == 0 {
+                        let zero_count = stats.record_zero_byte_read();
+                        const MAX_ZERO_BYTE_READS: u64 = 100;
+                        if zero_count >= MAX_ZERO_BYTE_READS {
+                            log::error!(
+                                "RDP session {session_id}: {zero_count} consecutive \
+                                 zero-byte reads — connection appears broken"
+                            );
+                            return SessionLoopExit::NetworkError(format!(
+                                "Zero-byte read threshold exceeded ({zero_count}/{MAX_ZERO_BYTE_READS})"
+                            ));
+                        }
+                    }
+
                     stats
                         .bytes_received
                         .fetch_add(payload_len, Ordering::Relaxed);
@@ -1323,19 +1406,19 @@ fn run_active_session_loop(
                                     ActiveStageOutput::PointerDefault => {
                                         let _ = app_handle.emit("rdp://pointer", RdpPointerEvent {
                                             session_id: session_id.to_string(),
-                                            pointer_type: "default".to_string(), x: None, y: None,
+                                            pointer_type: "default", x: None, y: None,
                                         });
                                     }
                                     ActiveStageOutput::PointerHidden => {
                                         let _ = app_handle.emit("rdp://pointer", RdpPointerEvent {
                                             session_id: session_id.to_string(),
-                                            pointer_type: "hidden".to_string(), x: None, y: None,
+                                            pointer_type: "hidden", x: None, y: None,
                                         });
                                     }
                                     ActiveStageOutput::PointerPosition { x, y } => {
                                         let _ = app_handle.emit("rdp://pointer", RdpPointerEvent {
                                             session_id: session_id.to_string(),
-                                            pointer_type: "position".to_string(),
+                                            pointer_type: "position",
                                             x: Some(x), y: Some(y),
                                         });
                                     }
@@ -1354,12 +1437,12 @@ fn run_active_session_loop(
                         Err(e) => {
                             let err_str = format!("{e}");
                             log::warn!("RDP session {session_id}: PDU processing error (recovering): {err_str}");
-                            stats.errors_recovered.fetch_add(1, Ordering::Relaxed);
+                            // Stats-based consecutive error tracking.
+                            let count = stats.record_pdu_error();
                             stats.set_last_error(&err_str);
-                            consecutive_errors += 1;
-                            if consecutive_errors >= max_consecutive_errors {
+                            if count as u32 >= max_consecutive_errors {
                                 return SessionLoopExit::ProtocolError(format!(
-                                    "Too many consecutive errors ({consecutive_errors}), last: {err_str}"
+                                    "Error threshold exceeded ({count}/{max_consecutive_errors}): {err_str}"
                                 ));
                             }
                         }

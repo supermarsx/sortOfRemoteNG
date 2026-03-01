@@ -1,8 +1,14 @@
 //! RDPGFX surface manager.
 //!
 //! Tracks surfaces created by the server and their mappings to the output display.
+//!
+//! Surface framebuffers are recycled through a `FrameBufferPool` which
+//! reuses previously-allocated buffers instead of hammering the heap
+//! allocator on every surface create/delete cycle.
 
 use std::collections::HashMap;
+
+use crate::h264::FrameBufferPool;
 
 pub struct GfxSurface {
     pub surface_id: u16,
@@ -16,24 +22,36 @@ pub struct GfxSurface {
 
 pub struct SurfaceManager {
     surfaces: HashMap<u16, GfxSurface>,
+    /// Buffer pool for recycling surface framebuffers.
+    buffer_pool: FrameBufferPool,
 }
 
 impl SurfaceManager {
     pub fn new() -> Self {
         Self {
             surfaces: HashMap::new(),
+            // Keep up to 8 recycled buffers — covers typical RDP sessions
+            // which use 1-4 surfaces simultaneously.
+            buffer_pool: FrameBufferPool::new(8),
         }
     }
 
     pub fn create_surface(&mut self, surface_id: u16, width: u16, height: u16) {
+        // If replacing an existing surface, recycle its buffer first.
+        if let Some(old) = self.surfaces.remove(&surface_id) {
+            self.buffer_pool.release(old.rgba);
+        }
         let size = width as usize * height as usize * 4;
+        let mut rgba = self.buffer_pool.acquire(size);
+        // Zero-fill (pool buffers may contain stale data).
+        rgba.resize(size, 0);
         self.surfaces.insert(
             surface_id,
             GfxSurface {
                 surface_id,
                 width,
                 height,
-                rgba: vec![0u8; size],
+                rgba,
                 output_origin: None,
             },
         );
@@ -41,7 +59,9 @@ impl SurfaceManager {
     }
 
     pub fn delete_surface(&mut self, surface_id: u16) {
-        self.surfaces.remove(&surface_id);
+        if let Some(old) = self.surfaces.remove(&surface_id) {
+            self.buffer_pool.release(old.rgba);
+        }
         log::debug!("GFX: deleted surface {surface_id}");
     }
 
@@ -98,8 +118,11 @@ impl SurfaceManager {
     }
 
     /// Reset all surfaces (e.g. on RDPGFX_RESET_GRAPHICS).
+    /// Recycled buffers are returned to the pool for reuse.
     pub fn reset(&mut self) {
-        self.surfaces.clear();
+        for (_, surface) in self.surfaces.drain() {
+            self.buffer_pool.release(surface.rgba);
+        }
     }
 }
 

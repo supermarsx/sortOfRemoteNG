@@ -15,7 +15,7 @@ use windows::Win32::Media::MediaFoundation::*;
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
 
 use super::yuv_convert;
-use super::{DecodedFrame, H264Decoder, H264Error};
+use super::{DecodedFrame, FrameBufferPool, H264Decoder, H264Error};
 
 static MF_INIT: Once = Once::new();
 static MF_INIT_ERROR: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -50,6 +50,11 @@ pub struct MfH264Decoder {
     output_subtype: GUID,
     hardware: bool,
     output_stride: u32,
+    /// Cached output stream info — avoids re-querying the MFT on every
+    /// `ProcessOutput` call.  Refreshed on stream-change events.
+    cached_output_info: Option<MFT_OUTPUT_STREAM_INFO>,
+    /// Reusable RGBA buffer pool — avoids per-frame heap allocation.
+    pool: FrameBufferPool,
 }
 
 // SAFETY: IMFTransform is a COM object that we only use from the RDP session thread.
@@ -115,6 +120,8 @@ impl MfH264Decoder {
                 output_subtype,
                 hardware,
                 output_stride: 0,
+                cached_output_info: None,
+                pool: FrameBufferPool::new(4),
             })
         }
     }
@@ -264,9 +271,15 @@ impl MfH264Decoder {
 
         unsafe {
             loop {
-                // Check if MFT allocates output samples itself
-                let output_info = self.transform.GetOutputStreamInfo(0)
-                    .unwrap_or_default();
+                // Use cached output stream info to avoid a COM call per iteration.
+                let output_info = match self.cached_output_info {
+                    Some(info) => info,
+                    None => {
+                        let info = self.transform.GetOutputStreamInfo(0).unwrap_or_default();
+                        self.cached_output_info = Some(info);
+                        info
+                    }
+                };
                 let mft_provides_samples = (output_info.dwFlags
                     & (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES.0 as u32
                         | MFT_OUTPUT_STREAM_LAZY_READ.0 as u32))
@@ -318,6 +331,8 @@ impl MfH264Decoder {
                         break;
                     }
                     Err(e) if e.code() == MF_E_TRANSFORM_STREAM_CHANGE => {
+                        // Output format changed — invalidate cached info.
+                        self.cached_output_info = None;
                         self.refresh_output_format()?;
                         continue;
                     }
@@ -333,7 +348,7 @@ impl MfH264Decoder {
     }
 
     unsafe fn extract_frame(
-        &self,
+        &mut self,
         sample: &IMFSample,
     ) -> Result<Option<DecodedFrame>, H264Error> {
         let buffer: IMFMediaBuffer = sample
@@ -351,19 +366,39 @@ impl MfH264Decoder {
         let w = self.width;
         let h = self.height;
 
-        let rgba = if w == 0 || h == 0 {
+        if w == 0 || h == 0 {
             buffer.Unlock().ok();
             return Ok(None);
-        } else if self.output_subtype == MFVideoFormat_NV12 {
+        }
+
+        // Acquire a pooled buffer — avoids heap allocation on the hot path.
+        let out_size = w as usize * h as usize * 4;
+        let mut rgba = self.pool.acquire(out_size);
+
+        if self.output_subtype == MFVideoFormat_NV12 {
             if self.output_stride > 0 && self.output_stride != w {
-                yuv_convert::nv12_strided_to_rgba(data, self.output_stride as usize, w, h)
+                yuv_convert::nv12_strided_to_rgba_into(data, self.output_stride as usize, w, h, &mut rgba);
             } else {
-                yuv_convert::nv12_to_rgba(data, w, h)
+                yuv_convert::nv12_to_rgba_into(data, w, h, &mut rgba);
             }
         } else {
             // I420 / IYUV
-            yuv_convert::i420_to_rgba(data, w, h)
-        };
+            let y_size = w as usize * h as usize;
+            let uv_size = (w as usize / 2) * (h as usize / 2);
+            if data.len() >= y_size + uv_size * 2 {
+                let y_plane = &data[..y_size];
+                let u_plane = &data[y_size..y_size + uv_size];
+                let v_plane = &data[y_size + uv_size..];
+                yuv_convert::yuv420_planar_to_rgba_inner_into(
+                    y_plane, u_plane, v_plane,
+                    w as usize, w as usize / 2, w as usize / 2,
+                    w as usize, h as usize, &mut rgba,
+                );
+            } else {
+                rgba.resize(out_size, 0);
+                rgba.fill(0);
+            }
+        }
 
         buffer
             .Unlock()

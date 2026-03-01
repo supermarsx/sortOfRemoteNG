@@ -1,3 +1,4 @@
+pub(crate) mod errors;
 mod frame_store;
 mod settings;
 mod stats;
@@ -18,7 +19,9 @@ use tokio::sync::Mutex;
 pub type RdpServiceState = Arc<Mutex<types::RdpService>>;
 
 // ---- Re-exports: types visible to the rest of the crate ----
+pub use errors::RdpError;
 pub use frame_store::{SharedFrameStore, SharedFrameStoreState};
+pub use stats::ConnectionPhase;
 pub use types::{
     RdpService, RdpSession, RdpStatusEvent, RdpPointerEvent, RdpStatsEvent,
     RdpInputAction, RdpLogEntry,
