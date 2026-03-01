@@ -1,4 +1,6 @@
 
+import { defaultScripts } from "../../../data/defaultScripts";
+
 export type OSTag = 'windows' | 'linux' | 'macos' | 'agnostic' | 'multiplatform' | 'cisco-ios';
 
 export interface ManagedScript {

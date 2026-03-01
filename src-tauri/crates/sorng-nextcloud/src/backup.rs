@@ -47,6 +47,10 @@ impl BackupManager {
         self.configs.get(id)
     }
 
+    pub fn get_config_mut(&mut self, id: &str) -> Option<&mut BackupConfig> {
+        self.configs.get_mut(id)
+    }
+
     pub fn list_configs(&self) -> Vec<&BackupConfig> {
         self.configs.values().collect()
     }

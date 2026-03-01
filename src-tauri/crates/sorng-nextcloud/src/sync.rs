@@ -47,6 +47,10 @@ impl SyncManager {
         self.configs.get(id)
     }
 
+    pub fn get_config_mut(&mut self, id: &str) -> Option<&mut SyncConfig> {
+        self.configs.get_mut(id)
+    }
+
     pub fn list_configs(&self) -> Vec<&SyncConfig> {
         self.configs.values().collect()
     }

@@ -6,7 +6,7 @@
  * (e.g. from tests or reset utilities).
  */
 
-import type { ManagedScript } from '../components/recording/ScriptManager';
+import type { ManagedScript } from '../components/recording/scriptManager/shared';
 
 export const defaultScripts: ManagedScript[] = [
   {
