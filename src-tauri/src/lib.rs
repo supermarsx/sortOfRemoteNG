@@ -128,6 +128,9 @@ pub use sorng_sqlite::sqlite;
 pub use sorng_mongodb::mongodb;
 pub use sorng_redis::redis;
 
+// AI Agent (dedicated crate)
+pub use sorng_ai_agent::ai_agent;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -195,6 +198,7 @@ use mssql::service::MssqlServiceState;
 use sqlite::service::SqliteServiceState;
 use mongodb::service::MongoServiceState;
 use redis::service::RedisServiceState;
+use ai_agent::types::AiAgentServiceState;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -544,6 +548,10 @@ pub fn run() {
 
       let redis_service: RedisServiceState = redis::service::new_state();
       app.manage(redis_service);
+
+      // Initialize AI Agent service
+      let ai_agent_service: AiAgentServiceState = ai_agent::service::AiAgentService::new();
+      app.manage(ai_agent_service);
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -1704,6 +1712,70 @@ pub fn run() {
         redis::commands::redis_config_set,
         redis::commands::redis_raw_command,
         redis::commands::redis_select_db,
+
+        // ── AI Agent ──────────────────────────────────────────────
+        ai_agent::commands::ai_register_provider,
+        ai_agent::commands::ai_remove_provider,
+        ai_agent::commands::ai_list_providers,
+        ai_agent::commands::ai_list_models,
+        ai_agent::commands::ai_health_check,
+        ai_agent::commands::ai_chat,
+        ai_agent::commands::ai_chat_stream_start,
+        ai_agent::commands::ai_chat_stream_poll,
+        ai_agent::commands::ai_chat_stream_cancel,
+        ai_agent::commands::ai_create_conversation,
+        ai_agent::commands::ai_get_conversation,
+        ai_agent::commands::ai_list_conversations,
+        ai_agent::commands::ai_delete_conversation,
+        ai_agent::commands::ai_rename_conversation,
+        ai_agent::commands::ai_fork_conversation,
+        ai_agent::commands::ai_send_message,
+        ai_agent::commands::ai_add_user_message,
+        ai_agent::commands::ai_remove_message,
+        ai_agent::commands::ai_edit_message,
+        ai_agent::commands::ai_search_conversations,
+        ai_agent::commands::ai_toggle_pin_conversation,
+        ai_agent::commands::ai_toggle_archive_conversation,
+        ai_agent::commands::ai_export_conversation,
+        ai_agent::commands::ai_run_agent,
+        ai_agent::commands::ai_list_tools,
+        ai_agent::commands::ai_execute_tool,
+        ai_agent::commands::ai_list_templates,
+        ai_agent::commands::ai_get_template,
+        ai_agent::commands::ai_create_template,
+        ai_agent::commands::ai_delete_template,
+        ai_agent::commands::ai_render_template,
+        ai_agent::commands::ai_count_tokens,
+        ai_agent::commands::ai_count_message_tokens,
+        ai_agent::commands::ai_set_budget,
+        ai_agent::commands::ai_get_budget_status,
+        ai_agent::commands::ai_get_global_usage,
+        ai_agent::commands::ai_reset_global_usage,
+        ai_agent::commands::ai_generate_embeddings,
+        ai_agent::commands::ai_vector_upsert,
+        ai_agent::commands::ai_vector_search,
+        ai_agent::commands::ai_vector_list_collections,
+        ai_agent::commands::ai_vector_drop_collection,
+        ai_agent::commands::ai_rag_create_pipeline,
+        ai_agent::commands::ai_rag_ingest_document,
+        ai_agent::commands::ai_rag_list_documents,
+        ai_agent::commands::ai_code_assist,
+        ai_agent::commands::ai_code_generate,
+        ai_agent::commands::ai_code_review,
+        ai_agent::commands::ai_code_explain,
+        ai_agent::commands::ai_create_workflow,
+        ai_agent::commands::ai_list_workflows,
+        ai_agent::commands::ai_get_workflow,
+        ai_agent::commands::ai_delete_workflow,
+        ai_agent::commands::ai_run_workflow,
+        ai_agent::commands::ai_get_workflow_progress,
+        ai_agent::commands::ai_memory_list_keys,
+        ai_agent::commands::ai_memory_clear,
+        ai_agent::commands::ai_memory_clear_all,
+        ai_agent::commands::ai_get_settings,
+        ai_agent::commands::ai_update_settings,
+        ai_agent::commands::ai_diagnostics,
+        ai_agent::commands::ai_estimate_cost,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
