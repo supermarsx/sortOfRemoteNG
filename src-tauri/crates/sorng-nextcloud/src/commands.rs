@@ -585,7 +585,7 @@ pub async fn nextcloud_list_folder_recursive(
 }
 
 #[tauri::command]
-pub fn nextcloud_breadcrumbs(path: String) -> Vec<String> {
+pub fn nextcloud_breadcrumbs(path: String) -> Vec<(String, String)> {
     folders::breadcrumbs(&path)
 }
 
@@ -724,21 +724,23 @@ pub async fn nextcloud_get_share(
 pub async fn nextcloud_update_share(
     state: State<'_, NextcloudServiceState>,
     share_id: String,
-    permissions: Option<u8>,
+    permissions: Option<u32>,
     password: Option<String>,
     expire_date: Option<String>,
     note: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let client = get_client(&state)?;
     let args = UpdateShareArgs {
-        permissions: permissions.map(|p| SharePermissions(p)),
+        share_id,
+        permissions,
         password,
         expire_date,
         note,
-        name: None,
+        label: None,
         public_upload: None,
+        hide_download: None,
     };
-    let result = sharing::update_share(&client, &share_id, &args).await?;
+    let result = sharing::update_share(&client, &args).await?;
     serde_json::to_value(&result).map_err(|e| e.to_string())
 }
 
@@ -856,8 +858,13 @@ pub async fn nextcloud_get_capabilities(
 pub async fn nextcloud_get_server_status(
     state: State<'_, NextcloudServiceState>,
 ) -> Result<serde_json::Value, String> {
-    let client = get_client(&state)?;
-    let status = users::get_server_status(&client).await?;
+    let server_url = {
+        let svc = state.lock().map_err(|e| e.to_string())?;
+        svc.server_url
+            .clone()
+            .ok_or("Server URL not configured")?
+    };
+    let status = users::get_server_status(&server_url).await?;
     serde_json::to_value(&status).map_err(|e| e.to_string())
 }
 
