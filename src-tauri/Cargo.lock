@@ -190,15 +190,22 @@ dependencies = [
  "serial_test",
  "sorng-ard",
  "sorng-auth",
+ "sorng-bitwarden",
  "sorng-cloud",
  "sorng-core",
  "sorng-gpo",
+ "sorng-keepass",
  "sorng-network",
  "sorng-protocols",
  "sorng-rdp",
  "sorng-remote-mgmt",
+ "sorng-rustdesk",
+ "sorng-scp",
+ "sorng-sftp",
  "sorng-ssh",
  "sorng-storage",
+ "sorng-telnet",
+ "sorng-vnc",
  "sorng-vpn",
  "tauri",
  "tauri-build",
@@ -1448,6 +1455,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "csv"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52cd9d68cf7efc6ddfaaee42e7288d3a99d613d4b50f76ce9827ae0c6e14f938"
+dependencies = [
+ "csv-core",
+ "itoa",
+ "ryu",
+ "serde_core",
+]
+
+[[package]]
+name = "csv-core"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704a3c26996a80471189265814dbc2c257598b96b8a7feae2d31ace646bb9782"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "ctor"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1661,6 +1689,15 @@ dependencies = [
  "quote 1.0.42",
  "rustc_version",
  "syn 2.0.112",
+]
+
+[[package]]
+name = "des"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffdd80ce8ce993de27e9f063a444a4d53ce8e8db4c1f00cc03af5ad5a9867a1e"
+dependencies = [
+ "cipher 0.4.4",
 ]
 
 [[package]]
@@ -2302,6 +2339,17 @@ checksum = "38e2275cc4e4fc009b0669731a1e5ab7ebf11f469eaede2bab9309a5b4d6057f"
 dependencies = [
  "memoffset",
  "rustc_version",
+]
+
+[[package]]
+name = "filetime"
+version = "0.2.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f98844151eee8917efc50bd9e8318cb963ae8b297431495d3f758616ea5c57db"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "libredox",
 ]
 
 [[package]]
@@ -4358,6 +4406,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
+name = "mime_guess"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
+dependencies = [
+ "mime",
+ "unicase",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5433,7 +5491,7 @@ dependencies = [
  "ctr 0.10.0-rc.1",
  "curve25519-dalek 5.0.0-pre.1",
  "der 0.8.0-rc.9",
- "des",
+ "des 0.9.0-rc.1",
  "digest 0.11.0-rc.3",
  "ecdsa 0.17.0-rc.7",
  "ed25519 3.0.0-rc.1",
@@ -5535,7 +5593,7 @@ dependencies = [
  "cipher 0.5.0-rc.1",
  "crypto-bigint 0.7.0-rc.8",
  "crypto-common 0.2.0-rc.4",
- "des",
+ "des 0.9.0-rc.1",
  "digest 0.11.0-rc.3",
  "hmac 0.13.0-rc.2",
  "inout 0.2.0-rc.6",
@@ -5618,7 +5676,7 @@ checksum = "740ebea15c5d1428f910cd1a5f52cebf8d25006245ed8ade92702f4943d91e07"
 dependencies = [
  "base64 0.22.1",
  "indexmap 2.12.1",
- "quick-xml",
+ "quick-xml 0.38.4",
  "serde",
  "time",
 ]
@@ -5924,6 +5982,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "166f136dfdb199f98186f3649cf7a0536534a61417a1a30221b492b4fb60ce3f"
 dependencies = [
  "image 0.24.9",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1004a344b30a54e2ee58d66a71b32d2db2feb0a31f9a2d302bf0536f15de2a33"
+dependencies = [
+ "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -6249,6 +6317,7 @@ dependencies = [
  "js-sys",
  "log",
  "mime",
+ "mime_guess",
  "native-tls",
  "once_cell",
  "percent-encoding",
@@ -7424,6 +7493,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-bitwarden"
+version = "0.1.0"
+dependencies = [
+ "aes 0.8.4",
+ "base64 0.21.7",
+ "cbc 0.1.2",
+ "chrono",
+ "hkdf 0.12.4",
+ "hmac 0.12.1",
+ "log",
+ "pbkdf2 0.12.2",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-core",
+ "tauri",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-cloud"
 version = "0.1.0"
 dependencies = [
@@ -7460,6 +7555,28 @@ dependencies = [
  "serde_json",
  "tokio",
  "windows 0.62.2",
+]
+
+[[package]]
+name = "sorng-keepass"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "csv",
+ "dirs 5.0.1",
+ "hex",
+ "lazy_static",
+ "log",
+ "quick-xml 0.31.0",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-core",
+ "tauri",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -7541,6 +7658,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "smallvec",
  "socket2 0.5.10",
  "softbuffer",
  "sorng-core",
@@ -7564,6 +7682,78 @@ dependencies = [
  "tauri",
  "tokio",
  "tokio-tungstenite",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-rustdesk"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "dirs 5.0.1",
+ "lazy_static",
+ "log",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sorng-core",
+ "tauri",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-scp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "dirs 5.0.1",
+ "filetime",
+ "futures",
+ "glob",
+ "hex",
+ "lazy_static",
+ "log",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-core",
+ "ssh-key",
+ "ssh2",
+ "tauri",
+ "tokio",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
+name = "sorng-sftp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "dirs 5.0.1",
+ "filetime",
+ "futures",
+ "glob",
+ "hex",
+ "lazy_static",
+ "log",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-core",
+ "ssh-key",
+ "ssh2",
+ "tauri",
+ "tokio",
  "uuid",
 ]
 
@@ -7613,6 +7803,39 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-telnet"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
+ "sorng-core",
+ "tauri",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-vnc"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "chrono",
+ "cipher 0.4.4",
+ "des 0.8.1",
+ "log",
+ "serde",
+ "serde_json",
+ "sorng-core",
  "tauri",
  "tokio",
  "uuid",
@@ -9242,6 +9465,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicase"
+version = "2.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbc4bc3a9f746d862c45cb89d705aa10f187bb96c76001afab07a0d35ce60142"
+
+[[package]]
 name = "unicode-bidi"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9607,7 +9836,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5423e94b6a63e68e439803a3e153a9252d5ead12fd853334e2ad33997e3889e3"
 dependencies = [
  "proc-macro2 1.0.104",
- "quick-xml",
+ "quick-xml 0.38.4",
  "quote 1.0.42",
 ]
 

@@ -114,6 +114,9 @@ pub use sorng_bitwarden::bitwarden;
 // KeePass (dedicated crate)
 pub use sorng_keepass::keepass;
 
+// SCP (dedicated crate)
+pub use sorng_scp::scp;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -171,6 +174,7 @@ use http::HttpService;
 use http::ProxySessionManager;
 use passkey::PasskeyService;
 use ssh3::Ssh3Service;
+use scp::ScpService;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -493,6 +497,10 @@ pub fn run() {
       // Initialize KeePass service
       let keepass_service = KeePassService::new();
       app.manage(keepass_service.clone());
+
+      // Initialize SCP service
+      let scp_service = ScpService::new();
+      app.manage(scp_service.clone());
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -1299,6 +1307,50 @@ pub fn run() {
         keepass::keepass_get_settings,
         keepass::keepass_update_settings,
         keepass::keepass_shutdown,
+        // SCP commands
+        scp::scp_connect,
+        scp::scp_disconnect,
+        scp::scp_disconnect_all,
+        scp::scp_get_session_info,
+        scp::scp_list_sessions,
+        scp::scp_ping,
+        scp::scp_remote_exists,
+        scp::scp_remote_is_dir,
+        scp::scp_remote_file_size,
+        scp::scp_remote_mkdir_p,
+        scp::scp_remote_rm,
+        scp::scp_remote_rm_rf,
+        scp::scp_remote_ls,
+        scp::scp_remote_stat,
+        scp::scp_remote_checksum,
+        scp::scp_local_checksum,
+        scp::scp_upload,
+        scp::scp_download,
+        scp::scp_batch_transfer,
+        scp::scp_upload_directory,
+        scp::scp_download_directory,
+        scp::scp_get_transfer_progress,
+        scp::scp_list_active_transfers,
+        scp::scp_cancel_transfer,
+        scp::scp_clear_completed_transfers,
+        scp::scp_queue_add,
+        scp::scp_queue_remove,
+        scp::scp_queue_list,
+        scp::scp_queue_status,
+        scp::scp_queue_start,
+        scp::scp_queue_stop,
+        scp::scp_queue_retry_failed,
+        scp::scp_queue_clear_done,
+        scp::scp_queue_clear_all,
+        scp::scp_queue_set_priority,
+        scp::scp_queue_pause,
+        scp::scp_queue_resume,
+        scp::scp_get_history,
+        scp::scp_clear_history,
+        scp::scp_history_stats,
+        scp::scp_diagnose,
+        scp::scp_diagnose_connection,
+        scp::scp_exec_remote,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
