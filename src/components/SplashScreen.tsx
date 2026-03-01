@@ -1,5 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Monitor, Loader2 } from 'lucide-react';
+import { useSplashScreen } from '../hooks/useSplashScreen';
+
+type Mgr = ReturnType<typeof useSplashScreen>;
 
 interface SplashScreenProps {
   isLoading: boolean;
@@ -7,64 +10,14 @@ interface SplashScreenProps {
 }
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({ isLoading, onLoadComplete }) => {
-  const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState('Initializing...');
-  const [shouldShow, setShouldShow] = useState(true);
-  const [fadeOut, setFadeOut] = useState(false);
+  const mgr = useSplashScreen(isLoading, onLoadComplete);
 
-  useEffect(() => {
-    if (isLoading) {
-      // Simulate loading progress
-      const statuses = [
-        'Loading settings...',
-        'Initializing theme...',
-        'Preparing workspace...',
-        'Loading connections...',
-        'Almost ready...',
-      ];
-      
-      let currentProgress = 0;
-      const interval = setInterval(() => {
-        currentProgress += Math.random() * 15 + 5;
-        if (currentProgress >= 100) {
-          currentProgress = 100;
-          clearInterval(interval);
-        }
-        setProgress(Math.min(currentProgress, 100));
-        
-        const statusIndex = Math.min(
-          Math.floor((currentProgress / 100) * statuses.length),
-          statuses.length - 1
-        );
-        setStatus(statuses[statusIndex]);
-      }, 200);
-
-      return () => clearInterval(interval);
-    }
-  }, [isLoading]);
-
-  useEffect(() => {
-    if (!isLoading && progress >= 100) {
-      // Fade out animation
-      setFadeOut(true);
-      const timeout = setTimeout(() => {
-        setShouldShow(false);
-        onLoadComplete?.();
-      }, 500);
-      return () => clearTimeout(timeout);
-    } else if (!isLoading) {
-      // Force complete progress
-      setProgress(100);
-      setStatus('Ready!');
-    }
-  }, [isLoading, progress, onLoadComplete]);
-
-  if (!shouldShow) return null;
+  if (!mgr.shouldShow) return null;
 
   return (
     <div
       className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 transition-opacity duration-500 ${
-        fadeOut ? 'opacity-0' : 'opacity-100'
+        mgr.fadeOut ? 'opacity-0' : 'opacity-100'
       }`}
     >
       {/* Glow effects */}
@@ -98,15 +51,15 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ isLoading, onLoadCom
           <div className="h-1.5 bg-[var(--color-surface)] rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all duration-300 ease-out"
-              style={{ width: `${progress}%` }}
+              style={{ width: `${mgr.progress}%` }}
             />
           </div>
         </div>
 
         {/* Status */}
         <div className="flex items-center space-x-2 text-[var(--color-textSecondary)] text-sm">
-          <Loader2 size={14} className={`animate-spin ${!isLoading && progress >= 100 ? 'hidden' : ''}`} />
-          <span>{status}</span>
+          <Loader2 size={14} className={`animate-spin ${!isLoading && mgr.progress >= 100 ? 'hidden' : ''}`} />
+          <span>{mgr.status}</span>
         </div>
 
         {/* Version */}

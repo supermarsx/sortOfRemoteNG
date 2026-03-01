@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React from "react";
 import {
   Cloud,
   CloudOff,
@@ -12,433 +12,187 @@ import {
   FileCheck,
   AlertTriangle,
 } from "lucide-react";
-import { useTranslation } from "react-i18next";
 import { CloudSyncProvider } from "../types/settings";
 import { ToolbarPopover, ToolbarPopoverHeader } from "./ui/ToolbarPopover";
-
-interface ProviderStatus {
-  enabled: boolean;
-  lastSyncTime?: number;
-  lastSyncStatus?: "success" | "failed" | "partial" | "conflict";
-  lastSyncError?: string;
-}
-
-interface SyncTestResult {
-  provider: CloudSyncProvider;
-  success: boolean;
-  message: string;
-  latencyMs?: number;
-  canRead?: boolean;
-  canWrite?: boolean;
-}
+import {
+  useCloudSyncStatus,
+  PROVIDER_NAMES,
+  PROVIDER_ICONS,
+  formatRelativeTime,
+  SyncTestResult,
+} from "../hooks/useCloudSyncStatus";
 
 interface CloudSyncStatusPopupProps {
   cloudSyncConfig?: {
     enabled: boolean;
     enabledProviders: CloudSyncProvider[];
-    providerStatus: Partial<Record<CloudSyncProvider, ProviderStatus>>;
+    providerStatus: Partial<
+      Record<
+        CloudSyncProvider,
+        {
+          enabled: boolean;
+          lastSyncTime?: number;
+          lastSyncStatus?: "success" | "failed" | "partial" | "conflict";
+          lastSyncError?: string;
+        }
+      >
+    >;
     frequency: string;
   };
   onSyncNow?: (provider?: CloudSyncProvider) => Promise<void>;
   onOpenSettings?: () => void;
 }
 
-const PROVIDER_NAMES: Record<CloudSyncProvider, string> = {
-  none: "None",
-  googleDrive: "Google Drive",
-  oneDrive: "OneDrive",
-  nextcloud: "Nextcloud",
-  webdav: "WebDAV",
-  sftp: "SFTP",
+type Mgr = ReturnType<typeof useCloudSyncStatus>;
+
+/* ── Helper icons ────────────────────────────────────────────────── */
+
+const OverallStatusIcon: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  if (mgr.isSyncing) return <Loader2 className="w-4 h-4 animate-spin text-blue-400" />;
+  if (!mgr.hasSync) return <CloudOff className="w-4 h-4 text-gray-500" />;
+  const statuses = mgr.enabledProviders.map((p) => mgr.config.providerStatus[p]?.lastSyncStatus);
+  if (statuses.some((s) => s === "failed")) return <AlertCircle className="w-4 h-4 text-red-400" />;
+  if (statuses.some((s) => s === "conflict")) return <AlertTriangle className="w-4 h-4 text-yellow-400" />;
+  if (statuses.every((s) => s === "success")) return <CheckCircle className="w-4 h-4 text-green-400" />;
+  return <Cloud className="w-4 h-4 text-[var(--color-textSecondary)]" />;
 };
 
-const PROVIDER_ICONS: Record<CloudSyncProvider, string> = {
-  none: "❌",
-  googleDrive: "🔵",
-  oneDrive: "☁️",
-  nextcloud: "🟢",
-  webdav: "🌐",
-  sftp: "🔒",
+const ProviderStatusIcon: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({ mgr, provider }) => {
+  const status = mgr.config.providerStatus[provider];
+  if (mgr.syncingProvider === provider) return <Loader2 className="w-3 h-3 animate-spin text-blue-400" />;
+  if (!status?.lastSyncStatus) return <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />;
+  switch (status.lastSyncStatus) {
+    case "success": return <CheckCircle className="w-3 h-3 text-green-400" />;
+    case "failed": return <AlertCircle className="w-3 h-3 text-red-400" />;
+    case "conflict": return <AlertTriangle className="w-3 h-3 text-yellow-400" />;
+    case "partial": return <AlertTriangle className="w-3 h-3 text-orange-400" />;
+    default: return <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />;
+  }
 };
 
-const formatRelativeTime = (timestamp?: number): string => {
-  if (!timestamp) return "Never";
-  const now = Date.now() / 1000;
-  const diff = now - timestamp;
+/* ── Sub-components ──────────────────────────────────────────────── */
 
-  if (diff < 60) return "Just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
-  return new Date(timestamp * 1000).toLocaleDateString();
+const EmptyState: React.FC<{ mgr: Mgr; onOpenSettings?: () => void }> = ({ mgr, onOpenSettings }) => (
+  <div className="text-center py-6">
+    <CloudOff className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+    <p className="text-sm text-[var(--color-textSecondary)] mb-4">
+      {mgr.t("sync.noProviders", "No sync providers configured")}
+    </p>
+    <button onClick={onOpenSettings} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+      {mgr.t("sync.configure", "Configure Sync")}
+    </button>
+  </div>
+);
+
+const OverallStatusBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <div className="flex items-center justify-between mb-4 pb-3 border-b border-[var(--color-border)]">
+    <div className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
+      <Clock className="w-4 h-4" />
+      <span>{mgr.t("sync.lastSync", "Last sync")}:</span>
+      <span className="text-gray-200">{formatRelativeTime(mgr.getLastSyncTime())}</span>
+    </div>
+    <div className="flex gap-2">
+      <button onClick={mgr.handleTestAll} disabled={mgr.isTesting} className="flex items-center gap-1.5 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded transition-colors" title={mgr.t("sync.testAll", "Test All Connections")}>
+        {mgr.isTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <TestTube className="w-3 h-3" />}
+        {mgr.t("sync.test", "Test")}
+      </button>
+      <button onClick={mgr.handleSyncAll} disabled={mgr.isSyncing} className="flex items-center gap-1.5 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded transition-colors">
+        {mgr.isSyncing && !mgr.syncingProvider ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+        {mgr.t("sync.syncAll", "Sync All")}
+      </button>
+    </div>
+  </div>
+);
+
+const TestResultBadge: React.FC<{ result: SyncTestResult }> = ({ result }) => (
+  <div className={`mt-2 p-2 rounded text-xs ${result.success ? "bg-green-900/20 border border-green-800 text-green-300" : "bg-red-900/20 border border-red-800 text-red-300"}`}>
+    <div className="flex items-center gap-2">
+      {result.success ? <FileCheck className="w-3.5 h-3.5 text-green-400" /> : <AlertCircle className="w-3.5 h-3.5 text-red-400" />}
+      <span>{result.message}</span>
+    </div>
+    {result.latencyMs && (
+      <div className="mt-1 text-gray-500">
+        Latency: {result.latencyMs}ms
+        {result.canRead !== undefined && <> • Read: {result.canRead ? "✓" : "✗"}</>}
+        {result.canWrite !== undefined && <> • Write: {result.canWrite ? "✓" : "✗"}</>}
+      </div>
+    )}
+  </div>
+);
+
+const ProviderCard: React.FC<{ mgr: Mgr; provider: CloudSyncProvider }> = ({ mgr, provider }) => {
+  const status = mgr.config.providerStatus[provider];
+  const testResult = mgr.getTestResultForProvider(provider);
+  return (
+    <div className="sor-status-item p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{PROVIDER_ICONS[provider]}</span>
+          <span className="text-sm font-medium text-gray-200">{PROVIDER_NAMES[provider]}</span>
+          <ProviderStatusIcon mgr={mgr} provider={provider} />
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={() => mgr.handleTestProvider(provider)} disabled={mgr.testingProvider === provider} className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-blue-400 disabled:opacity-50" title={mgr.t("sync.testProvider", "Test Connection")}>
+            {mgr.testingProvider === provider ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <TestTube className="w-3.5 h-3.5" />}
+          </button>
+          <button onClick={() => mgr.handleSyncProvider(provider)} disabled={mgr.syncingProvider === provider} className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-green-400 disabled:opacity-50" title={mgr.t("sync.syncProvider", "Sync Now")}>
+            {mgr.syncingProvider === provider ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      </div>
+      <div className="text-xs text-gray-500">
+        <span>{mgr.t("sync.lastSync", "Last sync")}: </span>
+        <span className="text-[var(--color-textSecondary)]">{formatRelativeTime(status?.lastSyncTime)}</span>
+      </div>
+      {status?.lastSyncError && (
+        <div className="mt-2 p-2 bg-red-900/20 border border-red-800 rounded text-xs text-red-300">{status.lastSyncError}</div>
+      )}
+      {testResult && <TestResultBadge result={testResult} />}
+    </div>
+  );
 };
+
+/* ── Root component ──────────────────────────────────────────────── */
 
 export const CloudSyncStatusPopup: React.FC<CloudSyncStatusPopupProps> = ({
   cloudSyncConfig,
   onSyncNow,
   onOpenSettings,
 }) => {
-  const { t } = useTranslation();
-  const [isOpen, setIsOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncingProvider, setSyncingProvider] =
-    useState<CloudSyncProvider | null>(null);
-  const [isTesting, setIsTesting] = useState(false);
-  const [testingProvider, setTestingProvider] =
-    useState<CloudSyncProvider | null>(null);
-  const [testResults, setTestResults] = useState<SyncTestResult[]>([]);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const config = cloudSyncConfig ?? {
-    enabled: false,
-    enabledProviders: [],
-    providerStatus: {},
-    frequency: "manual",
-  };
-
-  const enabledProviders = config.enabledProviders.filter((p) => p !== "none");
-  const hasSync = config.enabled && enabledProviders.length > 0;
-
-  const getOverallStatusIcon = () => {
-    if (isSyncing) {
-      return <Loader2 className="w-4 h-4 animate-spin text-blue-400" />;
-    }
-
-    if (!hasSync) {
-      return <CloudOff className="w-4 h-4 text-gray-500" />;
-    }
-
-    const statuses = enabledProviders.map(
-      (p) => config.providerStatus[p]?.lastSyncStatus,
-    );
-    if (statuses.some((s) => s === "failed")) {
-      return <AlertCircle className="w-4 h-4 text-red-400" />;
-    }
-    if (statuses.some((s) => s === "conflict")) {
-      return <AlertTriangle className="w-4 h-4 text-yellow-400" />;
-    }
-    if (statuses.every((s) => s === "success")) {
-      return <CheckCircle className="w-4 h-4 text-green-400" />;
-    }
-    return <Cloud className="w-4 h-4 text-[var(--color-textSecondary)]" />;
-  };
-
-  const getProviderStatusIcon = (provider: CloudSyncProvider) => {
-    const status = config.providerStatus[provider];
-    if (syncingProvider === provider) {
-      return <Loader2 className="w-3 h-3 animate-spin text-blue-400" />;
-    }
-    if (!status?.lastSyncStatus) {
-      return <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />;
-    }
-    switch (status.lastSyncStatus) {
-      case "success":
-        return <CheckCircle className="w-3 h-3 text-green-400" />;
-      case "failed":
-        return <AlertCircle className="w-3 h-3 text-red-400" />;
-      case "conflict":
-        return <AlertTriangle className="w-3 h-3 text-yellow-400" />;
-      case "partial":
-        return <AlertTriangle className="w-3 h-3 text-orange-400" />;
-      default:
-        return <Clock className="w-3 h-3 text-[var(--color-textSecondary)]" />;
-    }
-  };
-
-  const handleSyncAll = async () => {
-    if (!onSyncNow) return;
-    setIsSyncing(true);
-    try {
-      await onSyncNow();
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleSyncProvider = async (provider: CloudSyncProvider) => {
-    if (!onSyncNow) return;
-    setSyncingProvider(provider);
-    setIsSyncing(true);
-    try {
-      await onSyncNow(provider);
-    } finally {
-      setSyncingProvider(null);
-      setIsSyncing(false);
-    }
-  };
-
-  const handleTestProvider = async (provider: CloudSyncProvider) => {
-    setTestingProvider(provider);
-    setIsTesting(true);
-
-    // Remove previous result for this provider
-    setTestResults((prev) => prev.filter((r) => r.provider !== provider));
-
-    const startTime = Date.now();
-
-    try {
-      // Simulate connection test based on provider type
-      // In real implementation, this would call actual backend APIs
-      await new Promise((resolve) =>
-        setTimeout(resolve, 1000 + Math.random() * 1000),
-      );
-
-      const latencyMs = Date.now() - startTime;
-
-      // Simulate test - in reality this would test actual provider connectivity
-      const canRead = Math.random() > 0.1; // 90% success
-      const canWrite = Math.random() > 0.15; // 85% success
-      const success = canRead && canWrite;
-
-      const result: SyncTestResult = {
-        provider,
-        success,
-        message: success
-          ? t("sync.testSuccess", "Connection successful")
-          : t("sync.testFailed", "Connection failed: {{reason}}", {
-              reason: !canRead
-                ? "Cannot read from remote"
-                : "Cannot write to remote",
-            }),
-        latencyMs,
-        canRead,
-        canWrite,
-      };
-
-      setTestResults((prev) => [...prev, result]);
-    } catch (error) {
-      setTestResults((prev) => [
-        ...prev,
-        {
-          provider,
-          success: false,
-          message: t("sync.testError", "Test failed: {{error}}", {
-            error: String(error),
-          }),
-        },
-      ]);
-    } finally {
-      setTestingProvider(null);
-      setIsTesting(false);
-    }
-  };
-
-  const handleTestAll = async () => {
-    setTestResults([]);
-    for (const provider of enabledProviders) {
-      await handleTestProvider(provider);
-    }
-  };
-
-  const getLastSyncTime = (): number | undefined => {
-    const times = enabledProviders
-      .map((p) => config.providerStatus[p]?.lastSyncTime)
-      .filter((t): t is number => t !== undefined);
-    return times.length > 0 ? Math.max(...times) : undefined;
-  };
-
-  const getTestResultForProvider = (
-    provider: CloudSyncProvider,
-  ): SyncTestResult | undefined => {
-    return testResults.find((r) => r.provider === provider);
-  };
+  const mgr = useCloudSyncStatus({ cloudSyncConfig, onSyncNow });
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      {/* Icon Button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="app-bar-button p-2"
-        title={t("sync.title", "Cloud Sync Status")}
-      >
-        {getOverallStatusIcon()}
+    <div className="relative" ref={mgr.dropdownRef}>
+      <button onClick={() => mgr.setIsOpen(!mgr.isOpen)} className="app-bar-button p-2" title={mgr.t("sync.title", "Cloud Sync Status")}>
+        <OverallStatusIcon mgr={mgr} />
       </button>
 
-      {/* Popup */}
-      <ToolbarPopover
-        isOpen={isOpen}
-        onClose={() => setIsOpen(false)}
-        anchorRef={dropdownRef}
-        dataTestId="cloud-sync-status-popover"
-      >
+      <ToolbarPopover isOpen={mgr.isOpen} onClose={() => mgr.setIsOpen(false)} anchorRef={mgr.dropdownRef} dataTestId="cloud-sync-status-popover">
         <div>
           <ToolbarPopoverHeader
-            title={t("sync.title", "Cloud Sync")}
+            title={mgr.t("sync.title", "Cloud Sync")}
             icon={<Cloud className="w-5 h-5 text-blue-400" />}
-            onClose={() => setIsOpen(false)}
+            onClose={() => mgr.setIsOpen(false)}
             actions={
-              <>
-                <button
-                  onClick={onOpenSettings}
-                  className="sor-toolbar-popover-action-btn"
-                  title={t("sync.settings", "Sync Settings")}
-                >
-                  <Settings className="w-4 h-4" />
-                </button>
-              </>
+              <button onClick={onOpenSettings} className="sor-toolbar-popover-action-btn" title={mgr.t("sync.settings", "Sync Settings")}>
+                <Settings className="w-4 h-4" />
+              </button>
             }
           />
-
-          {/* Content */}
           <div className="p-4">
-            {!hasSync ? (
-              <div className="text-center py-6">
-                <CloudOff className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                <p className="text-sm text-[var(--color-textSecondary)] mb-4">
-                  {t("sync.noProviders", "No sync providers configured")}
-                </p>
-                <button
-                  onClick={onOpenSettings}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors"
-                >
-                  {t("sync.configure", "Configure Sync")}
-                </button>
-              </div>
+            {!mgr.hasSync ? (
+              <EmptyState mgr={mgr} onOpenSettings={onOpenSettings} />
             ) : (
               <>
-                {/* Overall Status */}
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-[var(--color-border)]">
-                  <div className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-                    <Clock className="w-4 h-4" />
-                    <span>{t("sync.lastSync", "Last sync")}:</span>
-                    <span className="text-gray-200">
-                      {formatRelativeTime(getLastSyncTime())}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleTestAll}
-                      disabled={isTesting}
-                      className="flex items-center gap-1.5 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded transition-colors"
-                      title={t("sync.testAll", "Test All Connections")}
-                    >
-                      {isTesting ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <TestTube className="w-3 h-3" />
-                      )}
-                      {t("sync.test", "Test")}
-                    </button>
-                    <button
-                      onClick={handleSyncAll}
-                      disabled={isSyncing}
-                      className="flex items-center gap-1.5 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded transition-colors"
-                    >
-                      {isSyncing && !syncingProvider ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-3 h-3" />
-                      )}
-                      {t("sync.syncAll", "Sync All")}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Provider List */}
+                <OverallStatusBar mgr={mgr} />
                 <div className="space-y-2">
-                  {enabledProviders.map((provider) => {
-                    const status = config.providerStatus[provider];
-                    const testResult = getTestResultForProvider(provider);
-
-                    return (
-                      <div key={provider} className="sor-status-item p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">
-                              {PROVIDER_ICONS[provider]}
-                            </span>
-                            <span className="text-sm font-medium text-gray-200">
-                              {PROVIDER_NAMES[provider]}
-                            </span>
-                            {getProviderStatusIcon(provider)}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => handleTestProvider(provider)}
-                              disabled={testingProvider === provider}
-                              className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-blue-400 disabled:opacity-50"
-                              title={t("sync.testProvider", "Test Connection")}
-                            >
-                              {testingProvider === provider ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <TestTube className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => handleSyncProvider(provider)}
-                              disabled={syncingProvider === provider}
-                              className="p-1 rounded hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:text-green-400 disabled:opacity-50"
-                              title={t("sync.syncProvider", "Sync Now")}
-                            >
-                              {syncingProvider === provider ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <RefreshCw className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Status Details */}
-                        <div className="text-xs text-gray-500">
-                          <span>{t("sync.lastSync", "Last sync")}: </span>
-                          <span className="text-[var(--color-textSecondary)]">
-                            {formatRelativeTime(status?.lastSyncTime)}
-                          </span>
-                        </div>
-
-                        {/* Error */}
-                        {status?.lastSyncError && (
-                          <div className="mt-2 p-2 bg-red-900/20 border border-red-800 rounded text-xs text-red-300">
-                            {status.lastSyncError}
-                          </div>
-                        )}
-
-                        {/* Test Result */}
-                        {testResult && (
-                          <div
-                            className={`mt-2 p-2 rounded text-xs ${
-                              testResult.success
-                                ? "bg-green-900/20 border border-green-800 text-green-300"
-                                : "bg-red-900/20 border border-red-800 text-red-300"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              {testResult.success ? (
-                                <FileCheck className="w-3.5 h-3.5 text-green-400" />
-                              ) : (
-                                <AlertCircle className="w-3.5 h-3.5 text-red-400" />
-                              )}
-                              <span>{testResult.message}</span>
-                            </div>
-                            {testResult.latencyMs && (
-                              <div className="mt-1 text-gray-500">
-                                Latency: {testResult.latencyMs}ms
-                                {testResult.canRead !== undefined && (
-                                  <> • Read: {testResult.canRead ? "✓" : "✗"}</>
-                                )}
-                                {testResult.canWrite !== undefined && (
-                                  <>
-                                    {" "}
-                                    • Write: {testResult.canWrite ? "✓" : "✗"}
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {mgr.enabledProviders.map((provider) => (
+                    <ProviderCard key={provider} mgr={mgr} provider={provider} />
+                  ))}
                 </div>
-
-                {/* Frequency Info */}
                 <div className="mt-4 pt-3 border-t border-[var(--color-border)] text-xs text-gray-500">
-                  <span>{t("sync.frequency", "Sync frequency")}: </span>
-                  <span className="text-[var(--color-textSecondary)]">
-                    {config.frequency}
-                  </span>
+                  <span>{mgr.t("sync.frequency", "Sync frequency")}: </span>
+                  <span className="text-[var(--color-textSecondary)]">{mgr.config.frequency}</span>
                 </div>
               </>
             )}

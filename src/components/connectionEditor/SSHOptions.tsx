@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { Key, Fingerprint, Trash2, Pencil } from "lucide-react";
-import { readTextFile } from "@tauri-apps/plugin-fs";
 import { PasswordInput } from "../ui/PasswordInput";
 import { Connection } from "../../types/connection";
 import { SSHKeyManager } from "../SSHKeyManager";
@@ -14,6 +13,9 @@ import {
   updateTrustRecordNickname,
   type TrustRecord,
 } from "../../utils/trustStore";
+import { useSSHOptions } from "../../hooks/useSSHOptions";
+
+type Mgr = ReturnType<typeof useSSHOptions>;
 
 interface SSHOptionsProps {
   formData: Partial<Connection>;
@@ -24,29 +26,9 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
   formData,
   setFormData,
 }) => {
-  const [showKeyManager, setShowKeyManager] = useState(false);
+  const mgr = useSSHOptions(formData, setFormData);
 
-  const isHttpProtocol = ["http", "https"].includes(formData.protocol || "");
-  if (formData.isGroup || isHttpProtocol) return null;
-
-  const handlePrivateKeyFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const text = await file.text();
-      setFormData((prev) => ({ ...prev, privateKey: text }));
-    }
-  };
-
-  const handleSelectKey = async (keyPath: string) => {
-    try {
-      const keyContent = await readTextFile(keyPath);
-      setFormData((prev) => ({ ...prev, privateKey: keyContent }));
-    } catch (err) {
-      console.error("Failed to read selected key:", err);
-    }
-  };
+  if (formData.isGroup || mgr.isHttpProtocol) return null;
 
   return (
     <>
@@ -276,7 +258,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
               </label>
               <button
                 type="button"
-                onClick={() => setShowKeyManager(true)}
+                onClick={() => mgr.setShowKeyManager(true)}
                 className="flex items-center gap-1.5 px-3 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
               >
                 <Key className="w-3.5 h-3.5" />
@@ -295,7 +277,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
             <input
               type="file"
               accept=".key,.pem,.ppk"
-              onChange={handlePrivateKeyFileChange}
+              onChange={mgr.handlePrivateKeyFileChange}
               className="mt-2 text-sm text-[var(--color-textSecondary)]"
             />
           </div>
@@ -314,9 +296,9 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
       )}
 
       <SSHKeyManager
-        isOpen={showKeyManager}
-        onClose={() => setShowKeyManager(false)}
-        onSelectKey={handleSelectKey}
+        isOpen={mgr.showKeyManager}
+        onClose={() => mgr.setShowKeyManager(false)}
+        onSelectKey={mgr.handleSelectKey}
       />
 
       {/* SSH Terminal Settings Override */}

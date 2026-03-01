@@ -34,7 +34,7 @@ import { SETTINGS_TABS, TAB_DEFAULTS } from "./settingsConstants";
 import {
   useSettingsDialog,
   type SettingsDialogMgr,
-} from "./useSettingsDialog";
+} from "../../hooks/useSettingsDialog";
 
 /* ═══════════════════════════════════════════════════════════════
    Types

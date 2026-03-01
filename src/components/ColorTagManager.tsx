@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React from "react";
 import { Plus, Palette, Edit, Trash2 } from "lucide-react";
-import { useTranslation } from "react-i18next";
-import { generateId } from "../utils/id";
 import { Modal, ModalHeader, ModalBody } from "./ui/Modal";
+import { useColorTagManager, PREDEFINED_COLORS } from "../hooks/useColorTagManager";
+
+type Mgr = ReturnType<typeof useColorTagManager>;
 
 interface ColorTag {
   id: string;
@@ -24,80 +25,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
   colorTags,
   onUpdateColorTags,
 }) => {
-  const { t } = useTranslation();
-  const [editingTag, setEditingTag] = useState<ColorTag | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newTag, setNewTag] = useState<Partial<ColorTag>>({
-    name: "",
-    color: "#3b82f6",
-    global: true,
-  });
-
-  const predefinedColors = [
-    "#ef4444",
-    "#f97316",
-    "#f59e0b",
-    "#eab308",
-    "#84cc16",
-    "#22c55e",
-    "#10b981",
-    "#14b8a6",
-    "#06b6d4",
-    "#0ea5e9",
-    "#3b82f6",
-    "#6366f1",
-    "#8b5cf6",
-    "#a855f7",
-    "#d946ef",
-    "#ec4899",
-    "#f43f5e",
-    "#64748b",
-    "#6b7280",
-    "#374151",
-  ];
-
-  const handleAddTag = () => {
-    if (!newTag.name?.trim()) return;
-
-    const id = generateId();
-    const tag: ColorTag = {
-      id,
-      name: newTag.name.trim(),
-      color: newTag.color || "#3b82f6",
-      global: newTag.global || false,
-    };
-
-    onUpdateColorTags({
-      ...colorTags,
-      [id]: tag,
-    });
-
-    setNewTag({ name: "", color: "#3b82f6", global: true });
-    setShowAddForm(false);
-  };
-
-  const handleEditTag = (tag: ColorTag) => {
-    setEditingTag({ ...tag });
-  };
-
-  const handleUpdateTag = () => {
-    if (!editingTag || !editingTag.name?.trim()) return;
-
-    onUpdateColorTags({
-      ...colorTags,
-      [editingTag.id]: editingTag,
-    });
-
-    setEditingTag(null);
-  };
-
-  const handleDeleteTag = (tagId: string) => {
-    if (confirm("Are you sure you want to delete this color tag?")) {
-      const updatedTags = { ...colorTags };
-      delete updatedTags[tagId];
-      onUpdateColorTags(updatedTags);
-    }
-  };
+  const mgr = useColorTagManager(colorTags, onUpdateColorTags);
 
   if (!isOpen) return null;
 
@@ -121,7 +49,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
           }
           actions={
             <button
-              onClick={() => setShowAddForm(true)}
+              onClick={() => mgr.setShowAddForm(true)}
               className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
             >
               <Plus size={14} />
@@ -132,7 +60,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
 
         <ModalBody className="p-6 max-h-[calc(90vh-200px)]">
           {/* Add Tag Form */}
-          {showAddForm && (
+          {mgr.showAddForm && (
             <div className="bg-[var(--color-border)] rounded-lg p-4 mb-6">
               <h3 className="text-[var(--color-text)] font-medium mb-4">
                 Add New Color Tag
@@ -143,9 +71,9 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                   <label className="sor-form-label">Tag Name</label>
                   <input
                     type="text"
-                    value={newTag.name || ""}
+                    value={mgr.newTag.name || ""}
                     onChange={(e) =>
-                      setNewTag({ ...newTag, name: e.target.value })
+                      mgr.setNewTag({ ...mgr.newTag, name: e.target.value })
                     }
                     className="sor-form-input"
                     placeholder="Enter tag name"
@@ -157,19 +85,19 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                   <div className="flex items-center space-x-3">
                     <input
                       type="color"
-                      value={newTag.color || "#3b82f6"}
+                      value={mgr.newTag.color || "#3b82f6"}
                       onChange={(e) =>
-                        setNewTag({ ...newTag, color: e.target.value })
+                        mgr.setNewTag({ ...mgr.newTag, color: e.target.value })
                       }
                       className="w-12 h-8 rounded border border-[var(--color-border)]"
                     />
                     <div className="flex flex-wrap gap-2">
-                      {predefinedColors.map((color) => (
+                      {PREDEFINED_COLORS.map((color) => (
                         <button
                           key={color}
-                          onClick={() => setNewTag({ ...newTag, color })}
+                          onClick={() => mgr.setNewTag({ ...mgr.newTag, color })}
                           className={`w-6 h-6 rounded border-2 transition-all ${
-                            newTag.color === color
+                            mgr.newTag.color === color
                               ? "border-[var(--color-border)] scale-110"
                               : "border-[var(--color-border)]"
                           }`}
@@ -183,9 +111,9 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                 <label className="flex items-center space-x-2">
                   <input
                     type="checkbox"
-                    checked={newTag.global || false}
+                    checked={mgr.newTag.global || false}
                     onChange={(e) =>
-                      setNewTag({ ...newTag, global: e.target.checked })
+                      mgr.setNewTag({ ...mgr.newTag, global: e.target.checked })
                     }
                     className="sor-form-checkbox"
                   />
@@ -196,13 +124,13 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
 
                 <div className="flex justify-end space-x-3">
                   <button
-                    onClick={() => setShowAddForm(false)}
+                    onClick={() => mgr.setShowAddForm(false)}
                     className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={handleAddTag}
+                    onClick={mgr.handleAddTag}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Add Tag
@@ -213,7 +141,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
           )}
 
           {/* Edit Tag Form */}
-          {editingTag && (
+          {mgr.editingTag && (
             <div className="bg-[var(--color-border)] rounded-lg p-4 mb-6">
               <h3 className="text-[var(--color-text)] font-medium mb-4">
                 Edit Color Tag
@@ -224,9 +152,9 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                   <label className="sor-form-label">Tag Name</label>
                   <input
                     type="text"
-                    value={editingTag.name}
+                    value={mgr.editingTag.name}
                     onChange={(e) =>
-                      setEditingTag({ ...editingTag, name: e.target.value })
+                      mgr.setEditingTag({ ...mgr.editingTag!, name: e.target.value })
                     }
                     className="sor-form-input"
                   />
@@ -237,21 +165,21 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                   <div className="flex items-center space-x-3">
                     <input
                       type="color"
-                      value={editingTag.color}
+                      value={mgr.editingTag.color}
                       onChange={(e) =>
-                        setEditingTag({ ...editingTag, color: e.target.value })
+                        mgr.setEditingTag({ ...mgr.editingTag!, color: e.target.value })
                       }
                       className="w-12 h-8 rounded border border-[var(--color-border)]"
                     />
                     <div className="flex flex-wrap gap-2">
-                      {predefinedColors.map((color) => (
+                      {PREDEFINED_COLORS.map((color) => (
                         <button
                           key={color}
                           onClick={() =>
-                            setEditingTag({ ...editingTag, color })
+                            mgr.setEditingTag({ ...mgr.editingTag!, color })
                           }
                           className={`w-6 h-6 rounded border-2 transition-all ${
-                            editingTag.color === color
+                            mgr.editingTag!.color === color
                               ? "border-[var(--color-border)] scale-110"
                               : "border-[var(--color-border)]"
                           }`}
@@ -265,9 +193,9 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                 <label className="flex items-center space-x-2">
                   <input
                     type="checkbox"
-                    checked={editingTag.global}
+                    checked={mgr.editingTag.global}
                     onChange={(e) =>
-                      setEditingTag({ ...editingTag, global: e.target.checked })
+                      mgr.setEditingTag({ ...mgr.editingTag!, global: e.target.checked })
                     }
                     className="sor-form-checkbox"
                   />
@@ -278,13 +206,13 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
 
                 <div className="flex justify-end space-x-3">
                   <button
-                    onClick={() => setEditingTag(null)}
+                    onClick={() => mgr.setEditingTag(null)}
                     className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Cancel
                   </button>
                   <button
-                    onClick={handleUpdateTag}
+                    onClick={mgr.handleUpdateTag}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors"
                   >
                     Update
@@ -333,14 +261,14 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
 
                   <div className="flex items-center space-x-2">
                     <button
-                      onClick={() => handleEditTag(tag)}
+                      onClick={() => mgr.handleEditTag(tag)}
                       className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
                       title="Edit"
                     >
                       <Edit size={16} />
                     </button>
                     <button
-                      onClick={() => handleDeleteTag(tag.id)}
+                      onClick={() => mgr.handleDeleteTag(tag.id)}
                       className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-red-400 hover:text-red-300"
                       title="Delete"
                     >

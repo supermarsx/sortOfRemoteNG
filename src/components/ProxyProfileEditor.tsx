@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { PasswordInput } from "./ui/PasswordInput";
 import {
   X,
@@ -13,15 +13,9 @@ import {
 } from "lucide-react";
 import { SavedProxyProfile, ProxyConfig } from "../types/settings";
 import { Modal, ModalHeader } from "./ui/Modal";
+import { useProxyProfileEditor } from "../hooks/useProxyProfileEditor";
 
-interface ProxyProfileEditorProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSave: (
-    profile: Omit<SavedProxyProfile, "id" | "createdAt" | "updatedAt">,
-  ) => void;
-  editingProfile?: SavedProxyProfile | null;
-}
+type Mgr = ReturnType<typeof useProxyProfileEditor>;
 
 const PROXY_TYPES: Array<{
   value: ProxyConfig["type"];
@@ -74,90 +68,308 @@ const PROXY_TYPES: Array<{
   },
 ];
 
+/* ── sub-components ── */
+
+const BasicInfoSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <div className="space-y-4">
+    <div>
+      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-1">
+        Profile Name *
+      </label>
+      <input
+        type="text"
+        value={mgr.name}
+        onChange={(e) => mgr.setName(e.target.value)}
+        placeholder="My SOCKS5 Proxy"
+        className="sor-form-input"
+      />
+    </div>
+    <div>
+      <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-1">
+        Description
+      </label>
+      <textarea
+        value={mgr.description}
+        onChange={(e) => mgr.setDescription(e.target.value)}
+        placeholder="Optional description..."
+        rows={2}
+        className="sor-form-textarea resize-none"
+      />
+    </div>
+  </div>
+);
+
+const ProxyTypeSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const selectedProxyType = PROXY_TYPES.find((t) => t.value === mgr.config.type);
+  return (
+    <div>
+      <label className="sor-form-label">
+        <Server className="w-4 h-4 inline mr-1" />
+        Proxy Type
+      </label>
+      <div className="grid grid-cols-3 gap-2">
+        {PROXY_TYPES.map((type) => (
+          <button
+            key={type.value}
+            onClick={() => mgr.updateConfig({ type: type.value })}
+            className={`p-2 rounded-lg border text-left transition-all ${
+              mgr.config.type === type.value
+                ? "border-blue-500 bg-blue-500/20 text-blue-400"
+                : "border-[var(--color-border)] bg-[var(--color-surface)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
+            }`}
+          >
+            <div className="text-xs font-medium">{type.label}</div>
+          </button>
+        ))}
+      </div>
+      {selectedProxyType && (
+        <p className="text-xs text-[var(--color-textSecondary)] mt-2 flex items-center gap-1">
+          <Info className="w-3 h-3" />
+          {selectedProxyType.description}
+        </p>
+      )}
+    </div>
+  );
+};
+
+const ConnectionDetailsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <div className="space-y-4 p-4 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)]">
+    <div className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
+      <Globe className="w-4 h-4" />
+      Connection Details
+    </div>
+    <div className="grid grid-cols-2 gap-4">
+      <div>
+        <label className="sor-form-label-xs">Host *</label>
+        <input
+          type="text"
+          value={mgr.config.host}
+          onChange={(e) => mgr.updateConfig({ host: e.target.value })}
+          placeholder="proxy.example.com"
+          className="sor-form-input"
+        />
+      </div>
+      <div>
+        <label className="sor-form-label-xs">Port *</label>
+        <input
+          type="number"
+          value={mgr.config.port}
+          onChange={(e) =>
+            mgr.updateConfig({ port: parseInt(e.target.value) || 1080 })
+          }
+          placeholder="1080"
+          className="sor-form-input"
+        />
+      </div>
+    </div>
+    {["socks5", "http", "https", "http-connect", "shadowsocks"].includes(
+      mgr.config.type,
+    ) && (
+      <>
+        <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)] pt-2 border-t border-[var(--color-border)]">
+          <Key className="w-3 h-3" />
+          Authentication (Optional)
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="sor-form-label-xs">Username</label>
+            <input
+              type="text"
+              value={mgr.config.username || ""}
+              onChange={(e) =>
+                mgr.updateConfig({ username: e.target.value || undefined })
+              }
+              placeholder="username"
+              className="sor-form-input"
+            />
+          </div>
+          <div>
+            <label className="sor-form-label-xs">Password</label>
+            <PasswordInput
+              value={mgr.config.password || ""}
+              onChange={(e) =>
+                mgr.updateConfig({ password: e.target.value || undefined })
+              }
+              placeholder="••••••••"
+              className="sor-form-input"
+            />
+          </div>
+        </div>
+      </>
+    )}
+    {mgr.config.type === "shadowsocks" && (
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="sor-form-label-xs">Encryption Method</label>
+          <select
+            value={mgr.config.shadowsocksMethod || "aes-256-gcm"}
+            onChange={(e) =>
+              mgr.updateConfig({ shadowsocksMethod: e.target.value })
+            }
+            className="sor-form-select"
+          >
+            <option value="aes-256-gcm">AES-256-GCM</option>
+            <option value="aes-128-gcm">AES-128-GCM</option>
+            <option value="chacha20-ietf-poly1305">
+              ChaCha20-IETF-Poly1305
+            </option>
+            <option value="xchacha20-ietf-poly1305">
+              XChaCha20-IETF-Poly1305
+            </option>
+            <option value="aes-256-cfb">AES-256-CFB</option>
+            <option value="aes-128-cfb">AES-128-CFB</option>
+          </select>
+        </div>
+        <div>
+          <label className="sor-form-label-xs">Plugin (Optional)</label>
+          <input
+            type="text"
+            value={mgr.config.shadowsocksPlugin || ""}
+            onChange={(e) =>
+              mgr.updateConfig({
+                shadowsocksPlugin: e.target.value || undefined,
+              })
+            }
+            placeholder="v2ray-plugin, simple-obfs"
+            className="sor-form-input"
+          />
+        </div>
+      </div>
+    )}
+    {mgr.config.type === "ssh" && (
+      <div className="space-y-4">
+        <div>
+          <label className="sor-form-label-xs">SSH Key File (Optional)</label>
+          <input
+            type="text"
+            value={mgr.config.sshKeyFile || ""}
+            onChange={(e) =>
+              mgr.updateConfig({ sshKeyFile: e.target.value || undefined })
+            }
+            placeholder="/path/to/private/key"
+            className="sor-form-input"
+          />
+        </div>
+        <div>
+          <label className="sor-form-label-xs">
+            Key Passphrase (if encrypted)
+          </label>
+          <PasswordInput
+            value={mgr.config.sshKeyPassphrase || ""}
+            onChange={(e) =>
+              mgr.updateConfig({
+                sshKeyPassphrase: e.target.value || undefined,
+              })
+            }
+            placeholder="••••••••"
+            className="sor-form-input"
+          />
+        </div>
+      </div>
+    )}
+    {mgr.config.type === "websocket" && (
+      <div>
+        <label className="sor-form-label-xs">WebSocket Path</label>
+        <input
+          type="text"
+          value={mgr.config.websocketPath || ""}
+          onChange={(e) =>
+            mgr.updateConfig({ websocketPath: e.target.value || undefined })
+          }
+          placeholder="/ws"
+          className="sor-form-input"
+        />
+      </div>
+    )}
+  </div>
+);
+
+const TagsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
+  <div className="space-y-2">
+    <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1">
+      <Tag className="w-4 h-4" />
+      Tags
+    </label>
+    <div className="flex flex-wrap gap-2 mb-2">
+      {mgr.tags.map((tag) => (
+        <span
+          key={tag}
+          className="px-2 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center gap-1"
+        >
+          {tag}
+          <button
+            onClick={() => mgr.handleRemoveTag(tag)}
+            className="hover:text-[var(--color-text)]"
+          >
+            <X size={12} />
+          </button>
+        </span>
+      ))}
+    </div>
+    <div className="flex gap-2">
+      <input
+        type="text"
+        value={mgr.tagInput}
+        onChange={(e) => mgr.setTagInput(e.target.value)}
+        onKeyDown={mgr.handleKeyDown}
+        placeholder="Add tag..."
+        className="flex-1 px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+      />
+      <button
+        onClick={mgr.handleAddTag}
+        disabled={!mgr.tagInput.trim()}
+        className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] text-sm"
+      >
+        Add
+      </button>
+    </div>
+  </div>
+);
+
+const DefaultProfileToggle: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
+  const selectedProxyType = PROXY_TYPES.find((t) => t.value === mgr.config.type);
+  return (
+    <label className="flex items-center gap-3 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
+      <input
+        type="checkbox"
+        checked={mgr.isDefault}
+        onChange={(e) => mgr.setIsDefault(e.target.checked)}
+        className="sor-form-checkbox w-4 h-4"
+      />
+      <div>
+        <div className="text-sm font-medium text-[var(--color-text)] flex items-center gap-1">
+          <Shield className="w-4 h-4 text-yellow-400" />
+          Set as Default for {selectedProxyType?.label || mgr.config.type}
+        </div>
+        <div className="text-xs text-[var(--color-textSecondary)]">
+          This profile will be pre-selected when creating new connections using
+          this proxy type
+        </div>
+      </div>
+    </label>
+  );
+};
+
+/* ── main component ── */
+
+interface ProxyProfileEditorProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (
+    profile: Omit<SavedProxyProfile, "id" | "createdAt" | "updatedAt">,
+  ) => void;
+  editingProfile?: SavedProxyProfile | null;
+}
+
 export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
   isOpen,
   onClose,
   onSave,
   editingProfile,
 }) => {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState("");
-  const [isDefault, setIsDefault] = useState(false);
-  const [config, setConfig] = useState<ProxyConfig>({
-    type: "socks5",
-    host: "",
-    port: 1080,
-    enabled: true,
-  });
-
-  useEffect(() => {
-    if (editingProfile) {
-      setName(editingProfile.name);
-      setDescription(editingProfile.description || "");
-      setTags(editingProfile.tags || []);
-      setIsDefault(editingProfile.isDefault || false);
-      setConfig(editingProfile.config);
-    } else {
-      resetForm();
-    }
-  }, [editingProfile, isOpen]);
-
-  const resetForm = () => {
-    setName("");
-    setDescription("");
-    setTags([]);
-    setTagInput("");
-    setIsDefault(false);
-    setConfig({
-      type: "socks5",
-      host: "",
-      port: 1080,
-      enabled: true,
-    });
-  };
-
-  const handleSave = () => {
-    if (!name.trim() || !config.host.trim()) return;
-
-    onSave({
-      name: name.trim(),
-      description: description.trim() || undefined,
-      tags: tags.length > 0 ? tags : undefined,
-      isDefault,
-      config,
-    });
-
-    resetForm();
-  };
-
-  const handleAddTag = () => {
-    const tag = tagInput.trim().toLowerCase();
-    if (tag && !tags.includes(tag)) {
-      setTags([...tags, tag]);
-      setTagInput("");
-    }
-  };
-
-  const handleRemoveTag = (tag: string) => {
-    setTags(tags.filter((t) => t !== tag));
-  };
-
-  const updateConfig = (updates: Partial<ProxyConfig>) => {
-    setConfig((prev) => ({ ...prev, ...updates }));
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && tagInput) {
-      e.preventDefault();
-      handleAddTag();
-    }
-  };
+  const mgr = useProxyProfileEditor(isOpen, editingProfile, onSave);
 
   if (!isOpen) return null;
-
-  const selectedProxyType = PROXY_TYPES.find((t) => t.value === config.type);
 
   return (
     <Modal
@@ -178,301 +390,20 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
                 <Wifi size={18} className="text-purple-400" />
               </div>
               <h2 className="text-lg font-semibold text-[var(--color-text)]">
-                {editingProfile ? "Edit Proxy Profile" : "New Proxy Profile"}
+                {mgr.editingProfile ? "Edit Proxy Profile" : "New Proxy Profile"}
               </h2>
             </div>
           }
         />
 
-        {/* Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* Basic Info */}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-1">
-                Profile Name *
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="My SOCKS5 Proxy"
-                className="sor-form-input"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-1">
-                Description
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Optional description..."
-                rows={2}
-                className="sor-form-textarea resize-none"
-              />
-            </div>
-          </div>
-
-          {/* Proxy Type */}
-          <div>
-            <label className="sor-form-label">
-              <Server className="w-4 h-4 inline mr-1" />
-              Proxy Type
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {PROXY_TYPES.map((type) => (
-                <button
-                  key={type.value}
-                  onClick={() => updateConfig({ type: type.value })}
-                  className={`p-2 rounded-lg border text-left transition-all ${
-                    config.type === type.value
-                      ? "border-blue-500 bg-blue-500/20 text-blue-400"
-                      : "border-[var(--color-border)] bg-[var(--color-surface)]/50 text-[var(--color-textSecondary)] hover:bg-[var(--color-surfaceHover)]"
-                  }`}
-                >
-                  <div className="text-xs font-medium">{type.label}</div>
-                </button>
-              ))}
-            </div>
-            {selectedProxyType && (
-              <p className="text-xs text-[var(--color-textSecondary)] mt-2 flex items-center gap-1">
-                <Info className="w-3 h-3" />
-                {selectedProxyType.description}
-              </p>
-            )}
-          </div>
-
-          {/* Connection Details */}
-          <div className="space-y-4 p-4 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)]">
-            <div className="text-sm font-medium text-[var(--color-text)] flex items-center gap-2">
-              <Globe className="w-4 h-4" />
-              Connection Details
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="sor-form-label-xs">Host *</label>
-                <input
-                  type="text"
-                  value={config.host}
-                  onChange={(e) => updateConfig({ host: e.target.value })}
-                  placeholder="proxy.example.com"
-                  className="sor-form-input"
-                />
-              </div>
-              <div>
-                <label className="sor-form-label-xs">Port *</label>
-                <input
-                  type="number"
-                  value={config.port}
-                  onChange={(e) =>
-                    updateConfig({ port: parseInt(e.target.value) || 1080 })
-                  }
-                  placeholder="1080"
-                  className="sor-form-input"
-                />
-              </div>
-            </div>
-
-            {/* Authentication (for types that support it) */}
-            {[
-              "socks5",
-              "http",
-              "https",
-              "http-connect",
-              "shadowsocks",
-            ].includes(config.type) && (
-              <>
-                <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)] pt-2 border-t border-[var(--color-border)]">
-                  <Key className="w-3 h-3" />
-                  Authentication (Optional)
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="sor-form-label-xs">Username</label>
-                    <input
-                      type="text"
-                      value={config.username || ""}
-                      onChange={(e) =>
-                        updateConfig({ username: e.target.value || undefined })
-                      }
-                      placeholder="username"
-                      className="sor-form-input"
-                    />
-                  </div>
-                  <div>
-                    <label className="sor-form-label-xs">Password</label>
-                    <PasswordInput
-                      value={config.password || ""}
-                      onChange={(e) =>
-                        updateConfig({ password: e.target.value || undefined })
-                      }
-                      placeholder="••••••••"
-                      className="sor-form-input"
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Shadowsocks specific */}
-            {config.type === "shadowsocks" && (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="sor-form-label-xs">Encryption Method</label>
-                  <select
-                    value={config.shadowsocksMethod || "aes-256-gcm"}
-                    onChange={(e) =>
-                      updateConfig({ shadowsocksMethod: e.target.value })
-                    }
-                    className="sor-form-select"
-                  >
-                    <option value="aes-256-gcm">AES-256-GCM</option>
-                    <option value="aes-128-gcm">AES-128-GCM</option>
-                    <option value="chacha20-ietf-poly1305">
-                      ChaCha20-IETF-Poly1305
-                    </option>
-                    <option value="xchacha20-ietf-poly1305">
-                      XChaCha20-IETF-Poly1305
-                    </option>
-                    <option value="aes-256-cfb">AES-256-CFB</option>
-                    <option value="aes-128-cfb">AES-128-CFB</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="sor-form-label-xs">Plugin (Optional)</label>
-                  <input
-                    type="text"
-                    value={config.shadowsocksPlugin || ""}
-                    onChange={(e) =>
-                      updateConfig({
-                        shadowsocksPlugin: e.target.value || undefined,
-                      })
-                    }
-                    placeholder="v2ray-plugin, simple-obfs"
-                    className="sor-form-input"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* SSH specific */}
-            {config.type === "ssh" && (
-              <div className="space-y-4">
-                <div>
-                  <label className="sor-form-label-xs">
-                    SSH Key File (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={config.sshKeyFile || ""}
-                    onChange={(e) =>
-                      updateConfig({ sshKeyFile: e.target.value || undefined })
-                    }
-                    placeholder="/path/to/private/key"
-                    className="sor-form-input"
-                  />
-                </div>
-                <div>
-                  <label className="sor-form-label-xs">
-                    Key Passphrase (if encrypted)
-                  </label>
-                  <PasswordInput
-                    value={config.sshKeyPassphrase || ""}
-                    onChange={(e) =>
-                      updateConfig({
-                        sshKeyPassphrase: e.target.value || undefined,
-                      })
-                    }
-                    placeholder="••••••••"
-                    className="sor-form-input"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* WebSocket specific */}
-            {config.type === "websocket" && (
-              <div>
-                <label className="sor-form-label-xs">WebSocket Path</label>
-                <input
-                  type="text"
-                  value={config.websocketPath || ""}
-                  onChange={(e) =>
-                    updateConfig({ websocketPath: e.target.value || undefined })
-                  }
-                  placeholder="/ws"
-                  className="sor-form-input"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Tags */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1">
-              <Tag className="w-4 h-4" />
-              Tags
-            </label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-2 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center gap-1"
-                >
-                  {tag}
-                  <button
-                    onClick={() => handleRemoveTag(tag)}
-                    className="hover:text-[var(--color-text)]"
-                  >
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Add tag..."
-                className="flex-1 px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
-              />
-              <button
-                onClick={handleAddTag}
-                disabled={!tagInput.trim()}
-                className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] text-sm"
-              >
-                Add
-              </button>
-            </div>
-          </div>
-
-          {/* Default Profile */}
-          <label className="flex items-center gap-3 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
-            <input
-              type="checkbox"
-              checked={isDefault}
-              onChange={(e) => setIsDefault(e.target.checked)}
-              className="sor-form-checkbox w-4 h-4"
-            />
-            <div>
-              <div className="text-sm font-medium text-[var(--color-text)] flex items-center gap-1">
-                <Shield className="w-4 h-4 text-yellow-400" />
-                Set as Default for {selectedProxyType?.label || config.type}
-              </div>
-              <div className="text-xs text-[var(--color-textSecondary)]">
-                This profile will be pre-selected when creating new connections
-                using this proxy type
-              </div>
-            </div>
-          </label>
+          <BasicInfoSection mgr={mgr} />
+          <ProxyTypeSelector mgr={mgr} />
+          <ConnectionDetailsSection mgr={mgr} />
+          <TagsSection mgr={mgr} />
+          <DefaultProfileToggle mgr={mgr} />
         </div>
 
-        {/* Footer */}
         <div className="px-5 py-4 border-t border-[var(--color-border)] flex justify-end gap-3">
           <button
             onClick={onClose}
@@ -481,12 +412,12 @@ export const ProxyProfileEditor: React.FC<ProxyProfileEditorProps> = ({
             Cancel
           </button>
           <button
-            onClick={handleSave}
-            disabled={!name.trim() || !config.host.trim()}
+            onClick={mgr.handleSave}
+            disabled={!mgr.canSave}
             className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] text-sm flex items-center gap-2 transition-colors"
           >
             <Save size={14} />
-            {editingProfile ? "Update Profile" : "Create Profile"}
+            {mgr.editingProfile ? "Update Profile" : "Create Profile"}
           </button>
         </div>
       </div>
