@@ -9,6 +9,7 @@ members = [
   "crates/sorng-protocols",
   "crates/sorng-vpn",
   "crates/sorng-cloud",
+  "crates/sorng-aws",
   "crates/sorng-remote-mgmt",
   "crates/sorng-gpo",
   "crates/sorng-ard",
@@ -27,6 +28,7 @@ members = [
   "crates/sorng-redis",
   "crates/sorng-passbolt",
   "crates/sorng-ai-agent",
+  "crates/sorng-powershell",
 ]
 
 [workspace.dependencies]
@@ -71,6 +73,7 @@ sorng-rdp = { path = "crates/sorng-rdp" }
 sorng-protocols = { path = "crates/sorng-protocols" }
 sorng-vpn = { path = "crates/sorng-vpn" }
 sorng-cloud = { path = "crates/sorng-cloud" }
+sorng-aws = { path = "crates/sorng-aws" }
 sorng-remote-mgmt = { path = "crates/sorng-remote-mgmt" }
 sorng-gpo = { path = "crates/sorng-gpo" }
 sorng-ard = { path = "crates/sorng-ard" }
@@ -89,6 +92,7 @@ sorng-mongodb = { path = "crates/sorng-mongodb" }
 sorng-redis = { path = "crates/sorng-redis" }
 sorng-passbolt = { path = "crates/sorng-passbolt" }
 sorng-ai-agent = { path = "crates/sorng-ai-agent" }
+sorng-powershell = { path = "crates/sorng-powershell" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
