@@ -19,7 +19,7 @@ import { ConnectionSession } from "../../types/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { mergeSSHTerminalConfig } from "../../types/settings";
-import { ManagedScript, getDefaultScripts, OSTag } from "../../components/ScriptManager";
+import { ManagedScript, getDefaultScripts, OSTag } from "../../components/recording/ScriptManager";
 import {
   verifyIdentity,
   trustIdentity,
