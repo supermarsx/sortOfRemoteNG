@@ -91,7 +91,7 @@ impl OnePasswordApiClient {
                 StatusCode::BAD_REQUEST => OnePasswordError::bad_request(msg).with_status(code),
                 StatusCode::CONFLICT => OnePasswordError::new(OnePasswordErrorKind::Conflict, msg).with_status(code),
                 StatusCode::TOO_MANY_REQUESTS => OnePasswordError::rate_limited().with_status(code),
-                StatusCode::REQUEST_ENTITY_TOO_LARGE => OnePasswordError::new(OnePasswordErrorKind::FileTooLarge, msg).with_status(code),
+                StatusCode::PAYLOAD_TOO_LARGE => OnePasswordError::new(OnePasswordErrorKind::FileTooLarge, msg).with_status(code),
                 _ => OnePasswordError::server_error(msg).with_status(code),
             })
         }
