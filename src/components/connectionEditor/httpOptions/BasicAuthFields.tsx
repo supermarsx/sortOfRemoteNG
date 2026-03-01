@@ -1,5 +1,6 @@
 import { PasswordInput } from "../../ui/forms/PasswordInput";
 import { Mgr } from "./types";
+import React from "react";
 
 const BasicAuthFields: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (mgr.formData.authType !== "basic") return null;

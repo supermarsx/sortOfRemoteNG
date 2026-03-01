@@ -1,5 +1,7 @@
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
+import React, { useEffect, useState } from "react";
+import { LayoutTemplate, RefreshCw, Trash2 } from "lucide-react";
 
 const TemplatesTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
   wa,

@@ -1,4 +1,5 @@
 import { Mgr } from "./types";
+import { Edit, Edit2, Play, Plus, Square, Trash2 } from "lucide-react";
 
 function TunnelsTab({ mgr }: { mgr: Mgr }) {
   return (

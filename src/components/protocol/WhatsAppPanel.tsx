@@ -1,7 +1,7 @@
+import React, { useState } from "react";
+import { MessageCircle, RefreshCw } from "lucide-react";
+import { useWhatsApp } from "../../hooks/protocol/useWhatsApp";
 import { TabId, TABS } from "./whatsApp/types";
-import StatusBadge from "./whatsApp/StatusBadge";
-import ErrorMsg from "./whatsApp/ErrorMsg";
-import LoadingSpinner from "./whatsApp/LoadingSpinner";
 import SettingsTab from "./whatsApp/SettingsTab";
 import ComposeTab from "./whatsApp/ComposeTab";
 import ChatTab from "./whatsApp/ChatTab";
@@ -9,6 +9,10 @@ import TemplatesTab from "./whatsApp/TemplatesTab";
 import MediaTab from "./whatsApp/MediaTab";
 import ContactsTab from "./whatsApp/ContactsTab";
 import PairingTab from "./whatsApp/PairingTab";
+
+interface WhatsAppPanelProps {
+  className?: string;
+}
 
 export const WhatsAppPanel: React.FC<WhatsAppPanelProps> = ({ className }) => {
   const waHook = useWhatsApp();

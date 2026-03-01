@@ -1,5 +1,8 @@
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
+import React, { useState } from "react";
+import type { Connection } from "../../../types/connection";
+import { Check, CheckCircle, Phone, QrCode, RefreshCw, Smartphone, X } from "lucide-react";
 
 const PairingTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
   wa,

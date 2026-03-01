@@ -1,4 +1,7 @@
 import { WebTerminalMgr } from "./types";
+import CertificateInfoPopup from "../../security/CertificateInfoPopup";
+import { Fingerprint } from "lucide-react";
+import { getStoredIdentity } from "../../../utils/trustStore";
 
 function HostKeyPopover({ mgr }: { mgr: WebTerminalMgr }) {
   return (

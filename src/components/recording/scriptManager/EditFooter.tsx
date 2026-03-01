@@ -1,4 +1,7 @@
 
+import { useTranslation } from "react-i18next";
+import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
+import { Save } from "lucide-react";
 function EditFooter({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();
   return (

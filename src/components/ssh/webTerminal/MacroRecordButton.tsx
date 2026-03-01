@@ -1,4 +1,5 @@
 import { WebTerminalMgr } from "./types";
+import { CircleDot, SquareIcon } from "lucide-react";
 
 function MacroRecordButton({ mgr }: { mgr: WebTerminalMgr }) {
   if (!mgr.macroRecorder.isRecording) {

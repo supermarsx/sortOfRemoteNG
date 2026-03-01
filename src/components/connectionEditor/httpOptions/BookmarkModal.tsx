@@ -1,4 +1,7 @@
 import { Mgr } from "./types";
+import React from "react";
+import { Edit, Save } from "lucide-react";
+import Modal, { ModalHeader } from "../../ui/overlays/Modal";
 
 const BookmarkModal: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.showAddBookmark) return null;

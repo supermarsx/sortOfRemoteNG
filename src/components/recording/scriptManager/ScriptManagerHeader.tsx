@@ -1,4 +1,8 @@
 
+import DialogHeader from "../../ui/overlays/DialogHeader";
+import { useTranslation } from "react-i18next";
+import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
+import { FileCode } from "lucide-react";
 function ScriptManagerHeader({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();
   return (

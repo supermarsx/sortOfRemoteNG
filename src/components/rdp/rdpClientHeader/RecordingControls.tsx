@@ -1,5 +1,6 @@
 import React from "react";
 import { RDPClientHeaderProps, btnDefault, formatDuration } from "./helpers";
+import { Circle, Pause, Play, Square } from "lucide-react";
 
 const RecordingControls: React.FC<{
   recState: RDPClientHeaderProps["recState"];

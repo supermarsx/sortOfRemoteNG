@@ -1,12 +1,16 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
+import { Terminal, Clock, History } from "lucide-react";
+import { useBulkSSHCommander } from "../../hooks/ssh/useBulkSSHCommander";
+import Modal from "../ui/overlays/Modal";
+import DialogHeader from "../ui/overlays/DialogHeader";
+import EmptyState from "../ui/display/EmptyState";
 import { BulkSSHCommanderProps } from "./bulkCommander/types";
 import SecondaryToolbar from "./bulkCommander/SecondaryToolbar";
 import ScriptLibraryPanel from "./bulkCommander/ScriptLibraryPanel";
 import SessionPanel from "./bulkCommander/SessionPanel";
 import CommandInput from "./bulkCommander/CommandInput";
 import OutputArea from "./bulkCommander/OutputArea";
-import TabOutputView from "./bulkCommander/TabOutputView";
-import MosaicOutputView from "./bulkCommander/MosaicOutputView";
 
 export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
   isOpen,

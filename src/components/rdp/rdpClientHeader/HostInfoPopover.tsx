@@ -1,5 +1,7 @@
 import React from "react";
 import { Mgr, RDPClientHeaderProps, btnActive, btnDefault } from "./helpers";
+import PopoverSurface from "../../ui/overlays/PopoverSurface";
+import { Check, Edit, Fingerprint, Info, Pencil, X } from "lucide-react";
 
 const HostInfoPopover: React.FC<{
   mgr: Mgr;

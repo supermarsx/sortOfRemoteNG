@@ -2,6 +2,7 @@ import ScriptEditForm from "./ScriptEditForm";
 import ScriptDetailView from "./ScriptDetailView";
 import SelectScriptPlaceholder from "./SelectScriptPlaceholder";
 import EditFooter from "./EditFooter";
+import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
 
 function DetailPane({ mgr }: { mgr: ScriptManagerMgr }) {
   return (

@@ -1,4 +1,5 @@
 import { Mgr } from "./types";
+import React from "react";
 
 const CustomHeadersSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (mgr.formData.authType !== "header") return null;

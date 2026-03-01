@@ -1,5 +1,6 @@
 import { ManagedScript, languageIcons, languageLabels, OS_TAG_LABELS, OS_TAG_ICONS } from "./shared";
 import ScriptList from "./ScriptList";
+import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
 
 function ScriptListItem({ script, mgr }: { script: ManagedScript; mgr: ScriptManagerMgr }) {
   return (

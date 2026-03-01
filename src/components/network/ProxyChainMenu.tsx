@@ -1,8 +1,8 @@
 import React from "react";
 import { Network, RefreshCw, Wifi, Link2, Route, PlugZap } from "lucide-react";
 import { useProxyChainManager } from "../../hooks/network/useProxyChainManager";
-import Modal from "../shared/Modal";
-import DialogHeader from "../ui/DialogHeader";
+import Modal from "../ui/overlays/Modal";
+import DialogHeader from "../ui/overlays/DialogHeader";
 import SSHTunnelDialog from "./SSHTunnelDialog";
 import ProxyProfileEditor from "./ProxyProfileEditor";
 import ProxyChainEditor from "./ProxyChainEditor";

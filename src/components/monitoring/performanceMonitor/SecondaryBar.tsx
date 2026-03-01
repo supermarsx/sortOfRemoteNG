@@ -1,5 +1,8 @@
 import React from "react";
 import { Mgr } from "./types";
+import { useTranslation } from "react-i18next";
+import { Clock, Download, Filter, RefreshCw, Trash2 } from "lucide-react";
+import { Select, NumberInput } from "../../ui/forms";
 
 const SecondaryBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();

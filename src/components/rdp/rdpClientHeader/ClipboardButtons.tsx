@@ -1,5 +1,6 @@
 import React from "react";
 import { btnDefault, btnDisabled } from "./helpers";
+import { ClipboardPaste, Copy } from "lucide-react";
 
 const ClipboardButtons: React.FC<{
   isConnected: boolean;

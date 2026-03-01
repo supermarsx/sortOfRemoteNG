@@ -1,5 +1,7 @@
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
+import React, { useState } from "react";
+import { AlertCircle, Building2, Check, CheckCircle, Link, Phone, PhoneCall, Users } from "lucide-react";
 
 const ContactsTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
   wa,

@@ -1,4 +1,6 @@
 import { Mgr } from "./types";
+import React from "react";
+import { ArrowDown, ArrowUp, Edit, FolderOpen, Pencil, Plus, Star, Trash2 } from "lucide-react";
 
 const BookmarksSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="md:col-span-2">

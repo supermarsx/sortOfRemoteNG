@@ -1,4 +1,8 @@
 import { ScriptLanguage, OSTag } from "./shared";
+import { useTranslation } from "react-i18next";
+import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
+import { ChevronDown, Plus, Search } from "lucide-react";
+import { Select } from "../../ui/forms";
 
 function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();

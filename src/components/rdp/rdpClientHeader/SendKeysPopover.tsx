@@ -1,5 +1,8 @@
 import React from "react";
 import { Mgr, btnActive, btnDefault, SEND_KEY_OPTIONS } from "./helpers";
+import PopoverSurface from "../../ui/overlays/PopoverSurface";
+import { Key, Keyboard, Send } from "lucide-react";
+import { OptionList, OptionGroup, OptionItemButton } from "../../ui/display/OptionList";
 
 const SendKeysPopover: React.FC<{
   mgr: Mgr;

@@ -1,4 +1,8 @@
 import { languageIcons, languageLabels, OS_TAG_ICONS, OS_TAG_LABELS } from "./shared";
+import HighlightedCode from "../../ui/display/HighlightedCode";
+import { useTranslation } from "react-i18next";
+import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
+import { Check, Clipboard, Copy, CopyPlus, Edit, Edit2, Trash2 } from "lucide-react";
 
 function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();

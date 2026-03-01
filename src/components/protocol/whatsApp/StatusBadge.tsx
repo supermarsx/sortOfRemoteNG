@@ -1,4 +1,5 @@
 
+import React from "react";
 const StatusBadge: React.FC<{ state: string }> = ({ state }) => {
   const colors: Record<string, string> = {
     active: "bg-green-500",

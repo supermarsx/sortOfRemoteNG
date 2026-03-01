@@ -1,8 +1,22 @@
+import React from "react";
+import { Monitor } from "lucide-react";
+import { useConnectionTree } from "../../hooks/connection/useConnectionTree";
+import type { Connection } from "../../types/connection";
 import ConnectionTreeItem from "./connectionTree/ConnectionTreeItem";
-import TreeItemMenu from "./connectionTree/TreeItemMenu";
 import RenameModal from "./connectionTree/RenameModal";
 import ConnectOptionsModal from "./connectionTree/ConnectOptionsModal";
 import PanelContextMenu from "./connectionTree/PanelContextMenu";
+
+interface ConnectionTreeProps {
+  onConnect: (connection: Connection) => void;
+  onDisconnect: (id: string) => void;
+  onEdit: (connection: Connection) => void;
+  onDelete: (id: string) => void;
+  onDiagnostics?: (connection: Connection) => void;
+  onSessionDetach?: (id: string) => void;
+  onOpenImport?: () => void;
+  enableReorder?: boolean;
+}
 
 export const ConnectionTree: React.FC<ConnectionTreeProps> = ({
   onConnect, onDisconnect, onEdit, onDelete, onDiagnostics,

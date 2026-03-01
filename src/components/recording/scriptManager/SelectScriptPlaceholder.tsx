@@ -1,4 +1,9 @@
 
+import EmptyState from "../../ui/display/EmptyState";
+import { useTranslation } from "react-i18next";
+import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
+import { FolderOpen, Plus } from "lucide-react";
+import { Select } from "../../ui/forms";
 function SelectScriptPlaceholder({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();
   return (

@@ -1,6 +1,8 @@
 import StatusBadge from "./StatusBadge";
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
+import React, { useState } from "react";
+import { CheckCircle, Phone, Save, Settings, Smartphone } from "lucide-react";
 
 const SettingsTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
   wa,

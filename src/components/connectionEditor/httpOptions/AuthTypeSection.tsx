@@ -1,4 +1,6 @@
 import { Mgr } from "./types";
+import React from "react";
+import { Select } from "../../ui/forms";
 
 const AuthTypeSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="md:col-span-2">

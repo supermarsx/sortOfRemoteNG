@@ -1,5 +1,9 @@
 import { PasswordInput } from "../../ui/forms/PasswordInput";
 import PanelContextMenu from "./PanelContextMenu";
+import Modal from "../../ui/overlays/Modal";
+import type { ConnectionTreeMgr } from "../../../hooks/connection/useConnectionTree";
+import { Key, Save } from "lucide-react";
+import { Select, Checkbox } from "../../ui/forms";
 
 function ConnectOptionsModal({ mgr }: { mgr: ConnectionTreeMgr }) {
   if (!mgr.connectOptionsTarget || !mgr.connectOptionsData) return null;

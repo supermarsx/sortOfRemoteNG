@@ -1,4 +1,7 @@
 import { Mgr } from "./types";
+import React from "react";
+import { AlertTriangle } from "lucide-react";
+import { Checkbox } from "../../ui/forms";
 
 const TlsVerifySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.isHttps) return null;

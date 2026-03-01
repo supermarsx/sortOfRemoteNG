@@ -1,4 +1,9 @@
 import { ScriptLanguage, OS_TAG_LABELS, OSTag, OS_TAG_ICONS, languageLabels } from "./shared";
+import HighlightedCode from "../../ui/display/HighlightedCode";
+import { useTranslation } from "react-i18next";
+import { detectLanguage } from "../../../utils/scriptSyntax";
+import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
+import { Select } from "../../ui/forms";
 
 function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();

@@ -1,5 +1,7 @@
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
+import React, { useState } from "react";
+import { History, RefreshCw, Send } from "lucide-react";
 
 const ChatTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({ wa }) => {
   const [threadId, setThreadId] = useState("");

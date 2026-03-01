@@ -1,4 +1,5 @@
 import { Mgr, TFunc } from "./types";
+import { FileCode, Grid3x3, History, Rows, Trash2 } from "lucide-react";
 
 function SecondaryToolbar({ mgr, t }: { mgr: Mgr; t: TFunc }) {
   return (

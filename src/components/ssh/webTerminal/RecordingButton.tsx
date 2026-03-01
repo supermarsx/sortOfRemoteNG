@@ -1,4 +1,5 @@
 import { WebTerminalMgr } from "./types";
+import { Circle, SquareIcon } from "lucide-react";
 
 function RecordingButton({ mgr }: { mgr: WebTerminalMgr }) {
   if (!mgr.terminalRecorder.isRecording) {

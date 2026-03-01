@@ -1,4 +1,6 @@
 import { Mgr, TFunc } from "./types";
+import { AlertCircle, Check, CheckSquare, Square, Terminal } from "lucide-react";
+import { Select } from "../../ui/forms";
 
 function SessionPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
   return (

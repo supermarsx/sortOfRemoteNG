@@ -1,3 +1,5 @@
+import React from "react";
+import { useHTTPOptions } from "../../hooks/connection/useHTTPOptions";
 import { HTTPOptionsProps } from "./httpOptions/types";
 import AuthTypeSection from "./httpOptions/AuthTypeSection";
 import BasicAuthFields from "./httpOptions/BasicAuthFields";
@@ -7,7 +9,6 @@ import CustomHeadersSection from "./httpOptions/CustomHeadersSection";
 import BookmarksSection from "./httpOptions/BookmarksSection";
 import BookmarkModal from "./httpOptions/BookmarkModal";
 import HeaderModal from "./httpOptions/HeaderModal";
-import NicknameEditButton from "./httpOptions/NicknameEditButton";
 
 export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
   formData,

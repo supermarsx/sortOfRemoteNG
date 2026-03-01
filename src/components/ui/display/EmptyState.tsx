@@ -37,3 +37,5 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
     {children}
   </div>
 );
+
+export default EmptyState;

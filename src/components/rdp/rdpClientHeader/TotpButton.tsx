@@ -1,5 +1,7 @@
 import React from "react";
 import { Mgr, RDPClientHeaderProps, btnActive, btnDefault } from "./helpers";
+import RDPTotpPanel from "../RDPTotpPanel";
+import { Shield } from "lucide-react";
 
 const TotpButton: React.FC<{
   mgr: Mgr;

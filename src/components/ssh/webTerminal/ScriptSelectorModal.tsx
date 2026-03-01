@@ -1,6 +1,10 @@
 import { OS_TAG_ICONS, OS_TAG_LABELS } from "../../recording/scriptManager/shared";
 import type { OSTag } from "../../recording/scriptManager/shared";
 import { WebTerminalMgr } from "./types";
+import Modal from "../../ui/overlays/Modal";
+import DialogHeader from "../../ui/overlays/DialogHeader";
+import { FileCode, Filter, Play, Search } from "lucide-react";
+import { Select } from "../../ui/forms";
 
 function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
   if (!mgr.showScriptSelector) return null;

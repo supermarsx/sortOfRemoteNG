@@ -1,6 +1,8 @@
 import { MsgType } from "./types";
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
+import React, { useState } from "react";
+import { CheckCircle, FileText, Image, MapPin, Music, Send, SmilePlus, Video } from "lucide-react";
 
 // ── Compose Tab ──────────────────────────────────────────────────────
 

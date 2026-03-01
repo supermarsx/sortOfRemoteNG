@@ -1,4 +1,5 @@
 import { Mgr } from "./types";
+import { Copy, Download, Edit, Edit2, Plus, Search, Trash2, Upload } from "lucide-react";
 
 function ProfilesTab({ mgr }: { mgr: Mgr }) {
   return (

@@ -1,5 +1,6 @@
 import React from "react";
 import { RDPClientHeaderProps, btnActive, btnDefault } from "./helpers";
+import { Activity, Camera, ClipboardCopy, Copy, Save, Search, Settings } from "lucide-react";
 
 const ToolbarButtons: React.FC<{ p: RDPClientHeaderProps }> = ({ p }) => (
   <>

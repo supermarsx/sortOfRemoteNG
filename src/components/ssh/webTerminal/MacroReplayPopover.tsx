@@ -1,4 +1,7 @@
 import { WebTerminalMgr } from "./types";
+import PopoverSurface from "../../ui/overlays/PopoverSurface";
+import { PlayCircle, StopCircle } from "lucide-react";
+import { OptionList, OptionEmptyState, OptionItemButton } from "../../ui/display/OptionList";
 
 function MacroReplayPopover({ mgr }: { mgr: WebTerminalMgr }) {
   return (

@@ -1,5 +1,8 @@
 import React from "react";
 import { Mgr } from "./types";
+import { useTranslation } from "react-i18next";
+import { Activity, Cpu, HardDrive, Wifi } from "lucide-react";
+import { TrendIndicator, Sparkline, MiniBarChart } from "../../ui/display";
 
 const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();

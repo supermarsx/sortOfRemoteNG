@@ -1,13 +1,19 @@
 import React from 'react';
+import { useScriptManager } from "../../hooks/recording/useScriptManager";
+import Modal from "../ui/overlays/Modal";
 import ScriptManagerHeader from "./scriptManager/ScriptManagerHeader";
 import FilterToolbar from "./scriptManager/FilterToolbar";
-import ScriptListItem from "./scriptManager/ScriptListItem";
 import ScriptList from "./scriptManager/ScriptList";
-import ScriptEditForm from "./scriptManager/ScriptEditForm";
-import ScriptDetailView from "./scriptManager/ScriptDetailView";
-import SelectScriptPlaceholder from "./scriptManager/SelectScriptPlaceholder";
-import EditFooter from "./scriptManager/EditFooter";
 import DetailPane from "./scriptManager/DetailPane";
+
+// Re-export shared types and constants for backward compatibility
+export type { ManagedScript, ScriptLanguage, OSTag } from "./scriptManager/shared";
+export { SCRIPTS_STORAGE_KEY, getDefaultScripts, OS_TAG_LABELS, OS_TAG_ICONS, languageLabels, languageIcons } from "./scriptManager/shared";
+
+interface ScriptManagerProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
 
 export const ScriptManager: React.FC<ScriptManagerProps> = ({ isOpen, onClose }) => {
   const mgr = useScriptManager(onClose);

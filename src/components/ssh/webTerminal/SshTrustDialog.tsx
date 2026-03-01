@@ -1,4 +1,5 @@
 import { WebTerminalMgr } from "./types";
+import TrustWarningDialog from "../../security/TrustWarningDialog";
 
 function SshTrustDialog({ mgr }: { mgr: WebTerminalMgr }) {
   if (!mgr.sshTrustPrompt || !mgr.hostKeyIdentity) return null;

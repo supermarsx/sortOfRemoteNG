@@ -1,4 +1,5 @@
 import { Mgr, TFunc } from "./types";
+import { Send } from "lucide-react";
 
 function TabOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
   return (

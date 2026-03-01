@@ -1,5 +1,9 @@
 import { Mgr } from "./types";
 import NicknameEditButton from "./NicknameEditButton";
+import React from "react";
+import { Lock, Trash2 } from "lucide-react";
+import { Select } from "../../ui/forms";
+import { getAllTrustRecords, clearAllTrustRecords, formatFingerprint, removeIdentity } from "../../../utils/trustStore";
 
 const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.isHttps) return null;

@@ -1,4 +1,5 @@
 import { Mgr, TFunc } from "./types";
+import { Send, StopCircle } from "lucide-react";
 
 function CommandInput({ mgr, t }: { mgr: Mgr; t: TFunc }) {
   return (

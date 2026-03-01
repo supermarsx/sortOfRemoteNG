@@ -1,4 +1,8 @@
 import ScriptListItem from "./ScriptListItem";
+import EmptyState from "../../ui/display/EmptyState";
+import { useTranslation } from "react-i18next";
+import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
+import { FileCode } from "lucide-react";
 
 function ScriptList({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();

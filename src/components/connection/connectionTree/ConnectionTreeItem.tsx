@@ -1,5 +1,8 @@
 import { ConnectionTreeItemProps, getConnectionIcon, getStatusColor } from "./helpers";
 import TreeItemMenu from "./TreeItemMenu";
+import React, { useState, useRef } from "react";
+import { useConnections } from "../../../contexts/useConnections";
+import { ChevronDown, ChevronRight, Folder, FolderOpen, MoreVertical, Play, Power } from "lucide-react";
 
 const ConnectionTreeItem: React.FC<ConnectionTreeItemProps> = ({
   connection, level,

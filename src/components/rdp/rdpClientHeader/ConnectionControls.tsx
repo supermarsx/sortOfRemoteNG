@@ -1,5 +1,6 @@
 import React from "react";
 import { Mgr, RDPClientHeaderProps, btnDefault, btnDisabled } from "./helpers";
+import { LogOut, Power, RefreshCw, Unplug } from "lucide-react";
 
 const ConnectionControls: React.FC<{
   mgr: Mgr;

@@ -1,4 +1,6 @@
 import { WebTerminalMgr } from "./types";
+import { Fingerprint, Key, Shield, ShieldAlert, ShieldCheck } from "lucide-react";
+import { getStoredIdentity, formatFingerprint } from "../../../utils/trustStore";
 
 function HostKeyTrustBadges({ mgr }: { mgr: WebTerminalMgr }) {
   if (!mgr.isSsh || !mgr.hostKeyIdentity || !mgr.hostKeyIdentity.fingerprint) return null;

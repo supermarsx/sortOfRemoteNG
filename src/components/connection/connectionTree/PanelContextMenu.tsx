@@ -1,4 +1,8 @@
 
+import MenuSurface from "../../ui/overlays/MenuSurface";
+import type { ConnectionTreeMgr } from "../../../hooks/connection/useConnectionTree";
+import type { Connection } from "../../../types/connection";
+import { Upload } from "lucide-react";
 function PanelContextMenu({ mgr, onOpenImport }: { mgr: ConnectionTreeMgr; onOpenImport?: () => void }) {
   if (!mgr.panelMenuPosition || !onOpenImport) return null;
   return (

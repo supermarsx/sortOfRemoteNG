@@ -1,13 +1,8 @@
 import React from "react";
+import { useWebTerminal } from "../../hooks/ssh/useWebTerminal";
 import { WebTerminalProps } from "./webTerminal/types";
-import RecordingButton from "./webTerminal/RecordingButton";
-import MacroRecordButton from "./webTerminal/MacroRecordButton";
-import MacroReplayPopover from "./webTerminal/MacroReplayPopover";
-import HostKeyPopover from "./webTerminal/HostKeyPopover";
-import TotpPopover from "./webTerminal/TotpPopover";
 import TerminalToolbar from "./webTerminal/TerminalToolbar";
 import TerminalStatusBar from "./webTerminal/TerminalStatusBar";
-import HostKeyTrustBadges from "./webTerminal/HostKeyTrustBadges";
 import ScriptSelectorModal from "./webTerminal/ScriptSelectorModal";
 import SshTrustDialog from "./webTerminal/SshTrustDialog";
 

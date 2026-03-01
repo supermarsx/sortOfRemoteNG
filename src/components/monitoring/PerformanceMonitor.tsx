@@ -1,4 +1,8 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
+import { usePerformanceMonitor } from "../../hooks/monitoring/usePerformanceMonitor";
+import Modal from "../ui/overlays/Modal";
+import ConfirmDialog from "../shared/ConfirmDialog";
 import { PerformanceMonitorProps } from "./performanceMonitor/types";
 import MonitorHeader from "./performanceMonitor/MonitorHeader";
 import SecondaryBar from "./performanceMonitor/SecondaryBar";

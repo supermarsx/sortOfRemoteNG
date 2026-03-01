@@ -111,3 +111,5 @@ export const DialogHeader: React.FC<DialogHeaderProps> = ({
     </div>
   );
 };
+
+export default DialogHeader;

@@ -1,4 +1,7 @@
 import { Mgr, TFunc } from "./types";
+import EmptyState from "../../ui/display/EmptyState";
+import { FileCode, Save, Search, Trash2 } from "lucide-react";
+import { Select } from "../../ui/forms";
 
 function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
   return (

@@ -1,4 +1,6 @@
 import { WebTerminalMgr } from "./types";
+import RDPTotpPanel from "../../rdp/RDPTotpPanel";
+import { Shield } from "lucide-react";
 
 function TotpPopover({ mgr }: { mgr: WebTerminalMgr }) {
   return (

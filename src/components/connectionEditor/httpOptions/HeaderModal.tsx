@@ -1,4 +1,6 @@
 import { Mgr } from "./types";
+import React from "react";
+import Modal, { ModalHeader } from "../../ui/overlays/Modal";
 
 const HeaderModal: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (!mgr.showAddHeader) return null;

@@ -4,6 +4,7 @@ import MacroRecordButton from "./MacroRecordButton";
 import MacroReplayPopover from "./MacroReplayPopover";
 import HostKeyPopover from "./HostKeyPopover";
 import TotpPopover from "./TotpPopover";
+import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, Send, StopCircle, Trash2, Unplug } from "lucide-react";
 
 function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
   return (

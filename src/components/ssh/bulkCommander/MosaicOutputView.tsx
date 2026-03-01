@@ -1,4 +1,6 @@
 import { Mgr, TFunc } from "./types";
+import { AlertCircle, Check, Copy, Grid3x3, Terminal } from "lucide-react";
+import { Select } from "../../ui/forms";
 
 function MosaicOutputView({ mgr, t }: { mgr: Mgr; t: TFunc }) {
   return (

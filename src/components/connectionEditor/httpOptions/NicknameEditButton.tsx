@@ -1,4 +1,8 @@
 
+import { useState } from "react";
+import { Pencil } from "lucide-react";
+import { updateTrustRecordNickname } from "../../../utils/trustStore";
+import type { TrustRecord } from "../../../utils/trustStore";
 function NicknameEditButton({
   record,
   connectionId,
@@ -66,5 +70,5 @@ function NicknameEditButton({
   );
 }
 
-export default HTTPOptions;
+export default NicknameEditButton;
 

@@ -1,5 +1,7 @@
 import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
+import React, { useState } from "react";
+import { Download, Link, Trash2, Upload } from "lucide-react";
 
 const MediaTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({ wa }) => {
   const [uploadPath, setUploadPath] = useState("");

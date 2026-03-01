@@ -1,5 +1,7 @@
 import React from "react";
 import { Mgr } from "./types";
+import { useTranslation } from "react-i18next";
+import { Activity, Clock, Cpu, HardDrive, Wifi } from "lucide-react";
 
 const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();

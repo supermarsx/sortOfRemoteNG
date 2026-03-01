@@ -1,4 +1,7 @@
-import { RDPClientHeaderProps } from "./rdpClientHeader/helpers";
+import { Monitor, Minimize2, Maximize2 } from "lucide-react";
+import { useRDPClientHeader } from "../../hooks/rdp/useRDPClientHeader";
+import ConfirmDialog from "../shared/ConfirmDialog";
+import { RDPClientHeaderProps, btnDefault } from "./rdpClientHeader/helpers";
 import NameDisplay from "./rdpClientHeader/NameDisplay";
 import ConnectionControls from "./rdpClientHeader/ConnectionControls";
 import ClipboardButtons from "./rdpClientHeader/ClipboardButtons";
