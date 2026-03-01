@@ -1,0 +1,21 @@
+[package]
+name = "sorng-vmware"
+version = "0.1.0"
+edition = "2021"
+description = "VMware vSphere / VMRC management (VM lifecycle, snapshots, networking, storage, metrics, ESXi hosts, VMRC console)"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.9.5", features = ["devtools"] }
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+reqwest = { version = "0.11", features = ["json", "cookies"] }
+base64 = "0.21"
+url = "2.5"
+async-trait = "0.1"
+futures = "0.3"
+native-tls = "0.2"
+tokio-native-tls = "0.3"
