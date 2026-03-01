@@ -971,6 +971,7 @@ pub fn format_wmi_datetime(dt: &chrono::DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Datelike;
 
     #[test]
     fn test_xml_escape_unescape() {
