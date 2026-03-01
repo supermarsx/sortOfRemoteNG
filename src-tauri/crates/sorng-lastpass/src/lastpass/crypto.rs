@@ -190,7 +190,7 @@ pub fn decrypt_field(data: &str, key: &[u8]) -> Result<String, LastPassError> {
 pub fn generate_iv() -> [u8; 16] {
     use rand::RngCore;
     let mut iv = [0u8; 16];
-    rand::rng().fill_bytes(&mut iv);
+    rand::thread_rng().fill_bytes(&mut iv);
     iv
 }
 

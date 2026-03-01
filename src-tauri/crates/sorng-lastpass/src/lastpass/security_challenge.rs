@@ -125,7 +125,7 @@ pub fn analyze_security(accounts: &[Account]) -> SecurityScore {
 
 /// Calculate a score for a single item based on its issues.
 fn calculate_item_score(issues: &[SecurityIssue]) -> f64 {
-    let mut score = 100.0;
+    let mut score: f64 = 100.0;
     for issue in issues {
         match issue {
             SecurityIssue::BlankPassword => score -= 100.0,
@@ -141,7 +141,7 @@ fn calculate_item_score(issues: &[SecurityIssue]) -> f64 {
             SecurityIssue::NoSymbols => score -= 5.0,
         }
     }
-    score.max(0.0)
+    score.max(0.0_f64)
 }
 
 /// Get accounts with the worst security scores.
