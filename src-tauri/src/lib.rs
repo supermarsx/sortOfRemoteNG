@@ -14,6 +14,7 @@
 //! - **sorng-gpo** — Windows Group Policy Object management
 //! - **sorng-network** — Network utilities, Wake-on-LAN, and QR codes
 //! - **sorng-ssh** — SSH, SSH3, and script execution
+//! - **sorng-sftp** — Comprehensive SFTP file-transfer and remote filesystem management
 //! - **sorng-rdp** — RDP connectivity and graphics pipeline
 //! - **sorng-protocols** — VNC, Telnet, Serial, FTP, DB, HTTP, and more
 //! - **sorng-vpn** — VPN services, proxy, and connection chaining
@@ -57,14 +58,17 @@ pub use sorng_ssh::ssh;
 pub use sorng_ssh::ssh3;
 pub use sorng_ssh::script;
 
+// SFTP (dedicated crate)
+pub use sorng_sftp::sftp;
+
 // RDP
 pub use sorng_rdp::rdp;
 pub use sorng_rdp::gfx;
 pub use sorng_rdp::h264;
 
 // Protocols
-pub use sorng_protocols::vnc;
-pub use sorng_protocols::telnet;
+pub use sorng_vnc::vnc;
+pub use sorng_telnet::telnet;
 pub use sorng_protocols::serial;
 pub use sorng_protocols::rlogin;
 pub use sorng_protocols::raw_socket;
@@ -100,7 +104,15 @@ pub use sorng_remote_mgmt::meshcentral;
 pub use sorng_remote_mgmt::agent;
 pub use sorng_remote_mgmt::commander;
 pub use sorng_remote_mgmt::anydesk;
-pub use sorng_remote_mgmt::rustdesk;
+
+// RustDesk (dedicated crate)
+pub use sorng_rustdesk::rustdesk;
+
+// Bitwarden (dedicated crate)
+pub use sorng_bitwarden::bitwarden;
+
+// KeePass (dedicated crate)
+pub use sorng_keepass::keepass;
 
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
@@ -116,6 +128,7 @@ mod tests {
 use auth::{AuthService, AuthServiceState};
 use storage::SecureStorage;
 use ssh::SshService;
+use sftp::SftpService;
 use rdp::RdpService;
 use vnc::VncService;
 use db::DbService;
@@ -133,6 +146,8 @@ use chaining::ChainingService;
 use qr::QrService;
 use rustdesk::RustDeskService;
 use anydesk::AnyDeskService;
+use bitwarden::BitwardenService;
+use keepass::KeePassService;
 use api::ApiService;
 use cert_auth::CertAuthService;
 use two_factor::TwoFactorService;
@@ -257,6 +272,10 @@ pub fn run() {
       let ssh_service = SshService::new();
       app.manage(ssh_service.clone());
 
+      // Initialize SFTP service (dedicated crate)
+      let sftp_service = SftpService::new();
+      app.manage(sftp_service.clone());
+
       // Initialize RDP service
       let rdp_service = RdpService::new();
       app.manage(rdp_service);
@@ -266,7 +285,7 @@ pub fn run() {
       app.manage(frame_store);
 
       // Initialize VNC service
-      let vnc_service = VncService::new();
+      let vnc_service = VncService::new_state();
       app.manage(vnc_service);
 
       // Initialize AnyDesk service
@@ -467,6 +486,14 @@ pub fn run() {
       let backup_service = backup::BackupService::new(backup_path.to_string_lossy().to_string());
       app.manage(backup_service.clone());
 
+      // Initialize Bitwarden service
+      let bw_service = BitwardenService::new_state();
+      app.manage(bw_service);
+
+      // Initialize KeePass service
+      let keepass_service = KeePassService::new();
+      app.manage(keepass_service.clone());
+
       // Initialize API service
       let api_service = ApiService::new(
         auth_service.clone(),
@@ -550,8 +577,18 @@ pub fn run() {
         rdp::get_rdp_logs,
         vnc::connect_vnc,
         vnc::disconnect_vnc,
+        vnc::disconnect_all_vnc,
+        vnc::is_vnc_connected,
         vnc::get_vnc_session_info,
         vnc::list_vnc_sessions,
+        vnc::get_vnc_session_stats,
+        vnc::send_vnc_key_event,
+        vnc::send_vnc_pointer_event,
+        vnc::send_vnc_clipboard,
+        vnc::request_vnc_update,
+        vnc::set_vnc_pixel_format,
+        vnc::prune_vnc_sessions,
+        vnc::get_vnc_session_count,
         anydesk::launch_anydesk,
         anydesk::disconnect_anydesk,
         anydesk::get_anydesk_session,
@@ -867,11 +904,17 @@ pub fn run() {
         // gpo::import_policies,
         // login_detection::analyze_page,
         // login_detection::submit_login_form,
-        // telnet::connect_telnet,
-        // telnet::disconnect_telnet,
-        // telnet::send_telnet_command,
-        // telnet::get_telnet_session_info,
-        // telnet::list_telnet_sessions,
+        telnet::connect_telnet,
+        telnet::disconnect_telnet,
+        telnet::send_telnet_command,
+        telnet::send_telnet_raw,
+        telnet::send_telnet_break,
+        telnet::send_telnet_ayt,
+        telnet::resize_telnet,
+        telnet::get_telnet_session_info,
+        telnet::list_telnet_sessions,
+        telnet::disconnect_all_telnet,
+        telnet::is_telnet_connected,
         // serial::connect_serial,
         // serial::disconnect_serial,
         // serial::send_serial_data,
@@ -946,6 +989,316 @@ pub fn run() {
         backup::backup_list,
         backup::backup_restore,
         backup::backup_delete,
+        // SFTP commands
+        sftp::sftp_connect,
+        sftp::sftp_disconnect,
+        sftp::sftp_get_session_info,
+        sftp::sftp_list_sessions,
+        sftp::sftp_ping,
+        sftp::sftp_set_directory,
+        sftp::sftp_realpath,
+        sftp::sftp_list_directory,
+        sftp::sftp_mkdir,
+        sftp::sftp_mkdir_p,
+        sftp::sftp_rmdir,
+        sftp::sftp_disk_usage,
+        sftp::sftp_search,
+        sftp::sftp_stat,
+        sftp::sftp_lstat,
+        sftp::sftp_rename,
+        sftp::sftp_delete_file,
+        sftp::sftp_delete_recursive,
+        sftp::sftp_chmod,
+        sftp::sftp_chown,
+        sftp::sftp_create_symlink,
+        sftp::sftp_read_link,
+        sftp::sftp_touch,
+        sftp::sftp_truncate,
+        sftp::sftp_read_text_file,
+        sftp::sftp_write_text_file,
+        sftp::sftp_checksum,
+        sftp::sftp_exists,
+        sftp::sftp_upload,
+        sftp::sftp_download,
+        sftp::sftp_batch_transfer,
+        sftp::sftp_get_transfer_progress,
+        sftp::sftp_list_active_transfers,
+        sftp::sftp_cancel_transfer,
+        sftp::sftp_pause_transfer,
+        sftp::sftp_clear_completed_transfers,
+        sftp::sftp_queue_add,
+        sftp::sftp_queue_remove,
+        sftp::sftp_queue_list,
+        sftp::sftp_queue_status,
+        sftp::sftp_queue_start,
+        sftp::sftp_queue_stop,
+        sftp::sftp_queue_retry_failed,
+        sftp::sftp_queue_clear_done,
+        sftp::sftp_queue_set_priority,
+        sftp::sftp_watch_start,
+        sftp::sftp_watch_stop,
+        sftp::sftp_watch_list,
+        sftp::sftp_sync_pull,
+        sftp::sftp_sync_push,
+        sftp::sftp_bookmark_add,
+        sftp::sftp_bookmark_remove,
+        sftp::sftp_bookmark_update,
+        sftp::sftp_bookmark_list,
+        sftp::sftp_bookmark_touch,
+        sftp::sftp_bookmark_import,
+        sftp::sftp_bookmark_export,
+        sftp::sftp_diagnose,
+        // RustDesk commands — Binary / Client
+        rustdesk::rustdesk_is_available,
+        rustdesk::rustdesk_get_binary_info,
+        rustdesk::rustdesk_detect_version,
+        rustdesk::rustdesk_get_local_id,
+        rustdesk::rustdesk_check_service_running,
+        rustdesk::rustdesk_install_service,
+        rustdesk::rustdesk_silent_install,
+        rustdesk::rustdesk_set_permanent_password,
+        // RustDesk commands — Server Configuration
+        rustdesk::rustdesk_configure_server,
+        rustdesk::rustdesk_get_server_config,
+        rustdesk::rustdesk_set_client_config,
+        rustdesk::rustdesk_get_client_config,
+        // RustDesk commands — Connection Lifecycle
+        rustdesk::rustdesk_connect,
+        rustdesk::rustdesk_connect_direct_ip,
+        rustdesk::rustdesk_disconnect,
+        rustdesk::rustdesk_shutdown,
+        // RustDesk commands — Sessions
+        rustdesk::rustdesk_get_session,
+        rustdesk::rustdesk_list_sessions,
+        rustdesk::rustdesk_update_session_settings,
+        rustdesk::rustdesk_send_input,
+        rustdesk::rustdesk_active_session_count,
+        // RustDesk commands — TCP Tunnels
+        rustdesk::rustdesk_create_tunnel,
+        rustdesk::rustdesk_close_tunnel,
+        rustdesk::rustdesk_list_tunnels,
+        rustdesk::rustdesk_get_tunnel,
+        // RustDesk commands — File Transfers
+        rustdesk::rustdesk_start_file_transfer,
+        rustdesk::rustdesk_upload_file,
+        rustdesk::rustdesk_download_file,
+        rustdesk::rustdesk_list_file_transfers,
+        rustdesk::rustdesk_get_file_transfer,
+        rustdesk::rustdesk_active_file_transfers,
+        rustdesk::rustdesk_transfer_progress,
+        rustdesk::rustdesk_record_file_transfer,
+        rustdesk::rustdesk_update_transfer_progress,
+        rustdesk::rustdesk_cancel_file_transfer,
+        rustdesk::rustdesk_list_remote_files,
+        rustdesk::rustdesk_file_transfer_stats,
+        // RustDesk commands — CLI Assignment
+        rustdesk::rustdesk_assign_via_cli,
+        // RustDesk commands — Server Admin: Devices
+        rustdesk::rustdesk_api_list_devices,
+        rustdesk::rustdesk_api_get_device,
+        rustdesk::rustdesk_api_device_action,
+        rustdesk::rustdesk_api_assign_device,
+        // RustDesk commands — Server Admin: Users
+        rustdesk::rustdesk_api_list_users,
+        rustdesk::rustdesk_api_create_user,
+        rustdesk::rustdesk_api_user_action,
+        // RustDesk commands — Server Admin: User Groups
+        rustdesk::rustdesk_api_list_user_groups,
+        rustdesk::rustdesk_api_create_user_group,
+        rustdesk::rustdesk_api_update_user_group,
+        rustdesk::rustdesk_api_delete_user_group,
+        rustdesk::rustdesk_api_add_users_to_group,
+        // RustDesk commands — Server Admin: Device Groups
+        rustdesk::rustdesk_api_list_device_groups,
+        rustdesk::rustdesk_api_create_device_group,
+        rustdesk::rustdesk_api_update_device_group,
+        rustdesk::rustdesk_api_delete_device_group,
+        rustdesk::rustdesk_api_add_devices_to_group,
+        rustdesk::rustdesk_api_remove_devices_from_group,
+        // RustDesk commands — Server Admin: Strategies
+        rustdesk::rustdesk_api_list_strategies,
+        rustdesk::rustdesk_api_get_strategy,
+        rustdesk::rustdesk_api_enable_strategy,
+        rustdesk::rustdesk_api_disable_strategy,
+        rustdesk::rustdesk_api_assign_strategy,
+        rustdesk::rustdesk_api_unassign_strategy,
+        // RustDesk commands — Address Books
+        rustdesk::rustdesk_api_list_address_books,
+        rustdesk::rustdesk_api_get_personal_address_book,
+        rustdesk::rustdesk_api_create_address_book,
+        rustdesk::rustdesk_api_update_address_book,
+        rustdesk::rustdesk_api_delete_address_book,
+        rustdesk::rustdesk_api_list_ab_peers,
+        rustdesk::rustdesk_api_add_ab_peer,
+        rustdesk::rustdesk_api_update_ab_peer,
+        rustdesk::rustdesk_api_remove_ab_peer,
+        rustdesk::rustdesk_api_import_ab_peers,
+        rustdesk::rustdesk_api_list_ab_tags,
+        rustdesk::rustdesk_api_add_ab_tag,
+        rustdesk::rustdesk_api_delete_ab_tag,
+        rustdesk::rustdesk_api_list_ab_rules,
+        rustdesk::rustdesk_api_add_ab_rule,
+        rustdesk::rustdesk_api_delete_ab_rule,
+        // RustDesk commands — Audit Logs
+        rustdesk::rustdesk_api_connection_audits,
+        rustdesk::rustdesk_api_file_audits,
+        rustdesk::rustdesk_api_alarm_audits,
+        rustdesk::rustdesk_api_console_audits,
+        rustdesk::rustdesk_api_peer_audit_summary,
+        rustdesk::rustdesk_api_operator_audit_summary,
+        // RustDesk commands — Login
+        rustdesk::rustdesk_api_login,
+        // RustDesk commands — Diagnostics
+        rustdesk::rustdesk_diagnostics_report,
+        rustdesk::rustdesk_quick_health_check,
+        rustdesk::rustdesk_server_health,
+        rustdesk::rustdesk_server_latency,
+        rustdesk::rustdesk_server_config_summary,
+        rustdesk::rustdesk_client_config_summary,
+        rustdesk::rustdesk_session_summary,
+        // Bitwarden commands
+        bitwarden::bw_check_cli,
+        bitwarden::bw_status,
+        bitwarden::bw_vault_status,
+        bitwarden::bw_session_info,
+        bitwarden::bw_get_config,
+        bitwarden::bw_set_config,
+        bitwarden::bw_config_server,
+        bitwarden::bw_login,
+        bitwarden::bw_login_2fa,
+        bitwarden::bw_login_api_key,
+        bitwarden::bw_unlock,
+        bitwarden::bw_lock,
+        bitwarden::bw_logout,
+        bitwarden::bw_sync,
+        bitwarden::bw_force_sync,
+        bitwarden::bw_list_items,
+        bitwarden::bw_search_items,
+        bitwarden::bw_get_item,
+        bitwarden::bw_create_item,
+        bitwarden::bw_edit_item,
+        bitwarden::bw_delete_item,
+        bitwarden::bw_delete_item_permanent,
+        bitwarden::bw_restore_item,
+        bitwarden::bw_get_username,
+        bitwarden::bw_get_password,
+        bitwarden::bw_get_totp,
+        bitwarden::bw_find_credentials,
+        bitwarden::bw_list_folders,
+        bitwarden::bw_create_folder,
+        bitwarden::bw_edit_folder,
+        bitwarden::bw_delete_folder,
+        bitwarden::bw_list_collections,
+        bitwarden::bw_list_organizations,
+        bitwarden::bw_list_sends,
+        bitwarden::bw_create_text_send,
+        bitwarden::bw_delete_send,
+        bitwarden::bw_create_attachment,
+        bitwarden::bw_delete_attachment,
+        bitwarden::bw_download_attachment,
+        bitwarden::bw_generate_password,
+        bitwarden::bw_generate_password_local,
+        bitwarden::bw_export,
+        bitwarden::bw_import,
+        bitwarden::bw_vault_stats,
+        bitwarden::bw_password_health,
+        bitwarden::bw_find_duplicates,
+        bitwarden::bw_start_serve,
+        bitwarden::bw_stop_serve,
+        bitwarden::bw_is_serve_running,
+        // KeePass commands
+        keepass::keepass_create_database,
+        keepass::keepass_open_database,
+        keepass::keepass_close_database,
+        keepass::keepass_close_all_databases,
+        keepass::keepass_save_database,
+        keepass::keepass_lock_database,
+        keepass::keepass_unlock_database,
+        keepass::keepass_list_databases,
+        keepass::keepass_backup_database,
+        keepass::keepass_list_backups,
+        keepass::keepass_change_master_key,
+        keepass::keepass_get_database_file_info,
+        keepass::keepass_get_database_statistics,
+        keepass::keepass_merge_database,
+        keepass::keepass_update_database_metadata,
+        keepass::keepass_create_entry,
+        keepass::keepass_get_entry,
+        keepass::keepass_list_entries_in_group,
+        keepass::keepass_list_all_entries,
+        keepass::keepass_list_entries_recursive,
+        keepass::keepass_update_entry,
+        keepass::keepass_delete_entry,
+        keepass::keepass_restore_entry,
+        keepass::keepass_empty_recycle_bin,
+        keepass::keepass_move_entry,
+        keepass::keepass_copy_entry,
+        keepass::keepass_get_entry_history,
+        keepass::keepass_get_entry_history_item,
+        keepass::keepass_restore_entry_from_history,
+        keepass::keepass_delete_entry_history,
+        keepass::keepass_diff_entry_with_history,
+        keepass::keepass_get_entry_otp,
+        keepass::keepass_password_health_report,
+        keepass::keepass_create_group,
+        keepass::keepass_get_group,
+        keepass::keepass_list_groups,
+        keepass::keepass_list_child_groups,
+        keepass::keepass_get_group_tree,
+        keepass::keepass_get_group_path,
+        keepass::keepass_update_group,
+        keepass::keepass_delete_group,
+        keepass::keepass_move_group,
+        keepass::keepass_sort_groups,
+        keepass::keepass_group_entry_count,
+        keepass::keepass_group_tags,
+        keepass::keepass_add_custom_icon,
+        keepass::keepass_get_custom_icon,
+        keepass::keepass_list_custom_icons,
+        keepass::keepass_delete_custom_icon,
+        keepass::keepass_generate_password,
+        keepass::keepass_generate_passwords,
+        keepass::keepass_analyze_password,
+        keepass::keepass_list_password_profiles,
+        keepass::keepass_add_password_profile,
+        keepass::keepass_remove_password_profile,
+        keepass::keepass_create_key_file,
+        keepass::keepass_verify_key_file,
+        keepass::keepass_search_entries,
+        keepass::keepass_quick_search,
+        keepass::keepass_find_entries_for_url,
+        keepass::keepass_find_duplicates,
+        keepass::keepass_find_expiring_entries,
+        keepass::keepass_find_weak_passwords,
+        keepass::keepass_find_entries_without_password,
+        keepass::keepass_get_all_tags,
+        keepass::keepass_find_entries_by_tag,
+        keepass::keepass_import_entries,
+        keepass::keepass_export_entries,
+        keepass::keepass_parse_autotype_sequence,
+        keepass::keepass_resolve_autotype_sequence,
+        keepass::keepass_find_autotype_matches,
+        keepass::keepass_list_autotype_associations,
+        keepass::keepass_validate_autotype_sequence,
+        keepass::keepass_get_default_autotype_sequence,
+        keepass::keepass_add_attachment,
+        keepass::keepass_get_entry_attachments,
+        keepass::keepass_get_attachment_data,
+        keepass::keepass_remove_attachment,
+        keepass::keepass_rename_attachment,
+        keepass::keepass_save_attachment_to_file,
+        keepass::keepass_import_attachment_from_file,
+        keepass::keepass_get_attachment_pool_size,
+        keepass::keepass_compact_attachment_pool,
+        keepass::keepass_verify_attachment_integrity,
+        keepass::keepass_list_recent_databases,
+        keepass::keepass_add_recent_database,
+        keepass::keepass_remove_recent_database,
+        keepass::keepass_clear_recent_databases,
+        keepass::keepass_get_change_log,
+        keepass::keepass_get_settings,
+        keepass::keepass_update_settings,
+        keepass::keepass_shutdown,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

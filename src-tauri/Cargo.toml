@@ -12,6 +12,12 @@ members = [
   "crates/sorng-remote-mgmt",
   "crates/sorng-gpo",
   "crates/sorng-ard",
+  "crates/sorng-telnet",
+  "crates/sorng-sftp",
+  "crates/sorng-vnc",
+  "crates/sorng-rustdesk",
+  "crates/sorng-bitwarden",
+  "crates/sorng-keepass",
 ]
 
 [workspace.dependencies]
@@ -59,6 +65,12 @@ sorng-cloud = { path = "crates/sorng-cloud" }
 sorng-remote-mgmt = { path = "crates/sorng-remote-mgmt" }
 sorng-gpo = { path = "crates/sorng-gpo" }
 sorng-ard = { path = "crates/sorng-ard" }
+sorng-sftp = { path = "crates/sorng-sftp" }
+sorng-telnet = { path = "crates/sorng-telnet" }
+sorng-vnc = { path = "crates/sorng-vnc" }
+sorng-rustdesk = { path = "crates/sorng-rustdesk" }
+sorng-bitwarden = { path = "crates/sorng-bitwarden" }
+sorng-keepass = { path = "crates/sorng-keepass" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
