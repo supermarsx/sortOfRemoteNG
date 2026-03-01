@@ -1,0 +1,280 @@
+/* Centralized settings primitives */
+.sor-settings-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.sor-settings-card {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sor-settings-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.sor-settings-checkbox {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.125rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: #2563eb;
+}
+
+.sor-settings-toggle-icon {
+  margin-top: 0.125rem;
+  display: flex;
+  align-items: center;
+  color: var(--color-textSecondary);
+}
+
+.sor-settings-toggle-label {
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+}
+
+.sor-settings-toggle-description {
+  margin-top: 0.125rem;
+  color: #6b7280;
+  font-size: 0.6875rem;
+}
+
+.sor-settings-slider-row,
+.sor-settings-select-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sor-settings-row-label {
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+}
+
+.sor-settings-slider-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sor-settings-range {
+  width: 7rem;
+  accent-color: #3b82f6;
+}
+
+.sor-settings-range-wide {
+  width: 8rem;
+}
+
+.sor-settings-range-full {
+  width: 100%;
+  accent-color: #3b82f6;
+}
+
+.sor-settings-slider-value {
+  width: 3.5rem;
+  text-align: right;
+  color: var(--color-textSecondary);
+  font-size: 0.75rem;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+}
+
+.sor-settings-input,
+.sor-settings-select {
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.sor-settings-input:focus,
+.sor-settings-select:focus {
+  border-color: #3b82f6;
+}
+
+.sor-settings-input-compact {
+  padding: 0.25rem 0.5rem;
+}
+
+.sor-settings-input-sm {
+  font-size: 0.75rem;
+}
+
+.sor-form-input,
+.sor-form-select,
+.sor-form-textarea {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+.sor-form-input-sm,
+.sor-form-select-sm,
+.sor-form-textarea-sm {
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  padding: 0.375rem 0.625rem;
+}
+
+.sor-form-input-xs,
+.sor-form-select-xs,
+.sor-form-textarea-xs {
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: var(--color-text);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.sor-form-input-sm::placeholder,
+.sor-form-textarea-sm::placeholder,
+.sor-form-input-xs::placeholder,
+.sor-form-textarea-xs::placeholder {
+  color: #9ca3af;
+}
+
+.sor-form-input::placeholder,
+.sor-form-textarea::placeholder {
+  color: #9ca3af;
+}
+
+.sor-form-input:focus,
+.sor-form-select:focus,
+.sor-form-textarea:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px rgb(59 130 246 / 45%);
+}
+
+.sor-form-input-sm:focus,
+.sor-form-select-sm:focus,
+.sor-form-textarea-sm:focus,
+.sor-form-input-xs:focus,
+.sor-form-select-xs:focus,
+.sor-form-textarea-xs:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px rgb(59 130 246 / 45%);
+}
+
+.sor-form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.sor-form-label-xs {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--color-textSecondary);
+  font-size: 0.75rem;
+}
+
+.sor-form-inline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+}
+
+.sor-form-section-heading {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.25rem;
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.sor-form-checkbox {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-border);
+  color: #2563eb;
+}
+
+.sor-settings-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-surfaceHover);
+}
+
+.sor-settings-tile-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.sor-settings-collapsible {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.sor-settings-collapsible-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-surfaceHover);
+  color: var(--color-textSecondary);
+  transition: background-color 150ms ease;
+}
+
+.sor-settings-collapsible-trigger:hover {
+  background: var(--color-border);
+}
+
+.sor-settings-collapsible-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.sor-settings-collapsible-body {
+  padding: 1rem;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}

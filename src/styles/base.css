@@ -1,0 +1,73 @@
+/* Override Tailwind's default border color (gray-200) with the theme variable.
+   This ensures bare `border`, `border-b`, etc. classes use the themed color
+   instead of a hardcoded light gray that looks white on dark/OLED themes. */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-border);
+  }
+}
+
+/* Default color variables so the UI has sensible colors before the ThemeManager runs */
+:root {
+  --color-primary: #3b82f6;
+  --color-secondary: #6b7280;
+  --color-accent: #10b981;
+  --color-background: #111827;
+  --color-surface: #1f2937;
+  --color-text: #f9fafb;
+  --color-textSecondary: #d1d5db;
+  --color-border: #374151;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  /* Animation variables */
+  --animation-duration: 550ms;
+  --animation-enabled: 1;
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --animation-duration: 0ms;
+    --animation-enabled: 0;
+  }
+}
+
+/* Disable animations class */
+.animations-disabled {
+  --animation-duration: 0ms !important;
+  --animation-enabled: 0 !important;
+}
+
+.animations-disabled *,
+.animations-disabled *::before,
+.animations-disabled *::after {
+  animation-duration: 0ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0ms !important;
+  transition-delay: 0ms !important;
+}
+
+/* Reduced motion class */
+.reduce-motion {
+  --animation-duration: 50ms !important;
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 50ms !important;
+  transition-duration: 50ms !important;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+}
+
+/* Map commonly used Tailwind utility classes to theme variables */
+.bg-gray-900,
+.bg-gray-800,

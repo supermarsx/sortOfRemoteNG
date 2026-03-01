@@ -1,0 +1,251 @@
+/* ============================================
+   SMOOTH FADE ANIMATIONS
+   ============================================ */
+
+/* Animation keyframes */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fadeOutScale {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Animation utility classes */
+.animate-fade-in {
+  animation: fadeIn var(--animation-duration, 200ms) ease-out forwards;
+}
+
+.animate-fade-out {
+  animation: fadeOut var(--animation-duration, 200ms) ease-out forwards;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp var(--animation-duration, 200ms) ease-out forwards;
+}
+
+.animate-fade-in-down {
+  animation: fadeInDown var(--animation-duration, 200ms) ease-out forwards;
+}
+
+.animate-fade-in-scale {
+  animation: fadeInScale var(--animation-duration, 200ms) ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight var(--animation-duration, 200ms) ease-out forwards;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft var(--animation-duration, 200ms) ease-out forwards;
+}
+
+/* Modal/Dialog backdrop animation */
+.backdrop-animate {
+  animation: fadeIn var(--animation-duration, 550ms) ease-out forwards;
+  backdrop-filter: blur(4px);
+}
+
+/* Modal/Dialog content animation */
+.modal-content-animate {
+  animation: fadeInScale var(--animation-duration, 550ms) cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Dropdown/Popup animation */
+.popup-animate {
+  animation: fadeInUp var(--animation-duration, 550ms) ease-out forwards;
+}
+
+/* Popup fade-out animation */
+.popup-animate-out {
+  animation: fadeOut var(--animation-duration, 550ms) ease-out forwards;
+}
+
+/* Modal close animation */
+.modal-content-animate-out {
+  animation: fadeOutScale var(--animation-duration, 550ms) ease-out forwards;
+}
+
+.backdrop-animate-out {
+  animation: fadeOut var(--animation-duration, 550ms) ease-out forwards;
+}
+
+/* Sidebar animation */
+.sidebar-animate {
+  animation: slideInLeft var(--animation-duration, 550ms) ease-out forwards;
+}
+
+/* Toast notification animation */
+.toast-animate {
+  animation: slideInRight 200ms ease-out forwards;
+}
+
+/* Card/Container hover effect */
+.card-hover-effect {
+  transition: transform var(--animation-duration, 200ms) ease,
+              box-shadow var(--animation-duration, 200ms) ease,
+              background-color var(--animation-duration, 200ms) ease;
+}
+
+.card-hover-effect:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Button hover animation */
+.btn-animate {
+  transition: transform var(--animation-duration, 150ms) ease,
+              background-color var(--animation-duration, 150ms) ease,
+              box-shadow var(--animation-duration, 150ms) ease;
+}
+
+.btn-animate:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-animate:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Generic smooth transitions */
+.transition-smooth {
+  transition: all var(--animation-duration, 200ms) ease;
+}
+
+.transition-colors-smooth {
+  transition: color var(--animation-duration, 150ms) ease,
+              background-color var(--animation-duration, 150ms) ease,
+              border-color var(--animation-duration, 150ms) ease;
+}
+
+.transition-transform-smooth {
+  transition: transform var(--animation-duration, 200ms) ease;
+}
+
+.transition-opacity-smooth {
+  transition: opacity var(--animation-duration, 200ms) ease;
+}
+
+/* Staggered animation for lists */
+.stagger-animate > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-animate > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-animate > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-animate > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-animate > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-animate > *:nth-child(6) { animation-delay: 250ms; }
+.stagger-animate > *:nth-child(7) { animation-delay: 300ms; }
+.stagger-animate > *:nth-child(8) { animation-delay: 350ms; }
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-fade-out,
+  .animate-fade-in-up,
+  .animate-fade-in-down,
+  .animate-fade-in-scale,
+  .animate-slide-in-right,
+  .animate-slide-in-left,
+  .backdrop-animate,
+  .modal-content-animate,
+  .popup-animate,
+  .sidebar-animate,
+  .toast-animate {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  
+  .card-hover-effect,
+  .btn-animate,
+  .transition-smooth,
+  .transition-colors-smooth,
+  .transition-transform-smooth,
+  .transition-opacity-smooth {
+    transition: none !important;
+  }
+}

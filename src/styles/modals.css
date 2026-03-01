@@ -1,0 +1,303 @@
+/* Centralized modal/dialog primitives */
+.sor-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.5);
+}
+
+.sor-modal-panel {
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  box-shadow: 0 25px 60px rgb(0 0 0 / 0.35);
+}
+
+.sor-modal-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.sor-modal-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent);
+}
+
+.sor-modal-title {
+  color: var(--color-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.sor-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sor-modal-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  color: var(--color-textSecondary);
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.sor-modal-close-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surfaceHover);
+}
+
+.sor-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sor-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.sor-menu-surface {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+  min-width: 10rem;
+  overflow: hidden;
+}
+
+.sor-menu-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.875rem;
+  color: var(--color-textSecondary);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.sor-menu-item:hover {
+  background-color: var(--color-surfaceHover);
+  color: var(--color-text);
+}
+
+.sor-menu-item-danger {
+  color: var(--color-error);
+}
+
+.sor-menu-item-danger:hover {
+  background-color: color-mix(
+    in srgb,
+    var(--color-error) 12%,
+    var(--color-surfaceHover)
+  );
+  color: var(--color-error);
+}
+
+.sor-menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 0.25rem 0;
+}
+
+.sor-popover-surface {
+  min-width: 10rem;
+}
+
+.sor-popover-panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.sor-popover-panel-strong {
+  box-shadow: 0 20px 48px rgb(0 0 0 / 0.45);
+}
+
+.sor-option-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.sor-option-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.sor-option-group + .sor-option-group {
+  border-top: 1px solid var(--color-border);
+}
+
+.sor-option-group-label {
+  padding: 0.5rem 0.75rem 0.375rem;
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-textSecondary);
+  font-weight: 600;
+}
+
+.sor-option-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+.sor-option-item-interactive {
+  color: var(--color-textSecondary);
+  background: transparent;
+  border: 0;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.sor-option-item-interactive:hover {
+  background: var(--color-surfaceHover);
+  color: var(--color-text);
+}
+
+.sor-option-item-selected {
+  color: #facc15;
+  font-weight: 600;
+}
+
+.sor-option-item-compact {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.sor-option-item-divider {
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--color-border) 50%, transparent);
+}
+
+.sor-option-item-divider:last-child {
+  border-bottom: 0;
+}
+
+.sor-option-item-disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.sor-option-empty {
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--color-textSecondary);
+}
+
+.sor-surface-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+}
+
+.sor-web-error-panel {
+  padding: 1rem;
+  margin-bottom: 1rem;
+  max-width: 32rem;
+}
+
+.sor-guidance-list {
+  color: var(--color-textSecondary);
+  font-size: 0.875rem;
+}
+
+.sor-guidance-list > li + li {
+  margin-top: 0.25rem;
+}
+
+.sor-guidance-list-disc {
+  list-style: disc;
+  list-style-position: inside;
+}
+
+.sor-guidance-list-decimal {
+  list-style: decimal;
+  list-style-position: inside;
+}
+
+.sor-metric-card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  transition: border-color 150ms ease;
+}
+
+.sor-metric-card-blue:hover {
+  border-color: color-mix(in srgb, #3b82f6 30%, var(--color-border));
+}
+
+.sor-metric-card-green:hover {
+  border-color: color-mix(in srgb, #22c55e 30%, var(--color-border));
+}
+
+.sor-metric-card-yellow:hover {
+  border-color: color-mix(in srgb, #eab308 30%, var(--color-border));
+}
+
+.sor-metric-card-purple:hover {
+  border-color: color-mix(in srgb, #a855f7 30%, var(--color-border));
+}
+
+.sor-metric-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--color-surfaceHover) 50%, transparent);
+}
+
+.sor-metric-table-shell {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.sor-manager-panel {
+  max-width: 64rem;
+  height: 85vh;
+}

@@ -1,0 +1,142 @@
+/* ── Centralized button primitives ─────────────────────────────── */
+.sor-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  background: #2563eb;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+}
+.sor-btn-primary:hover { background: #1d4ed8; }
+.sor-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sor-btn-primary-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  background: #2563eb;
+  color: var(--color-text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+}
+.sor-btn-primary-sm:hover { background: #1d4ed8; }
+.sor-btn-primary-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sor-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  background: #4b5563;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+}
+.sor-btn-secondary:hover { background: #6b7280; }
+.sor-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sor-btn-secondary-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  background: #4b5563;
+  color: var(--color-text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+}
+.sor-btn-secondary-sm:hover { background: #6b7280; }
+.sor-btn-secondary-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sor-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  background: #dc2626;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+}
+.sor-btn-danger:hover { background: #b91c1c; }
+.sor-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sor-btn-danger-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.375rem;
+  background: #dc2626;
+  color: var(--color-text);
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+}
+.sor-btn-danger-sm:hover { background: #b91c1c; }
+.sor-btn-danger-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Icon buttons ────────────────────────────────────────────── */
+.sor-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  color: var(--color-textSecondary);
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.sor-icon-btn:hover {
+  color: #60a5fa;
+  background: var(--color-border);
+}
+.sor-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sor-icon-btn-sm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  color: var(--color-textSecondary);
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.sor-icon-btn-sm:hover {
+  color: var(--color-text);
+  background: var(--color-border);
+}
+.sor-icon-btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sor-icon-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  color: var(--color-textSecondary);
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.sor-icon-btn-danger:hover {
+  color: #f87171;
+  background: var(--color-border);
+}
+.sor-icon-btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }

@@ -1,0 +1,282 @@
+/* ── Badge / Tag Pill ────────────────────────────────────────── */
+.sor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  border-radius: 9999px;
+}
+.sor-badge-blue   { background: rgb(59 130 246 / 0.2);  color: #93c5fd; }
+.sor-badge-green  { background: rgb(34 197 94 / 0.2);   color: #86efac; }
+.sor-badge-red    { background: rgb(239 68 68 / 0.2);   color: #fca5a5; }
+.sor-badge-yellow { background: rgb(234 179 8 / 0.2);   color: #fde047; }
+.sor-badge-purple { background: rgb(168 85 247 / 0.2);  color: #c4b5fd; }
+.sor-badge-orange { background: rgb(249 115 22 / 0.2);  color: #fdba74; }
+.sor-badge-gray   { background: rgb(107 114 128 / 0.2); color: #9ca3af; }
+
+/* ── Section card ────────────────────────────────────────────── */
+.sor-section-card {
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surfaceHover) 30%, transparent);
+  padding: 1rem;
+}
+
+/* ── Search input (left icon variant) ────────────────────────── */
+.sor-search-input {
+  width: 100%;
+  padding: 0.5rem 1rem 0.5rem 2.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+.sor-search-input::placeholder { color: #6b7280; }
+.sor-search-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(59 130 246 / 0.5);
+}
+
+/* ── Alert banners ───────────────────────────────────────────── */
+.sor-alert-error {
+  background: rgb(127 29 29 / 0.2);
+  border: 1px solid #b91c1c;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.sor-alert-warning {
+  background: rgb(113 63 18 / 0.2);
+  border: 1px solid #a16207;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+/* ── Diagnostics card & section title ─────────────────────────── */
+.sor-diag-card {
+  padding: 0.75rem;
+  background: var(--color-surface);
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+}
+
+.sor-diag-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-textSecondary);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Sidebar tab navigation ──────────────────────────────────── */
+.sor-sidebar-tab {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  text-align: left;
+  color: var(--color-textSecondary);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.sor-sidebar-tab:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+.sor-sidebar-tab-active {
+  background: #2563eb;
+  color: var(--color-text);
+}
+
+/* ── Mini buttons (TOTP panels etc.) ─────────────────────────── */
+.sor-btn-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 10px;
+  color: var(--color-textSecondary);
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.sor-btn-mini:hover { color: var(--color-text); }
+
+.sor-btn-mini-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 10px;
+  background: #2563eb;
+  color: var(--color-text);
+  transition: background-color 150ms ease;
+}
+.sor-btn-mini-primary:hover { background: #1d4ed8; }
+
+/* ── Toggle card (checkbox grid items) ────────────────────────── */
+.sor-toggle-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.sor-toggle-card:hover {
+  background: color-mix(in srgb, var(--color-surfaceHover) 50%, transparent);
+}
+
+/* ── Section heading (settings panels) ────────────────────────── */
+.sor-section-heading {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-textSecondary);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Settings form input (rounded-lg, --color-input bg) ──────── */
+.sor-settings-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--color-input);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 0.875rem;
+}
+.sor-settings-input::placeholder { color: var(--color-textMuted, #9ca3af); }
+.sor-settings-input:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px rgb(59 130 246 / 45%);
+}
+
+/* ── Toggle option label (group-hover color swap) ─────────────── */
+.sor-toggle-label {
+  font-size: 0.875rem;
+  color: var(--color-textSecondary);
+  transition: color 150ms ease;
+}
+.group:hover .sor-toggle-label { color: var(--color-text); }
+
+/* ── Inline tag pill ─────────────────────────────────────────── */
+.sor-tag {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  background: var(--color-border);
+  color: var(--color-text);
+  border-radius: 0.25rem;
+}
+
+/* ── Table header cell ───────────────────────────────────────── */
+.sor-th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-textSecondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Status info pill (surface bg, xs text) ──────────────────── */
+.sor-info-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: color-mix(in srgb, var(--color-surface) 50%, transparent);
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-textSecondary);
+}
+
+/* ── Toolbar separator row (border-b, flex justify-between) ──── */
+.sor-toolbar-row {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ── Micro action bar (10px size, flex space-x-1) ────────────── */
+.sor-micro-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 10px;
+  color: var(--color-textSecondary);
+  transition: color 150ms ease;
+}
+.sor-micro-actions:hover { color: var(--color-text); }
+
+/* ── Table th (10px variant — RDP internals) ─────────────────── */
+.sor-th-xs {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-textMuted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Settings toggle row (full-width interactive) ────────────── */
+.sor-settings-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, var(--color-surface) 40%, transparent);
+  transition: background-color 150ms ease;
+}
+.sor-settings-row:hover {
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+/* ── Micro badge (10px rounded-full) ─────────────────────────── */
+.sor-micro-badge {
+  padding: 0.125rem 0.375rem;
+  font-size: 10px;
+  background: var(--color-border);
+  color: var(--color-textSecondary);
+  border-radius: 9999px;
+}
+
+/* ── Sub-section label (xs uppercase with gap) ───────────────── */
+.sor-sub-heading {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-textSecondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}

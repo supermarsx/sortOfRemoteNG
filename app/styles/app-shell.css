@@ -1,0 +1,225 @@
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-shell.app-transparent {
+  background-color: var(--app-surface-900);
+}
+
+.app-transparent .bg-gray-900,
+.app-transparent .bg-gray-900\/40,
+.app-transparent .bg-gray-900\/50,
+.app-transparent .bg-gray-900\/60 {
+  background-color: var(--app-surface-900) !important;
+}
+
+.app-transparent .bg-gray-800,
+.app-transparent .bg-gray-800\/60,
+.app-transparent .bg-gray-800\/80,
+.app-transparent .bg-gray-800\/90 {
+  background-color: var(--app-surface-800) !important;
+}
+
+.app-transparent .bg-gray-700,
+.app-transparent .bg-gray-700\/50,
+.app-transparent .bg-gray-700\/60 {
+  background-color: var(--app-surface-700) !important;
+}
+
+.app-transparent .bg-gray-750 {
+  background-color: var(--app-surface-700) !important;
+}
+
+.app-transparent .bg-gray-600,
+.app-transparent .bg-gray-500 {
+  background-color: var(--app-surface-600) !important;
+}
+
+.app-transparent .bg-slate-950,
+.app-transparent .bg-slate-950\/80 {
+  background-color: var(--app-slate-950) !important;
+}
+
+.app-transparent .bg-slate-900,
+.app-transparent .bg-slate-900\/90,
+.app-transparent .bg-slate-900\/80 {
+  background-color: var(--app-slate-900) !important;
+}
+
+.app-transparent .bg-slate-800,
+.app-transparent .bg-slate-800\/80,
+.app-transparent .bg-slate-800\/50 {
+  background-color: var(--app-slate-800) !important;
+}
+
+.app-transparent .bg-slate-700,
+.app-transparent .bg-slate-700\/50 {
+  background-color: var(--app-slate-700) !important;
+}
+
+.app-shell.app-glow::before {
+  content: "";
+  position: absolute;
+  inset: -15%;
+  background:
+    radial-gradient(circle at 15% -10%, var(--app-glow-color) 0, transparent var(--app-glow-radius)),
+    radial-gradient(circle at 85% 0%, var(--app-glow-color) 0, transparent var(--app-glow-radius));
+  opacity: var(--app-glow-opacity);
+  filter: blur(var(--app-glow-blur));
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-shell > * {
+  z-index: 1;
+}
+
+.app-shell > :not(.fixed):not(.absolute):not(.sticky) {
+  position: relative;
+}
+
+.app-bar {
+  background-color: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Top bar glow effect */
+.app-glow .app-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: 
+    radial-gradient(ellipse 30% 200% at 0% 50%, color-mix(in srgb, var(--app-glow-color) 30%, transparent) 0%, transparent 70%),
+    radial-gradient(ellipse 25% 180% at 15% 60%, color-mix(in srgb, var(--app-glow-color) 22%, transparent) 0%, transparent 60%),
+    radial-gradient(ellipse 20% 150% at 35% 40%, color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%, transparent 50%),
+    radial-gradient(ellipse 18% 140% at 55% 55%, color-mix(in srgb, var(--app-glow-color) 10%, transparent) 0%, transparent 45%),
+    radial-gradient(ellipse 22% 160% at 75% 45%, color-mix(in srgb, var(--app-glow-color) 14%, transparent) 0%, transparent 55%),
+    radial-gradient(ellipse 28% 190% at 90% 50%, color-mix(in srgb, var(--app-glow-color) 25%, transparent) 0%, transparent 65%),
+    radial-gradient(ellipse 35% 220% at 100% 50%, color-mix(in srgb, var(--app-glow-color) 32%, transparent) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--app-glow-opacity);
+}
+
+.app-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.app-bar-secondary {
+  background-color: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+/* Sidebar glow effect */
+.sidebar-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.app-glow .sidebar-glow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(ellipse 120% 40% at 50% 0%, color-mix(in srgb, var(--app-glow-color) 25%, transparent) 0%, transparent 70%),
+    radial-gradient(circle at 10% 20%, color-mix(in srgb, var(--app-glow-color) 18%, transparent) 0%, transparent 35%),
+    radial-gradient(circle at 90% 35%, color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%, transparent 30%),
+    radial-gradient(circle at 20% 60%, color-mix(in srgb, var(--app-glow-color) 8%, transparent) 0%, transparent 25%),
+    radial-gradient(circle at 80% 75%, color-mix(in srgb, var(--app-glow-color) 10%, transparent) 0%, transparent 28%),
+    radial-gradient(ellipse 80% 30% at 50% 100%, color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--app-glow-opacity);
+}
+
+.sidebar-glow > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Settings dialog glow effect */
+.settings-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.app-glow .settings-glow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(ellipse 100% 50% at 50% 0%, color-mix(in srgb, var(--app-glow-color) 18%, transparent) 0%, transparent 60%),
+    radial-gradient(circle at 0% 30%, color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%, transparent 40%),
+    radial-gradient(circle at 100% 40%, color-mix(in srgb, var(--app-glow-color) 15%, transparent) 0%, transparent 40%),
+    radial-gradient(circle at 20% 70%, color-mix(in srgb, var(--app-glow-color) 8%, transparent) 0%, transparent 30%),
+    radial-gradient(circle at 80% 80%, color-mix(in srgb, var(--app-glow-color) 8%, transparent) 0%, transparent 30%),
+    radial-gradient(ellipse 90% 40% at 50% 100%, color-mix(in srgb, var(--app-glow-color) 12%, transparent) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--app-glow-opacity);
+}
+
+.settings-glow > * {
+  position: relative;
+  z-index: 1;
+}
+
+.app-bar-button {
+  border-radius: 0.375rem;
+  color: var(--color-textSecondary);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.app-bar-button:hover {
+  background-color: color-mix(in srgb, var(--color-border) 35%, transparent);
+  color: var(--color-text);
+}
+
+.app-bar-button-danger:hover {
+  background-color: color-mix(in srgb, var(--color-error) 30%, transparent);
+  color: var(--color-text);
+}
+
+.app-badge {
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+.app-badge--success {
+  background-color: color-mix(in srgb, var(--color-success) 18%, transparent);
+  color: var(--color-success);
+}
+
+.app-badge--warning {
+  background-color: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+
+.app-badge--error {
+  background-color: color-mix(in srgb, var(--color-error) 18%, transparent);
+  color: var(--color-error);
+}
+
+.app-badge--info {
+  background-color: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  color: var(--color-primary);
+}
+
+.app-badge--neutral {
+  background-color: color-mix(in srgb, var(--color-border) 30%, transparent);
+  color: var(--color-textSecondary);
+}
