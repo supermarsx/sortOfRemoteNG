@@ -66,7 +66,7 @@ pub async fn list_ec2_instances(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<Instance>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_ec2_instances(&session_id).await
 }
 
@@ -77,7 +77,7 @@ pub async fn execute_ec2_action(
     instance_id: String,
     action: String,
 ) -> Result<String, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.execute_ec2_action(&session_id, &instance_id, &action)
         .await
 }
@@ -89,7 +89,7 @@ pub async fn list_s3_buckets(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<Bucket>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_s3_buckets(&session_id).await
 }
 
@@ -100,7 +100,7 @@ pub async fn get_s3_objects(
     bucket: String,
     prefix: Option<String>,
 ) -> Result<Vec<Object>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_s3_objects(&session_id, &bucket, prefix.as_deref())
         .await
 }
@@ -112,7 +112,7 @@ pub async fn create_s3_bucket(
     bucket_name: String,
     region: String,
 ) -> Result<String, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.create_s3_bucket(&session_id, &bucket_name, &region)
         .await
 }
@@ -124,7 +124,7 @@ pub async fn list_rds_instances(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<DBInstance>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_rds_instances(&session_id).await
 }
 
@@ -135,7 +135,7 @@ pub async fn list_lambda_functions(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<FunctionConfiguration>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_lambda_functions(&session_id).await
 }
 
@@ -146,7 +146,7 @@ pub async fn invoke_lambda_function(
     function_name: String,
     payload: Option<String>,
 ) -> Result<String, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.invoke_lambda_function(&session_id, &function_name, payload)
         .await
 }
@@ -160,7 +160,7 @@ pub async fn get_cloudwatch_metrics(
     namespace: String,
     metric_name: String,
 ) -> Result<Vec<Metric>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.get_cloudwatch_metrics(&session_id, &namespace, &metric_name)
         .await
 }
@@ -172,7 +172,7 @@ pub async fn list_iam_users(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<User>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_iam_users(&session_id).await
 }
 
@@ -181,7 +181,7 @@ pub async fn list_iam_roles(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<Role>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_iam_roles(&session_id).await
 }
 
@@ -192,7 +192,7 @@ pub async fn get_caller_identity(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<CallerIdentity, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.get_caller_identity(&session_id).await
 }
 
@@ -205,7 +205,7 @@ pub async fn get_ssm_parameter(
     name: String,
     with_decryption: bool,
 ) -> Result<Parameter, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.get_ssm_parameter(&session_id, &name, with_decryption)
         .await
 }
@@ -218,7 +218,7 @@ pub async fn get_secret_value(
     session_id: String,
     secret_id: String,
 ) -> Result<SecretValue, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.get_secret_value(&session_id, &secret_id).await
 }
 
@@ -227,7 +227,7 @@ pub async fn list_secrets(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<SecretListEntry>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_secrets(&session_id).await
 }
 
@@ -238,7 +238,7 @@ pub async fn list_ecs_clusters(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<String>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_ecs_clusters(&session_id).await
 }
 
@@ -248,7 +248,7 @@ pub async fn list_ecs_services(
     session_id: String,
     cluster: String,
 ) -> Result<Vec<String>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_ecs_services(&session_id, &cluster).await
 }
 
@@ -259,7 +259,7 @@ pub async fn list_hosted_zones(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<HostedZone>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_hosted_zones(&session_id).await
 }
 
@@ -270,7 +270,7 @@ pub async fn list_sns_topics(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<Topic>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_sns_topics(&session_id).await
 }
 
@@ -282,7 +282,7 @@ pub async fn list_sqs_queues(
     session_id: String,
     prefix: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_sqs_queues(&session_id, prefix.as_deref()).await
 }
 
@@ -293,6 +293,6 @@ pub async fn list_cloudformation_stacks(
     state: tauri::State<'_, AwsServiceState>,
     session_id: String,
 ) -> Result<Vec<StackSummary>, String> {
-    let mut aws = state.lock().await;
+    let aws = state.lock().await;
     aws.list_cloudformation_stacks(&session_id).await
 }

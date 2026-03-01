@@ -384,9 +384,9 @@ impl CloudWatchClient {
         if let Some(l) = limit {
             body["limit"] = serde_json::json!(l);
         }
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.DescribeLogGroups", &body).await?;
+        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.DescribeLogGroups", &body.to_string()).await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status_code))?;
+            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
         Ok(result.get("logGroups")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
@@ -397,13 +397,13 @@ impl CloudWatchClient {
         if let Some(r) = retention_in_days {
             body["retentionInDays"] = serde_json::json!(r);
         }
-        self.client.json_request(LOGS_SERVICE, "Logs_20140328.CreateLogGroup", &body).await?;
+        self.client.json_request(LOGS_SERVICE, "Logs_20140328.CreateLogGroup", &body.to_string()).await?;
         Ok(())
     }
 
     pub async fn delete_log_group(&self, log_group_name: &str) -> AwsResult<()> {
         let body = serde_json::json!({ "logGroupName": log_group_name });
-        self.client.json_request(LOGS_SERVICE, "Logs_20140328.DeleteLogGroup", &body).await?;
+        self.client.json_request(LOGS_SERVICE, "Logs_20140328.DeleteLogGroup", &body.to_string()).await?;
         Ok(())
     }
 
@@ -419,9 +419,9 @@ impl CloudWatchClient {
             body["limit"] = serde_json::json!(l);
         }
         body["descending"] = serde_json::json!(true);
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.DescribeLogStreams", &body).await?;
+        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.DescribeLogStreams", &body.to_string()).await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status_code))?;
+            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
         Ok(result.get("logStreams")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
@@ -436,9 +436,9 @@ impl CloudWatchClient {
         if let Some(et) = end_time { body["endTime"] = serde_json::json!(et); }
         if let Some(l) = limit { body["limit"] = serde_json::json!(l); }
         if let Some(sfh) = start_from_head { body["startFromHead"] = serde_json::json!(sfh); }
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.GetLogEvents", &body).await?;
+        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.GetLogEvents", &body.to_string()).await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status_code))?;
+            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
         let events: Vec<OutputLogEvent> = result.get("events")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
@@ -456,9 +456,9 @@ impl CloudWatchClient {
         if let Some(st) = sequence_token {
             body["sequenceToken"] = serde_json::Value::String(st.to_string());
         }
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.PutLogEvents", &body).await?;
+        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.PutLogEvents", &body.to_string()).await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status_code))?;
+            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
         Ok(result.get("nextSequenceToken").and_then(|v| v.as_str()).map(String::from))
     }
 
@@ -470,9 +470,9 @@ impl CloudWatchClient {
         if let Some(st) = start_time { body["startTime"] = serde_json::json!(st); }
         if let Some(et) = end_time { body["endTime"] = serde_json::json!(et); }
         if let Some(l) = limit { body["limit"] = serde_json::json!(l); }
-        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.FilterLogEvents", &body).await?;
+        let response = self.client.json_request(LOGS_SERVICE, "Logs_20140328.FilterLogEvents", &body.to_string()).await?;
         let result: serde_json::Value = serde_json::from_str(&response.body)
-            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status_code))?;
+            .map_err(|e| AwsError::new(LOGS_SERVICE, "ParseError", &e.to_string(), response.status))?;
         Ok(result.get("events")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default())
@@ -483,7 +483,7 @@ impl CloudWatchClient {
             "logGroupName": log_group_name,
             "retentionInDays": retention_in_days,
         });
-        self.client.json_request(LOGS_SERVICE, "Logs_20140328.PutRetentionPolicy", &body).await?;
+        self.client.json_request(LOGS_SERVICE, "Logs_20140328.PutRetentionPolicy", &body.to_string()).await?;
         Ok(())
     }
 

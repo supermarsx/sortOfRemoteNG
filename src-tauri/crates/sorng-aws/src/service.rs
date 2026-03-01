@@ -9,7 +9,7 @@ use crate::client::AwsClient;
 use crate::cloudformation::CloudFormationClient;
 use crate::cloudwatch::CloudWatchClient;
 use crate::config::{
-    AwsConnectionConfig, AwsRegion, AwsServiceInfo, AwsSession, RetryConfig, SdkConfig,
+    AwsConnectionConfig, AwsRegion, AwsServiceInfo, AwsSession, SdkConfig,
 };
 use crate::ec2::{self, Ec2Client};
 use crate::ecs::EcsClient;
@@ -257,11 +257,12 @@ impl AwsService {
         session_id: &str,
     ) -> Result<Vec<ec2::Instance>, String> {
         let clients = self.require_clients(session_id)?;
-        clients
+        let (reservations, _) = clients
             .ec2
-            .describe_instances(&[], None)
+            .describe_instances(&[], &[], None, None)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok(reservations.into_iter().flat_map(|r| r.instances).collect())
     }
 
     pub async fn execute_ec2_action(
@@ -330,11 +331,12 @@ impl AwsService {
         prefix: Option<&str>,
     ) -> Result<Vec<s3::Object>, String> {
         let clients = self.require_clients(session_id)?;
-        clients
+        let output = clients
             .s3
-            .list_objects_v2(bucket, prefix, None, None)
+            .list_objects_v2(bucket, prefix, None, None, None)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok(output.contents)
     }
 
     pub async fn create_s3_bucket(
@@ -346,7 +348,7 @@ impl AwsService {
         let clients = self.require_clients(session_id)?;
         clients
             .s3
-            .create_bucket(bucket_name, Some(region))
+            .create_bucket(bucket_name, region)
             .await
             .map_err(|e| e.to_string())?;
         Ok(format!(
@@ -362,31 +364,31 @@ impl AwsService {
         session_id: &str,
     ) -> Result<Vec<rds::DBInstance>, String> {
         let clients = self.require_clients(session_id)?;
-        clients
+        let (instances, _) = clients
             .rds
-            .describe_db_instances(None)
+            .describe_db_instances(None, None, None)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        Ok(instances)
     }
 
     // ── Lambda ──────────────────────────────────────────────────────
 
     pub async fn list_lambda_functions(
-        &mut self,
+        &self,
         session_id: &str,
     ) -> Result<Vec<lambda::FunctionConfiguration>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        let (functions, _) = clients
             .lambda
             .list_functions(None, None)
             .await
             .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+        Ok(functions)
     }
 
     pub async fn invoke_lambda_function(
-        &mut self,
+        &self,
         session_id: &str,
         function_name: &str,
         payload: Option<String>,
@@ -398,10 +400,8 @@ impl AwsService {
             .invoke(function_name, &payload_bytes, None)
             .await
             .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
         let body = result
             .payload
-            .map(|b| String::from_utf8_lossy(&b).to_string())
             .unwrap_or_default();
         Ok(body)
     }
@@ -409,210 +409,188 @@ impl AwsService {
     // ── CloudWatch ──────────────────────────────────────────────────
 
     pub async fn get_cloudwatch_metrics(
-        &mut self,
+        &self,
         session_id: &str,
         namespace: &str,
         metric_name: &str,
     ) -> Result<Vec<crate::cloudwatch::Metric>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        clients
             .cloudwatch
-            .list_metrics(Some(namespace), Some(metric_name), &[], None)
+            .list_metrics(Some(namespace), Some(metric_name), &[])
             .await
-            .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+            .map_err(|e| e.to_string())
     }
 
     // ── IAM ─────────────────────────────────────────────────────────
 
     pub async fn list_iam_users(
-        &mut self,
+        &self,
         session_id: &str,
     ) -> Result<Vec<crate::iam::User>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        let (users, _) = clients
             .iam
-            .list_users(None, None)
+            .list_users(None, None, None)
             .await
             .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+        Ok(users)
     }
 
     pub async fn list_iam_roles(
-        &mut self,
+        &self,
         session_id: &str,
     ) -> Result<Vec<crate::iam::Role>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        clients
             .iam
-            .list_roles(None, None)
+            .list_roles()
             .await
-            .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+            .map_err(|e| e.to_string())
     }
 
     // ── STS ─────────────────────────────────────────────────────────
 
     pub async fn get_caller_identity(
-        &mut self,
+        &self,
         session_id: &str,
     ) -> Result<crate::sts::CallerIdentity, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        clients
             .sts
             .get_caller_identity()
             .await
-            .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+            .map_err(|e| e.to_string())
     }
 
     // ── SSM ─────────────────────────────────────────────────────────
 
     pub async fn get_ssm_parameter(
-        &mut self,
+        &self,
         session_id: &str,
         name: &str,
         with_decryption: bool,
     ) -> Result<crate::ssm::Parameter, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        clients
             .ssm
             .get_parameter(name, with_decryption)
             .await
-            .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+            .map_err(|e| e.to_string())
     }
 
     // ── Secrets Manager ─────────────────────────────────────────────
 
     pub async fn get_secret_value(
-        &mut self,
+        &self,
         session_id: &str,
         secret_id: &str,
     ) -> Result<crate::secrets::SecretValue, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        clients
             .secrets
             .get_secret_value(secret_id, None, None)
             .await
-            .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+            .map_err(|e| e.to_string())
     }
 
     pub async fn list_secrets(
-        &mut self,
+        &self,
         session_id: &str,
     ) -> Result<Vec<crate::secrets::SecretListEntry>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        let (secrets, _) = clients
             .secrets
             .list_secrets(None, None)
             .await
             .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+        Ok(secrets)
     }
 
     // ── ECS ─────────────────────────────────────────────────────────
 
     pub async fn list_ecs_clusters(
-        &mut self,
+        &self,
         session_id: &str,
     ) -> Result<Vec<String>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        clients
             .ecs
-            .list_clusters(None)
+            .list_clusters()
             .await
-            .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+            .map_err(|e| e.to_string())
     }
 
     pub async fn list_ecs_services(
-        &mut self,
+        &self,
         session_id: &str,
         cluster: &str,
     ) -> Result<Vec<String>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        clients
             .ecs
-            .list_services(cluster, None)
+            .list_services(cluster)
             .await
-            .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+            .map_err(|e| e.to_string())
     }
 
     // ── Route 53 ────────────────────────────────────────────────────
 
     pub async fn list_hosted_zones(
-        &mut self,
+        &self,
         session_id: &str,
     ) -> Result<Vec<crate::route53::HostedZone>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        let (zones, _) = clients
             .route53
-            .list_hosted_zones(None)
+            .list_hosted_zones(None, None)
             .await
             .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+        Ok(zones)
     }
 
     // ── SNS ─────────────────────────────────────────────────────────
 
     pub async fn list_sns_topics(
-        &mut self,
+        &self,
         session_id: &str,
     ) -> Result<Vec<crate::sns::Topic>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        let (topics, _) = clients
             .sns
             .list_topics(None)
             .await
             .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+        Ok(topics)
     }
 
     // ── SQS ─────────────────────────────────────────────────────────
 
     pub async fn list_sqs_queues(
-        &mut self,
+        &self,
         session_id: &str,
         prefix: Option<&str>,
     ) -> Result<Vec<String>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        clients
             .sqs
             .list_queues(prefix)
             .await
-            .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+            .map_err(|e| e.to_string())
     }
 
     // ── CloudFormation ──────────────────────────────────────────────
 
     pub async fn list_cloudformation_stacks(
-        &mut self,
+        &self,
         session_id: &str,
     ) -> Result<Vec<crate::cloudformation::StackSummary>, String> {
         let clients = self.require_clients(session_id)?;
-        let result = clients
+        clients
             .cloudformation
             .list_stacks(&[])
             .await
-            .map_err(|e| e.to_string())?;
-        self.touch_session(session_id);
-        Ok(result)
+            .map_err(|e| e.to_string())
     }
 }
 

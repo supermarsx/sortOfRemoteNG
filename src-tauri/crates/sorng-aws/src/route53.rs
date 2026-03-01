@@ -5,6 +5,7 @@
 //!
 //! Reference: <https://docs.aws.amazon.com/Route53/latest/APIReference/>
 
+use std::collections::BTreeMap;
 use crate::client::{self, AwsClient};
 use crate::error::{AwsError, AwsResult};
 use serde::{Deserialize, Serialize};
@@ -155,7 +156,7 @@ impl Route53Client {
         if let Some(mi) = max_items { qp.push(format!("maxitems={}", mi)); }
         if let Some(mk) = marker { qp.push(format!("marker={}", mk)); }
         if !qp.is_empty() { path = format!("{}?{}", path, qp.join("&")); }
-        let response = self.client.rest_xml_request(SERVICE, "GET", &path, None).await?;
+        let response = self.client.rest_xml_request(SERVICE, "GET", &path, &BTreeMap::new(), "").await?;
         let zones = self.parse_hosted_zones(&response.body);
         let next_marker = client::xml_text(&response.body, "NextMarker");
         Ok((zones, next_marker))
@@ -165,7 +166,7 @@ impl Route53Client {
     pub async fn get_hosted_zone(&self, zone_id: &str) -> AwsResult<HostedZone> {
         let clean_id = zone_id.trim_start_matches("/hostedzone/");
         let path = format!("/2013-04-01/hostedzone/{}", clean_id);
-        let response = self.client.rest_xml_request(SERVICE, "GET", &path, None).await?;
+        let response = self.client.rest_xml_request(SERVICE, "GET", &path, &BTreeMap::new(), "").await?;
         self.parse_hosted_zones(&response.body)
             .into_iter()
             .next()
@@ -197,7 +198,7 @@ impl Route53Client {
             ));
         }
         xml.push_str("</CreateHostedZoneRequest>");
-        let response = self.client.rest_xml_request(SERVICE, "POST", "/2013-04-01/hostedzone", Some(&xml)).await?;
+        let response = self.client.rest_xml_request(SERVICE, "POST", "/2013-04-01/hostedzone", &BTreeMap::new(), &xml).await?;
         let zone = self.parse_hosted_zones(&response.body)
             .into_iter()
             .next()
@@ -211,7 +212,7 @@ impl Route53Client {
     pub async fn delete_hosted_zone(&self, zone_id: &str) -> AwsResult<ChangeInfo> {
         let clean_id = zone_id.trim_start_matches("/hostedzone/");
         let path = format!("/2013-04-01/hostedzone/{}", clean_id);
-        let response = self.client.rest_xml_request(SERVICE, "DELETE", &path, None).await?;
+        let response = self.client.rest_xml_request(SERVICE, "DELETE", &path, &BTreeMap::new(), "").await?;
         self.parse_change_info(&response.body)
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No ChangeInfo in response", 200))
     }
@@ -225,7 +226,7 @@ impl Route53Client {
         if let Some(srt) = start_record_type { qp.push(format!("type={}", srt)); }
         if let Some(mi) = max_items { qp.push(format!("maxitems={}", mi)); }
         if !qp.is_empty() { path = format!("{}?{}", path, qp.join("&")); }
-        let response = self.client.rest_xml_request(SERVICE, "GET", &path, None).await?;
+        let response = self.client.rest_xml_request(SERVICE, "GET", &path, &BTreeMap::new(), "").await?;
         Ok(self.parse_resource_record_sets(&response.body))
     }
 
@@ -270,7 +271,7 @@ impl Route53Client {
         xml.push_str("    </Changes>");
         xml.push_str("  </ChangeBatch>");
         xml.push_str("</ChangeResourceRecordSetsRequest>");
-        let response = self.client.rest_xml_request(SERVICE, "POST", &path, Some(&xml)).await?;
+        let response = self.client.rest_xml_request(SERVICE, "POST", &path, &BTreeMap::new(), &xml).await?;
         self.parse_change_info(&response.body)
             .ok_or_else(|| AwsError::new(SERVICE, "ParseError", "No ChangeInfo in response", 200))
     }
@@ -278,7 +279,7 @@ impl Route53Client {
     // ── Health Checks ───────────────────────────────────────────────
 
     pub async fn list_health_checks(&self) -> AwsResult<Vec<HealthCheck>> {
-        let response = self.client.rest_xml_request(SERVICE, "GET", "/2013-04-01/healthcheck", None).await?;
+        let response = self.client.rest_xml_request(SERVICE, "GET", "/2013-04-01/healthcheck", &BTreeMap::new(), "").await?;
         Ok(self.parse_health_checks(&response.body))
     }
 
@@ -300,7 +301,7 @@ impl Route53Client {
         if let Some(ft) = config.failure_threshold { xml.push_str(&format!("    <FailureThreshold>{}</FailureThreshold>", ft)); }
         xml.push_str("  </HealthCheckConfig>");
         xml.push_str("</CreateHealthCheckRequest>");
-        let response = self.client.rest_xml_request(SERVICE, "POST", "/2013-04-01/healthcheck", Some(&xml)).await?;
+        let response = self.client.rest_xml_request(SERVICE, "POST", "/2013-04-01/healthcheck", &BTreeMap::new(), &xml).await?;
         self.parse_health_checks(&response.body)
             .into_iter()
             .next()
@@ -309,7 +310,7 @@ impl Route53Client {
 
     pub async fn delete_health_check(&self, health_check_id: &str) -> AwsResult<()> {
         let path = format!("/2013-04-01/healthcheck/{}", health_check_id);
-        self.client.rest_xml_request(SERVICE, "DELETE", &path, None).await?;
+        self.client.rest_xml_request(SERVICE, "DELETE", &path, &BTreeMap::new(), "").await?;
         Ok(())
     }
 
