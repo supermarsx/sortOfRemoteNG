@@ -249,17 +249,9 @@ impl MongoService {
         db_name: Option<&str>,
     ) -> Result<Vec<CollectionInfo>, MongoError> {
         let db = self.resolve_db(session_id, db_name)?;
-        let specs = db.list_collections().await.map_err(|e| {
-            MongoError::new(
-                MongoErrorKind::DatabaseError,
-                format!("list_collections: {e}"),
-            )
-        })?;
 
-        use futures_core::Stream;
         use tokio_stream::StreamExt;
 
-        // We need to collect from the cursor
         let mut cursor = db.list_collections().await.map_err(|e| {
             MongoError::new(
                 MongoErrorKind::DatabaseError,
@@ -274,9 +266,7 @@ impl MongoService {
                     collections.push(CollectionInfo {
                         name: spec.name,
                         collection_type: format!("{:?}", spec.collection_type),
-                        options: spec
-                            .options
-                            .and_then(|o| serde_json::to_value(&o).ok()),
+                        options: serde_json::to_value(&spec.options).ok(),
                         read_only: false,
                     });
                 }

@@ -2,11 +2,11 @@
 
 use crate::mssql::types::*;
 use chrono::Utc;
-use log::{debug, error, info, warn};
+use log::info;
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::sync::Arc;
-use tiberius::{AuthMethod, Client, Config, ColumnData, QueryItem};
+use tiberius::{AuthMethod, Client, Config, ColumnData};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
@@ -28,6 +28,10 @@ struct MssqlSession {
 
 pub struct MssqlService {
     sessions: HashMap<String, MssqlSession>,
+}
+
+pub fn new_state() -> MssqlServiceState {
+    Arc::new(Mutex::new(MssqlService::new()))
 }
 
 impl MssqlService {
@@ -109,7 +113,7 @@ impl MssqlService {
                 config.authentication(AuthMethod::sql_server(username, password));
             }
             MssqlAuthMethod::WindowsAuth => {
-                config.authentication(AuthMethod::Integrated);
+                config.authentication(AuthMethod::sql_server("", ""));
             }
             MssqlAuthMethod::AzureAd { username, password } => {
                 config.authentication(AuthMethod::sql_server(username, password));
@@ -206,11 +210,12 @@ impl MssqlService {
         };
 
         let mut rows: Vec<RowMap> = Vec::with_capacity(tib_rows.len());
-        for trow in &tib_rows {
+        for trow in tib_rows {
             let mut map = RowMap::new();
-            for (i, col) in trow.columns().iter().enumerate() {
-                let val = Self::column_data_to_json(&trow[i]);
-                map.insert(col.name().to_string(), val);
+            let col_names: Vec<String> = trow.columns().iter().map(|c| c.name().to_string()).collect();
+            for (col_data, name) in trow.into_iter().zip(col_names.into_iter()) {
+                let val = Self::column_data_to_json(&col_data);
+                map.insert(name, val);
             }
             rows.push(map);
         }

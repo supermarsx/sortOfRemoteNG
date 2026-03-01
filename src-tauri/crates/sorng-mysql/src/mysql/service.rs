@@ -24,6 +24,10 @@ struct MysqlSession {
     _local_port: Option<u16>,
 }
 
+pub fn new_state() -> MysqlServiceState {
+    Arc::new(Mutex::new(MysqlService::new()))
+}
+
 impl MysqlService {
     // ── Construction ────────────────────────────────────────────────
 
@@ -31,10 +35,6 @@ impl MysqlService {
         Self {
             sessions: std::collections::HashMap::new(),
         }
-    }
-
-    pub fn new_state() -> MysqlServiceState {
-        Arc::new(Mutex::new(Self::new()))
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
@@ -1309,7 +1309,7 @@ mod tests {
     #[tokio::test]
     async fn ping_not_connected() {
         let svc = MysqlService::new();
-        let err = svc.ping("no-session").unwrap_err();
+        let err = svc.ping("no-session").await.unwrap_err();
         assert_eq!(err.kind, MysqlErrorKind::NotConnected);
     }
 

@@ -4,7 +4,7 @@ use crate::postgres::types::*;
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
-use sqlx::Row;
+use sqlx::{Column, Row};
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::sync::Arc;
@@ -27,6 +27,10 @@ struct PgSession {
 
 pub struct PostgresService {
     sessions: HashMap<String, PgSession>,
+}
+
+pub fn new_state() -> PostgresServiceState {
+    Arc::new(Mutex::new(PostgresService::new()))
 }
 
 impl PostgresService {

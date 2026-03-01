@@ -19,6 +19,13 @@ members = [
   "crates/sorng-bitwarden",
   "crates/sorng-keepass",
   "crates/sorng-scp",
+  "crates/sorng-mysql",
+  "crates/sorng-postgres",
+  "crates/sorng-mssql",
+  "crates/sorng-sqlite",
+  "crates/sorng-mongodb",
+  "crates/sorng-redis",
+  "crates/sorng-passbolt",
 ]
 
 [workspace.dependencies]
@@ -73,6 +80,13 @@ sorng-rustdesk = { path = "crates/sorng-rustdesk" }
 sorng-bitwarden = { path = "crates/sorng-bitwarden" }
 sorng-keepass = { path = "crates/sorng-keepass" }
 sorng-scp = { path = "crates/sorng-scp" }
+sorng-mysql = { path = "crates/sorng-mysql" }
+sorng-postgres = { path = "crates/sorng-postgres" }
+sorng-mssql = { path = "crates/sorng-mssql" }
+sorng-sqlite = { path = "crates/sorng-sqlite" }
+sorng-mongodb = { path = "crates/sorng-mongodb" }
+sorng-redis = { path = "crates/sorng-redis" }
+sorng-passbolt = { path = "crates/sorng-passbolt" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"

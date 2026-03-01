@@ -55,7 +55,7 @@ pub async fn mysql_ping(
     session_id: String,
 ) -> Result<bool, String> {
     let svc = state.lock().await;
-    svc.ping(&session_id).map_err(|e| e.message)
+    svc.ping(&session_id).await.map_err(|e| e.message)
 }
 
 // ── Query execution ─────────────────────────────────────────────────

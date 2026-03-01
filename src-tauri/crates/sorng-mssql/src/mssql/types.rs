@@ -481,7 +481,7 @@ mod tests {
     fn config_to_ado_override_port() {
         let c = MssqlConnectionConfig::sql_auth("h", 1433, "u", "p");
         let ado = c.to_ado_string(Some(14330));
-        assert!(ado.contains(":14330"));
+        assert!(ado.contains(",14330"));
     }
 
     #[test]

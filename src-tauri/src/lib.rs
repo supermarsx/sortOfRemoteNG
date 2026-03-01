@@ -114,8 +114,19 @@ pub use sorng_bitwarden::bitwarden;
 // KeePass (dedicated crate)
 pub use sorng_keepass::keepass;
 
+// Passbolt (dedicated crate)
+pub use sorng_passbolt::passbolt;
+
 // SCP (dedicated crate)
 pub use sorng_scp::scp;
+
+// Database client crates
+pub use sorng_mysql::mysql;
+pub use sorng_postgres::postgres;
+pub use sorng_mssql::mssql;
+pub use sorng_sqlite::sqlite;
+pub use sorng_mongodb::mongodb;
+pub use sorng_redis::redis;
 
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
@@ -151,6 +162,7 @@ use rustdesk::RustDeskService;
 use anydesk::AnyDeskService;
 use bitwarden::BitwardenService;
 use keepass::KeePassService;
+use passbolt::PassboltService;
 use api::ApiService;
 use cert_auth::CertAuthService;
 use two_factor::TwoFactorService;
@@ -175,6 +187,14 @@ use http::ProxySessionManager;
 use passkey::PasskeyService;
 use ssh3::Ssh3Service;
 use scp::ScpService;
+
+// Database client services
+use mysql::service::MysqlServiceState;
+use postgres::service::PostgresServiceState;
+use mssql::service::MssqlServiceState;
+use sqlite::service::SqliteServiceState;
+use mongodb::service::MongoServiceState;
+use redis::service::RedisServiceState;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -498,9 +518,32 @@ pub fn run() {
       let keepass_service = KeePassService::new();
       app.manage(keepass_service.clone());
 
+      // Initialize Passbolt service
+      let pb_service = PassboltService::new_state();
+      app.manage(pb_service);
+
       // Initialize SCP service
       let scp_service = ScpService::new();
       app.manage(scp_service.clone());
+
+      // Initialize database client services
+      let mysql_service: MysqlServiceState = mysql::service::new_state();
+      app.manage(mysql_service);
+
+      let postgres_service: PostgresServiceState = postgres::service::new_state();
+      app.manage(postgres_service);
+
+      let mssql_service: MssqlServiceState = mssql::service::new_state();
+      app.manage(mssql_service);
+
+      let sqlite_service: SqliteServiceState = sqlite::service::new_state();
+      app.manage(sqlite_service);
+
+      let mongodb_service: MongoServiceState = mongodb::service::new_state();
+      app.manage(mongodb_service);
+
+      let redis_service: RedisServiceState = redis::service::new_state();
+      app.manage(redis_service);
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -1307,6 +1350,88 @@ pub fn run() {
         keepass::keepass_get_settings,
         keepass::keepass_update_settings,
         keepass::keepass_shutdown,
+        // Passbolt commands
+        passbolt::pb_get_config,
+        passbolt::pb_set_config,
+        passbolt::pb_login_gpgauth,
+        passbolt::pb_login_jwt,
+        passbolt::pb_refresh_token,
+        passbolt::pb_logout,
+        passbolt::pb_check_session,
+        passbolt::pb_is_authenticated,
+        passbolt::pb_verify_mfa_totp,
+        passbolt::pb_verify_mfa_yubikey,
+        passbolt::pb_get_mfa_requirements,
+        passbolt::pb_list_resources,
+        passbolt::pb_get_resource,
+        passbolt::pb_create_resource,
+        passbolt::pb_update_resource,
+        passbolt::pb_delete_resource,
+        passbolt::pb_search_resources,
+        passbolt::pb_list_favorite_resources,
+        passbolt::pb_list_resources_in_folder,
+        passbolt::pb_list_resource_types,
+        passbolt::pb_get_secret,
+        passbolt::pb_get_decrypted_secret,
+        passbolt::pb_list_folders,
+        passbolt::pb_get_folder,
+        passbolt::pb_create_folder,
+        passbolt::pb_update_folder,
+        passbolt::pb_delete_folder,
+        passbolt::pb_move_folder,
+        passbolt::pb_move_resource,
+        passbolt::pb_get_folder_tree,
+        passbolt::pb_list_users,
+        passbolt::pb_get_user,
+        passbolt::pb_get_me,
+        passbolt::pb_create_user,
+        passbolt::pb_update_user,
+        passbolt::pb_delete_user,
+        passbolt::pb_delete_user_dry_run,
+        passbolt::pb_search_users,
+        passbolt::pb_list_groups,
+        passbolt::pb_get_group,
+        passbolt::pb_create_group,
+        passbolt::pb_update_group,
+        passbolt::pb_delete_group,
+        passbolt::pb_update_group_dry_run,
+        passbolt::pb_list_resource_permissions,
+        passbolt::pb_share_resource,
+        passbolt::pb_share_folder,
+        passbolt::pb_simulate_share_resource,
+        passbolt::pb_search_aros,
+        passbolt::pb_add_favorite,
+        passbolt::pb_remove_favorite,
+        passbolt::pb_list_comments,
+        passbolt::pb_add_comment,
+        passbolt::pb_update_comment,
+        passbolt::pb_delete_comment,
+        passbolt::pb_list_tags,
+        passbolt::pb_update_tag,
+        passbolt::pb_delete_tag,
+        passbolt::pb_add_tags_to_resource,
+        passbolt::pb_list_gpg_keys,
+        passbolt::pb_get_gpg_key,
+        passbolt::pb_load_recipient_key,
+        passbolt::pb_list_roles,
+        passbolt::pb_list_metadata_keys,
+        passbolt::pb_create_metadata_key,
+        passbolt::pb_get_metadata_types_settings,
+        passbolt::pb_list_metadata_session_keys,
+        passbolt::pb_list_resources_needing_rotation,
+        passbolt::pb_rotate_resource_metadata,
+        passbolt::pb_list_resources_needing_upgrade,
+        passbolt::pb_upgrade_resource_metadata,
+        passbolt::pb_healthcheck,
+        passbolt::pb_server_status,
+        passbolt::pb_is_server_reachable,
+        passbolt::pb_server_settings,
+        passbolt::pb_directory_sync_dry_run,
+        passbolt::pb_directory_sync,
+        passbolt::pb_refresh_cache,
+        passbolt::pb_invalidate_cache,
+        passbolt::pb_get_cached_resources,
+        passbolt::pb_get_cached_folders,
         // SCP commands
         scp::scp_connect,
         scp::scp_disconnect,
@@ -1351,6 +1476,234 @@ pub fn run() {
         scp::scp_diagnose,
         scp::scp_diagnose_connection,
         scp::scp_exec_remote,
+
+        // ── MySQL ───────────────────────────────────────────────────
+        mysql::commands::mysql_connect,
+        mysql::commands::mysql_disconnect,
+        mysql::commands::mysql_disconnect_all,
+        mysql::commands::mysql_list_sessions,
+        mysql::commands::mysql_get_session,
+        mysql::commands::mysql_ping,
+        mysql::commands::mysql_execute_query,
+        mysql::commands::mysql_execute_statement,
+        mysql::commands::mysql_explain_query,
+        mysql::commands::mysql_list_databases,
+        mysql::commands::mysql_list_tables,
+        mysql::commands::mysql_describe_table,
+        mysql::commands::mysql_list_indexes,
+        mysql::commands::mysql_list_foreign_keys,
+        mysql::commands::mysql_list_views,
+        mysql::commands::mysql_list_routines,
+        mysql::commands::mysql_list_triggers,
+        mysql::commands::mysql_create_database,
+        mysql::commands::mysql_drop_database,
+        mysql::commands::mysql_drop_table,
+        mysql::commands::mysql_truncate_table,
+        mysql::commands::mysql_get_table_data,
+        mysql::commands::mysql_insert_row,
+        mysql::commands::mysql_update_rows,
+        mysql::commands::mysql_delete_rows,
+        mysql::commands::mysql_export_table,
+        mysql::commands::mysql_export_database,
+        mysql::commands::mysql_import_sql,
+        mysql::commands::mysql_import_csv,
+        mysql::commands::mysql_show_variables,
+        mysql::commands::mysql_show_processlist,
+        mysql::commands::mysql_kill_process,
+        mysql::commands::mysql_list_users,
+        mysql::commands::mysql_show_grants,
+        mysql::commands::mysql_server_uptime,
+
+        // ── PostgreSQL ──────────────────────────────────────────────
+        postgres::commands::pg_connect,
+        postgres::commands::pg_disconnect,
+        postgres::commands::pg_disconnect_all,
+        postgres::commands::pg_list_sessions,
+        postgres::commands::pg_get_session,
+        postgres::commands::pg_ping,
+        postgres::commands::pg_execute_query,
+        postgres::commands::pg_execute_statement,
+        postgres::commands::pg_explain_query,
+        postgres::commands::pg_list_databases,
+        postgres::commands::pg_list_schemas,
+        postgres::commands::pg_list_tables,
+        postgres::commands::pg_describe_table,
+        postgres::commands::pg_list_indexes,
+        postgres::commands::pg_list_foreign_keys,
+        postgres::commands::pg_list_views,
+        postgres::commands::pg_list_routines,
+        postgres::commands::pg_list_triggers,
+        postgres::commands::pg_list_sequences,
+        postgres::commands::pg_list_extensions,
+        postgres::commands::pg_create_database,
+        postgres::commands::pg_drop_database,
+        postgres::commands::pg_create_schema,
+        postgres::commands::pg_drop_schema,
+        postgres::commands::pg_drop_table,
+        postgres::commands::pg_truncate_table,
+        postgres::commands::pg_get_table_data,
+        postgres::commands::pg_insert_row,
+        postgres::commands::pg_update_rows,
+        postgres::commands::pg_delete_rows,
+        postgres::commands::pg_export_table,
+        postgres::commands::pg_export_schema,
+        postgres::commands::pg_import_sql,
+        postgres::commands::pg_import_csv,
+        postgres::commands::pg_show_settings,
+        postgres::commands::pg_show_activity,
+        postgres::commands::pg_terminate_backend,
+        postgres::commands::pg_cancel_backend,
+        postgres::commands::pg_vacuum_table,
+        postgres::commands::pg_list_roles,
+        postgres::commands::pg_list_tablespaces,
+        postgres::commands::pg_server_uptime,
+        postgres::commands::pg_database_size,
+
+        // ── MSSQL ───────────────────────────────────────────────────
+        mssql::commands::mssql_connect,
+        mssql::commands::mssql_disconnect,
+        mssql::commands::mssql_disconnect_all,
+        mssql::commands::mssql_list_sessions,
+        mssql::commands::mssql_get_session,
+        mssql::commands::mssql_execute_query,
+        mssql::commands::mssql_execute_statement,
+        mssql::commands::mssql_list_databases,
+        mssql::commands::mssql_list_schemas,
+        mssql::commands::mssql_list_tables,
+        mssql::commands::mssql_describe_table,
+        mssql::commands::mssql_list_indexes,
+        mssql::commands::mssql_list_foreign_keys,
+        mssql::commands::mssql_list_views,
+        mssql::commands::mssql_list_stored_procs,
+        mssql::commands::mssql_list_triggers,
+        mssql::commands::mssql_create_database,
+        mssql::commands::mssql_drop_database,
+        mssql::commands::mssql_drop_table,
+        mssql::commands::mssql_truncate_table,
+        mssql::commands::mssql_get_table_data,
+        mssql::commands::mssql_insert_row,
+        mssql::commands::mssql_update_rows,
+        mssql::commands::mssql_delete_rows,
+        mssql::commands::mssql_export_table,
+        mssql::commands::mssql_import_sql,
+        mssql::commands::mssql_import_csv,
+        mssql::commands::mssql_server_properties,
+        mssql::commands::mssql_show_processes,
+        mssql::commands::mssql_kill_process,
+        mssql::commands::mssql_list_logins,
+
+        // ── SQLite ──────────────────────────────────────────────────
+        sqlite::commands::sqlite_connect,
+        sqlite::commands::sqlite_disconnect,
+        sqlite::commands::sqlite_disconnect_all,
+        sqlite::commands::sqlite_list_sessions,
+        sqlite::commands::sqlite_get_session,
+        sqlite::commands::sqlite_ping,
+        sqlite::commands::sqlite_execute_query,
+        sqlite::commands::sqlite_execute_statement,
+        sqlite::commands::sqlite_explain_query,
+        sqlite::commands::sqlite_list_tables,
+        sqlite::commands::sqlite_describe_table,
+        sqlite::commands::sqlite_list_indexes,
+        sqlite::commands::sqlite_list_foreign_keys,
+        sqlite::commands::sqlite_list_triggers,
+        sqlite::commands::sqlite_list_attached_databases,
+        sqlite::commands::sqlite_get_pragma,
+        sqlite::commands::sqlite_set_pragma,
+        sqlite::commands::sqlite_drop_table,
+        sqlite::commands::sqlite_vacuum,
+        sqlite::commands::sqlite_integrity_check,
+        sqlite::commands::sqlite_attach_database,
+        sqlite::commands::sqlite_detach_database,
+        sqlite::commands::sqlite_get_table_data,
+        sqlite::commands::sqlite_insert_row,
+        sqlite::commands::sqlite_update_rows,
+        sqlite::commands::sqlite_delete_rows,
+        sqlite::commands::sqlite_export_table,
+        sqlite::commands::sqlite_export_database,
+        sqlite::commands::sqlite_import_sql,
+        sqlite::commands::sqlite_import_csv,
+        sqlite::commands::sqlite_database_size,
+        sqlite::commands::sqlite_table_count,
+
+        // ── MongoDB ─────────────────────────────────────────────────
+        mongodb::commands::mongo_connect,
+        mongodb::commands::mongo_disconnect,
+        mongodb::commands::mongo_disconnect_all,
+        mongodb::commands::mongo_list_sessions,
+        mongodb::commands::mongo_get_session,
+        mongodb::commands::mongo_ping,
+        mongodb::commands::mongo_list_databases,
+        mongodb::commands::mongo_drop_database,
+        mongodb::commands::mongo_list_collections,
+        mongodb::commands::mongo_create_collection,
+        mongodb::commands::mongo_drop_collection,
+        mongodb::commands::mongo_collection_stats,
+        mongodb::commands::mongo_find,
+        mongodb::commands::mongo_count_documents,
+        mongodb::commands::mongo_insert_one,
+        mongodb::commands::mongo_insert_many,
+        mongodb::commands::mongo_update_one,
+        mongodb::commands::mongo_update_many,
+        mongodb::commands::mongo_delete_one,
+        mongodb::commands::mongo_delete_many,
+        mongodb::commands::mongo_aggregate,
+        mongodb::commands::mongo_run_command,
+        mongodb::commands::mongo_list_indexes,
+        mongodb::commands::mongo_create_index,
+        mongodb::commands::mongo_drop_index,
+        mongodb::commands::mongo_server_status,
+        mongodb::commands::mongo_list_users,
+        mongodb::commands::mongo_replica_set_status,
+        mongodb::commands::mongo_current_op,
+        mongodb::commands::mongo_kill_op,
+        mongodb::commands::mongo_export_collection,
+
+        // ── Redis ───────────────────────────────────────────────────
+        redis::commands::redis_connect,
+        redis::commands::redis_disconnect,
+        redis::commands::redis_disconnect_all,
+        redis::commands::redis_list_sessions,
+        redis::commands::redis_get_session,
+        redis::commands::redis_ping,
+        redis::commands::redis_get,
+        redis::commands::redis_set,
+        redis::commands::redis_del,
+        redis::commands::redis_exists,
+        redis::commands::redis_expire,
+        redis::commands::redis_persist,
+        redis::commands::redis_ttl,
+        redis::commands::redis_key_type,
+        redis::commands::redis_rename,
+        redis::commands::redis_scan,
+        redis::commands::redis_key_info,
+        redis::commands::redis_dbsize,
+        redis::commands::redis_flushdb,
+        redis::commands::redis_hgetall,
+        redis::commands::redis_hget,
+        redis::commands::redis_hset,
+        redis::commands::redis_hdel,
+        redis::commands::redis_lrange,
+        redis::commands::redis_lpush,
+        redis::commands::redis_rpush,
+        redis::commands::redis_llen,
+        redis::commands::redis_smembers,
+        redis::commands::redis_sadd,
+        redis::commands::redis_srem,
+        redis::commands::redis_scard,
+        redis::commands::redis_zrange_with_scores,
+        redis::commands::redis_zadd,
+        redis::commands::redis_zrem,
+        redis::commands::redis_zcard,
+        redis::commands::redis_server_info,
+        redis::commands::redis_memory_info,
+        redis::commands::redis_client_list,
+        redis::commands::redis_client_kill,
+        redis::commands::redis_slowlog_get,
+        redis::commands::redis_config_get,
+        redis::commands::redis_config_set,
+        redis::commands::redis_raw_command,
+        redis::commands::redis_select_db,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
