@@ -1,11 +1,14 @@
 //! # SortOfRemote NG – Cloud
 //!
-//! Cloud provider integrations: AWS, Azure, GCP, IBM Cloud, DigitalOcean,
+//! Cloud provider integrations: IBM Cloud, DigitalOcean,
 //! Heroku, Scaleway, Linode, OVH, Vercel, and Cloudflare.
+//!
+//! AWS has been moved to its own crate: `sorng-aws`.
+//! Azure has been moved to its own crate: `sorng-azure`.
+//! GCP has been moved to its own crate: `sorng-gcp`.
 
 pub mod aws;
 pub mod gcp;
-pub mod azure;
 pub mod ibm;
 pub mod digital_ocean;
 pub mod heroku;

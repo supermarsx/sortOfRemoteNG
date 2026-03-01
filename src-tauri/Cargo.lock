@@ -193,12 +193,14 @@ dependencies = [
  "sorng-ard",
  "sorng-auth",
  "sorng-aws",
+ "sorng-azure",
  "sorng-bitwarden",
  "sorng-cloud",
  "sorng-core",
  "sorng-dashlane",
  "sorng-dropbox",
  "sorng-ftp",
+ "sorng-gcp",
  "sorng-gdrive",
  "sorng-google-passwords",
  "sorng-gpo",
@@ -211,6 +213,7 @@ dependencies = [
  "sorng-mssql",
  "sorng-mysql",
  "sorng-network",
+ "sorng-nextcloud",
  "sorng-onedrive",
  "sorng-openvpn",
  "sorng-passbolt",
@@ -8111,6 +8114,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-azure"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-bitwarden"
 version = "0.1.0"
 dependencies = [
@@ -8222,6 +8241,25 @@ dependencies = [
  "tauri",
  "tokio",
  "tokio-native-tls",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-gcp"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "jsonwebtoken",
+ "log",
+ "percent-encoding",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
  "url",
  "uuid",
 ]
@@ -8450,6 +8488,28 @@ dependencies = [
  "sorng-core",
  "tauri",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-nextcloud"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "futures",
+ "hex",
+ "log",
+ "quick-xml 0.31.0",
+ "rand 0.8.5",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "url",
  "uuid",
 ]
 

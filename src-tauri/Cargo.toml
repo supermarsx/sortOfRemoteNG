@@ -46,8 +46,11 @@ members = [
   "crates/sorng-whatsapp",
   "crates/sorng-telegram",
   "crates/sorng-dropbox",
+  "crates/sorng-nextcloud",
   "crates/sorng-gdrive",
   "crates/sorng-recording",
+  "crates/sorng-gcp",
+  "crates/sorng-azure",
 ]
 
 [workspace.dependencies]
@@ -131,8 +134,11 @@ sorng-whatsapp = { path = "crates/sorng-whatsapp" }
 sorng-telegram = { path = "crates/sorng-telegram" }
 sorng-onedrive = { path = "crates/sorng-onedrive" }
 sorng-dropbox = { path = "crates/sorng-dropbox" }
+sorng-nextcloud = { path = "crates/sorng-nextcloud" }
 sorng-gdrive = { path = "crates/sorng-gdrive" }
 sorng-recording = { path = "crates/sorng-recording" }
+sorng-gcp = { path = "crates/sorng-gcp" }
+sorng-azure = { path = "crates/sorng-azure" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"

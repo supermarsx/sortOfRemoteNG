@@ -86,8 +86,8 @@ pub use sorng_vpn::chaining;
 
 // Cloud
 pub use sorng_aws as aws;
-pub use sorng_cloud::gcp;
-pub use sorng_cloud::azure;
+pub use sorng_gcp as gcp;
+pub use sorng_azure as azure;
 pub use sorng_cloud::ibm;
 pub use sorng_cloud::digital_ocean;
 pub use sorng_cloud::heroku;
@@ -167,6 +167,9 @@ pub use sorng_telegram as telegram;
 // Dropbox API v2 integration (dedicated crate)
 pub use sorng_dropbox as dropbox;
 
+// Nextcloud WebDAV/OCS integration (dedicated crate)
+pub use sorng_nextcloud as nextcloud;
+
 // Google Drive API v3 integration (dedicated crate)
 pub use sorng_gdrive as gdrive;
 
@@ -220,7 +223,7 @@ use serial::SerialService;
 use rlogin::RloginService;
 use raw_socket::RawSocketService;
 use gcp::GcpService;
-use azure::AzureService;
+use azure::service::AzureService;
 use ibm::IbmService;
 use digital_ocean::DigitalOceanService;
 use heroku::HerokuService;
@@ -658,6 +661,10 @@ pub fn run() {
       // Initialize Dropbox API v2 integration service
       let dropbox_state = dropbox::service::DropboxService::new();
       app.manage(dropbox_state);
+
+      // Initialize Nextcloud WebDAV/OCS integration service
+      let nextcloud_state = nextcloud::service::NextcloudService::new();
+      app.manage(nextcloud_state);
 
       // Initialize Google Drive API v3 integration service
       let gdrive_state = gdrive::service::GDriveService::new();
@@ -1147,14 +1154,155 @@ pub fn run() {
         // raw_socket::list_raw_socket_sessions,
         gcp::connect_gcp,
         gcp::disconnect_gcp,
-        gcp::list_gcp_instances,
-        gcp::get_gcp_session,
         gcp::list_gcp_sessions,
-        azure::connect_azure,
-        azure::disconnect_azure,
-        azure::list_azure_virtual_machines,
-        azure::get_azure_session,
-        azure::list_azure_sessions,
+        gcp::get_gcp_session,
+        // Compute Engine
+        gcp::list_gcp_instances,
+        gcp::get_gcp_instance,
+        gcp::start_gcp_instance,
+        gcp::stop_gcp_instance,
+        gcp::reset_gcp_instance,
+        gcp::delete_gcp_instance,
+        gcp::list_gcp_disks,
+        gcp::list_gcp_snapshots,
+        gcp::list_gcp_firewalls,
+        gcp::list_gcp_networks,
+        gcp::list_gcp_machine_types,
+        // Cloud Storage
+        gcp::list_gcp_buckets,
+        gcp::get_gcp_bucket,
+        gcp::create_gcp_bucket,
+        gcp::delete_gcp_bucket,
+        gcp::list_gcp_objects,
+        gcp::download_gcp_object,
+        gcp::delete_gcp_object,
+        // IAM
+        gcp::list_gcp_service_accounts,
+        gcp::get_gcp_iam_policy,
+        gcp::list_gcp_roles,
+        // Secret Manager
+        gcp::list_gcp_secrets,
+        gcp::get_gcp_secret,
+        gcp::access_gcp_secret_version,
+        gcp::create_gcp_secret,
+        gcp::delete_gcp_secret,
+        // Cloud SQL
+        gcp::list_gcp_sql_instances,
+        gcp::get_gcp_sql_instance,
+        gcp::list_gcp_sql_databases,
+        gcp::list_gcp_sql_users,
+        // Cloud Functions
+        gcp::list_gcp_functions,
+        gcp::get_gcp_function,
+        gcp::call_gcp_function,
+        // GKE
+        gcp::list_gcp_clusters,
+        gcp::get_gcp_cluster,
+        gcp::list_gcp_node_pools,
+        // Cloud DNS
+        gcp::list_gcp_managed_zones,
+        gcp::list_gcp_dns_record_sets,
+        // Pub/Sub
+        gcp::list_gcp_topics,
+        gcp::create_gcp_topic,
+        gcp::delete_gcp_topic,
+        gcp::publish_gcp_message,
+        gcp::list_gcp_subscriptions,
+        gcp::pull_gcp_messages,
+        // Cloud Run
+        gcp::list_gcp_run_services,
+        gcp::list_gcp_run_jobs,
+        // Cloud Logging
+        gcp::list_gcp_log_entries,
+        gcp::list_gcp_logs,
+        gcp::list_gcp_log_sinks,
+        // Cloud Monitoring
+        gcp::list_gcp_metric_descriptors,
+        gcp::list_gcp_time_series,
+        gcp::list_gcp_alert_policies,
+        // Azure (sorng-azure)
+        azure::commands::azure_set_credentials,
+        azure::commands::azure_authenticate,
+        azure::commands::azure_disconnect,
+        azure::commands::azure_is_authenticated,
+        azure::commands::azure_connection_summary,
+        azure::commands::azure_list_vms,
+        azure::commands::azure_list_vms_in_rg,
+        azure::commands::azure_get_vm,
+        azure::commands::azure_get_vm_instance_view,
+        azure::commands::azure_start_vm,
+        azure::commands::azure_stop_vm,
+        azure::commands::azure_restart_vm,
+        azure::commands::azure_deallocate_vm,
+        azure::commands::azure_delete_vm,
+        azure::commands::azure_resize_vm,
+        azure::commands::azure_list_vm_sizes,
+        azure::commands::azure_list_vm_summaries,
+        azure::commands::azure_list_resource_groups,
+        azure::commands::azure_get_resource_group,
+        azure::commands::azure_create_resource_group,
+        azure::commands::azure_delete_resource_group,
+        azure::commands::azure_list_resources_in_rg,
+        azure::commands::azure_list_all_resources,
+        azure::commands::azure_list_storage_accounts,
+        azure::commands::azure_list_storage_accounts_in_rg,
+        azure::commands::azure_get_storage_account,
+        azure::commands::azure_create_storage_account,
+        azure::commands::azure_delete_storage_account,
+        azure::commands::azure_list_storage_keys,
+        azure::commands::azure_list_containers,
+        azure::commands::azure_list_vnets,
+        azure::commands::azure_list_vnets_in_rg,
+        azure::commands::azure_get_vnet,
+        azure::commands::azure_list_nsgs,
+        azure::commands::azure_list_nsgs_in_rg,
+        azure::commands::azure_list_public_ips,
+        azure::commands::azure_list_nics,
+        azure::commands::azure_list_load_balancers,
+        azure::commands::azure_list_web_apps,
+        azure::commands::azure_list_web_apps_in_rg,
+        azure::commands::azure_get_web_app,
+        azure::commands::azure_start_web_app,
+        azure::commands::azure_stop_web_app,
+        azure::commands::azure_restart_web_app,
+        azure::commands::azure_delete_web_app,
+        azure::commands::azure_list_slots,
+        azure::commands::azure_swap_slot,
+        azure::commands::azure_list_sql_servers,
+        azure::commands::azure_list_sql_servers_in_rg,
+        azure::commands::azure_get_sql_server,
+        azure::commands::azure_list_databases,
+        azure::commands::azure_get_database,
+        azure::commands::azure_create_database,
+        azure::commands::azure_delete_database,
+        azure::commands::azure_list_firewall_rules,
+        azure::commands::azure_create_firewall_rule,
+        azure::commands::azure_delete_firewall_rule,
+        azure::commands::azure_list_vaults,
+        azure::commands::azure_list_vaults_in_rg,
+        azure::commands::azure_get_vault,
+        azure::commands::azure_list_secrets,
+        azure::commands::azure_get_secret,
+        azure::commands::azure_set_secret,
+        azure::commands::azure_delete_secret,
+        azure::commands::azure_list_keys,
+        azure::commands::azure_list_certificates,
+        azure::commands::azure_list_container_groups,
+        azure::commands::azure_list_container_groups_in_rg,
+        azure::commands::azure_get_container_group,
+        azure::commands::azure_create_container_group,
+        azure::commands::azure_delete_container_group,
+        azure::commands::azure_restart_container_group,
+        azure::commands::azure_stop_container_group,
+        azure::commands::azure_start_container_group,
+        azure::commands::azure_get_container_logs,
+        azure::commands::azure_list_metric_definitions,
+        azure::commands::azure_query_metrics,
+        azure::commands::azure_list_activity_log,
+        azure::commands::azure_list_usage_details,
+        azure::commands::azure_list_budgets,
+        azure::commands::azure_get_budget,
+        azure::commands::azure_search_resources,
         // ibm::connect_ibm,
         // ibm::disconnect_ibm,
         // ibm::list_ibm_virtual_servers,
@@ -2622,6 +2770,118 @@ pub fn run() {
         dropbox::commands::dropbox_reset_stats,
         // Dropbox commands — Longpoll
         dropbox::commands::dropbox_longpoll,
+        // Nextcloud commands — Configuration & Connection
+        nextcloud::commands::nextcloud_configure,
+        nextcloud::commands::nextcloud_set_bearer_token,
+        nextcloud::commands::nextcloud_configure_oauth2,
+        nextcloud::commands::nextcloud_disconnect,
+        nextcloud::commands::nextcloud_is_connected,
+        nextcloud::commands::nextcloud_masked_credential,
+        nextcloud::commands::nextcloud_get_server_url,
+        nextcloud::commands::nextcloud_get_username,
+        // Nextcloud commands — Login Flow v2
+        nextcloud::commands::nextcloud_start_login_flow,
+        nextcloud::commands::nextcloud_poll_login_flow,
+        // Nextcloud commands — OAuth 2.0
+        nextcloud::commands::nextcloud_start_oauth2,
+        nextcloud::commands::nextcloud_exchange_oauth2_code,
+        nextcloud::commands::nextcloud_refresh_oauth2_token,
+        nextcloud::commands::nextcloud_validate_credentials,
+        nextcloud::commands::nextcloud_revoke_app_password,
+        // Nextcloud commands — File operations
+        nextcloud::commands::nextcloud_upload,
+        nextcloud::commands::nextcloud_download,
+        nextcloud::commands::nextcloud_get_metadata,
+        nextcloud::commands::nextcloud_move_file,
+        nextcloud::commands::nextcloud_copy_file,
+        nextcloud::commands::nextcloud_delete_file,
+        nextcloud::commands::nextcloud_set_favorite,
+        nextcloud::commands::nextcloud_set_tags,
+        nextcloud::commands::nextcloud_list_versions,
+        nextcloud::commands::nextcloud_restore_version,
+        nextcloud::commands::nextcloud_list_trash,
+        nextcloud::commands::nextcloud_restore_trash_item,
+        nextcloud::commands::nextcloud_delete_trash_item,
+        nextcloud::commands::nextcloud_empty_trash,
+        nextcloud::commands::nextcloud_search,
+        nextcloud::commands::nextcloud_content_hash,
+        nextcloud::commands::nextcloud_guess_mime,
+        nextcloud::commands::nextcloud_get_preview,
+        // Nextcloud commands — Folder operations
+        nextcloud::commands::nextcloud_create_folder,
+        nextcloud::commands::nextcloud_create_folder_recursive,
+        nextcloud::commands::nextcloud_list_folder,
+        nextcloud::commands::nextcloud_list_files,
+        nextcloud::commands::nextcloud_list_subfolders,
+        nextcloud::commands::nextcloud_list_folder_recursive,
+        nextcloud::commands::nextcloud_breadcrumbs,
+        nextcloud::commands::nextcloud_parent_path,
+        nextcloud::commands::nextcloud_join_path,
+        nextcloud::commands::nextcloud_filename,
+        // Nextcloud commands — Sharing (OCS)
+        nextcloud::commands::nextcloud_create_share,
+        nextcloud::commands::nextcloud_create_public_link,
+        nextcloud::commands::nextcloud_list_shares,
+        nextcloud::commands::nextcloud_list_shares_for_path,
+        nextcloud::commands::nextcloud_list_shared_with_me,
+        nextcloud::commands::nextcloud_list_pending_shares,
+        nextcloud::commands::nextcloud_get_share,
+        nextcloud::commands::nextcloud_update_share,
+        nextcloud::commands::nextcloud_delete_share,
+        nextcloud::commands::nextcloud_accept_remote_share,
+        nextcloud::commands::nextcloud_decline_remote_share,
+        nextcloud::commands::nextcloud_share_url,
+        nextcloud::commands::nextcloud_share_download_url,
+        // Nextcloud commands — Users & Capabilities
+        nextcloud::commands::nextcloud_get_current_user,
+        nextcloud::commands::nextcloud_get_quota,
+        nextcloud::commands::nextcloud_get_user,
+        nextcloud::commands::nextcloud_list_users,
+        nextcloud::commands::nextcloud_list_groups,
+        nextcloud::commands::nextcloud_get_capabilities,
+        nextcloud::commands::nextcloud_get_server_status,
+        nextcloud::commands::nextcloud_list_notifications,
+        nextcloud::commands::nextcloud_delete_notification,
+        nextcloud::commands::nextcloud_delete_all_notifications,
+        nextcloud::commands::nextcloud_list_external_storages,
+        nextcloud::commands::nextcloud_avatar_url,
+        nextcloud::commands::nextcloud_get_avatar,
+        nextcloud::commands::nextcloud_format_bytes,
+        nextcloud::commands::nextcloud_format_quota,
+        // Nextcloud commands — Activity Feed
+        nextcloud::commands::nextcloud_list_activities,
+        nextcloud::commands::nextcloud_activities_for_file,
+        nextcloud::commands::nextcloud_recent_activities,
+        nextcloud::commands::nextcloud_list_activity_filters,
+        // Nextcloud commands — Sync manager
+        nextcloud::commands::nextcloud_sync_add,
+        nextcloud::commands::nextcloud_sync_remove,
+        nextcloud::commands::nextcloud_sync_list,
+        nextcloud::commands::nextcloud_sync_set_enabled,
+        nextcloud::commands::nextcloud_sync_set_interval,
+        nextcloud::commands::nextcloud_sync_set_exclude_patterns,
+        // Nextcloud commands — Backup manager
+        nextcloud::commands::nextcloud_backup_add,
+        nextcloud::commands::nextcloud_backup_remove,
+        nextcloud::commands::nextcloud_backup_list,
+        nextcloud::commands::nextcloud_backup_set_enabled,
+        nextcloud::commands::nextcloud_backup_set_max_versions,
+        nextcloud::commands::nextcloud_backup_set_interval,
+        nextcloud::commands::nextcloud_backup_get_history,
+        nextcloud::commands::nextcloud_backup_total_size,
+        // Nextcloud commands — File watcher
+        nextcloud::commands::nextcloud_watch_add,
+        nextcloud::commands::nextcloud_watch_remove,
+        nextcloud::commands::nextcloud_watch_list,
+        nextcloud::commands::nextcloud_watch_set_enabled,
+        nextcloud::commands::nextcloud_watch_get_changes,
+        nextcloud::commands::nextcloud_watch_clear_changes,
+        nextcloud::commands::nextcloud_watch_total_pending,
+        // Nextcloud commands — Activity Log & Stats
+        nextcloud::commands::nextcloud_get_activity_log,
+        nextcloud::commands::nextcloud_clear_activity_log,
+        nextcloud::commands::nextcloud_get_stats,
+        nextcloud::commands::nextcloud_reset_stats,
         // Google Drive commands — Auth & Configuration
         gdrive::commands::gdrive_set_credentials,
         gdrive::commands::gdrive_get_auth_url,
