@@ -141,5 +141,4 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
   );
 };
 
-export { ProxyChainMenu };
 export default ProxyChainMenu;
