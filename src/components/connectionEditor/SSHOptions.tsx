@@ -13,7 +13,7 @@ import {
   updateTrustRecordNickname,
   type TrustRecord,
 } from "../../utils/trustStore";
-import { useSSHOptions } from "../../hooks/useSSHOptions";
+import { useSSHOptions } from "../../hooks/ssh/useSSHOptions";
 
 type Mgr = ReturnType<typeof useSSHOptions>;
 

@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Modal } from "./ui/Modal";
-import { useShortcutManager, FolderPreset } from "../hooks/useShortcutManager";
+import { useShortcutManager, FolderPreset } from "../hooks/window/useShortcutManager";
 
 interface ShortcutManagerDialogProps {
   isOpen: boolean;

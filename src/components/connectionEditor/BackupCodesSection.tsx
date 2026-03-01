@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { Connection } from '../../types/connection';
 import { TOTPConfig } from '../../types/settings';
-import { useBackupCodesSection } from '../../hooks/useBackupCodesSection';
+import { useBackupCodesSection } from '../../hooks/security/useBackupCodesSection';
 
 type Mgr = ReturnType<typeof useBackupCodesSection>;
 

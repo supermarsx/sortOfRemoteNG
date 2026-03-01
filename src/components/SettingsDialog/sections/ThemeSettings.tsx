@@ -1,7 +1,7 @@
 import React from "react";
 import { GlobalSettings, Theme, ColorScheme } from "../../../types/settings";
 import { Palette, Droplets, Sparkles, Eye, Code, Zap } from "lucide-react";
-import { useThemeSettings, formatLabel } from "../../../hooks/useThemeSettings";
+import { useThemeSettings, formatLabel } from "../../../hooks/settings/useThemeSettings";
 
 type Mgr = ReturnType<typeof useThemeSettings>;
 

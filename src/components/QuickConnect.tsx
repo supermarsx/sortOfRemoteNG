@@ -3,7 +3,7 @@ import { PasswordInput } from "./ui/PasswordInput";
 import { Clock, Play, Trash2, X, Zap } from "lucide-react";
 import { QuickConnectHistoryEntry } from "../types/settings";
 import { Modal } from "./ui/Modal";
-import { useQuickConnect } from "../hooks/useQuickConnect";
+import { useQuickConnect } from "../hooks/connection/useQuickConnect";
 
 type Mgr = ReturnType<typeof useQuickConnect>;
 

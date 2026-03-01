@@ -44,7 +44,7 @@ import {
   OptionList,
 } from "./ui/OptionList";
 import { ConnectionSession } from "../types/connection";
-import { useWebTerminal, type WebTerminalMgr } from "../hooks/useWebTerminal";
+import { useWebTerminal, type WebTerminalMgr } from "../hooks/ssh/useWebTerminal";
 
 /* ── Props ─────────────────────────────────────────────────────── */
 

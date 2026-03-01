@@ -7,7 +7,7 @@ import {
   Search,
   ArrowDown,
 } from "lucide-react";
-import { useRdpLogViewer } from "../hooks/useRdpLogViewer";
+import { useRdpLogViewer } from "../hooks/rdp/useRdpLogViewer";
 
 type Mgr = ReturnType<typeof useRdpLogViewer>;
 

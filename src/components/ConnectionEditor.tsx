@@ -33,7 +33,7 @@ import {
   ICON_OPTIONS,
   PROTOCOL_COLOR_MAP,
   type ConnectionEditorMgr,
-} from "../hooks/useConnectionEditor";
+} from "../hooks/connection/useConnectionEditor";
 
 /* ═══════════════════════════════════════════════════════════════
    Types

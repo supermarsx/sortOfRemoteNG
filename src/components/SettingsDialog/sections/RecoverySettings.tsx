@@ -10,7 +10,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Modal } from "../../ui/Modal";
-import { useRecoverySettings } from "../../../hooks/useRecoverySettings";
+import { useRecoverySettings } from "../../../hooks/settings/useRecoverySettings";
 
 type Mgr = ReturnType<typeof useRecoverySettings>;
 

@@ -16,7 +16,7 @@ import {
   FileItem,
   formatFileSize,
   getTransferProgress,
-} from "../hooks/useFileTransfer";
+} from "../hooks/protocol/useFileTransfer";
 
 type Mgr = ReturnType<typeof useFileTransfer>;
 

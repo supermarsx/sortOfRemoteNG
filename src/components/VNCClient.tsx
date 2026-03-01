@@ -11,7 +11,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
-import { useVNCClient, VNCSettings } from '../hooks/useVNCClient';
+import { useVNCClient, VNCSettings } from '../hooks/protocol/useVNCClient';
 
 interface VNCClientProps {
   session: ConnectionSession;

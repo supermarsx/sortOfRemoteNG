@@ -20,7 +20,7 @@ import {
   Eye,
   Power,
 } from "lucide-react";
-import { useRecordingSettings } from "../../../hooks/useRecordingSettings";
+import { useRecordingSettings } from "../../../hooks/settings/useRecordingSettings";
 
 type Mgr = ReturnType<typeof useRecordingSettings>;
 

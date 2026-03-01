@@ -10,7 +10,7 @@ import {
   Play,
 } from "lucide-react";
 import type { SavedRdpRecording } from "../../types/macroTypes";
-import { useInlineRename } from "../../hooks/useInlineRename";
+import { useInlineRename } from "../../hooks/window/useInlineRename";
 import { formatDuration, formatBytes } from "../../utils/formatters";
 
 interface RdpRecordingRowProps {

@@ -41,7 +41,7 @@ import {
   encryptionAlgorithmLabels,
   encryptionAlgorithmDescriptions,
   locationPresetLabels,
-} from "../../../hooks/useBackupSettings";
+} from "../../../hooks/settings/useBackupSettings";
 
 /* ═══════════════════════════════════════════════════════════════
    Types

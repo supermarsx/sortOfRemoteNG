@@ -9,8 +9,8 @@ import { SavedRecording } from '../types/macroTypes';
 import { Modal } from './ui/Modal';
 import { MacroEditor } from './MacroEditor';
 import { formatDuration } from '../utils/formatters';
-import { useInlineRename } from '../hooks/useInlineRename';
-import { useMacroManager } from '../hooks/useMacroManager';
+import { useInlineRename } from '../hooks/window/useInlineRename';
+import { useMacroManager } from '../hooks/recording/useMacroManager';
 
 type Mgr = ReturnType<typeof useMacroManager>;
 

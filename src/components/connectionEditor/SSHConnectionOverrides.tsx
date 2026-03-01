@@ -22,7 +22,7 @@ import {
   KEX_OPTIONS,
   HOST_KEY_OPTIONS,
   type SSHOverridesMgr,
-} from "../../hooks/useSSHOverrides";
+} from "../../hooks/ssh/useSSHOverrides";
 
 /* ═══════════════════════════════════════════════════════════════
    Types

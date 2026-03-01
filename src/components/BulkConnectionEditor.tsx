@@ -9,7 +9,7 @@ import { Modal } from './ui/Modal';
 import {
   useBulkConnectionEditor,
   type BulkConnectionEditorMgr,
-} from '../hooks/useBulkConnectionEditor';
+} from '../hooks/connection/useBulkConnectionEditor';
 
 interface BulkConnectionEditorProps {
   isOpen: boolean;

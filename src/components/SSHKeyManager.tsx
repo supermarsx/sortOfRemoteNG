@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "./ui/Modal";
-import { useSSHKeyManager, SSHKey } from "../hooks/useSSHKeyManager";
+import { useSSHKeyManager, SSHKey } from "../hooks/ssh/useSSHKeyManager";
 
 type Mgr = ReturnType<typeof useSSHKeyManager>;
 

@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
-import { useHTTPViewer } from '../hooks/useHTTPViewer';
+import { useHTTPViewer } from '../hooks/protocol/useHTTPViewer';
 import RDPTotpPanel from './rdp/RDPTotpPanel';
 
 interface HTTPViewerProps {

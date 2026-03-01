@@ -30,7 +30,7 @@ import {
   Play as PlayIcon,
 } from "lucide-react";
 import { ConnectionSession, HttpBookmarkItem } from "../types/connection";
-import { useWebBrowser, type WebBrowserMgr } from "../hooks/useWebBrowser";
+import { useWebBrowser, type WebBrowserMgr } from "../hooks/protocol/useWebBrowser";
 import { invoke } from "@tauri-apps/api/core";
 import RDPTotpPanel from "./rdp/RDPTotpPanel";
 import { CertificateInfoPopup } from "./CertificateInfoPopup";

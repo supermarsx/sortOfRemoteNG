@@ -12,7 +12,7 @@ import {
   SavedProxyChain,
   SavedChainLayer,
 } from "../types/settings";
-import { useProxyChainEditor, LAYER_TYPES } from "../hooks/useProxyChainEditor";
+import { useProxyChainEditor, LAYER_TYPES } from "../hooks/network/useProxyChainEditor";
 import { Modal, ModalHeader } from "./ui/Modal";
 
 type Mgr = ReturnType<typeof useProxyChainEditor>;

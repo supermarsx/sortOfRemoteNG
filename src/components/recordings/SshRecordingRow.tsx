@@ -10,7 +10,7 @@ import {
   Film,
 } from "lucide-react";
 import type { SavedRecording } from "../../types/macroTypes";
-import { useInlineRename } from "../../hooks/useInlineRename";
+import { useInlineRename } from "../../hooks/window/useInlineRename";
 import { formatDuration } from "../../utils/formatters";
 
 interface SshRecordingRowProps {

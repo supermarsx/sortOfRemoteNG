@@ -10,7 +10,7 @@ import {
   Copy,
   Bug,
 } from "lucide-react";
-import { useErrorLogBar } from "../hooks/useErrorLogBar";
+import { useErrorLogBar } from "../hooks/monitoring/useErrorLogBar";
 
 type Mgr = ReturnType<typeof useErrorLogBar>;
 

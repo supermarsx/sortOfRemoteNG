@@ -16,8 +16,8 @@ import { StatusChecker } from "./utils/statusChecker";
 import { CollectionManager } from "./utils/collectionManager";
 import { CollectionNotFoundError, InvalidPasswordError } from "./utils/errors";
 import { SecureStorage } from "./utils/storage";
-import { useSessionManager } from "./hooks/useSessionManager";
-import { useAppLifecycle } from "./hooks/useAppLifecycle";
+import { useSessionManager } from "./hooks/session/useSessionManager";
+import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { ToastProvider } from "./contexts/ToastContext";
@@ -30,15 +30,15 @@ import { SplashScreen } from "./components/SplashScreen";
 import { RdpSessionPanel } from "./components/RdpSessionPanel";
 import { ToolKey, createToolSession, getToolProtocol, isToolProtocol } from "./components/ToolPanel";
 import { generateId } from "./utils/id";
-import { useTooltipSystem } from "./hooks/useTooltipSystem";
-import { useWindowControls } from "./hooks/useWindowControls";
-import { useWindowTheme } from "./hooks/useWindowTheme";
-import { useWindowPersistence } from "./hooks/useWindowPersistence";
-import { useDetachedSessionEvents } from "./hooks/useDetachedSessionEvents";
+import { useTooltipSystem } from "./hooks/window/useTooltipSystem";
+import { useWindowControls } from "./hooks/window/useWindowControls";
+import { useWindowTheme } from "./hooks/window/useWindowTheme";
+import { useWindowPersistence } from "./hooks/window/useWindowPersistence";
+import { useDetachedSessionEvents } from "./hooks/session/useDetachedSessionEvents";
 import { AppToolbar } from "./components/AppToolbar";
 import { AppDialogs } from "./components/AppDialogs";
-import { useResizeHandlers } from "./hooks/useResizeHandlers";
-import { useSessionDetach } from "./hooks/useSessionDetach";
+import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
+import { useSessionDetach } from "./hooks/session/useSessionDetach";
 
 /**
  * Core application component responsible for rendering the main layout and

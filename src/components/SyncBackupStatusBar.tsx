@@ -21,7 +21,7 @@ import {
   formatRelativeTime,
   formatNextTime,
   formatBytes,
-} from "../hooks/useSyncBackupStatusBar";
+} from "../hooks/sync/useSyncBackupStatusBar";
 
 type Mgr = ReturnType<typeof useSyncBackupStatusBar>;
 

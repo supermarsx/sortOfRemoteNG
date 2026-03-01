@@ -20,7 +20,7 @@ import { TOTPConfig } from '../../types/settings';
 import { TOTPService } from '../../utils/totpService';
 import { TotpImportDialog } from '../TotpImportDialog';
 import { PopoverSurface } from '../ui/PopoverSurface';
-import { useRDPTotpPanel, type RDPTotpPanelMgr } from '../../hooks/useRDPTotpPanel';
+import { useRDPTotpPanel, type RDPTotpPanelMgr } from '../../hooks/rdp/useRDPTotpPanel';
 
 // ─── Props ───────────────────────────────────────────────────────────
 

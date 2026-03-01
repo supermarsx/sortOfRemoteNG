@@ -1,7 +1,7 @@
 import React from "react";
 import { Plus, Trash2, Copy, Shield, Key } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useTOTPManager } from "../hooks/useTOTPManager";
+import { useTOTPManager } from "../hooks/security/useTOTPManager";
 import { Modal, ModalHeader, ModalBody } from "./ui/Modal";
 import { TOTPConfig } from "../types/settings";
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { Download, Upload, X, ArrowLeftRight } from "lucide-react";
-import { useImportExport } from "../../hooks/useImportExport";
+import { useImportExport } from "../../hooks/sync/useImportExport";
 import ExportTab from "./ExportTab";
 import ImportTab from "./ImportTab";
 import { Modal } from "../ui/Modal";

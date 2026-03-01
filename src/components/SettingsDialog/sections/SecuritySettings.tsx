@@ -21,7 +21,7 @@ import {
 import {
   useSecuritySettings,
   ENCRYPTION_ALGORITHMS,
-} from "../../../hooks/useSecuritySettings";
+} from "../../../hooks/settings/useSecuritySettings";
 
 interface SecuritySettingsProps {
   settings: GlobalSettings;

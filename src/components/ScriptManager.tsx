@@ -10,7 +10,7 @@ import { Modal } from './ui/Modal';
 import { HighlightedCode } from './ui/HighlightedCode';
 import { detectLanguage } from '../utils/scriptSyntax';
 import { defaultScripts } from '../data/defaultScripts';
-import { useScriptManager, type ScriptManagerMgr } from '../hooks/useScriptManager';
+import { useScriptManager, type ScriptManagerMgr } from '../hooks/recording/useScriptManager';
 
 interface ScriptManagerProps {
   isOpen: boolean;

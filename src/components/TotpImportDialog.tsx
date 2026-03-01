@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { TOTPConfig } from "../types/settings";
 import { IMPORT_SOURCES } from "../utils/totpImport";
-import { useTotpImport } from "../hooks/useTotpImport";
+import { useTotpImport } from "../hooks/security/useTotpImport";
 import { Modal } from "./ui/Modal";
 
 interface TotpImportDialogProps {

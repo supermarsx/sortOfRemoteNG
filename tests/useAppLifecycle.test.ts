@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { useAppLifecycle } from "../src/hooks/useAppLifecycle";
+import { useAppLifecycle } from "../src/hooks/window/useAppLifecycle";
 import { SettingsManager } from "../src/utils/settingsManager";
 import { ThemeManager } from "../src/utils/themeManager";
 import i18n, { loadLanguage } from "../src/i18n";

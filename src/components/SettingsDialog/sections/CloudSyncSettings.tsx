@@ -47,7 +47,7 @@ import {
   frequencyLabels,
   conflictLabels,
   conflictDescriptions,
-} from "../../../hooks/useCloudSyncSettings";
+} from "../../../hooks/settings/useCloudSyncSettings";
 
 interface CloudSyncSettingsProps {
   settings: GlobalSettings;

@@ -19,7 +19,7 @@ import {
   updateTrustRecordNickname,
   type TrustRecord,
 } from "../../../utils/trustStore";
-import { useTrustVerificationSettings } from "../../../hooks/useTrustVerificationSettings";
+import { useTrustVerificationSettings } from "../../../hooks/settings/useTrustVerificationSettings";
 
 type Mgr = ReturnType<typeof useTrustVerificationSettings>;
 

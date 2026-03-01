@@ -20,7 +20,7 @@ import {
 import { Connection } from "../../types/connection";
 import { TOTPConfig } from "../../types/settings";
 import { TotpImportDialog } from "../TotpImportDialog";
-import { useTOTPOptions, type TOTPOptionsMgr } from "../../hooks/useTOTPOptions";
+import { useTOTPOptions, type TOTPOptionsMgr } from "../../hooks/security/useTOTPOptions";
 
 /* ═══════════════════════════════════════════════════════════════
    Types

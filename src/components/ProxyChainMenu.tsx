@@ -21,7 +21,7 @@ import { SSHTunnelDialog } from "./SSHTunnelDialog";
 import { ProxyProfileEditor } from "./ProxyProfileEditor";
 import { ProxyChainEditor } from "./ProxyChainEditor";
 import { Modal } from "./ui/Modal";
-import { useProxyChainManager } from "../hooks/useProxyChainManager";
+import { useProxyChainManager } from "../hooks/network/useProxyChainManager";
 
 interface ProxyChainMenuProps {
   isOpen: boolean;

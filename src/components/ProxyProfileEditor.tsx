@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { SavedProxyProfile, ProxyConfig } from "../types/settings";
 import { Modal, ModalHeader } from "./ui/Modal";
-import { useProxyProfileEditor } from "../hooks/useProxyProfileEditor";
+import { useProxyProfileEditor } from "../hooks/network/useProxyProfileEditor";
 
 type Mgr = ReturnType<typeof useProxyProfileEditor>;
 

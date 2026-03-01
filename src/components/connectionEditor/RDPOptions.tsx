@@ -37,7 +37,7 @@ import {
   PERFORMANCE_PRESETS,
   CSS,
   type RDPOptionsMgr,
-} from "../../hooks/useRDPOptions";
+} from "../../hooks/rdp/useRDPOptions";
 
 /* ═══════════════════════════════════════════════════════════════
    Types

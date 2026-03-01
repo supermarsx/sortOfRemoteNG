@@ -1,7 +1,7 @@
 import React from 'react';
 import { Folder, File, Download, Trash2, RefreshCw, Home, ArrowLeft, HardDrive, Table } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
-import { useSMBClient, SMBFile } from '../hooks/useSMBClient';
+import { useSMBClient, SMBFile } from '../hooks/protocol/useSMBClient';
 
 type Mgr = ReturnType<typeof useSMBClient>;
 

@@ -13,7 +13,7 @@ import {
   Radar,
 } from "lucide-react";
 import { DiscoveredHost, DiscoveredService } from "../types/connection";
-import { useNetworkDiscovery } from "../hooks/useNetworkDiscovery";
+import { useNetworkDiscovery } from "../hooks/network/useNetworkDiscovery";
 import { Modal } from "./ui/Modal";
 
 interface NetworkDiscoveryProps {

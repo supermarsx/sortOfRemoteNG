@@ -20,7 +20,7 @@ import {
   formatBytes,
   RdpSessionInfo,
   RdpStats,
-} from "../hooks/useRdpSessionManager";
+} from "../hooks/rdp/useRdpSessionManager";
 
 type Mgr = ReturnType<typeof useRdpSessionManager>;
 

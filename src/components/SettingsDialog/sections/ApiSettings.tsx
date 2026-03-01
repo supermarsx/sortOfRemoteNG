@@ -19,7 +19,7 @@ import {
   Cpu,
   Zap,
 } from "lucide-react";
-import { useApiSettings } from "../../../hooks/useApiSettings";
+import { useApiSettings } from "../../../hooks/settings/useApiSettings";
 
 type Mgr = ReturnType<typeof useApiSettings>;
 

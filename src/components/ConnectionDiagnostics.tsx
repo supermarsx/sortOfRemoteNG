@@ -30,7 +30,7 @@ import { Modal } from "./ui/Modal";
 import {
   useConnectionDiagnostics,
   DiagnosticsMgr,
-} from "../hooks/useConnectionDiagnostics";
+} from "../hooks/connection/useConnectionDiagnostics";
 import { DiagnosticResults } from "../types/diagnostics";
 
 /* ── Props ─────────────────────────────────────────────────────── */

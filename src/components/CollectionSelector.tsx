@@ -21,7 +21,7 @@ import { ImportExport } from "./ImportExport";
 import { ProxyProfileEditor } from "./ProxyProfileEditor";
 import { ProxyChainEditor } from "./ProxyChainEditor";
 import { Modal } from "./ui/Modal";
-import { useCollectionSelector } from "../hooks/useCollectionSelector";
+import { useCollectionSelector } from "../hooks/connection/useCollectionSelector";
 
 interface CollectionSelectorProps {
   isOpen: boolean;

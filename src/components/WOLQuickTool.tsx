@@ -7,7 +7,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Modal } from './ui/Modal';
 import { WakeScheduleManager } from './WakeScheduleManager';
-import { useWOLQuickTool, type WOLQuickToolMgr } from '../hooks/useWOLQuickTool';
+import { useWOLQuickTool, type WOLQuickToolMgr } from '../hooks/network/useWOLQuickTool';
 
 interface WOLQuickToolProps {
   isOpen: boolean;

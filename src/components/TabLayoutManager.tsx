@@ -10,7 +10,7 @@ import {
 import { ConnectionSession, TabLayout } from "../types/connection";
 import { Resizable } from "react-resizable";
 import { PopoverSurface } from "./ui/PopoverSurface";
-import { useTabLayoutManager } from "../hooks/useTabLayoutManager";
+import { useTabLayoutManager } from "../hooks/session/useTabLayoutManager";
 
 type Mgr = ReturnType<typeof useTabLayoutManager>;
 

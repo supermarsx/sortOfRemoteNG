@@ -15,7 +15,7 @@ import {
 import { Modal } from "./ui/Modal";
 import { SshRecordingRow, RdpRecordingRow, WebHarRecordingRow } from "./recordings";
 import { formatDuration, formatBytes } from "../utils/formatters";
-import { useRecordingManager } from "../hooks/useRecordingManager";
+import { useRecordingManager } from "../hooks/recording/useRecordingManager";
 
 type Mgr = ReturnType<typeof useRecordingManager>;
 

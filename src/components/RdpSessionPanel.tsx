@@ -27,7 +27,7 @@ import {
   RdpStats,
   formatUptime,
   formatBytes,
-} from '../hooks/useRdpSessionPanel';
+} from '../hooks/rdp/useRdpSessionPanel';
 
 interface RdpSessionPanelProps {
   isVisible: boolean;

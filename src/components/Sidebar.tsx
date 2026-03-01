@@ -3,7 +3,7 @@ import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock,
 import { ConnectionTree } from './ConnectionTree';
 import { BulkConnectionEditor } from './BulkConnectionEditor';
 import { Connection } from '../types/connection';
-import { useSidebar } from '../hooks/useSidebar';
+import { useSidebar } from '../hooks/connection/useSidebar';
 
 type Mgr = ReturnType<typeof useSidebar>;
 

@@ -31,7 +31,7 @@ import RDPTotpPanel from "./RDPTotpPanel";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { PopoverSurface } from "../ui/PopoverSurface";
 import { OptionGroup, OptionItemButton, OptionList } from "../ui/OptionList";
-import { useRDPClientHeader } from "../../hooks/useRDPClientHeader";
+import { useRDPClientHeader } from "../../hooks/rdp/useRDPClientHeader";
 
 type Mgr = ReturnType<typeof useRDPClientHeader>;
 

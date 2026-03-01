@@ -24,7 +24,7 @@ import {
   getStatusColor,
   getMethodColor,
   ManagerTab,
-} from "../hooks/useInternalProxyManager";
+} from "../hooks/network/useInternalProxyManager";
 
 type Mgr = ReturnType<typeof useInternalProxyManager>;
 

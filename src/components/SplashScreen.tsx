@@ -1,6 +1,6 @@
 import React from 'react';
 import { Monitor, Loader2 } from 'lucide-react';
-import { useSplashScreen } from '../hooks/useSplashScreen';
+import { useSplashScreen } from '../hooks/window/useSplashScreen';
 
 type Mgr = ReturnType<typeof useSplashScreen>;
 

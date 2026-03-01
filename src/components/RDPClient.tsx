@@ -12,7 +12,7 @@ import { RDPInternalsPanel } from './rdp/RDPInternalsPanel';
 import { RDPStatusBar } from './rdp/RDPStatusBar';
 import RDPClientHeader from './rdp/RDPClientHeader';
 import { RDPSettingsPanel } from './rdp/RDPSettingsPanel';
-import { useRDPClient, type RDPClientMgr } from '../hooks/useRDPClient';
+import { useRDPClient, type RDPClientMgr } from '../hooks/rdp/useRDPClient';
 
 // ─── Props ───────────────────────────────────────────────────────────
 

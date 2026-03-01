@@ -34,7 +34,7 @@ import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
 import { Modal, ModalHeader } from "./ui/Modal";
 import { MenuSurface } from "./ui/MenuSurface";
-import { useConnectionTree, type ConnectionTreeMgr } from "../hooks/useConnectionTree";
+import { useConnectionTree, type ConnectionTreeMgr } from "../hooks/connection/useConnectionTree";
 
 /* ── Static helpers (module-level) ─────────────────────────────── */
 

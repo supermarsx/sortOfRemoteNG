@@ -23,7 +23,7 @@ import {
   updateTrustRecordNickname,
   type TrustRecord,
 } from "../../utils/trustStore";
-import { useHTTPOptions } from "../../hooks/useHTTPOptions";
+import { useHTTPOptions } from "../../hooks/connection/useHTTPOptions";
 
 type Mgr = ReturnType<typeof useHTTPOptions>;
 

@@ -16,7 +16,7 @@ import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Modal } from "./ui/Modal";
 import { Sparkline, MiniBarChart, TrendIndicator } from "./ui/Charts";
-import { usePerformanceMonitor } from "../hooks/usePerformanceMonitor";
+import { usePerformanceMonitor } from "../hooks/monitoring/usePerformanceMonitor";
 
 type Mgr = ReturnType<typeof usePerformanceMonitor>;
 

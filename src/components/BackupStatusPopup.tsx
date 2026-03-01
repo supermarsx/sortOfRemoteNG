@@ -19,7 +19,7 @@ import {
   formatBytes,
   formatRelativeTime,
   formatNextTime,
-} from "../hooks/useBackupStatus";
+} from "../hooks/sync/useBackupStatus";
 
 type Mgr = ReturnType<typeof useBackupStatus>;
 

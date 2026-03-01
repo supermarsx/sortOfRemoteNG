@@ -1,7 +1,7 @@
 import React from 'react';
 import { Lock, Eye, EyeOff, Shield, AlertCircle, X, Fingerprint, Key, FileKey, Upload, Loader2 } from 'lucide-react';
 import { Modal, ModalBody } from './ui/Modal';
-import { usePasswordDialog, AuthMethod } from '../hooks/usePasswordDialog';
+import { usePasswordDialog, AuthMethod } from '../hooks/security/usePasswordDialog';
 
 type Mgr = ReturnType<typeof usePasswordDialog>;
 

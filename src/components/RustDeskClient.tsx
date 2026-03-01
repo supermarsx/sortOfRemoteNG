@@ -1,7 +1,7 @@
 import React from 'react';
 import { Monitor, Settings, Maximize2, Minimize2, Wifi, WifiOff } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
-import { useRustDeskClient } from '../hooks/useRustDeskClient';
+import { useRustDeskClient } from '../hooks/protocol/useRustDeskClient';
 
 type Mgr = ReturnType<typeof useRustDeskClient>;
 

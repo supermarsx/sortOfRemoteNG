@@ -12,7 +12,7 @@ import {
   Repeat,
 } from "lucide-react";
 import { Modal } from "./ui/Modal";
-import { useWakeScheduleManager, formatMac } from "../hooks/useWakeScheduleManager";
+import { useWakeScheduleManager, formatMac } from "../hooks/network/useWakeScheduleManager";
 
 type Mgr = ReturnType<typeof useWakeScheduleManager>;
 

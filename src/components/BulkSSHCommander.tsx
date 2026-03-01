@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Modal } from "./ui/Modal";
-import { useBulkSSHCommander } from "../hooks/useBulkSSHCommander";
+import { useBulkSSHCommander } from "../hooks/ssh/useBulkSSHCommander";
 
 interface BulkSSHCommanderProps {
   isOpen: boolean;

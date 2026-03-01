@@ -1,7 +1,7 @@
 import React from "react";
 import { Plus, Palette, Edit, Trash2 } from "lucide-react";
 import { Modal, ModalHeader, ModalBody } from "./ui/Modal";
-import { useColorTagManager, PREDEFINED_COLORS } from "../hooks/useColorTagManager";
+import { useColorTagManager, PREDEFINED_COLORS } from "../hooks/connection/useColorTagManager";
 
 type Mgr = ReturnType<typeof useColorTagManager>;
 

@@ -2,7 +2,7 @@ import React from "react";
 import { Lock, Clock, Eye, EyeOff } from "lucide-react";
 import { AutoLockConfig } from "../types/settings";
 import { Modal } from "./ui/Modal";
-import { useAutoLockManager } from "../hooks/useAutoLockManager";
+import { useAutoLockManager } from "../hooks/security/useAutoLockManager";
 
 type Mgr = ReturnType<typeof useAutoLockManager>;
 

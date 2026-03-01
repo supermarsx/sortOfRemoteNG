@@ -20,7 +20,7 @@ import {
   PROVIDER_ICONS,
   formatRelativeTime,
   SyncTestResult,
-} from "../hooks/useCloudSyncStatus";
+} from "../hooks/sync/useCloudSyncStatus";
 
 interface CloudSyncStatusPopupProps {
   cloudSyncConfig?: {

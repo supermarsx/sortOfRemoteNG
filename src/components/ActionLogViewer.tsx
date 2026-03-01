@@ -15,7 +15,7 @@ import {
   Server,
 } from "lucide-react";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { useActionLogViewer } from "../hooks/useActionLogViewer";
+import { useActionLogViewer } from "../hooks/monitoring/useActionLogViewer";
 import { Modal } from "./ui/Modal";
 
 const LEVEL_ICONS: Record<string, JSX.Element> = {
