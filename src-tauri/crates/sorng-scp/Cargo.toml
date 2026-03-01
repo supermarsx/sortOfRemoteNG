@@ -1,0 +1,28 @@
+[package]
+name = "sorng-scp"
+version = "0.1.0"
+edition = "2021"
+description = "SCP (Secure Copy Protocol) file transfer service with chunked transfers, progress tracking, recursive directory operations, transfer queuing, and diagnostics"
+
+[dependencies]
+sorng-core = { path = "../sorng-core" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.9.5", features = ["devtools"] }
+ssh2 = "0.9"
+futures = "0.3"
+async-trait = "0.1"
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+lazy_static = "1.4"
+dirs = "5.0"
+log = "0.4"
+rand = "0.8"
+base64 = "0.21"
+sha2 = "0.10"
+hex = "0.4"
+ssh-key = { version = "0.6", features = ["rsa", "ed25519", "encryption", "std", "getrandom"] }
+glob = "0.3"
+walkdir = "2.4"
+filetime = "0.2"
