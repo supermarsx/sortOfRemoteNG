@@ -40,6 +40,8 @@ members = [
   "crates/sorng-meshcentral",
   "crates/sorng-openvpn",
   "crates/sorng-vmware",
+  "crates/sorng-totp",
+  "crates/sorng-mremoteng",
 ]
 
 [workspace.dependencies]
@@ -116,6 +118,8 @@ sorng-hyperv = { path = "crates/sorng-hyperv" }
 sorng-meshcentral = { path = "crates/sorng-meshcentral" }
 sorng-openvpn = { path = "crates/sorng-openvpn" }
 sorng-vmware = { path = "crates/sorng-vmware" }
+sorng-totp = { path = "crates/sorng-totp" }
+sorng-mremoteng = { path = "crates/sorng-mremoteng" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"

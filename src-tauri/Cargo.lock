@@ -205,6 +205,7 @@ dependencies = [
  "sorng-lastpass",
  "sorng-meshcentral",
  "sorng-mongodb",
+ "sorng-mremoteng",
  "sorng-mssql",
  "sorng-mysql",
  "sorng-network",
@@ -224,6 +225,7 @@ dependencies = [
  "sorng-ssh",
  "sorng-storage",
  "sorng-telnet",
+ "sorng-totp",
  "sorng-vmware",
  "sorng-vnc",
  "sorng-vpn",
@@ -5669,6 +5671,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "password-hash"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
+dependencies = [
+ "base64ct",
+ "rand_core 0.6.4",
+ "subtle",
+]
+
+[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5682,7 +5695,7 @@ checksum = "83a0692ec44e4cf1ef28ca317f14f8f07da2d95ec3fa01f86e4467b725e60917"
 dependencies = [
  "digest 0.10.7",
  "hmac 0.12.1",
- "password-hash",
+ "password-hash 0.4.2",
  "sha2 0.10.9",
 ]
 
@@ -5694,6 +5707,8 @@ checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
 dependencies = [
  "digest 0.10.7",
  "hmac 0.12.1",
+ "password-hash 0.5.0",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -6402,10 +6417,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+dependencies = [
+ "image 0.25.9",
+]
+
+[[package]]
 name = "quick-xml"
 version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1004a344b30a54e2ee58d66a71b32d2db2feb0a31f9a2d302bf0536f15de2a33"
+dependencies = [
+ "memchr",
+ "serde",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.36.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
 dependencies = [
  "memchr",
  "serde",
@@ -8028,7 +8062,7 @@ dependencies = [
  "jsonwebtoken",
  "log",
  "oauth2",
- "qrcode",
+ "qrcode 0.13.0",
  "rand 0.8.5",
  "regex",
  "reqwest 0.11.27",
@@ -8296,6 +8330,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-mremoteng"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "base64 0.21.7",
+ "chrono",
+ "csv",
+ "hmac 0.12.1",
+ "log",
+ "pbkdf2 0.12.2",
+ "quick-xml 0.36.2",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha1 0.10.6",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "uuid",
+ "winreg 0.52.0",
+]
+
+[[package]]
 name = "sorng-mssql"
 version = "0.1.0"
 dependencies = [
@@ -8341,7 +8398,7 @@ dependencies = [
  "image 0.24.9",
  "log",
  "mac_address",
- "qrcode",
+ "qrcode 0.13.0",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
@@ -8711,6 +8768,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-totp"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "base32",
+ "base64 0.21.7",
+ "chrono",
+ "hex",
+ "hmac 0.12.1",
+ "image 0.25.9",
+ "log",
+ "pbkdf2 0.12.2",
+ "qrcode 0.14.1",
+ "rand 0.8.5",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha1 0.10.6",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-vmware"
 version = "0.1.0"
 dependencies = [
@@ -8719,11 +8802,13 @@ dependencies = [
  "chrono",
  "futures",
  "log",
+ "native-tls",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
  "tauri",
  "tokio",
+ "tokio-native-tls",
  "url",
  "uuid",
 ]
@@ -11788,6 +11873,16 @@ name = "winreg"
 version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "winreg"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
 dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",

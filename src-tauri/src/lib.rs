@@ -152,6 +152,9 @@ pub use sorng_vmware as vmware;
 // MeshCentral (dedicated crate)
 pub use sorng_meshcentral::meshcentral as meshcentral_dedicated;
 
+// mRemoteNG import/export (dedicated crate)
+pub use sorng_mremoteng::mremoteng as mremoteng_dedicated;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -227,6 +230,7 @@ use dashlane::service::DashlaneServiceState;
 use hyperv::service::HyperVServiceState;
 use vmware::service::VmwareServiceState;
 use meshcentral_dedicated::MeshCentralService;
+use mremoteng_dedicated::MremotengService;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -609,6 +613,10 @@ pub fn run() {
       // Initialize MeshCentral service
       let meshcentral_service = MeshCentralService::new();
       app.manage(meshcentral_service);
+
+      // Initialize mRemoteNG import/export service
+      let mremoteng_service = MremotengService::new();
+      app.manage(mremoteng_service);
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -2222,13 +2230,50 @@ pub fn run() {
         vmware::commands::vmware_get_vm_stats,
         vmware::commands::vmware_get_all_vm_stats,
         vmware::commands::vmware_get_inventory_summary,
-        // VMware commands — VMRC / Horizon
+        // VMware commands — Console (cross-platform WebSocket)
+        vmware::commands::vmware_acquire_console_ticket,
+        vmware::commands::vmware_open_console,
+        vmware::commands::vmware_close_console,
+        vmware::commands::vmware_close_all_consoles,
+        vmware::commands::vmware_list_console_sessions,
+        vmware::commands::vmware_get_console_session,
+        // VMware commands — VMRC / Horizon (binary fallback)
         vmware::commands::vmware_launch_vmrc,
         vmware::commands::vmware_list_vmrc_sessions,
         vmware::commands::vmware_close_vmrc_session,
         vmware::commands::vmware_close_all_vmrc_sessions,
         vmware::commands::vmware_is_vmrc_available,
         vmware::commands::vmware_is_horizon_available,
+        // mRemoteNG commands — Format Detection
+        mremoteng_dedicated::mrng_detect_format,
+        mremoteng_dedicated::mrng_get_import_formats,
+        mremoteng_dedicated::mrng_get_export_formats,
+        // mRemoteNG commands — Import
+        mremoteng_dedicated::mrng_import_xml,
+        mremoteng_dedicated::mrng_import_xml_as_connections,
+        mremoteng_dedicated::mrng_import_csv,
+        mremoteng_dedicated::mrng_import_csv_as_connections,
+        mremoteng_dedicated::mrng_import_rdp_files,
+        mremoteng_dedicated::mrng_import_rdp_as_connections,
+        mremoteng_dedicated::mrng_import_putty_reg,
+        mremoteng_dedicated::mrng_import_putty_registry,
+        mremoteng_dedicated::mrng_import_putty_as_connections,
+        mremoteng_dedicated::mrng_import_auto,
+        mremoteng_dedicated::mrng_import_auto_as_connections,
+        // mRemoteNG commands — Export
+        mremoteng_dedicated::mrng_export_xml,
+        mremoteng_dedicated::mrng_export_app_to_xml,
+        mremoteng_dedicated::mrng_export_csv,
+        mremoteng_dedicated::mrng_export_app_to_csv,
+        mremoteng_dedicated::mrng_export_rdp_file,
+        mremoteng_dedicated::mrng_export_app_to_rdp,
+        // mRemoteNG commands — Validation / Info
+        mremoteng_dedicated::mrng_validate_xml,
+        mremoteng_dedicated::mrng_get_last_import,
+        mremoteng_dedicated::mrng_get_last_export,
+        // mRemoteNG commands — Configuration
+        mremoteng_dedicated::mrng_set_password,
+        mremoteng_dedicated::mrng_set_kdf_iterations,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
