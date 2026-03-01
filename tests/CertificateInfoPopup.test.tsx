@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { CertificateInfoPopup } from "../src/components/CertificateInfoPopup";
+import { CertificateInfoPopup } from "../src/components/security/CertificateInfoPopup";
 
 const identity = {
   fingerprint: "SHA256:test-fingerprint",

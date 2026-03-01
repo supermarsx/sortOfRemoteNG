@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { SSHKeyManager } from "../src/components/SSHKeyManager";
+import { SSHKeyManager } from "../src/components/ssh/SSHKeyManager";
 
 // Mock Tauri APIs
 vi.mock("@tauri-apps/api/core", () => ({

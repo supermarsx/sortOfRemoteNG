@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { TabLayoutManager } from "../src/components/TabLayoutManager";
+import { TabLayoutManager } from "../src/components/session/TabLayoutManager";
 import type { ConnectionSession, TabLayout } from "../src/types/connection";
 
 vi.mock("react-resizable", () => ({

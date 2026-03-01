@@ -6,7 +6,7 @@ import {
   waitFor,
   cleanup,
 } from "@testing-library/react";
-import { ActionLogViewer } from "../src/components/ActionLogViewer";
+import { ActionLogViewer } from "../src/components/monitoring/ActionLogViewer";
 
 const mocks = vi.hoisted(() => ({
   getActionLog: vi.fn(),

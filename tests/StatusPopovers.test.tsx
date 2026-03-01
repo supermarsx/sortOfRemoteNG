@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { BackupStatusPopup } from "../src/components/BackupStatusPopup";
-import { CloudSyncStatusPopup } from "../src/components/CloudSyncStatusPopup";
-import { SyncBackupStatusBar } from "../src/components/SyncBackupStatusBar";
+import { BackupStatusPopup } from "../src/components/sync/BackupStatusPopup";
+import { CloudSyncStatusPopup } from "../src/components/sync/CloudSyncStatusPopup";
+import { SyncBackupStatusBar } from "../src/components/sync/SyncBackupStatusBar";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),

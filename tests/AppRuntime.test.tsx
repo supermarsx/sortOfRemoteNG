@@ -124,7 +124,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 // ── rdpCanvas mock ──────────────────────────────────────────────────────
-vi.mock("../src/components/rdpCanvas", () => ({
+vi.mock("../src/components/rdp/rdpCanvas", () => ({
   drawSimulatedDesktop: vi.fn(),
   drawDesktopIcon: vi.fn(),
   drawWindow: vi.fn(),
@@ -162,18 +162,18 @@ vi.mock("../src/i18n", () => ({
 import App from "../src/App";
 import { ConnectionProvider } from "../src/contexts/ConnectionProvider";
 import { ToastProvider, useToastContext } from "../src/contexts/ToastContext";
-import { ErrorBoundary } from "../src/components/ErrorBoundary";
+import { ErrorBoundary } from "../src/components/app/ErrorBoundary";
 import { useConnections } from "../src/contexts/useConnections";
 import { Connection, ConnectionSession } from "../src/types/connection";
 import { generateId } from "../src/utils/id";
-import { SplashScreen } from "../src/components/SplashScreen";
+import { SplashScreen } from "../src/components/app/SplashScreen";
 import {
   isToolProtocol,
   getToolKeyFromProtocol,
   getToolProtocol,
   createToolSession,
   TOOL_LABELS,
-} from "../src/components/ToolPanel";
+} from "../src/components/app/ToolPanel";
 import { SettingsManager } from "../src/utils/settingsManager";
 import { StatusChecker } from "../src/utils/statusChecker";
 import { CollectionManager } from "../src/utils/collectionManager";

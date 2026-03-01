@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
-import { CollectionSelector } from '../src/components/CollectionSelector';
+import { CollectionSelector } from '../src/components/connection/CollectionSelector';
 import { CollectionManager } from '../src/utils/collectionManager';
 import { IndexedDbService } from '../src/utils/indexedDbService';
 import { openDB } from 'idb';

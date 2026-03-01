@@ -1,7 +1,7 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
-import { SettingsDialog } from "../src/components/SettingsDialog";
+import { SettingsDialog } from "../src/components/settingsDialog";
 import { GlobalSettings } from "../src/types/settings";
 import { ToastProvider } from "../src/contexts/ToastContext";
 

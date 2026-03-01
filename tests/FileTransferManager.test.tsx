@@ -6,7 +6,7 @@ import {
   waitFor,
   cleanup,
 } from "@testing-library/react";
-import { FileTransferManager } from "../src/components/FileTransferManager";
+import { FileTransferManager } from "../src/components/protocol/FileTransferManager";
 
 const mocks = vi.hoisted(() => ({
   listDirectory: vi.fn(),

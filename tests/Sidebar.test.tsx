@@ -1,11 +1,11 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Sidebar } from "../src/components/Sidebar";
+import { Sidebar } from "../src/components/connection/Sidebar";
 import { Connection } from "../src/types/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 // Mock child components
-vi.mock('../src/components/ConnectionTree', () => ({
+vi.mock('../src/components/connection/ConnectionTree', () => ({
   ConnectionTree: ({ onEdit, onDelete, onConnect }: any) => (
     <div data-testid="connection-tree">
       <button onClick={() => onEdit(mockConnection)}>Edit Connection</button>

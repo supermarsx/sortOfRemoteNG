@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ScriptManager } from "../src/components/ScriptManager";
+import { ScriptManager } from "../src/components/recording/ScriptManager";
 
 // Mock dependencies
 vi.mock("react-i18next", () => ({

@@ -27,7 +27,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import { WakeScheduleManager } from "../src/components/WakeScheduleManager";
+import { WakeScheduleManager } from "../src/components/network/WakeScheduleManager";
 
 describe("WakeScheduleManager", () => {
   beforeEach(() => {

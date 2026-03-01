@@ -1,70 +1,70 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent, screen } from "@testing-library/react";
-import { AppDialogs } from "../src/components/AppDialogs";
+import { AppDialogs } from "../src/components/app/AppDialogs";
 
-vi.mock("../src/components/CollectionSelector", () => ({
+vi.mock("../src/components/connection/CollectionSelector", () => ({
   CollectionSelector: () => <div data-testid="collection-selector" />,
 }));
-vi.mock("../src/components/ConnectionEditor", () => ({
+vi.mock("../src/components/connection/ConnectionEditor", () => ({
   ConnectionEditor: () => <div data-testid="connection-editor" />,
 }));
-vi.mock("../src/components/QuickConnect", () => ({
+vi.mock("../src/components/connection/QuickConnect", () => ({
   QuickConnect: () => <div data-testid="quick-connect" />,
 }));
-vi.mock("../src/components/PasswordDialog", () => ({
+vi.mock("../src/components/security/PasswordDialog", () => ({
   PasswordDialog: () => <div data-testid="password-dialog" />,
 }));
-vi.mock("../src/components/ConfirmDialog", () => ({
+vi.mock("../src/components/shared/ConfirmDialog", () => ({
   ConfirmDialog: () => <div data-testid="confirm-dialog" />,
 }));
-vi.mock("../src/components/SettingsDialog", () => ({
+vi.mock("../src/components/settingsDialog", () => ({
   SettingsDialog: () => <div data-testid="settings-dialog" />,
 }));
-vi.mock("../src/components/ImportExport", () => ({
+vi.mock("../src/components/importExport", () => ({
   ImportExport: () => <div data-testid="import-export" />,
 }));
-vi.mock("../src/components/PerformanceMonitor", () => ({
+vi.mock("../src/components/monitoring/PerformanceMonitor", () => ({
   PerformanceMonitor: () => <div data-testid="perf-monitor" />,
 }));
-vi.mock("../src/components/ActionLogViewer", () => ({
+vi.mock("../src/components/monitoring/ActionLogViewer", () => ({
   ActionLogViewer: () => <div data-testid="action-log" />,
 }));
-vi.mock("../src/components/ShortcutManagerDialog", () => ({
+vi.mock("../src/components/app/ShortcutManagerDialog", () => ({
   ShortcutManagerDialog: () => <div data-testid="shortcut-manager" />,
 }));
-vi.mock("../src/components/ProxyChainMenu", () => ({
+vi.mock("../src/components/network/ProxyChainMenu", () => ({
   ProxyChainMenu: () => <div data-testid="proxy-menu" />,
 }));
-vi.mock("../src/components/InternalProxyManager", () => ({
+vi.mock("../src/components/network/InternalProxyManager", () => ({
   InternalProxyManager: () => <div data-testid="internal-proxy" />,
 }));
-vi.mock("../src/components/WOLQuickTool", () => ({
+vi.mock("../src/components/network/WOLQuickTool", () => ({
   WOLQuickTool: () => <div data-testid="wol" />,
 }));
-vi.mock("../src/components/BulkSSHCommander", () => ({
+vi.mock("../src/components/ssh/BulkSSHCommander", () => ({
   BulkSSHCommander: () => <div data-testid="bulk-ssh" />,
 }));
-vi.mock("../src/components/ScriptManager", () => ({
+vi.mock("../src/components/recording/ScriptManager", () => ({
   ScriptManager: () => <div data-testid="script-manager" />,
 }));
-vi.mock("../src/components/MacroManager", () => ({
+vi.mock("../src/components/recording/MacroManager", () => ({
   MacroManager: () => <div data-testid="macro-manager" />,
 }));
-vi.mock("../src/components/RecordingManager", () => ({
+vi.mock("../src/components/recording/RecordingManager", () => ({
   RecordingManager: () => <div data-testid="recording-manager" />,
 }));
-vi.mock("../src/components/ConnectionDiagnostics", () => ({
+vi.mock("../src/components/connection/ConnectionDiagnostics", () => ({
   ConnectionDiagnostics: () => <div data-testid="connection-diagnostics" />,
 }));
-vi.mock("../src/components/ErrorLogBar", () => ({
+vi.mock("../src/components/monitoring/ErrorLogBar", () => ({
   ErrorLogBar: () => <div data-testid="error-log" />,
 }));
-vi.mock("../src/components/AutoLockManager", () => ({
+vi.mock("../src/components/security/AutoLockManager", () => ({
   AutoLockManager: () => <div data-testid="auto-lock" />,
 }));
-vi.mock("../src/components/RdpSessionPanel", () => ({
-  RdpSessionPanel: ({ onClose }: { onClose: () => void }) => (
+vi.mock("../src/components/rdp/RDPSessionPanel", () => ({
+  RDPSessionPanel: ({ onClose }: { onClose: () => void }) => (
     <div>
       <span>rdp-session-panel</span>
       <button onClick={onClose}>close-rdp-panel</button>

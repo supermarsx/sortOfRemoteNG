@@ -6,7 +6,7 @@ import {
   waitFor,
   cleanup,
 } from "@testing-library/react";
-import { TOTPManager } from "../src/components/TOTPManager";
+import { TOTPManager } from "../src/components/security/TOTPManager";
 
 const mocks = vi.hoisted(() => ({
   getAllConfigs: vi.fn(),

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { ShortcutManagerDialog } from '../src/components/ShortcutManagerDialog';
+import { ShortcutManagerDialog } from '../src/components/app/ShortcutManagerDialog';
 import { ConnectionProvider } from '../src/contexts/ConnectionProvider';
 
 // Mock Tauri invoke

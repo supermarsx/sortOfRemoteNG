@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { TrustWarningDialog } from "../src/components/TrustWarningDialog";
+import { TrustWarningDialog } from "../src/components/security/TrustWarningDialog";
 
 describe("TrustWarningDialog", () => {
   const now = "2026-02-01T00:00:00.000Z";

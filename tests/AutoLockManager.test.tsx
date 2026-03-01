@@ -1,7 +1,7 @@
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AutoLockManager } from "../src/components/AutoLockManager";
+import { AutoLockManager } from "../src/components/security/AutoLockManager";
 import { SecureStorage } from "../src/utils/storage";
 import { AutoLockConfig } from "../src/types/settings";
 

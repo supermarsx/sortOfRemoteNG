@@ -1,9 +1,9 @@
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../src/types/settings";
-import GeneralSettings from "../src/components/SettingsDialog/sections/GeneralSettings";
-import BackendSettings from "../src/components/SettingsDialog/sections/BackendSettings";
-import RdpDefaultSettings from "../src/components/SettingsDialog/sections/RdpDefaultSettings";
+import GeneralSettings from "../src/components/settingsDialog/sections/GeneralSettings";
+import BackendSettings from "../src/components/settingsDialog/sections/BackendSettings";
+import RDPDefaultSettings from "../src/components/settingsDialog/sections/RDPDefaultSettings";
 
 const baseSettings = {
   language: "en",
@@ -101,10 +101,10 @@ describe("Core settings section centralization", () => {
     expect(authCheckbox).toBeTruthy();
   });
 
-  it("uses centralized cards/selects/checkboxes in RdpDefaultSettings", () => {
+  it("uses centralized cards/selects/checkboxes in RDPDefaultSettings", () => {
     const updateSettings = vi.fn();
     const { container } = render(
-      <RdpDefaultSettings
+      <RDPDefaultSettings
         settings={baseSettings}
         updateSettings={updateSettings}
       />,

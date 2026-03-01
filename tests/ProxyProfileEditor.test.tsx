@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { ProxyProfileEditor } from "../src/components/ProxyProfileEditor";
+import { ProxyProfileEditor } from "../src/components/network/ProxyProfileEditor";
 
 describe("ProxyProfileEditor", () => {
   it("does not render when closed", () => {

@@ -6,14 +6,14 @@ import {
   waitFor,
   cleanup,
 } from "@testing-library/react";
-import { RdpSessionManager } from "../src/components/RdpSessionManager";
+import { RDPSessionManager } from "../src/components/rdp/RDPSessionManager";
 import { invoke } from "@tauri-apps/api/core";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-describe("RdpSessionManager", () => {
+describe("RDPSessionManager", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -63,12 +63,12 @@ describe("RdpSessionManager", () => {
   });
 
   it("does not render when closed", () => {
-    render(<RdpSessionManager isOpen={false} onClose={() => {}} />);
+    render(<RDPSessionManager isOpen={false} onClose={() => {}} />);
     expect(screen.queryByText("RDP Sessions")).not.toBeInTheDocument();
   });
 
   it("renders active session data when open", async () => {
-    render(<RdpSessionManager isOpen onClose={() => {}} />);
+    render(<RDPSessionManager isOpen onClose={() => {}} />);
 
     expect(await screen.findByText("RDP Sessions")).toBeInTheDocument();
     expect(await screen.findByText("10.0.0.10:3389")).toBeInTheDocument();
@@ -76,7 +76,7 @@ describe("RdpSessionManager", () => {
   });
 
   it("disconnects a single session", async () => {
-    render(<RdpSessionManager isOpen onClose={() => {}} />);
+    render(<RDPSessionManager isOpen onClose={() => {}} />);
 
     const disconnectBtn = await screen.findByTitle("Disconnect session");
     fireEvent.click(disconnectBtn);
@@ -89,7 +89,7 @@ describe("RdpSessionManager", () => {
   });
 
   it("disconnects all sessions", async () => {
-    render(<RdpSessionManager isOpen onClose={() => {}} />);
+    render(<RDPSessionManager isOpen onClose={() => {}} />);
 
     const disconnectAll = await screen.findByText("Disconnect All");
     fireEvent.click(disconnectAll);
@@ -104,7 +104,7 @@ describe("RdpSessionManager", () => {
   it("closes on backdrop and Escape", async () => {
     const onClose = vi.fn();
     const { container } = render(
-      <RdpSessionManager isOpen onClose={onClose} />,
+      <RDPSessionManager isOpen onClose={onClose} />,
     );
 
     await screen.findByText("RDP Sessions");

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
-import { WOLQuickTool } from '../src/components/WOLQuickTool';
+import { WOLQuickTool } from '../src/components/network/WOLQuickTool';
 
 // Mock Tauri invoke
 vi.mock('@tauri-apps/api/core', () => ({

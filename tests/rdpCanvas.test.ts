@@ -5,7 +5,7 @@ import {
   paintFrame,
   decodeBase64Rgba,
   clearCanvas,
-} from '../src/components/rdpCanvas';
+} from '../src/components/rdp/rdpCanvas';
 
 // Polyfill ImageData for jsdom (not available in test environment)
 beforeAll(() => {

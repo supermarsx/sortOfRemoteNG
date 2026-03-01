@@ -6,7 +6,7 @@ import {
   waitFor,
   cleanup,
 } from "@testing-library/react";
-import { InternalProxyManager } from "../src/components/InternalProxyManager";
+import { InternalProxyManager } from "../src/components/network/InternalProxyManager";
 import { invoke } from "@tauri-apps/api/core";
 
 vi.mock("@tauri-apps/api/core", () => ({

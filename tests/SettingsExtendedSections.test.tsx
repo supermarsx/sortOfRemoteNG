@@ -1,12 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../src/types/settings";
-import AdvancedSettings from "../src/components/SettingsDialog/sections/AdvancedSettings";
-import LayoutSettings from "../src/components/SettingsDialog/sections/LayoutSettings";
-import ApiSettings from "../src/components/SettingsDialog/sections/ApiSettings";
-import SecuritySettings from "../src/components/SettingsDialog/sections/SecuritySettings";
-import { TrustVerificationSettings } from "../src/components/SettingsDialog/sections/TrustVerificationSettings";
-import RecoverySettings from "../src/components/SettingsDialog/sections/RecoverySettings";
+import AdvancedSettings from "../src/components/settingsDialog/sections/AdvancedSettings";
+import LayoutSettings from "../src/components/settingsDialog/sections/LayoutSettings";
+import ApiSettings from "../src/components/settingsDialog/sections/ApiSettings";
+import SecuritySettings from "../src/components/settingsDialog/sections/SecuritySettings";
+import { TrustVerificationSettings } from "../src/components/settingsDialog/sections/TrustVerificationSettings";
+import RecoverySettings from "../src/components/settingsDialog/sections/RecoverySettings";
 
 vi.mock("../src/contexts/useConnections", () => ({
   useConnections: () => ({

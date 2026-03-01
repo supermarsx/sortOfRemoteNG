@@ -1,10 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { GlobalSettings } from "../src/types/settings";
-import PerformanceSettings from "../src/components/SettingsDialog/sections/PerformanceSettings";
-import ThemeSettings from "../src/components/SettingsDialog/sections/ThemeSettings";
-import ProxySettings from "../src/components/SettingsDialog/sections/ProxySettings";
-import StartupSettings from "../src/components/SettingsDialog/sections/StartupSettings";
+import PerformanceSettings from "../src/components/settingsDialog/sections/PerformanceSettings";
+import ThemeSettings from "../src/components/settingsDialog/sections/ThemeSettings";
+import ProxySettings from "../src/components/settingsDialog/sections/ProxySettings";
+import StartupSettings from "../src/components/settingsDialog/sections/StartupSettings";
 
 const baseSettings = {
   retryAttempts: 3,

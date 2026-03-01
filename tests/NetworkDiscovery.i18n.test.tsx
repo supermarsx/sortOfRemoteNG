@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { I18nextProvider } from "react-i18next";
 import i18n, { loadLanguage } from "../src/i18n";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
-import { NetworkDiscovery } from "../src/components/NetworkDiscovery";
+import { NetworkDiscovery } from "../src/components/network/NetworkDiscovery";
 
 const renderWithProviders = () =>
   render(

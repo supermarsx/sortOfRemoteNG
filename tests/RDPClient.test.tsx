@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import RDPClient from "../src/components/RDPClient";
+import RDPClient from "../src/components/rdp/RDPClient";
 import { ConnectionSession } from "../src/types/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 import { ToastProvider } from "../src/contexts/ToastContext";
@@ -44,7 +44,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 // Mock rdpCanvas (FrameBuffer class used by the live frame listener)
-vi.mock("../src/components/rdpCanvas", () => ({
+vi.mock("../src/components/rdp/rdpCanvas", () => ({
   drawSimulatedDesktop: vi.fn(),
   drawDesktopIcon: vi.fn(),
   drawWindow: vi.fn(),

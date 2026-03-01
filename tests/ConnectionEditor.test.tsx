@@ -1,11 +1,11 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ConnectionEditor } from "../src/components/ConnectionEditor";
+import { ConnectionEditor } from "../src/components/connection/ConnectionEditor";
 import { Connection } from "../src/types/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 // Mock child components
-vi.mock('../src/components/TagManager', () => ({
+vi.mock('../src/components/connection/TagManager', () => ({
   TagManager: ({ tags, onChange }: any) => (
     <div data-testid="tag-manager">
       <span>Tags: {tags?.join(', ') || 'none'}</span>

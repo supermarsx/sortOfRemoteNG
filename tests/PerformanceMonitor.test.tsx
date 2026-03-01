@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, cleanup } from "@testing-library/react";
-import { PerformanceMonitor } from "../src/components/PerformanceMonitor";
+import { PerformanceMonitor } from "../src/components/monitoring/PerformanceMonitor";
 import { invoke } from "@tauri-apps/api/core";
 
 const mocks = vi.hoisted(() => ({

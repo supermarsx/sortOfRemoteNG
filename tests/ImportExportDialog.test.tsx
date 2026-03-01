@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ImportExport } from "../src/components/ImportExport";
+import { ImportExport } from "../src/components/importExport";
 
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -56,7 +56,7 @@ vi.mock("../src/utils/settingsManager", () => ({
   },
 }));
 
-vi.mock("../src/components/ImportExport/ExportTab", () => ({
+vi.mock("../src/components/importExport/ExportTab", () => ({
   default: ({ handleExport }: { handleExport: () => void }) => (
     <div>
       <div data-testid="export-tab-content">export-content</div>
@@ -65,7 +65,7 @@ vi.mock("../src/components/ImportExport/ExportTab", () => ({
   ),
 }));
 
-vi.mock("../src/components/ImportExport/ImportTab", () => ({
+vi.mock("../src/components/importExport/ImportTab", () => ({
   default: () => <div data-testid="import-tab-content">import-content</div>,
 }));
 

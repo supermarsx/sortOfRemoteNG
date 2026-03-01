@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { SSHTunnelDialog } from "../src/components/SSHTunnelDialog";
+import { SSHTunnelDialog } from "../src/components/ssh/SSHTunnelDialog";
 
 describe("SSHTunnelDialog", () => {
   const sshConnections = [

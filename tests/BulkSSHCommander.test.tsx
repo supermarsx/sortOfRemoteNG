@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { BulkSSHCommander } from "../src/components/BulkSSHCommander";
+import { BulkSSHCommander } from "../src/components/ssh/BulkSSHCommander";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 // Mock dependencies

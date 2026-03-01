@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { ProxyChainEditor } from "../src/components/ProxyChainEditor";
+import { ProxyChainEditor } from "../src/components/network/ProxyChainEditor";
 
 const mocks = vi.hoisted(() => ({
   getProfiles: vi.fn(),

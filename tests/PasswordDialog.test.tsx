@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { PasswordDialog } from '../src/components/PasswordDialog';
+import { PasswordDialog } from '../src/components/security/PasswordDialog';
 
 describe('PasswordDialog', () => {
   it('shows validation message for short passwords', () => {

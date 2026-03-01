@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
-import { ConnectionDiagnostics } from '../src/components/ConnectionDiagnostics';
+import { ConnectionDiagnostics } from '../src/components/connection/ConnectionDiagnostics';
 import { Connection } from '../src/types/connection';
 import { ToastProvider } from '../src/contexts/ToastContext';
 import React from 'react';

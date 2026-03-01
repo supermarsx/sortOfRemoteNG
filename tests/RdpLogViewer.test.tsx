@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RdpLogViewer } from "../src/components/RdpLogViewer";
+import { RDPLogViewer } from "../src/components/rdp/RDPLogViewer";
 import { invoke } from "@tauri-apps/api/core";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -22,7 +22,7 @@ const mockLogs = [
   },
 ];
 
-describe("RdpLogViewer", () => {
+describe("RDPLogViewer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(invoke).mockResolvedValue(mockLogs);
@@ -33,7 +33,7 @@ describe("RdpLogViewer", () => {
   });
 
   it("uses centralized form classes for filters", async () => {
-    render(<RdpLogViewer isVisible />);
+    render(<RDPLogViewer isVisible />);
 
     expect(
       await screen.findByText("connected successfully"),
@@ -47,7 +47,7 @@ describe("RdpLogViewer", () => {
   });
 
   it("filters logs by text and level", async () => {
-    render(<RdpLogViewer isVisible />);
+    render(<RDPLogViewer isVisible />);
 
     expect(
       await screen.findByText("connected successfully"),

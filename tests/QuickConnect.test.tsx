@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { QuickConnect } from "../src/components/QuickConnect";
+import { QuickConnect } from "../src/components/connection/QuickConnect";
 
 const mockProps = {
   isOpen: true,

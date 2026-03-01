@@ -6,7 +6,7 @@ import {
   waitFor,
   cleanup,
 } from "@testing-library/react";
-import { TotpImportDialog } from "../src/components/TotpImportDialog";
+import { TotpImportDialog } from "../src/components/security/TotpImportDialog";
 
 const mocks = vi.hoisted(() => ({
   importTotpEntries: vi.fn(),
