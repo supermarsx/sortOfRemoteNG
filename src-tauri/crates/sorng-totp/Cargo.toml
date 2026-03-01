@@ -1,0 +1,27 @@
+[package]
+name = "sorng-totp"
+version = "0.1.0"
+edition = "2021"
+description = "Comprehensive TOTP/HOTP authenticator — RFC 6238/4226 code generation, otpauth:// URI handling, QR support, multi-format import (Google Authenticator, Aegis, 2FAS, andOTP, Authy, FreeOTP+, Bitwarden, RAIVO), encrypted vault storage, backup/restore, and Tauri command bindings"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.9.5", features = ["devtools"] }
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+base32 = "0.5"
+base64 = "0.21"
+sha1 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+url = "2.5"
+rand = "0.8"
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", features = ["simple"] }
+hex = "0.4"
+regex = "1.10"
+qrcode = "0.14"
+image = { version = "0.25", default-features = false, features = ["png"] }
