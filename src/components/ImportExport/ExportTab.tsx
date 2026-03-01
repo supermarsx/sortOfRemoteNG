@@ -1,6 +1,7 @@
 import React from 'react';
 import { Download, FileText, Database, Settings, Lock } from 'lucide-react';
-import { PasswordInput } from '../ui/PasswordInput';
+import { PasswordInput } from '../ui/forms/PasswordInput';
+import { Checkbox } from '../ui/forms';
 import { Connection } from '../../types/connection';
 
 interface ExportTabProps {
@@ -80,22 +81,12 @@ const ExportTab: React.FC<ExportTabProps> = ({
 
       <div className="space-y-4">
         <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={includePasswords}
-            onChange={e => setIncludePasswords(e.target.checked)}
-            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-          />
+          <Checkbox checked={includePasswords} onChange={setIncludePasswords} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
           <span className="text-[var(--color-textSecondary)]">Include passwords in export</span>
         </label>
 
         <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={exportEncrypted}
-            onChange={e => setExportEncrypted(e.target.checked)}
-            className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-          />
+          <Checkbox checked={exportEncrypted} onChange={setExportEncrypted} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
           <span className="text-[var(--color-textSecondary)]">Encrypt export file</span>
           <Lock size={16} className="text-yellow-400" />
         </label>

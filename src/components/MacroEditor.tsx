@@ -10,6 +10,7 @@ import {
   Clock,
 } from "lucide-react";
 import { TerminalMacro, MacroStep } from "../types/macroTypes";
+import { Checkbox, NumberInput } from './ui/forms';
 
 interface MacroEditorProps {
   macro: TerminalMacro;
@@ -176,28 +177,13 @@ export const MacroEditor: React.FC<MacroEditorProps> = ({
                 <div className="flex items-center gap-3 text-xs text-[var(--color-textSecondary)]">
                   <label className="flex items-center gap-1.5">
                     <Clock size={10} />
-                    <input
-                      type="number"
-                      value={step.delayMs}
-                      onChange={(e) =>
-                        updateStep(i, {
-                          delayMs: Math.max(0, Number(e.target.value)),
-                        })
-                      }
-                      className="w-16 px-1.5 py-0.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] outline-none"
-                      min={0}
-                    />
+                    <NumberInput value={step.delayMs} onChange={(v: number) => updateStep(i, {
+                          delayMs: v,
+                        })} className="w-16 px-1.5 py-0.5 bg-[var(--color-background)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] outline-none" min={0} />
                     ms
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={step.sendNewline}
-                      onChange={(e) =>
-                        updateStep(i, { sendNewline: e.target.checked })
-                      }
-                      className="rounded border-[var(--color-border)]"
-                    />
+                    <Checkbox checked={step.sendNewline} onChange={(v: boolean) => updateStep(i, { sendNewline: v })} className="rounded border-[var(--color-border)]" />
                     Send Enter
                   </label>
                 </div>

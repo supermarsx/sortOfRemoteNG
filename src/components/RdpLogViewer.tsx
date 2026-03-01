@@ -8,6 +8,7 @@ import {
   ArrowDown,
 } from "lucide-react";
 import { useRdpLogViewer } from "../hooks/rdp/useRdpLogViewer";
+import { Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useRdpLogViewer>;
 
@@ -64,30 +65,9 @@ export const RdpLogViewer: React.FC<RdpLogViewerProps> = ({
             className="sor-settings-input sor-settings-input-compact sor-settings-input-sm w-full pl-7 pr-2 placeholder-gray-500"
           />
         </div>
-        <select
-          value={mgr.levelFilter}
-          onChange={(e) => mgr.setLevelFilter(e.target.value)}
-          className="sor-settings-select sor-settings-input-sm"
-        >
-          <option value="all">All</option>
-          <option value="info">Info</option>
-          <option value="warn">Warn</option>
-          <option value="error">Error</option>
-        </select>
+        <Select value={mgr.levelFilter} onChange={(v: string) => mgr.setLevelFilter(v)} options={[{ value: "all", label: "All" }, { value: "info", label: "Info" }, { value: "warn", label: "Warn" }, { value: "error", label: "Error" }]} className="sor-settings-input-sm" />
         {mgr.sessionIds.length > 0 && (
-          <select
-            value={mgr.sessionIdFilter}
-            onChange={(e) => mgr.setSessionIdFilter(e.target.value)}
-            className="sor-settings-select sor-settings-input-sm max-w-[80px]"
-            data-tooltip="Filter by session"
-          >
-            <option value="all">All sessions</option>
-            {mgr.sessionIds.map((sid) => (
-              <option key={sid} value={sid}>
-                {sid.slice(0, 8)}
-              </option>
-            ))}
-          </select>
+          <Select value={mgr.sessionIdFilter} onChange={(v: string) => mgr.setSessionIdFilter(v)} options={[{ value: 'all', label: 'All sessions' }, ...mgr.sessionIds.map((sid) => ({ value: sid, label: sid.slice(0, 8) }))]} className="sor-settings-select sor-settings-input-sm max-w-[80px]" data-tooltip="Filter by session" />
         )}
         <button
           onClick={() => mgr.setAutoScroll(!mgr.autoScroll)}

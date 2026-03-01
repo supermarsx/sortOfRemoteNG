@@ -13,7 +13,8 @@ import {
   SavedChainLayer,
 } from "../types/settings";
 import { useProxyChainEditor, LAYER_TYPES } from "../hooks/network/useProxyChainEditor";
-import { Modal, ModalHeader } from "./ui/Modal";
+import { Modal, ModalHeader } from "./ui/overlays/Modal";
+import { Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useProxyChainEditor>;
 
@@ -71,25 +72,18 @@ const LayerCard: React.FC<{ mgr: Mgr; layer: SavedChainLayer; index: number; tot
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Layer Type</label>
-          <select value={layer.type} onChange={(e) => mgr.handleLayerTypeChange(index, e.target.value as SavedChainLayer["type"])} className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm">
-            {LAYER_TYPES.map((lt) => (<option key={lt.value} value={lt.value}>{lt.label}</option>))}
-          </select>
+          <Select value={layer.type} onChange={(v: string) => mgr.handleLayerTypeChange(index, v as SavedChainLayer["type"])} options={[...LAYER_TYPES.map((lt) => ({ value: lt.value, label: lt.label }))]} className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm" />
         </div>
         {layer.type === "proxy" && (
           <div>
             <label className="block text-xs text-[var(--color-textSecondary)] mb-1">Proxy Profile</label>
-            <select value={layer.proxyProfileId || ""} onChange={(e) => mgr.handleLayerProfileChange(index, e.target.value)} className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm">
-              <option value="">Select profile...</option>
-              {mgr.getProfilesForType(layer.type).map((profile) => (<option key={profile.id} value={profile.id}>{profile.name} ({profile.config.type})</option>))}
-            </select>
+            <Select value={layer.proxyProfileId || ""} onChange={(v: string) => mgr.handleLayerProfileChange(index, v)} options={[{ value: '', label: 'Select profile...' }, ...mgr.getProfilesForType(layer.type).map((profile) => ({ value: profile.id, label: `${profile.name} (${profile.config.type})` }))]} className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm" />
           </div>
         )}
         {(layer.type === "openvpn" || layer.type === "wireguard") && (
           <div>
             <label className="block text-xs text-[var(--color-textSecondary)] mb-1">VPN Profile</label>
-            <select value={layer.vpnProfileId || ""} onChange={(e) => mgr.handleVpnProfileChange(index, e.target.value)} className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm">
-              <option value="">Select VPN profile...</option>
-            </select>
+            <Select value={layer.vpnProfileId || ""} onChange={(v: string) => mgr.handleVpnProfileChange(index, v)} options={[{ value: '', label: 'Select VPN profile...' }]} className="w-full px-2 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm" />
             <p className="text-xs text-[var(--color-textSecondary)] mt-1">VPN profiles coming soon</p>
           </div>
         )}

@@ -1,6 +1,7 @@
 import React from "react";
 import { Globe, Wifi, Bookmark, RefreshCw, Trash2 } from "lucide-react";
 import { GlobalSettings } from "../../../types/settings";
+import { Checkbox, NumberInput } from '../../ui/forms';
 
 interface WebBrowserSettingsProps {
   settings: GlobalSettings;
@@ -45,14 +46,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                 Periodically verify the local proxy is still alive
               </p>
             </div>
-            <input
-              type="checkbox"
-              checked={settings.proxyKeepaliveEnabled}
-              onChange={(e) =>
-                updateSettings({ proxyKeepaliveEnabled: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.proxyKeepaliveEnabled} onChange={(v: boolean) => updateSettings({ proxyKeepaliveEnabled: v })} />
           </label>
 
           {/* Interval */}
@@ -69,21 +63,12 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={3}
-                  max={120}
-                  value={settings.proxyKeepaliveIntervalSeconds}
-                  onChange={(e) =>
-                    updateSettings({
+                <NumberInput value={settings.proxyKeepaliveIntervalSeconds} onChange={(v: number) => updateSettings({
                       proxyKeepaliveIntervalSeconds: Math.max(
                         3,
-                        Math.min(120, Number(e.target.value) || 10),
+                        Math.min(120, v || 10),
                       ),
-                    })
-                  }
-                  className="sor-settings-input w-20 text-right"
-                />
+                    })} className="w-20 text-right" min={3} max={120} />
                 <span className="text-xs text-[var(--color-textSecondary)]">
                   sec
                 </span>
@@ -104,14 +89,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                 Automatically restart the proxy when a health check fails
               </p>
             </div>
-            <input
-              type="checkbox"
-              checked={settings.proxyAutoRestart}
-              onChange={(e) =>
-                updateSettings({ proxyAutoRestart: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.proxyAutoRestart} onChange={(v: boolean) => updateSettings({ proxyAutoRestart: v })} />
           </label>
 
           {/* Max auto-restarts */}
@@ -127,21 +105,12 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                   Stop auto-restarting after this many attempts (0 = unlimited)
                 </p>
               </div>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                value={settings.proxyMaxAutoRestarts}
-                onChange={(e) =>
-                  updateSettings({
+              <NumberInput value={settings.proxyMaxAutoRestarts} onChange={(v: number) => updateSettings({
                     proxyMaxAutoRestarts: Math.max(
                       0,
-                      Math.min(100, Number(e.target.value) || 0),
+                      Math.min(100, v || 0),
                     ),
-                  })
-                }
-                className="sor-settings-input w-20 text-right"
-              />
+                  })} className="w-20 text-right" min={0} max={100} />
             </label>
           </div>
         </div>
@@ -167,14 +136,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
                 connection
               </p>
             </div>
-            <input
-              type="checkbox"
-              checked={settings.confirmDeleteAllBookmarks}
-              onChange={(e) =>
-                updateSettings({ confirmDeleteAllBookmarks: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.confirmDeleteAllBookmarks} onChange={(v: boolean) => updateSettings({ confirmDeleteAllBookmarks: v })} />
           </label>
         </div>
       </section>

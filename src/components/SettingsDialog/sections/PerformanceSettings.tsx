@@ -13,6 +13,7 @@ import {
   Zap,
   History,
 } from "lucide-react";
+import { Checkbox, NumberInput } from '../../ui/forms';
 
 interface PerformanceSettingsProps {
   settings: GlobalSettings;
@@ -65,16 +66,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
                 <RefreshCw className="w-4 h-4" />
                 Retry Attempts
               </label>
-              <input
-                type="number"
-                value={settings.retryAttempts}
-                onChange={(e) =>
-                  updateSettings({ retryAttempts: parseInt(e.target.value) })
-                }
-                className="sor-settings-input w-full"
-                min="0"
-                max="10"
-              />
+              <NumberInput value={settings.retryAttempts} onChange={(v: number) => updateSettings({ retryAttempts: v })} className="w-full" min={0} max={10} />
             </div>
 
             <div className="space-y-2">
@@ -82,17 +74,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
                 <Clock className="w-4 h-4" />
                 Retry Delay (ms)
               </label>
-              <input
-                type="number"
-                value={settings.retryDelay}
-                onChange={(e) =>
-                  updateSettings({ retryDelay: parseInt(e.target.value) })
-                }
-                className="sor-settings-input w-full"
-                min="1000"
-                max="60000"
-                step="1000"
-              />
+              <NumberInput value={settings.retryDelay} onChange={(v: number) => updateSettings({ retryDelay: v })} className="w-full" min={1000} max={60000} step={1000} />
             </div>
           </div>
         </div>
@@ -107,14 +89,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.enablePerformanceTracking}
-              onChange={(e) =>
-                updateSettings({ enablePerformanceTracking: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.enablePerformanceTracking} onChange={(v: boolean) => updateSettings({ enablePerformanceTracking: v })} />
             <Activity className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Performance Tracking
@@ -129,19 +104,10 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
                 <Clock className="w-4 h-4" />
                 Poll Interval (seconds)
               </label>
-              <input
-                type="number"
-                value={Math.round(settings.performancePollIntervalMs / 1000)}
-                onChange={(e) =>
-                  updateSettings({
+              <NumberInput value={Math.round(settings.performancePollIntervalMs / 1000)} onChange={(v: number) => updateSettings({
                     performancePollIntervalMs:
                       Math.max(1, parseInt(e.target.value || "0")) * 1000,
-                  })
-                }
-                className="sor-settings-input w-full"
-                min="1"
-                max="120"
-              />
+                  })} className="w-full" min={1} max={120} />
             </div>
 
             <div className="space-y-2">
@@ -174,14 +140,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.enableStatusChecking}
-              onChange={(e) =>
-                updateSettings({ enableStatusChecking: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.enableStatusChecking} onChange={(v: boolean) => updateSettings({ enableStatusChecking: v })} />
             <Zap className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Status Checking
@@ -196,18 +155,9 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
                 <Clock className="w-4 h-4" />
                 Check Interval (seconds)
               </label>
-              <input
-                type="number"
-                value={settings.statusCheckInterval}
-                onChange={(e) =>
-                  updateSettings({
-                    statusCheckInterval: parseInt(e.target.value),
-                  })
-                }
-                className="sor-settings-input w-full"
-                min="10"
-                max="300"
-              />
+              <NumberInput value={settings.statusCheckInterval} onChange={(v: number) => updateSettings({
+                    statusCheckInterval: v,
+                  })} className="w-full" min={10} max={300} />
             </div>
 
             <div className="space-y-2">
@@ -259,14 +209,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.enableActionLog}
-              onChange={(e) =>
-                updateSettings({ enableActionLog: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.enableActionLog} onChange={(v: boolean) => updateSettings({ enableActionLog: v })} />
             <History className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Action Logging
@@ -280,17 +223,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
               <FileText className="w-4 h-4" />
               Max Log Entries
             </label>
-            <input
-              type="number"
-              value={settings.maxLogEntries}
-              onChange={(e) =>
-                updateSettings({ maxLogEntries: parseInt(e.target.value) })
-              }
-              className="sor-settings-input w-full"
-              min="100"
-              max="10000"
-              step="100"
-            />
+            <NumberInput value={settings.maxLogEntries} onChange={(v: number) => updateSettings({ maxLogEntries: v })} className="w-full" min={100} max={10000} step={100} />
           </div>
         </div>
       </div>

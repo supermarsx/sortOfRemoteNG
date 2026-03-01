@@ -9,6 +9,7 @@ import {
   SSHVersion,
 } from "../../types/settings";
 import { useSettings } from "../../contexts/SettingsContext";
+import { Checkbox, NumberInput, Select, Slider } from '../ui/forms';
 
 interface SSHTerminalOverridesProps {
   formData: Partial<Connection>;
@@ -131,14 +132,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               }
             >
               <label className="sor-form-inline-check">
-                <input
-                  type="checkbox"
-                  checked={getValue("useCustomFont")}
-                  onChange={(e) =>
-                    updateOverride("useCustomFont", e.target.checked)
-                  }
-                  className="sor-form-checkbox"
-                />
+                <Checkbox checked={getValue("useCustomFont")} onChange={(v: boolean) => updateOverride("useCustomFont", v)} variant="form" />
                 Enable custom font
               </label>
             </OverrideToggle>
@@ -204,19 +198,10 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                     }
                   }}
                 >
-                  <input
-                    type="number"
-                    min={8}
-                    max={32}
-                    value={getValue("font").size}
-                    onChange={(e) =>
-                      updateOverride("font", {
+                  <NumberInput value={getValue("font").size} onChange={(v: number) => updateOverride("font", {
                         ...getValue("font"),
-                        size: Number(e.target.value),
-                      })
-                    }
-                    className="w-24 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
-                  />
+                        size: v,
+                      })} className="w-24 px-3 py-1.5  bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]" min={8} max={32} />
                 </OverrideToggle>
               </>
             )}
@@ -242,14 +227,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               }
             >
               <label className="sor-form-inline-check">
-                <input
-                  type="checkbox"
-                  checked={getValue("useCustomDimensions")}
-                  onChange={(e) =>
-                    updateOverride("useCustomDimensions", e.target.checked)
-                  }
-                  className="sor-form-checkbox"
-                />
+                <Checkbox checked={getValue("useCustomDimensions")} onChange={(v: boolean) => updateOverride("useCustomDimensions", v)} variant="form" />
                 Use custom dimensions
               </label>
             </OverrideToggle>
@@ -267,16 +245,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                     )
                   }
                 >
-                  <input
-                    type="number"
-                    min={40}
-                    max={500}
-                    value={getValue("columns")}
-                    onChange={(e) =>
-                      updateOverride("columns", Number(e.target.value))
-                    }
-                    className="sor-form-input-sm w-20"
-                  />
+                  <NumberInput value={getValue("columns")} onChange={(v: number) => updateOverride("columns", v)} variant="form-sm" className="" min={40} max={500} />
                 </OverrideToggle>
                 <OverrideToggle
                   label="Rows"
@@ -289,16 +258,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                     )
                   }
                 >
-                  <input
-                    type="number"
-                    min={10}
-                    max={200}
-                    value={getValue("rows")}
-                    onChange={(e) =>
-                      updateOverride("rows", Number(e.target.value))
-                    }
-                    className="sor-form-input-sm w-20"
-                  />
+                  <NumberInput value={getValue("rows")} onChange={(v: number) => updateOverride("rows", v)} variant="form-sm" className="" min={10} max={200} />
                 </OverrideToggle>
               </div>
             )}
@@ -314,17 +274,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                 )
               }
             >
-              <input
-                type="number"
-                min={100}
-                max={100000}
-                step={1000}
-                value={getValue("scrollbackLines")}
-                onChange={(e) =>
-                  updateOverride("scrollbackLines", Number(e.target.value))
-                }
-                className="w-28 px-3 py-1.5 text-sm bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]"
-              />
+              <NumberInput value={getValue("scrollbackLines")} onChange={(v: number) => updateOverride("scrollbackLines", v)} className="w-28 px-3 py-1.5  bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)]" min={100} max={100000} step={1000} />
             </OverrideToggle>
           </div>
 
@@ -343,19 +293,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                 )
               }
             >
-              <select
-                value={getValue("bellStyle")}
-                onChange={(e) =>
-                  updateOverride("bellStyle", e.target.value as BellStyle)
-                }
-                className="sor-form-select-sm w-40"
-              >
-                <option value="none">None</option>
-                <option value="system">System</option>
-                <option value="visual">Visual</option>
-                <option value="flash-window">Flash Window</option>
-                <option value="pc-speaker">PC Speaker</option>
-              </select>
+              <Select value={getValue("bellStyle")} onChange={(v: string) => updateOverride("bellStyle", v as BellStyle)} options={[{ value: "none", label: "None" }, { value: "system", label: "System" }, { value: "visual", label: "Visual" }, { value: "flash-window", label: "Flash Window" }, { value: "pc-speaker", label: "PC Speaker" }]} variant="form-sm" className="" />
             </OverrideToggle>
 
             <OverrideToggle
@@ -369,21 +307,10 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                 )
               }
             >
-              <select
-                value={getValue("taskbarFlash")}
-                onChange={(e) =>
-                  updateOverride(
+              <Select value={getValue("taskbarFlash")} onChange={(v: string) => updateOverride(
                     "taskbarFlash",
-                    e.target.value as TaskbarFlashMode,
-                  )
-                }
-                className="sor-form-select-sm w-40"
-              >
-                <option value="disabled">Disabled</option>
-                <option value="on-bell">On Bell</option>
-                <option value="on-output">On Output</option>
-                <option value="always">Always</option>
-              </select>
+                    v as TaskbarFlashMode,
+                  )} options={[{ value: "disabled", label: "Disabled" }, { value: "on-bell", label: "On Bell" }, { value: "on-output", label: "On Output" }, { value: "always", label: "Always" }]} variant="form-sm" className="" />
             </OverrideToggle>
           </div>
 
@@ -407,14 +334,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               }
             >
               <label className="sor-form-inline-check">
-                <input
-                  type="checkbox"
-                  checked={getValue("enableCompression")}
-                  onChange={(e) =>
-                    updateOverride("enableCompression", e.target.checked)
-                  }
-                  className="sor-form-checkbox"
-                />
+                <Checkbox checked={getValue("enableCompression")} onChange={(v: boolean) => updateOverride("enableCompression", v)} variant="form" />
                 Enable compression
               </label>
             </OverrideToggle>
@@ -431,16 +351,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                   )
                 }
               >
-                <input
-                  type="range"
-                  min={1}
-                  max={9}
-                  value={getValue("compressionLevel")}
-                  onChange={(e) =>
-                    updateOverride("compressionLevel", Number(e.target.value))
-                  }
-                  className="w-32"
-                />
+                <Slider value={getValue("compressionLevel")} onChange={(v: number) => updateOverride("compressionLevel", v)} min={1} max={9} className="w-32" />
                 <span className="text-sm text-[var(--color-textSecondary)] ml-2">
                   {getValue("compressionLevel")}
                 </span>
@@ -458,18 +369,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
                 )
               }
             >
-              <select
-                value={getValue("sshVersion")}
-                onChange={(e) =>
-                  updateOverride("sshVersion", e.target.value as SSHVersion)
-                }
-                className="sor-form-select-sm w-32"
-              >
-                <option value="auto">Auto</option>
-                <option value="1">SSH-1 Only</option>
-                <option value="2">SSH-2 Only</option>
-                <option value="3">SSH-3 Only</option>
-              </select>
+              <Select value={getValue("sshVersion")} onChange={(v: string) => updateOverride("sshVersion", v as SSHVersion)} options={[{ value: "auto", label: "Auto" }, { value: "1", label: "SSH-1 Only" }, { value: "2", label: "SSH-2 Only" }, { value: "3", label: "SSH-3 Only" }]} variant="form-sm" className="" />
             </OverrideToggle>
           </div>
 
@@ -502,17 +402,10 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               }}
             >
               <label className="sor-form-inline-check">
-                <input
-                  type="checkbox"
-                  checked={getValue("tcpOptions").tcpNoDelay}
-                  onChange={(e) =>
-                    updateOverride("tcpOptions", {
+                <Checkbox checked={getValue("tcpOptions").tcpNoDelay} onChange={(v: boolean) => updateOverride("tcpOptions", {
                       ...getValue("tcpOptions"),
-                      tcpNoDelay: e.target.checked,
-                    })
-                  }
-                  className="sor-form-checkbox"
-                />
+                      tcpNoDelay: v,
+                    })} variant="form" />
                 Disable Nagle's algorithm
               </label>
             </OverrideToggle>
@@ -545,17 +438,10 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               }}
             >
               <label className="sor-form-inline-check">
-                <input
-                  type="checkbox"
-                  checked={getValue("tcpOptions").tcpKeepAlive}
-                  onChange={(e) =>
-                    updateOverride("tcpOptions", {
+                <Checkbox checked={getValue("tcpOptions").tcpKeepAlive} onChange={(v: boolean) => updateOverride("tcpOptions", {
                       ...getValue("tcpOptions"),
-                      tcpKeepAlive: e.target.checked,
-                    })
-                  }
-                  className="sor-form-checkbox"
-                />
+                      tcpKeepAlive: v,
+                    })} variant="form" />
                 Enable TCP keep alive
               </label>
             </OverrideToggle>
@@ -585,19 +471,10 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               }}
             >
               <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={5}
-                  max={300}
-                  value={getValue("tcpOptions").connectionTimeout}
-                  onChange={(e) =>
-                    updateOverride("tcpOptions", {
+                <NumberInput value={getValue("tcpOptions").connectionTimeout} onChange={(v: number) => updateOverride("tcpOptions", {
                       ...getValue("tcpOptions"),
-                      connectionTimeout: Number(e.target.value),
-                    })
-                  }
-                  className="sor-form-input-sm w-20"
-                />
+                      connectionTimeout: v,
+                    })} variant="form-sm" className="" min={5} max={300} />
                 <span className="text-sm text-[var(--color-textSecondary)]">
                   seconds
                 </span>
@@ -621,14 +498,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               }
             >
               <label className="sor-form-inline-check">
-                <input
-                  type="checkbox"
-                  checked={getValue("implicitCrInLf")}
-                  onChange={(e) =>
-                    updateOverride("implicitCrInLf", e.target.checked)
-                  }
-                  className="sor-form-checkbox"
-                />
+                <Checkbox checked={getValue("implicitCrInLf")} onChange={(v: boolean) => updateOverride("implicitCrInLf", v)} variant="form" />
                 Add CR to every LF
               </label>
             </OverrideToggle>
@@ -645,12 +515,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
               }
             >
               <label className="sor-form-inline-check">
-                <input
-                  type="checkbox"
-                  checked={getValue("autoWrap")}
-                  onChange={(e) => updateOverride("autoWrap", e.target.checked)}
-                  className="sor-form-checkbox"
-                />
+                <Checkbox checked={getValue("autoWrap")} onChange={(v: boolean) => updateOverride("autoWrap", v)} variant="form" />
                 Auto-wrap long lines
               </label>
             </OverrideToggle>
@@ -682,12 +547,7 @@ const OverrideToggle: React.FC<OverrideToggleProps> = ({
   return (
     <div className="flex items-start gap-3">
       <label className="flex items-center gap-2 min-w-[140px]">
-        <input
-          type="checkbox"
-          checked={isOverridden}
-          onChange={(e) => onToggle(e.target.checked)}
-          className="sor-form-checkbox"
-        />
+        <Checkbox checked={isOverridden} onChange={(v: boolean) => onToggle(v)} variant="form" />
         <span className="text-sm text-[var(--color-textSecondary)]">
           {label}
         </span>

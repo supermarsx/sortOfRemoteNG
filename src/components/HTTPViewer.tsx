@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
 import { useHTTPViewer } from '../hooks/protocol/useHTTPViewer';
+import { StatusBar } from './ui/display';
 import RDPTotpPanel from './rdp/RDPTotpPanel';
 
 interface HTTPViewerProps {
@@ -155,20 +156,25 @@ function IframeContent({ m }: { m: Mgr }) {
   );
 }
 
-function StatusBar({ m }: { m: Mgr }) {
+function HTTPStatusBar({ m }: { m: Mgr }) {
   return (
-    <div className="flex items-center justify-between px-3 py-1 bg-[var(--color-surface)] border-t border-[var(--color-border)] text-xs text-[var(--color-textSecondary)]">
-      <div className="flex items-center gap-2">
-        <Globe className="w-3 h-3" />
-        <span>{m.connection?.name || m.session.hostname}</span>
-      </div>
-      <div className="flex items-center gap-4">
-        {m.proxySessionId && <span className="text-gray-500">Proxied via localhost</span>}
-        <span className={m.status === 'connected' ? 'text-green-400' : 'text-yellow-400'}>
-          {m.status === 'connected' ? 'Connected' : 'Loading...'}
-        </span>
-      </div>
-    </div>
+    <StatusBar
+      className="px-3 py-1"
+      left={
+        <div className="flex items-center gap-2">
+          <Globe className="w-3 h-3" />
+          <span>{m.connection?.name || m.session.hostname}</span>
+        </div>
+      }
+      right={
+        <div className="flex items-center gap-4">
+          {m.proxySessionId && <span className="text-gray-500">Proxied via localhost</span>}
+          <span className={m.status === 'connected' ? 'text-green-400' : 'text-yellow-400'}>
+            {m.status === 'connected' ? 'Connected' : 'Loading...'}
+          </span>
+        </div>
+      }
+    />
   );
 }
 
@@ -189,7 +195,7 @@ export const HTTPViewer: React.FC<HTTPViewerProps> = ({ session }) => {
       </div>
       <SettingsPanel m={m} />
       <IframeContent m={m} />
-      <StatusBar m={m} />
+      <HTTPStatusBar m={m} />
     </div>
   );
 };

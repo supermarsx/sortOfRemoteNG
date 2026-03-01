@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Modal, ModalBody, ModalHeader } from './ui/Modal';
+import { Modal, ModalBody, ModalHeader } from './ui/overlays/Modal';
 
 interface InputDialogProps {
   isOpen: boolean;

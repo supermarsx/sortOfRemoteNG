@@ -25,7 +25,7 @@ import TOTPOptions from "./connectionEditor/TOTPOptions";
 import BackupCodesSection from "./connectionEditor/BackupCodesSection";
 import SecurityQuestionsSection from "./connectionEditor/SecurityQuestionsSection";
 import RecoveryInfoSection from "./connectionEditor/RecoveryInfoSection";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";
 import {
   useConnectionEditor,
   PROTOCOL_OPTIONS,
@@ -34,6 +34,7 @@ import {
   PROTOCOL_COLOR_MAP,
   type ConnectionEditorMgr,
 } from "../hooks/connection/useConnectionEditor";
+import { Checkbox, NumberInput, Select } from './ui/forms';
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -142,14 +143,7 @@ const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
           : ""
       }`}
     >
-      <input
-        type="checkbox"
-        checked={!!mgr.formData.isGroup}
-        onChange={(e) =>
-          mgr.setFormData({ ...mgr.formData, isGroup: e.target.checked })
-        }
-        className="sr-only"
-      />
+      <Checkbox checked={!!mgr.formData.isGroup} onChange={(v: boolean) => mgr.setFormData({ ...mgr.formData, isGroup: v })} className="sr-only" />
       <FolderIcon size={16} />
       <span className="text-sm font-medium">Folder/Group</span>
     </label>
@@ -161,14 +155,7 @@ const QuickToggles: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
             : ""
         }`}
       >
-        <input
-          type="checkbox"
-          checked={!!mgr.formData.favorite}
-          onChange={(e) =>
-            mgr.setFormData({ ...mgr.formData, favorite: e.target.checked })
-          }
-          className="sr-only"
-        />
+        <Checkbox checked={!!mgr.formData.favorite} onChange={(v: boolean) => mgr.setFormData({ ...mgr.formData, favorite: v })} className="sr-only" />
         <Star
           size={16}
           className={mgr.formData.favorite ? "fill-yellow-400" : ""}
@@ -215,29 +202,12 @@ const ParentSelector: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => {
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
         Parent Folder
       </label>
-      <select
-        value={mgr.formData.parentId || ""}
-        onChange={(e) =>
+      <Select value={mgr.formData.parentId || ""} onChange={(v: string) =>
           mgr.setFormData({
             ...mgr.formData,
-            parentId: e.target.value || undefined,
-          })
-        }
-        className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-      >
-        <option value="">Root (No parent)</option>
-        {mgr.selectableGroups.map(({ group, disabled, reason }) => (
-          <option
-            key={group.id}
-            value={group.id}
-            disabled={disabled}
-            title={reason}
-          >
-            {group.name}
-            {disabled ? ` (${reason})` : ""}
-          </option>
-        ))}
-      </select>
+            parentId: v || undefined,
+          })} options={[{ value: '', label: 'Root (No parent)' }, ...mgr.selectableGroups.map(({ group, disabled, reason }) => ({ value: group.id, label: `${group.name}
+            ${disabled ? ` (${reason})` : ""}`, disabled: disabled, title: reason }))]} className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all" />
     </div>
   );
 };
@@ -320,19 +290,10 @@ const ConnectionFields: React.FC<{ mgr: ConnectionEditorMgr }> = ({ mgr }) => (
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
         Port
       </label>
-      <input
-        type="number"
-        value={mgr.formData.port || 0}
-        onChange={(e) =>
-          mgr.setFormData({
+      <NumberInput value={mgr.formData.port || 0} onChange={(v: number) => mgr.setFormData({
             ...mgr.formData,
-            port: parseInt(e.target.value) || 0,
-          })
-        }
-        className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono"
-        min={1}
-        max={65535}
-      />
+            port: v,
+          })} className="w-full px-4 py-2.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded-xl text-[var(--color-text)] placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all font-mono" min={1} max={65535} />
     </div>
   </div>
 );

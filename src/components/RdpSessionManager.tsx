@@ -13,7 +13,9 @@ import {
   ArrowDownToLine,
   Unplug,
 } from "lucide-react";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";
+import { DialogHeader } from './ui/overlays/DialogHeader';
+import { ErrorBanner, EmptyState } from './ui/display';
 import {
   useRdpSessionManager,
   formatUptime,
@@ -21,6 +23,7 @@ import {
   RdpSessionInfo,
   RdpStats,
 } from "../hooks/rdp/useRdpSessionManager";
+import { Checkbox } from './ui/forms';
 
 type Mgr = ReturnType<typeof useRdpSessionManager>;
 
@@ -31,62 +34,32 @@ const SessionManagerHeader: React.FC<{
   sessionCount: number;
   onClose: () => void;
 }> = ({ mgr, sessionCount, onClose }) => (
-  <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
-    <div className="flex items-center space-x-3">
-      <div className="w-8 h-8 rounded-lg bg-indigo-600/20 flex items-center justify-center">
-        <Monitor size={16} className="text-indigo-400" />
-      </div>
-      <div>
-        <h2 className="text-lg font-semibold text-[var(--color-text)]">
-          RDP Sessions
-        </h2>
-        <p className="text-xs text-gray-500">
-          {sessionCount} active session
-          {sessionCount !== 1 ? "s" : ""}
-        </p>
-      </div>
-    </div>
-    <div className="flex items-center space-x-2">
-      <label className="flex items-center space-x-1.5 text-xs text-[var(--color-textSecondary)] cursor-pointer">
-        <input
-          type="checkbox"
-          checked={mgr.autoRefresh}
-          onChange={(e) => mgr.setAutoRefresh(e.target.checked)}
-          className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-indigo-600 w-3.5 h-3.5"
-        />
-        <span>Auto-refresh</span>
-      </label>
-      <button
-        onClick={mgr.handleRefresh}
-        className={`p-2 hover:bg-[var(--color-surface)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${mgr.isLoading ? "animate-spin" : ""}`}
-        title="Refresh"
-      >
-        <RefreshCw size={14} />
-      </button>
-      <button
-        onClick={onClose}
-        className="p-2 hover:bg-[var(--color-surface)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-      >
-        <X size={16} />
-      </button>
-    </div>
-  </div>
+  <DialogHeader
+    icon={Monitor}
+    iconColor="text-indigo-400"
+    iconBg="bg-indigo-600/20"
+    title="RDP Sessions"
+    subtitle={`${sessionCount} active session${sessionCount !== 1 ? 's' : ''}`}
+    onClose={onClose}
+    actions={
+      <>
+        <label className="flex items-center space-x-1.5 text-xs text-[var(--color-textSecondary)] cursor-pointer">
+          <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-indigo-600 w-3.5 h-3.5" />
+          <span>Auto-refresh</span>
+        </label>
+        <button
+          onClick={mgr.handleRefresh}
+          className={`p-2 hover:bg-[var(--color-surface)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${mgr.isLoading ? 'animate-spin' : ''}`}
+          title="Refresh"
+        >
+          <RefreshCw size={14} />
+        </button>
+      </>
+    }
+  />
 );
 
-const ErrorBanner: React.FC<{ error: string; onClear: () => void }> = ({
-  error,
-  onClear,
-}) => (
-  <div className="mx-5 mt-3 px-3 py-2 bg-red-900/30 border border-red-800 rounded-lg text-red-400 text-sm flex items-center justify-between">
-    <div className="flex items-center space-x-2">
-      <AlertCircle size={14} />
-      <span>{error}</span>
-    </div>
-    <button onClick={onClear} className="hover:text-red-300">
-      <XCircle size={14} />
-    </button>
-  </div>
-);
+
 
 const SessionInfoGrid: React.FC<{
   session: RdpSessionInfo;
@@ -217,13 +190,13 @@ const SessionRow: React.FC<{
 const SessionList: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="flex-1 overflow-y-auto p-5 space-y-3">
     {mgr.sessions.length === 0 ? (
-      <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-        <Server size={40} className="mb-3 opacity-40" />
-        <p className="text-sm">No active RDP sessions</p>
-        <p className="text-xs mt-1">
-          Sessions will appear here when RDP connections are established
-        </p>
-      </div>
+      <EmptyState
+        icon={Server}
+        iconSize={40}
+        message="No active RDP sessions"
+        hint="Sessions will appear here when RDP connections are established"
+        className="py-16"
+      />
     ) : (
       <div className="sor-selection-list">
         {mgr.sessions.map((session) => (

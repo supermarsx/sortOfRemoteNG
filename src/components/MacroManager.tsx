@@ -6,7 +6,9 @@ import {
   ListVideo, Disc,
 } from 'lucide-react';
 import { SavedRecording } from '../types/macroTypes';
-import { Modal } from './ui/Modal';
+import { Modal } from './ui/overlays/Modal';
+import { DialogHeader } from './ui/overlays/DialogHeader';
+import { TabBar } from './ui/display';
 import { MacroEditor } from './MacroEditor';
 import { formatDuration } from '../utils/formatters';
 import { useInlineRename } from '../hooks/window/useInlineRename';
@@ -17,25 +19,10 @@ type Mgr = ReturnType<typeof useMacroManager>;
 // ─── Sub-components ─────────────────────────────────────────────────
 
 const ManagerHeader: React.FC<{ onClose: () => void }> = ({ onClose }) => (
-  <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/60">
-    <div className="flex items-center gap-3">
-      <ListVideo size={18} className="text-blue-400" />
-      <h2 className="text-sm font-semibold text-[var(--color-text)]">Macro & Recording Manager</h2>
-    </div>
-    <button onClick={onClose} className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded"><X size={16} /></button>
-  </div>
+  <DialogHeader variant="compact" icon={ListVideo} iconColor="text-blue-400" title="Macro & Recording Manager" onClose={onClose} />
 );
 
-const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="flex border-b border-[var(--color-border)]">
-    <button onClick={() => mgr.setActiveTab('macros')} className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${mgr.activeTab === 'macros' ? 'border-blue-500 text-blue-400' : 'border-transparent text-[var(--color-textSecondary)] hover:text-gray-200'}`}>
-      <CircleDot size={14} />Macros ({mgr.macros.length})
-    </button>
-    <button onClick={() => mgr.setActiveTab('recordings')} className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${mgr.activeTab === 'recordings' ? 'border-blue-500 text-blue-400' : 'border-transparent text-[var(--color-textSecondary)] hover:text-gray-200'}`}>
-      <Disc size={14} />Recordings ({mgr.recordings.length})
-    </button>
-  </div>
-);
+
 
 const Toolbar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface)]/40 border-b border-[var(--color-border)]/50">
@@ -122,7 +109,14 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
   return (
     <Modal isOpen={isOpen} onClose={onClose} closeOnBackdrop closeOnEscape backdropClassName="bg-black/60" panelClassName="max-w-5xl mx-4 h-[90vh] bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl">
       <ManagerHeader onClose={onClose} />
-      <TabBar mgr={mgr} />
+      <TabBar
+        tabs={[
+          { id: 'macros', label: 'Macros', icon: CircleDot, count: mgr.macros.length },
+          { id: 'recordings', label: 'Recordings', icon: Disc, count: mgr.recordings.length },
+        ]}
+        activeTab={mgr.activeTab}
+        onTabChange={mgr.setActiveTab}
+      />
       <Toolbar mgr={mgr} />
       <div className="flex-1 overflow-hidden flex">
         {mgr.activeTab === 'macros' ? (

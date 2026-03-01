@@ -14,7 +14,7 @@ import {
   Timer,
 } from "lucide-react";
 import { CloudSyncProvider } from "../types/settings";
-import { ToolbarPopover, ToolbarPopoverHeader } from "./ui/ToolbarPopover";
+import { ToolbarPopover, ToolbarPopoverHeader } from "./ui/overlays/ToolbarPopover";
 import {
   useSyncBackupStatusBar,
   PROVIDER_NAMES,

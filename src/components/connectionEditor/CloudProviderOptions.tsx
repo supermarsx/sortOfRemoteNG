@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "../ui/PasswordInput";
+import { PasswordInput } from "../ui/forms/PasswordInput";
 import { Connection } from "../../types/connection";
 
 interface CloudProviderOptionsProps {

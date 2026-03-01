@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Connection } from "../types/connection";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";
 import {
   useConnectionDiagnostics,
   DiagnosticsMgr,

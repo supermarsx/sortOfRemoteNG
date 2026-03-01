@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "../../ui/PasswordInput";
+import { PasswordInput } from "../../ui/forms/PasswordInput";
 import {
   Cloud,
   CloudCog,
@@ -38,7 +38,7 @@ import {
   ConflictResolutionStrategy,
   GlobalSettings,
 } from "../../../types/settings";
-import { Modal } from "../../ui/Modal";
+import { Modal } from "../../ui/overlays/Modal";
 import {
   useCloudSyncSettings,
   providerLabels,
@@ -48,6 +48,7 @@ import {
   conflictLabels,
   conflictDescriptions,
 } from "../../../hooks/settings/useCloudSyncSettings";
+import { Checkbox, NumberInput, Select } from '../../ui/forms';
 
 interface CloudSyncSettingsProps {
   settings: GlobalSettings;
@@ -192,12 +193,7 @@ function EnableSyncToggle({ mgr }: { mgr: Mgr }) {
             </p>
           </div>
         </div>
-        <input
-          type="checkbox"
-          checked={mgr.cloudSync.enabled}
-          onChange={(e) => mgr.updateCloudSync({ enabled: e.target.checked })}
-          className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-        />
+        <Checkbox checked={mgr.cloudSync.enabled} onChange={(v: boolean) => mgr.updateCloudSync({ enabled: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
       </label>
     </div>
   );
@@ -235,12 +231,7 @@ function ProviderList({ mgr }: { mgr: Mgr }) {
               <div className="flex items-center justify-between p-3">
                 <div className="flex items-center gap-3">
                   <label className="flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isEnabled}
-                      onChange={() => mgr.toggleProvider(provider)}
-                      className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-                    />
+                    <Checkbox checked={isEnabled} onChange={() => mgr.toggleProvider(provider)} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
                   </label>
                   <div className="flex items-center gap-2">
                     {providerIcons[provider]}
@@ -471,19 +462,12 @@ function ProviderConfig({
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={cs.nextcloud.useAppPassword}
-              onChange={(e) =>
-                mgr.updateCloudSync({
+            <Checkbox checked={cs.nextcloud.useAppPassword} onChange={(v: boolean) => mgr.updateCloudSync({
                   nextcloud: {
                     ...cs.nextcloud,
-                    useAppPassword: e.target.checked,
+                    useAppPassword: v,
                   },
-                })
-              }
-              className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-            />
+                })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
             <span className="text-sm text-[var(--color-text)]">
               Use App Password (Recommended)
             </span>
@@ -561,22 +545,12 @@ function ProviderConfig({
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
               Authentication Method
             </label>
-            <select
-              value={cs.webdav.authMethod}
-              onChange={(e) =>
-                mgr.updateCloudSync({
+            <Select value={cs.webdav.authMethod} onChange={(v: string) => mgr.updateCloudSync({
                   webdav: {
                     ...cs.webdav,
-                    authMethod: e.target.value as "basic" | "digest" | "bearer",
+                    authMethod: v as "basic" | "digest" | "bearer",
                   },
-                })
-              }
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
-            >
-              <option value="basic">Basic Authentication</option>
-              <option value="digest">Digest Authentication</option>
-              <option value="bearer">Bearer Token</option>
-            </select>
+                })} options={[{ value: "basic", label: "Basic Authentication" }, { value: "digest", label: "Digest Authentication" }, { value: "bearer", label: "Bearer Token" }]} className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]" />
           </div>
 
           {cs.webdav.authMethod === "bearer" ? (
@@ -676,20 +650,12 @@ function ProviderConfig({
               <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                 Port
               </label>
-              <input
-                type="number"
-                value={cs.sftp.port}
-                onChange={(e) =>
-                  mgr.updateCloudSync({
+              <NumberInput value={cs.sftp.port} onChange={(v: number) => mgr.updateCloudSync({
                     sftp: {
                       ...cs.sftp,
-                      port: parseInt(e.target.value) || 22,
+                      port: v,
                     },
-                  })
-                }
-                placeholder="22"
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
-              />
+                  })} className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]" />
             </div>
           </div>
 
@@ -714,21 +680,12 @@ function ProviderConfig({
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
               Authentication Method
             </label>
-            <select
-              value={cs.sftp.authMethod}
-              onChange={(e) =>
-                mgr.updateCloudSync({
+            <Select value={cs.sftp.authMethod} onChange={(v: string) => mgr.updateCloudSync({
                   sftp: {
                     ...cs.sftp,
-                    authMethod: e.target.value as "password" | "key",
+                    authMethod: v as "password" | "key",
                   },
-                })
-              }
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
-            >
-              <option value="password">Password</option>
-              <option value="key">SSH Key</option>
-            </select>
+                })} options={[{ value: "password", label: "Password" }, { value: "key", label: "SSH Key" }]} className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]" />
           </div>
 
           {cs.sftp.authMethod === "key" ? (
@@ -815,21 +772,10 @@ function SyncFrequencySelect({ mgr }: { mgr: Mgr }) {
         <Clock className="w-4 h-4 inline mr-2" />
         Sync Frequency
       </label>
-      <select
-        value={mgr.cloudSync.frequency}
-        onChange={(e) =>
+      <Select value={mgr.cloudSync.frequency} onChange={(v: string) =>
           mgr.updateCloudSync({
-            frequency: e.target.value as CloudSyncFrequency,
-          })
-        }
-        className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]"
-      >
-        {CloudSyncFrequencies.map((freq) => (
-          <option key={freq} value={freq}>
-            {frequencyLabels[freq]}
-          </option>
-        ))}
-      </select>
+            frequency: v as CloudSyncFrequency,
+          })} options={[...CloudSyncFrequencies.map((freq) => ({ value: freq, label: frequencyLabels[freq] }))]} className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]" />
     </div>
   );
 }
@@ -892,12 +838,7 @@ function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
             key={key}
             className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors"
           >
-            <input
-              type="checkbox"
-              checked={mgr.cloudSync[key]}
-              onChange={(e) => mgr.updateCloudSync({ [key]: e.target.checked })}
-              className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-            />
+            <Checkbox checked={mgr.cloudSync[key]} onChange={(v: boolean) => mgr.updateCloudSync({ [key]: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
             {icon}
             <span className="text-sm text-[var(--color-text)]">{label}</span>
           </label>
@@ -924,14 +865,7 @@ function EncryptionSection({ mgr }: { mgr: Mgr }) {
             </p>
           </div>
         </div>
-        <input
-          type="checkbox"
-          checked={mgr.cloudSync.encryptBeforeSync}
-          onChange={(e) =>
-            mgr.updateCloudSync({ encryptBeforeSync: e.target.checked })
-          }
-          className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-        />
+        <Checkbox checked={mgr.cloudSync.encryptBeforeSync} onChange={(v: boolean) => mgr.updateCloudSync({ encryptBeforeSync: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
       </label>
 
       {mgr.cloudSync.encryptBeforeSync && (
@@ -965,21 +899,10 @@ function ConflictResolutionSection({ mgr }: { mgr: Mgr }) {
         <AlertTriangle className="w-4 h-4 inline mr-2" />
         Conflict Resolution
       </label>
-      <select
-        value={mgr.cloudSync.conflictResolution}
-        onChange={(e) =>
+      <Select value={mgr.cloudSync.conflictResolution} onChange={(v: string) =>
           mgr.updateCloudSync({
-            conflictResolution: e.target.value as ConflictResolutionStrategy,
-          })
-        }
-        className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]"
-      >
-        {ConflictResolutionStrategies.map((strategy) => (
-          <option key={strategy} value={strategy}>
-            {conflictLabels[strategy]}
-          </option>
-        ))}
-      </select>
+            conflictResolution: v as ConflictResolutionStrategy,
+          })} options={[...ConflictResolutionStrategies.map((strategy) => ({ value: strategy, label: conflictLabels[strategy] }))]} className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]" />
       <p className="text-xs text-[var(--color-textSecondary)]">
         {conflictDescriptions[mgr.cloudSync.conflictResolution]}
       </p>
@@ -991,28 +914,14 @@ function StartupShutdownGrid({ mgr }: { mgr: Mgr }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
-        <input
-          type="checkbox"
-          checked={mgr.cloudSync.syncOnStartup}
-          onChange={(e) =>
-            mgr.updateCloudSync({ syncOnStartup: e.target.checked })
-          }
-          className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-        />
+        <Checkbox checked={mgr.cloudSync.syncOnStartup} onChange={(v: boolean) => mgr.updateCloudSync({ syncOnStartup: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
         <span className="text-sm text-[var(--color-text)]">
           Sync on Startup
         </span>
       </label>
 
       <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
-        <input
-          type="checkbox"
-          checked={mgr.cloudSync.syncOnShutdown}
-          onChange={(e) =>
-            mgr.updateCloudSync({ syncOnShutdown: e.target.checked })
-          }
-          className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-        />
+        <Checkbox checked={mgr.cloudSync.syncOnShutdown} onChange={(v: boolean) => mgr.updateCloudSync({ syncOnShutdown: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
         <span className="text-sm text-[var(--color-text)]">
           Sync on Shutdown
         </span>
@@ -1025,14 +934,7 @@ function NotificationsGrid({ mgr }: { mgr: Mgr }) {
   return (
     <div className="grid grid-cols-2 gap-4">
       <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
-        <input
-          type="checkbox"
-          checked={mgr.cloudSync.notifyOnSync}
-          onChange={(e) =>
-            mgr.updateCloudSync({ notifyOnSync: e.target.checked })
-          }
-          className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-        />
+        <Checkbox checked={mgr.cloudSync.notifyOnSync} onChange={(v: boolean) => mgr.updateCloudSync({ notifyOnSync: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
         <Bell className="w-4 h-4 text-blue-400" />
         <span className="text-sm text-[var(--color-text)]">
           Notify on Sync
@@ -1040,14 +942,7 @@ function NotificationsGrid({ mgr }: { mgr: Mgr }) {
       </label>
 
       <label className="flex items-center gap-2 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
-        <input
-          type="checkbox"
-          checked={mgr.cloudSync.notifyOnConflict}
-          onChange={(e) =>
-            mgr.updateCloudSync({ notifyOnConflict: e.target.checked })
-          }
-          className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-        />
+        <Checkbox checked={mgr.cloudSync.notifyOnConflict} onChange={(v: boolean) => mgr.updateCloudSync({ notifyOnConflict: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
         <AlertTriangle className="w-4 h-4 text-orange-400" />
         <span className="text-sm text-[var(--color-text)]">
           Notify on Conflict
@@ -1078,14 +973,7 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
       {mgr.showAdvanced && (
         <div className="space-y-4 p-4 bg-[var(--color-surface)]/50 rounded-lg border border-[var(--color-border)]">
           <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={mgr.cloudSync.compressionEnabled}
-              onChange={(e) =>
-                mgr.updateCloudSync({ compressionEnabled: e.target.checked })
-              }
-              className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-            />
+            <Checkbox checked={mgr.cloudSync.compressionEnabled} onChange={(v: boolean) => mgr.updateCloudSync({ compressionEnabled: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
             <span className="text-sm text-[var(--color-text)]">
               Enable Compression
             </span>
@@ -1096,18 +984,9 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
               <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                 Max File Size (MB)
               </label>
-              <input
-                type="number"
-                value={mgr.cloudSync.maxFileSizeMB}
-                onChange={(e) =>
-                  mgr.updateCloudSync({
-                    maxFileSizeMB: parseInt(e.target.value) || 50,
-                  })
-                }
-                min={1}
-                max={500}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
-              />
+              <NumberInput value={mgr.cloudSync.maxFileSizeMB} onChange={(v: number) => mgr.updateCloudSync({
+                    maxFileSizeMB: v,
+                  })} className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]" min={1} max={500} />
             </div>
 
             <div>
@@ -1115,17 +994,9 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
                 <Upload className="w-3 h-3 inline mr-1" />
                 Upload Limit (KB/s, 0=∞)
               </label>
-              <input
-                type="number"
-                value={mgr.cloudSync.uploadLimitKBs}
-                onChange={(e) =>
-                  mgr.updateCloudSync({
-                    uploadLimitKBs: parseInt(e.target.value) || 0,
-                  })
-                }
-                min={0}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
-              />
+              <NumberInput value={mgr.cloudSync.uploadLimitKBs} onChange={(v: number) => mgr.updateCloudSync({
+                    uploadLimitKBs: v,
+                  })} className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]" min={0} />
             </div>
 
             <div>
@@ -1133,17 +1004,9 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
                 <Download className="w-3 h-3 inline mr-1" />
                 Download Limit (KB/s, 0=∞)
               </label>
-              <input
-                type="number"
-                value={mgr.cloudSync.downloadLimitKBs}
-                onChange={(e) =>
-                  mgr.updateCloudSync({
-                    downloadLimitKBs: parseInt(e.target.value) || 0,
-                  })
-                }
-                min={0}
-                className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
-              />
+              <NumberInput value={mgr.cloudSync.downloadLimitKBs} onChange={(v: number) => mgr.updateCloudSync({
+                    downloadLimitKBs: v,
+                  })} className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]" min={0} />
             </div>
           </div>
 
@@ -1254,18 +1117,10 @@ function AuthTokenModal({ mgr }: { mgr: Mgr }) {
             <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
               Token Expiry (epoch seconds, optional)
             </label>
-            <input
-              type="number"
-              value={mgr.authForm.tokenExpiry}
-              onChange={(e) =>
-                mgr.setAuthForm({
+            <NumberInput value={mgr.authForm.tokenExpiry} onChange={(v: number) => mgr.setAuthForm({
                   ...mgr.authForm,
                   tokenExpiry: e.target.value,
-                })
-              }
-              min={0}
-              className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
-            />
+                })} className="w-full px-3 py-2 rounded-lg bg-[var(--color-input)] border border-[var(--color-border)] text-[var(--color-text)]" min={0} />
           </div>
         </div>
 

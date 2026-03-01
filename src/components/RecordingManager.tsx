@@ -12,7 +12,9 @@ import {
   HardDrive,
   Globe,
 } from "lucide-react";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";
+import { DialogHeader } from "./ui/overlays/DialogHeader";
+import { EmptyState, TabBar } from "./ui/display";
 import { SshRecordingRow, RdpRecordingRow, WebHarRecordingRow } from "./recordings";
 import { formatDuration, formatBytes } from "../utils/formatters";
 import { useRecordingManager } from "../hooks/recording/useRecordingManager";
@@ -29,52 +31,10 @@ interface RecordingManagerProps {
 /* ------------------------------------------------------------------ */
 
 const RecordingHeader: React.FC<{ onClose: () => void }> = ({ onClose }) => (
-  <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/60">
-    <div className="flex items-center gap-3">
-      <Disc size={18} className="text-red-400" />
-      <h2 className="text-sm font-semibold text-[var(--color-text)]">
-        Recording Manager
-      </h2>
-    </div>
-    <button
-      onClick={onClose}
-      className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded"
-    >
-      <X size={16} />
-    </button>
-  </div>
+  <DialogHeader variant="compact" icon={Disc} iconColor="text-red-400" title="Recording Manager" onClose={onClose} />
 );
 
-const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  const tabs = [
-    { id: "ssh" as const, label: "SSH Terminal", icon: Terminal, count: mgr.sshRecordings.length, activeColor: "border-green-500 text-green-400" },
-    { id: "rdp" as const, label: "RDP Screen", icon: Monitor, count: mgr.rdpRecordings.length, activeColor: "border-blue-500 text-blue-400" },
-    { id: "web" as const, label: "Web (HAR)", icon: Globe, count: mgr.webRecordings.length, activeColor: "border-cyan-500 text-cyan-400" },
-    { id: "webVideo" as const, label: "Web (Video)", icon: Film, count: mgr.webVideoRecordings.length, activeColor: "border-purple-500 text-purple-400" },
-  ];
 
-  return (
-    <div className="flex border-b border-[var(--color-border)]">
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        return (
-          <button
-            key={tab.id}
-            onClick={() => mgr.switchTab(tab.id)}
-            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              mgr.activeTab === tab.id
-                ? tab.activeColor
-                : "border-transparent text-[var(--color-textSecondary)] hover:text-gray-200"
-            }`}
-          >
-            <Icon size={14} />
-            {tab.label} ({tab.count})
-          </button>
-        );
-      })}
-    </div>
-  );
-};
 
 const Toolbar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface)]/40 border-b border-[var(--color-border)]/50">
@@ -168,11 +128,12 @@ const RecordingContent: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
 const SshTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
   mgr.filteredSsh.length === 0 ? (
-    <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-      <Terminal size={32} className="mb-3 opacity-50" />
-      <p className="text-sm">{mgr.searchQuery ? "No SSH recordings match your search" : "No SSH terminal recordings yet"}</p>
-      {!mgr.searchQuery && <p className="text-xs mt-1">Start recording from an SSH session toolbar</p>}
-    </div>
+    <EmptyState
+      icon={Terminal}
+      message={mgr.searchQuery ? "No SSH recordings match your search" : "No SSH terminal recordings yet"}
+      hint={mgr.searchQuery ? undefined : "Start recording from an SSH session toolbar"}
+      className="py-16"
+    />
   ) : (
     <div className="divide-y divide-[var(--color-border)]/50">
       {[...mgr.filteredSsh]
@@ -193,11 +154,12 @@ const SshTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
 
 const RdpTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
   mgr.filteredRdp.length === 0 ? (
-    <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-      <Monitor size={32} className="mb-3 opacity-50" />
-      <p className="text-sm">{mgr.searchQuery ? "No RDP recordings match your search" : "No RDP screen recordings yet"}</p>
-      {!mgr.searchQuery && <p className="text-xs mt-1">Enable auto-save in Recording settings, or save from the RDP toolbar</p>}
-    </div>
+    <EmptyState
+      icon={Monitor}
+      message={mgr.searchQuery ? "No RDP recordings match your search" : "No RDP screen recordings yet"}
+      hint={mgr.searchQuery ? undefined : "Enable auto-save in Recording settings, or save from the RDP toolbar"}
+      className="py-16"
+    />
   ) : (
     <div className="divide-y divide-[var(--color-border)]/50">
       {[...mgr.filteredRdp]
@@ -219,11 +181,12 @@ const RdpTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
 
 const WebTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
   mgr.filteredWeb.length === 0 ? (
-    <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-      <Globe size={32} className="mb-3 opacity-50" />
-      <p className="text-sm">{mgr.searchQuery ? "No web recordings match your search" : "No web HAR recordings yet"}</p>
-      {!mgr.searchQuery && <p className="text-xs mt-1">Start recording HTTP traffic from a web browser session</p>}
-    </div>
+    <EmptyState
+      icon={Globe}
+      message={mgr.searchQuery ? "No web recordings match your search" : "No web HAR recordings yet"}
+      hint={mgr.searchQuery ? undefined : "Start recording HTTP traffic from a web browser session"}
+      className="py-16"
+    />
   ) : (
     <div className="divide-y divide-[var(--color-border)]/50">
       {[...mgr.filteredWeb]
@@ -244,11 +207,12 @@ const WebTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
 
 const WebVideoTabContent: React.FC<{ mgr: Mgr }> = ({ mgr }) =>
   mgr.filteredWebVideo.length === 0 ? (
-    <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-      <Film size={32} className="mb-3 opacity-50" />
-      <p className="text-sm">{mgr.searchQuery ? "No web video recordings match your search" : "No web video recordings yet"}</p>
-      {!mgr.searchQuery && <p className="text-xs mt-1">Record your web browsing session as video</p>}
-    </div>
+    <EmptyState
+      icon={Film}
+      message={mgr.searchQuery ? "No web video recordings match your search" : "No web video recordings yet"}
+      hint={mgr.searchQuery ? undefined : "Record your web browsing session as video"}
+      className="py-16"
+    />
   ) : (
     <div className="divide-y divide-[var(--color-border)]/50">
       {[...mgr.filteredWebVideo]
@@ -322,7 +286,16 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({
       panelClassName="max-w-5xl mx-4 h-[90vh] bg-[var(--color-background)] border border-[var(--color-border)] rounded-xl shadow-2xl"
     >
       <RecordingHeader onClose={onClose} />
-      <TabBar mgr={mgr} />
+      <TabBar
+        tabs={[
+          { id: "ssh", label: "SSH Terminal", icon: Terminal, count: mgr.sshRecordings.length, activeColor: "border-green-500 text-green-400" },
+          { id: "rdp", label: "RDP Screen", icon: Monitor, count: mgr.rdpRecordings.length, activeColor: "border-blue-500 text-blue-400" },
+          { id: "web", label: "Web (HAR)", icon: Globe, count: mgr.webRecordings.length, activeColor: "border-cyan-500 text-cyan-400" },
+          { id: "webVideo", label: "Web (Video)", icon: Film, count: mgr.webVideoRecordings.length, activeColor: "border-purple-500 text-purple-400" },
+        ]}
+        activeTab={mgr.activeTab}
+        onTabChange={mgr.switchTab}
+      />
       <Toolbar mgr={mgr} />
       <StatsBar mgr={mgr} />
       <RecordingContent mgr={mgr} />

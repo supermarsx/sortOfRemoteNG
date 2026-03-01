@@ -1,9 +1,10 @@
 import React from "react";
-import { PasswordInput } from "./ui/PasswordInput";
+import { PasswordInput } from "./ui/forms/PasswordInput";
 import { Clock, Play, Trash2, X, Zap } from "lucide-react";
 import { QuickConnectHistoryEntry } from "../types/settings";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";
 import { useQuickConnect } from "../hooks/connection/useQuickConnect";
+import { Checkbox, Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useQuickConnect>;
 
@@ -149,19 +150,7 @@ const ProtocolSelector: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     >
       Protocol
     </label>
-    <select
-      id="protocol"
-      value={mgr.protocol}
-      onChange={(e) => mgr.setProtocol(e.target.value)}
-      className="sor-form-select"
-    >
-      <option value="rdp">RDP (Remote Desktop)</option>
-      <option value="ssh">SSH (Secure Shell)</option>
-      <option value="vnc">VNC (Virtual Network Computing)</option>
-      <option value="http">HTTP</option>
-      <option value="https">HTTPS</option>
-      <option value="telnet">Telnet</option>
-    </select>
+    <Select id="protocol" value={mgr.protocol} onChange={(v: string) => mgr.setProtocol(v)} options={[{ value: "rdp", label: "RDP (Remote Desktop)" }, { value: "ssh", label: "SSH (Secure Shell)" }, { value: "vnc", label: "VNC (Virtual Network Computing)" }, { value: "http", label: "HTTP" }, { value: "https", label: "HTTPS" }, { value: "telnet", label: "Telnet" }]} variant="form" />
   </div>
 );
 
@@ -242,17 +231,7 @@ const SshCredentials: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       >
         Auth Method
       </label>
-      <select
-        id="ssh-auth"
-        value={mgr.authType}
-        onChange={(e) =>
-          mgr.setAuthType(e.target.value as "password" | "key")
-        }
-        className="sor-form-select"
-      >
-        <option value="password">Password</option>
-        <option value="key">Private Key</option>
-      </select>
+      <Select id="ssh-auth" value={mgr.authType} onChange={(v: string) => mgr.setAuthType(v as "password" | "key")} options={[{ value: "password", label: "Password" }, { value: "key", label: "Private Key" }]} variant="form" />
     </div>
     {mgr.authType === "password" ? (
       <div>
@@ -360,12 +339,7 @@ const HttpCredentials: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     {mgr.isHttps && (
       <div>
         <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)]">
-          <input
-            type="checkbox"
-            checked={mgr.httpVerifySsl}
-            onChange={(e) => mgr.setHttpVerifySsl(e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={mgr.httpVerifySsl} onChange={(v: boolean) => mgr.setHttpVerifySsl(v)} variant="form" />
           <span>Verify TLS certificates</span>
         </label>
         <p className="text-xs text-gray-500 mt-1">

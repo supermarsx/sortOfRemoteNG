@@ -11,8 +11,11 @@ import {
   Calendar,
   Repeat,
 } from "lucide-react";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";
+import { DialogHeader } from "./ui/overlays/DialogHeader";
+import { EmptyState } from './ui/display';
 import { useWakeScheduleManager, formatMac } from "../hooks/network/useWakeScheduleManager";
+import { NumberInput, Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useWakeScheduleManager>;
 
@@ -55,13 +58,7 @@ const ScheduleRow: React.FC<{ s: WakeSchedule; mgr: Mgr }> = ({ s, mgr }) => {
   );
 };
 
-const EmptyState: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
-  <div className="text-center py-8 text-[var(--color-textMuted)]">
-    <Clock size={32} className="mx-auto mb-3 opacity-50" />
-    <p className="text-sm">{mgr.t("wake.noSchedules", "No schedules configured")}</p>
-    <p className="text-xs mt-1">Click "New Schedule" to create one</p>
-  </div>
-);
+
 
 const ScheduleForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-3 p-4 bg-[var(--color-surfaceHover)]/30 rounded-lg border border-[var(--color-border)]">
@@ -86,16 +83,12 @@ const ScheduleForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </div>
       <div>
         <label className="sor-form-label-xs">UDP Port</label>
-        <input type="number" className="sor-form-input" value={mgr.form.port} onChange={(e) => mgr.setForm({ ...mgr.form, port: parseInt(e.target.value, 10) || 9 })} />
+        <NumberInput value={mgr.form.port} onChange={(v: number) => mgr.setForm({ ...mgr.form, port: v })} variant="form" />
       </div>
     </div>
     <div>
       <label className="sor-form-label-xs">Recurrence</label>
-      <select className="sor-form-select" value={mgr.form.recurrence ?? ""} onChange={(e) => mgr.setForm({ ...mgr.form, recurrence: e.target.value as WakeRecurrence })}>
-        <option value="">{mgr.t("wake.once", "Once")}</option>
-        <option value="daily">{mgr.t("wake.daily", "Daily")}</option>
-        <option value="weekly">{mgr.t("wake.weekly", "Weekly")}</option>
-      </select>
+      <Select value={mgr.form.recurrence ?? ""} onChange={(v: string) => mgr.setForm({ ...mgr.form, recurrence: v as WakeRecurrence })} options={[{ value: "", label: mgr.t("wake.once", "Once") }, { value: "daily", label: mgr.t("wake.daily", "Daily") }, { value: "weekly", label: mgr.t("wake.weekly", "Weekly") }]} variant="form" />
     </div>
     <button onClick={mgr.handleSubmit} disabled={!mgr.form.macAddress || mgr.form.macAddress.length < 17} className="w-full flex items-center justify-center space-x-2 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-orange-500/20 disabled:shadow-none">
       <Save size={16} />
@@ -132,22 +125,15 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
 
         {/* Header */}
-        <div className="relative z-10 flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-orange-500/20 rounded-lg">
-              <Clock size={20} className="text-orange-500" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-[var(--color-text)]">
-                {mgr.t("wake.scheduleManager", "Wake Schedule Manager")}
-              </h2>
-              <p className="text-xs text-[var(--color-textSecondary)]">Schedule automatic wake-up for devices</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
-            <X size={18} />
-          </button>
-        </div>
+        <DialogHeader
+          icon={Clock}
+          iconColor="text-orange-500"
+          iconBg="bg-orange-500/20"
+          title={mgr.t("wake.scheduleManager", "Wake Schedule Manager")}
+          subtitle="Schedule automatic wake-up for devices"
+          onClose={onClose}
+          className="relative z-10"
+        />
 
         {/* Content */}
         <div className="relative z-10 p-5">
@@ -155,7 +141,14 @@ export const WakeScheduleManager: React.FC<Props> = ({ isOpen, onClose }) => {
             {mgr.schedules.map((s) => (
               <ScheduleRow key={`${s.macAddress}-${s.wakeTime}-${s.broadcastAddress ?? ""}-${s.port}-${s.recurrence ?? ""}`} s={s} mgr={mgr} />
             ))}
-            {mgr.schedules.length === 0 && !mgr.showForm && <EmptyState mgr={mgr} />}
+            {mgr.schedules.length === 0 && !mgr.showForm && (
+              <EmptyState
+                icon={Clock}
+                message={mgr.t("wake.noSchedules", "No schedules configured")}
+                hint='Click "New Schedule" to create one'
+                className="py-8"
+              />
+            )}
           </div>
 
           {mgr.showForm ? (

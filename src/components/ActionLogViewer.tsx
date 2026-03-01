@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { useActionLogViewer } from "../hooks/monitoring/useActionLogViewer";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";import { DialogHeader } from './ui/overlays/DialogHeader';import { EmptyState } from './ui/display';import { Select } from './ui/forms';
 
 const LEVEL_ICONS: Record<string, JSX.Element> = {
   debug: <Bug className="text-[var(--color-textSecondary)]" size={14} />,
@@ -51,16 +51,14 @@ type Mgr = ReturnType<typeof useActionLogViewer>;
 
 function ViewerHeader({ m, onClose }: { m: Mgr; onClose: () => void }) {
   return (
-    <div className="border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between">
-      <div className="flex items-center space-x-3">
-        <div className="p-2 bg-amber-500/20 rounded-lg"><ScrollText size={20} className="text-amber-400" /></div>
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--color-text)]">{m.t("logs.title")}</h2>
-          <p className="text-xs text-[var(--color-textSecondary)]">{m.logs.length} total entries</p>
-        </div>
-      </div>
-      <button onClick={onClose} className="p-2 hover:bg-[var(--color-border)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"><X size={18} /></button>
-    </div>
+    <DialogHeader
+      icon={ScrollText}
+      iconColor="text-amber-400"
+      iconBg="bg-amber-500/20"
+      title={m.t("logs.title")}
+      subtitle={`${m.logs.length} total entries`}
+      onClose={onClose}
+    />
   );
 }
 
@@ -85,37 +83,19 @@ function FilterBar({ m }: { m: Mgr }) {
   return (
     <div className="flex items-center gap-3 flex-wrap">
       <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)] uppercase tracking-wider"><Filter size={14} /><span>Filters</span></div>
-      <select value={m.levelFilter} onChange={(e) => m.setLevelFilter(e.target.value)} className={selectCls} title="Filter by level">
-        <option value="all">All Levels</option>
-        <option value="debug">Debug</option>
-        <option value="info">Info</option>
-        <option value="warn">Warning</option>
-        <option value="error">Error</option>
-      </select>
+      <Select value={m.levelFilter} onChange={(v: string) => m.setLevelFilter(v)} options={[{ value: "all", label: "All Levels" }, { value: "debug", label: "Debug" }, { value: "info", label: "Info" }, { value: "warn", label: "Warning" }, { value: "error", label: "Error" }]} className="selectCls" />
       {m.uniqueActions.length > 0 && (
-        <select value={m.actionFilter} onChange={(e) => m.setActionFilter(e.target.value)} className={`${selectCls} max-w-[180px]`} title="Filter by action">
-          <option value="all">All Actions</option>
-          {m.uniqueActions.map((a) => <option key={a} value={a}>{a}</option>)}
-        </select>
+        <Select value={m.actionFilter} onChange={(v: string) => m.setActionFilter(v)} options={[{ value: 'all', label: 'All Actions' }, ...m.uniqueActions.map((a) => ({ value: a, label: a }))]} className={`${selectCls} max-w-[180px]`} title="Filter by action" />
       )}
       {m.uniqueConnections.length > 0 && (
         <div className="flex items-center gap-1.5">
           <Server size={14} className="text-gray-500" />
-          <select value={m.connectionFilter} onChange={(e) => m.setConnectionFilter(e.target.value)} className={`${selectCls} max-w-[160px]`} title="Filter by connection">
-            <option value="all">All Connections</option>
-            {m.uniqueConnections.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <Select value={m.connectionFilter} onChange={(v: string) => m.setConnectionFilter(v)} options={[{ value: 'all', label: 'All Connections' }, ...m.uniqueConnections.map((c) => ({ value: c, label: c }))]} className={`${selectCls} max-w-[160px]`} title="Filter by connection" />
         </div>
       )}
       <div className="flex items-center gap-1.5">
         <Calendar size={14} className="text-gray-500" />
-        <select value={m.dateFilter} onChange={(e) => m.setDateFilter(e.target.value)} className={selectCls} title="Filter by date">
-          <option value="all">All Time</option>
-          <option value="today">Today</option>
-          <option value="yesterday">Yesterday</option>
-          <option value="week">Last 7 Days</option>
-          <option value="month">Last 30 Days</option>
-        </select>
+        <Select value={m.dateFilter} onChange={(v: string) => m.setDateFilter(v)} options={[{ value: "all", label: "All Time" }, { value: "today", label: "Today" }, { value: "yesterday", label: "Yesterday" }, { value: "week", label: "Last 7 Days" }, { value: "month", label: "Last 30 Days" }]} className="selectCls" />
       </div>
       {m.hasActiveFilters && (
         <button onClick={m.resetFilters} className="sor-option-chip text-xs text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"><X size={12} />Clear filters</button>
@@ -152,11 +132,12 @@ function LogTable({ m }: { m: Mgr }) {
         </tbody>
       </table>
       {m.filteredLogs.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-[var(--color-textSecondary)]">
-          <AlertCircle size={48} className="mb-4" />
-          <p className="text-lg font-medium mb-2">No log entries found</p>
-          <p className="text-sm">Try adjusting your search or filter criteria</p>
-        </div>
+        <EmptyState
+          icon={AlertCircle}
+          iconSize={48}
+          message="No log entries found"
+          hint="Try adjusting your search or filter criteria"
+        />
       )}
     </div>
   );

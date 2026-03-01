@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "./ui/PasswordInput";
+import { PasswordInput } from "./ui/forms/PasswordInput";
 import {
   Key,
   Plus,
@@ -16,8 +16,10 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Modal, ModalHeader, ModalBody, ModalFooter } from "./ui/Modal";
+import { Modal, ModalHeader, ModalBody, ModalFooter } from "./ui/overlays/Modal";
+import { EmptyState } from './ui/display';
 import { useSSHKeyManager, SSHKey } from "../hooks/ssh/useSSHKeyManager";
+import { Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useSSHKeyManager>;
 
@@ -104,16 +106,7 @@ const GenerateKeyForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <label className="block text-sm font-medium mb-1">
             {t("sshKeyManager.keyType", "Key Type")}
           </label>
-          <select
-            value={mgr.newKeyType}
-            onChange={(e) =>
-              mgr.setNewKeyType(e.target.value as "ed25519" | "rsa")
-            }
-            className="w-full px-3 py-2 bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="ed25519">Ed25519 (Recommended)</option>
-            <option value="rsa">RSA (4096-bit)</option>
-          </select>
+          <Select value={mgr.newKeyType} onChange={(v: string) => mgr.setNewKeyType(v as "ed25519" | "rsa")} options={[{ value: "ed25519", label: "Ed25519 (Recommended)" }, { value: "rsa", label: "RSA (4096-bit)" }]} className="w-full px-3 py-2 bg-background border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-primary" />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">
@@ -276,16 +269,13 @@ const KeysList: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
   if (mgr.keys.length === 0) {
     return (
-      <div className="text-center py-12 text-muted-foreground">
-        <FileKey className="w-12 h-12 mx-auto mb-4 opacity-50" />
-        <p>{t("sshKeyManager.noKeys", "No SSH keys found")}</p>
-        <p className="text-sm">
-          {t(
-            "sshKeyManager.noKeysHint",
-            "Generate or import a key to get started",
-          )}
-        </p>
-      </div>
+      <EmptyState
+        icon={FileKey}
+        iconSize={48}
+        message={t("sshKeyManager.noKeys", "No SSH keys found")}
+        hint={t("sshKeyManager.noKeysHint", "Generate or import a key to get started")}
+        className="py-12"
+      />
     );
   }
 

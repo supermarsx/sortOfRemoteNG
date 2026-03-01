@@ -22,6 +22,7 @@ import {
   useSecuritySettings,
   ENCRYPTION_ALGORITHMS,
 } from "../../../hooks/settings/useSecuritySettings";
+import { Checkbox, NumberInput, Select, Slider } from '../../ui/forms';
 
 interface SecuritySettingsProps {
   settings: GlobalSettings;
@@ -96,20 +97,9 @@ function EncryptionAlgorithmSection({
         <div data-setting-key="encryptionAlgorithm" className="flex items-center gap-3">
           <Lock className="w-5 h-5 text-blue-400 flex-shrink-0" />
           <div className="flex-1">
-            <select
-              value={settings.encryptionAlgorithm}
-              onChange={(e) =>
-                updateSettings({ encryptionAlgorithm: e.target.value as any })
-              }
-              className="sor-settings-select w-full text-sm"
-            >
-              {ENCRYPTION_ALGORITHMS.map((algo) => (
-                <option key={algo.value} value={algo.value}>
-                  {algo.label}
-                  {algo.recommended ? " ★" : ""}
-                </option>
-              ))}
-            </select>
+            <Select value={settings.encryptionAlgorithm} onChange={(v: string) =>
+                updateSettings({ encryptionAlgorithm: v as any })} options={[...ENCRYPTION_ALGORITHMS.map((algo) => ({ value: algo.value, label: `${algo.label}
+                  ${algo.recommended ? " ★" : ""}` }))]} className="sor-settings-select w-full text-sm" />
           </div>
         </div>
 
@@ -133,20 +123,8 @@ function EncryptionAlgorithmSection({
               <span className="text-sm text-[var(--color-textSecondary)] whitespace-nowrap">
                 Mode:
               </span>
-              <select
-                value={settings.blockCipherMode}
-                onChange={(e) =>
-                  updateSettings({ blockCipherMode: e.target.value as any })
-                }
-                className="sor-settings-select flex-1 text-sm"
-                disabled={mgr.validModes.length === 1}
-              >
-                {mgr.validModes.map((mode) => (
-                  <option key={mode.value} value={mode.value}>
-                    {mode.label}
-                  </option>
-                ))}
-              </select>
+              <Select value={settings.blockCipherMode} onChange={(v: string) =>
+                  updateSettings({ blockCipherMode: v as any })} options={[...mgr.validModes.map((mode) => ({ value: mode.value, label: mode.label }))]} className="sor-settings-select flex-1 text-sm" disabled={mgr.validModes.length === 1} />
             </div>
           </div>
         )}
@@ -190,18 +168,9 @@ function KeyDerivationSection({
               {t("security.iterations")}
             </label>
             <div className="flex space-x-2">
-              <input
-                type="number"
-                value={settings.keyDerivationIterations}
-                onChange={(e) =>
-                  updateSettings({
-                    keyDerivationIterations: parseInt(e.target.value),
-                  })
-                }
-                className="sor-settings-input flex-1"
-                min="10000"
-                max="1000000"
-              />
+              <NumberInput value={settings.keyDerivationIterations} onChange={(v: number) => updateSettings({
+                    keyDerivationIterations: v,
+                  })} className="flex-1" min={10000} max={1000000} />
               <button
                 onClick={handleBenchmark}
                 disabled={isBenchmarking}
@@ -231,19 +200,9 @@ function KeyDerivationSection({
               <Timer className="w-4 h-4" />
               {t("security.benchmarkTime")}
             </label>
-            <input
-              type="number"
-              value={settings.benchmarkTimeSeconds}
-              onChange={(e) =>
-                updateSettings({
-                  benchmarkTimeSeconds: parseInt(e.target.value),
-                })
-              }
-              className="sor-settings-input w-full"
-              min="0.5"
-              max="10"
-              step="0.5"
-            />
+            <NumberInput value={settings.benchmarkTimeSeconds} onChange={(v: number) => updateSettings({
+                  benchmarkTimeSeconds: v,
+                })} className="w-full" min={0.5} max={10} step={0.5} />
             <p className="text-xs text-gray-500">
               Target time for key derivation during benchmark
             </p>
@@ -251,14 +210,7 @@ function KeyDerivationSection({
         </div>
 
         <label className="flex items-center space-x-3 cursor-pointer group pt-2">
-          <input
-            type="checkbox"
-            checked={settings.autoBenchmarkIterations}
-            onChange={(e) =>
-              updateSettings({ autoBenchmarkIterations: e.target.checked })
-            }
-            className="sor-settings-checkbox"
-          />
+          <Checkbox checked={settings.autoBenchmarkIterations} onChange={(v: boolean) => updateSettings({ autoBenchmarkIterations: v })} />
           <Gauge className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
           <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
             {t("security.autoBenchmark")}
@@ -296,17 +248,9 @@ function AutoLockSection({
         <label
           className={`flex items-center space-x-3 cursor-pointer group ${!mgr.hasPassword ? "opacity-50" : ""}`}
         >
-          <input
-            type="checkbox"
-            checked={settings.autoLock.enabled && mgr.hasPassword}
-            onChange={(e) =>
-              updateSettings({
-                autoLock: { ...settings.autoLock, enabled: e.target.checked },
-              })
-            }
-            className="sor-settings-checkbox"
-            disabled={!mgr.hasPassword}
-          />
+          <Checkbox checked={settings.autoLock.enabled && mgr.hasPassword} onChange={(v: boolean) => updateSettings({
+                autoLock: { ...settings.autoLock, enabled: v },
+              })} disabled={!mgr.hasPassword} />
           <Clock className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
           <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
             Enable auto lock after inactivity
@@ -320,22 +264,12 @@ function AutoLockSection({
             <Timer className="w-4 h-4" />
             Auto lock timeout (minutes)
           </label>
-          <input
-            type="number"
-            value={settings.autoLock.timeoutMinutes}
-            onChange={(e) =>
-              updateSettings({
+          <NumberInput value={settings.autoLock.timeoutMinutes} onChange={(v: number) => updateSettings({
                 autoLock: {
                   ...settings.autoLock,
-                  timeoutMinutes: parseInt(e.target.value),
+                  timeoutMinutes: v,
                 },
-              })
-            }
-            className="sor-settings-input w-full"
-            min="1"
-            max="240"
-            disabled={!mgr.hasPassword}
-          />
+              })} className="w-full" min={1} max={240} disabled={!mgr.hasPassword} />
         </div>
       </div>
     </div>
@@ -531,25 +465,15 @@ function CredSSPSection({
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
           Encryption Oracle Remediation Policy
         </label>
-        <select
-          value={settings.credsspDefaults?.oracleRemediation ?? "mitigated"}
-          onChange={(e) =>
-            updateSettings({
+        <Select value={settings.credsspDefaults?.oracleRemediation ?? "mitigated"} onChange={(v: string) => updateSettings({
               credsspDefaults: {
                 ...settings.credsspDefaults,
-                oracleRemediation: e.target.value as
+                oracleRemediation: v as
                   | "force-updated"
                   | "mitigated"
                   | "vulnerable",
               },
-            })
-          }
-          className="sor-settings-select w-full text-sm"
-        >
-          <option value="force-updated">Force Updated Clients</option>
-          <option value="mitigated">Mitigated (recommended)</option>
-          <option value="vulnerable">Vulnerable (allow all)</option>
-        </select>
+            })} options={[{ value: "force-updated", label: "Force Updated Clients" }, { value: "mitigated", label: "Mitigated (recommended)" }, { value: "vulnerable", label: "Vulnerable (allow all)" }]} className="w-full" />
         <p className="text-xs text-gray-500 mt-1">
           {settings.credsspDefaults?.oracleRemediation === "force-updated"
             ? "Both client and server must be patched for CVE-2018-0886."
@@ -564,25 +488,15 @@ function CredSSPSection({
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
           Default NLA Mode
         </label>
-        <select
-          value={settings.credsspDefaults?.nlaMode ?? "required"}
-          onChange={(e) =>
-            updateSettings({
+        <Select value={settings.credsspDefaults?.nlaMode ?? "required"} onChange={(v: string) => updateSettings({
               credsspDefaults: {
                 ...settings.credsspDefaults,
-                nlaMode: e.target.value as
+                nlaMode: v as
                   | "required"
                   | "preferred"
                   | "disabled",
               },
-            })
-          }
-          className="sor-settings-select w-full text-sm"
-        >
-          <option value="required">Required (reject if NLA unavailable)</option>
-          <option value="preferred">Preferred (fallback to TLS)</option>
-          <option value="disabled">Disabled (TLS only)</option>
-        </select>
+            })} options={[{ value: "required", label: "Required (reject if NLA unavailable)" }, { value: "preferred", label: "Preferred (fallback to TLS)" }, { value: "disabled", label: "Disabled (TLS only)" }]} className="w-full" />
       </div>
 
       {/* Minimum TLS Version */}
@@ -590,23 +504,12 @@ function CredSSPSection({
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
           Minimum TLS Version
         </label>
-        <select
-          value={settings.credsspDefaults?.tlsMinVersion ?? "1.2"}
-          onChange={(e) =>
-            updateSettings({
+        <Select value={settings.credsspDefaults?.tlsMinVersion ?? "1.2"} onChange={(v: string) => updateSettings({
               credsspDefaults: {
                 ...settings.credsspDefaults,
-                tlsMinVersion: e.target.value as "1.0" | "1.1" | "1.2" | "1.3",
+                tlsMinVersion: v as "1.0" | "1.1" | "1.2" | "1.3",
               },
-            })
-          }
-          className="sor-settings-select w-full text-sm"
-        >
-          <option value="1.0">TLS 1.0 (legacy, insecure)</option>
-          <option value="1.1">TLS 1.1 (deprecated)</option>
-          <option value="1.2">TLS 1.2 (recommended)</option>
-          <option value="1.3">TLS 1.3 (strictest)</option>
-        </select>
+            })} options={[{ value: "1.0", label: "TLS 1.0 (legacy, insecure)" }, { value: "1.1", label: "TLS 1.1 (deprecated)" }, { value: "1.2", label: "TLS 1.2 (recommended)" }, { value: "1.3", label: "TLS 1.3 (strictest)" }]} className="w-full" />
       </div>
 
       {/* CredSSP Version */}
@@ -614,22 +517,12 @@ function CredSSPSection({
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
           CredSSP TSRequest Version
         </label>
-        <select
-          value={String(settings.credsspDefaults?.credsspVersion ?? 6)}
-          onChange={(e) =>
-            updateSettings({
+        <Select value={String(settings.credsspDefaults?.credsspVersion ?? 6)} onChange={(v: string) => updateSettings({
               credsspDefaults: {
                 ...settings.credsspDefaults,
-                credsspVersion: parseInt(e.target.value) as 2 | 3 | 6,
+                credsspVersion: parseInt(v) as 2 | 3 | 6,
               },
-            })
-          }
-          className="sor-settings-select w-full text-sm"
-        >
-          <option value="2">Version 2 (legacy)</option>
-          <option value="3">Version 3 (with client nonce)</option>
-          <option value="6">Version 6 (latest, with nonce binding)</option>
-        </select>
+            })} options={[{ value: "2", label: "Version 2 (legacy)" }, { value: "3", label: "Version 3 (with client nonce)" }, { value: "6", label: "Version 6 (latest, with nonce binding)" }]} className="w-full" />
       </div>
 
       {/* Server Cert Validation */}
@@ -637,25 +530,15 @@ function CredSSPSection({
         <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
           Server Certificate Validation
         </label>
-        <select
-          value={settings.credsspDefaults?.serverCertValidation ?? "validate"}
-          onChange={(e) =>
-            updateSettings({
+        <Select value={settings.credsspDefaults?.serverCertValidation ?? "validate"} onChange={(v: string) => updateSettings({
               credsspDefaults: {
                 ...settings.credsspDefaults,
-                serverCertValidation: e.target.value as
+                serverCertValidation: v as
                   | "validate"
                   | "warn"
                   | "ignore",
               },
-            })
-          }
-          className="sor-settings-select w-full text-sm"
-        >
-          <option value="validate">Validate (reject untrusted)</option>
-          <option value="warn">Warn (prompt on untrusted)</option>
-          <option value="ignore">Ignore (accept all certificates)</option>
-        </select>
+            })} options={[{ value: "validate", label: "Validate (reject untrusted)" }, { value: "warn", label: "Warn (prompt on untrusted)" }, { value: "ignore", label: "Ignore (accept all certificates)" }]} className="w-full" />
       </div>
 
       {/* Boolean toggles */}
@@ -691,19 +574,12 @@ function CredSSPSection({
             key={key}
             className="flex items-center space-x-3 cursor-pointer group"
           >
-            <input
-              type="checkbox"
-              checked={settings.credsspDefaults?.[key] ?? def}
-              onChange={(e) =>
-                updateSettings({
+            <Checkbox checked={settings.credsspDefaults?.[key] ?? def} onChange={(v: boolean) => updateSettings({
                   credsspDefaults: {
                     ...settings.credsspDefaults,
-                    [key]: e.target.checked,
+                    [key]: v,
                   },
-                })
-              }
-              className="sor-settings-checkbox"
-            />
+                })} />
             <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
               {label}
             </span>
@@ -730,19 +606,12 @@ function CredSSPSection({
               key={key}
               className="flex items-center space-x-3 cursor-pointer group"
             >
-              <input
-                type="checkbox"
-                checked={settings.credsspDefaults?.[key] ?? def}
-                onChange={(e) =>
-                  updateSettings({
+              <Checkbox checked={settings.credsspDefaults?.[key] ?? def} onChange={(v: boolean) => updateSettings({
                     credsspDefaults: {
                       ...settings.credsspDefaults,
-                      [key]: e.target.checked,
+                      [key]: v,
                     },
-                  })
-                }
-                className="sor-settings-checkbox"
-              />
+                  })} />
               <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
                 {label}
               </span>
@@ -800,19 +669,12 @@ function PasswordRevealSection({
       </div>
 
       <label className="flex items-center space-x-3 cursor-pointer group">
-        <input
-          type="checkbox"
-          checked={settings.passwordReveal?.enabled ?? true}
-          onChange={(e) =>
-            updateSettings({
+        <Checkbox checked={settings.passwordReveal?.enabled ?? true} onChange={(v: boolean) => updateSettings({
               passwordReveal: {
                 ...settings.passwordReveal,
-                enabled: e.target.checked,
+                enabled: v,
               },
-            })
-          }
-          className="sor-settings-checkbox"
-        />
+            })} />
         <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
           Enable password reveal icon on all password fields
         </span>
@@ -824,21 +686,12 @@ function PasswordRevealSection({
             <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
               Reveal Mode
             </label>
-            <select
-              value={settings.passwordReveal?.mode ?? "toggle"}
-              onChange={(e) =>
-                updateSettings({
+            <Select value={settings.passwordReveal?.mode ?? "toggle"} onChange={(v: string) => updateSettings({
                   passwordReveal: {
                     ...settings.passwordReveal,
-                    mode: e.target.value as "toggle" | "hold",
+                    mode: v as "toggle" | "hold",
                   },
-                })
-              }
-              className="sor-settings-select w-full text-sm"
-            >
-              <option value="toggle">Toggle (click to show/hide)</option>
-              <option value="hold">Hold (hold mouse to reveal)</option>
-            </select>
+                })} options={[{ value: "toggle", label: "Toggle (click to show/hide)" }, { value: "hold", label: "Hold (hold mouse to reveal)" }]} className="w-full" />
           </div>
 
           <div>
@@ -848,22 +701,12 @@ function PasswordRevealSection({
               {(settings.passwordReveal?.autoHideSeconds ?? 0) === 0 &&
                 " (disabled)"}
             </label>
-            <input
-              type="range"
-              min={0}
-              max={60}
-              step={1}
-              value={settings.passwordReveal?.autoHideSeconds ?? 0}
-              onChange={(e) =>
-                updateSettings({
+            <Slider value={settings.passwordReveal?.autoHideSeconds ?? 0} onChange={(v: number) => updateSettings({
                   passwordReveal: {
                     ...settings.passwordReveal,
-                    autoHideSeconds: parseInt(e.target.value),
+                    autoHideSeconds: v,
                   },
-                })
-              }
-              className="sor-settings-range-full"
-            />
+                })} min={0} max={60} variant="full" />
             <div className="flex justify-between text-xs text-gray-600">
               <span>Off</span>
               <span>60s</span>
@@ -871,38 +714,24 @@ function PasswordRevealSection({
           </div>
 
           <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.passwordReveal?.showByDefault ?? false}
-              onChange={(e) =>
-                updateSettings({
+            <Checkbox checked={settings.passwordReveal?.showByDefault ?? false} onChange={(v: boolean) => updateSettings({
                   passwordReveal: {
                     ...settings.passwordReveal,
-                    showByDefault: e.target.checked,
+                    showByDefault: v,
                   },
-                })
-              }
-              className="sor-settings-checkbox"
-            />
+                })} />
             <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
               Show passwords by default (not recommended)
             </span>
           </label>
 
           <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.passwordReveal?.maskIcon ?? false}
-              onChange={(e) =>
-                updateSettings({
+            <Checkbox checked={settings.passwordReveal?.maskIcon ?? false} onChange={(v: boolean) => updateSettings({
                   passwordReveal: {
                     ...settings.passwordReveal,
-                    maskIcon: e.target.checked,
+                    maskIcon: v,
                   },
-                })
-              }
-              className="sor-settings-checkbox"
-            />
+                })} />
             <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors flex items-center gap-2">
               Dim eye icon when password is hidden
               <EyeOff className="w-3.5 h-3.5 opacity-40" />
@@ -938,12 +767,7 @@ function TOTPDefaultsSection({
         data-setting-key="totpEnabled"
         className="flex items-center space-x-3 cursor-pointer group"
       >
-        <input
-          type="checkbox"
-          checked={settings.totpEnabled}
-          onChange={(e) => updateSettings({ totpEnabled: e.target.checked })}
-          className="sor-settings-checkbox"
-        />
+        <Checkbox checked={settings.totpEnabled} onChange={(v: boolean) => updateSettings({ totpEnabled: v })} />
         <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
           Enable TOTP functionality
         </span>
@@ -967,52 +791,23 @@ function TOTPDefaultsSection({
           <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             Default Digits
           </label>
-          <select
-            value={settings.totpDigits}
-            onChange={(e) =>
-              updateSettings({ totpDigits: parseInt(e.target.value) })
-            }
-            className="sor-settings-select w-full text-sm"
-          >
-            <option value={6}>6 digits</option>
-            <option value={8}>8 digits</option>
-          </select>
+          <Select value={settings.totpDigits} onChange={(v: string) => updateSettings({ totpDigits: parseInt(v) })} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="w-full" />
         </div>
 
         <div data-setting-key="totpPeriod">
           <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             Default Period
           </label>
-          <select
-            value={settings.totpPeriod}
-            onChange={(e) =>
-              updateSettings({ totpPeriod: parseInt(e.target.value) })
-            }
-            className="sor-settings-select w-full text-sm"
-          >
-            <option value={15}>15 seconds</option>
-            <option value={30}>30 seconds</option>
-            <option value={60}>60 seconds</option>
-          </select>
+          <Select value={settings.totpPeriod} onChange={(v: string) => updateSettings({ totpPeriod: parseInt(v) })} options={[{ value: "15", label: "15 seconds" }, { value: "30", label: "30 seconds" }, { value: "60", label: "60 seconds" }]} className="w-full" />
         </div>
 
         <div data-setting-key="totpAlgorithm">
           <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
             Default Algorithm
           </label>
-          <select
-            value={settings.totpAlgorithm}
-            onChange={(e) =>
-              updateSettings({
-                totpAlgorithm: e.target.value as "sha1" | "sha256" | "sha512",
-              })
-            }
-            className="sor-settings-select w-full text-sm"
-          >
-            <option value="sha1">SHA-1</option>
-            <option value="sha256">SHA-256</option>
-            <option value="sha512">SHA-512</option>
-          </select>
+          <Select value={settings.totpAlgorithm} onChange={(v: string) => updateSettings({
+                totpAlgorithm: v as "sha1" | "sha256" | "sha512",
+              })} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="w-full" />
         </div>
       </div>
     </div>

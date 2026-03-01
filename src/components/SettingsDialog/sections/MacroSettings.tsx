@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { GlobalSettings, MacroConfig } from "../../../types/settings";
 import { ListVideo, Clock, AlertCircle, Hash } from "lucide-react";
 import * as macroService from "../../../utils/macroService";
+import { Checkbox, NumberInput, Slider } from '../../ui/forms';
 
 interface MacroSettingsProps {
   settings: GlobalSettings;
@@ -53,17 +54,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <input
-              type="range"
-              value={macros.defaultStepDelayMs}
-              onChange={(e) =>
-                update({ defaultStepDelayMs: Number(e.target.value) })
-              }
-              min={0}
-              max={2000}
-              step={50}
-              className="sor-settings-range sor-settings-range-wide"
-            />
+            <Slider value={macros.defaultStepDelayMs} onChange={(v: number) => update({ defaultStepDelayMs: v })} min={0} max={2000} variant="wide" step={50} />
             <span className="text-xs text-[var(--color-textSecondary)] w-14 text-right">
               {macros.defaultStepDelayMs}ms
             </span>
@@ -86,12 +77,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
               </p>
             </div>
           </div>
-          <input
-            type="checkbox"
-            checked={macros.confirmBeforeReplay}
-            onChange={(e) => update({ confirmBeforeReplay: e.target.checked })}
-            className="sor-settings-checkbox"
-          />
+          <Checkbox checked={macros.confirmBeforeReplay} onChange={(v: boolean) => update({ confirmBeforeReplay: v })} />
         </label>
 
         {/* Max steps */}
@@ -110,15 +96,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
               </p>
             </div>
           </div>
-          <input
-            type="number"
-            value={macros.maxMacroSteps}
-            onChange={(e) =>
-              update({ maxMacroSteps: Math.max(1, Number(e.target.value)) })
-            }
-            className="sor-settings-input sor-settings-input-compact w-20 text-right"
-            min={1}
-          />
+          <NumberInput value={macros.maxMacroSteps} onChange={(v: number) => update({ maxMacroSteps: v })} variant="settings-compact" className="w-20 text-right" min={1} />
         </div>
       </div>
 

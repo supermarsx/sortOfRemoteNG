@@ -22,7 +22,7 @@ import type {
 import {
   formatFingerprint,
 } from "../utils/trustStore";
-import { PopoverSurface } from "./ui/PopoverSurface";
+import { PopoverSurface } from "./ui/overlays/PopoverSurface";
 import { useCertificateInfoPopup } from "../hooks/security/useCertificateInfoPopup";
 
 const TRUST_ICONS = { ShieldAlert, ShieldCheck, Shield } as const;

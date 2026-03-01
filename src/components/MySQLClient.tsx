@@ -2,6 +2,7 @@ import React from 'react';
 import { Database, Play, RefreshCw, Table, Code, BarChart3 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
 import { useMySQLClient } from '../hooks/protocol/useMySQLClient';
+import { Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useMySQLClient>;
 
@@ -15,15 +16,7 @@ const MySQLHeader: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <span className="text-[var(--color-text)] font-medium">MySQL Client - {mgr.session.hostname}</span>
       </div>
       <div className="flex items-center space-x-3">
-        <select
-          value={mgr.selectedDatabase}
-          onChange={(e) => mgr.setSelectedDatabase(e.target.value)}
-          className="px-3 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm"
-        >
-          {mgr.databases.map(db => (
-            <option key={db} value={db}>{db}</option>
-          ))}
-        </select>
+        <Select value={mgr.selectedDatabase} onChange={(v: string) => mgr.setSelectedDatabase(v)} options={[...mgr.databases.map((db) => ({ value: db, label: db }))]} className="px-3 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm" />
         <button
           onClick={mgr.loadDatabases}
           className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"

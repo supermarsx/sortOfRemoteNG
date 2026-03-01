@@ -5,9 +5,11 @@ import {
   Database, Loader2, CheckSquare, Square, Zap, Calendar,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Modal } from './ui/Modal';
+import { Modal } from './ui/overlays/Modal';
+import { DialogHeader } from './ui/overlays/DialogHeader';
 import { WakeScheduleManager } from './WakeScheduleManager';
 import { useWOLQuickTool, type WOLQuickToolMgr } from '../hooks/network/useWOLQuickTool';
+import { Checkbox, NumberInput } from './ui/forms';
 
 interface WOLQuickToolProps {
   isOpen: boolean;
@@ -50,21 +52,15 @@ function getVendorSourceIcon(source: string | null | undefined) {
 function WOLHeader({ mgr }: { mgr: WOLQuickToolMgr }) {
   const { t } = useTranslation();
   return (
-    <div className="relative z-10 flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-      <div className="flex items-center space-x-3">
-        <div className="p-2 bg-green-500/20 rounded-lg">
-          <Power size={20} className="text-green-500" />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--color-text)]">
-            {t('wake.quickTool', 'Wake-on-LAN')}
-          </h2>
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            Send magic packets to wake network devices
-          </p>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
+    <DialogHeader
+      icon={Power}
+      iconColor="text-green-500"
+      iconBg="bg-green-500/20"
+      title={t('wake.quickTool', 'Wake-on-LAN')}
+      subtitle="Send magic packets to wake network devices"
+      onClose={mgr.onClose}
+      className="relative z-10 bg-[var(--color-surface)]"
+      actions={
         <button
           onClick={() => mgr.setShowScheduleManager(true)}
           className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] border border-[var(--color-border)] btn-animate"
@@ -73,14 +69,8 @@ function WOLHeader({ mgr }: { mgr: WOLQuickToolMgr }) {
           <Calendar size={16} />
           <span className="text-sm">{t('wake.schedules', 'Schedules')}</span>
         </button>
-        <button
-          onClick={mgr.onClose}
-          className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] btn-animate"
-        >
-          <X size={18} />
-        </button>
-      </div>
-    </div>
+      }
+    />
   );
 }
 
@@ -145,21 +135,11 @@ function AdvancedOptions({ mgr }: { mgr: WOLQuickToolMgr }) {
           <label className="block text-xs text-[var(--color-textSecondary)] mb-2">
             {t('wake.port', 'UDP Port')}
           </label>
-          <input
-            type="number"
-            value={mgr.port}
-            onChange={(e) => mgr.setPort(parseInt(e.target.value) || 9)}
-            className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-green-500 transition-all"
-          />
+          <NumberInput value={mgr.port} onChange={(v: number) => mgr.setPort(v)} className="w-full px-3 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-green-500 transition-all" />
         </div>
         <div className="col-span-2">
           <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={mgr.useSecureOn}
-              onChange={(e) => mgr.setUseSecureOn(e.target.checked)}
-              className="rounded bg-[var(--color-input)] border-[var(--color-border)] text-green-500 focus:ring-green-500"
-            />
+            <Checkbox checked={mgr.useSecureOn} onChange={(v: boolean) => mgr.setUseSecureOn(v)} className="rounded bg-[var(--color-input)] border-[var(--color-border)] text-green-500 focus:ring-green-500" />
             <span>{t('wake.secureOn', 'SecureOn Password')}</span>
           </label>
           {mgr.useSecureOn && (

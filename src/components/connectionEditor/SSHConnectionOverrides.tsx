@@ -23,6 +23,7 @@ import {
   HOST_KEY_OPTIONS,
   type SSHOverridesMgr,
 } from "../../hooks/ssh/useSSHOverrides";
+import { Checkbox, NumberInput, Select } from '../ui/forms';
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -50,12 +51,7 @@ const OverrideToggle: React.FC<{
 }> = ({ label, isOverridden, globalValue, onToggle, children }) => (
   <div className="flex items-start gap-3">
     <label className="flex items-center gap-2 min-w-[140px]">
-      <input
-        type="checkbox"
-        checked={isOverridden}
-        onChange={(e) => onToggle(e.target.checked)}
-        className="sor-form-checkbox"
-      />
+      <Checkbox checked={isOverridden} onChange={(v: boolean) => onToggle(v)} variant="form" />
       <span className="text-sm text-[var(--color-textSecondary)]">
         {label}
       </span>
@@ -107,12 +103,7 @@ const AuthMethodSelector: React.FC<{
                 : "bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500"
             }`}
           >
-            <input
-              type="checkbox"
-              checked={value.includes(method)}
-              onChange={() => toggleMethod(method)}
-              className="sr-only"
-            />
+            <Checkbox checked={value.includes(method)} onChange={() => toggleMethod(method)} className="sr-only" />
             {method}
           </label>
         ))}
@@ -285,14 +276,7 @@ const ConnectionSection: React.FC<SectionProps> = ({ mgr }) => {
         onToggle={(on) => u("connectTimeout", on ? g.connectTimeout : undefined)}
       >
         <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min={5}
-            max={300}
-            value={v("connectTimeout")}
-            onChange={(e) => u("connectTimeout", Number(e.target.value))}
-            className="sor-form-input-sm w-20"
-          />
+          <NumberInput value={v("connectTimeout")} onChange={(v: number) => u("connectTimeout", v)} variant="form-sm" className="" min={5} max={300} />
           <span className="text-sm text-[var(--color-textSecondary)]">seconds</span>
         </div>
       </OverrideToggle>
@@ -304,14 +288,7 @@ const ConnectionSection: React.FC<SectionProps> = ({ mgr }) => {
         onToggle={(on) => u("keepAliveInterval", on ? g.keepAliveInterval : undefined)}
       >
         <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            max={600}
-            value={v("keepAliveInterval")}
-            onChange={(e) => u("keepAliveInterval", Number(e.target.value))}
-            className="sor-form-input-sm w-20"
-          />
+          <NumberInput value={v("keepAliveInterval")} onChange={(v: number) => u("keepAliveInterval", v)} variant="form-sm" className="" min={0} max={600} />
           <span className="text-sm text-[var(--color-textSecondary)]">seconds (0 = disabled)</span>
         </div>
       </OverrideToggle>
@@ -325,12 +302,7 @@ const ConnectionSection: React.FC<SectionProps> = ({ mgr }) => {
         }
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("strictHostKeyChecking")}
-            onChange={(e) => u("strictHostKeyChecking", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("strictHostKeyChecking")} onChange={(v: boolean) => u("strictHostKeyChecking", v)} variant="form" />
           Strict host key verification
         </label>
       </OverrideToggle>
@@ -371,12 +343,7 @@ const AuthSection: React.FC<SectionProps> = ({ mgr }) => {
         }
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("tryPublicKeyFirst")}
-            onChange={(e) => u("tryPublicKeyFirst", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("tryPublicKeyFirst")} onChange={(v: boolean) => u("tryPublicKeyFirst", v)} variant="form" />
           Attempt public key auth first
         </label>
       </OverrideToggle>
@@ -390,12 +357,7 @@ const AuthSection: React.FC<SectionProps> = ({ mgr }) => {
         }
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("agentForwarding")}
-            onChange={(e) => u("agentForwarding", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("agentForwarding")} onChange={(v: boolean) => u("agentForwarding", v)} variant="form" />
           Enable SSH agent forwarding
         </label>
       </OverrideToggle>
@@ -419,15 +381,7 @@ const ProtocolSection: React.FC<SectionProps> = ({ mgr }) => {
         globalValue={g.sshVersion}
         onToggle={(on) => u("sshVersion", on ? g.sshVersion : undefined)}
       >
-        <select
-          value={v("sshVersion")}
-          onChange={(e) => u("sshVersion", e.target.value as SSHVersion)}
-          className="sor-form-select-sm w-32"
-        >
-          <option value="auto">Auto</option>
-          <option value="2">SSH-2 only</option>
-          <option value="1">SSH-1 only</option>
-        </select>
+        <Select value={v("sshVersion")} onChange={(v: string) => u("sshVersion", v as SSHVersion)} options={[{ value: "auto", label: "Auto" }, { value: "2", label: "SSH-2 only" }, { value: "1", label: "SSH-1 only" }]} variant="form-sm" className="" />
       </OverrideToggle>
 
       <OverrideToggle
@@ -442,12 +396,7 @@ const ProtocolSection: React.FC<SectionProps> = ({ mgr }) => {
       >
         <div className="flex items-center gap-3">
           <label className="sor-form-inline-check">
-            <input
-              type="checkbox"
-              checked={v("enableCompression")}
-              onChange={(e) => u("enableCompression", e.target.checked)}
-              className="sor-form-checkbox"
-            />
+            <Checkbox checked={v("enableCompression")} onChange={(v: boolean) => u("enableCompression", v)} variant="form" />
             Enable
           </label>
           {v("enableCompression") && (
@@ -455,16 +404,7 @@ const ProtocolSection: React.FC<SectionProps> = ({ mgr }) => {
               <span className="text-sm text-[var(--color-textSecondary)]">
                 Level:
               </span>
-              <input
-                type="number"
-                min={1}
-                max={9}
-                value={v("compressionLevel")}
-                onChange={(e) =>
-                  u("compressionLevel", Number(e.target.value))
-                }
-                className="sor-form-input-xs w-16"
-              />
+              <NumberInput value={v("compressionLevel")} onChange={(v: number) => u("compressionLevel", v)} variant="form" className="-xs w-16" min={1} max={9} />
             </div>
           )}
         </div>
@@ -476,18 +416,7 @@ const ProtocolSection: React.FC<SectionProps> = ({ mgr }) => {
         globalValue={g.ptyType}
         onToggle={(on) => u("ptyType", on ? g.ptyType : undefined)}
       >
-        <select
-          value={v("ptyType")}
-          onChange={(e) => u("ptyType", e.target.value)}
-          className="sor-form-select-sm w-40"
-        >
-          <option value="xterm-256color">xterm-256color</option>
-          <option value="xterm">xterm</option>
-          <option value="vt100">vt100</option>
-          <option value="vt220">vt220</option>
-          <option value="linux">linux</option>
-          <option value="dumb">dumb</option>
-        </select>
+        <Select value={v("ptyType")} onChange={(v: string) => u("ptyType", v)} options={[{ value: "xterm-256color", label: "xterm-256color" }, { value: "xterm", label: "xterm" }, { value: "vt100", label: "vt100" }, { value: "vt220", label: "vt220" }, { value: "linux", label: "linux" }, { value: "dumb", label: "dumb" }]} variant="form-sm" className="" />
       </OverrideToggle>
     </div>
   );
@@ -510,12 +439,7 @@ const TcpIpSection: React.FC<SectionProps> = ({ mgr }) => {
         onToggle={(on) => u("tcpNoDelay", on ? !g.tcpNoDelay : undefined)}
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("tcpNoDelay")}
-            onChange={(e) => u("tcpNoDelay", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("tcpNoDelay")} onChange={(v: boolean) => u("tcpNoDelay", v)} variant="form" />
           Disable Nagle algorithm
         </label>
       </OverrideToggle>
@@ -527,12 +451,7 @@ const TcpIpSection: React.FC<SectionProps> = ({ mgr }) => {
         onToggle={(on) => u("tcpKeepAlive", on ? !g.tcpKeepAlive : undefined)}
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("tcpKeepAlive")}
-            onChange={(e) => u("tcpKeepAlive", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("tcpKeepAlive")} onChange={(v: boolean) => u("tcpKeepAlive", v)} variant="form" />
           Enable TCP keep-alive
         </label>
       </OverrideToggle>
@@ -543,15 +462,7 @@ const TcpIpSection: React.FC<SectionProps> = ({ mgr }) => {
         globalValue={g.ipProtocol}
         onToggle={(on) => u("ipProtocol", on ? g.ipProtocol : undefined)}
       >
-        <select
-          value={v("ipProtocol")}
-          onChange={(e) => u("ipProtocol", e.target.value as IPProtocol)}
-          className="sor-form-select-sm w-32"
-        >
-          <option value="auto">Auto</option>
-          <option value="ipv4">IPv4 only</option>
-          <option value="ipv6">IPv6 only</option>
-        </select>
+        <Select value={v("ipProtocol")} onChange={(v: string) => u("ipProtocol", v as IPProtocol)} options={[{ value: "auto", label: "Auto" }, { value: "ipv4", label: "IPv4 only" }, { value: "ipv6", label: "IPv6 only" }]} variant="form-sm" className="" />
       </OverrideToggle>
     </div>
   );
@@ -576,12 +487,7 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
         }
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("enableTcpForwarding")}
-            onChange={(e) => u("enableTcpForwarding", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("enableTcpForwarding")} onChange={(v: boolean) => u("enableTcpForwarding", v)} variant="form" />
           Allow TCP port forwarding
         </label>
       </OverrideToggle>
@@ -595,12 +501,7 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
         }
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("enableX11Forwarding")}
-            onChange={(e) => u("enableX11Forwarding", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("enableX11Forwarding")} onChange={(v: boolean) => u("enableX11Forwarding", v)} variant="form" />
           Enable X11 forwarding
         </label>
       </OverrideToggle>
@@ -625,12 +526,7 @@ const FileTransferSection: React.FC<SectionProps> = ({ mgr }) => {
         onToggle={(on) => u("sftpEnabled", on ? !g.sftpEnabled : undefined)}
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("sftpEnabled")}
-            onChange={(e) => u("sftpEnabled", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("sftpEnabled")} onChange={(v: boolean) => u("sftpEnabled", v)} variant="form" />
           Enable SFTP subsystem
         </label>
       </OverrideToggle>
@@ -642,12 +538,7 @@ const FileTransferSection: React.FC<SectionProps> = ({ mgr }) => {
         onToggle={(on) => u("scpEnabled", on ? !g.scpEnabled : undefined)}
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("scpEnabled")}
-            onChange={(e) => u("scpEnabled", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("scpEnabled")} onChange={(v: boolean) => u("scpEnabled", v)} variant="form" />
           Enable SCP transfers
         </label>
       </OverrideToggle>
@@ -735,12 +626,7 @@ const BannerSection: React.FC<SectionProps> = ({ mgr }) => {
         onToggle={(on) => u("showBanner", on ? !g.showBanner : undefined)}
       >
         <label className="sor-form-inline-check">
-          <input
-            type="checkbox"
-            checked={v("showBanner")}
-            onChange={(e) => u("showBanner", e.target.checked)}
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={v("showBanner")} onChange={(v: boolean) => u("showBanner", v)} variant="form" />
           Display server banner
         </label>
       </OverrideToggle>
@@ -752,14 +638,7 @@ const BannerSection: React.FC<SectionProps> = ({ mgr }) => {
         onToggle={(on) => u("bannerTimeout", on ? g.bannerTimeout : undefined)}
       >
         <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min={1}
-            max={60}
-            value={v("bannerTimeout")}
-            onChange={(e) => u("bannerTimeout", Number(e.target.value))}
-            className="sor-form-input-sm w-20"
-          />
+          <NumberInput value={v("bannerTimeout")} onChange={(v: number) => u("bannerTimeout", v)} variant="form-sm" className="" min={1} max={60} />
           <span className="text-sm text-[var(--color-textSecondary)]">seconds</span>
         </div>
       </OverrideToggle>

@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MenuSurface } from "../src/components/ui/MenuSurface";
+import { MenuSurface } from "../src/components/ui/overlays/MenuSurface";
 
 const renderMenu = (useIgnoreRef = false) => {
   const TestHarness: React.FC = () => {

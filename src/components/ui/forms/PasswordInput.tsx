@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, InputHTMLAttributes } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
-import { useSettings } from '../../contexts/SettingsContext';
+import { useSettings } from '../../../contexts/SettingsContext';
 
 export interface PasswordInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {

@@ -21,6 +21,7 @@ import { Connection } from "../../types/connection";
 import { TOTPConfig } from "../../types/settings";
 import { TotpImportDialog } from "../TotpImportDialog";
 import { useTOTPOptions, type TOTPOptionsMgr } from "../../hooks/security/useTOTPOptions";
+import { Checkbox, Select } from '../ui/forms';
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -169,12 +170,7 @@ const ReplicateToPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
               key={conn.id}
               className="flex items-center gap-2 px-2 py-1.5 bg-[var(--color-border)]/60 hover:bg-[var(--color-border)] rounded cursor-pointer transition-colors"
             >
-              <input
-                type="checkbox"
-                checked={mgr.selectedReplicateIds.has(conn.id)}
-                onChange={() => mgr.toggleReplicateTarget(conn.id)}
-                className="sor-form-checkbox w-3.5 h-3.5"
-              />
+              <Checkbox checked={mgr.selectedReplicateIds.has(conn.id)} onChange={() => mgr.toggleReplicateTarget(conn.id)} variant="form" className="w-3.5 h-3.5" />
               <div className="min-w-0 flex-1">
                 <div className="text-xs text-[var(--color-text)] truncate">
                   {conn.name}
@@ -325,47 +321,18 @@ const ConfigEditRow: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => (
       className="sor-form-input-sm w-full"
     />
     <div className="flex space-x-2">
-      <select
-        value={mgr.editData.digits ?? 6}
-        onChange={(e) =>
-          mgr.setEditData((d) => ({
+      <Select value={mgr.editData.digits ?? 6} onChange={(v: string) => mgr.setEditData((d) => ({
             ...d,
-            digits: parseInt(e.target.value),
-          }))
-        }
-        className="sor-form-select-sm flex-1"
-      >
-        <option value={6}>6 digits</option>
-        <option value={8}>8 digits</option>
-      </select>
-      <select
-        value={mgr.editData.period ?? 30}
-        onChange={(e) =>
-          mgr.setEditData((d) => ({
+            digits: parseInt(v),
+          }))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} variant="form-sm" className="" />
+      <Select value={mgr.editData.period ?? 30} onChange={(v: string) => mgr.setEditData((d) => ({
             ...d,
-            period: parseInt(e.target.value),
-          }))
-        }
-        className="sor-form-select-sm flex-1"
-      >
-        <option value={15}>15s period</option>
-        <option value={30}>30s period</option>
-        <option value={60}>60s period</option>
-      </select>
-      <select
-        value={mgr.editData.algorithm ?? "sha1"}
-        onChange={(e) =>
-          mgr.setEditData((d) => ({
+            period: parseInt(v),
+          }))} options={[{ value: "15", label: "15s period" }, { value: "30", label: "30s period" }, { value: "60", label: "60s period" }]} variant="form-sm" className="" />
+      <Select value={mgr.editData.algorithm ?? "sha1"} onChange={(v: string) => mgr.setEditData((d) => ({
             ...d,
-            algorithm: e.target.value as TOTPConfig["algorithm"],
-          }))
-        }
-        className="sor-form-select-sm flex-1"
-      >
-        <option value="sha1">SHA-1</option>
-        <option value="sha256">SHA-256</option>
-        <option value="sha512">SHA-512</option>
-      </select>
+            algorithm: v as TOTPConfig["algorithm"],
+          }))} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} variant="form-sm" className="" />
     </div>
     <div className="flex justify-end space-x-2">
       <button
@@ -603,32 +570,9 @@ const AddForm: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
         </button>
       </div>
       <div className="flex space-x-2">
-        <select
-          value={mgr.newDigits}
-          onChange={(e) => mgr.setNewDigits(parseInt(e.target.value))}
-          className="sor-form-select-sm flex-1"
-        >
-          <option value={6}>6 digits</option>
-          <option value={8}>8 digits</option>
-        </select>
-        <select
-          value={mgr.newPeriod}
-          onChange={(e) => mgr.setNewPeriod(parseInt(e.target.value))}
-          className="sor-form-select-sm flex-1"
-        >
-          <option value={15}>15s period</option>
-          <option value={30}>30s period</option>
-          <option value={60}>60s period</option>
-        </select>
-        <select
-          value={mgr.newAlgorithm}
-          onChange={(e) => mgr.setNewAlgorithm(e.target.value)}
-          className="sor-form-select-sm flex-1"
-        >
-          <option value="sha1">SHA-1</option>
-          <option value="sha256">SHA-256</option>
-          <option value="sha512">SHA-512</option>
-        </select>
+        <Select value={mgr.newDigits} onChange={(v: string) => mgr.setNewDigits(parseInt(v))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} variant="form-sm" className="" />
+        <Select value={mgr.newPeriod} onChange={(v: string) => mgr.setNewPeriod(parseInt(v))} options={[{ value: "15", label: "15s period" }, { value: "30", label: "30s period" }, { value: "60", label: "60s period" }]} variant="form-sm" className="" />
+        <Select value={mgr.newAlgorithm} onChange={(v: string) => mgr.setNewAlgorithm(v)} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} variant="form-sm" className="" />
       </div>
       <div className="flex justify-end space-x-2">
         <button

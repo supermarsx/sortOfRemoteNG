@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "./ui/PasswordInput";
+import { PasswordInput } from "./ui/forms/PasswordInput";
 import {
   Database,
   Plus,
@@ -20,8 +20,10 @@ import {
 import { ImportExport } from "./ImportExport";
 import { ProxyProfileEditor } from "./ProxyProfileEditor";
 import { ProxyChainEditor } from "./ProxyChainEditor";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";
+import { DialogHeader } from "./ui/overlays/DialogHeader";
 import { useCollectionSelector } from "../hooks/connection/useCollectionSelector";
+import { Checkbox } from './ui/forms';
 
 interface CollectionSelectorProps {
   isOpen: boolean;
@@ -48,66 +50,55 @@ export const CollectionSelector: React.FC<CollectionSelectorProps> = ({
     >
       <div className="flex flex-1 min-h-0 flex-col">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-[var(--color-surface)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <Database size={20} className="text-blue-400" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-[var(--color-text)]">
-                Collection Center
-              </h2>
-              <p className="text-xs text-[var(--color-textSecondary)]">
-                Manage your connection collections
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center space-x-2">
-            {mgr.activeTab === "collections" && (
-              <>
-                <button
-                  onClick={() => mgr.setShowImportForm(true)}
-                  className="px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
-                >
-                  <Upload size={14} />
-                  <span>Import</span>
-                </button>
-                <button
-                  onClick={() => mgr.setShowCreateForm(true)}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
-                >
-                  <Plus size={14} />
-                  <span>New</span>
-                </button>
-              </>
-            )}
-            {mgr.activeTab === "proxies" && (
-              <>
-                <button
-                  onClick={mgr.handleImportProxies}
-                  className="px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
-                >
-                  <Upload size={14} />
-                  <span>Import</span>
-                </button>
-                <button
-                  onClick={mgr.handleExportProxies}
-                  className="px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
-                >
-                  <Download size={14} />
-                  <span>Export</span>
-                </button>
-              </>
-            )}
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              title="Close"
-            >
-              <X size={18} />
-            </button>
-          </div>
-        </div>
+        <DialogHeader
+          icon={Database}
+          iconColor="text-blue-400"
+          iconBg="bg-blue-500/20"
+          title="Collection Center"
+          subtitle="Manage your connection collections"
+          onClose={onClose}
+          sticky
+          actions={
+            <>
+              {mgr.activeTab === "collections" && (
+                <>
+                  <button
+                    onClick={() => mgr.setShowImportForm(true)}
+                    className="px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
+                  >
+                    <Upload size={14} />
+                    <span>Import</span>
+                  </button>
+                  <button
+                    onClick={() => mgr.setShowCreateForm(true)}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
+                  >
+                    <Plus size={14} />
+                    <span>New</span>
+                  </button>
+                </>
+              )}
+              {mgr.activeTab === "proxies" && (
+                <>
+                  <button
+                    onClick={mgr.handleImportProxies}
+                    className="px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
+                  >
+                    <Upload size={14} />
+                    <span>Import</span>
+                  </button>
+                  <button
+                    onClick={mgr.handleExportProxies}
+                    className="px-3 py-1 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2"
+                  >
+                    <Download size={14} />
+                    <span>Export</span>
+                  </button>
+                </>
+              )}
+            </>
+          }
+        />
 
         <div className="flex flex-1 min-h-0">
           {/* Sidebar */}
@@ -231,17 +222,10 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               />
             </div>
             <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={mgr.newCollection.isEncrypted}
-                onChange={(e) =>
-                  mgr.setNewCollection({
+              <Checkbox checked={mgr.newCollection.isEncrypted} onChange={(v: boolean) => mgr.setNewCollection({
                     ...mgr.newCollection,
-                    isEncrypted: e.target.checked,
-                  })
-                }
-                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-              />
+                    isEncrypted: v,
+                  })} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
               <span className="text-[var(--color-textSecondary)]">
                 Encrypt this collection
               </span>
@@ -391,12 +375,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               </div>
             )}
             <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={mgr.includePasswords}
-                onChange={(e) => mgr.setIncludePasswords(e.target.checked)}
-                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-              />
+              <Checkbox checked={mgr.includePasswords} onChange={(v: boolean) => mgr.setIncludePasswords(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
               <span className="text-[var(--color-textSecondary)]">
                 Include passwords
               </span>
@@ -485,12 +464,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               />
             </div>
             <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={mgr.encryptImport}
-                onChange={(e) => mgr.setEncryptImport(e.target.checked)}
-                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-              />
+              <Checkbox checked={mgr.encryptImport} onChange={(v: boolean) => mgr.setEncryptImport(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
               <span className="text-[var(--color-textSecondary)]">
                 Encrypt imported collection
               </span>
@@ -594,17 +568,10 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               />
             </div>
             <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={mgr.editPassword.enableEncryption}
-                onChange={(e) =>
-                  mgr.setEditPassword((prev) => ({
+              <Checkbox checked={mgr.editPassword.enableEncryption} onChange={(v: boolean) => mgr.setEditPassword((prev) => ({
                     ...prev,
-                    enableEncryption: e.target.checked,
-                  }))
-                }
-                className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-              />
+                    enableEncryption: v,
+                  }))} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
               <span className="text-[var(--color-textSecondary)]">
                 Encrypt this collection
               </span>

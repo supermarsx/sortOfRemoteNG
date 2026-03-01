@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
 import { useVNCClient, VNCSettings } from '../hooks/protocol/useVNCClient';
+import { StatusBar, ConnectingSpinner } from './ui/display';
+import { Checkbox } from './ui/forms';
 
 interface VNCClientProps {
   session: ConnectionSession;
@@ -49,14 +51,14 @@ function VNCHeader({ m }: { m: Mgr }) {
 
 function SettingsPanel({ m }: { m: Mgr }) {
   if (!m.showSettings) return null;
-  const toggle = (key: keyof VNCSettings) => (e: React.ChangeEvent<HTMLInputElement>) => m.setSettings({ ...m.settings, [key]: e.target.checked });
+  const toggle = (key: keyof VNCSettings) => (v: boolean) => m.setSettings({ ...m.settings, [key]: v });
   return (
     <div className="bg-[var(--color-surface)] border-b border-[var(--color-border)] p-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-        <label className="flex items-center space-x-2"><input type="checkbox" checked={m.settings.viewOnly} onChange={toggle('viewOnly')} className="rounded" /><span className="text-[var(--color-textSecondary)]">View Only</span></label>
-        <label className="flex items-center space-x-2"><input type="checkbox" checked={m.settings.scaleViewport} onChange={toggle('scaleViewport')} className="rounded" /><span className="text-[var(--color-textSecondary)]">Scale Viewport</span></label>
-        <label className="flex items-center space-x-2"><input type="checkbox" checked={m.settings.clipViewport} onChange={toggle('clipViewport')} className="rounded" /><span className="text-[var(--color-textSecondary)]">Clip Viewport</span></label>
-        <label className="flex items-center space-x-2"><input type="checkbox" checked={m.settings.localCursor} onChange={toggle('localCursor')} className="rounded" /><span className="text-[var(--color-textSecondary)]">Local Cursor</span></label>
+        <label className="flex items-center space-x-2"><Checkbox checked={m.settings.viewOnly} onChange={toggle('viewOnly')} className="rounded" /><span className="text-[var(--color-textSecondary)]">View Only</span></label>
+        <label className="flex items-center space-x-2"><Checkbox checked={m.settings.scaleViewport} onChange={toggle('scaleViewport')} className="rounded" /><span className="text-[var(--color-textSecondary)]">Scale Viewport</span></label>
+        <label className="flex items-center space-x-2"><Checkbox checked={m.settings.clipViewport} onChange={toggle('clipViewport')} className="rounded" /><span className="text-[var(--color-textSecondary)]">Clip Viewport</span></label>
+        <label className="flex items-center space-x-2"><Checkbox checked={m.settings.localCursor} onChange={toggle('localCursor')} className="rounded" /><span className="text-[var(--color-textSecondary)]">Local Cursor</span></label>
       </div>
     </div>
   );
@@ -66,11 +68,10 @@ function CanvasArea({ m }: { m: Mgr }) {
   return (
     <div className="flex-1 flex items-center justify-center bg-black p-4">
       {m.connectionStatus === 'connecting' && (
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4" />
-          <p className="text-[var(--color-textSecondary)]">Connecting to VNC server...</p>
-          <p className="text-gray-500 text-sm mt-2">{m.session.hostname}</p>
-        </div>
+        <ConnectingSpinner
+          message="Connecting to VNC server..."
+          detail={m.session.hostname}
+        />
       )}
       {m.connectionStatus === 'error' && (
         <div className="text-center">
@@ -88,23 +89,27 @@ function CanvasArea({ m }: { m: Mgr }) {
 
 function VNCStatusBar({ m }: { m: Mgr }) {
   return (
-    <div className="bg-[var(--color-surface)] border-t border-[var(--color-border)] px-4 py-2 flex items-center justify-between text-xs text-[var(--color-textSecondary)]">
-      <div className="flex items-center space-x-4">
-        <span>Session: {m.session.id.slice(0, 8)}</span>
-        <span>Protocol: VNC</span>
-        {m.isConnected && (
-          <>
-            <span>Encoding: Raw</span>
-            <span>Compression: Level {m.settings.compressionLevel}</span>
-          </>
-        )}
-      </div>
-      <div className="flex items-center space-x-2">
-        <MousePointer size={12} />
-        <Keyboard size={12} />
-        <Copy size={12} />
-      </div>
-    </div>
+    <StatusBar
+      left={
+        <div className="flex items-center space-x-4">
+          <span>Session: {m.session.id.slice(0, 8)}</span>
+          <span>Protocol: VNC</span>
+          {m.isConnected && (
+            <>
+              <span>Encoding: Raw</span>
+              <span>Compression: Level {m.settings.compressionLevel}</span>
+            </>
+          )}
+        </div>
+      }
+      right={
+        <div className="flex items-center space-x-2">
+          <MousePointer size={12} />
+          <Keyboard size={12} />
+          <Copy size={12} />
+        </div>
+      }
+    />
   );
 }
 

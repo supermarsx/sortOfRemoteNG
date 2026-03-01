@@ -3,7 +3,7 @@ import { Download, Upload, X, ArrowLeftRight } from "lucide-react";
 import { useImportExport } from "../../hooks/sync/useImportExport";
 import ExportTab from "./ExportTab";
 import ImportTab from "./ImportTab";
-import { Modal } from "../ui/Modal";
+import { Modal } from "../ui/overlays/Modal";
 
 type Mgr = ReturnType<typeof useImportExport>;
 

@@ -20,6 +20,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useApiSettings } from "../../../hooks/settings/useApiSettings";
+import { Checkbox, NumberInput, Select } from '../../ui/forms';
 
 type Mgr = ReturnType<typeof useApiSettings>;
 
@@ -49,12 +50,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
       {/* Enable API Server */}
       <div className="sor-settings-card">
         <label className="flex items-center space-x-3 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={settings.restApi?.enabled || false}
-            onChange={(e) => mgr.updateRestApi({ enabled: e.target.checked })}
-            className="sor-settings-checkbox"
-          />
+          <Checkbox checked={settings.restApi?.enabled || false} onChange={(v: boolean) => mgr.updateRestApi({ enabled: v })} />
           <Power className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
           <div>
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
@@ -75,14 +71,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
           {/* Start on Launch */}
           <div className="sor-settings-card">
             <label className="flex items-center space-x-3 cursor-pointer group">
-              <input
-                type="checkbox"
-                checked={settings.restApi?.startOnLaunch || false}
-                onChange={(e) =>
-                  mgr.updateRestApi({ startOnLaunch: e.target.checked })
-                }
-                className="sor-settings-checkbox"
-              />
+              <Checkbox checked={settings.restApi?.startOnLaunch || false} onChange={(v: boolean) => mgr.updateRestApi({ startOnLaunch: v })} />
               <Clock className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
               <div>
                 <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
@@ -200,20 +189,9 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                     {mgr.t("settings.api.port", "Port")}
                   </label>
                   <div className="flex gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      max={65535}
-                      value={settings.restApi?.port || 9876}
-                      onChange={(e) =>
-                        mgr.updateRestApi({
-                          port: parseInt(e.target.value) || 9876,
-                        })
-                      }
-                      disabled={settings.restApi?.useRandomPort}
-                      className="sor-settings-input flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                      placeholder="9876"
-                    />
+                    <NumberInput value={settings.restApi?.port || 9876} onChange={(v: number) => mgr.updateRestApi({
+                          port: v,
+                        })} className="flex-1 disabled:opacity-50 disabled:cursor-not-allowed" min={1} max={65535} disabled={settings.restApi?.useRandomPort} />
                     <button
                       type="button"
                       onClick={mgr.generateRandomPort}
@@ -225,14 +203,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                     </button>
                   </div>
                   <label className="flex items-center space-x-2 cursor-pointer group mt-2">
-                    <input
-                      type="checkbox"
-                      checked={settings.restApi?.useRandomPort || false}
-                      onChange={(e) =>
-                        mgr.updateRestApi({ useRandomPort: e.target.checked })
-                      }
-                      className="sor-settings-checkbox"
-                    />
+                    <Checkbox checked={settings.restApi?.useRandomPort || false} onChange={(v: boolean) => mgr.updateRestApi({ useRandomPort: v })} />
                     <span className="text-xs text-[var(--color-textSecondary)] group-hover:text-[var(--color-textSecondary)]">
                       {mgr.t(
                         "settings.api.useRandomPort",
@@ -250,18 +221,9 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
 
                 <div className="space-y-2">
                   <label className="flex items-center space-x-3 cursor-pointer group">
-                    <input
-                      type="checkbox"
-                      checked={
-                        settings.restApi?.allowRemoteConnections || false
-                      }
-                      onChange={(e) =>
-                        mgr.updateRestApi({
-                          allowRemoteConnections: e.target.checked,
-                        })
-                      }
-                      className="sor-settings-checkbox"
-                    />
+                    <Checkbox checked={settings.restApi?.allowRemoteConnections || false} onChange={(v: boolean) => mgr.updateRestApi({
+                          allowRemoteConnections: v,
+                        })} />
                     <div>
                       <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] flex items-center gap-2">
                         <Globe className="w-4 h-4 text-yellow-500" />
@@ -303,14 +265,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
 
             <div className="sor-settings-card space-y-4">
               <label className="flex items-center space-x-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={settings.restApi?.authentication || false}
-                  onChange={(e) =>
-                    mgr.updateRestApi({ authentication: e.target.checked })
-                  }
-                  className="sor-settings-checkbox"
-                />
+                <Checkbox checked={settings.restApi?.authentication || false} onChange={(v: boolean) => mgr.updateRestApi({ authentication: v })} />
                 <Key className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
                 <div>
                   <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
@@ -380,14 +335,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
 
             <div className="sor-settings-card space-y-4">
               <label className="flex items-center space-x-3 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={settings.restApi?.sslEnabled || false}
-                  onChange={(e) =>
-                    mgr.updateRestApi({ sslEnabled: e.target.checked })
-                  }
-                  className="sor-settings-checkbox"
-                />
+                <Checkbox checked={settings.restApi?.sslEnabled || false} onChange={(v: boolean) => mgr.updateRestApi({ sslEnabled: v })} />
                 <Shield className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
                 <div>
                   <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
@@ -410,37 +358,12 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                       <Shield className="w-4 h-4" />
                       {mgr.t("settings.api.sslMode", "Certificate Mode")}
                     </label>
-                    <select
-                      value={settings.restApi?.sslMode || "manual"}
-                      onChange={(e) =>
-                        mgr.updateRestApi({
-                          sslMode: e.target.value as
+                    <Select value={settings.restApi?.sslMode || "manual"} onChange={(v: string) => mgr.updateRestApi({
+                          sslMode: v as
                             | "manual"
                             | "self-signed"
                             | "letsencrypt",
-                        })
-                      }
-                      className="sor-settings-select w-full"
-                    >
-                      <option value="manual">
-                        {mgr.t(
-                          "settings.api.sslManual",
-                          "Manual (Provide Certificate)",
-                        )}
-                      </option>
-                      <option value="self-signed">
-                        {mgr.t(
-                          "settings.api.sslSelfSigned",
-                          "Auto-Generate Self-Signed",
-                        )}
-                      </option>
-                      <option value="letsencrypt">
-                        {mgr.t(
-                          "settings.api.sslLetsEncrypt",
-                          "Let's Encrypt (Auto-Renew)",
-                        )}
-                      </option>
-                    </select>
+                        })} options={[{ value: "manual", label: mgr.t("settings.api.sslManual", "Manual (Provide Certificate)") }, { value: "self-signed", label: mgr.t("settings.api.sslSelfSigned", "Auto-Generate Self-Signed") }, { value: "letsencrypt", label: mgr.t("settings.api.sslLetsEncrypt", "Let's Encrypt (Auto-Renew)") }]} className="w-full" />
                   </div>
 
                   {/* Manual Certificate Paths */}
@@ -573,19 +496,9 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                     <Cpu className="w-4 h-4" />
                     {mgr.t("settings.api.maxThreads", "Max Worker Threads")}
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={64}
-                    value={settings.restApi?.maxThreads || 4}
-                    onChange={(e) =>
-                      mgr.updateRestApi({
-                        maxThreads: parseInt(e.target.value) || 4,
-                      })
-                    }
-                    className="sor-settings-input w-full"
-                    placeholder="4"
-                  />
+                  <NumberInput value={settings.restApi?.maxThreads || 4} onChange={(v: number) => mgr.updateRestApi({
+                        maxThreads: v,
+                      })} className="w-full" min={1} max={64} />
                   <p className="text-xs text-gray-500">
                     {mgr.t(
                       "settings.api.maxThreadsDescription",
@@ -602,19 +515,9 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                       "Request Timeout (seconds)",
                     )}
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={300}
-                    value={settings.restApi?.requestTimeout || 30}
-                    onChange={(e) =>
-                      mgr.updateRestApi({
-                        requestTimeout: parseInt(e.target.value) || 30,
-                      })
-                    }
-                    className="sor-settings-input w-full"
-                    placeholder="30"
-                  />
+                  <NumberInput value={settings.restApi?.requestTimeout || 30} onChange={(v: number) => mgr.updateRestApi({
+                        requestTimeout: v,
+                      })} className="w-full" min={1} max={300} />
                   <p className="text-xs text-gray-500">
                     {mgr.t(
                       "settings.api.requestTimeoutDescription",
@@ -639,19 +542,9 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                   <Clock className="w-4 h-4" />
                   {mgr.t("settings.api.maxRequests", "Max Requests Per Minute")}
                 </label>
-                <input
-                  type="number"
-                  min={0}
-                  max={10000}
-                  value={settings.restApi?.maxRequestsPerMinute || 60}
-                  onChange={(e) =>
-                    mgr.updateRestApi({
-                      maxRequestsPerMinute: parseInt(e.target.value) || 60,
-                    })
-                  }
-                  className="sor-settings-input w-full"
-                  placeholder="60"
-                />
+                <NumberInput value={settings.restApi?.maxRequestsPerMinute || 60} onChange={(v: number) => mgr.updateRestApi({
+                      maxRequestsPerMinute: v,
+                    })} className="w-full" min={0} max={10000} />
                 <p className="text-xs text-gray-500">
                   {mgr.t(
                     "settings.api.maxRequestsDescription",

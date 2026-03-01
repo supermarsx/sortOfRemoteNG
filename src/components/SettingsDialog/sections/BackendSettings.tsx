@@ -9,6 +9,7 @@ import {
   Globe,
   Layers,
 } from "lucide-react";
+import { Checkbox, NumberInput, Select } from '../../ui/forms';
 
 interface BackendSettingsProps {
   settings: GlobalSettings;
@@ -75,38 +76,17 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Log Level</label>
-            <select
-              className={selectClass}
-              value={cfg.logLevel}
-              onChange={(e) =>
-                update({
-                  logLevel: e.target.value as BackendConfig["logLevel"],
-                })
-              }
-            >
-              <option value="trace">Trace</option>
-              <option value="debug">Debug</option>
-              <option value="info">Info</option>
-              <option value="warn">Warn</option>
-              <option value="error">Error</option>
-            </select>
+            <Select value={cfg.logLevel} onChange={(v: string) => update({
+                  logLevel: v as BackendConfig["logLevel"],
+                })} options={[{ value: "trace", label: "Trace" }, { value: "debug", label: "Debug" }, { value: "info", label: "Info" }, { value: "warn", label: "Warn" }, { value: "error", label: "Error" }]} className="selectClass" />
             <p className={descClass}>Verbosity of backend log output</p>
           </div>
 
           <div>
             <label className={labelClass}>Max Concurrent RDP Sessions</label>
-            <input
-              type="number"
-              className={inputClass}
-              value={cfg.maxConcurrentRdpSessions}
-              min={1}
-              max={50}
-              onChange={(e) =>
-                update({
-                  maxConcurrentRdpSessions: parseInt(e.target.value) || 10,
-                })
-              }
-            />
+            <NumberInput value={cfg.maxConcurrentRdpSessions} onChange={(v: number) => update({
+                  maxConcurrentRdpSessions: v,
+                })} className="inputClass" min={1} max={50} />
             <p className={descClass}>
               Maximum number of simultaneous RDP connections
             </p>
@@ -124,21 +104,10 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Server-Side Renderer</label>
-            <select
-              className={selectClass}
-              value={cfg.rdpServerRenderer}
-              onChange={(e) =>
-                update({
+            <Select value={cfg.rdpServerRenderer} onChange={(v: string) => update({
                   rdpServerRenderer: e.target
                     .value as BackendConfig["rdpServerRenderer"],
-                })
-              }
-            >
-              <option value="auto">Auto-detect</option>
-              <option value="softbuffer">Softbuffer (CPU)</option>
-              <option value="wgpu">wgpu (GPU)</option>
-              <option value="webview">WebView (default)</option>
-            </select>
+                })} options={[{ value: "auto", label: "Auto-detect" }, { value: "softbuffer", label: "Softbuffer (CPU)" }, { value: "wgpu", label: "wgpu (GPU)" }, { value: "webview", label: "WebView (default)" }]} className="selectClass" />
             <p className={descClass}>
               Rendering backend for server-side frame compositing
             </p>
@@ -146,22 +115,10 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
           <div>
             <label className={labelClass}>Codec Preference</label>
-            <select
-              className={selectClass}
-              value={cfg.rdpCodecPreference}
-              onChange={(e) =>
-                update({
+            <Select value={cfg.rdpCodecPreference} onChange={(v: string) => update({
                   rdpCodecPreference: e.target
                     .value as BackendConfig["rdpCodecPreference"],
-                })
-              }
-            >
-              <option value="auto">Auto-negotiate</option>
-              <option value="remotefx">RemoteFX</option>
-              <option value="gfx">RDPGFX</option>
-              <option value="h264">H.264</option>
-              <option value="bitmap">Bitmap (legacy)</option>
-            </select>
+                })} options={[{ value: "auto", label: "Auto-negotiate" }, { value: "remotefx", label: "RemoteFX" }, { value: "gfx", label: "RDPGFX" }, { value: "h264", label: "H.264" }, { value: "bitmap", label: "Bitmap (legacy)" }]} className="selectClass" />
             <p className={descClass}>Preferred codec for RDP frame encoding</p>
           </div>
         </div>
@@ -177,49 +134,21 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className={labelClass}>TCP Buffer Size (bytes)</label>
-            <input
-              type="number"
-              className={inputClass}
-              value={cfg.tcpDefaultBufferSize}
-              min={4096}
-              max={1048576}
-              step={4096}
-              onChange={(e) =>
-                update({
-                  tcpDefaultBufferSize: parseInt(e.target.value) || 65536,
-                })
-              }
-            />
+            <NumberInput value={cfg.tcpDefaultBufferSize} onChange={(v: number) => update({
+                  tcpDefaultBufferSize: v,
+                })} className="inputClass" min={4096} max={1048576} step={4096} />
           </div>
 
           <div>
             <label className={labelClass}>Keep-Alive (seconds)</label>
-            <input
-              type="number"
-              className={inputClass}
-              value={cfg.tcpKeepAliveSeconds}
-              min={5}
-              max={300}
-              onChange={(e) =>
-                update({ tcpKeepAliveSeconds: parseInt(e.target.value) || 30 })
-              }
-            />
+            <NumberInput value={cfg.tcpKeepAliveSeconds} onChange={(v: number) => update({ tcpKeepAliveSeconds: v })} className="inputClass" min={5} max={300} />
           </div>
 
           <div>
             <label className={labelClass}>Connection Timeout (seconds)</label>
-            <input
-              type="number"
-              className={inputClass}
-              value={cfg.connectionTimeoutSeconds}
-              min={5}
-              max={120}
-              onChange={(e) =>
-                update({
-                  connectionTimeoutSeconds: parseInt(e.target.value) || 15,
-                })
-              }
-            />
+            <NumberInput value={cfg.connectionTimeoutSeconds} onChange={(v: number) => update({
+                  connectionTimeoutSeconds: v,
+                })} className="inputClass" min={5} max={120} />
           </div>
         </div>
       </div>
@@ -234,16 +163,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Cache Size (MB)</label>
-            <input
-              type="number"
-              className={inputClass}
-              value={cfg.cacheSizeMb}
-              min={32}
-              max={2048}
-              onChange={(e) =>
-                update({ cacheSizeMb: parseInt(e.target.value) || 256 })
-              }
-            />
+            <NumberInput value={cfg.cacheSizeMb} onChange={(v: number) => update({ cacheSizeMb: v })} className="inputClass" min={32} max={2048} />
             <p className={descClass}>
               Maximum memory for frame and bitmap caching
             </p>
@@ -283,19 +203,10 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
             {cfg.tempFileCleanupEnabled && (
               <div>
                 <label className={labelClass}>Cleanup Interval (minutes)</label>
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={cfg.tempFileCleanupIntervalMinutes}
-                  min={5}
-                  max={1440}
-                  onChange={(e) =>
-                    update({
+                <NumberInput value={cfg.tempFileCleanupIntervalMinutes} onChange={(v: number) => update({
                       tempFileCleanupIntervalMinutes:
-                        parseInt(e.target.value) || 60,
-                    })
-                  }
-                />
+                        v,
+                    })} className="inputClass" min={5} max={1440} />
               </div>
             )}
           </div>
@@ -312,19 +223,10 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Minimum TLS Version</label>
-            <select
-              className={selectClass}
-              value={cfg.tlsMinVersion}
-              onChange={(e) =>
-                update({
+            <Select value={cfg.tlsMinVersion} onChange={(v: string) => update({
                   tlsMinVersion: e.target
                     .value as BackendConfig["tlsMinVersion"],
-                })
-              }
-            >
-              <option value="1.2">TLS 1.2</option>
-              <option value="1.3">TLS 1.3</option>
-            </select>
+                })} options={[{ value: "1.2", label: "TLS 1.2" }, { value: "1.3", label: "TLS 1.3" }]} className="selectClass" />
             <p className={descClass}>
               Minimum TLS version for all outgoing connections
             </p>
@@ -332,20 +234,10 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
           <div>
             <label className={labelClass}>Certificate Validation</label>
-            <select
-              className={selectClass}
-              value={cfg.certValidationMode}
-              onChange={(e) =>
-                update({
+            <Select value={cfg.certValidationMode} onChange={(v: string) => update({
                   certValidationMode: e.target
                     .value as BackendConfig["certValidationMode"],
-                })
-              }
-            >
-              <option value="strict">Strict (require valid CA chain)</option>
-              <option value="tofu">Trust on First Use</option>
-              <option value="permissive">Permissive (accept all)</option>
-            </select>
+                })} options={[{ value: "strict", label: "Strict (require valid CA chain)" }, { value: "tofu", label: "Trust on First Use" }, { value: "permissive", label: "Permissive (accept all)" }]} className="selectClass" />
             <p className={descClass}>
               How the backend validates remote server certificates
             </p>
@@ -390,73 +282,34 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Port</label>
-              <input
-                type="number"
-                className={inputClass}
-                value={cfg.internalApiPort}
-                min={1024}
-                max={65535}
-                onChange={(e) =>
-                  update({ internalApiPort: parseInt(e.target.value) || 9876 })
-                }
-              />
+              <NumberInput value={cfg.internalApiPort} onChange={(v: number) => update({ internalApiPort: v })} className="inputClass" min={1024} max={65535} />
             </div>
 
             <div>
               <label className={labelClass}>Rate Limit (req/min)</label>
-              <input
-                type="number"
-                className={inputClass}
-                value={cfg.internalApiRateLimit}
-                min={10}
-                max={10000}
-                onChange={(e) =>
-                  update({
-                    internalApiRateLimit: parseInt(e.target.value) || 100,
-                  })
-                }
-              />
+              <NumberInput value={cfg.internalApiRateLimit} onChange={(v: number) => update({
+                    internalApiRateLimit: v,
+                  })} className="inputClass" min={10} max={10000} />
             </div>
 
             <div className="flex items-center justify-between col-span-1 md:col-span-2">
               <div className="flex items-center space-x-6">
                 <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={cfg.internalApiAuth}
-                    onChange={(e) =>
-                      update({ internalApiAuth: e.target.checked })
-                    }
-                    className="sor-settings-checkbox"
-                  />
+                  <Checkbox checked={cfg.internalApiAuth} onChange={(v: boolean) => update({ internalApiAuth: v })} />
                   <span className="text-sm text-[var(--color-textSecondary)]">
                     Require Auth
                   </span>
                 </label>
 
                 <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={cfg.internalApiCors}
-                    onChange={(e) =>
-                      update({ internalApiCors: e.target.checked })
-                    }
-                    className="sor-settings-checkbox"
-                  />
+                  <Checkbox checked={cfg.internalApiCors} onChange={(v: boolean) => update({ internalApiCors: v })} />
                   <span className="text-sm text-[var(--color-textSecondary)]">
                     Enable CORS
                   </span>
                 </label>
 
                 <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={cfg.internalApiSsl}
-                    onChange={(e) =>
-                      update({ internalApiSsl: e.target.checked })
-                    }
-                    className="sor-settings-checkbox"
-                  />
+                  <Checkbox checked={cfg.internalApiSsl} onChange={(v: boolean) => update({ internalApiSsl: v })} />
                   <span className="text-sm text-[var(--color-textSecondary)]">
                     Enable SSL
                   </span>

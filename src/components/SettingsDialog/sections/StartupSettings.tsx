@@ -16,6 +16,7 @@ import {
   MessageSquare,
   RotateCcw,
 } from "lucide-react";
+import { Checkbox } from '../../ui/forms';
 
 interface StartupSettingsProps {
   settings: GlobalSettings;
@@ -58,12 +59,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.startWithSystem}
-              onChange={(e) => handleStartWithSystemChange(e.target.checked)}
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.startWithSystem} onChange={(v: boolean) => handleStartWithSystemChange(v)} />
             <div className="flex items-center gap-2">
               <Play className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-textSecondary)]">
@@ -73,15 +69,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           </label>
 
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.startMinimized}
-              onChange={(e) =>
-                updateSettings({ startMinimized: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-              disabled={settings.startMaximized}
-            />
+            <Checkbox checked={settings.startMinimized} onChange={(v: boolean) => updateSettings({ startMinimized: v })} disabled={settings.startMaximized} />
             <div className="flex items-center gap-2">
               <Minimize2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span
@@ -93,15 +81,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           </label>
 
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.startMaximized}
-              onChange={(e) =>
-                updateSettings({ startMaximized: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-              disabled={settings.startMinimized}
-            />
+            <Checkbox checked={settings.startMaximized} onChange={(v: boolean) => updateSettings({ startMaximized: v })} disabled={settings.startMinimized} />
             <div className="flex items-center gap-2">
               <Monitor className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span
@@ -113,14 +93,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           </label>
 
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.reconnectPreviousSessions}
-              onChange={(e) =>
-                updateSettings({ reconnectPreviousSessions: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.reconnectPreviousSessions} onChange={(v: boolean) => updateSettings({ reconnectPreviousSessions: v })} />
             <div className="flex items-center gap-2">
               <RefreshCw className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-textSecondary)]">
@@ -133,14 +106,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           </label>
 
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.autoOpenLastCollection}
-              onChange={(e) =>
-                updateSettings({ autoOpenLastCollection: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.autoOpenLastCollection} onChange={(v: boolean) => updateSettings({ autoOpenLastCollection: v })} />
             <div className="flex items-center gap-2">
               <FolderOpen className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-textSecondary)]">
@@ -162,14 +128,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.showTrayIcon}
-              onChange={(e) =>
-                updateSettings({ showTrayIcon: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.showTrayIcon} onChange={(v: boolean) => updateSettings({ showTrayIcon: v })} />
             <div className="flex items-center gap-2">
               <AppWindow className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-textSecondary)]">
@@ -179,15 +138,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           </label>
 
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.minimizeToTray}
-              onChange={(e) =>
-                updateSettings({ minimizeToTray: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-              disabled={!settings.showTrayIcon}
-            />
+            <Checkbox checked={settings.minimizeToTray} onChange={(v: boolean) => updateSettings({ minimizeToTray: v })} disabled={!settings.showTrayIcon} />
             <div className="flex items-center gap-2">
               <Minimize2 className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span
@@ -202,15 +153,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           </label>
 
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.closeToTray}
-              onChange={(e) =>
-                updateSettings({ closeToTray: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-              disabled={!settings.showTrayIcon}
-            />
+            <Checkbox checked={settings.closeToTray} onChange={(v: boolean) => updateSettings({ closeToTray: v })} disabled={!settings.showTrayIcon} />
             <div className="flex items-center gap-2">
               <XIcon className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span
@@ -234,14 +177,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.hideQuickStartMessage ?? false}
-              onChange={(e) =>
-                updateSettings({ hideQuickStartMessage: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.hideQuickStartMessage ?? false} onChange={(v: boolean) => updateSettings({ hideQuickStartMessage: v })} />
             <div className="flex items-center gap-2">
               <EyeOff className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-textSecondary)]">
@@ -254,14 +190,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
           </label>
 
           <label className="flex items-center space-x-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.hideQuickStartButtons ?? false}
-              onChange={(e) =>
-                updateSettings({ hideQuickStartButtons: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.hideQuickStartButtons ?? false} onChange={(v: boolean) => updateSettings({ hideQuickStartButtons: v })} />
             <div className="flex items-center gap-2">
               <EyeOff className="w-4 h-4 text-[var(--color-textSecondary)]" />
               <span className="text-[var(--color-textSecondary)]">

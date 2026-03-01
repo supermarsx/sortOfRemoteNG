@@ -5,11 +5,13 @@ import {
   CheckSquare, Square, Minus, Star, RefreshCw, Edit3,
 } from 'lucide-react';
 import { Connection } from '../types/connection';
-import { Modal } from './ui/Modal';
+import { Modal } from './ui/overlays/Modal';
+import { DialogHeader } from './ui/overlays/DialogHeader';
 import {
   useBulkConnectionEditor,
   type BulkConnectionEditorMgr,
 } from '../hooks/connection/useBulkConnectionEditor';
+import { Checkbox } from './ui/forms';
 
 interface BulkConnectionEditorProps {
   isOpen: boolean;
@@ -34,27 +36,15 @@ const protocolIcons: Record<string, React.ReactNode> = {
 
 function BulkEditorHeader({ mgr }: { mgr: BulkConnectionEditorMgr }) {
   return (
-    <div className="relative z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
-      <div className="flex items-center space-x-3">
-        <div className="p-2 bg-blue-500/20 rounded-lg">
-          <RefreshCw size={18} className="text-blue-500" />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--color-text)]">
-            Bulk Connection Editor
-          </h2>
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            {mgr.connections.length} connections • Double-click any cell to edit
-          </p>
-        </div>
-      </div>
-      <button
-        onClick={mgr.onClose}
-        className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-      >
-        <X size={18} />
-      </button>
-    </div>
+    <DialogHeader
+      icon={RefreshCw}
+      iconColor="text-blue-500"
+      iconBg="bg-blue-500/20"
+      title="Bulk Connection Editor"
+      subtitle={`${mgr.connections.length} connections • Double-click any cell to edit`}
+      onClose={mgr.onClose}
+      className="relative z-10 bg-[var(--color-surface)]"
+    />
   );
 }
 
@@ -74,12 +64,7 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
 
       <div className="flex items-center space-x-2">
         <label className="flex items-center space-x-2 text-xs text-[var(--color-textSecondary)] cursor-pointer hover:text-[var(--color-text)] transition-colors">
-          <input
-            type="checkbox"
-            checked={mgr.showFavoritesFirst}
-            onChange={(e) => mgr.setShowFavoritesFirst(e.target.checked)}
-            className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-yellow-500 w-3.5 h-3.5"
-          />
+          <Checkbox checked={mgr.showFavoritesFirst} onChange={(v: boolean) => mgr.setShowFavoritesFirst(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-yellow-500 w-3.5 h-3.5" />
           <Star size={12} className="text-yellow-400" />
           <span>Favorites first</span>
         </label>

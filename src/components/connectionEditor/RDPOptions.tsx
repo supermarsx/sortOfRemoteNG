@@ -38,6 +38,7 @@ import {
   CSS,
   type RDPOptionsMgr,
 } from "../../hooks/rdp/useRDPOptions";
+import { Checkbox, NumberInput, Select, Slider } from '../ui/forms';
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -99,31 +100,13 @@ const DisplaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
           Width
         </label>
-        <input
-          type="number"
-          value={rdp.display?.width ?? 1920}
-          onChange={(e) =>
-            updateRdp("display", { width: parseInt(e.target.value) || 1920 })
-          }
-          className={CSS.input}
-          min={640}
-          max={7680}
-        />
+        <NumberInput value={rdp.display?.width ?? 1920} onChange={(v: number) => updateRdp("display", { width: v })} className="CSS.input" min={640} max={7680} />
       </div>
       <div>
         <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
           Height
         </label>
-        <input
-          type="number"
-          value={rdp.display?.height ?? 1080}
-          onChange={(e) =>
-            updateRdp("display", { height: parseInt(e.target.value) || 1080 })
-          }
-          className={CSS.input}
-          min={480}
-          max={4320}
-        />
+        <NumberInput value={rdp.display?.height ?? 1080} onChange={(v: number) => updateRdp("display", { height: v })} className="CSS.input" min={480} max={4320} />
       </div>
     </div>
 
@@ -131,83 +114,35 @@ const DisplaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Color Depth
       </label>
-      <select
-        value={rdp.display?.colorDepth ?? 32}
-        onChange={(e) =>
-          updateRdp("display", {
-            colorDepth: parseInt(e.target.value) as 16 | 24 | 32,
-          })
-        }
-        className={CSS.select}
-      >
-        <option value={16}>16-bit (High Color)</option>
-        <option value={24}>24-bit (True Color)</option>
-        <option value={32}>32-bit (True Color + Alpha)</option>
-      </select>
+      <Select value={rdp.display?.colorDepth ?? 32} onChange={(v: string) => updateRdp("display", {
+            colorDepth: parseInt(v) as 16 | 24 | 32,
+          })} options={[{ value: "16", label: "16-bit (High Color)" }, { value: "24", label: "24-bit (True Color)" }, { value: "32", label: "32-bit (True Color + Alpha)" }]} className="CSS.select" />
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Desktop Scale Factor: {rdp.display?.desktopScaleFactor ?? 100}%
       </label>
-      <input
-        type="range"
-        min={100}
-        max={500}
-        step={25}
-        value={rdp.display?.desktopScaleFactor ?? 100}
-        onChange={(e) =>
-          updateRdp("display", { desktopScaleFactor: parseInt(e.target.value) })
-        }
-        className="w-full"
-      />
+      <Slider value={rdp.display?.desktopScaleFactor ?? 100} onChange={(v: number) => updateRdp("display", { desktopScaleFactor: v })} min={100} max={500} variant="full" step={25} />
     </div>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.display?.resizeToWindow ?? false}
-        onChange={(e) =>
-          updateRdp("display", { resizeToWindow: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.display?.resizeToWindow ?? false} onChange={(v: boolean) => updateRdp("display", { resizeToWindow: v })} className="CSS.checkbox" />
       <span>Resize to window (dynamic resolution)</span>
     </label>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.display?.smartSizing ?? true}
-        onChange={(e) =>
-          updateRdp("display", { smartSizing: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.display?.smartSizing ?? true} onChange={(v: boolean) => updateRdp("display", { smartSizing: v })} className="CSS.checkbox" />
       <span>Smart sizing (scale to fit)</span>
     </label>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.display?.lossyCompression ?? true}
-        onChange={(e) =>
-          updateRdp("display", { lossyCompression: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.display?.lossyCompression ?? true} onChange={(v: boolean) => updateRdp("display", { lossyCompression: v })} className="CSS.checkbox" />
       <span>Lossy bitmap compression</span>
     </label>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.display?.magnifierEnabled ?? false}
-        onChange={(e) =>
-          updateRdp("display", { magnifierEnabled: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.display?.magnifierEnabled ?? false} onChange={(v: boolean) => updateRdp("display", { magnifierEnabled: v })} className="CSS.checkbox" />
       <span>Enable magnifier glass</span>
     </label>
 
@@ -216,17 +151,7 @@ const DisplaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
           Magnifier Zoom: {rdp.display?.magnifierZoom ?? 3}x
         </label>
-        <input
-          type="range"
-          min={2}
-          max={8}
-          step={1}
-          value={rdp.display?.magnifierZoom ?? 3}
-          onChange={(e) =>
-            updateRdp("display", { magnifierZoom: parseInt(e.target.value) })
-          }
-          className="w-full"
-        />
+        <Slider value={rdp.display?.magnifierZoom ?? 3} onChange={(v: number) => updateRdp("display", { magnifierZoom: v })} min={2} max={8} variant="full" />
       </div>
     )}
   </Section>
@@ -245,56 +170,27 @@ const AudioSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Audio Playback
       </label>
-      <select
-        value={rdp.audio?.playbackMode ?? "local"}
-        onChange={(e) =>
-          updateRdp("audio", {
-            playbackMode: e.target.value as "local" | "remote" | "disabled",
-          })
-        }
-        className={CSS.select}
-      >
-        <option value="local">Play on this computer</option>
-        <option value="remote">Play on remote computer</option>
-        <option value="disabled">Do not play</option>
-      </select>
+      <Select value={rdp.audio?.playbackMode ?? "local"} onChange={(v: string) => updateRdp("audio", {
+            playbackMode: v as "local" | "remote" | "disabled",
+          })} options={[{ value: "local", label: "Play on this computer" }, { value: "remote", label: "Play on remote computer" }, { value: "disabled", label: "Do not play" }]} className="CSS.select" />
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Audio Recording
       </label>
-      <select
-        value={rdp.audio?.recordingMode ?? "disabled"}
-        onChange={(e) =>
-          updateRdp("audio", {
-            recordingMode: e.target.value as "enabled" | "disabled",
-          })
-        }
-        className={CSS.select}
-      >
-        <option value="disabled">Disabled</option>
-        <option value="enabled">Record from this computer</option>
-      </select>
+      <Select value={rdp.audio?.recordingMode ?? "disabled"} onChange={(v: string) => updateRdp("audio", {
+            recordingMode: v as "enabled" | "disabled",
+          })} options={[{ value: "disabled", label: "Disabled" }, { value: "enabled", label: "Record from this computer" }]} className="CSS.select" />
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Audio Quality
       </label>
-      <select
-        value={rdp.audio?.audioQuality ?? "dynamic"}
-        onChange={(e) =>
-          updateRdp("audio", {
-            audioQuality: e.target.value as "dynamic" | "medium" | "high",
-          })
-        }
-        className={CSS.select}
-      >
-        <option value="dynamic">Dynamic (auto-adjust)</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-      </select>
+      <Select value={rdp.audio?.audioQuality ?? "dynamic"} onChange={(v: string) => updateRdp("audio", {
+            audioQuality: v as "dynamic" | "medium" | "high",
+          })} options={[{ value: "dynamic", label: "Dynamic (auto-adjust)" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }]} className="CSS.select" />
     </div>
   </Section>
 );
@@ -317,29 +213,13 @@ const InputSection: React.FC<
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Mouse Mode
       </label>
-      <select
-        value={rdp.input?.mouseMode ?? "absolute"}
-        onChange={(e) =>
-          updateRdp("input", {
-            mouseMode: e.target.value as "relative" | "absolute",
-          })
-        }
-        className={CSS.select}
-      >
-        <option value="absolute">Absolute (real mouse position)</option>
-        <option value="relative">Relative (virtual mouse delta)</option>
-      </select>
+      <Select value={rdp.input?.mouseMode ?? "absolute"} onChange={(v: string) => updateRdp("input", {
+            mouseMode: v as "relative" | "absolute",
+          })} options={[{ value: "absolute", label: "Absolute (real mouse position)" }, { value: "relative", label: "Relative (virtual mouse delta)" }]} className="CSS.select" />
     </div>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.input?.autoDetectLayout !== false}
-        onChange={(e) =>
-          updateRdp("input", { autoDetectLayout: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.input?.autoDetectLayout !== false} onChange={(v: boolean) => updateRdp("input", { autoDetectLayout: v })} className="CSS.checkbox" />
       <span>Auto-detect keyboard layout on connect</span>
     </label>
 
@@ -351,24 +231,10 @@ const InputSection: React.FC<
         )}
       </label>
       <div className="flex gap-2">
-        <select
-          value={rdp.input?.keyboardLayout ?? 0x0409}
-          onChange={(e) =>
-            updateRdp("input", { keyboardLayout: parseInt(e.target.value) })
-          }
-          disabled={rdp.input?.autoDetectLayout !== false}
-          className={
-            CSS.select +
+        <Select value={rdp.input?.keyboardLayout ?? 0x0409} onChange={(v: string) =>
+            updateRdp("input", { keyboardLayout: parseInt(v) })} options={[...KEYBOARD_LAYOUTS.map((kl) => ({ value: kl.value, label: `${kl.label} (0x${kl.value.toString(16).padStart(4, "0")})` }))]} disabled={rdp.input?.autoDetectLayout !== false} className={CSS.select +
             " flex-1" +
-            (rdp.input?.autoDetectLayout !== false ? " opacity-50" : "")
-          }
-        >
-          {KEYBOARD_LAYOUTS.map((kl) => (
-            <option key={kl.value} value={kl.value}>
-              {kl.label} (0x{kl.value.toString(16).padStart(4, "0")})
-            </option>
-          ))}
-        </select>
+            (rdp.input?.autoDetectLayout !== false ? " opacity-50" : "")} />
         <button
           type="button"
           onClick={detectKeyboardLayout}
@@ -386,41 +252,18 @@ const InputSection: React.FC<
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Keyboard Type
       </label>
-      <select
-        value={rdp.input?.keyboardType ?? "ibm-enhanced"}
-        onChange={(e) =>
-          updateRdp("input", {
-            keyboardType: e.target.value as "ibm-enhanced",
-          })
-        }
-        className={CSS.select}
-      >
-        <option value="ibm-pc-xt">IBM PC/XT (83 key)</option>
-        <option value="olivetti">Olivetti (102 key)</option>
-        <option value="ibm-pc-at">IBM PC/AT (84 key)</option>
-        <option value="ibm-enhanced">IBM Enhanced (101/102 key)</option>
-        <option value="nokia1050">Nokia 1050</option>
-        <option value="nokia9140">Nokia 9140</option>
-        <option value="japanese">Japanese</option>
-      </select>
+      <Select value={rdp.input?.keyboardType ?? "ibm-enhanced"} onChange={(v: string) => updateRdp("input", {
+            keyboardType: v as "ibm-enhanced",
+          })} options={[{ value: "ibm-pc-xt", label: "IBM PC/XT (83 key)" }, { value: "olivetti", label: "Olivetti (102 key)" }, { value: "ibm-pc-at", label: "IBM PC/AT (84 key)" }, { value: "ibm-enhanced", label: "IBM Enhanced (101/102 key)" }, { value: "nokia1050", label: "Nokia 1050" }, { value: "nokia9140", label: "Nokia 9140" }, { value: "japanese", label: "Japanese" }]} className="CSS.select" />
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Input Priority
       </label>
-      <select
-        value={rdp.input?.inputPriority ?? "realtime"}
-        onChange={(e) =>
-          updateRdp("input", {
-            inputPriority: e.target.value as "realtime" | "batched",
-          })
-        }
-        className={CSS.select}
-      >
-        <option value="realtime">Realtime (send immediately)</option>
-        <option value="batched">Batched (group events)</option>
-      </select>
+      <Select value={rdp.input?.inputPriority ?? "realtime"} onChange={(v: string) => updateRdp("input", {
+            inputPriority: v as "realtime" | "batched",
+          })} options={[{ value: "realtime", label: "Realtime (send immediately)" }, { value: "batched", label: "Batched (group events)" }]} className="CSS.select" />
     </div>
 
     {rdp.input?.inputPriority === "batched" && (
@@ -428,29 +271,12 @@ const InputSection: React.FC<
         <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
           Batch Interval: {rdp.input?.batchIntervalMs ?? 16}ms
         </label>
-        <input
-          type="range"
-          min={8}
-          max={100}
-          step={4}
-          value={rdp.input?.batchIntervalMs ?? 16}
-          onChange={(e) =>
-            updateRdp("input", { batchIntervalMs: parseInt(e.target.value) })
-          }
-          className="w-full"
-        />
+        <Slider value={rdp.input?.batchIntervalMs ?? 16} onChange={(v: number) => updateRdp("input", { batchIntervalMs: v })} min={8} max={100} variant="full" step={4} />
       </div>
     )}
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.input?.enableUnicodeInput ?? true}
-        onChange={(e) =>
-          updateRdp("input", { enableUnicodeInput: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.input?.enableUnicodeInput ?? true} onChange={(v: boolean) => updateRdp("input", { enableUnicodeInput: v })} className="CSS.checkbox" />
       <span>Enable Unicode keyboard input</span>
     </label>
   </Section>
@@ -482,14 +308,7 @@ const DeviceRedirectionSection: React.FC<SectionBaseProps> = ({
     >
       {devices.map((d) => (
         <label key={d.key} className={CSS.label}>
-          <input
-            type="checkbox"
-            checked={(rdp.deviceRedirection?.[d.key] as boolean | undefined) ?? d.defaultVal}
-            onChange={(e) =>
-              updateRdp("deviceRedirection", { [d.key]: e.target.checked })
-            }
-            className={CSS.checkbox}
-          />
+          <Checkbox checked={(rdp.deviceRedirection?.[d.key] as boolean | undefined) ?? d.defaultVal} onChange={(v: boolean) => updateRdp("deviceRedirection", { [d.key]: v })} className="CSS.checkbox" />
           <span>{d.label}</span>
         </label>
       ))}
@@ -515,10 +334,8 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Connection Speed
       </label>
-      <select
-        value={rdp.performance?.connectionSpeed ?? "broadband-high"}
-        onChange={(e) => {
-          const speed = e.target.value;
+      <Select value={rdp.performance?.connectionSpeed ?? "broadband-high"} onChange={(v: string) => {
+          const speed = v;
           const preset = PERFORMANCE_PRESETS[speed];
           if (preset) {
             updateRdp("performance", {
@@ -530,16 +347,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
               connectionSpeed: speed as RdpConnectionSettings["performance"] extends { connectionSpeed?: infer T } ? T : never,
             });
           }
-        }}
-        className={CSS.select}
-      >
-        <option value="modem">Modem (56 Kbps)</option>
-        <option value="broadband-low">Broadband (Low)</option>
-        <option value="broadband-high">Broadband (High)</option>
-        <option value="wan">WAN</option>
-        <option value="lan">LAN (10 Mbps+)</option>
-        <option value="auto-detect">Auto-detect</option>
-      </select>
+        }} options={[{ value: "modem", label: "Modem (56 Kbps)" }, { value: "broadband-low", label: "Broadband (Low)" }, { value: "broadband-high", label: "Broadband (High)" }, { value: "wan", label: "WAN" }, { value: "lan", label: "LAN (10 Mbps+)" }, { value: "auto-detect", label: "Auto-detect" }]} className="CSS.select" />
     </div>
 
     {/* Visual experience */}
@@ -558,14 +366,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       ["enableDesktopComposition", false, "Enable desktop composition (Aero)"],
     ] as [string, boolean, string][]).map(([key, def, label]) => (
       <label key={key} className={CSS.label}>
-        <input
-          type="checkbox"
-          checked={
-            (rdp.performance?.[key as keyof NonNullable<RdpConnectionSettings["performance"]>] as boolean | undefined) ?? def
-          }
-          onChange={(e) => updateRdp("performance", { [key]: e.target.checked })}
-          className={CSS.checkbox}
-        />
+        <Checkbox checked={(rdp.performance?.[key as keyof NonNullable<RdpConnectionSettings["performance"]>] as boolean | undefined) ?? def} onChange={(v: boolean) => updateRdp("performance", { [key]: v })} className="CSS.checkbox" />
         <span>{label}</span>
       </label>
     ))}
@@ -579,30 +380,13 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       JS entirely for lowest latency.
     </p>
     <div>
-      <select
-        value={rdp.performance?.renderBackend ?? "webview"}
-        onChange={(e) =>
-          updateRdp("performance", {
-            renderBackend: e.target.value as
+      <Select value={rdp.performance?.renderBackend ?? "webview"} onChange={(v: string) => updateRdp("performance", {
+            renderBackend: v as
               | "auto"
               | "softbuffer"
               | "wgpu"
               | "webview",
-          })
-        }
-        className={CSS.select}
-      >
-        <option value="webview">
-          Webview (JS Canvas) — default, most compatible
-        </option>
-        <option value="softbuffer">
-          Softbuffer (CPU) — native Win32 child window, zero JS
-        </option>
-        <option value="wgpu">
-          Wgpu (GPU) — DX12/Vulkan texture, best throughput
-        </option>
-        <option value="auto">Auto — try GPU → CPU → Webview</option>
-      </select>
+          })} options={[{ value: "webview", label: "Webview (JS Canvas) — default, most compatible" }, { value: "softbuffer", label: "Softbuffer (CPU) — native Win32 child window, zero JS" }, { value: "wgpu", label: "Wgpu (GPU) — DX12/Vulkan texture, best throughput" }, { value: "auto", label: "Auto — try GPU → CPU → Webview" }]} className="CSS.select" />
     </div>
 
     {/* Frontend renderer */}
@@ -615,36 +399,14 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       rendering off the main thread.
     </p>
     <div>
-      <select
-        value={rdp.performance?.frontendRenderer ?? "auto"}
-        onChange={(e) =>
-          updateRdp("performance", {
-            frontendRenderer: e.target.value as
+      <Select value={rdp.performance?.frontendRenderer ?? "auto"} onChange={(v: string) => updateRdp("performance", {
+            frontendRenderer: v as
               | "auto"
               | "canvas2d"
               | "webgl"
               | "webgpu"
               | "offscreen-worker",
-          })
-        }
-        className={CSS.select}
-      >
-        <option value="auto">
-          Auto — best available (WebGPU → WebGL → Canvas 2D)
-        </option>
-        <option value="canvas2d">
-          Canvas 2D — putImageData (baseline, always works)
-        </option>
-        <option value="webgl">
-          WebGL — texSubImage2D (GPU texture upload)
-        </option>
-        <option value="webgpu">
-          WebGPU — writeTexture (modern GPU API)
-        </option>
-        <option value="offscreen-worker">
-          OffscreenCanvas Worker — off-main-thread rendering
-        </option>
-      </select>
+          })} options={[{ value: "auto", label: "Auto — best available (WebGPU → WebGL → Canvas 2D)" }, { value: "canvas2d", label: "Canvas 2D — putImageData (baseline, always works)" }, { value: "webgl", label: "WebGL — texSubImage2D (GPU texture upload)" }, { value: "webgpu", label: "WebGPU — writeTexture (modern GPU API)" }, { value: "offscreen-worker", label: "OffscreenCanvas Worker — off-main-thread rendering" }]} className="CSS.select" />
     </div>
 
     {/* Frame delivery */}
@@ -655,17 +417,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Target FPS: {rdp.performance?.targetFps ?? 30}
       </label>
-      <input
-        type="range"
-        min={0}
-        max={60}
-        step={5}
-        value={rdp.performance?.targetFps ?? 30}
-        onChange={(e) =>
-          updateRdp("performance", { targetFps: parseInt(e.target.value) })
-        }
-        className="w-full"
-      />
+      <Slider value={rdp.performance?.targetFps ?? 30} onChange={(v: number) => updateRdp("performance", { targetFps: v })} min={0} max={60} variant="full" step={5} />
       <div className="flex justify-between text-xs text-gray-600">
         <span>Unlimited</span>
         <span>60</span>
@@ -673,14 +425,7 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
     </div>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.performance?.frameBatching ?? true}
-        onChange={(e) =>
-          updateRdp("performance", { frameBatching: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.performance?.frameBatching ?? true} onChange={(v: boolean) => updateRdp("performance", { frameBatching: v })} className="CSS.checkbox" />
       <span>Frame batching (combine dirty regions)</span>
     </label>
 
@@ -691,33 +436,16 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
           {Math.round(1000 / (rdp.performance?.frameBatchIntervalMs || 33))}{" "}
           fps max)
         </label>
-        <input
-          type="range"
-          min={8}
-          max={100}
-          step={1}
-          value={rdp.performance?.frameBatchIntervalMs ?? 33}
-          onChange={(e) =>
-            updateRdp("performance", {
-              frameBatchIntervalMs: parseInt(e.target.value),
-            })
-          }
-          className="w-full"
-        />
+        <Slider value={rdp.performance?.frameBatchIntervalMs ?? 33} onChange={(v: number) => updateRdp("performance", {
+              frameBatchIntervalMs: v,
+            })} min={8} max={100} variant="full" />
       </div>
     )}
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.performance?.persistentBitmapCaching ?? false}
-        onChange={(e) =>
-          updateRdp("performance", {
-            persistentBitmapCaching: e.target.checked,
-          })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.performance?.persistentBitmapCaching ?? false} onChange={(v: boolean) => updateRdp("performance", {
+            persistentBitmapCaching: v,
+          })} className="CSS.checkbox" />
       <span>Persistent bitmap caching</span>
     </label>
 
@@ -732,32 +460,18 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
     </p>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.performance?.codecs?.enableCodecs ?? true}
-        onChange={(e) =>
-          updateRdp("performance", {
-            codecs: { ...rdp.performance?.codecs, enableCodecs: e.target.checked },
-          })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.performance?.codecs?.enableCodecs ?? true} onChange={(v: boolean) => updateRdp("performance", {
+            codecs: { ...rdp.performance?.codecs, enableCodecs: v },
+          })} className="CSS.checkbox" />
       <span className="font-medium">Enable bitmap codec negotiation</span>
     </label>
 
     {(rdp.performance?.codecs?.enableCodecs ?? true) && (
       <>
         <label className={`${CSS.label} ml-4`}>
-          <input
-            type="checkbox"
-            checked={rdp.performance?.codecs?.remoteFx ?? true}
-            onChange={(e) =>
-              updateRdp("performance", {
-                codecs: { ...rdp.performance?.codecs, remoteFx: e.target.checked },
-              })
-            }
-            className={CSS.checkbox}
-          />
+          <Checkbox checked={rdp.performance?.codecs?.remoteFx ?? true} onChange={(v: boolean) => updateRdp("performance", {
+                codecs: { ...rdp.performance?.codecs, remoteFx: v },
+              })} className="CSS.checkbox" />
           <span>RemoteFX (RFX)</span>
           <span className="text-xs text-gray-500 ml-1">
             — DWT + RLGR entropy, best quality/compression
@@ -769,36 +483,20 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
             <span className="text-xs text-[var(--color-textSecondary)]">
               Entropy:
             </span>
-            <select
-              value={rdp.performance?.codecs?.remoteFxEntropy ?? "rlgr3"}
-              onChange={(e) =>
-                updateRdp("performance", {
+            <Select value={rdp.performance?.codecs?.remoteFxEntropy ?? "rlgr3"} onChange={(v: string) => updateRdp("performance", {
                   codecs: {
                     ...rdp.performance?.codecs,
-                    remoteFxEntropy: e.target.value as "rlgr1" | "rlgr3",
+                    remoteFxEntropy: v as "rlgr1" | "rlgr3",
                   },
-                })
-              }
-              className="bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-0.5 text-xs text-gray-200"
-            >
-              <option value="rlgr1">RLGR1 (faster decoding)</option>
-              <option value="rlgr3">RLGR3 (better compression)</option>
-            </select>
+                })} options={[{ value: "rlgr1", label: "RLGR1 (faster decoding)" }, { value: "rlgr3", label: "RLGR3 (better compression)" }]} className="bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-0.5 text-xs text-gray-200" />
           </div>
         )}
 
         <div className="border-t border-[var(--color-border)]/50 pt-2 mt-2">
           <label className={CSS.label}>
-            <input
-              type="checkbox"
-              checked={rdp.performance?.codecs?.enableGfx ?? false}
-              onChange={(e) =>
-                updateRdp("performance", {
-                  codecs: { ...rdp.performance?.codecs, enableGfx: e.target.checked },
-                })
-              }
-              className={CSS.checkbox}
-            />
+            <Checkbox checked={rdp.performance?.codecs?.enableGfx ?? false} onChange={(v: boolean) => updateRdp("performance", {
+                  codecs: { ...rdp.performance?.codecs, enableGfx: v },
+                })} className="CSS.checkbox" />
             <span>RDPGFX (H.264 Hardware Decode)</span>
             <span className="text-xs text-gray-500 ml-1">
               — lowest bandwidth &amp; CPU via GPU decode
@@ -810,29 +508,15 @@ const PerformanceSection: React.FC<SectionBaseProps> = ({
               <span className="text-xs text-[var(--color-textSecondary)]">
                 H.264 Decoder:
               </span>
-              <select
-                value={rdp.performance?.codecs?.h264Decoder ?? "auto"}
-                onChange={(e) =>
-                  updateRdp("performance", {
+              <Select value={rdp.performance?.codecs?.h264Decoder ?? "auto"} onChange={(v: string) => updateRdp("performance", {
                     codecs: {
                       ...rdp.performance?.codecs,
-                      h264Decoder: e.target.value as
+                      h264Decoder: v as
                         | "auto"
                         | "media-foundation"
                         | "openh264",
                     },
-                  })
-                }
-                className="bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-0.5 text-xs text-gray-200"
-              >
-                <option value="auto">
-                  Auto (MF hardware → openh264 fallback)
-                </option>
-                <option value="media-foundation">
-                  Media Foundation (GPU hardware)
-                </option>
-                <option value="openh264">openh264 (software)</option>
-              </select>
+                  })} options={[{ value: "auto", label: "Auto (MF hardware → openh264 fallback)" }, { value: "media-foundation", label: "Media Foundation (GPU hardware)" }, { value: "openh264", label: "openh264 (software)" }]} className="bg-[var(--color-border)] border border-[var(--color-border)] rounded px-2 py-0.5 text-xs text-gray-200" />
             </div>
           )}
         </div>
@@ -859,14 +543,7 @@ const SecuritySection: React.FC<
     {/* CredSSP Master Toggle */}
     <div className="pb-2 mb-2 border-b border-[var(--color-border)]/60">
       <label className={CSS.label}>
-        <input
-          type="checkbox"
-          checked={rdp.security?.useCredSsp ?? true}
-          onChange={(e) =>
-            updateRdp("security", { useCredSsp: e.target.checked })
-          }
-          className={CSS.checkbox}
-        />
+        <Checkbox checked={rdp.security?.useCredSsp ?? true} onChange={(v: boolean) => updateRdp("security", { useCredSsp: v })} className="CSS.checkbox" />
         <span className="font-medium">Use CredSSP</span>
       </label>
       <p className="text-xs text-gray-500 ml-5 mt-0.5">
@@ -876,15 +553,7 @@ const SecuritySection: React.FC<
     </div>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.security?.enableNla ?? true}
-        onChange={(e) =>
-          updateRdp("security", { enableNla: e.target.checked })
-        }
-        className={CSS.checkbox}
-        disabled={!(rdp.security?.useCredSsp ?? true)}
-      />
+      <Checkbox checked={rdp.security?.enableNla ?? true} onChange={(v: boolean) => updateRdp("security", { enableNla: v })} className="CSS.checkbox" disabled={!(rdp.security?.useCredSsp ?? true)} />
       <span
         className={!(rdp.security?.useCredSsp ?? true) ? "opacity-50" : ""}
       >
@@ -893,52 +562,24 @@ const SecuritySection: React.FC<
     </label>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.security?.enableTls ?? true}
-        onChange={(e) =>
-          updateRdp("security", { enableTls: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.security?.enableTls ?? true} onChange={(v: boolean) => updateRdp("security", { enableTls: v })} className="CSS.checkbox" />
       <span>Enable TLS (legacy graphical logon)</span>
     </label>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.security?.autoLogon ?? false}
-        onChange={(e) =>
-          updateRdp("security", { autoLogon: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.security?.autoLogon ?? false} onChange={(v: boolean) => updateRdp("security", { autoLogon: v })} className="CSS.checkbox" />
       <span>Auto logon (send credentials in INFO packet)</span>
     </label>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.security?.enableServerPointer ?? true}
-        onChange={(e) =>
-          updateRdp("security", { enableServerPointer: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.security?.enableServerPointer ?? true} onChange={(v: boolean) => updateRdp("security", { enableServerPointer: v })} className="CSS.checkbox" />
       <span>Server-side pointer rendering</span>
     </label>
 
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.security?.pointerSoftwareRendering ?? true}
-        onChange={(e) =>
-          updateRdp("security", {
-            pointerSoftwareRendering: e.target.checked,
-          })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.security?.pointerSoftwareRendering ?? true} onChange={(v: boolean) => updateRdp("security", {
+            pointerSoftwareRendering: v,
+          })} className="CSS.checkbox" />
       <span>Software pointer rendering</span>
     </label>
 
@@ -955,81 +596,44 @@ const SecuritySection: React.FC<
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Encryption Oracle Remediation Policy
           </label>
-          <select
-            value={rdp.security?.credsspOracleRemediation ?? ""}
-            onChange={(e) =>
+          <Select value={rdp.security?.credsspOracleRemediation ?? ""} onChange={(v: string) =>
               updateRdp("security", {
                 credsspOracleRemediation:
-                  e.target.value === ""
+                  v === ""
                     ? undefined
-                    : (e.target.value as (typeof CredsspOracleRemediationPolicies)[number]),
-              })
-            }
-            className={CSS.select}
-          >
-            <option value="">Use global default</option>
-            {CredsspOracleRemediationPolicies.map((p) => (
-              <option key={p} value={p}>
-                {p === "force-updated"
+                    : (v as (typeof CredsspOracleRemediationPolicies)[number]),
+              })} options={[{ value: '', label: 'Use global default' }, ...CredsspOracleRemediationPolicies.map((p) => ({ value: p, label: p === "force-updated"
                   ? "Force Updated Clients"
                   : p === "mitigated"
                     ? "Mitigated (recommended)"
-                    : "Vulnerable (allow all)"}
-              </option>
-            ))}
-          </select>
+                    : "Vulnerable (allow all)" }))]} className={CSS.select} />
         </div>
 
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             NLA Mode
           </label>
-          <select
-            value={rdp.security?.enableNla === false ? "disabled" : ""}
-            onChange={(e) => {
-              const v = e.target.value as (typeof NlaModes)[number] | "";
-              if (v === "") {
+          <Select value={rdp.security?.enableNla === false ? "disabled" : ""} onChange={(v: string) => {
+              const mode = v as (typeof NlaModes)[number] | "";
+              if (mode === "") {
                 updateRdp("security", { enableNla: undefined });
               } else {
-                updateRdp("security", { enableNla: v !== "disabled" });
+                updateRdp("security", { enableNla: mode !== "disabled" });
               }
-            }}
-            className={CSS.select}
-          >
-            <option value="">Use global default</option>
-            {NlaModes.map((m) => (
-              <option key={m} value={m}>
-                {m === "required"
+            }} options={[{ value: '', label: 'Use global default' }, ...NlaModes.map((m) => ({ value: m, label: m === "required"
                   ? "Required (reject if NLA unavailable)"
                   : m === "preferred"
                     ? "Preferred (fallback to TLS)"
-                    : "Disabled (TLS only)"}
-              </option>
-            ))}
-          </select>
+                    : "Disabled (TLS only)" }))]} className={CSS.select} />
         </div>
 
         <label className={CSS.label}>
-          <input
-            type="checkbox"
-            checked={rdp.security?.allowHybridEx ?? false}
-            onChange={(e) =>
-              updateRdp("security", { allowHybridEx: e.target.checked })
-            }
-            className={CSS.checkbox}
-          />
+          <Checkbox checked={rdp.security?.allowHybridEx ?? false} onChange={(v: boolean) => updateRdp("security", { allowHybridEx: v })} className="CSS.checkbox" />
           <span>Allow HYBRID_EX protocol (Early User Auth Result)</span>
         </label>
 
         <label className={CSS.label}>
-          <input
-            type="checkbox"
-            checked={rdp.security?.nlaFallbackToTls ?? true}
-            onChange={(e) =>
-              updateRdp("security", { nlaFallbackToTls: e.target.checked })
-            }
-            className={CSS.checkbox}
-          />
+          <Checkbox checked={rdp.security?.nlaFallbackToTls ?? true} onChange={(v: boolean) => updateRdp("security", { nlaFallbackToTls: v })} className="CSS.checkbox" />
           <span>Allow NLA fallback to TLS on failure</span>
         </label>
 
@@ -1037,25 +641,13 @@ const SecuritySection: React.FC<
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Minimum TLS Version
           </label>
-          <select
-            value={rdp.security?.tlsMinVersion ?? ""}
-            onChange={(e) =>
+          <Select value={rdp.security?.tlsMinVersion ?? ""} onChange={(v: string) =>
               updateRdp("security", {
                 tlsMinVersion:
-                  e.target.value === ""
+                  v === ""
                     ? undefined
-                    : (e.target.value as (typeof TlsVersions)[number]),
-              })
-            }
-            className={CSS.select}
-          >
-            <option value="">Use global default</option>
-            {TlsVersions.map((v) => (
-              <option key={v} value={v}>
-                TLS {v}
-              </option>
-            ))}
-          </select>
+                    : (v as (typeof TlsVersions)[number]),
+              })} options={[{ value: '', label: 'Use global default' }, ...TlsVersions.map((v) => ({ value: v, label: `TLS ${v}` }))]} className={CSS.select} />
         </div>
 
         {/* Auth packages */}
@@ -1069,58 +661,28 @@ const SecuritySection: React.FC<
             ["pku2uEnabled", false, "PKU2U"],
           ] as [string, boolean, string][]).map(([key, def, label]) => (
             <label key={key} className={CSS.label}>
-              <input
-                type="checkbox"
-                checked={
-                  (rdp.security?.[key as keyof NonNullable<RdpConnectionSettings["security"]>] as boolean | undefined) ?? def
-                }
-                onChange={(e) =>
-                  updateRdp("security", { [key]: e.target.checked })
-                }
-                className={CSS.checkbox}
-              />
+              <Checkbox checked={(rdp.security?.[key as keyof NonNullable<RdpConnectionSettings["security"]>] as boolean | undefined) ?? def} onChange={(v: boolean) => updateRdp("security", { [key]: v })} className="CSS.checkbox" />
               <span>{label}</span>
             </label>
           ))}
         </div>
 
         <label className={CSS.label}>
-          <input
-            type="checkbox"
-            checked={rdp.security?.restrictedAdmin ?? false}
-            onChange={(e) =>
-              updateRdp("security", { restrictedAdmin: e.target.checked })
-            }
-            className={CSS.checkbox}
-          />
+          <Checkbox checked={rdp.security?.restrictedAdmin ?? false} onChange={(v: boolean) => updateRdp("security", { restrictedAdmin: v })} className="CSS.checkbox" />
           <span>Restricted Admin (no credential delegation)</span>
         </label>
 
         <label className={CSS.label}>
-          <input
-            type="checkbox"
-            checked={rdp.security?.remoteCredentialGuard ?? false}
-            onChange={(e) =>
-              updateRdp("security", {
-                remoteCredentialGuard: e.target.checked,
-              })
-            }
-            className={CSS.checkbox}
-          />
+          <Checkbox checked={rdp.security?.remoteCredentialGuard ?? false} onChange={(v: boolean) => updateRdp("security", {
+                remoteCredentialGuard: v,
+              })} className="CSS.checkbox" />
           <span>Remote Credential Guard</span>
         </label>
 
         <label className={CSS.label}>
-          <input
-            type="checkbox"
-            checked={rdp.security?.enforceServerPublicKeyValidation ?? true}
-            onChange={(e) =>
-              updateRdp("security", {
-                enforceServerPublicKeyValidation: e.target.checked,
-              })
-            }
-            className={CSS.checkbox}
-          />
+          <Checkbox checked={rdp.security?.enforceServerPublicKeyValidation ?? true} onChange={(v: boolean) => updateRdp("security", {
+                enforceServerPublicKeyValidation: v,
+              })} className="CSS.checkbox" />
           <span>Enforce server public key validation</span>
         </label>
 
@@ -1128,53 +690,30 @@ const SecuritySection: React.FC<
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             CredSSP Version
           </label>
-          <select
-            value={rdp.security?.credsspVersion?.toString() ?? ""}
-            onChange={(e) =>
+          <Select value={rdp.security?.credsspVersion?.toString() ?? ""} onChange={(v: string) =>
               updateRdp("security", {
                 credsspVersion:
-                  e.target.value === ""
+                  v === ""
                     ? undefined
-                    : (parseInt(e.target.value) as (typeof CredsspVersions)[number]),
-              })
-            }
-            className={CSS.select}
-          >
-            <option value="">Use global default</option>
-            {CredsspVersions.map((v) => (
-              <option key={v} value={v.toString()}>
-                TSRequest v{v}{" "}
-                {v === 6
+                    : (parseInt(v) as (typeof CredsspVersions)[number]),
+              })} options={[{ value: '', label: 'Use global default' }, ...CredsspVersions.map((v) => ({ value: v.toString(), label: `TSRequest v${v}${" "}
+                ${v === 6
                   ? "(latest, with nonce)"
                   : v === 3
                     ? "(with client nonce)"
-                    : "(legacy)"}
-              </option>
-            ))}
-          </select>
+                    : "(legacy)"}` }))]} className={CSS.select} />
         </div>
 
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Server Certificate Validation
           </label>
-          <select
-            value={rdp.security?.serverCertValidation ?? ""}
-            onChange={(e) =>
-              updateRdp("security", {
+          <Select value={rdp.security?.serverCertValidation ?? ""} onChange={(v: string) => updateRdp("security", {
                 serverCertValidation:
-                  e.target.value === ""
+                  v === ""
                     ? undefined
-                    : (e.target.value as "validate" | "warn" | "ignore"),
-              })
-            }
-            className={CSS.select}
-          >
-            <option value="">Use global default</option>
-            <option value="validate">Validate (reject untrusted)</option>
-            <option value="warn">Warn (prompt on untrusted)</option>
-            <option value="ignore">Ignore (accept all)</option>
-          </select>
+                    : (v as "validate" | "warn" | "ignore"),
+              })} options={[{ value: "", label: "Use global default" }, { value: "validate", label: "Validate (reject untrusted)" }, { value: "warn", label: "Warn (prompt on untrusted)" }, { value: "ignore", label: "Ignore (accept all)" }]} className="CSS.select" />
         </div>
 
         <div>
@@ -1201,31 +740,17 @@ const SecuritySection: React.FC<
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Server Certificate Trust Policy
       </label>
-      <select
-        value={formData.rdpTrustPolicy ?? ""}
-        onChange={(e) =>
-          setFormData({
+      <Select value={formData.rdpTrustPolicy ?? ""} onChange={(v: string) => setFormData({
             ...formData,
             rdpTrustPolicy:
-              e.target.value === ""
+              v === ""
                 ? undefined
-                : (e.target.value as
+                : (v as
                     | "tofu"
                     | "always-ask"
                     | "always-trust"
                     | "strict"),
-          })
-        }
-        className={CSS.select}
-      >
-        <option value="">Use global default</option>
-        <option value="tofu">Trust On First Use (TOFU)</option>
-        <option value="always-ask">Always Ask</option>
-        <option value="always-trust">
-          Always Trust (skip verification)
-        </option>
-        <option value="strict">Strict (reject unless pre-approved)</option>
-      </select>
+          })} options={[{ value: "", label: "Use global default" }, { value: "tofu", label: "Trust On First Use (TOFU)" }, { value: "always-ask", label: "Always Ask" }, { value: "always-trust", label: "Always Trust (skip verification)" }, { value: "strict", label: "Strict (reject unless pre-approved)" }]} className="CSS.select" />
     </div>
 
     {/* Trusted certificates */}
@@ -1321,14 +846,7 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     icon={<Network size={14} className="text-cyan-400" />}
   >
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.gateway?.enabled ?? false}
-        onChange={(e) =>
-          updateRdp("gateway", { enabled: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.gateway?.enabled ?? false} onChange={(v: boolean) => updateRdp("gateway", { enabled: v })} className="CSS.checkbox" />
       <span className="font-medium">Enable RDP Gateway</span>
     </label>
     <p className="text-xs text-gray-500 ml-5 -mt-1">
@@ -1356,34 +874,17 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Gateway Port: {rdp.gateway?.port ?? 443}
           </label>
-          <input
-            type="number"
-            min={1}
-            max={65535}
-            value={rdp.gateway?.port ?? 443}
-            onChange={(e) =>
-              updateRdp("gateway", { port: parseInt(e.target.value) || 443 })
-            }
-            className={CSS.input}
-          />
+          <NumberInput value={rdp.gateway?.port ?? 443} onChange={(v: number) => updateRdp("gateway", { port: v })} className="CSS.input" min={1} max={65535} />
         </div>
 
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Authentication Method
           </label>
-          <select
-            value={rdp.gateway?.authMethod ?? "ntlm"}
-            onChange={(e) =>
+          <Select value={rdp.gateway?.authMethod ?? "ntlm"} onChange={(v: string) =>
               updateRdp("gateway", {
-                authMethod: e.target.value as (typeof GatewayAuthMethods)[number],
-              })
-            }
-            className={CSS.select}
-          >
-            {GatewayAuthMethods.map((m) => (
-              <option key={m} value={m}>
-                {m === "ntlm"
+                authMethod: v as (typeof GatewayAuthMethods)[number],
+              })} options={[...GatewayAuthMethods.map((m) => ({ value: m, label: m === "ntlm"
                   ? "NTLM"
                   : m === "basic"
                     ? "Basic"
@@ -1391,35 +892,21 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
                       ? "Digest"
                       : m === "negotiate"
                         ? "Negotiate (Kerberos/NTLM)"
-                        : "Smart Card"}
-              </option>
-            ))}
-          </select>
+                        : "Smart Card" }))]} className={CSS.select} />
         </div>
 
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Credential Source
           </label>
-          <select
-            value={rdp.gateway?.credentialSource ?? "same-as-connection"}
-            onChange={(e) =>
+          <Select value={rdp.gateway?.credentialSource ?? "same-as-connection"} onChange={(v: string) =>
               updateRdp("gateway", {
-                credentialSource: e.target.value as (typeof GatewayCredentialSources)[number],
-              })
-            }
-            className={CSS.select}
-          >
-            {GatewayCredentialSources.map((s) => (
-              <option key={s} value={s}>
-                {s === "same-as-connection"
+                credentialSource: v as (typeof GatewayCredentialSources)[number],
+              })} options={[...GatewayCredentialSources.map((s) => ({ value: s, label: s === "same-as-connection"
                   ? "Same as connection"
                   : s === "separate"
                     ? "Separate credentials"
-                    : "Ask on connect"}
-              </option>
-            ))}
-          </select>
+                    : "Ask on connect" }))]} className={CSS.select} />
         </div>
 
         {rdp.gateway?.credentialSource === "separate" && (
@@ -1472,32 +959,14 @@ const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Transport Mode
           </label>
-          <select
-            value={rdp.gateway?.transportMode ?? "auto"}
-            onChange={(e) =>
+          <Select value={rdp.gateway?.transportMode ?? "auto"} onChange={(v: string) =>
               updateRdp("gateway", {
-                transportMode: e.target.value as (typeof GatewayTransportModes)[number],
-              })
-            }
-            className={CSS.select}
-          >
-            {GatewayTransportModes.map((m) => (
-              <option key={m} value={m}>
-                {m === "auto" ? "Auto" : m === "http" ? "HTTP" : "UDP"}
-              </option>
-            ))}
-          </select>
+                transportMode: v as (typeof GatewayTransportModes)[number],
+              })} options={[...GatewayTransportModes.map((m) => ({ value: m, label: m === "auto" ? "Auto" : m === "http" ? "HTTP" : "UDP" }))]} className={CSS.select} />
         </div>
 
         <label className={CSS.label}>
-          <input
-            type="checkbox"
-            checked={rdp.gateway?.bypassForLocal ?? true}
-            onChange={(e) =>
-              updateRdp("gateway", { bypassForLocal: e.target.checked })
-            }
-            className={CSS.checkbox}
-          />
+          <Checkbox checked={rdp.gateway?.bypassForLocal ?? true} onChange={(v: boolean) => updateRdp("gateway", { bypassForLocal: v })} className="CSS.checkbox" />
           <span>Bypass gateway for local addresses</span>
         </label>
 
@@ -1535,12 +1004,7 @@ const HyperVSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     icon={<Server size={14} className="text-violet-400" />}
   >
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.hyperv?.useVmId ?? false}
-        onChange={(e) => updateRdp("hyperv", { useVmId: e.target.checked })}
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.hyperv?.useVmId ?? false} onChange={(v: boolean) => updateRdp("hyperv", { useVmId: v })} className="CSS.checkbox" />
       <span className="font-medium">Connect via VM ID</span>
     </label>
     <p className="text-xs text-gray-500 ml-5 -mt-1">
@@ -1583,14 +1047,7 @@ const HyperVSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
 
     <div className="pt-2 mt-2 border-t border-[var(--color-border)]/60">
       <label className={CSS.label}>
-        <input
-          type="checkbox"
-          checked={rdp.hyperv?.enhancedSessionMode ?? false}
-          onChange={(e) =>
-            updateRdp("hyperv", { enhancedSessionMode: e.target.checked })
-          }
-          className={CSS.checkbox}
-        />
+        <Checkbox checked={rdp.hyperv?.enhancedSessionMode ?? false} onChange={(v: boolean) => updateRdp("hyperv", { enhancedSessionMode: v })} className="CSS.checkbox" />
         <span>Enhanced Session Mode</span>
       </label>
       <p className="text-xs text-gray-500 ml-5 -mt-1">
@@ -1614,14 +1071,7 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
     icon={<Zap size={14} className="text-amber-400" />}
   >
     <label className={CSS.label}>
-      <input
-        type="checkbox"
-        checked={rdp.negotiation?.autoDetect ?? false}
-        onChange={(e) =>
-          updateRdp("negotiation", { autoDetect: e.target.checked })
-        }
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.negotiation?.autoDetect ?? false} onChange={(v: boolean) => updateRdp("negotiation", { autoDetect: v })} className="CSS.checkbox" />
       <span className="font-medium">Auto-detect negotiation</span>
     </label>
     <p className="text-xs text-gray-500 ml-5 -mt-1">
@@ -1635,18 +1085,10 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Negotiation Strategy
           </label>
-          <select
-            value={rdp.negotiation?.strategy ?? "nla-first"}
-            onChange={(e) =>
+          <Select value={rdp.negotiation?.strategy ?? "nla-first"} onChange={(v: string) =>
               updateRdp("negotiation", {
-                strategy: e.target.value as (typeof NegotiationStrategies)[number],
-              })
-            }
-            className={CSS.select}
-          >
-            {NegotiationStrategies.map((s) => (
-              <option key={s} value={s}>
-                {s === "auto"
+                strategy: v as (typeof NegotiationStrategies)[number],
+              })} options={[...NegotiationStrategies.map((s) => ({ value: s, label: s === "auto"
                   ? "Auto (try all combinations)"
                   : s === "nla-first"
                     ? "NLA First (CredSSP → TLS → Plain)"
@@ -1656,29 +1098,16 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
                         ? "NLA Only (fail if unavailable)"
                         : s === "tls-only"
                           ? "TLS Only (no CredSSP)"
-                          : "Plain Only (no security — DANGEROUS)"}
-              </option>
-            ))}
-          </select>
+                          : "Plain Only (no security — DANGEROUS)" }))]} className={CSS.select} />
         </div>
 
         <div>
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Max Retries: {rdp.negotiation?.maxRetries ?? 3}
           </label>
-          <input
-            type="range"
-            min={1}
-            max={10}
-            step={1}
-            value={rdp.negotiation?.maxRetries ?? 3}
-            onChange={(e) =>
-              updateRdp("negotiation", {
-                maxRetries: parseInt(e.target.value),
-              })
-            }
-            className="w-full"
-          />
+          <Slider value={rdp.negotiation?.maxRetries ?? 3} onChange={(v: number) => updateRdp("negotiation", {
+                maxRetries: v,
+              })} min={1} max={10} variant="full" />
           <div className="flex justify-between text-xs text-gray-600">
             <span>1</span>
             <span>10</span>
@@ -1689,19 +1118,9 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
           <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
             Retry Delay: {rdp.negotiation?.retryDelayMs ?? 1000}ms
           </label>
-          <input
-            type="range"
-            min={100}
-            max={5000}
-            step={100}
-            value={rdp.negotiation?.retryDelayMs ?? 1000}
-            onChange={(e) =>
-              updateRdp("negotiation", {
-                retryDelayMs: parseInt(e.target.value),
-              })
-            }
-            className="w-full"
-          />
+          <Slider value={rdp.negotiation?.retryDelayMs ?? 1000} onChange={(v: number) => updateRdp("negotiation", {
+                retryDelayMs: v,
+              })} min={100} max={5000} variant="full" step={100} />
           <div className="flex justify-between text-xs text-gray-600">
             <span>100ms</span>
             <span>5000ms</span>
@@ -1737,14 +1156,7 @@ const NegotiationSection: React.FC<SectionBaseProps> = ({
       </div>
 
       <label className={`${CSS.label} mt-2`}>
-        <input
-          type="checkbox"
-          checked={rdp.negotiation?.useRoutingToken ?? false}
-          onChange={(e) =>
-            updateRdp("negotiation", { useRoutingToken: e.target.checked })
-          }
-          className={CSS.checkbox}
-        />
+        <Checkbox checked={rdp.negotiation?.useRoutingToken ?? false} onChange={(v: boolean) => updateRdp("negotiation", { useRoutingToken: v })} className="CSS.checkbox" />
         <span>Use routing token format (instead of cookie)</span>
       </label>
     </div>
@@ -1782,17 +1194,7 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Read Timeout: {rdp.advanced?.readTimeoutMs ?? 16}ms
       </label>
-      <input
-        type="range"
-        min={1}
-        max={100}
-        step={1}
-        value={rdp.advanced?.readTimeoutMs ?? 16}
-        onChange={(e) =>
-          updateRdp("advanced", { readTimeoutMs: parseInt(e.target.value) })
-        }
-        className="w-full"
-      />
+      <Slider value={rdp.advanced?.readTimeoutMs ?? 16} onChange={(v: number) => updateRdp("advanced", { readTimeoutMs: v })} min={1} max={100} variant="full" />
       <div className="flex justify-between text-xs text-gray-600">
         <span>1ms (fast)</span>
         <span>100ms (low CPU)</span>
@@ -1804,57 +1206,27 @@ const AdvancedSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         Full-frame Sync Interval: every{" "}
         {rdp.advanced?.fullFrameSyncInterval ?? 300} frames
       </label>
-      <input
-        type="range"
-        min={60}
-        max={600}
-        step={30}
-        value={rdp.advanced?.fullFrameSyncInterval ?? 300}
-        onChange={(e) =>
-          updateRdp("advanced", {
-            fullFrameSyncInterval: parseInt(e.target.value),
-          })
-        }
-        className="w-full"
-      />
+      <Slider value={rdp.advanced?.fullFrameSyncInterval ?? 300} onChange={(v: number) => updateRdp("advanced", {
+            fullFrameSyncInterval: v,
+          })} min={60} max={600} variant="full" step={30} />
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Max Consecutive Errors: {rdp.advanced?.maxConsecutiveErrors ?? 50}
       </label>
-      <input
-        type="range"
-        min={10}
-        max={200}
-        step={10}
-        value={rdp.advanced?.maxConsecutiveErrors ?? 50}
-        onChange={(e) =>
-          updateRdp("advanced", {
-            maxConsecutiveErrors: parseInt(e.target.value),
-          })
-        }
-        className="w-full"
-      />
+      <Slider value={rdp.advanced?.maxConsecutiveErrors ?? 50} onChange={(v: number) => updateRdp("advanced", {
+            maxConsecutiveErrors: v,
+          })} min={10} max={200} variant="full" step={10} />
     </div>
 
     <div>
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Stats Interval: {rdp.advanced?.statsIntervalSecs ?? 1}s
       </label>
-      <input
-        type="range"
-        min={1}
-        max={10}
-        step={1}
-        value={rdp.advanced?.statsIntervalSecs ?? 1}
-        onChange={(e) =>
-          updateRdp("advanced", {
-            statsIntervalSecs: parseInt(e.target.value),
-          })
-        }
-        className="w-full"
-      />
+      <Slider value={rdp.advanced?.statsIntervalSecs ?? 1} onChange={(v: number) => updateRdp("advanced", {
+            statsIntervalSecs: v,
+          })} min={1} max={10} variant="full" />
     </div>
   </Section>
 );
@@ -1876,17 +1248,7 @@ const TcpSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
       <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
         Connect Timeout: {rdp.tcp?.connectTimeoutSecs ?? 10}s
       </label>
-      <input
-        type="range"
-        min={1}
-        max={60}
-        step={1}
-        value={rdp.tcp?.connectTimeoutSecs ?? 10}
-        onChange={(e) =>
-          updateRdp("tcp", { connectTimeoutSecs: parseInt(e.target.value) })
-        }
-        className="w-full"
-      />
+      <Slider value={rdp.tcp?.connectTimeoutSecs ?? 10} onChange={(v: number) => updateRdp("tcp", { connectTimeoutSecs: v })} min={1} max={60} variant="full" />
       <div className="flex justify-between text-xs text-gray-600">
         <span>1s</span>
         <span>60s</span>
@@ -1894,24 +1256,14 @@ const TcpSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
     </div>
 
     <label className="flex items-center space-x-3 cursor-pointer group">
-      <input
-        type="checkbox"
-        checked={rdp.tcp?.nodelay ?? true}
-        onChange={(e) => updateRdp("tcp", { nodelay: e.target.checked })}
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.tcp?.nodelay ?? true} onChange={(v: boolean) => updateRdp("tcp", { nodelay: v })} className="CSS.checkbox" />
       <span className="text-xs text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
         TCP_NODELAY (disable Nagle&apos;s algorithm)
       </span>
     </label>
 
     <label className="flex items-center space-x-3 cursor-pointer group">
-      <input
-        type="checkbox"
-        checked={rdp.tcp?.keepAlive ?? true}
-        onChange={(e) => updateRdp("tcp", { keepAlive: e.target.checked })}
-        className={CSS.checkbox}
-      />
+      <Checkbox checked={rdp.tcp?.keepAlive ?? true} onChange={(v: boolean) => updateRdp("tcp", { keepAlive: v })} className="CSS.checkbox" />
       <span className="text-xs text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)] transition-colors">
         TCP Keep-Alive
       </span>
@@ -1922,19 +1274,9 @@ const TcpSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
           Keep-Alive Interval: {rdp.tcp?.keepAliveIntervalSecs ?? 60}s
         </label>
-        <input
-          type="range"
-          min={5}
-          max={300}
-          step={5}
-          value={rdp.tcp?.keepAliveIntervalSecs ?? 60}
-          onChange={(e) =>
-            updateRdp("tcp", {
-              keepAliveIntervalSecs: parseInt(e.target.value),
-            })
-          }
-          className="w-full"
-        />
+        <Slider value={rdp.tcp?.keepAliveIntervalSecs ?? 60} onChange={(v: number) => updateRdp("tcp", {
+              keepAliveIntervalSecs: v,
+            })} min={5} max={300} variant="full" step={5} />
       </div>
     )}
 
@@ -1943,39 +1285,13 @@ const TcpSection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (
         <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
           Recv Buffer
         </label>
-        <select
-          value={rdp.tcp?.recvBufferSize ?? 262144}
-          onChange={(e) =>
-            updateRdp("tcp", { recvBufferSize: parseInt(e.target.value) })
-          }
-          className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs"
-        >
-          <option value={65536}>64 KB</option>
-          <option value={131072}>128 KB</option>
-          <option value={262144}>256 KB</option>
-          <option value={524288}>512 KB</option>
-          <option value={1048576}>1 MB</option>
-          <option value={2097152}>2 MB</option>
-        </select>
+        <Select value={rdp.tcp?.recvBufferSize ?? 262144} onChange={(v: string) => updateRdp("tcp", { recvBufferSize: parseInt(v) })} options={[{ value: "65536", label: "64 KB" }, { value: "131072", label: "128 KB" }, { value: "262144", label: "256 KB" }, { value: "524288", label: "512 KB" }, { value: "1048576", label: "1 MB" }, { value: "2097152", label: "2 MB" }]} className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs" />
       </div>
       <div>
         <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
           Send Buffer
         </label>
-        <select
-          value={rdp.tcp?.sendBufferSize ?? 262144}
-          onChange={(e) =>
-            updateRdp("tcp", { sendBufferSize: parseInt(e.target.value) })
-          }
-          className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs"
-        >
-          <option value={65536}>64 KB</option>
-          <option value={131072}>128 KB</option>
-          <option value={262144}>256 KB</option>
-          <option value={524288}>512 KB</option>
-          <option value={1048576}>1 MB</option>
-          <option value={2097152}>2 MB</option>
-        </select>
+        <Select value={rdp.tcp?.sendBufferSize ?? 262144} onChange={(v: string) => updateRdp("tcp", { sendBufferSize: parseInt(v) })} options={[{ value: "65536", label: "64 KB" }, { value: "131072", label: "128 KB" }, { value: "262144", label: "256 KB" }, { value: "524288", label: "512 KB" }, { value: "1048576", label: "1 MB" }, { value: "2097152", label: "2 MB" }]} className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs" />
       </div>
     </div>
   </Section>

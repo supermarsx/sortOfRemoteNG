@@ -21,6 +21,7 @@ import {
   Power,
 } from "lucide-react";
 import { useRecordingSettings } from "../../../hooks/settings/useRecordingSettings";
+import { Checkbox, NumberInput, Select, Slider } from '../../ui/forms';
 
 type Mgr = ReturnType<typeof useRecordingSettings>;
 
@@ -54,7 +55,7 @@ const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <p className="text-[10px] text-gray-500">Allow SSH terminal sessions to be recorded</p>
           </div>
         </div>
-        <input type="checkbox" checked={mgr.recording.enabled} onChange={(e) => mgr.updateSsh({ enabled: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={mgr.recording.enabled} onChange={(v: boolean) => mgr.updateSsh({ enabled: v })} />
       </label>
       <label data-setting-key="recording.autoRecordSessions" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
@@ -64,7 +65,7 @@ const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <p className="text-[10px] text-gray-500">Automatically start recording when connecting to SSH</p>
           </div>
         </div>
-        <input type="checkbox" checked={mgr.recording.autoRecordSessions} onChange={(e) => mgr.updateSsh({ autoRecordSessions: e.target.checked })} className="sor-settings-checkbox" disabled={!mgr.recording.enabled} />
+        <Checkbox checked={mgr.recording.autoRecordSessions} onChange={(v: boolean) => mgr.updateSsh({ autoRecordSessions: v })} disabled={!mgr.recording.enabled} />
       </label>
       <label data-setting-key="recording.recordInput" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
@@ -74,7 +75,7 @@ const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <p className="text-[10px] text-gray-500">Include typed input in recordings (may contain sensitive data)</p>
           </div>
         </div>
-        <input type="checkbox" checked={mgr.recording.recordInput} onChange={(e) => mgr.updateSsh({ recordInput: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={mgr.recording.recordInput} onChange={(v: boolean) => mgr.updateSsh({ recordInput: v })} />
       </label>
     </div>
   </>
@@ -91,7 +92,7 @@ const SshLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <input type="number" value={mgr.recording.maxRecordingDurationMinutes} onChange={(e) => mgr.updateSsh({ maxRecordingDurationMinutes: Math.max(0, Number(e.target.value)) })} className="sor-settings-input sor-settings-input-compact w-20 text-right" min={0} />
+        <NumberInput value={mgr.recording.maxRecordingDurationMinutes} onChange={(v: number) => mgr.updateSsh({ maxRecordingDurationMinutes: v })} variant="settings-compact" className="w-20 text-right" min={0} />
         <span className="text-xs text-[var(--color-textSecondary)]">min</span>
       </div>
     </div>
@@ -104,7 +105,7 @@ const SshLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
         </div>
       </div>
-      <input type="number" value={mgr.recording.maxStoredRecordings} onChange={(e) => mgr.updateSsh({ maxStoredRecordings: Math.max(1, Number(e.target.value)) })} className="sor-settings-input sor-settings-input-compact w-20 text-right" min={1} />
+      <NumberInput value={mgr.recording.maxStoredRecordings} onChange={(v: number) => mgr.updateSsh({ maxStoredRecordings: v })} variant="settings-compact" className="w-20 text-right" min={1} />
     </div>
 
     <div data-setting-key="recording.defaultExportFormat" className="flex items-center justify-between">
@@ -112,12 +113,7 @@ const SshLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Download size={14} className="text-purple-400" />
         <span className="text-sm text-[var(--color-textSecondary)]">Default export format</span>
       </div>
-      <select value={mgr.recording.defaultExportFormat} onChange={(e) => mgr.updateSsh({ defaultExportFormat: e.target.value as RecordingConfig["defaultExportFormat"] })} className="sor-settings-select">
-        <option value="asciicast">Asciicast (asciinema)</option>
-        <option value="script">Script (text)</option>
-        <option value="json">JSON</option>
-        <option value="gif">GIF (animated)</option>
-      </select>
+      <Select value={mgr.recording.defaultExportFormat} onChange={(v: string) => mgr.updateSsh({ defaultExportFormat: v as RecordingConfig["defaultExportFormat"] })} options={[{ value: "asciicast", label: "Asciicast (asciinema)" }, { value: "script", label: "Script (text)" }, { value: "json", label: "JSON" }, { value: "gif", label: "GIF (animated)" }]} />
     </div>
   </div>
 );
@@ -146,7 +142,7 @@ const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <p className="text-[10px] text-gray-500">Allow RDP sessions to be screen-recorded</p>
           </div>
         </div>
-        <input type="checkbox" checked={mgr.rdpRec.enabled} onChange={(e) => mgr.updateRdp({ enabled: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={mgr.rdpRec.enabled} onChange={(v: boolean) => mgr.updateRdp({ enabled: v })} />
       </label>
       <label data-setting-key="rdpRecording.autoRecordRdpSessions" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
@@ -156,7 +152,7 @@ const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <p className="text-[10px] text-gray-500">Automatically start video recording on RDP connect</p>
           </div>
         </div>
-        <input type="checkbox" checked={mgr.rdpRec.autoRecordRdpSessions} onChange={(e) => mgr.updateRdp({ autoRecordRdpSessions: e.target.checked })} className="sor-settings-checkbox" disabled={!mgr.rdpRec.enabled} />
+        <Checkbox checked={mgr.rdpRec.autoRecordRdpSessions} onChange={(v: boolean) => mgr.updateRdp({ autoRecordRdpSessions: v })} disabled={!mgr.rdpRec.enabled} />
       </label>
       <label data-setting-key="rdpRecording.autoSaveToLibrary" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
@@ -166,7 +162,7 @@ const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <p className="text-[10px] text-gray-500">Save RDP recordings to the Recording Manager instead of prompting a file dialog</p>
           </div>
         </div>
-        <input type="checkbox" checked={mgr.rdpRec.autoSaveToLibrary} onChange={(e) => mgr.updateRdp({ autoSaveToLibrary: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={mgr.rdpRec.autoSaveToLibrary} onChange={(v: boolean) => mgr.updateRdp({ autoSaveToLibrary: v })} />
       </label>
     </div>
   </>
@@ -179,11 +175,7 @@ const RdpFormatQuality: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Film size={14} className="text-cyan-400" />
         <span className="text-sm text-[var(--color-textSecondary)]">Video format</span>
       </div>
-      <select value={mgr.rdpRec.defaultVideoFormat} onChange={(e) => mgr.updateRdp({ defaultVideoFormat: e.target.value as "webm" | "mp4" | "gif" })} className="sor-settings-select">
-        <option value="webm">WebM (VP8/VP9)</option>
-        <option value="mp4">MP4 (H.264)</option>
-        <option value="gif">GIF (animated)</option>
-      </select>
+      <Select value={mgr.rdpRec.defaultVideoFormat} onChange={(v: string) => mgr.updateRdp({ defaultVideoFormat: v as "webm" | "mp4" | "gif" })} options={[{ value: "webm", label: "WebM (VP8/VP9)" }, { value: "mp4", label: "MP4 (H.264)" }, { value: "gif", label: "GIF (animated)" }]} />
     </div>
     <div data-setting-key="rdpRecording.recordingFps" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -194,7 +186,7 @@ const RdpFormatQuality: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <input type="range" min={5} max={60} step={5} value={mgr.rdpRec.recordingFps} onChange={(e) => mgr.updateRdp({ recordingFps: Number(e.target.value) })} className="sor-settings-range sor-settings-range-wide" />
+        <Slider value={mgr.rdpRec.recordingFps} onChange={(v: number) => mgr.updateRdp({ recordingFps: v })} min={5} max={60} variant="wide" step={5} />
         <span className="text-xs text-[var(--color-textSecondary)] w-12 text-right font-mono">{mgr.rdpRec.recordingFps} fps</span>
       </div>
     </div>
@@ -207,7 +199,7 @@ const RdpFormatQuality: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <input type="range" min={1} max={20} step={1} value={mgr.rdpRec.videoBitrateMbps} onChange={(e) => mgr.updateRdp({ videoBitrateMbps: Number(e.target.value) })} className="sor-settings-range sor-settings-range-wide" />
+        <Slider value={mgr.rdpRec.videoBitrateMbps} onChange={(v: number) => mgr.updateRdp({ videoBitrateMbps: v })} min={1} max={20} variant="wide" />
         <span className="text-xs text-[var(--color-textSecondary)] w-16 text-right font-mono">{mgr.rdpRec.videoBitrateMbps} Mbps</span>
       </div>
     </div>
@@ -225,7 +217,7 @@ const RdpLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <input type="number" value={mgr.rdpRec.maxRdpRecordingDurationMinutes} onChange={(e) => mgr.updateRdp({ maxRdpRecordingDurationMinutes: Math.max(0, Number(e.target.value)) })} className="sor-settings-input sor-settings-input-compact w-20 text-right" min={0} />
+        <NumberInput value={mgr.rdpRec.maxRdpRecordingDurationMinutes} onChange={(v: number) => mgr.updateRdp({ maxRdpRecordingDurationMinutes: v })} variant="settings-compact" className="w-20 text-right" min={0} />
         <span className="text-xs text-[var(--color-textSecondary)]">min</span>
       </div>
     </div>
@@ -237,7 +229,7 @@ const RdpLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
         </div>
       </div>
-      <input type="number" value={mgr.rdpRec.maxStoredRdpRecordings} onChange={(e) => mgr.updateRdp({ maxStoredRdpRecordings: Math.max(1, Number(e.target.value)) })} className="sor-settings-input sor-settings-input-compact w-20 text-right" min={1} />
+      <NumberInput value={mgr.rdpRec.maxStoredRdpRecordings} onChange={(v: number) => mgr.updateRdp({ maxStoredRdpRecordings: v })} variant="settings-compact" className="w-20 text-right" min={1} />
     </div>
   </div>
 );
@@ -274,7 +266,7 @@ const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <p className="text-[10px] text-gray-500">Allow web sessions to be recorded (HAR and video)</p>
           </div>
         </div>
-        <input type="checkbox" checked={mgr.webRec.enabled} onChange={(e) => mgr.updateWeb({ enabled: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={mgr.webRec.enabled} onChange={(v: boolean) => mgr.updateWeb({ enabled: v })} />
       </label>
       <label data-setting-key="webRecording.autoRecordWebSessions" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
@@ -284,7 +276,7 @@ const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <p className="text-[10px] text-gray-500">Automatically start HTTP traffic recording on web connect</p>
           </div>
         </div>
-        <input type="checkbox" checked={mgr.webRec.autoRecordWebSessions} onChange={(e) => mgr.updateWeb({ autoRecordWebSessions: e.target.checked })} className="sor-settings-checkbox" disabled={!mgr.webRec.enabled} />
+        <Checkbox checked={mgr.webRec.autoRecordWebSessions} onChange={(v: boolean) => mgr.updateWeb({ autoRecordWebSessions: v })} disabled={!mgr.webRec.enabled} />
       </label>
       <label data-setting-key="webRecording.recordHeaders" className="flex items-center justify-between cursor-pointer group">
         <div className="flex items-center gap-3">
@@ -294,7 +286,7 @@ const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <p className="text-[10px] text-gray-500">Include request and response headers in recordings</p>
           </div>
         </div>
-        <input type="checkbox" checked={mgr.webRec.recordHeaders} onChange={(e) => mgr.updateWeb({ recordHeaders: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={mgr.webRec.recordHeaders} onChange={(v: boolean) => mgr.updateWeb({ recordHeaders: v })} />
       </label>
     </div>
   </>
@@ -311,7 +303,7 @@ const WebLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <input type="number" value={mgr.webRec.maxWebRecordingDurationMinutes} onChange={(e) => mgr.updateWeb({ maxWebRecordingDurationMinutes: Math.max(0, Number(e.target.value)) })} className="sor-settings-input sor-settings-input-compact w-20 text-right" min={0} />
+        <NumberInput value={mgr.webRec.maxWebRecordingDurationMinutes} onChange={(v: number) => mgr.updateWeb({ maxWebRecordingDurationMinutes: v })} variant="settings-compact" className="w-20 text-right" min={0} />
         <span className="text-xs text-[var(--color-textSecondary)]">min</span>
       </div>
     </div>
@@ -323,17 +315,14 @@ const WebLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
         </div>
       </div>
-      <input type="number" value={mgr.webRec.maxStoredWebRecordings} onChange={(e) => mgr.updateWeb({ maxStoredWebRecordings: Math.max(1, Number(e.target.value)) })} className="sor-settings-input sor-settings-input-compact w-20 text-right" min={1} />
+      <NumberInput value={mgr.webRec.maxStoredWebRecordings} onChange={(v: number) => mgr.updateWeb({ maxStoredWebRecordings: v })} variant="settings-compact" className="w-20 text-right" min={1} />
     </div>
     <div data-setting-key="webRecording.defaultExportFormat" className="flex items-center justify-between">
       <div className="flex items-center gap-3">
         <FileText size={14} className="text-purple-400" />
         <span className="text-sm text-[var(--color-textSecondary)]">Default export format</span>
       </div>
-      <select value={mgr.webRec.defaultExportFormat} onChange={(e) => mgr.updateWeb({ defaultExportFormat: e.target.value as "json" | "har" })} className="sor-settings-select">
-        <option value="har">HAR (HTTP Archive)</option>
-        <option value="json">JSON</option>
-      </select>
+      <Select value={mgr.webRec.defaultExportFormat} onChange={(v: string) => mgr.updateWeb({ defaultExportFormat: v as "json" | "har" })} options={[{ value: "har", label: "HAR (HTTP Archive)" }, { value: "json", label: "JSON" }]} />
     </div>
   </div>
 );

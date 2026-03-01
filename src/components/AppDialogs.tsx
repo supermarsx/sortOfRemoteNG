@@ -24,7 +24,7 @@ import { RecordingManager } from "./RecordingManager";
 import { ConnectionDiagnostics } from "./ConnectionDiagnostics";
 import { ErrorLogBar } from "./ErrorLogBar";
 import { AutoLockManager } from "./AutoLockManager";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";
 
 interface AppDialogsProps {
   appSettings: GlobalSettings;

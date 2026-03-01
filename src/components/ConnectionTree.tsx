@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { PasswordInput } from "./ui/PasswordInput";
+import { PasswordInput } from "./ui/forms/PasswordInput";
 import {
   ChevronRight,
   ChevronDown,
@@ -32,9 +32,10 @@ import {
 } from "lucide-react";
 import { Connection } from "../types/connection";
 import { useConnections } from "../contexts/useConnections";
-import { Modal, ModalHeader } from "./ui/Modal";
-import { MenuSurface } from "./ui/MenuSurface";
+import { Modal, ModalHeader } from "./ui/overlays/Modal";
+import { MenuSurface } from "./ui/overlays/MenuSurface";
 import { useConnectionTree, type ConnectionTreeMgr } from "../hooks/connection/useConnectionTree";
+import { Checkbox, Select } from './ui/forms';
 
 /* ── Static helpers (module-level) ─────────────────────────────── */
 
@@ -452,14 +453,7 @@ function ConnectOptionsModal({ mgr }: { mgr: ConnectionTreeMgr }) {
             <>
               <div>
                 <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Auth Type</label>
-                <select
-                  value={data.authType}
-                  onChange={(e) => update({ authType: e.target.value as "password" | "key" })}
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="password">Password</option>
-                  <option value="key">Private Key</option>
-                </select>
+                <Select value={data.authType} onChange={(v: string) => update({ authType: v as "password" | "key" })} options={[{ value: "password", label: "Password" }, { value: "key", label: "Private Key" }]} className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
               </div>
               {data.authType === "password" ? (
                 <div>
@@ -503,7 +497,7 @@ function ConnectOptionsModal({ mgr }: { mgr: ConnectionTreeMgr }) {
             </div>
           )}
           <label className="flex items-center gap-2 text-sm text-[var(--color-textSecondary)]">
-            <input type="checkbox" checked={data.saveToConnection} onChange={(e) => update({ saveToConnection: e.target.checked })} />
+            <Checkbox checked={data.saveToConnection} onChange={(v: boolean) => update({ saveToConnection: v })} />
             <span>Save credentials to this connection</span>
           </label>
           <div className="flex justify-end gap-2">

@@ -18,6 +18,7 @@ import {
   getMaxDescendantDepth,
   MAX_NESTING_DEPTH,
 } from "../../utils/dragDropManager";
+import { Checkbox, NumberInput, Select } from '../ui/forms';
 
 interface GeneralSectionProps {
   formData: Partial<Connection>;
@@ -102,26 +103,9 @@ const ParentFolderSelect: React.FC<{
   }, [availableGroups, allConnections, formData.id, formData.isGroup]);
 
   return (
-    <select
-      value={formData.parentId || ""}
-      onChange={(e) =>
-        setFormData({ ...formData, parentId: e.target.value || undefined })
-      }
-      className="sor-form-select"
-    >
-      <option value="">Root (No parent)</option>
-      {selectableGroups.map(({ group, depth, disabled, reason }) => (
-        <option
-          key={group.id}
-          value={group.id}
-          disabled={disabled}
-          title={reason}
-        >
-          {"─".repeat(depth)} {getFolderPath(group.id, allConnections)}
-          {disabled ? ` (${reason})` : ""}
-        </option>
-      ))}
-    </select>
+    <Select value={formData.parentId || ""} onChange={(v: string) =>
+        setFormData({ ...formData, parentId: v || undefined })} options={[{ value: '', label: 'Root (No parent)' }, ...selectableGroups.map(({ group, depth, disabled, reason }) => ({ value: group.id, label: `${"─".repeat(depth)} ${getFolderPath(group.id, allConnections)}
+          ${disabled ? ` (${reason})` : ""}`, disabled: disabled, title: reason }))]} className="sor-form-select" />
   );
 };
 
@@ -160,28 +144,14 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
     <>
       <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={!!formData.isGroup}
-            onChange={(e) =>
-              setFormData({ ...formData, isGroup: e.target.checked })
-            }
-            className="sor-form-checkbox"
-          />
+          <Checkbox checked={!!formData.isGroup} onChange={(v: boolean) => setFormData({ ...formData, isGroup: v })} variant="form" />
           <span className="text-[var(--color-textSecondary)]">
             Create as folder/group
           </span>
         </label>
         {!formData.isGroup && (
           <label className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={!!formData.favorite}
-              onChange={(e) =>
-                setFormData({ ...formData, favorite: e.target.checked })
-              }
-              className="sor-form-checkbox"
-            />
+            <Checkbox checked={!!formData.favorite} onChange={(v: boolean) => setFormData({ ...formData, favorite: v })} variant="form" />
             <span className="text-[var(--color-textSecondary)]">
               Mark as favorite
             </span>
@@ -253,28 +223,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Protocol
               </label>
-              <select
-                value={formData.protocol ?? "rdp"}
-                onChange={(e) => handleProtocolChange(e.target.value)}
-                className="sor-form-select"
-              >
-                <option value="rdp">RDP (Remote Desktop)</option>
-                <option value="ssh">SSH (Secure Shell)</option>
-                <option value="vnc">VNC (Virtual Network Computing)</option>
-                <option value="anydesk">AnyDesk</option>
-                <option value="http">HTTP</option>
-                <option value="https">HTTPS</option>
-                <option value="telnet">Telnet</option>
-                <option value="rlogin">RLogin</option>
-                <option value="gcp">Google Cloud Platform (GCP)</option>
-                <option value="azure">Microsoft Azure</option>
-                <option value="ibm-csp">IBM Cloud</option>
-                <option value="digital-ocean">Digital Ocean</option>
-                <option value="heroku">Heroku</option>
-                <option value="scaleway">Scaleway</option>
-                <option value="linode">Linode</option>
-                <option value="ovhcloud">OVH Cloud</option>
-              </select>
+              <Select value={formData.protocol ?? "rdp"} onChange={(v: string) => handleProtocolChange(v)} options={[{ value: "rdp", label: "RDP (Remote Desktop)" }, { value: "ssh", label: "SSH (Secure Shell)" }, { value: "vnc", label: "VNC (Virtual Network Computing)" }, { value: "anydesk", label: "AnyDesk" }, { value: "http", label: "HTTP" }, { value: "https", label: "HTTPS" }, { value: "telnet", label: "Telnet" }, { value: "rlogin", label: "RLogin" }, { value: "gcp", label: "Google Cloud Platform (GCP)" }, { value: "azure", label: "Microsoft Azure" }, { value: "ibm-csp", label: "IBM Cloud" }, { value: "digital-ocean", label: "Digital Ocean" }, { value: "heroku", label: "Heroku" }, { value: "scaleway", label: "Scaleway" }, { value: "linode", label: "Linode" }, { value: "ovhcloud", label: "OVH Cloud" }]} variant="form" />
             </div>
 
             {formData.protocol === "ssh" && (
@@ -311,19 +260,10 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Port
               </label>
-              <input
-                type="number"
-                value={formData.port || 0}
-                onChange={(e) =>
-                  setFormData({
+              <NumberInput value={formData.port || 0} onChange={(v: number) => setFormData({
                     ...formData,
-                    port: parseInt(e.target.value) || 0,
-                  })
-                }
-                className="sor-form-input"
-                min={1}
-                max={65535}
-              />
+                    port: v,
+                  })} variant="form" min={1} max={65535} />
             </div>
 
             {formData.protocol === "rdp" && (

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { PasswordInput } from "../ui/PasswordInput";
+import { PasswordInput } from "../ui/forms/PasswordInput";
 import {
   X,
   AlertTriangle,
@@ -13,7 +13,7 @@ import {
   ArrowDown,
   FolderOpen,
 } from "lucide-react";
-import { Modal, ModalHeader } from "../ui/Modal";
+import { Modal, ModalHeader } from "../ui/overlays/Modal";
 import { Connection, HttpBookmarkItem } from "../../types/connection";
 import {
   getAllTrustRecords,
@@ -24,6 +24,7 @@ import {
   type TrustRecord,
 } from "../../utils/trustStore";
 import { useHTTPOptions } from "../../hooks/connection/useHTTPOptions";
+import { Checkbox, Select } from '../ui/forms';
 
 type Mgr = ReturnType<typeof useHTTPOptions>;
 
@@ -41,16 +42,7 @@ const AuthTypeSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
       Authentication Type
     </label>
-    <select
-      value={mgr.formData.authType ?? "basic"}
-      onChange={(e) =>
-        mgr.setFormData({ ...mgr.formData, authType: e.target.value as any })
-      }
-      className="sor-form-select"
-    >
-      <option value="basic">Basic Authentication</option>
-      <option value="header">Custom Headers</option>
-    </select>
+    <Select value={mgr.formData.authType ?? "basic"} onChange={(v: string) => mgr.setFormData({ ...mgr.formData, authType: v as any })} options={[{ value: "basic", label: "Basic Authentication" }, { value: "header", label: "Custom Headers" }]} variant="form" />
   </div>
 );
 
@@ -119,17 +111,10 @@ const TlsVerifySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   return (
     <div className="md:col-span-2">
       <label className="flex items-center space-x-2 text-sm text-[var(--color-textSecondary)]">
-        <input
-          type="checkbox"
-          checked={mgr.formData.httpVerifySsl ?? true}
-          onChange={(e) =>
-            mgr.setFormData({
+        <Checkbox checked={mgr.formData.httpVerifySsl ?? true} onChange={(v: boolean) => mgr.setFormData({
               ...mgr.formData,
-              httpVerifySsl: e.target.checked,
-            })
-          }
-          className="sor-form-checkbox"
-        />
+              httpVerifySsl: v,
+            })} variant="form" />
         <span>Verify TLS certificates</span>
       </label>
       {(mgr.formData.httpVerifySsl ?? true) ? (
@@ -165,31 +150,17 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
         Certificate Trust Policy
       </label>
-      <select
-        value={mgr.formData.tlsTrustPolicy ?? ""}
-        onChange={(e) =>
-          mgr.setFormData({
+      <Select value={mgr.formData.tlsTrustPolicy ?? ""} onChange={(v: string) => mgr.setFormData({
             ...mgr.formData,
             tlsTrustPolicy:
-              e.target.value === ""
+              v === ""
                 ? undefined
-                : (e.target.value as
+                : (v as
                     | "tofu"
                     | "always-ask"
                     | "always-trust"
                     | "strict"),
-          })
-        }
-        className="sor-form-select text-sm"
-      >
-        <option value="">Use global default</option>
-        <option value="tofu">Trust On First Use (TOFU)</option>
-        <option value="always-ask">Always Ask</option>
-        <option value="always-trust">
-          Always Trust (skip verification)
-        </option>
-        <option value="strict">Strict (reject unless pre-approved)</option>
-      </select>
+          })} options={[{ value: "", label: "Use global default" }, { value: "tofu", label: "Trust On First Use (TOFU)" }, { value: "always-ask", label: "Always Ask" }, { value: "always-trust", label: "Always Trust (skip verification)" }, { value: "strict", label: "Strict (reject unless pre-approved)" }]} variant="form" />
       <p className="text-xs text-gray-500 mt-1">
         Controls whether certificate fingerprints are memorized and verified
         across connections.

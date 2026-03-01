@@ -2,8 +2,10 @@ import React from "react";
 import { Plus, Trash2, Copy, Shield, Key } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useTOTPManager } from "../hooks/security/useTOTPManager";
-import { Modal, ModalHeader, ModalBody } from "./ui/Modal";
+import { Modal, ModalHeader, ModalBody } from "./ui/overlays/Modal";
+import { EmptyState } from './ui/display';
 import { TOTPConfig } from "../types/settings";
+import { Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useTOTPManager>;
 
@@ -50,39 +52,20 @@ const AddTOTPForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
           Digits
         </label>
-        <select
-          value={mgr.newConfig.digits || 6}
-          onChange={(e) =>
-            mgr.setNewConfig({
+        <Select value={mgr.newConfig.digits || 6} onChange={(v: string) => mgr.setNewConfig({
               ...mgr.newConfig,
-              digits: parseInt(e.target.value),
-            })
-          }
-          className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-        >
-          <option value={6}>6 digits</option>
-          <option value={8}>8 digits</option>
-        </select>
+              digits: parseInt(v),
+            })} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]" />
       </div>
 
       <div>
         <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
           Period (seconds)
         </label>
-        <select
-          value={mgr.newConfig.period || 30}
-          onChange={(e) =>
-            mgr.setNewConfig({
+        <Select value={mgr.newConfig.period || 30} onChange={(v: string) => mgr.setNewConfig({
               ...mgr.newConfig,
-              period: parseInt(e.target.value),
-            })
-          }
-          className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]"
-        >
-          <option value={15}>15 seconds</option>
-          <option value={30}>30 seconds</option>
-          <option value={60}>60 seconds</option>
-        </select>
+              period: parseInt(v),
+            })} options={[{ value: "15", label: "15 seconds" }, { value: "30", label: "30 seconds" }, { value: "60", label: "60 seconds" }]} className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)]" />
       </div>
     </div>
 
@@ -252,15 +235,12 @@ export const TOTPManager: React.FC<TOTPManagerProps> = ({
 
         <div className="sor-selection-list">
           {mgr.totpConfigs.length === 0 ? (
-            <div className="text-center py-12">
-              <Key size={48} className="mx-auto text-gray-500 mb-4" />
-              <p className="text-[var(--color-textSecondary)]">
-                No TOTP configurations found
-              </p>
-              <p className="text-gray-500 text-sm">
-                Add a new TOTP configuration to get started
-              </p>
-            </div>
+            <EmptyState
+              icon={Key}
+              iconSize={48}
+              message="No TOTP configurations found"
+              hint="Add a new TOTP configuration to get started"
+            />
           ) : (
             mgr.totpConfigs.map((config) => (
               <TOTPConfigRow key={config.secret} config={config} mgr={mgr} />

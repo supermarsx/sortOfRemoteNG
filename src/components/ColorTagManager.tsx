@@ -1,7 +1,9 @@
 import React from "react";
 import { Plus, Palette, Edit, Trash2 } from "lucide-react";
-import { Modal, ModalHeader, ModalBody } from "./ui/Modal";
+import { Modal, ModalHeader, ModalBody } from "./ui/overlays/Modal";
+import { EmptyState } from './ui/display';
 import { useColorTagManager, PREDEFINED_COLORS } from "../hooks/connection/useColorTagManager";
+import { Checkbox } from './ui/forms';
 
 type Mgr = ReturnType<typeof useColorTagManager>;
 
@@ -109,14 +111,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                 </div>
 
                 <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={mgr.newTag.global || false}
-                    onChange={(e) =>
-                      mgr.setNewTag({ ...mgr.newTag, global: e.target.checked })
-                    }
-                    className="sor-form-checkbox"
-                  />
+                  <Checkbox checked={mgr.newTag.global || false} onChange={(v: boolean) => mgr.setNewTag({ ...mgr.newTag, global: v })} variant="form" />
                   <span className="text-[var(--color-textSecondary)]">
                     Global tag (available for all connections)
                   </span>
@@ -191,14 +186,7 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
                 </div>
 
                 <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={mgr.editingTag.global}
-                    onChange={(e) =>
-                      mgr.setEditingTag({ ...mgr.editingTag!, global: e.target.checked })
-                    }
-                    className="sor-form-checkbox"
-                  />
+                  <Checkbox checked={mgr.editingTag.global} onChange={(v: boolean) => mgr.setEditingTag({ ...mgr.editingTag!, global: v })} variant="form" />
                   <span className="text-[var(--color-textSecondary)]">
                     Global tag
                   </span>
@@ -229,13 +217,13 @@ export const ColorTagManager: React.FC<ColorTagManagerProps> = ({
             </h3>
 
             {Object.values(colorTags).length === 0 ? (
-              <div className="text-center py-8 text-[var(--color-textSecondary)]">
-                <Palette size={48} className="mx-auto mb-4" />
-                <p>No color tags created yet</p>
-                <p className="text-sm">
-                  Add a color tag to organize your connections
-                </p>
-              </div>
+              <EmptyState
+                icon={Palette}
+                iconSize={48}
+                message="No color tags created yet"
+                hint="Add a color tag to organize your connections"
+                className="py-8"
+              />
             ) : (
               Object.values(colorTags).map((tag) => (
                 <div

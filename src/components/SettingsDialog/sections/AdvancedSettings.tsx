@@ -15,6 +15,7 @@ import {
   Save,
   RotateCcw,
 } from "lucide-react";
+import { Checkbox } from '../../ui/forms';
 
 interface AdvancedSettingsProps {
   settings: GlobalSettings;
@@ -167,14 +168,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
 
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.hostnameOverride}
-              onChange={(e) =>
-                updateSettings({ hostnameOverride: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.hostnameOverride} onChange={(v: boolean) => updateSettings({ hostnameOverride: v })} />
             <Terminal className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
@@ -198,14 +192,7 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
 
         <div className="sor-settings-card space-y-3">
           <label className="flex items-center space-x-3 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={settings.detectUnexpectedClose ?? true}
-              onChange={(e) =>
-                updateSettings({ detectUnexpectedClose: e.target.checked })
-              }
-              className="sor-settings-checkbox"
-            />
+            <Checkbox checked={settings.detectUnexpectedClose ?? true} onChange={(v: boolean) => updateSettings({ detectUnexpectedClose: v })} />
             <ShieldAlert className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
@@ -231,23 +218,16 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             data-setting-key="settingsDialog.autoSave"
             className="flex items-center space-x-3 cursor-pointer group"
           >
-            <input
-              type="checkbox"
-              checked={settings.settingsDialog?.autoSave ?? true}
-              onChange={(e) =>
-                updateSettings({
+            <Checkbox checked={settings.settingsDialog?.autoSave ?? true} onChange={(v: boolean) => updateSettings({
                   settingsDialog: {
                     ...settings.settingsDialog,
                     showSaveButton:
                       settings.settingsDialog?.showSaveButton ?? false,
                     confirmBeforeReset:
                       settings.settingsDialog?.confirmBeforeReset ?? true,
-                    autoSave: e.target.checked,
+                    autoSave: v,
                   },
-                })
-              }
-              className="sor-settings-checkbox"
-            />
+                })} />
             <Save className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
@@ -264,22 +244,15 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             data-setting-key="settingsDialog.showSaveButton"
             className="flex items-center space-x-3 cursor-pointer group"
           >
-            <input
-              type="checkbox"
-              checked={settings.settingsDialog?.showSaveButton ?? false}
-              onChange={(e) =>
-                updateSettings({
+            <Checkbox checked={settings.settingsDialog?.showSaveButton ?? false} onChange={(v: boolean) => updateSettings({
                   settingsDialog: {
                     ...settings.settingsDialog,
                     autoSave: settings.settingsDialog?.autoSave ?? true,
                     confirmBeforeReset:
                       settings.settingsDialog?.confirmBeforeReset ?? true,
-                    showSaveButton: e.target.checked,
+                    showSaveButton: v,
                   },
-                })
-              }
-              className="sor-settings-checkbox"
-            />
+                })} />
             <Save className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
@@ -296,22 +269,15 @@ export const AdvancedSettings: React.FC<AdvancedSettingsProps> = ({
             data-setting-key="settingsDialog.confirmBeforeReset"
             className="flex items-center space-x-3 cursor-pointer group"
           >
-            <input
-              type="checkbox"
-              checked={settings.settingsDialog?.confirmBeforeReset ?? true}
-              onChange={(e) =>
-                updateSettings({
+            <Checkbox checked={settings.settingsDialog?.confirmBeforeReset ?? true} onChange={(v: boolean) => updateSettings({
                   settingsDialog: {
                     ...settings.settingsDialog,
                     autoSave: settings.settingsDialog?.autoSave ?? true,
                     showSaveButton:
                       settings.settingsDialog?.showSaveButton ?? false,
-                    confirmBeforeReset: e.target.checked,
+                    confirmBeforeReset: v,
                   },
-                })
-              }
-              className="sor-settings-checkbox"
-            />
+                })} />
             <RotateCcw className="w-4 h-4 text-gray-500 group-hover:text-orange-400" />
             <div>
               <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">

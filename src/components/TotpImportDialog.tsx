@@ -15,7 +15,7 @@ import {
 import { TOTPConfig } from "../types/settings";
 import { IMPORT_SOURCES } from "../utils/totpImport";
 import { useTotpImport } from "../hooks/security/useTotpImport";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";import { DialogHeader } from './ui/overlays/DialogHeader';import { Select } from './ui/forms';
 
 interface TotpImportDialogProps {
   onImport: (entries: TOTPConfig[]) => void;
@@ -29,13 +29,7 @@ type Mgr = ReturnType<typeof useTotpImport>;
 
 function Header({ onClose }: { onClose: () => void }) {
   return (
-    <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/60">
-      <div className="flex items-center gap-3">
-        <Upload size={18} className="text-blue-400" />
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">Import 2FA / TOTP Entries</h2>
-      </div>
-      <button onClick={onClose} className="p-1.5 text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)] rounded"><X size={16} /></button>
-    </div>
+    <DialogHeader variant="compact" icon={Upload} iconColor="text-blue-400" title="Import 2FA / TOTP Entries" onClose={onClose} />
   );
 }
 
@@ -44,9 +38,7 @@ function SourceSelector({ m }: { m: Mgr }) {
     <div className="flex items-center gap-3">
       <label className="text-xs text-[var(--color-textSecondary)] w-16 flex-shrink-0">Source</label>
       <div className="relative flex-1">
-        <select value={m.source} onChange={(e) => m.changeSource(e.target.value as any)} className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] appearance-none outline-none focus:border-blue-500 pr-8">
-          {IMPORT_SOURCES.map((s) => (<option key={s.id} value={s.id}>{s.label}</option>))}
-        </select>
+        <Select value={m.source} onChange={(v: string) => m.changeSource(v as any)} options={[...IMPORT_SOURCES.map((s) => ({ value: s.id, label: s.label }))]} className="w-full px-3 py-1.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg text-sm text-[var(--color-text)] appearance-none outline-none focus:border-blue-500 pr-8" />
         <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
       </div>
     </div>

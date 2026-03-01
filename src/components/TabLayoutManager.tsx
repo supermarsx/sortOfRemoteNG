@@ -9,8 +9,9 @@ import {
 } from "lucide-react";
 import { ConnectionSession, TabLayout } from "../types/connection";
 import { Resizable } from "react-resizable";
-import { PopoverSurface } from "./ui/PopoverSurface";
+import { PopoverSurface } from "./ui/overlays/PopoverSurface";
 import { useTabLayoutManager } from "../hooks/session/useTabLayoutManager";
+import { Slider } from './ui/forms';
 
 type Mgr = ReturnType<typeof useTabLayoutManager>;
 
@@ -63,14 +64,14 @@ const CustomGridPopover: React.FC<{ mgr: Mgr; sessionCount: number }> = ({ mgr, 
         <div>
           <label className="text-[var(--color-textSecondary)] text-xs block mb-1">Columns</label>
           <div className="flex items-center space-x-2">
-            <input type="range" min="1" max="4" value={mgr.customCols} onChange={(e) => mgr.setCustomCols(parseInt(e.target.value))} className="sor-settings-range flex-1" />
+            <Slider value={mgr.customCols} onChange={(v: number) => mgr.setCustomCols(v)} min={1} max={4} className="flex-1" />
             <span className="text-[var(--color-text)] text-sm w-6">{mgr.customCols}</span>
           </div>
         </div>
         <div>
           <label className="text-[var(--color-textSecondary)] text-xs block mb-1">Rows</label>
           <div className="flex items-center space-x-2">
-            <input type="range" min="1" max="4" value={mgr.customRows} onChange={(e) => mgr.setCustomRows(parseInt(e.target.value))} className="sor-settings-range flex-1" />
+            <Slider value={mgr.customRows} onChange={(v: number) => mgr.setCustomRows(v)} min={1} max={4} className="flex-1" />
             <span className="text-[var(--color-text)] text-sm w-6">{mgr.customRows}</span>
           </div>
         </div>

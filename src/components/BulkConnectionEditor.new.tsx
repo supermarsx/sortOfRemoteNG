@@ -5,11 +5,12 @@ import {
   CheckSquare, Square, Minus, Star, RefreshCw, Edit3,
 } from 'lucide-react';
 import { Connection } from '../types/connection';
-import { Modal } from './ui/Modal';
+import { Modal } from './ui/overlays/Modal';
 import {
   useBulkConnectionEditor,
   type BulkConnectionEditorMgr,
 } from '../hooks/connection/useBulkConnectionEditor';
+import { Checkbox } from './ui/forms';
 
 interface BulkConnectionEditorProps {
   isOpen: boolean;
@@ -74,12 +75,7 @@ function BulkEditorToolbar({ mgr }: { mgr: BulkConnectionEditorMgr }) {
 
       <div className="flex items-center space-x-2">
         <label className="flex items-center space-x-2 text-xs text-[var(--color-textSecondary)] cursor-pointer hover:text-[var(--color-text)] transition-colors">
-          <input
-            type="checkbox"
-            checked={mgr.showFavoritesFirst}
-            onChange={(e) => mgr.setShowFavoritesFirst(e.target.checked)}
-            className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-yellow-500 w-3.5 h-3.5"
-          />
+          <Checkbox checked={mgr.showFavoritesFirst} onChange={(v: boolean) => mgr.setShowFavoritesFirst(v)} className="rounded border-[var(--color-border)] bg-[var(--color-input)] text-yellow-500 w-3.5 h-3.5" />
           <Star size={12} className="text-yellow-400" />
           <span>Favorites first</span>
         </label>

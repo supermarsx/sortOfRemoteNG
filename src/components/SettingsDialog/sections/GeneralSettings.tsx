@@ -17,7 +17,8 @@ import {
   SettingsCard as Card,
   SettingsSectionHeader as SectionHeader,
   SettingsToggleRow as Toggle,
-} from "../../ui/SettingsPrimitives";
+} from "../../ui/settings/SettingsPrimitives";
+import { NumberInput, Select } from '../../ui/forms';
 
 interface GeneralSettingsProps {
   settings: GlobalSettings;
@@ -56,17 +57,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 <Globe className="w-4 h-4" />
                 {t("settings.language")}
               </label>
-              <select
-                value={settings.language}
-                onChange={(e) => updateSettings({ language: e.target.value })}
-                className={selectClass}
-              >
-                <option value="en">English</option>
-                <option value="es">Español (España)</option>
-                <option value="fr">Français (France)</option>
-                <option value="de">Deutsch (Deutschland)</option>
-                <option value="pt-PT">Português (Portugal)</option>
-              </select>
+              <Select value={settings.language} onChange={(v: string) => updateSettings({ language: v })} options={[{ value: "en", label: "English" }, { value: "es", label: "Español (España)" }, { value: "fr", label: "Français (France)" }, { value: "de", label: "Deutsch (Deutschland)" }, { value: "pt-PT", label: "Português (Portugal)" }]} className="selectClass" />
             </div>
 
             <div className="space-y-2">
@@ -74,18 +65,9 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
                 <Clock className="w-4 h-4" />
                 Connection Timeout (seconds)
               </label>
-              <input
-                type="number"
-                value={settings.connectionTimeout}
-                onChange={(e) =>
-                  updateSettings({
-                    connectionTimeout: parseInt(e.target.value),
-                  })
-                }
-                className={inputClass}
-                min="5"
-                max="300"
-              />
+              <NumberInput value={settings.connectionTimeout} onChange={(v: number) => updateSettings({
+                    connectionTimeout: v,
+                  })} className="inputClass" min={5} max={300} />
             </div>
           </div>
         </Card>
@@ -113,18 +95,9 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               <Clock className="w-4 h-4" />
               Autosave Interval (minutes)
             </label>
-            <input
-              type="number"
-              value={settings.autoSaveIntervalMinutes}
-              onChange={(e) =>
-                updateSettings({
-                  autoSaveIntervalMinutes: parseInt(e.target.value),
-                })
-              }
-              className={inputClass}
-              min="1"
-              max="120"
-            />
+            <NumberInput value={settings.autoSaveIntervalMinutes} onChange={(v: number) => updateSettings({
+                  autoSaveIntervalMinutes: v,
+                })} className="inputClass" min={1} max={120} />
           </div>
         </Card>
       </div>

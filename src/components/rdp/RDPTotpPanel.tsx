@@ -19,8 +19,9 @@ import {
 import { TOTPConfig } from '../../types/settings';
 import { TOTPService } from '../../utils/totpService';
 import { TotpImportDialog } from '../TotpImportDialog';
-import { PopoverSurface } from '../ui/PopoverSurface';
+import { PopoverSurface } from '../ui/overlays/PopoverSurface';
 import { useRDPTotpPanel, type RDPTotpPanelMgr } from '../../hooks/rdp/useRDPTotpPanel';
+import { Select } from '../ui/forms';
 
 // ─── Props ───────────────────────────────────────────────────────────
 
@@ -251,20 +252,9 @@ const AddForm: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
       </button>
     </div>
     <div className="flex space-x-2">
-      <select value={mgr.newDigits} onChange={(e) => mgr.setNewDigits(parseInt(e.target.value))} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]">
-        <option value={6}>6 digits</option>
-        <option value={8}>8 digits</option>
-      </select>
-      <select value={mgr.newPeriod} onChange={(e) => mgr.setNewPeriod(parseInt(e.target.value))} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]">
-        <option value={15}>15s</option>
-        <option value={30}>30s</option>
-        <option value={60}>60s</option>
-      </select>
-      <select value={mgr.newAlgorithm} onChange={(e) => mgr.setNewAlgorithm(e.target.value)} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]">
-        <option value="sha1">SHA-1</option>
-        <option value="sha256">SHA-256</option>
-        <option value="sha512">SHA-512</option>
-      </select>
+      <Select value={mgr.newDigits} onChange={(v: string) => mgr.setNewDigits(parseInt(v))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
+      <Select value={mgr.newPeriod} onChange={(v: string) => mgr.setNewPeriod(parseInt(v))} options={[{ value: "15", label: "15s" }, { value: "30", label: "30s" }, { value: "60", label: "60s" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
+      <Select value={mgr.newAlgorithm} onChange={(v: string) => mgr.setNewAlgorithm(v)} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
     </div>
     <div className="flex justify-end space-x-2">
       <button onClick={() => mgr.setShowAdd(false)} className="px-2 py-1 text-xs text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors">
@@ -296,32 +286,9 @@ const TotpEditRow: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
       className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
     />
     <div className="flex space-x-2">
-      <select
-        value={mgr.editData.digits ?? 6}
-        onChange={(e) => mgr.setEditData((d) => ({ ...d, digits: parseInt(e.target.value) }))}
-        className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
-      >
-        <option value={6}>6 digits</option>
-        <option value={8}>8 digits</option>
-      </select>
-      <select
-        value={mgr.editData.period ?? 30}
-        onChange={(e) => mgr.setEditData((d) => ({ ...d, period: parseInt(e.target.value) }))}
-        className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
-      >
-        <option value={15}>15s</option>
-        <option value={30}>30s</option>
-        <option value={60}>60s</option>
-      </select>
-      <select
-        value={mgr.editData.algorithm ?? 'sha1'}
-        onChange={(e) => mgr.setEditData((d) => ({ ...d, algorithm: e.target.value as TOTPConfig['algorithm'] }))}
-        className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]"
-      >
-        <option value="sha1">SHA-1</option>
-        <option value="sha256">SHA-256</option>
-        <option value="sha512">SHA-512</option>
-      </select>
+      <Select value={mgr.editData.digits ?? 6} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, digits: parseInt(v) }))} options={[{ value: "6", label: "6 digits" }, { value: "8", label: "8 digits" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
+      <Select value={mgr.editData.period ?? 30} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, period: parseInt(v) }))} options={[{ value: "15", label: "15s" }, { value: "30", label: "30s" }, { value: "60", label: "60s" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
+      <Select value={mgr.editData.algorithm ?? 'sha1'} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, algorithm: v as TOTPConfig['algorithm'] }))} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)]" />
     </div>
     <div className="flex justify-end space-x-2">
       <button onClick={mgr.cancelEdit} className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">

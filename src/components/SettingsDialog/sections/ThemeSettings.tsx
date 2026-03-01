@@ -2,6 +2,7 @@ import React from "react";
 import { GlobalSettings, Theme, ColorScheme } from "../../../types/settings";
 import { Palette, Droplets, Sparkles, Eye, Code, Zap } from "lucide-react";
 import { useThemeSettings, formatLabel } from "../../../hooks/settings/useThemeSettings";
+import { Checkbox, NumberInput, Slider, Select } from '../../ui/forms';
 
 type Mgr = ReturnType<typeof useThemeSettings>;
 
@@ -25,9 +26,7 @@ const AppearanceSection: React.FC<{
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <div className="space-y-2">
         <label className="text-sm text-[var(--color-textSecondary)]">{mgr.t("settings.theme")}</label>
-        <select value={settings.theme} onChange={(e) => updateSettings({ theme: e.target.value as Theme })} className="sor-settings-select w-full">
-          {mgr.themes.map((theme) => (<option key={theme} value={theme}>{formatLabel(theme)}</option>))}
-        </select>
+        <Select value={settings.theme} onChange={(v: string) => updateSettings({ theme: v as Theme })} options={[...mgr.themes.map((theme) => ({ value: theme, label: formatLabel(theme) }))]} className="sor-settings-select w-full" />
       </div>
       <div className="space-y-2">
         <label className="text-sm text-[var(--color-textSecondary)]">Custom Accent</label>
@@ -63,11 +62,11 @@ const GlowSection: React.FC<{
     </h4>
     <div className="sor-settings-card">
       <label className="flex items-center space-x-3 cursor-pointer">
-        <input type="checkbox" checked={settings.backgroundGlowEnabled} onChange={(e) => updateSettings({ backgroundGlowEnabled: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={settings.backgroundGlowEnabled} onChange={(v: boolean) => updateSettings({ backgroundGlowEnabled: v })} />
         <span className="text-sm text-[var(--color-textSecondary)]">Enable background glow effect</span>
       </label>
       <label className={`flex items-center space-x-3 cursor-pointer ${!settings.backgroundGlowEnabled ? "opacity-50 pointer-events-none" : ""}`}>
-        <input type="checkbox" checked={settings.backgroundGlowFollowsColorScheme} onChange={(e) => updateSettings({ backgroundGlowFollowsColorScheme: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={settings.backgroundGlowFollowsColorScheme} onChange={(v: boolean) => updateSettings({ backgroundGlowFollowsColorScheme: v })} />
         <span className="text-sm text-[var(--color-textSecondary)]">Glow follows color scheme</span>
       </label>
       <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 ${!settings.backgroundGlowEnabled ? "opacity-50 pointer-events-none" : ""}`}>
@@ -77,15 +76,15 @@ const GlowSection: React.FC<{
         </div>
         <div className="space-y-1">
           <label className="text-xs text-[var(--color-textSecondary)]">Opacity</label>
-          <input type="number" step="0.05" min="0" max="1" value={settings.backgroundGlowOpacity} onChange={(e) => updateSettings({ backgroundGlowOpacity: Math.min(1, Math.max(0, parseFloat(e.target.value || "0"))) })} className="sor-settings-input w-full" />
+          <NumberInput value={settings.backgroundGlowOpacity} onChange={(v: number) => updateSettings({ backgroundGlowOpacity: v })} className="w-full" min={0} max={1} step={0.05} />
         </div>
         <div className="space-y-1">
           <label className="text-xs text-[var(--color-textSecondary)]">Radius (px)</label>
-          <input type="number" min="200" max="1200" value={settings.backgroundGlowRadius} onChange={(e) => updateSettings({ backgroundGlowRadius: Math.max(200, parseInt(e.target.value || "0")) })} className="sor-settings-input w-full" />
+          <NumberInput value={settings.backgroundGlowRadius} onChange={(v: number) => updateSettings({ backgroundGlowRadius: v })} className="w-full" min={200} max={1200} />
         </div>
         <div className="space-y-1">
           <label className="text-xs text-[var(--color-textSecondary)]">Blur (px)</label>
-          <input type="number" min="40" max="320" value={settings.backgroundGlowBlur} onChange={(e) => updateSettings({ backgroundGlowBlur: Math.max(40, parseInt(e.target.value || "0")) })} className="sor-settings-input w-full" />
+          <NumberInput value={settings.backgroundGlowBlur} onChange={(v: number) => updateSettings({ backgroundGlowBlur: v })} className="w-full" min={40} max={320} />
         </div>
       </div>
       <p className="text-xs text-gray-500">The glow effect appears centered in the main content area for an exquisite visual experience.</p>
@@ -107,7 +106,7 @@ const TransparencySection: React.FC<{
     <p className="text-xs text-gray-500">Window transparency is experimental and may cause visual artifacts on some platforms or compositors. Disabled by default.</p>
     <div className="sor-settings-card">
       <label data-setting-key="windowTransparencyEnabled" className="flex items-center space-x-3 cursor-pointer group">
-        <input type="checkbox" checked={settings.windowTransparencyEnabled} onChange={(e) => updateSettings({ windowTransparencyEnabled: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={settings.windowTransparencyEnabled} onChange={(v: boolean) => updateSettings({ windowTransparencyEnabled: v })} />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable window transparency</span>
           <p className="text-[10px] text-gray-500">Make the application window semi-transparent</p>
@@ -116,12 +115,12 @@ const TransparencySection: React.FC<{
       <div className={`space-y-2 ${!settings.windowTransparencyEnabled ? "opacity-50 pointer-events-none" : ""}`}>
         <label data-setting-key="windowTransparencyOpacity" className="text-xs text-[var(--color-textSecondary)]">Opacity Level</label>
         <div className="flex items-center gap-3">
-          <input type="range" min="0" max="1" step="0.01" value={mgr.opacityValue} onChange={(e) => updateSettings({ windowTransparencyOpacity: Math.min(1, Math.max(0, parseFloat(e.target.value || "1"))) })} className="sor-settings-range-full flex-1" />
-          <input type="number" step="0.01" min="0" max="1" value={mgr.opacityValue.toFixed(2)} onChange={(e) => updateSettings({ windowTransparencyOpacity: Math.min(1, Math.max(0, parseFloat(e.target.value || "1"))) })} className="w-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-xs" />
+          <Slider value={mgr.opacityValue} onChange={(v: number) => updateSettings({ windowTransparencyOpacity: v })} min={0} max={1} variant="full" className="flex-1" step={0.01} />
+          <NumberInput value={mgr.opacityValue.toFixed(2)} onChange={(v: number) => updateSettings({ windowTransparencyOpacity: v })} className="w-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-xs" min={0} max={1} step={0.01} />
         </div>
       </div>
       <label data-setting-key="showTransparencyToggle" className="flex items-center space-x-3 cursor-pointer group">
-        <input type="checkbox" checked={settings.showTransparencyToggle ?? false} onChange={(e) => updateSettings({ showTransparencyToggle: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={settings.showTransparencyToggle ?? false} onChange={(v: boolean) => updateSettings({ showTransparencyToggle: v })} />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Show transparency toggle in title bar</span>
           <p className="text-[10px] text-gray-500">Add a quick-toggle button to the window title bar</p>
@@ -143,17 +142,17 @@ const AnimationsSection: React.FC<{
     </h4>
     <div className="sor-settings-card">
       <label className="flex items-center space-x-3 cursor-pointer">
-        <input type="checkbox" checked={settings.animationsEnabled} onChange={(e) => updateSettings({ animationsEnabled: e.target.checked })} className="sor-settings-checkbox" />
+        <Checkbox checked={settings.animationsEnabled} onChange={(v: boolean) => updateSettings({ animationsEnabled: v })} />
         <span className="text-sm text-[var(--color-textSecondary)]">{mgr.t("settings.theme.enableAnimations", "Enable animations and transitions")}</span>
       </label>
       <label className="flex items-center space-x-3 cursor-pointer">
-        <input type="checkbox" checked={settings.reduceMotion} onChange={(e) => updateSettings({ reduceMotion: e.target.checked })} className="sor-settings-checkbox" disabled={!settings.animationsEnabled} />
+        <Checkbox checked={settings.reduceMotion} onChange={(v: boolean) => updateSettings({ reduceMotion: v })} disabled={!settings.animationsEnabled} />
         <span className={`text-sm text-[var(--color-textSecondary)] ${!settings.animationsEnabled ? "opacity-50" : ""}`}>{mgr.t("settings.theme.reduceMotion", "Reduce motion (minimal animations)")}</span>
       </label>
       <div className={`space-y-2 ${!settings.animationsEnabled ? "opacity-50 pointer-events-none" : ""}`}>
         <label className="text-xs text-[var(--color-textSecondary)]">{mgr.t("settings.theme.animationDuration", "Animation duration")}</label>
         <div className="flex items-center space-x-4">
-          <input type="range" min="50" max="500" step="25" value={settings.animationDuration || 200} onChange={(e) => updateSettings({ animationDuration: parseInt(e.target.value) })} className="sor-settings-range-full flex-1" />
+          <Slider value={settings.animationDuration || 200} onChange={(v: number) => updateSettings({ animationDuration: v })} min={50} max={500} variant="full" className="flex-1" step={25} />
           <span className="text-[var(--color-textSecondary)] text-sm w-16 text-right">{settings.animationDuration || 200}ms</span>
         </div>
       </div>

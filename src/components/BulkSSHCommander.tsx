@@ -18,8 +18,8 @@ import {
   StopCircle,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Modal } from "./ui/Modal";
-import { useBulkSSHCommander } from "../hooks/ssh/useBulkSSHCommander";
+import { Modal } from "./ui/overlays/Modal";import { DialogHeader } from './ui/overlays/DialogHeader';import { EmptyState } from './ui/display';import { useBulkSSHCommander } from "../hooks/ssh/useBulkSSHCommander";
+import { Select } from './ui/forms';
 
 interface BulkSSHCommanderProps {
   isOpen: boolean;
@@ -53,32 +53,15 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
 
       <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full max-w-6xl mx-4 h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)] relative z-10">
         {/* Header */}
-        <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-green-500/20 rounded-lg">
-              <Terminal
-                size={16}
-                className="text-green-600 dark:text-green-500"
-              />
-            </div>
-            <h2 className="text-lg font-semibold text-[var(--color-text)]">
-              {t("bulkSsh.title", "Bulk SSH Commander")}
-            </h2>
-            <span className="text-sm text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] px-2 py-0.5 rounded">
-              {mgr.selectedCount}/{mgr.totalCount}{" "}
-              {t("bulkSsh.sessions", "sessions")}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              aria-label={t("common.close", "Close")}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
+        <DialogHeader
+          icon={Terminal}
+          iconColor="text-green-600 dark:text-green-500"
+          iconBg="bg-green-500/20"
+          title={t("bulkSsh.title", "Bulk SSH Commander")}
+          badge={`${mgr.selectedCount}/${mgr.totalCount} ${t("bulkSsh.sessions", "sessions")}`}
+          onClose={onClose}
+          sticky
+        />
 
         {/* Secondary toolbar */}
         <SecondaryToolbar mgr={mgr} t={t} />
@@ -110,12 +93,12 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
           </div>
         )}
         {mgr.showHistory && mgr.commandHistory.length === 0 && (
-          <div className="border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8 text-center text-[var(--color-textSecondary)]">
-            <History size={24} className="mx-auto mb-2 opacity-50" />
-            <p className="text-sm">
-              {t("bulkSsh.noHistory", "No command history yet")}
-            </p>
-          </div>
+          <EmptyState
+            icon={History}
+            iconSize={24}
+            message={t("bulkSsh.noHistory", "No command history yet")}
+            className="border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8"
+          />
         )}
 
         <div className="flex-1 flex overflow-hidden">
@@ -250,18 +233,7 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
               placeholder={t("bulkSsh.scriptName", "Script name")}
               className="flex-1 px-3 py-1.5 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-[var(--color-textMuted)] focus:outline-none focus:ring-1 focus:ring-green-500"
             />
-            <select
-              value={mgr.newScriptCategory}
-              onChange={(e) => mgr.setNewScriptCategory(e.target.value)}
-              className="px-3 py-1.5 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500"
-            >
-              {mgr.categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-              <option value="Custom">Custom</option>
-            </select>
+            <Select value={mgr.newScriptCategory} onChange={(v: string) => mgr.setNewScriptCategory(v)} options={[...mgr.categories.map((cat) => ({ value: cat, label: cat })), { value: 'Custom', label: 'Custom' }]} className="px-3 py-1.5 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500" />
           </div>
           <div className="flex gap-2">
             <input
@@ -344,12 +316,12 @@ function ScriptLibraryPanel({ mgr, t }: { mgr: Mgr; t: TFunc }) {
           );
         })}
         {mgr.filteredScripts.length === 0 && (
-          <div className="px-4 py-8 text-center text-[var(--color-textSecondary)]">
-            <FileCode size={24} className="mx-auto mb-2 opacity-50" />
-            <p className="text-sm">
-              {t("bulkSsh.noScriptsFound", "No scripts found")}
-            </p>
-          </div>
+          <EmptyState
+            icon={FileCode}
+            iconSize={24}
+            message={t("bulkSsh.noScriptsFound", "No scripts found")}
+            className="px-4 py-8"
+          />
         )}
       </div>
     </div>

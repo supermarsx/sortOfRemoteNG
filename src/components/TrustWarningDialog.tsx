@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import type { CertIdentity, SshHostKeyIdentity } from "../utils/trustStore";
 import { formatFingerprint } from "../utils/trustStore";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";
 
 interface TrustWarningDialogProps {
   type: "tls" | "ssh";

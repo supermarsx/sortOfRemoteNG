@@ -4,6 +4,7 @@ import { ConnectionTree } from './ConnectionTree';
 import { BulkConnectionEditor } from './BulkConnectionEditor';
 import { Connection } from '../types/connection';
 import { useSidebar } from '../hooks/connection/useSidebar';
+import { Checkbox, Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useSidebar>;
 
@@ -84,26 +85,18 @@ const SearchBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         )}
         <div className="space-y-2">
           <label className="flex items-center text-xs text-[var(--color-textSecondary)]">
-            <input type="checkbox" className="mr-2 rounded" checked={mgr.state.filter.showRecent} onChange={(e) => mgr.dispatch({ type: 'SET_FILTER', payload: { showRecent: e.target.checked } })} />
+            <Checkbox checked={mgr.state.filter.showRecent} onChange={(v: boolean) => mgr.dispatch({ type: 'SET_FILTER', payload: { showRecent: v } })} className="mr-2 rounded" />
             Recent connections
           </label>
           <label className="flex items-center text-xs text-[var(--color-textSecondary)]">
-            <input type="checkbox" className="mr-2 rounded" checked={mgr.state.filter.showFavorites} onChange={(e) => mgr.dispatch({ type: 'SET_FILTER', payload: { showFavorites: e.target.checked } })} />
+            <Checkbox checked={mgr.state.filter.showFavorites} onChange={(v: boolean) => mgr.dispatch({ type: 'SET_FILTER', payload: { showFavorites: v } })} className="mr-2 rounded" />
             Favorites only
           </label>
         </div>
         <div className="pt-2 border-t border-[var(--color-border)]">
           <label className="block text-xs font-medium text-[var(--color-textSecondary)] mb-2">Sort By</label>
           <div className="flex gap-2">
-            <select value={mgr.state.filter.sortBy || 'name'} onChange={(e) => mgr.dispatch({ type: 'SET_FILTER', payload: { sortBy: e.target.value as 'name' | 'protocol' | 'hostname' | 'createdAt' | 'updatedAt' | 'recentlyUsed' | 'custom' } })} className="flex-1 px-2 py-1 text-xs bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] focus:border-blue-500 focus:outline-none">
-              <option value="name">Name</option>
-              <option value="protocol">Protocol</option>
-              <option value="hostname">Hostname</option>
-              <option value="createdAt">Date Created</option>
-              <option value="updatedAt">Date Modified</option>
-              <option value="recentlyUsed">Recently Used</option>
-              <option value="custom">Custom Order</option>
-            </select>
+            <Select value={mgr.state.filter.sortBy || 'name'} onChange={(v: string) => mgr.dispatch({ type: 'SET_FILTER', payload: { sortBy: v as 'name' | 'protocol' | 'hostname' | 'createdAt' | 'updatedAt' | 'recentlyUsed' | 'custom' } })} options={[{ value: "name", label: "Name" }, { value: "protocol", label: "Protocol" }, { value: "hostname", label: "Hostname" }, { value: "createdAt", label: "Date Created" }, { value: "updatedAt", label: "Date Modified" }, { value: "recentlyUsed", label: "Recently Used" }, { value: "custom", label: "Custom Order" }]} className="flex-1 px-2 py-1 text-xs bg-[var(--color-surface)] border border-[var(--color-border)] rounded text-[var(--color-textSecondary)] focus:border-blue-500 focus:outline-none" />
             <button onClick={() => mgr.dispatch({ type: 'SET_FILTER', payload: { sortDirection: mgr.state.filter.sortDirection === 'asc' ? 'desc' : 'asc' } })} className={`p-1.5 rounded transition-colors ${mgr.state.filter.sortDirection === 'desc' ? 'bg-blue-600 text-[var(--color-text)]' : 'bg-gray-600 text-[var(--color-textSecondary)] hover:bg-gray-500'}`} title={mgr.state.filter.sortDirection === 'asc' ? 'Ascending' : 'Descending'}>
               {mgr.state.filter.sortDirection === 'desc' ? <ArrowDown size={14} /> : <ArrowUp size={14} />}
             </button>

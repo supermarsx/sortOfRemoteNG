@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "./ui/PasswordInput";
+import { PasswordInput } from "./ui/forms/PasswordInput";
 import {
   X,
   Save,
@@ -12,8 +12,9 @@ import {
   Wifi,
 } from "lucide-react";
 import { SavedProxyProfile, ProxyConfig } from "../types/settings";
-import { Modal, ModalHeader } from "./ui/Modal";
+import { Modal, ModalHeader } from "./ui/overlays/Modal";
 import { useProxyProfileEditor } from "../hooks/network/useProxyProfileEditor";
+import { Checkbox, NumberInput, Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useProxyProfileEditor>;
 
@@ -151,15 +152,7 @@ const ConnectionDetailsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       </div>
       <div>
         <label className="sor-form-label-xs">Port *</label>
-        <input
-          type="number"
-          value={mgr.config.port}
-          onChange={(e) =>
-            mgr.updateConfig({ port: parseInt(e.target.value) || 1080 })
-          }
-          placeholder="1080"
-          className="sor-form-input"
-        />
+        <NumberInput value={mgr.config.port} onChange={(v: number) => mgr.updateConfig({ port: v })} variant="form" placeholder="1080" />
       </div>
     </div>
     {["socks5", "http", "https", "http-connect", "shadowsocks"].includes(
@@ -201,24 +194,7 @@ const ConnectionDetailsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="sor-form-label-xs">Encryption Method</label>
-          <select
-            value={mgr.config.shadowsocksMethod || "aes-256-gcm"}
-            onChange={(e) =>
-              mgr.updateConfig({ shadowsocksMethod: e.target.value })
-            }
-            className="sor-form-select"
-          >
-            <option value="aes-256-gcm">AES-256-GCM</option>
-            <option value="aes-128-gcm">AES-128-GCM</option>
-            <option value="chacha20-ietf-poly1305">
-              ChaCha20-IETF-Poly1305
-            </option>
-            <option value="xchacha20-ietf-poly1305">
-              XChaCha20-IETF-Poly1305
-            </option>
-            <option value="aes-256-cfb">AES-256-CFB</option>
-            <option value="aes-128-cfb">AES-128-CFB</option>
-          </select>
+          <Select value={mgr.config.shadowsocksMethod || "aes-256-gcm"} onChange={(v: string) => mgr.updateConfig({ shadowsocksMethod: v })} options={[{ value: "aes-256-gcm", label: "AES-256-GCM" }, { value: "aes-128-gcm", label: "AES-128-GCM" }, { value: "chacha20-ietf-poly1305", label: "ChaCha20-IETF-Poly1305" }, { value: "xchacha20-ietf-poly1305", label: "XChaCha20-IETF-Poly1305" }, { value: "aes-256-cfb", label: "AES-256-CFB" }, { value: "aes-128-cfb", label: "AES-128-CFB" }]} variant="form" />
         </div>
         <div>
           <label className="sor-form-label-xs">Plugin (Optional)</label>
@@ -330,12 +306,7 @@ const DefaultProfileToggle: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const selectedProxyType = PROXY_TYPES.find((t) => t.value === mgr.config.type);
   return (
     <label className="flex items-center gap-3 p-3 rounded-lg bg-[var(--color-surface)]/50 border border-[var(--color-border)] cursor-pointer hover:bg-[var(--color-surfaceHover)]/50 transition-colors">
-      <input
-        type="checkbox"
-        checked={mgr.isDefault}
-        onChange={(e) => mgr.setIsDefault(e.target.checked)}
-        className="sor-form-checkbox w-4 h-4"
-      />
+      <Checkbox checked={mgr.isDefault} onChange={(v: boolean) => mgr.setIsDefault(v)} className="sor-form-checkbox w-4 h-4" />
       <div>
         <div className="text-sm font-medium text-[var(--color-text)] flex items-center gap-1">
           <Shield className="w-4 h-4 text-yellow-400" />

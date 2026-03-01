@@ -37,13 +37,13 @@ import { CertificateInfoPopup } from "./CertificateInfoPopup";
 import { TrustWarningDialog } from "./TrustWarningDialog";
 import { InputDialog } from "./InputDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { MenuSurface } from "./ui/MenuSurface";
-import { PopoverSurface } from "./ui/PopoverSurface";
+import { MenuSurface } from "./ui/overlays/MenuSurface";
+import { PopoverSurface } from "./ui/overlays/PopoverSurface";
 import {
   OptionEmptyState,
   OptionItemButton,
   OptionList,
-} from "./ui/OptionList";
+} from "./ui/display/OptionList";
 import { getStoredIdentity } from "../utils/trustStore";
 
 /* ═══════════════════════════════════════════════════════════════

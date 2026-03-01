@@ -6,11 +6,14 @@ import {
   ChevronDown, CopyPlus
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Modal } from './ui/Modal';
-import { HighlightedCode } from './ui/HighlightedCode';
+import { Modal } from './ui/overlays/Modal';
+import { DialogHeader } from './ui/overlays/DialogHeader';
+import { HighlightedCode } from './ui/display/HighlightedCode';
+import { EmptyState } from './ui/display';
 import { detectLanguage } from '../utils/scriptSyntax';
 import { defaultScripts } from '../data/defaultScripts';
 import { useScriptManager, type ScriptManagerMgr } from '../hooks/recording/useScriptManager';
+import { Select } from './ui/forms';
 
 interface ScriptManagerProps {
   isOpen: boolean;
@@ -78,28 +81,15 @@ export const languageIcons: Record<ScriptLanguage, string> = {
 function ScriptManagerHeader({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();
   return (
-    <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
-      <div className="flex items-center space-x-3">
-        <div className="p-2 bg-purple-500/20 rounded-lg">
-          <FileCode size={16} className="text-purple-600 dark:text-purple-400" />
-        </div>
-        <h2 className="text-lg font-semibold text-[var(--color-text)]">
-          {t('scriptManager.title', 'Script Manager')}
-        </h2>
-        <span className="text-sm text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] px-2 py-0.5 rounded">
-          {mgr.filteredScripts.length} {t('scriptManager.scripts', 'scripts')}
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={mgr.onClose}
-          className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-          aria-label={t('common.close', 'Close')}
-        >
-          <X size={16} />
-        </button>
-      </div>
-    </div>
+    <DialogHeader
+      icon={FileCode}
+      iconColor="text-purple-600 dark:text-purple-400"
+      iconBg="bg-purple-500/20"
+      title={t('scriptManager.title', 'Script Manager')}
+      badge={`${mgr.filteredScripts.length} ${t('scriptManager.scripts', 'scripts')}`}
+      onClose={mgr.onClose}
+      sticky
+    />
   );
 }
 
@@ -121,50 +111,19 @@ function FilterToolbar({ mgr }: { mgr: ScriptManagerMgr }) {
 
       {/* Category filter */}
       <div className="relative">
-        <select
-          value={mgr.categoryFilter}
-          onChange={(e) => mgr.setCategoryFilter(e.target.value)}
-          className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
-        >
-          <option value="">{t('scriptManager.allCategories', 'All Categories')}</option>
-          {mgr.categories.map(cat => (
-            <option key={cat} value={cat}>{cat}</option>
-          ))}
-        </select>
+        <Select value={mgr.categoryFilter} onChange={(v: string) => mgr.setCategoryFilter(v)} options={[{ value: '', label: t('scriptManager.allCategories', 'All Categories') }, ...mgr.categories.map((cat) => ({ value: cat, label: cat }))]} className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer" />
         <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
       </div>
 
       {/* Language filter */}
       <div className="relative">
-        <select
-          value={mgr.languageFilter}
-          onChange={(e) => mgr.setLanguageFilter(e.target.value as ScriptLanguage | '')}
-          className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
-        >
-          <option value="">{t('scriptManager.allLanguages', 'All Languages')}</option>
-          <option value="bash">Bash</option>
-          <option value="sh">Shell (sh)</option>
-          <option value="powershell">PowerShell</option>
-          <option value="batch">Batch (cmd)</option>
-        </select>
+        <Select value={mgr.languageFilter} onChange={(v: string) => mgr.setLanguageFilter(v as ScriptLanguage | '')} options={[{ value: "", label: t('scriptManager.allLanguages', 'All Languages') }, { value: "bash", label: "Bash" }, { value: "sh", label: "Shell (sh)" }, { value: "powershell", label: "PowerShell" }, { value: "batch", label: "Batch (cmd)" }]} className="appearance-none pl-3 pr-8 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer" />
         <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
       </div>
 
       {/* OS Tag filter */}
       <div className="relative">
-        <select
-          value={mgr.osTagFilter}
-          onChange={(e) => mgr.setOsTagFilter(e.target.value as OSTag | '')}
-          className="appearance-none pl-3 pr-8 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
-        >
-          <option value="">{t('scriptManager.allPlatforms', 'All Platforms')}</option>
-          <option value="windows">🪟 Windows</option>
-          <option value="linux">🐧 Linux</option>
-          <option value="macos">🍎 macOS</option>
-          <option value="agnostic">🌐 Agnostic</option>
-          <option value="multiplatform">🔀 Multi-Platform</option>
-          <option value="cisco-ios">🔌 Cisco IOS</option>
-        </select>
+        <Select value={mgr.osTagFilter} onChange={(v: string) => mgr.setOsTagFilter(v as OSTag | '')} options={[{ value: "", label: t('scriptManager.allPlatforms', 'All Platforms') }, { value: "windows", label: "🪟 Windows" }, { value: "linux", label: "🐧 Linux" }, { value: "macos", label: "🍎 macOS" }, { value: "agnostic", label: "🌐 Agnostic" }, { value: "multiplatform", label: "🔀 Multi-Platform" }, { value: "cisco-ios", label: "🔌 Cisco IOS" }]} className="appearance-none pl-3 pr-8 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer" />
         <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-textSecondary)] pointer-events-none" />
       </div>
 
@@ -240,10 +199,11 @@ function ScriptList({ mgr }: { mgr: ScriptManagerMgr }) {
     <div className="w-80 border-r border-[var(--color-border)] flex flex-col bg-[var(--color-surface)]">
       <div className="flex-1 overflow-y-auto">
         {mgr.filteredScripts.length === 0 ? (
-          <div className="p-8 text-center text-[var(--color-textSecondary)]">
-            <FileCode size={32} className="mx-auto mb-3 opacity-40" />
-            <p className="text-sm">{t('scriptManager.noScripts', 'No scripts found')}</p>
-          </div>
+          <EmptyState
+            icon={FileCode}
+            message={t('scriptManager.noScripts', 'No scripts found')}
+            className="p-8"
+          />
         ) : (
           <div className="p-2 space-y-1">
             {mgr.filteredScripts.map(script => (
@@ -281,17 +241,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
               {t('scriptManager.language', 'Language')}
             </label>
-            <select
-              value={mgr.editLanguage}
-              onChange={(e) => mgr.setEditLanguage(e.target.value as ScriptLanguage)}
-              className="w-full px-3 py-2 text-sm bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500"
-            >
-              <option value="auto">🔍 Auto Detect</option>
-              <option value="bash">🐚 Bash</option>
-              <option value="sh">📜 Shell (sh)</option>
-              <option value="powershell">⚡ PowerShell</option>
-              <option value="batch">🪟 Batch (cmd)</option>
-            </select>
+            <Select value={mgr.editLanguage} onChange={(v: string) => mgr.setEditLanguage(v as ScriptLanguage)} options={[{ value: "auto", label: "🔍 Auto Detect" }, { value: "bash", label: "🐚 Bash" }, { value: "sh", label: "📜 Shell (sh)" }, { value: "powershell", label: "⚡ PowerShell" }, { value: "batch", label: "🪟 Batch (cmd)" }]} className="w-full px-3 py-2  bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-purple-500" />
           </div>
           <div>
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
@@ -485,23 +435,24 @@ function ScriptDetailView({ mgr }: { mgr: ScriptManagerMgr }) {
   );
 }
 
-function EmptyState({ mgr }: { mgr: ScriptManagerMgr }) {
+function SelectScriptPlaceholder({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();
   return (
-    <div className="flex-1 flex items-center justify-center">
-      <div className="text-center text-[var(--color-textSecondary)]">
-        <FolderOpen size={48} className="mx-auto mb-4 opacity-30" />
-        <p className="text-lg font-medium">{t('scriptManager.selectScript', 'Select a script')}</p>
-        <p className="text-sm mt-1">{t('scriptManager.selectScriptHint', 'Choose a script from the list to view or edit')}</p>
-        <button
-          onClick={mgr.handleNewScript}
-          className="inline-flex items-center gap-2 px-4 py-2 mt-4 text-sm bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] rounded-lg transition-colors"
-        >
-          <Plus size={14} />
-          {t('scriptManager.createNew', 'Create New Script')}
-        </button>
-      </div>
-    </div>
+    <EmptyState
+      icon={FolderOpen}
+      iconSize={48}
+      message={t('scriptManager.selectScript', 'Select a script')}
+      hint={t('scriptManager.selectScriptHint', 'Choose a script from the list to view or edit')}
+      className="flex-1"
+    >
+      <button
+        onClick={mgr.handleNewScript}
+        className="inline-flex items-center gap-2 px-4 py-2 mt-4 text-sm bg-purple-600 hover:bg-purple-700 text-[var(--color-text)] rounded-lg transition-colors"
+      >
+        <Plus size={14} />
+        {t('scriptManager.createNew', 'Create New Script')}
+      </button>
+    </EmptyState>
   );
 }
 
@@ -535,7 +486,7 @@ function DetailPane({ mgr }: { mgr: ScriptManagerMgr }) {
       ) : mgr.selectedScript ? (
         <ScriptDetailView mgr={mgr} />
       ) : (
-        <EmptyState mgr={mgr} />
+        <SelectScriptPlaceholder mgr={mgr} />
       )}
       {mgr.isEditing && <EditFooter mgr={mgr} />}
     </div>

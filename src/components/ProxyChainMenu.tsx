@@ -20,8 +20,8 @@ import {
 import { SSHTunnelDialog } from "./SSHTunnelDialog";
 import { ProxyProfileEditor } from "./ProxyProfileEditor";
 import { ProxyChainEditor } from "./ProxyChainEditor";
-import { Modal } from "./ui/Modal";
-import { useProxyChainManager } from "../hooks/network/useProxyChainManager";
+import { Modal } from "./ui/overlays/Modal";import { DialogHeader } from './ui/overlays/DialogHeader';import { useProxyChainManager } from "../hooks/network/useProxyChainManager";
+import { Select } from './ui/forms';
 
 interface ProxyChainMenuProps {
   isOpen: boolean;
@@ -47,16 +47,14 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
     >
       <div className="bg-[var(--color-surface)] rounded-xl shadow-xl w-full h-[85vh] overflow-hidden flex flex-col border border-[var(--color-border)]">
         {/* Header */}
-        <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <Network size={18} className="text-blue-500" />
-            </div>
-            <h2 className="text-lg font-semibold text-[var(--color-text)]">
-              Proxy & VPN Chains
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
+        <DialogHeader
+          icon={Network}
+          iconColor="text-blue-500"
+          iconBg="bg-blue-500/20"
+          title="Proxy & VPN Chains"
+          onClose={onClose}
+          sticky
+          actions={
             <button
               onClick={mgr.reloadChains}
               className="p-2 text-[var(--color-textSecondary)] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] rounded-lg transition-colors"
@@ -65,16 +63,8 @@ export const ProxyChainMenu: React.FC<ProxyChainMenuProps> = ({
             >
               <RefreshCw size={16} />
             </button>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-              data-tooltip="Close"
-              aria-label="Close"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
+          }
+        />
 
         <div className="flex flex-1 min-h-0">
           {/* Sidebar */}
@@ -698,39 +688,15 @@ function AssociationsTab({ mgr }: { mgr: Mgr }) {
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                   Connection Chain
                 </label>
-                <select
-                  value={connection.connectionChainId || ""}
-                  onChange={(e) =>
-                    mgr.updateConnectionChain(connection.id, e.target.value)
-                  }
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
-                >
-                  <option value="">None</option>
-                  {mgr.connectionChains.map((chain) => (
-                    <option key={chain.id} value={chain.id}>
-                      {chain.name}
-                    </option>
-                  ))}
-                </select>
+                <Select value={connection.connectionChainId || ""} onChange={(v: string) =>
+                    mgr.updateConnectionChain(connection.id, v)} options={[{ value: '', label: 'None' }, ...mgr.connectionChains.map((chain) => ({ value: chain.id, label: chain.name }))]} className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm" />
               </div>
               <div>
                 <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
                   Proxy Chain
                 </label>
-                <select
-                  value={connection.proxyChainId || ""}
-                  onChange={(e) =>
-                    mgr.updateProxyChain(connection.id, e.target.value)
-                  }
-                  className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm"
-                >
-                  <option value="">None</option>
-                  {mgr.proxyChains.map((chain) => (
-                    <option key={chain.id} value={chain.id}>
-                      {chain.name}
-                    </option>
-                  ))}
-                </select>
+                <Select value={connection.proxyChainId || ""} onChange={(v: string) =>
+                    mgr.updateProxyChain(connection.id, v)} options={[{ value: '', label: 'None' }, ...mgr.proxyChains.map((chain) => ({ value: chain.id, label: chain.name }))]} className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-sm" />
               </div>
             </div>
           </div>

@@ -5,7 +5,7 @@ import {
   OptionGroup,
   OptionItemButton,
   OptionList,
-} from "../src/components/ui/OptionList";
+} from "../src/components/ui/display/OptionList";
 
 describe("OptionList primitives", () => {
   it("renders option group labels and empty state content", () => {

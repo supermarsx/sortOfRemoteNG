@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { Modal } from "./ui/Modal";
-import { Sparkline, MiniBarChart, TrendIndicator } from "./ui/Charts";
+import { Modal } from "./ui/overlays/Modal";import { DialogHeader } from './ui/overlays/DialogHeader';import { Sparkline, MiniBarChart, TrendIndicator } from "./ui/display/Charts";
 import { usePerformanceMonitor } from "../hooks/monitoring/usePerformanceMonitor";
+import { NumberInput, Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof usePerformanceMonitor>;
 
@@ -30,27 +30,15 @@ const MonitorHeader: React.FC<{
 }> = ({ mgr, onClose }) => {
   const { t } = useTranslation();
   return (
-    <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between shrink-0">
-      <div className="flex items-center space-x-3">
-        <div className="p-2 bg-green-500/20 rounded-lg">
-          <BarChart3 size={18} className="text-green-500" />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--color-text)]">
-            {t("performance.title")}
-          </h2>
-          <p className="text-xs text-[var(--color-textSecondary)]">
-            {mgr.filteredMetrics.length} entries
-          </p>
-        </div>
-      </div>
-      <button
-        onClick={onClose}
-        className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-      >
-        <X size={18} />
-      </button>
-    </div>
+    <DialogHeader
+      icon={BarChart3}
+      iconColor="text-green-500"
+      iconBg="bg-green-500/20"
+      title={t("performance.title")}
+      subtitle={`${mgr.filteredMetrics.length} entries`}
+      onClose={onClose}
+      className="shrink-0"
+    />
   );
 };
 
@@ -62,49 +50,20 @@ const SecondaryBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         {/* Time Range Filter */}
         <div className="flex items-center gap-2">
           <Clock size={14} className="text-[var(--color-textSecondary)]" />
-          <select
-            value={mgr.timeRangeFilter}
-            onChange={(e) => mgr.setTimeRangeFilter(e.target.value)}
-            className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="all">All Time</option>
-            <option value="1h">Last Hour</option>
-            <option value="6h">Last 6 Hours</option>
-            <option value="24h">Last 24 Hours</option>
-            <option value="7d">Last 7 Days</option>
-          </select>
+          <Select value={mgr.timeRangeFilter} onChange={(v: string) => mgr.setTimeRangeFilter(v)} options={[{ value: "all", label: "All Time" }, { value: "1h", label: "Last Hour" }, { value: "6h", label: "Last 6 Hours" }, { value: "24h", label: "Last 24 Hours" }, { value: "7d", label: "Last 7 Days" }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
 
         {/* Metric Type Filter */}
         <div className="flex items-center gap-2">
           <Filter size={14} className="text-[var(--color-textSecondary)]" />
-          <select
-            value={mgr.metricFilter}
-            onChange={(e) => mgr.setMetricFilter(e.target.value)}
-            className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="all">All Metrics</option>
-            <option value="latency">Latency</option>
-            <option value="throughput">Throughput</option>
-            <option value="cpu">CPU Usage</option>
-            <option value="memory">Memory Usage</option>
-          </select>
+          <Select value={mgr.metricFilter} onChange={(v: string) => mgr.setMetricFilter(v)} options={[{ value: "all", label: "All Metrics" }, { value: "latency", label: "Latency" }, { value: "throughput", label: "Throughput" }, { value: "cpu", label: "CPU Usage" }, { value: "memory", label: "Memory Usage" }]} className="bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg px-2 py-1 text-xs text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
 
         {/* Update Interval */}
         <div className="flex items-center gap-2 text-xs text-[var(--color-textSecondary)]">
           <RefreshCw size={14} />
           <span>Update:</span>
-          <input
-            type="number"
-            min={1}
-            max={120}
-            value={Math.round(mgr.pollIntervalMs / 1000)}
-            onChange={(e) =>
-              mgr.handlePollIntervalChange(parseInt(e.target.value || "0"))
-            }
-            className="sor-settings-input sor-settings-input-compact sor-settings-input-sm w-12 text-center"
-          />
+          <NumberInput value={Math.round(mgr.pollIntervalMs / 1000)} onChange={(v: number) => mgr.handlePollIntervalChange(v)} variant="settings-compact" className="w-12 text-center" min={1} max={120} />
           <span>s</span>
         </div>
 

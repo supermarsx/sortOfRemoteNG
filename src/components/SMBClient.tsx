@@ -2,6 +2,7 @@ import React from 'react';
 import { Folder, File, Download, Trash2, RefreshCw, Home, ArrowLeft, HardDrive, Table } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
 import { useSMBClient, SMBFile } from '../hooks/protocol/useSMBClient';
+import { Checkbox, Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useSMBClient>;
 
@@ -15,15 +16,7 @@ const SMBHeader: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <span className="text-[var(--color-text)] font-medium">SMB Client - {mgr.session.hostname}</span>
       </div>
       <div className="flex items-center space-x-2">
-        <select
-          value={mgr.currentShare}
-          onChange={(e) => mgr.handleShareChange(e.target.value)}
-          className="px-3 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm"
-        >
-          {mgr.shares.map(share => (
-            <option key={share} value={share}>{share}</option>
-          ))}
-        </select>
+        <Select value={mgr.currentShare} onChange={(v: string) => mgr.handleShareChange(v)} options={[...mgr.shares.map((share) => ({ value: share, label: share }))]} className="px-3 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-sm" />
         <button
           onClick={mgr.loadShares}
           className="p-2 hover:bg-[var(--color-border)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
@@ -67,15 +60,10 @@ const FileTableHeader: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <thead className="bg-[var(--color-border)] sticky top-0">
     <tr>
       <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">
-        <input
-          type="checkbox"
-          checked={mgr.selectedFiles.size === mgr.files.length && mgr.files.length > 0}
-          onChange={(e) => {
-            if (e.target.checked) mgr.selectAll();
+        <Checkbox checked={mgr.selectedFiles.size === mgr.files.length && mgr.files.length > 0} onChange={(v: boolean) => {
+            if (v) mgr.selectAll();
             else mgr.deselectAll();
-          }}
-          className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-        />
+          }} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
       </th>
       <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">Name</th>
       <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">Size</th>
@@ -94,12 +82,7 @@ const FileRow: React.FC<{ file: SMBFile; mgr: Mgr }> = ({ file, mgr }) => (
     onDoubleClick={() => mgr.handleDoubleClick(file)}
   >
     <td className="px-4 py-3">
-      <input
-        type="checkbox"
-        checked={mgr.selectedFiles.has(file.name)}
-        onChange={() => mgr.handleFileSelect(file.name)}
-        className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-      />
+      <Checkbox checked={mgr.selectedFiles.has(file.name)} onChange={() => mgr.handleFileSelect(file.name)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
     </td>
     <td className="px-4 py-3 text-sm text-[var(--color-text)]">
       <div className="flex items-center space-x-2">

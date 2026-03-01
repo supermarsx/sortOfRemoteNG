@@ -20,6 +20,7 @@ import {
   type TrustRecord,
 } from "../../../utils/trustStore";
 import { useTrustVerificationSettings } from "../../../hooks/settings/useTrustVerificationSettings";
+import { Checkbox, NumberInput, Select } from '../../ui/forms';
 
 type Mgr = ReturnType<typeof useTrustVerificationSettings>;
 
@@ -79,21 +80,10 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           TLS Certificate Policy
         </h4>
       </div>
-      <select
-        value={mgr.settings.tlsTrustPolicy ?? "tofu"}
-        onChange={(e) =>
+      <Select value={mgr.settings.tlsTrustPolicy ?? "tofu"} onChange={(v: string) =>
           mgr.updateSettings({
-            tlsTrustPolicy: e.target.value as GlobalSettings["tlsTrustPolicy"],
-          })
-        }
-        className="sor-settings-select w-full text-sm"
-      >
-        {POLICY_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+            tlsTrustPolicy: v as GlobalSettings["tlsTrustPolicy"],
+          })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
       <p className="text-xs text-gray-500 mt-2">
         {
           POLICY_OPTIONS.find((o) => o.value === mgr.settings.tlsTrustPolicy)
@@ -109,21 +99,10 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           SSH Host Key Policy
         </h4>
       </div>
-      <select
-        value={mgr.settings.sshTrustPolicy ?? "tofu"}
-        onChange={(e) =>
+      <Select value={mgr.settings.sshTrustPolicy ?? "tofu"} onChange={(v: string) =>
           mgr.updateSettings({
-            sshTrustPolicy: e.target.value as GlobalSettings["sshTrustPolicy"],
-          })
-        }
-        className="sor-settings-select w-full text-sm"
-      >
-        {POLICY_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+            sshTrustPolicy: v as GlobalSettings["sshTrustPolicy"],
+          })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
       <p className="text-xs text-gray-500 mt-2">
         {
           POLICY_OPTIONS.find((o) => o.value === mgr.settings.sshTrustPolicy)
@@ -203,14 +182,7 @@ const PolicyExplanations: React.FC = () => (
 const AdditionalOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="space-y-4">
     <label className="flex items-center gap-3 text-sm text-[var(--color-textSecondary)]">
-      <input
-        type="checkbox"
-        checked={mgr.settings.showTrustIdentityInfo ?? true}
-        onChange={(e) =>
-          mgr.updateSettings({ showTrustIdentityInfo: e.target.checked })
-        }
-        className="sor-settings-checkbox"
-      />
+      <Checkbox checked={mgr.settings.showTrustIdentityInfo ?? true} onChange={(v: boolean) => mgr.updateSettings({ showTrustIdentityInfo: v })} />
       <div className="flex items-center gap-2">
         <Eye size={14} className="text-[var(--color-textSecondary)]" />
         <span>
@@ -226,18 +198,9 @@ const AdditionalOptions: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           Warn when TLS certificate expires within
         </label>
       </div>
-      <input
-        type="number"
-        min={0}
-        max={365}
-        value={mgr.settings.certExpiryWarningDays ?? 5}
-        onChange={(e) =>
-          mgr.updateSettings({
-            certExpiryWarningDays: parseInt(e.target.value, 10) || 0,
-          })
-        }
-        className="sor-settings-input w-20 text-sm"
-      />
+      <NumberInput value={mgr.settings.certExpiryWarningDays ?? 5} onChange={(v: number) => mgr.updateSettings({
+            certExpiryWarningDays: v,
+          })} className="w-20" min={0} max={365} />
       <span className="text-sm text-[var(--color-textSecondary)]">
         days (0 = disabled)
       </span>

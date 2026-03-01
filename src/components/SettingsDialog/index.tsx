@@ -29,7 +29,7 @@ import BackendSettings from "./sections/BackendSettings";
 import RecordingSettings from "./sections/RecordingSettings";
 import MacroSettings from "./sections/MacroSettings";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { Modal } from "../ui/Modal";
+import { Modal } from "../ui/overlays/Modal";
 import { SETTINGS_TABS, TAB_DEFAULTS } from "./settingsConstants";
 import {
   useSettingsDialog,

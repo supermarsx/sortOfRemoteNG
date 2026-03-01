@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { PopoverSurface } from "../src/components/ui/PopoverSurface";
+import { PopoverSurface } from "../src/components/ui/overlays/PopoverSurface";
 
 const renderPopover = () => {
   const TestHarness: React.FC = () => {

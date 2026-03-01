@@ -2,6 +2,8 @@ import React from 'react';
 import { Monitor, Settings, Maximize2, Minimize2, Wifi, WifiOff } from 'lucide-react';
 import { ConnectionSession } from '../types/connection';
 import { useRustDeskClient } from '../hooks/protocol/useRustDeskClient';
+import { StatusBar, ConnectingSpinner } from './ui/display';
+import { Checkbox, Select } from './ui/forms';
 
 type Mgr = ReturnType<typeof useRustDeskClient>;
 
@@ -64,65 +66,31 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
             <div>
               <label className="block text-[var(--color-textSecondary)] mb-1">Quality</label>
-              <select
-                value={mgr.settings.quality}
-                onChange={(e) => mgr.setSettings({...mgr.settings, quality: e.target.value})}
-                className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs"
-              >
-                <option value="low">Low</option>
-                <option value="balanced">Balanced</option>
-                <option value="high">High</option>
-                <option value="best">Best</option>
-              </select>
+              <Select value={mgr.settings.quality} onChange={(v: string) => mgr.setSettings({...mgr.settings, quality: v})} options={[{ value: "low", label: "Low" }, { value: "balanced", label: "Balanced" }, { value: "high", label: "High" }, { value: "best", label: "Best" }]} className="w-full px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] text-xs" />
             </div>
             
             <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={mgr.settings.viewOnly}
-                onChange={(e) => mgr.setSettings({...mgr.settings, viewOnly: e.target.checked})}
-                className="rounded"
-              />
+              <Checkbox checked={mgr.settings.viewOnly} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, viewOnly: v})} className="rounded" />
               <span className="text-[var(--color-textSecondary)]">View Only</span>
             </label>
             
             <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={mgr.settings.showCursor}
-                onChange={(e) => mgr.setSettings({...mgr.settings, showCursor: e.target.checked})}
-                className="rounded"
-              />
+              <Checkbox checked={mgr.settings.showCursor} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, showCursor: v})} className="rounded" />
               <span className="text-[var(--color-textSecondary)]">Show Cursor</span>
             </label>
             
             <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={mgr.settings.enableAudio}
-                onChange={(e) => mgr.setSettings({...mgr.settings, enableAudio: e.target.checked})}
-                className="rounded"
-              />
+              <Checkbox checked={mgr.settings.enableAudio} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, enableAudio: v})} className="rounded" />
               <span className="text-[var(--color-textSecondary)]">Audio</span>
             </label>
             
             <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={mgr.settings.enableClipboard}
-                onChange={(e) => mgr.setSettings({...mgr.settings, enableClipboard: e.target.checked})}
-                className="rounded"
-              />
+              <Checkbox checked={mgr.settings.enableClipboard} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, enableClipboard: v})} className="rounded" />
               <span className="text-[var(--color-textSecondary)]">Clipboard</span>
             </label>
             
             <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={mgr.settings.enableFileTransfer}
-                onChange={(e) => mgr.setSettings({...mgr.settings, enableFileTransfer: e.target.checked})}
-                className="rounded"
-              />
+              <Checkbox checked={mgr.settings.enableFileTransfer} onChange={(v: boolean) => mgr.setSettings({...mgr.settings, enableFileTransfer: v})} className="rounded" />
               <span className="text-[var(--color-textSecondary)]">File Transfer</span>
             </label>
           </div>
@@ -132,11 +100,11 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
       {/* RustDesk Content */}
       <div className="flex-1 flex items-center justify-center bg-black">
         {mgr.connectionStatus === 'connecting' && (
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-400 mx-auto mb-4"></div>
-            <p className="text-[var(--color-textSecondary)]">Connecting to RustDesk...</p>
-            <p className="text-gray-500 text-sm mt-2">{session.hostname}</p>
-          </div>
+          <ConnectingSpinner
+            message="Connecting to RustDesk..."
+            detail={session.hostname}
+            color="border-orange-400"
+          />
         )}
         
         {mgr.connectionStatus === 'error' && (
@@ -173,22 +141,25 @@ export const RustDeskClient: React.FC<RustDeskClientProps> = ({ session }) => {
       </div>
 
       {/* Status Bar */}
-      <div className="bg-[var(--color-surface)] border-t border-[var(--color-border)] px-4 py-2 flex items-center justify-between text-xs text-[var(--color-textSecondary)]">
-        <div className="flex items-center space-x-4">
-          <span>Session: {session.id.slice(0, 8)}</span>
-          <span>Protocol: RustDesk</span>
-          {mgr.isConnected && (
-            <>
-              <span>Quality: {mgr.settings.quality}</span>
-              <span>Audio: {mgr.settings.enableAudio ? 'On' : 'Off'}</span>
-            </>
-          )}
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <span>RustDesk Remote Desktop</span>
-        </div>
-      </div>
+      <StatusBar
+        left={
+          <div className="flex items-center space-x-4">
+            <span>Session: {session.id.slice(0, 8)}</span>
+            <span>Protocol: RustDesk</span>
+            {mgr.isConnected && (
+              <>
+                <span>Quality: {mgr.settings.quality}</span>
+                <span>Audio: {mgr.settings.enableAudio ? 'On' : 'Off'}</span>
+              </>
+            )}
+          </div>
+        }
+        right={
+          <div className="flex items-center space-x-2">
+            <span>RustDesk Remote Desktop</span>
+          </div>
+        }
+      />
     </div>
   );
 };

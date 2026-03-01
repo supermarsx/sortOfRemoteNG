@@ -7,6 +7,7 @@ import {
   ZoomIn,
 } from 'lucide-react';
 import RdpErrorScreen from './RdpErrorScreen';
+import { ConnectingSpinner } from './ui/display';
 import { TrustWarningDialog } from './TrustWarningDialog';
 import { RDPInternalsPanel } from './rdp/RDPInternalsPanel';
 import { RDPStatusBar } from './rdp/RDPStatusBar';
@@ -66,14 +67,11 @@ const MagnifierOverlay: React.FC<{ mgr: RDPClientMgr }> = ({ mgr }) => (
 
 const ConnectingOverlay: React.FC<{ mgr: RDPClientMgr; session: ConnectionSession }> = ({ mgr, session }) => (
   <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60">
-    <div className="text-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-4"></div>
-      <p className="text-[var(--color-textSecondary)]">Connecting to RDP server...</p>
-      <p className="text-gray-500 text-sm mt-2">
-        {session.name !== session.hostname ? `${session.name} (${session.hostname})` : session.hostname}
-      </p>
-      {mgr.statusMessage && <p className="text-gray-600 text-xs mt-1">{mgr.statusMessage}</p>}
-    </div>
+    <ConnectingSpinner
+      message="Connecting to RDP server..."
+      detail={session.name !== session.hostname ? `${session.name} (${session.hostname})` : session.hostname}
+      statusMessage={mgr.statusMessage || undefined}
+    />
   </div>
 );
 

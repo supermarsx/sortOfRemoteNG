@@ -13,7 +13,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { CloudSyncProvider } from "../types/settings";
-import { ToolbarPopover, ToolbarPopoverHeader } from "./ui/ToolbarPopover";
+import { ToolbarPopover, ToolbarPopoverHeader } from "./ui/overlays/ToolbarPopover";
 import {
   useCloudSyncStatus,
   PROVIDER_NAMES,

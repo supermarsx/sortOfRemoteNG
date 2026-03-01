@@ -36,15 +36,16 @@ import {
   getStoredIdentity,
   formatFingerprint,
 } from "../utils/trustStore";
-import { Modal } from "./ui/Modal";
-import { PopoverSurface } from "./ui/PopoverSurface";
+import { Modal } from "./ui/overlays/Modal";
+import { PopoverSurface } from "./ui/overlays/PopoverSurface";
 import {
   OptionEmptyState,
   OptionItemButton,
   OptionList,
-} from "./ui/OptionList";
+} from "./ui/display/OptionList";
 import { ConnectionSession } from "../types/connection";
 import { useWebTerminal, type WebTerminalMgr } from "../hooks/ssh/useWebTerminal";
+import { Select } from './ui/forms';
 
 /* ── Props ─────────────────────────────────────────────────────── */
 
@@ -467,38 +468,9 @@ function ScriptSelectorModal({ mgr }: { mgr: WebTerminalMgr }) {
             <Filter size={12} />
             <span className="text-xs font-medium">Filters:</span>
           </div>
-          <select
-            value={mgr.scriptCategoryFilter}
-            onChange={(e) => mgr.setScriptCategoryFilter(e.target.value)}
-            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer"
-          >
-            <option value="all">All Categories</option>
-            {mgr.uniqueCategories.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
-            ))}
-          </select>
-          <select
-            value={mgr.scriptLanguageFilter}
-            onChange={(e) => mgr.setScriptLanguageFilter(e.target.value)}
-            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer"
-          >
-            <option value="all">All Languages</option>
-            {mgr.uniqueLanguages.map((lang) => (
-              <option key={lang} value={lang}>{lang}</option>
-            ))}
-          </select>
-          <select
-            value={mgr.scriptOsTagFilter}
-            onChange={(e) => mgr.setScriptOsTagFilter(e.target.value)}
-            className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer"
-          >
-            <option value="all">All Platforms</option>
-            {mgr.uniqueOsTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {OS_TAG_ICONS[tag as OSTag]} {OS_TAG_LABELS[tag as OSTag]}
-              </option>
-            ))}
-          </select>
+          <Select value={mgr.scriptCategoryFilter} onChange={(v: string) => mgr.setScriptCategoryFilter(v)} options={[{ value: 'all', label: 'All Categories' }, ...mgr.uniqueCategories.map((cat) => ({ value: cat, label: cat }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer" />
+          <Select value={mgr.scriptLanguageFilter} onChange={(v: string) => mgr.setScriptLanguageFilter(v)} options={[{ value: 'all', label: 'All Languages' }, ...mgr.uniqueLanguages.map((lang) => ({ value: lang, label: lang }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer" />
+          <Select value={mgr.scriptOsTagFilter} onChange={(v: string) => mgr.setScriptOsTagFilter(v)} options={[{ value: 'all', label: 'All Platforms' }, ...mgr.uniqueOsTags.map((tag) => ({ value: tag, label: `${OS_TAG_ICONS[tag as OSTag]} ${OS_TAG_LABELS[tag as OSTag]}` }))]} className="text-xs px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded text-[var(--color-text)] focus:outline-none focus:ring-1 focus:ring-green-500/50 cursor-pointer" />
           {(mgr.scriptCategoryFilter !== "all" ||
             mgr.scriptLanguageFilter !== "all" ||
             mgr.scriptOsTagFilter !== "all") && (

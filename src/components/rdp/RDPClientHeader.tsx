@@ -29,8 +29,8 @@ import {
 import { TOTPConfig } from "../../types/settings";
 import RDPTotpPanel from "./RDPTotpPanel";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { PopoverSurface } from "../ui/PopoverSurface";
-import { OptionGroup, OptionItemButton, OptionList } from "../ui/OptionList";
+import { PopoverSurface } from "../ui/overlays/PopoverSurface";
+import { OptionGroup, OptionItemButton, OptionList } from "../ui/display/OptionList";
 import { useRDPClientHeader } from "../../hooks/rdp/useRDPClientHeader";
 
 type Mgr = ReturnType<typeof useRDPClientHeader>;

@@ -55,7 +55,8 @@ import {
   SettingsSelectRow as SelectRow,
   SettingsSliderRow as SliderRow,
   SettingsToggleRow as Toggle,
-} from "../../ui/SettingsPrimitives";
+} from "../../ui/settings/SettingsPrimitives";
+import { Select } from '../../ui/forms';
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -775,22 +776,13 @@ const ToolDisplayModesSection: React.FC<SectionProps> = ({ s, u }) => (
             Global Default
           </span>
         </div>
-        <select
-          value={s.toolDisplayModes?.globalDefault ?? "popup"}
-          onChange={(e) =>
-            u({
+        <Select value={s.toolDisplayModes?.globalDefault ?? "popup"} onChange={(v: string) => u({
               toolDisplayModes: {
                 ...defaultToolDisplayModes,
                 ...s.toolDisplayModes,
-                globalDefault: e.target.value as ToolDisplayMode,
+                globalDefault: v as ToolDisplayMode,
               },
-            })
-          }
-          className="px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)]"
-        >
-          <option value="popup">Popup</option>
-          <option value="tab">Tab</option>
-        </select>
+            })} options={[{ value: "popup", label: "Popup" }, { value: "tab", label: "Tab" }]} className="px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded  text-[var(--color-text)]" />
       </div>
 
       {/* Per-tool overrides */}
@@ -818,23 +810,13 @@ const ToolDisplayModesSection: React.FC<SectionProps> = ({ s, u }) => (
                 </span>
               )}
             </div>
-            <select
-              value={current}
-              onChange={(e) =>
-                u({
+            <Select value={current} onChange={(v: string) => u({
                   toolDisplayModes: {
                     ...defaultToolDisplayModes,
                     ...s.toolDisplayModes,
-                    [tool.key]: e.target.value as ToolDisplayModeOverride,
+                    [tool.key]: v as ToolDisplayModeOverride,
                   },
-                })
-              }
-              className="px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-sm text-[var(--color-text)]"
-            >
-              <option value="inherit">Inherit</option>
-              <option value="popup">Popup</option>
-              <option value="tab">Tab</option>
-            </select>
+                })} options={[{ value: "inherit", label: "Inherit" }, { value: "popup", label: "Popup" }, { value: "tab", label: "Tab" }]} className="px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded  text-[var(--color-text)]" />
           </div>
         );
       })}

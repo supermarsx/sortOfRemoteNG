@@ -10,29 +10,25 @@ import {
   Home,
   FolderUp,
 } from "lucide-react";
-import { Modal } from "./ui/Modal";
-import {
+import { Modal } from "./ui/overlays/Modal";import { DialogHeader } from './ui/overlays/DialogHeader';import { EmptyState } from './ui/display';import {
   useFileTransfer,
   FileItem,
   formatFileSize,
   getTransferProgress,
 } from "../hooks/protocol/useFileTransfer";
+import { Checkbox } from './ui/forms';
 
 type Mgr = ReturnType<typeof useFileTransfer>;
 
 // ─── Sub-components ─────────────────────────────────────────────────
 
 const ManagerHeader: React.FC<{ protocol: string }> = ({ protocol }) => (
-  <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
-    <div className="flex items-center space-x-3">
-      <div className="p-2 bg-cyan-500/20 rounded-lg">
-        <FolderUp size={18} className="text-cyan-500" />
-      </div>
-      <h2 className="text-lg font-semibold text-[var(--color-text)]">
-        File Transfer - {protocol.toUpperCase()}
-      </h2>
-    </div>
-  </div>
+  <DialogHeader
+    icon={FolderUp}
+    iconColor="text-cyan-500"
+    iconBg="bg-cyan-500/20"
+    title={`File Transfer - ${protocol.toUpperCase()}`}
+  />
 );
 
 const FileToolbar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
@@ -66,7 +62,7 @@ const FileTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <thead className="bg-[var(--color-border)] sticky top-0">
           <tr>
             <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">
-              <input type="checkbox" checked={mgr.selectedFiles.size === mgr.files.length && mgr.files.length > 0} onChange={(e) => mgr.handleSelectAll(e.target.checked)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+              <Checkbox checked={mgr.selectedFiles.size === mgr.files.length && mgr.files.length > 0} onChange={(v: boolean) => mgr.handleSelectAll(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">Name</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-[var(--color-textSecondary)] uppercase">Size</th>
@@ -77,7 +73,7 @@ const FileTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <tbody className="divide-y divide-[var(--color-border)]">
           {mgr.files.map((file) => (
             <tr key={file.name} className={`hover:bg-[var(--color-border)] cursor-pointer ${mgr.selectedFiles.has(file.name) ? "bg-blue-900/20" : ""}`} onClick={() => mgr.handleFileSelect(file.name)} onDoubleClick={() => mgr.handleDoubleClick(file)}>
-              <td className="px-4 py-3"><input type="checkbox" checked={mgr.selectedFiles.has(file.name)} onChange={() => mgr.handleFileSelect(file.name)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" /></td>
+              <td className="px-4 py-3"><Checkbox checked={mgr.selectedFiles.has(file.name)} onChange={() => mgr.handleFileSelect(file.name)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" /></td>
               <td className="px-4 py-3 text-sm text-[var(--color-text)]">
                 <div className="flex items-center space-x-2">
                   {file.type === "directory" ? <Folder size={16} className="text-blue-400" /> : <File size={16} className="text-[var(--color-textSecondary)]" />}
@@ -102,7 +98,7 @@ const TransferQueue: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     <div className="sor-selection-list flex-1 overflow-y-auto p-4">
       {mgr.transfers.length === 0 ? (
-        <div className="text-center text-[var(--color-textSecondary)] py-8"><Upload size={24} className="mx-auto mb-2" /><p>No active transfers</p></div>
+        <EmptyState icon={Upload} iconSize={24} message="No active transfers" className="py-8" />
       ) : (
         mgr.transfers.map((transfer) => (
           <div key={transfer.id} className="sor-selection-row cursor-default bg-[var(--color-border)] p-3">

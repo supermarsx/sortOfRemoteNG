@@ -15,8 +15,8 @@ import {
   Link,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Modal } from "./ui/Modal";
-import { useShortcutManager, FolderPreset } from "../hooks/window/useShortcutManager";
+import { Modal } from "./ui/overlays/Modal";import { DialogHeader } from './ui/overlays/DialogHeader';import { EmptyState } from './ui/display';import { useShortcutManager, FolderPreset } from "../hooks/window/useShortcutManager";
+import { Select } from './ui/forms';
 
 interface ShortcutManagerDialogProps {
   isOpen: boolean;
@@ -56,16 +56,14 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
       backdropClassName="bg-black/50"
       panelClassName="max-w-3xl mx-4 h-[85vh] bg-[var(--color-surface)] rounded-xl border border-[var(--color-border)] shadow-xl"
     >
-      <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-blue-500/20 rounded-lg">
-            <Keyboard size={16} className="text-blue-500" />
-          </div>
-          <h2 className="text-lg font-semibold text-[var(--color-text)]">
-            {t("shortcuts.title", "Shortcut Manager")}
-          </h2>
-        </div>
-        <div className="flex items-center gap-2">
+      <DialogHeader
+        icon={Keyboard}
+        iconColor="text-blue-500"
+        iconBg="bg-blue-500/20"
+        title={t("shortcuts.title", "Shortcut Manager")}
+        onClose={onClose}
+        sticky
+        actions={
           <button
             onClick={mgr.refreshShortcuts}
             disabled={mgr.isLoading}
@@ -78,16 +76,8 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
               className={mgr.isLoading ? "animate-spin" : ""}
             />
           </button>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-            data-tooltip={t("common.close", "Close")}
-            aria-label={t("common.close", "Close")}
-          >
-            <X size={16} />
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {/* Create/Edit Form */}
@@ -127,26 +117,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                 <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                   {t("shortcuts.folder", "Folder")}
                 </label>
-                <select
-                  value={mgr.selectedFolder}
-                  onChange={(e) =>
-                    mgr.setSelectedFolder(e.target.value as FolderPreset)
-                  }
-                  className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="desktop">
-                    {t("shortcuts.desktop", "Desktop")}
-                  </option>
-                  <option value="documents">
-                    {t("shortcuts.documents", "Documents")}
-                  </option>
-                  <option value="appdata">
-                    {t("shortcuts.appdata", "AppData (Start Menu)")}
-                  </option>
-                  <option value="custom">
-                    {t("shortcuts.customFolder", "Custom Folder...")}
-                  </option>
-                </select>
+                <Select value={mgr.selectedFolder} onChange={(v: string) => mgr.setSelectedFolder(v as FolderPreset)} options={[{ value: "desktop", label: t("shortcuts.desktop", "Desktop") }, { value: "documents", label: t("shortcuts.documents", "Documents") }, { value: "appdata", label: t("shortcuts.appdata", "AppData (Start Menu)") }, { value: "custom", label: t("shortcuts.customFolder", "Custom Folder...") }]} className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
               </div>
             )}
 
@@ -183,20 +154,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                 {t("shortcuts.collection", "Collection")} (
                 {t("common.optional", "Optional")})
               </label>
-              <select
-                value={mgr.selectedCollectionId}
-                onChange={(e) => mgr.setSelectedCollectionId(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">
-                  {t("shortcuts.selectCollection", "Select a collection...")}
-                </option>
-                {mgr.collections.map((collection) => (
-                  <option key={collection.id} value={collection.id}>
-                    {collection.name}
-                  </option>
-                ))}
-              </select>
+              <Select value={mgr.selectedCollectionId} onChange={(v: string) => mgr.setSelectedCollectionId(v)} options={[{ value: '', label: t("shortcuts.selectCollection", "Select a collection...") }, ...mgr.collections.map((collection) => ({ value: collection.id, label: collection.name }))]} className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
             </div>
 
             <div>
@@ -204,22 +162,7 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
                 {t("shortcuts.connection", "Connection")} (
                 {t("common.optional", "Optional")})
               </label>
-              <select
-                value={mgr.selectedConnectionId}
-                onChange={(e) => mgr.setSelectedConnectionId(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="">
-                  {t("shortcuts.selectConnection", "Select a connection...")}
-                </option>
-                {mgr.connections
-                  .filter((conn) => !conn.isGroup)
-                  .map((connection) => (
-                    <option key={connection.id} value={connection.id}>
-                      {connection.name}
-                    </option>
-                  ))}
-              </select>
+              <Select value={mgr.selectedConnectionId} onChange={(v: string) => mgr.setSelectedConnectionId(v)} options={[{ value: '', label: t("shortcuts.selectConnection", "Select a connection...") }, ...mgr.connections.filter((conn) => !conn.isGroup).map((connection) => ({ value: connection.id, label: connection.name }))]} className="w-full px-3 py-2 bg-gray-600 border border-[var(--color-border)] rounded-md text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
@@ -285,18 +228,12 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
           </div>
 
           {mgr.shortcuts.length === 0 ? (
-            <div className="text-center text-[var(--color-textSecondary)] py-8">
-              <Keyboard size={32} className="mx-auto mb-3 opacity-50" />
-              <p>
-                {t("shortcuts.noShortcuts", "No shortcuts created yet")}
-              </p>
-              <p className="text-sm mt-1">
-                {t(
-                  "shortcuts.createHint",
-                  "Create a shortcut above to get started",
-                )}
-              </p>
-            </div>
+            <EmptyState
+              icon={Keyboard}
+              message={t("shortcuts.noShortcuts", "No shortcuts created yet")}
+              hint={t("shortcuts.createHint", "Create a shortcut above to get started")}
+              className="py-8"
+            />
           ) : (
             <div className="space-y-2">
               {mgr.shortcuts.map((shortcut) => (
@@ -414,21 +351,13 @@ export const ShortcutManagerDialog: React.FC<ShortcutManagerDialogProps> = ({
           </p>
 
           {mgr.showScanResults && mgr.scannedShortcuts.length === 0 && (
-            <div className="text-center text-[var(--color-textSecondary)] py-4 bg-[var(--color-surface)]/50 rounded-lg border border-[var(--color-border)]">
-              <Search size={24} className="mx-auto mb-2 opacity-50" />
-              <p>
-                {t(
-                  "shortcuts.noShortcutsFound",
-                  "No sortOfRemoteNG shortcuts found",
-                )}
-              </p>
-              <p className="text-xs mt-1">
-                {t(
-                  "shortcuts.allTracked",
-                  "All shortcuts may already be tracked",
-                )}
-              </p>
-            </div>
+            <EmptyState
+              icon={Search}
+              iconSize={24}
+              message={t("shortcuts.noShortcutsFound", "No sortOfRemoteNG shortcuts found")}
+              hint={t("shortcuts.allTracked", "All shortcuts may already be tracked")}
+              className="py-4 bg-[var(--color-surface)]/50 rounded-lg border border-[var(--color-border)]"
+            />
           )}
 
           {mgr.scannedShortcuts.length > 0 && (

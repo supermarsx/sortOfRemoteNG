@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { DiscoveredHost, DiscoveredService } from "../types/connection";
 import { useNetworkDiscovery } from "../hooks/network/useNetworkDiscovery";
-import { Modal } from "./ui/Modal";
+import { Modal } from "./ui/overlays/Modal";import { DialogHeader } from './ui/overlays/DialogHeader';import { Checkbox, NumberInput } from './ui/forms';
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
@@ -40,23 +40,19 @@ const getServiceIcon = (service: string) => {
 /* ── Sub-components ──────────────────────────────────────────────── */
 
 const DiscoveryHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({ mgr, onClose }) => (
-  <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
-    <div className="flex items-center space-x-3">
-      <div className="p-2 bg-purple-500/20 rounded-lg">
-        <Radar size={18} className="text-purple-500" />
-      </div>
-      <h2 className="text-lg font-semibold text-[var(--color-text)]">{mgr.t("networkDiscovery.title")}</h2>
-    </div>
-    <div className="flex items-center space-x-2">
+  <DialogHeader
+    icon={Radar}
+    iconColor="text-purple-500"
+    iconBg="bg-purple-500/20"
+    title={mgr.t("networkDiscovery.title")}
+    onClose={onClose}
+    actions={
       <button onClick={() => mgr.setShowAdvanced(!mgr.showAdvanced)} className="px-3 py-1.5 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 text-sm">
         <Settings size={14} />
         <span>{mgr.t("networkDiscovery.advanced")}</span>
       </button>
-      <button onClick={onClose} className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
-        <X size={18} />
-      </button>
-    </div>
-  </div>
+    }
+  />
 );
 
 const ScanConfig: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
@@ -67,11 +63,11 @@ const ScanConfig: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     <div>
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mgr.t("networkDiscovery.timeout")}</label>
-      <input type="number" value={mgr.config.timeout} onChange={(e) => mgr.setConfig({ ...mgr.config, timeout: parseInt(e.target.value) })} className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]" min="1000" max="30000" />
+      <NumberInput value={mgr.config.timeout} onChange={(v: number) => mgr.setConfig({ ...mgr.config, timeout: v })} className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]" min={1000} max={30000} />
     </div>
     <div>
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mgr.t("networkDiscovery.maxConcurrent")}</label>
-      <input type="number" value={mgr.config.maxConcurrent} onChange={(e) => mgr.setConfig({ ...mgr.config, maxConcurrent: parseInt(e.target.value) })} className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]" min="1" max="100" />
+      <NumberInput value={mgr.config.maxConcurrent} onChange={(v: number) => mgr.setConfig({ ...mgr.config, maxConcurrent: v })} className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]" min={1} max={100} />
     </div>
   </div>
 );
@@ -91,18 +87,13 @@ const AdvancedConfig: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           <div className="flex flex-wrap gap-2">
             {["ssh", "http", "https", "rdp", "vnc", "mysql", "ftp", "telnet"].map((protocol) => (
               <label key={protocol} className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={mgr.config.protocols.includes(protocol)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
+                <Checkbox checked={mgr.config.protocols.includes(protocol)} onChange={(v: boolean) => {
+                    if (v) {
                       mgr.setConfig({ ...mgr.config, protocols: [...mgr.config.protocols, protocol] });
                     } else {
                       mgr.setConfig({ ...mgr.config, protocols: mgr.config.protocols.filter((p) => p !== protocol) });
                     }
-                  }}
-                  className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600"
-                />
+                  }} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
                 <span className="text-[var(--color-textSecondary)] text-sm">{protocol.toUpperCase()}</span>
               </label>
             ))}
@@ -144,7 +135,7 @@ const HostCard: React.FC<{ mgr: Mgr; host: DiscoveredHost }> = ({ mgr, host }) =
   >
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center space-x-3">
-        <input type="checkbox" checked={mgr.selectedHosts.has(host.ip)} onChange={() => mgr.toggleHostSelection(host.ip)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
+        <Checkbox checked={mgr.selectedHosts.has(host.ip)} onChange={() => mgr.toggleHostSelection(host.ip)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-blue-600" />
         <div>
           <h4 className="text-[var(--color-text)] font-medium">{host.hostname || host.ip}</h4>
           {host.hostname && <p className="text-[var(--color-textSecondary)] text-sm">{host.ip}</p>}

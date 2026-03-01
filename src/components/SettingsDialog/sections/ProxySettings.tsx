@@ -1,8 +1,9 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { PasswordInput } from "../../ui/PasswordInput";
+import { PasswordInput } from "../../ui/forms/PasswordInput";
 import { GlobalSettings, ProxyConfig } from "../../../types/settings";
 import { Shield, Globe, Server, Hash, User, Lock, Wifi } from "lucide-react";
+import { Checkbox, NumberInput } from '../../ui/forms';
 
 interface ProxySettingsProps {
   settings: GlobalSettings;
@@ -34,12 +35,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
       {/* Enable Global Proxy */}
       <div className="sor-settings-card">
         <label className="flex items-center space-x-3 cursor-pointer group">
-          <input
-            type="checkbox"
-            checked={settings.globalProxy?.enabled || false}
-            onChange={(e) => updateProxy({ enabled: e.target.checked })}
-            className="sor-settings-checkbox"
-          />
+          <Checkbox checked={settings.globalProxy?.enabled || false} onChange={(v: boolean) => updateProxy({ enabled: v })} />
           <Shield className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
           <div>
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
@@ -112,16 +108,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
                     <Hash className="w-4 h-4" />
                     Proxy Port
                   </label>
-                  <input
-                    type="number"
-                    value={settings.globalProxy?.port || 8080}
-                    onChange={(e) =>
-                      updateProxy({ port: parseInt(e.target.value) })
-                    }
-                    className="sor-settings-input w-full"
-                    min="1"
-                    max="65535"
-                  />
+                  <NumberInput value={settings.globalProxy?.port || 8080} onChange={(v: number) => updateProxy({ port: v })} className="w-full" min={1} max={65535} />
                 </div>
               </div>
             </div>

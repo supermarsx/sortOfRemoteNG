@@ -2,12 +2,10 @@ import React from 'react';
 import {
   RefreshCw,
   Activity,
-  AlertCircle,
   Monitor,
   Power,
   PowerOff,
   Clock,
-  XCircle,
   Server,
   ArrowDownToLine,
   Unplug,
@@ -18,6 +16,7 @@ import {
   ScrollText,
   PanelRightClose,
 } from 'lucide-react';
+import { ErrorBanner, EmptyState } from './ui/display';
 import { Connection } from '../types/connection';
 import { ConfirmDialog } from './ConfirmDialog';
 import { RdpLogViewer } from './RdpLogViewer';
@@ -28,6 +27,7 @@ import {
   formatUptime,
   formatBytes,
 } from '../hooks/rdp/useRdpSessionPanel';
+import { Checkbox } from './ui/forms';
 
 interface RdpSessionPanelProps {
   isVisible: boolean;
@@ -58,7 +58,7 @@ const PanelHeader: React.FC<{ mgr: Mgr; onClose: () => void }> = ({ mgr, onClose
     </div>
     <div className="flex items-center space-x-1">
       <label className="flex items-center space-x-1 text-[10px] text-[var(--color-textSecondary)] cursor-pointer">
-        <input type="checkbox" checked={mgr.autoRefresh} onChange={(e) => mgr.setAutoRefresh(e.target.checked)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-indigo-600 w-3 h-3" />
+        <Checkbox checked={mgr.autoRefresh} onChange={(v: boolean) => mgr.setAutoRefresh(v)} className="rounded border-[var(--color-border)] bg-[var(--color-border)] text-indigo-600 w-3 h-3" />
         <span>Auto</span>
       </label>
       <button onClick={mgr.handleRefresh} className={`p-1.5 hover:bg-[var(--color-surface)] rounded transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)] ${mgr.isLoading ? 'animate-spin' : ''}`} data-tooltip="Refresh">
@@ -82,20 +82,7 @@ const PanelTabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   </div>
 );
 
-const ErrorBanner: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
-  if (!mgr.error) return null;
-  return (
-    <div className="mx-3 mt-2 px-2.5 py-1.5 bg-red-900/30 border border-red-800 rounded-lg text-red-400 text-xs flex items-center justify-between flex-shrink-0">
-      <div className="flex items-center space-x-1.5">
-        <AlertCircle size={12} />
-        <span className="truncate">{mgr.error}</span>
-      </div>
-      <button onClick={() => mgr.setError('')} className="hover:text-red-300 flex-shrink-0">
-        <XCircle size={12} />
-      </button>
-    </div>
-  );
-};
+
 
 const SessionThumbnail: React.FC<{ mgr: Mgr; session: RdpSessionInfo; thumbnailsEnabled: boolean }> = ({ mgr, session, thumbnailsEnabled }) => {
   if (!thumbnailsEnabled) return null;
@@ -239,17 +226,17 @@ export const RdpSessionPanel: React.FC<RdpSessionPanelProps> = ({
       <div className="flex flex-col h-full bg-[var(--color-background)] border-l border-[var(--color-border)] overflow-hidden">
         <PanelHeader mgr={mgr} onClose={onClose} />
         <PanelTabBar mgr={mgr} />
-        <ErrorBanner mgr={mgr} />
+        <ErrorBanner error={mgr.error} onClear={() => mgr.setError('')} compact />
 
         {mgr.activeTab === 'sessions' ? (
           <>
             <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
               {mgr.sessions.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-                  <Server size={32} className="mb-2 opacity-40" />
-                  <p className="text-xs">No active RDP sessions</p>
-                  <p className="text-[10px] mt-1">Sessions appear when RDP connections are established</p>
-                </div>
+                <EmptyState
+                  icon={Server}
+                  message="No active RDP sessions"
+                  hint="Sessions appear when RDP connections are established"
+                />
               ) : (
                 mgr.sessions.map((session) => (
                   <SessionCard key={session.id} mgr={mgr} session={session} thumbnailsEnabled={thumbnailsEnabled} onReattachSession={onReattachSession} onDetachToWindow={onDetachToWindow} />

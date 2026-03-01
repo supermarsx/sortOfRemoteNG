@@ -13,7 +13,7 @@ import {
   FolderOpen,
   FileCheck,
 } from "lucide-react";
-import { ToolbarPopover, ToolbarPopoverHeader } from "./ui/ToolbarPopover";
+import { ToolbarPopover, ToolbarPopoverHeader } from "./ui/overlays/ToolbarPopover";
 import {
   useBackupStatus,
   formatBytes,

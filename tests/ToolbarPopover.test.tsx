@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import {
   ToolbarPopover,
   ToolbarPopoverHeader,
-} from "../src/components/ui/ToolbarPopover";
+} from "../src/components/ui/overlays/ToolbarPopover";
 
 const renderPopover = () => {
   const TestHarness: React.FC = () => {

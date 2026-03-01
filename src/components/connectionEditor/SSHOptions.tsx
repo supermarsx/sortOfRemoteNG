@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Key, Fingerprint, Trash2, Pencil } from "lucide-react";
-import { PasswordInput } from "../ui/PasswordInput";
+import { PasswordInput } from "../ui/forms/PasswordInput";
 import { Connection } from "../../types/connection";
 import { SSHKeyManager } from "../SSHKeyManager";
 import { SSHTerminalOverrides } from "./SSHTerminalOverrides";
@@ -14,6 +14,7 @@ import {
   type TrustRecord,
 } from "../../utils/trustStore";
 import { useSSHOptions } from "../../hooks/ssh/useSSHOptions";
+import { Checkbox, NumberInput, Select } from '../ui/forms';
 
 type Mgr = ReturnType<typeof useSSHOptions>;
 
@@ -49,60 +50,28 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
         <div className="space-y-3">
           <div>
             <label className="sor-form-label">Authentication Type</label>
-            <select
-              value={formData.authType ?? "password"}
-              onChange={(e) =>
-                setFormData({ ...formData, authType: e.target.value as any })
-              }
-              className="sor-form-select"
-            >
-              <option value="password">Password</option>
-              <option value="key">Private Key</option>
-            </select>
+            <Select value={formData.authType ?? "password"} onChange={(v: string) => setFormData({ ...formData, authType: v as any })} options={[{ value: "password", label: "Password" }, { value: "key", label: "Private Key" }]} variant="form" />
           </div>
           <label className="sor-form-inline-check">
-            <input
-              type="checkbox"
-              checked={formData.ignoreSshSecurityErrors ?? true}
-              onChange={(e) =>
-                setFormData({
+            <Checkbox checked={formData.ignoreSshSecurityErrors ?? true} onChange={(v: boolean) => setFormData({
                   ...formData,
-                  ignoreSshSecurityErrors: e.target.checked,
-                })
-              }
-              className="sor-form-checkbox"
-            />
+                  ignoreSshSecurityErrors: v,
+                })} variant="form" />
             <span>Ignore SSH security errors (host keys/certs)</span>
           </label>
           <div>
             <label className="sor-form-label">Host Key Trust Policy</label>
-            <select
-              value={formData.sshTrustPolicy ?? ""}
-              onChange={(e) =>
-                setFormData({
+            <Select value={formData.sshTrustPolicy ?? ""} onChange={(v: string) => setFormData({
                   ...formData,
                   sshTrustPolicy:
-                    e.target.value === ""
+                    v === ""
                       ? undefined
-                      : (e.target.value as
+                      : (v as
                           | "tofu"
                           | "always-ask"
                           | "always-trust"
                           | "strict"),
-                })
-              }
-              className="sor-form-select text-sm"
-            >
-              <option value="">Use global default</option>
-              <option value="tofu">Trust On First Use (TOFU)</option>
-              <option value="always-ask">Always Ask</option>
-              <option value="always-trust">
-                Always Trust (skip verification)
-              </option>
-              <option value="strict">
-                Strict (reject unless pre-approved)
-              </option>
-            </select>
+                })} options={[{ value: "", label: "Use global default" }, { value: "tofu", label: "Trust On First Use (TOFU)" }, { value: "always-ask", label: "Always Ask" }, { value: "always-trust", label: "Always Trust (skip verification)" }, { value: "strict", label: "Strict (reject unless pre-approved)" }]} variant="form" />
             <p className="text-xs text-gray-500 mt-1">
               How to handle host key verification for this connection.
             </p>
@@ -186,35 +155,17 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <label className="sor-form-label">Connect Timeout (sec)</label>
-              <input
-                type="number"
-                min={5}
-                max={300}
-                value={formData.sshConnectTimeout ?? 30}
-                onChange={(e) =>
-                  setFormData({
+              <NumberInput value={formData.sshConnectTimeout ?? 30} onChange={(v: number) => setFormData({
                     ...formData,
-                    sshConnectTimeout: Number(e.target.value) || 30,
-                  })
-                }
-                className="sor-form-input"
-              />
+                    sshConnectTimeout: v || 30,
+                  })} variant="form" min={5} max={300} />
             </div>
             <div>
               <label className="sor-form-label">Keep Alive (sec)</label>
-              <input
-                type="number"
-                min={10}
-                max={600}
-                value={formData.sshKeepAliveInterval ?? 60}
-                onChange={(e) =>
-                  setFormData({
+              <NumberInput value={formData.sshKeepAliveInterval ?? 60} onChange={(v: number) => setFormData({
                     ...formData,
-                    sshKeepAliveInterval: Number(e.target.value) || 60,
-                  })
-                }
-                className="sor-form-input"
-              />
+                    sshKeepAliveInterval: v || 60,
+                  })} variant="form" min={10} max={600} />
             </div>
             <div>
               <label className="sor-form-label">Known Hosts Path</label>

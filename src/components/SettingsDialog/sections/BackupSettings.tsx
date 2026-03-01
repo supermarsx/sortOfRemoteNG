@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "../../ui/PasswordInput";
+import { PasswordInput } from "../../ui/forms/PasswordInput";
 import {
   Archive,
   Clock,
@@ -42,6 +42,7 @@ import {
   encryptionAlgorithmDescriptions,
   locationPresetLabels,
 } from "../../../hooks/settings/useBackupSettings";
+import { Checkbox, NumberInput, Select } from '../../ui/forms';
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -88,12 +89,7 @@ const EnableBackup: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           </p>
         </div>
       </div>
-      <input
-        type="checkbox"
-        checked={mgr.backup.enabled}
-        onChange={(e) => mgr.updateBackup({ enabled: e.target.checked })}
-        className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-      />
+      <Checkbox checked={mgr.backup.enabled} onChange={(v: boolean) => mgr.updateBackup({ enabled: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
     </label>
   </div>
 );
@@ -199,21 +195,10 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <label className="block text-sm text-[var(--color-textSecondary)]">
           Frequency
         </label>
-        <select
-          value={mgr.backup.frequency}
-          onChange={(e) =>
+        <Select value={mgr.backup.frequency} onChange={(v: string) =>
             mgr.updateBackup({
-              frequency: e.target.value as BackupFrequency,
-            })
-          }
-          className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm"
-        >
-          {BackupFrequencies.map((freq) => (
-            <option key={freq} value={freq}>
-              {frequencyLabels[freq]}
-            </option>
-          ))}
-        </select>
+              frequency: v as BackupFrequency,
+            })} options={[...BackupFrequencies.map((freq) => ({ value: freq, label: frequencyLabels[freq] }))]} className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm" />
       </div>
 
       {mgr.backup.frequency !== "manual" &&
@@ -238,19 +223,8 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <label className="block text-sm text-[var(--color-textSecondary)]">
             Day of Week
           </label>
-          <select
-            value={mgr.backup.weeklyDay}
-            onChange={(e) =>
-              mgr.updateBackup({ weeklyDay: e.target.value as DayOfWeek })
-            }
-            className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm"
-          >
-            {DaysOfWeek.map((day) => (
-              <option key={day} value={day}>
-                {dayLabels[day]}
-              </option>
-            ))}
-          </select>
+          <Select value={mgr.backup.weeklyDay} onChange={(v: string) =>
+              mgr.updateBackup({ weeklyDay: v as DayOfWeek })} options={[...DaysOfWeek.map((day) => ({ value: day, label: dayLabels[day] }))]} className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm" />
         </div>
       )}
 
@@ -259,19 +233,8 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <label className="block text-sm text-[var(--color-textSecondary)]">
             Day of Month
           </label>
-          <select
-            value={mgr.backup.monthlyDay}
-            onChange={(e) =>
-              mgr.updateBackup({ monthlyDay: parseInt(e.target.value) })
-            }
-            className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm"
-          >
-            {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
-              <option key={day} value={day}>
-                {day}
-              </option>
-            ))}
-          </select>
+          <Select value={mgr.backup.monthlyDay} onChange={(v: string) =>
+              mgr.updateBackup({ monthlyDay: parseInt(v) })} options={[...Array.from({ length: 28 }, (_, i) => i + 1).map((day) => ({ value: day, label: day }))]} className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm" />
         </div>
       )}
     </div>
@@ -299,14 +262,7 @@ const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             Only backup changes since the last full backup (saves space)
           </p>
         </div>
-        <input
-          type="checkbox"
-          checked={mgr.backup.differentialEnabled}
-          onChange={(e) =>
-            mgr.updateBackup({ differentialEnabled: e.target.checked })
-          }
-          className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-        />
+        <Checkbox checked={mgr.backup.differentialEnabled} onChange={(v: boolean) => mgr.updateBackup({ differentialEnabled: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
       </label>
 
       {mgr.backup.differentialEnabled && (
@@ -314,18 +270,9 @@ const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           <label className="block text-sm text-[var(--color-textSecondary)]">
             Full backup every N backups
           </label>
-          <input
-            type="number"
-            min={1}
-            max={30}
-            value={mgr.backup.fullBackupInterval}
-            onChange={(e) =>
-              mgr.updateBackup({
-                fullBackupInterval: parseInt(e.target.value) || 7,
-              })
-            }
-            className="w-24 px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm"
-          />
+          <NumberInput value={mgr.backup.fullBackupInterval} onChange={(v: number) => mgr.updateBackup({
+                fullBackupInterval: v,
+              })} className="w-24 px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]" min={1} max={30} />
           <p className="text-xs text-[var(--color-textMuted)]">
             A full backup will be created every{" "}
             {mgr.backup.fullBackupInterval} differential backups
@@ -352,19 +299,8 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <label className="block text-sm text-[var(--color-textSecondary)]">
           Backup Format
         </label>
-        <select
-          value={mgr.backup.format}
-          onChange={(e) =>
-            mgr.updateBackup({ format: e.target.value as BackupFormat })
-          }
-          className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm"
-        >
-          {BackupFormats.map((fmt) => (
-            <option key={fmt} value={fmt}>
-              {formatLabels[fmt]}
-            </option>
-          ))}
-        </select>
+        <Select value={mgr.backup.format} onChange={(v: string) =>
+            mgr.updateBackup({ format: v as BackupFormat })} options={[...BackupFormats.map((fmt) => ({ value: fmt, label: formatLabels[fmt] }))]} className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm" />
       </div>
 
       <div className="space-y-2">
@@ -388,18 +324,9 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               </button>
             ))}
           </div>
-          <input
-            type="number"
-            min={0}
-            max={365}
-            value={mgr.backup.maxBackupsToKeep}
-            onChange={(e) =>
-              mgr.updateBackup({
-                maxBackupsToKeep: parseInt(e.target.value) || 0,
-              })
-            }
-            className="w-20 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm text-center"
-          />
+          <NumberInput value={mgr.backup.maxBackupsToKeep} onChange={(v: number) => mgr.updateBackup({
+                maxBackupsToKeep: v,
+              })} className="w-20 px-2 py-1 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  text-center" min={0} max={365} />
         </div>
         <p className="text-xs text-[var(--color-textMuted)]">
           Older backups are automatically deleted. 0 or ∞ = keep all.
@@ -421,12 +348,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           className="flex items-center justify-between cursor-pointer"
         >
           <span className="text-[var(--color-text)]">{label}</span>
-          <input
-            type="checkbox"
-            checked={mgr.backup[key]}
-            onChange={(e) => mgr.updateBackup({ [key]: e.target.checked })}
-            className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-          />
+          <Checkbox checked={mgr.backup[key]} onChange={(v: boolean) => mgr.updateBackup({ [key]: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
         </label>
       ))}
     </div>
@@ -452,14 +374,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             Password-protect backup files
           </p>
         </div>
-        <input
-          type="checkbox"
-          checked={mgr.backup.encryptBackups}
-          onChange={(e) =>
-            mgr.updateBackup({ encryptBackups: e.target.checked })
-          }
-          className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-        />
+        <Checkbox checked={mgr.backup.encryptBackups} onChange={(v: boolean) => mgr.updateBackup({ encryptBackups: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
       </label>
 
       {mgr.backup.encryptBackups && (
@@ -469,22 +384,11 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               <Shield className="w-4 h-4 inline mr-2" />
               Encryption Algorithm
             </label>
-            <select
-              value={mgr.backup.encryptionAlgorithm}
-              onChange={(e) =>
+            <Select value={mgr.backup.encryptionAlgorithm} onChange={(v: string) =>
                 mgr.updateBackup({
                   encryptionAlgorithm:
-                    e.target.value as BackupEncryptionAlgorithm,
-                })
-              }
-              className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm"
-            >
-              {BackupEncryptionAlgorithms.map((alg) => (
-                <option key={alg} value={alg}>
-                  {encryptionAlgorithmLabels[alg]}
-                </option>
-              ))}
-            </select>
+                    v as BackupEncryptionAlgorithm,
+                })} options={[...BackupEncryptionAlgorithms.map((alg) => ({ value: alg, label: encryptionAlgorithmLabels[alg] }))]} className="w-full px-3 py-2 bg-[var(--color-input)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm" />
             <p className="text-xs text-[var(--color-textMuted)]">
               {
                 encryptionAlgorithmDescriptions[
@@ -547,14 +451,7 @@ const AdvancedSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               Create a backup when closing the application
             </p>
           </div>
-          <input
-            type="checkbox"
-            checked={mgr.backup.backupOnClose}
-            onChange={(e) =>
-              mgr.updateBackup({ backupOnClose: e.target.checked })
-            }
-            className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-          />
+          <Checkbox checked={mgr.backup.backupOnClose} onChange={(v: boolean) => mgr.updateBackup({ backupOnClose: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
         </label>
 
         <label className="flex items-center justify-between cursor-pointer">
@@ -566,14 +463,7 @@ const AdvancedSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               Display a notification after successful backup
             </p>
           </div>
-          <input
-            type="checkbox"
-            checked={mgr.backup.notifyOnBackup}
-            onChange={(e) =>
-              mgr.updateBackup({ notifyOnBackup: e.target.checked })
-            }
-            className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600"
-          />
+          <Checkbox checked={mgr.backup.notifyOnBackup} onChange={(v: boolean) => mgr.updateBackup({ notifyOnBackup: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
         </label>
       </div>
     )}
