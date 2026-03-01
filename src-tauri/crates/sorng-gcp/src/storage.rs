@@ -5,7 +5,7 @@
 //! API base: `https://storage.googleapis.com/storage/v1`
 
 use crate::client::GcpClient;
-use crate::error::{GcpError, GcpResult};
+use crate::error::GcpResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -219,15 +219,14 @@ impl StorageClient {
         location: &str,
         storage_class: Option<&str>,
     ) -> GcpResult<Bucket> {
-        let path = format!("{}/b", V1);
         let body = serde_json::json!({
             "name": bucket_name,
             "location": location,
             "storageClass": storage_class.unwrap_or("STANDARD"),
         });
         // project must be query param
-        let url = format!("{}/b?project={}", V1, project);
-        client.post(SERVICE, &url, &body).await
+        let path = format!("{}/b?project={}", V1, project);
+        client.post(SERVICE, &path, &body).await
     }
 
     /// Delete a bucket (must be empty).

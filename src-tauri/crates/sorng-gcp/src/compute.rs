@@ -16,7 +16,7 @@ const V1: &str = "/compute/v1";
 // ── Types ───────────────────────────────────────────────────────────────
 
 /// Compute Engine instance.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Instance {
     #[serde(default)]
     pub id: String,
@@ -54,7 +54,7 @@ pub struct Instance {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NetworkInterface {
     #[serde(default)]
     pub network: String,
@@ -70,7 +70,7 @@ pub struct NetworkInterface {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AccessConfig {
     #[serde(default)]
     pub name: String,
@@ -82,7 +82,7 @@ pub struct AccessConfig {
     pub network_tier: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AliasIpRange {
     #[serde(default, rename = "ipCidrRange")]
     pub ip_cidr_range: String,
@@ -90,7 +90,7 @@ pub struct AliasIpRange {
     pub subnetwork_range_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AttachedDisk {
     #[serde(default)]
     pub source: String,
@@ -112,7 +112,7 @@ pub struct AttachedDisk {
     pub interface: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Tags {
     #[serde(default)]
     pub items: Vec<String>,
@@ -120,7 +120,7 @@ pub struct Tags {
     pub fingerprint: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Metadata {
     #[serde(default)]
     pub items: Vec<MetadataItem>,
@@ -134,7 +134,7 @@ pub struct MetadataItem {
     pub value: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ServiceAccount {
     #[serde(default)]
     pub email: String,
@@ -142,7 +142,7 @@ pub struct ServiceAccount {
     pub scopes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Scheduling {
     #[serde(default, rename = "onHostMaintenance")]
     pub on_host_maintenance: Option<String>,
@@ -155,7 +155,7 @@ pub struct Scheduling {
 }
 
 /// Persistent disk.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Disk {
     #[serde(default)]
     pub id: String,
@@ -186,7 +186,7 @@ pub struct Disk {
 }
 
 /// Snapshot.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Snapshot {
     #[serde(default)]
     pub id: String,
@@ -209,7 +209,7 @@ pub struct Snapshot {
 }
 
 /// Machine type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MachineType {
     #[serde(default)]
     pub name: String,
@@ -230,7 +230,7 @@ pub struct MachineType {
 }
 
 /// Firewall rule.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Firewall {
     #[serde(default)]
     pub id: String,
@@ -262,7 +262,7 @@ pub struct Firewall {
     pub self_link: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FirewallAllowed {
     #[serde(default, rename = "IPProtocol")]
     pub ip_protocol: String,
@@ -270,7 +270,7 @@ pub struct FirewallAllowed {
     pub ports: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FirewallDenied {
     #[serde(default, rename = "IPProtocol")]
     pub ip_protocol: String,
@@ -279,7 +279,7 @@ pub struct FirewallDenied {
 }
 
 /// VPC network.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Network {
     #[serde(default)]
     pub id: String,
@@ -306,7 +306,7 @@ pub struct RoutingConfig {
 }
 
 /// Subnetwork.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Subnetwork {
     #[serde(default)]
     pub id: String,
@@ -329,7 +329,7 @@ pub struct Subnetwork {
 }
 
 /// Static/external address.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Address {
     #[serde(default)]
     pub id: String,
@@ -352,7 +352,7 @@ pub struct Address {
 }
 
 /// GCE operation (for async Compute actions).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Operation {
     #[serde(default)]
     pub id: String,

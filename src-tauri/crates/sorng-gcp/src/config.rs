@@ -5,7 +5,6 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // ── Regions & Zones ─────────────────────────────────────────────────────
 
@@ -151,7 +150,7 @@ pub struct GcpConnectionConfig {
     /// GCP project ID.
     pub project_id: String,
     /// The raw JSON of the service account key file.
-    pub service_account_key_json: String,
+    pub service_account_key: String,
     /// Default region for operations.
     pub region: Option<String>,
     /// Default zone for operations.
@@ -173,7 +172,7 @@ impl GcpConnectionConfig {
         if self.project_id.is_empty() {
             return Err("project_id is required".to_string());
         }
-        let key = ServiceAccountKey::from_json(&self.service_account_key_json)?;
+        let key = ServiceAccountKey::from_json(&self.service_account_key)?;
         key.validate()?;
         if key.project_id != self.project_id {
             return Err(format!(
@@ -196,8 +195,9 @@ impl GcpConnectionConfig {
 /// Available GCP services detected/enabled for a session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GcpServiceInfo {
-    pub name: String,
-    pub available: bool,
+    pub service_name: String,
+    pub endpoint: String,
+    pub status: String,
 }
 
 /// A live GCP session with authentication state.
@@ -205,14 +205,14 @@ pub struct GcpServiceInfo {
 pub struct GcpSession {
     /// Session ID.
     pub id: String,
+    /// Original connection config.
+    pub config: GcpConnectionConfig,
     /// Project ID.
     pub project_id: String,
-    /// Service account email.
-    pub service_account_email: String,
     /// Default region.
-    pub region: Option<String>,
+    pub region: String,
     /// Default zone.
-    pub zone: Option<String>,
+    pub zone: String,
     /// When the session was created.
     pub connected_at: DateTime<Utc>,
     /// Last API activity.
@@ -221,8 +221,6 @@ pub struct GcpSession {
     pub is_connected: bool,
     /// Available services.
     pub services: Vec<GcpServiceInfo>,
-    /// Labels/tags.
-    pub labels: HashMap<String, String>,
 }
 
 // ── Pagination ──────────────────────────────────────────────────────────

@@ -406,5 +406,3 @@ impl GcpClient {
 pub fn query_params(params: &HashMap<String, String>) -> Vec<(&str, &str)> {
     params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect()
 }
-
-use std::time::Duration;
