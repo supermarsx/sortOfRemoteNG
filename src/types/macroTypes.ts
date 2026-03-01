@@ -60,7 +60,7 @@ export interface RecordingConfig {
 
 // ─── RDP Screen Recording ─────────────────────────────────────────
 
-export interface SavedRdpRecording {
+export interface SavedRDPRecording {
   id: string;
   name: string;
   description?: string;
@@ -78,7 +78,7 @@ export interface SavedRdpRecording {
   tags?: string[];
 }
 
-export interface RdpRecordingConfig {
+export interface RDPRecordingConfig {
   /** Enable RDP recording globally */
   enabled: boolean;
   /** Auto-record RDP sessions on connect */

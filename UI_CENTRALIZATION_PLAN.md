@@ -37,7 +37,7 @@ Consolidate reusable UI structure and CSS for:
   - `PerformanceMonitor`
   - `CollectionSelector`
   - `ConnectionDiagnostics`
-  - `RdpSessionManager`
+  - `RDPSessionManager`
   - `ImportExport/index`
   - `FileTransferManager`
   - `SSHKeyManager`
@@ -99,17 +99,59 @@ Consolidate reusable UI structure and CSS for:
   - shared editor/connect form primitives: `.sor-form-input`, `.sor-form-select`, `.sor-form-textarea`, `.sor-form-checkbox`
   - shared form composition primitives: `.sor-form-label*`, `.sor-form-inline-check`, `.sor-form-section-heading`, `.sor-form-input-*`, `.sor-form-select-*`, `.sor-form-textarea-*`
   - toolbar status popup primitives: `.sor-toolbar-popover-*`, `.sor-status-item`
+  - **button primitives**: `.sor-btn-primary`, `.sor-btn-primary-sm`, `.sor-btn-secondary`, `.sor-btn-secondary-sm`, `.sor-btn-danger`, `.sor-btn-danger-sm`
+  - **icon button primitives**: `.sor-icon-btn`, `.sor-icon-btn-sm`, `.sor-icon-btn-danger`
+  - **badge pills**: `.sor-badge` + color modifiers (`-blue`, `-green`, `-red`, `-yellow`, `-purple`, `-orange`, `-gray`)
+  - **section cards**: `.sor-section-card`, `.sor-diag-card`
+  - **sidebar navigation**: `.sor-sidebar-tab`, `.sor-sidebar-tab-active`
+  - **search input**: `.sor-search-input` (left-icon variant)
+  - **alert banners**: `.sor-alert-error`, `.sor-alert-warning`
+  - **mini buttons**: `.sor-btn-mini`, `.sor-btn-mini-primary`
+  - **toggle cards**: `.sor-toggle-card`
+  - **section headings**: `.sor-section-heading` (settings panels)
+  - **settings form input**: `.sor-settings-input` (rounded-lg, --color-input bg)
+  - **toggle labels**: `.sor-toggle-label` (group-hover color swap)
+  - **inline tags**: `.sor-tag` (compact pill)
+  - **table headers**: `.sor-th` (uppercase tracking header cell)
+  - **diagnostics**: `.sor-diag-section-title`
 - Migrated components adopted these classes where behavior/style stacks were duplicated.
   - latest adoption: `InternalProxyManager` stats/log cards and `WebBrowser` categorized error help cards
   - latest adoption: `RecordingSettings`, `MacroSettings`, and `WebBrowserSettings` form controls/tile shells
-  - latest adoption: `PerformanceMonitor` metric/table cards, `RdpLogViewer` filter controls, and `RecordingManager` inline rename fields
-  - latest adoption: `GeneralSettings`, `BackendSettings`, and `RdpDefaultSettings` cards/inputs/selects/checkboxes
+  - latest adoption: `PerformanceMonitor` metric/table cards, `RDPLogViewer` filter controls, and `RecordingManager` inline rename fields
+  - latest adoption: `GeneralSettings`, `BackendSettings`, and `RDPDefaultSettings` cards/inputs/selects/checkboxes
   - latest adoption: `WebBrowser` error guidance lists via shared list primitives
   - latest adoption: `PerformanceSettings`, `ThemeSettings`, `ProxySettings`, and `StartupSettings` cards/inputs/selects/checkboxes/ranges
   - latest adoption: `AdvancedSettings`, `LayoutSettings`, `ApiSettings`, `SecuritySettings`, `RecoverySettings`, and `TrustVerificationSettings` cards/inputs/selects/checkboxes/ranges
   - latest adoption: `QuickConnect`, `connectionEditor/GeneralSection`, `connectionEditor/CloudProviderOptions`, `connectionEditor/SSHOptions`, `connectionEditor/HTTPOptions`, and `connectionEditor/RDPOptions` form controls/checkboxes
   - latest adoption: `connectionEditor/SSHTerminalOverrides`, `connectionEditor/SSHConnectionOverrides`, and `connectionEditor/TOTPOptions` override/input/checkbox control stacks
   - latest adoption: `ProxyProfileEditor`, `ColorTagManager`, and `WakeScheduleManager` modal form labels/inputs/selects/checkboxes
+  - **latest adoption (CSS primitive sweep)**: 397 inline Tailwind class stacks replaced across 64 file-touches via 3 migration passes. Top files: `CollectionSelector` (65), `CloudSyncSettings` (38), `RDPDefaultSettings` (25), `ProxyChainMenu` (22), `ConnectionDiagnostics` (16), `SecuritySettings` (15), `ScriptManager` (15), and 57 more. 22 new CSS primitive classes added to `src/index.css`.
+
+### Theme Color Migration
+
+- **547 hardcoded Tailwind gray colors** replaced with CSS variable references across **85 files**.
+- Mappings applied:
+  - `text-gray-500` / `text-gray-600` → `text-[var(--color-textMuted)]`
+  - `text-gray-200` → `text-[var(--color-textSecondary)]`
+  - `placeholder-gray-500` / `placeholder-gray-400` → `placeholder-[var(--color-textMuted)]`
+  - `disabled:bg-gray-600` / `disabled:bg-gray-500` → `disabled:bg-[var(--color-surfaceHover)]`
+  - standalone `bg-gray-600` → `bg-[var(--color-surfaceHover)]`
+  - standalone `bg-gray-500` → `bg-[var(--color-secondary)]`
+- Top files: `RDPOptions` (31), `RDPDefaultSettings` (25), `RDPInternalsPanel` (24), `RecordingSettings` (20), `HTTPOptions` (19), `ApiSettings` (19), `RDPErrorScreen` (16), and 78 more.
+- All hardcoded grays for text/placeholder/disabled-bg now route through `--color-*` theme variables.
+
+### Duplicate ClassName → CSS Primitive Adoption (Pass 2)
+
+- **35 replacements** across **12 files** consolidating 7 long duplicated className patterns into new CSS primitives.
+- New primitives added to `src/index.css`:
+  - `.sor-info-pill` — info stat row (6× duplicate)
+  - `.sor-toolbar-row` — toolbar/subheader strip (5× duplicate)
+  - `.sor-micro-actions` — tiny action group (5× duplicate)
+  - `.sor-th-xs` — 10px table header (5× duplicate)
+  - `.sor-settings-row` — settings toggle row (4× duplicate)
+  - `.sor-micro-badge` — micro badge pill (4× duplicate)
+  - `.sor-sub-heading` — uppercase subsection label (4× duplicate)
+- Top files: `TOTPOptions` (7), `ImportTab` (6), `TrustVerificationSettings` (6), `PerformanceMonitor` (5), and 8 more.
 
 ### Test Coverage Added/Updated
 
@@ -131,7 +173,7 @@ Consolidate reusable UI structure and CSS for:
   - `tests/TrustWarningDialog.test.tsx`
   - `tests/SettingsSections.test.tsx`
   - `tests/TabLayoutManager.test.tsx`
-  - `tests/RdpLogViewer.test.tsx`
+  - `tests/RDPLogViewer.test.tsx`
   - `tests/SettingsCoreSections.test.tsx`
   - `tests/SettingsSecondarySections.test.tsx`
   - `tests/SettingsExtendedSections.test.tsx`
@@ -159,18 +201,51 @@ Consolidate reusable UI structure and CSS for:
 
 - Any future right-click menus should use `MenuSurface` by default.
 
-### CSS Consolidation Follow-Up
+### CSS Consolidation Follow-Up (Minimal Tail)
 
-- Finish converging remaining dense lists to `.sor-selection-*`.
-- Complete option chip adoption in settings/tool headers.
-- Remove duplicate local class stacks once adoption is complete.
+- ~560 inline classNames with 90+ chars remain, but these are highly fragmented (max 3 identical duplicates per pattern) — diminishing returns for further consolidation.
+- 547 hardcoded gray colors have been migrated to CSS variables — theme compliance is now comprehensive.
+- Remaining long classNames include component-specific layouts (modal/dialog shells, specific grid containers, unique color variants) that are intentionally one-off.
+- New components should use `sor-*` CSS primitives from `src/index.css` instead of raw Tailwind stacks.
 
-## Execution Plan (Next Steps)
+## Execution Plan (Completed)
 
-1. Sweep remaining ad-hoc list/chip class stacks and replace with `.sor-*` primitives.
-2. Evaluate a shared anchored popover for non-context-menu dropdowns (e.g., bookmark folder dropdown).
-3. Continue reducing duplicated utility class combinations in managers/editors.
-4. Run lint + targeted tests after each batch, then full suite pass.
+All major consolidation is complete:
+
+1. ✅ Modal scaffold centralization (21+ components)
+2. ✅ Menu/popover primitives and migration
+3. ✅ Form primitives (339+ raw elements → shared components)
+4. ✅ Display primitives (EmptyState, ErrorBanner, StatusBar, etc.)
+5. ✅ DialogHeader centralization (24+ components)
+6. ✅ Directory reorganization (66 files → 12 domain directories)
+7. ✅ Naming consolidation (Rdp→RDP, directory casing, dead code)
+8. ✅ CSS primitive adoption sweep (397 replacements, 22 new `sor-*` classes)
+9. ✅ Theme color migration (547 hardcoded grays → CSS variables across 85 files)
+10. ✅ CSS primitive pass 2 (35 replacements, 7 new `sor-*` classes across 12 files)
+11. ✅ CSS file modularization — split monolithic files into focused partials:
+    - `src/index.css` (1630 lines) → 9 partials in `src/styles/`: base, tailwind-overrides, embedded, buttons, primitives, modals, forms, lists, tables-tabs
+    - `app/globals.css` (784 lines) → 7 partials in `app/styles/`: theme-variables, app-shell, scrollbar, form-controls, tooltip-editor, tailwind-overrides, animations
+    - Hub files reduced to `@tailwind` directives + `@import` manifests (14 and 12 lines respectively)
+12. ✅ Component splitting — Wave 1 (5 large files → 62 sub-files in 5 directories):
+    - `ConnectionDiagnostics` (1340 lines) → `connection/diagnostics/` (17 sub-files + orchestrator)
+    - `RDPOptions` → `connectionEditor/rdpOptions/` (12 sub-files + types.ts)
+    - `CloudSyncSettings` (1147 lines) → `settingsDialog/sections/cloudSync/` (12 sub-files + types.ts)
+    - `BehaviorSettings` → `settingsDialog/sections/behavior/` (13 sub-files)
+    - `SecuritySettings` (816 lines) → `settingsDialog/sections/security/` (8 sub-files + types.ts)
+13. ✅ Component splitting — Wave 2 (7 large files → 78 sub-files in 7 directories):
+    - `SSHTerminalSettings` → `settingsDialog/sections/sshTerminal/` (14 sub-files)
+    - `CollectionSelector` → `connection/collectionSelector/` (3 sub-files)
+    - `WebBrowser` → `protocol/webBrowser/` (12 sub-files)
+    - `SSHConnectionOverrides` → `connectionEditor/sshOverrides/` (13 sub-files)
+    - `RDPDefaultSettings` → `settingsDialog/sections/rdpDefaults/` (11 sub-files + selectClass.tsx)
+    - `TOTPOptions` → `connectionEditor/totpOptions/` (9 sub-files)
+    - `BackupSettings` → `settingsDialog/sections/backup/` (9 sub-files)
+14. ✅ Shared UI pattern extraction:
+    - `src/components/ui/SectionHeading.tsx` — reusable heading with icon + title + optional description
+    - `src/components/ui/CollapsibleSection.tsx` — expandable/collapsible section with controlled/uncontrolled modes
+    - `src/components/ui/OverrideToggle.tsx` — checkbox toggle for connection-level setting overrides (shows global value when disabled)
+    - `sshOverrides/OverrideToggle.tsx` converted to re-export wrapper; duplicate removed from `SSHTerminalOverrides.tsx`
+    - `SectionHeading` adopted across 18 settings panel files (replacing inline `<h3>` + `<p>` heading patterns)
 
 ## Guardrails
 

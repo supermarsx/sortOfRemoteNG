@@ -6,9 +6,9 @@ import { ThemeManager } from "../../utils/themeManager";
 import { loadLanguage } from "../../i18n";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
-import { useSettingsSearch } from "../../components/SettingsDialog/useSettingsSearch";
-import { useSettingHighlight } from "../../components/SettingsDialog/useSettingHighlight";
-import { TAB_DEFAULTS, DEFAULT_VALUES } from "../../components/SettingsDialog/settingsConstants";
+import { useSettingsSearch } from "../../components/settingsDialog/useSettingsSearch";
+import { useSettingHighlight } from "../../components/settingsDialog/useSettingHighlight";
+import { TAB_DEFAULTS, DEFAULT_VALUES } from "../../components/settingsDialog/settingsConstants";
 
 /* ═══════════════════════════════════════════════════════════════
    Hook

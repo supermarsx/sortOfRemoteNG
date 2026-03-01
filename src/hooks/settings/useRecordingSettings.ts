@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { GlobalSettings, RecordingConfig } from '../../types/settings';
-import { RdpRecordingConfig, WebRecordingConfig } from '../../types/macroTypes';
+import { RDPRecordingConfig, WebRecordingConfig } from '../../types/macroTypes';
 import * as macroService from '../../utils/macroService';
 
 export function useRecordingSettings(
@@ -35,7 +35,7 @@ export function useRecordingSettings(
   );
 
   const updateRdp = useCallback(
-    (patch: Partial<RdpRecordingConfig>) => {
+    (patch: Partial<RDPRecordingConfig>) => {
       updateSettings({ rdpRecording: { ...rdpRec, ...patch } });
     },
     [updateSettings, rdpRec],

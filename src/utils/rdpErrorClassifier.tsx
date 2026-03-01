@@ -1,7 +1,7 @@
 /**
  * RDP connection-error classification and diagnostic-cause builder.
  *
- * Pure logic extracted from RdpErrorScreen so it can be
+ * Pure logic extracted from RDPErrorScreen so it can be
  * unit-tested and reused (e.g. in logging / telemetry).
  */
 
@@ -19,7 +19,7 @@ import {
 
 /* ── Types ───────────────────────────────────────────────────────── */
 
-export type RdpErrorCategory =
+export type RDPErrorCategory =
   | 'duplicate_session'
   | 'negotiation_failure'
   | 'credssp_post_auth'
@@ -58,7 +58,7 @@ export interface DiagnosticReportResult {
 
 /* ── Classification ──────────────────────────────────────────────── */
 
-export function classifyRdpError(raw: string): RdpErrorCategory {
+export function classifyRdpError(raw: string): RDPErrorCategory {
   const msg = raw.toLowerCase();
   if (msg.includes('already active or connecting')) {
     return 'duplicate_session';
@@ -95,7 +95,7 @@ export function classifyRdpError(raw: string): RdpErrorCategory {
 
 /* ── Diagnostic suggestions ──────────────────────────────────────── */
 
-export function buildRdpDiagnostics(category: RdpErrorCategory): DiagnosticCause[] {
+export function buildRdpDiagnostics(category: RDPErrorCategory): DiagnosticCause[] {
   switch (category) {
     case 'duplicate_session':
       return [
@@ -278,7 +278,7 @@ export function buildRdpDiagnostics(category: RdpErrorCategory): DiagnosticCause
 
 /* ── Labels ──────────────────────────────────────────────────────── */
 
-export const RDP_ERROR_CATEGORY_LABELS: Record<RdpErrorCategory, string> = {
+export const RDP_ERROR_CATEGORY_LABELS: Record<RDPErrorCategory, string> = {
   duplicate_session: 'Duplicate Session',
   negotiation_failure: 'Security Negotiation Failure',
   credssp_post_auth: 'Post-Authentication Rejection (NLA / CredSSP)',

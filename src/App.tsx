@@ -21,22 +21,22 @@ import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
 import { useConnections } from "./contexts/useConnections";
 import { ToastProvider } from "./contexts/ToastContext";
-import { Sidebar } from "./components/Sidebar";
-import { SessionTabs } from "./components/SessionTabs";
-import { SessionViewer } from "./components/SessionViewer";
-import { TabLayoutManager } from "./components/TabLayoutManager";
-import { ErrorBoundary } from "./components/ErrorBoundary";
-import { SplashScreen } from "./components/SplashScreen";
-import { RdpSessionPanel } from "./components/RdpSessionPanel";
-import { ToolKey, createToolSession, getToolProtocol, isToolProtocol } from "./components/ToolPanel";
+import { Sidebar } from "./components/connection/Sidebar";
+import { SessionTabs } from "./components/session/SessionTabs";
+import { SessionViewer } from "./components/session/SessionViewer";
+import { TabLayoutManager } from "./components/session/TabLayoutManager";
+import { ErrorBoundary } from "./components/app/ErrorBoundary";
+import { SplashScreen } from "./components/app/SplashScreen";
+import { RDPSessionPanel } from "./components/rdp/RDPSessionPanel";
+import { ToolKey, createToolSession, getToolProtocol, isToolProtocol } from "./components/app/ToolPanel";
 import { generateId } from "./utils/id";
 import { useTooltipSystem } from "./hooks/window/useTooltipSystem";
 import { useWindowControls } from "./hooks/window/useWindowControls";
 import { useWindowTheme } from "./hooks/window/useWindowTheme";
 import { useWindowPersistence } from "./hooks/window/useWindowPersistence";
 import { useDetachedSessionEvents } from "./hooks/session/useDetachedSessionEvents";
-import { AppToolbar } from "./components/AppToolbar";
-import { AppDialogs } from "./components/AppDialogs";
+import { AppToolbar } from "./components/app/AppToolbar";
+import { AppDialogs } from "./components/app/AppDialogs";
 import { useResizeHandlers } from "./hooks/window/useResizeHandlers";
 import { useSessionDetach } from "./hooks/session/useSessionDetach";
 
@@ -1178,7 +1178,7 @@ const AppContent: React.FC = () => {
             className="relative flex-shrink-0 z-10 h-full overflow-hidden"
             style={{ width: `${rdpPanelWidth}px` }}
           >
-            <RdpSessionPanel
+            <RDPSessionPanel
               isVisible={rdpPanelOpen}
               connections={state.connections}
               activeBackendSessionIds={activeRdpBackendIds}

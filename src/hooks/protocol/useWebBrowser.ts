@@ -915,7 +915,7 @@ export function useWebBrowser(session: ConnectionSession) {
   const handleSaveHarRecording = useCallback(
     async (name: string) => {
       const recording = pendingRecordingRef.current as
-        | import("../types/macroTypes").WebRecording
+        | import("../../types/macroTypes").WebRecording
         | null;
       if (!recording) return;
       await macroService.saveWebRecording({

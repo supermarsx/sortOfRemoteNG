@@ -183,14 +183,14 @@ export interface Connection {
   rdpTrustPolicy?: TrustPolicy;
 
   // RDP Connection Settings
-  rdpSettings?: RdpConnectionSettings;
+  rdpSettings?: RDPConnectionSettings;
 }
 
 /**
  * Comprehensive RDP connection settings covering display, audio, input,
  * device redirection, performance, and security/fingerprint options.
  */
-export interface RdpConnectionSettings {
+export interface RDPConnectionSettings {
   // ─── Display ──────────────────────────────────────────────────────
   display?: RdpDisplaySettings;
   // ─── Audio ────────────────────────────────────────────────────────
@@ -583,7 +583,7 @@ export interface RdpTcpSettings {
 }
 
 /** Default RDP settings for new connections */
-export const DEFAULT_RDP_SETTINGS: RdpConnectionSettings = {
+export const DEFAULT_RDP_SETTINGS: RDPConnectionSettings = {
   display: {
     width: 1920,
     height: 1080,

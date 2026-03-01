@@ -1,15 +1,15 @@
-import { DEFAULT_RDP_SETTINGS, RdpConnectionSettings } from '../types/connection';
+import { DEFAULT_RDP_SETTINGS, RDPConnectionSettings } from '../types/connection';
 
-type FrontendRendererType = NonNullable<RdpConnectionSettings['performance']>['frontendRenderer'];
+type FrontendRendererType = NonNullable<RDPConnectionSettings['performance']>['frontendRenderer'];
 
 /**
  * Merge compile-time defaults, global defaults, and per-connection overrides
- * into a single RdpConnectionSettings object.
+ * into a single RDPConnectionSettings object.
  */
 export function mergeRdpSettings(
-  connSettings: RdpConnectionSettings | undefined,
+  connSettings: RDPConnectionSettings | undefined,
   globalDefaults: Record<string, any>,
-): RdpConnectionSettings {
+): RDPConnectionSettings {
   const base = DEFAULT_RDP_SETTINGS;
   const conn = connSettings;
   const global = globalDefaults;

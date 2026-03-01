@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   SavedRecording,
-  SavedRdpRecording,
+  SavedRDPRecording,
   SavedWebRecording,
   SavedWebVideoRecording,
 } from "../../types/macroTypes";
@@ -12,7 +12,7 @@ export type RecordingTab = "ssh" | "rdp" | "web" | "webVideo";
 export function useRecordingManager(isOpen: boolean) {
   const [activeTab, setActiveTab] = useState<RecordingTab>("ssh");
   const [sshRecordings, setSshRecordings] = useState<SavedRecording[]>([]);
-  const [rdpRecordings, setRdpRecordings] = useState<SavedRdpRecording[]>([]);
+  const [rdpRecordings, setRdpRecordings] = useState<SavedRDPRecording[]>([]);
   const [webRecordings, setWebRecordings] = useState<SavedWebRecording[]>([]);
   const [webVideoRecordings, setWebVideoRecordings] = useState<
     SavedWebVideoRecording[]
@@ -147,7 +147,7 @@ export function useRecordingManager(isOpen: boolean) {
 
   /* ---- RDP actions ---- */
   const handleRenameRdp = useCallback(
-    async (rec: SavedRdpRecording, name: string) => {
+    async (rec: SavedRDPRecording, name: string) => {
       rec.name = name;
       await macroService.saveRdpRecording(rec);
       await loadData();
@@ -164,7 +164,7 @@ export function useRecordingManager(isOpen: boolean) {
     [expandedId, loadData],
   );
 
-  const handleExportRdp = useCallback((rec: SavedRdpRecording) => {
+  const handleExportRdp = useCallback((rec: SavedRDPRecording) => {
     const blob = macroService.rdpRecordingToBlob(rec);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -175,7 +175,7 @@ export function useRecordingManager(isOpen: boolean) {
     URL.revokeObjectURL(url);
   }, []);
 
-  const handlePlayRdp = useCallback((rec: SavedRdpRecording) => {
+  const handlePlayRdp = useCallback((rec: SavedRDPRecording) => {
     const blob = macroService.rdpRecordingToBlob(rec);
     const url = URL.createObjectURL(blob);
     window.open(url, "_blank");

@@ -9,7 +9,7 @@ import type { BackupConfig } from './backupSettings';
 import type { CloudSyncConfig } from './cloudSyncSettings';
 import type { OpenVPNConfig } from './vpnSettings';
 import type { SSHTerminalConfig } from './sshSettings';
-import type { RdpRecordingConfig, WebRecordingConfig } from './macroTypes';
+import type { RDPRecordingConfig, WebRecordingConfig } from './macroTypes';
 
 export const Themes = [
   "dark",
@@ -253,7 +253,7 @@ export interface GlobalSettings {
 
   // Recording & Macros
   recording: RecordingConfig;
-  rdpRecording: RdpRecordingConfig;
+  rdpRecording: RDPRecordingConfig;
   webRecording: WebRecordingConfig;
   macros: MacroConfig;
   /** Show Recording Manager icon in secondary bar */

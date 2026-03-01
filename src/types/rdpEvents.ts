@@ -1,4 +1,4 @@
-export interface RdpStatusEvent {
+export interface RDPStatusEvent {
   session_id: string;
   status: string;
   message: string;
@@ -6,14 +6,14 @@ export interface RdpStatusEvent {
   desktop_height?: number;
 }
 
-export interface RdpPointerEvent {
+export interface RDPPointerEvent {
   session_id: string;
   pointer_type: string;
   x?: number;
   y?: number;
 }
 
-export interface RdpStatsEvent {
+export interface RDPStatsEvent {
   session_id: string;
   uptime_secs: number;
   bytes_received: number;
@@ -36,7 +36,7 @@ export interface RdpCertFingerprintEvent {
   port: number;
 }
 
-export interface RdpTimingEvent {
+export interface RDPTimingEvent {
   session_id: string;
   dns_ms: number;
   tcp_ms: number;

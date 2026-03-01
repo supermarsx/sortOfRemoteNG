@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { detectLanguage } from '../../utils/scriptSyntax';
 import { defaultScripts } from '../../data/defaultScripts';
-import type { ManagedScript, ScriptLanguage, OSTag } from '../../components/ScriptManager';
-import { SCRIPTS_STORAGE_KEY } from '../../components/ScriptManager';
+import type { ManagedScript, ScriptLanguage, OSTag } from '../../components/recording/ScriptManager';
+import { SCRIPTS_STORAGE_KEY } from '../../components/recording/ScriptManager';
 
 export function useScriptManager(onClose: () => void) {
   const [scripts, setScripts] = useState<ManagedScript[]>([]);

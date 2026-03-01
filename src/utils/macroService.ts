@@ -4,7 +4,7 @@ import {
   TerminalMacro,
   MacroStep,
   SavedRecording,
-  SavedRdpRecording,
+  SavedRDPRecording,
   SavedWebRecording,
   SavedWebVideoRecording,
   SessionRecording,
@@ -86,16 +86,16 @@ export async function trimRecordings(maxCount: number): Promise<void> {
 
 // ─── RDP Recordings ────────────────────────────────────────────────
 
-export async function loadRdpRecordings(): Promise<SavedRdpRecording[]> {
-  const data = await IndexedDbService.getItem<SavedRdpRecording[]>(RDP_RECORDINGS_STORAGE_KEY);
+export async function loadRdpRecordings(): Promise<SavedRDPRecording[]> {
+  const data = await IndexedDbService.getItem<SavedRDPRecording[]>(RDP_RECORDINGS_STORAGE_KEY);
   return data ?? [];
 }
 
-export async function saveRdpRecordings(recordings: SavedRdpRecording[]): Promise<void> {
+export async function saveRdpRecordings(recordings: SavedRDPRecording[]): Promise<void> {
   await IndexedDbService.setItem(RDP_RECORDINGS_STORAGE_KEY, recordings);
 }
 
-export async function saveRdpRecording(recording: SavedRdpRecording): Promise<void> {
+export async function saveRdpRecording(recording: SavedRDPRecording): Promise<void> {
   const recordings = await loadRdpRecordings();
   const idx = recordings.findIndex((r) => r.id === recording.id);
   if (idx >= 0) {
@@ -120,7 +120,7 @@ export async function trimRdpRecordings(maxCount: number): Promise<void> {
 }
 
 /**
- * Convert a Blob to a SavedRdpRecording ready for IndexedDB storage.
+ * Convert a Blob to a SavedRDPRecording ready for IndexedDB storage.
  */
 export async function blobToRdpRecording(
   blob: Blob,
@@ -134,7 +134,7 @@ export async function blobToRdpRecording(
     width: number;
     height: number;
   },
-): Promise<SavedRdpRecording> {
+): Promise<SavedRDPRecording> {
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   let binary = '';
@@ -160,9 +160,9 @@ export async function blobToRdpRecording(
 }
 
 /**
- * Convert a SavedRdpRecording back to a downloadable Blob.
+ * Convert a SavedRDPRecording back to a downloadable Blob.
  */
-export function rdpRecordingToBlob(recording: SavedRdpRecording): Blob {
+export function rdpRecordingToBlob(recording: SavedRDPRecording): Blob {
   const binary = atob(recording.data);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {

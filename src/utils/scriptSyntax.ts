@@ -5,7 +5,7 @@
  * (e.g. in script previews, the WebTerminal macro panel, etc.).
  */
 
-import type { ScriptLanguage } from '../components/ScriptManager';
+import type { ScriptLanguage } from '../components/recording/ScriptManager';
 
 /* ── Token type ──────────────────────────────────────────────────── */
 
