@@ -3,6 +3,7 @@ import { GlobalSettings, MacroConfig } from "../../../types/settings";
 import { ListVideo, Clock, AlertCircle, Hash } from "lucide-react";
 import * as macroService from "../../../utils/macroService";
 import { Checkbox, NumberInput, Slider } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 interface MacroSettingsProps {
   settings: GlobalSettings;
@@ -27,13 +28,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-          <ListVideo className="w-5 h-5" />
-          Macros
-        </h3>
-        <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-          Configure terminal macro recording and replay behavior.
-        </p>
+        <SectionHeading icon={<ListVideo className="w-5 h-5" />} title="Macros" description="Configure terminal macro recording and replay behavior." />
       </div>
 
       {/* Default delay */}
@@ -48,7 +43,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
               <span className="text-sm text-[var(--color-textSecondary)]">
                 Default delay between steps
               </span>
-              <p className="text-[10px] text-gray-500">
+              <p className="text-[10px] text-[var(--color-textMuted)]">
                 Delay in milliseconds when replaying macros
               </p>
             </div>
@@ -69,10 +64,10 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
           <div className="flex items-center gap-3">
             <AlertCircle size={14} className="text-yellow-400" />
             <div>
-              <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
+              <span className="sor-toggle-label">
                 Confirm before replay
               </span>
-              <p className="text-[10px] text-gray-500">
+              <p className="text-[10px] text-[var(--color-textMuted)]">
                 Show confirmation dialog before replaying a macro
               </p>
             </div>
@@ -91,7 +86,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
               <span className="text-sm text-[var(--color-textSecondary)]">
                 Max steps per macro
               </span>
-              <p className="text-[10px] text-gray-500">
+              <p className="text-[10px] text-[var(--color-textMuted)]">
                 Maximum number of steps allowed in a single macro
               </p>
             </div>
@@ -102,7 +97,7 @@ const MacroSettings: React.FC<MacroSettingsProps> = ({
 
       {/* Storage info */}
       <div className="pt-2 border-t border-[var(--color-border)]">
-        <div className="flex items-center gap-3 text-xs text-gray-500">
+        <div className="flex items-center gap-3 text-xs text-[var(--color-textMuted)]">
           <ListVideo size={12} />
           <span>
             {macroCount} macro{macroCount !== 1 ? "s" : ""} saved

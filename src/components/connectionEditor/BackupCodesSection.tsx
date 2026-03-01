@@ -17,11 +17,11 @@ const PasteArea: React.FC<{ secret: string; mgr: Mgr }> = ({ secret, mgr }) => (
       value={mgr.pasteText}
       onChange={(e) => mgr.setPasteText(e.target.value)}
       placeholder="Paste recovery codes here (one per line, or comma-separated)"
-      className="w-full h-24 px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-gray-500 resize-none"
+      className="w-full h-24 px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)] resize-none"
       autoFocus
     />
     <div className="flex items-center justify-between">
-      <span className="text-[10px] text-gray-500">
+      <span className="text-[10px] text-[var(--color-textMuted)]">
         {mgr.parseCodes(mgr.pasteText).length > 0
           ? `${mgr.parseCodes(mgr.pasteText).length} code(s) detected`
           : 'Paste codes from your provider'}
@@ -38,7 +38,7 @@ const PasteArea: React.FC<{ secret: string; mgr: Mgr }> = ({ secret, mgr }) => (
           type="button"
           onClick={() => mgr.handlePasteCodes(secret)}
           disabled={mgr.parseCodes(mgr.pasteText).length === 0}
-          className="px-2 py-1 text-[10px] bg-gray-600 hover:bg-gray-500 disabled:bg-[var(--color-border)] disabled:text-gray-600 text-[var(--color-text)] rounded"
+          className="px-2 py-1 text-[10px] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-secondary)] disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded"
         >
           Save codes
         </button>
@@ -58,14 +58,14 @@ const AddSingleCodeInput: React.FC<{ secret: string; mgr: Mgr }> = ({ secret, mg
         if (e.key === 'Escape') mgr.cancelAddSingle();
       }}
       placeholder="Enter recovery code"
-      className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-gray-500"
+      className="flex-1 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)]"
       autoFocus
     />
     <button
       type="button"
       onClick={() => mgr.handleAddSingleCode(secret)}
       disabled={!mgr.singleCode.trim()}
-      className="px-2 py-1 text-[10px] bg-gray-600 hover:bg-gray-500 disabled:bg-[var(--color-border)] disabled:text-gray-600 text-[var(--color-text)] rounded"
+      className="px-2 py-1 text-[10px] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-secondary)] disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded"
     >
       Add
     </button>
@@ -107,7 +107,7 @@ const ConfigActions: React.FC<{ cfg: TOTPConfig; mgr: Mgr }> = ({ cfg, mgr }) =>
         <button
           type="button"
           onClick={() => mgr.copyAll(cfg.backupCodes!, copyKey)}
-          className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+          className="sor-icon-btn-sm"
           title="Copy all codes"
         >
           {mgr.copiedKey === copyKey ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
@@ -116,7 +116,7 @@ const ConfigActions: React.FC<{ cfg: TOTPConfig; mgr: Mgr }> = ({ cfg, mgr }) =>
       <button
         type="button"
         onClick={() => mgr.generateBackupFor(cfg.secret)}
-        className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+        className="sor-icon-btn-sm"
         title="Generate 10 random codes"
       >
         <RefreshCw size={12} />
@@ -125,7 +125,7 @@ const ConfigActions: React.FC<{ cfg: TOTPConfig; mgr: Mgr }> = ({ cfg, mgr }) =>
         <button
           type="button"
           onClick={() => mgr.clearBackupFor(cfg.secret)}
-          className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+          className="sor-icon-btn-sm"
           title="Clear all codes"
         >
           <Trash2 size={12} />
@@ -149,7 +149,7 @@ const CodesGrid: React.FC<{ cfg: TOTPConfig; mgr: Mgr }> = ({ cfg, mgr }) => {
           <button
             type="button"
             onClick={() => mgr.removeCode(cfg.secret, i)}
-            className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-500 hover:text-red-400 transition-opacity"
+            className="opacity-0 group-hover:opacity-100 p-0.5 text-[var(--color-textMuted)] hover:text-red-400 transition-opacity"
             title="Remove code"
           >
             <X size={10} />
@@ -158,7 +158,7 @@ const CodesGrid: React.FC<{ cfg: TOTPConfig; mgr: Mgr }> = ({ cfg, mgr }) => {
       ))}
     </div>
   ) : (
-    <p className="text-[10px] text-gray-600 text-center py-1">
+    <p className="text-[10px] text-[var(--color-textMuted)] text-center py-1">
       No recovery codes stored — paste from your provider or generate new ones
     </p>
   );
@@ -173,11 +173,11 @@ const ConfigCard: React.FC<{ cfg: TOTPConfig; mgr: Mgr }> = ({ cfg, mgr }) => {
     <div className="bg-[var(--color-surface)] rounded-lg p-3 space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          <KeyRound size={12} className="text-gray-500" />
+          <KeyRound size={12} className="text-[var(--color-textMuted)]" />
           <span className="text-xs font-medium text-[var(--color-textSecondary)]">{cfg.account}</span>
-          <span className="text-[10px] text-gray-600">({cfg.issuer})</span>
+          <span className="text-[10px] text-[var(--color-textMuted)]">({cfg.issuer})</span>
           {hasCodes && (
-            <span className="text-[10px] text-gray-600">
+            <span className="text-[10px] text-[var(--color-textMuted)]">
               {cfg.backupCodes!.length} codes
             </span>
           )}
@@ -208,7 +208,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
       <button
         type="button"
         onClick={() => mgr.setExpanded(!mgr.expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-surface)]/40 hover:bg-[var(--color-surface)]/60 transition-colors"
+        className="sor-settings-row"
       >
         <div className="flex items-center space-x-2">
           <KeyRound size={16} className="text-[var(--color-textSecondary)]" />
@@ -216,7 +216,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
             Backup / Recovery Codes
           </span>
           {mgr.totalBackupCodes > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-full">
+            <span className="sor-micro-badge">
               {mgr.totalBackupCodes} codes
             </span>
           )}
@@ -226,7 +226,7 @@ export const BackupCodesSection: React.FC<BackupCodesSectionProps> = ({ formData
 
       {mgr.expanded && (
         <div className="px-4 py-3 space-y-3 border-t border-[var(--color-border)]">
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[var(--color-textMuted)]">
             Paste recovery codes from your TOTP provider (Google, Microsoft, etc.) to store
             them alongside the connection. You can also generate your own codes.
           </p>

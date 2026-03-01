@@ -10,6 +10,7 @@ import {
 } from "../../types/settings";
 import { useSettings } from "../../contexts/SettingsContext";
 import { Checkbox, NumberInput, Select, Slider } from '../ui/forms';
+import OverrideToggle from '../ui/OverrideToggle';
 
 interface SSHTerminalOverridesProps {
   formData: Partial<Connection>;
@@ -82,7 +83,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
       >
         <div className="flex items-center gap-2">
           <Settings2 className="w-4 h-4 text-blue-400" />
-          <span className="text-sm font-medium text-gray-200">
+          <span className="text-sm font-medium text-[var(--color-textSecondary)]">
             Terminal Settings Override
           </span>
           {hasOverrides && (
@@ -109,7 +110,7 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
             <button
               type="button"
               onClick={clearAllOverrides}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-[var(--color-text)] rounded transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-[var(--color-surfaceHover)] hover:bg-[var(--color-secondary)] text-[var(--color-text)] rounded transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset All to Global
@@ -522,45 +523,6 @@ export const SSHTerminalOverrides: React.FC<SSHTerminalOverridesProps> = ({
           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-interface OverrideToggleProps {
-  label: string;
-  isOverridden: boolean;
-  globalValue: string;
-  onToggle: (enabled: boolean) => void;
-  children: React.ReactNode;
-}
-
-/**
- * A toggle row that shows whether a setting is overridden from global.
- */
-const OverrideToggle: React.FC<OverrideToggleProps> = ({
-  label,
-  isOverridden,
-  globalValue,
-  onToggle,
-  children,
-}) => {
-  return (
-    <div className="flex items-start gap-3">
-      <label className="flex items-center gap-2 min-w-[140px]">
-        <Checkbox checked={isOverridden} onChange={(v: boolean) => onToggle(v)} variant="form" />
-        <span className="text-sm text-[var(--color-textSecondary)]">
-          {label}
-        </span>
-      </label>
-      <div className="flex-1">
-        {isOverridden ? (
-          children
-        ) : (
-          <span className="text-sm text-gray-500 italic">
-            Global: {globalValue}
-          </span>
-        )}
-      </div>
     </div>
   );
 };

@@ -14,6 +14,7 @@ import {
   History,
 } from "lucide-react";
 import { Checkbox, NumberInput } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 interface PerformanceSettingsProps {
   settings: GlobalSettings;
@@ -43,18 +44,11 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
   const { t } = useTranslation();
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-        <Zap className="w-5 h-5" />
-        Performance
-      </h3>
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Connection retry, performance monitoring, status checking, and action
-        logging.
-      </p>
+      <SectionHeading icon={<Zap className="w-5 h-5" />} title="Performance" description="Connection retry, performance monitoring, status checking, and action logging." />
 
       {/* Retry Settings Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <RefreshCw className="w-4 h-4 text-blue-400" />
           Connection Retry
         </h4>
@@ -82,7 +76,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 
       {/* Monitoring Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Gauge className="w-4 h-4 text-green-400" />
           Performance Monitoring
         </h4>
@@ -90,7 +84,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enablePerformanceTracking} onChange={(v: boolean) => updateSettings({ enablePerformanceTracking: v })} />
-            <Activity className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
+            <Activity className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-green-400" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Performance Tracking
             </span>
@@ -133,7 +127,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 
       {/* Status Checking Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Wifi className="w-4 h-4 text-purple-400" />
           Status Checking
         </h4>
@@ -141,7 +135,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enableStatusChecking} onChange={(v: boolean) => updateSettings({ enableStatusChecking: v })} />
-            <Zap className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
+            <Zap className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-purple-400" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Status Checking
             </span>
@@ -202,7 +196,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
 
       {/* Logging Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <FileText className="w-4 h-4 text-yellow-400" />
           Action Logging
         </h4>
@@ -210,7 +204,7 @@ export const PerformanceSettings: React.FC<PerformanceSettingsProps> = ({
         <div className="sor-settings-card">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enableActionLog} onChange={(v: boolean) => updateSettings({ enableActionLog: v })} />
-            <History className="w-4 h-4 text-gray-500 group-hover:text-yellow-400" />
+            <History className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-yellow-400" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Action Logging
             </span>

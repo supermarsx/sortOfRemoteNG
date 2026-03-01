@@ -1,7 +1,7 @@
 import React from "react";
 import { GlobalSettings, RecordingConfig } from "../../../types/settings";
 import {
-  RdpRecordingConfig,
+  RDPRecordingConfig,
   WebRecordingConfig,
 } from "../../../types/macroTypes";
 import {
@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useRecordingSettings } from "../../../hooks/settings/useRecordingSettings";
 import { Checkbox, NumberInput, Select, Slider } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 type Mgr = ReturnType<typeof useRecordingSettings>;
 
@@ -29,20 +30,13 @@ type Mgr = ReturnType<typeof useRecordingSettings>;
 
 const SectionHeader: React.FC = () => (
   <div>
-    <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-      <Circle className="w-5 h-5" />
-      Recording
-    </h3>
-    <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-      Configure SSH terminal and RDP screen recording, export formats, and
-      storage limits.
-    </p>
+    <SectionHeading icon={<Circle className="w-5 h-5" />} title="Recording" description="Configure SSH terminal and RDP screen recording, export formats, and storage limits." />
   </div>
 );
 
 const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <>
-    <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+    <h4 className="sor-section-heading">
       <Terminal className="w-4 h-4" />
       SSH Terminal Recording
     </h4>
@@ -51,8 +45,8 @@ const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="flex items-center gap-3">
           <Power size={14} className="text-green-400" />
           <div>
-            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable SSH recording</span>
-            <p className="text-[10px] text-gray-500">Allow SSH terminal sessions to be recorded</p>
+            <span className="sor-toggle-label">Enable SSH recording</span>
+            <p className="text-[10px] text-[var(--color-textMuted)]">Allow SSH terminal sessions to be recorded</p>
           </div>
         </div>
         <Checkbox checked={mgr.recording.enabled} onChange={(v: boolean) => mgr.updateSsh({ enabled: v })} />
@@ -61,8 +55,8 @@ const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="flex items-center gap-3">
           <Circle size={14} className="text-red-400" />
           <div>
-            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-record SSH sessions</span>
-            <p className="text-[10px] text-gray-500">Automatically start recording when connecting to SSH</p>
+            <span className="sor-toggle-label">Auto-record SSH sessions</span>
+            <p className="text-[10px] text-[var(--color-textMuted)]">Automatically start recording when connecting to SSH</p>
           </div>
         </div>
         <Checkbox checked={mgr.recording.autoRecordSessions} onChange={(v: boolean) => mgr.updateSsh({ autoRecordSessions: v })} disabled={!mgr.recording.enabled} />
@@ -71,8 +65,8 @@ const SshToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="flex items-center gap-3">
           <Keyboard size={14} className="text-orange-400" />
           <div>
-            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Record input (keystrokes)</span>
-            <p className="text-[10px] text-gray-500">Include typed input in recordings (may contain sensitive data)</p>
+            <span className="sor-toggle-label">Record input (keystrokes)</span>
+            <p className="text-[10px] text-[var(--color-textMuted)]">Include typed input in recordings (may contain sensitive data)</p>
           </div>
         </div>
         <Checkbox checked={mgr.recording.recordInput} onChange={(v: boolean) => mgr.updateSsh({ recordInput: v })} />
@@ -88,7 +82,7 @@ const SshLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Clock size={14} className="text-blue-400" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max recording duration</span>
-          <p className="text-[10px] text-gray-500">0 = unlimited</p>
+          <p className="text-[10px] text-[var(--color-textMuted)]">0 = unlimited</p>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -102,7 +96,7 @@ const SshLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <HardDrive size={14} className="text-green-400" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max stored recordings</span>
-          <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
+          <p className="text-[10px] text-[var(--color-textMuted)]">Oldest recordings auto-deleted when exceeded</p>
         </div>
       </div>
       <NumberInput value={mgr.recording.maxStoredRecordings} onChange={(v: number) => mgr.updateSsh({ maxStoredRecordings: v })} variant="settings-compact" className="w-20 text-right" min={1} />
@@ -120,7 +114,7 @@ const SshLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
 const SshStorageInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="pt-2 border-t border-[var(--color-border)]">
-    <div className="flex items-center gap-3 text-xs text-gray-500">
+    <div className="flex items-center gap-3 text-xs text-[var(--color-textMuted)]">
       <HardDrive size={12} />
       <span>{mgr.sshCount} SSH recording{mgr.sshCount !== 1 ? "s" : ""} stored</span>
     </div>
@@ -129,7 +123,7 @@ const SshStorageInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
 const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <>
-    <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2 pt-4">
+    <h4 className="sor-section-heading pt-4">
       <Monitor className="w-4 h-4" />
       RDP Screen Recording
     </h4>
@@ -138,8 +132,8 @@ const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="flex items-center gap-3">
           <Power size={14} className="text-green-400" />
           <div>
-            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable RDP recording</span>
-            <p className="text-[10px] text-gray-500">Allow RDP sessions to be screen-recorded</p>
+            <span className="sor-toggle-label">Enable RDP recording</span>
+            <p className="text-[10px] text-[var(--color-textMuted)]">Allow RDP sessions to be screen-recorded</p>
           </div>
         </div>
         <Checkbox checked={mgr.rdpRec.enabled} onChange={(v: boolean) => mgr.updateRdp({ enabled: v })} />
@@ -148,8 +142,8 @@ const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="flex items-center gap-3">
           <Circle size={14} className="text-red-400" />
           <div>
-            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-record RDP sessions</span>
-            <p className="text-[10px] text-gray-500">Automatically start video recording on RDP connect</p>
+            <span className="sor-toggle-label">Auto-record RDP sessions</span>
+            <p className="text-[10px] text-[var(--color-textMuted)]">Automatically start video recording on RDP connect</p>
           </div>
         </div>
         <Checkbox checked={mgr.rdpRec.autoRecordRdpSessions} onChange={(v: boolean) => mgr.updateRdp({ autoRecordRdpSessions: v })} disabled={!mgr.rdpRec.enabled} />
@@ -158,8 +152,8 @@ const RdpToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="flex items-center gap-3">
           <Save size={14} className="text-green-400" />
           <div>
-            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-save to library</span>
-            <p className="text-[10px] text-gray-500">Save RDP recordings to the Recording Manager instead of prompting a file dialog</p>
+            <span className="sor-toggle-label">Auto-save to library</span>
+            <p className="text-[10px] text-[var(--color-textMuted)]">Save RDP recordings to the Recording Manager instead of prompting a file dialog</p>
           </div>
         </div>
         <Checkbox checked={mgr.rdpRec.autoSaveToLibrary} onChange={(v: boolean) => mgr.updateRdp({ autoSaveToLibrary: v })} />
@@ -182,7 +176,7 @@ const RdpFormatQuality: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Gauge size={14} className="text-yellow-400" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Recording FPS</span>
-          <p className="text-[10px] text-gray-500">Higher = smoother but larger files</p>
+          <p className="text-[10px] text-[var(--color-textMuted)]">Higher = smoother but larger files</p>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -195,7 +189,7 @@ const RdpFormatQuality: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Gauge size={14} className="text-orange-400" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Video bitrate</span>
-          <p className="text-[10px] text-gray-500">Higher = better quality but larger files</p>
+          <p className="text-[10px] text-[var(--color-textMuted)]">Higher = better quality but larger files</p>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -213,7 +207,7 @@ const RdpLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Clock size={14} className="text-blue-400" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max RDP recording duration</span>
-          <p className="text-[10px] text-gray-500">0 = unlimited</p>
+          <p className="text-[10px] text-[var(--color-textMuted)]">0 = unlimited</p>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -226,7 +220,7 @@ const RdpLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <HardDrive size={14} className="text-green-400" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max stored RDP recordings</span>
-          <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
+          <p className="text-[10px] text-[var(--color-textMuted)]">Oldest recordings auto-deleted when exceeded</p>
         </div>
       </div>
       <NumberInput value={mgr.rdpRec.maxStoredRdpRecordings} onChange={(v: number) => mgr.updateRdp({ maxStoredRdpRecordings: v })} variant="settings-compact" className="w-20 text-right" min={1} />
@@ -236,7 +230,7 @@ const RdpLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
 const RdpStorageInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="pt-2 border-t border-[var(--color-border)]">
-    <div className="flex items-center gap-4 text-xs text-gray-500">
+    <div className="flex items-center gap-4 text-xs text-[var(--color-textMuted)]">
       <span className="flex items-center gap-1">
         <Film size={12} />
         {mgr.rdpCount} RDP recording{mgr.rdpCount !== 1 ? "s" : ""} stored
@@ -253,7 +247,7 @@ const RdpStorageInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
 const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <>
-    <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2 pt-4">
+    <h4 className="sor-section-heading pt-4">
       <Globe className="w-4 h-4" />
       Web Session Recording
     </h4>
@@ -262,8 +256,8 @@ const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="flex items-center gap-3">
           <Power size={14} className="text-green-400" />
           <div>
-            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable web recording</span>
-            <p className="text-[10px] text-gray-500">Allow web sessions to be recorded (HAR and video)</p>
+            <span className="sor-toggle-label">Enable web recording</span>
+            <p className="text-[10px] text-[var(--color-textMuted)]">Allow web sessions to be recorded (HAR and video)</p>
           </div>
         </div>
         <Checkbox checked={mgr.webRec.enabled} onChange={(v: boolean) => mgr.updateWeb({ enabled: v })} />
@@ -272,8 +266,8 @@ const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="flex items-center gap-3">
           <Circle size={14} className="text-red-400" />
           <div>
-            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Auto-record web sessions</span>
-            <p className="text-[10px] text-gray-500">Automatically start HTTP traffic recording on web connect</p>
+            <span className="sor-toggle-label">Auto-record web sessions</span>
+            <p className="text-[10px] text-[var(--color-textMuted)]">Automatically start HTTP traffic recording on web connect</p>
           </div>
         </div>
         <Checkbox checked={mgr.webRec.autoRecordWebSessions} onChange={(v: boolean) => mgr.updateWeb({ autoRecordWebSessions: v })} disabled={!mgr.webRec.enabled} />
@@ -282,8 +276,8 @@ const WebToggles: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <div className="flex items-center gap-3">
           <Eye size={14} className="text-orange-400" />
           <div>
-            <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Record HTTP headers</span>
-            <p className="text-[10px] text-gray-500">Include request and response headers in recordings</p>
+            <span className="sor-toggle-label">Record HTTP headers</span>
+            <p className="text-[10px] text-[var(--color-textMuted)]">Include request and response headers in recordings</p>
           </div>
         </div>
         <Checkbox checked={mgr.webRec.recordHeaders} onChange={(v: boolean) => mgr.updateWeb({ recordHeaders: v })} />
@@ -299,7 +293,7 @@ const WebLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <Clock size={14} className="text-blue-400" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max web recording duration</span>
-          <p className="text-[10px] text-gray-500">0 = unlimited</p>
+          <p className="text-[10px] text-[var(--color-textMuted)]">0 = unlimited</p>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -312,7 +306,7 @@ const WebLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         <HardDrive size={14} className="text-green-400" />
         <div>
           <span className="text-sm text-[var(--color-textSecondary)]">Max stored web recordings</span>
-          <p className="text-[10px] text-gray-500">Oldest recordings auto-deleted when exceeded</p>
+          <p className="text-[10px] text-[var(--color-textMuted)]">Oldest recordings auto-deleted when exceeded</p>
         </div>
       </div>
       <NumberInput value={mgr.webRec.maxStoredWebRecordings} onChange={(v: number) => mgr.updateWeb({ maxStoredWebRecordings: v })} variant="settings-compact" className="w-20 text-right" min={1} />
@@ -329,7 +323,7 @@ const WebLimits: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
 const WebStorageInfo: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="pt-2 border-t border-[var(--color-border)]">
-    <div className="flex items-center gap-4 text-xs text-gray-500">
+    <div className="flex items-center gap-4 text-xs text-[var(--color-textMuted)]">
       <span className="flex items-center gap-1">
         <Globe size={12} />
         {mgr.webCount} HAR recording{mgr.webCount !== 1 ? "s" : ""} stored

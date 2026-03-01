@@ -1,9 +1,10 @@
 import React from "react";
-import { Download, Upload, X, ArrowLeftRight } from "lucide-react";
+import { Download, Upload, ArrowLeftRight } from "lucide-react";
 import { useImportExport } from "../../hooks/sync/useImportExport";
 import ExportTab from "./ExportTab";
 import ImportTab from "./ImportTab";
 import { Modal } from "../ui/overlays/Modal";
+import { DialogHeader } from "../ui/overlays/DialogHeader";
 
 type Mgr = ReturnType<typeof useImportExport>;
 
@@ -15,25 +16,6 @@ interface ImportExportProps {
 }
 
 /* ── Sub-components ──────────────────────────────────────────────── */
-
-const DialogHeader: React.FC<{ onClose: () => void }> = ({ onClose }) => (
-  <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between">
-    <div className="flex items-center space-x-3">
-      <div className="p-2 bg-indigo-500/20 rounded-lg">
-        <ArrowLeftRight size={18} className="text-indigo-500" />
-      </div>
-      <h2 className="text-lg font-semibold text-[var(--color-text)]">
-        Import / Export Connections
-      </h2>
-    </div>
-    <button
-      onClick={onClose}
-      className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-    >
-      <X size={18} />
-    </button>
-  </div>
-);
 
 const TabBar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="flex space-x-1 mb-6 bg-[var(--color-border)] rounded-lg p-1">
@@ -74,7 +56,15 @@ export const ImportExport: React.FC<ImportExportProps> = ({
 
   const content = (
     <div className={embedded ? "" : "relative flex flex-1 min-h-0 flex-col"}>
-      {!embedded && <DialogHeader onClose={onClose} />}
+      {!embedded && (
+        <DialogHeader
+          icon={ArrowLeftRight}
+          iconColor="text-indigo-500"
+          iconBg="bg-indigo-500/20"
+          title="Import / Export Connections"
+          onClose={onClose}
+        />
+      )}
 
       <div className={embedded ? "p-0" : "p-6 overflow-y-auto"}>
         <TabBar mgr={mgr} />

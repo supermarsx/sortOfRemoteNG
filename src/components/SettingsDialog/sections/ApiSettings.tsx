@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useApiSettings } from "../../../hooks/settings/useApiSettings";
 import { Checkbox, NumberInput, Select } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 type Mgr = ReturnType<typeof useApiSettings>;
 
@@ -37,26 +38,18 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-        <Server className="w-5 h-5" />
-        {mgr.t("settings.api.title", "API Server")}
-      </h3>
-
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Configure the internal REST API server for remote control and
-        automation.
-      </p>
+      <SectionHeading icon={<Server className="w-5 h-5" />} title={mgr.t("settings.api.title", "API Server")} description="Configure the internal REST API server for remote control and automation." />
 
       {/* Enable API Server */}
       <div className="sor-settings-card">
         <label className="flex items-center space-x-3 cursor-pointer group">
           <Checkbox checked={settings.restApi?.enabled || false} onChange={(v: boolean) => mgr.updateRestApi({ enabled: v })} />
-          <Power className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
+          <Power className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-blue-400" />
           <div>
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               {mgr.t("settings.api.enable", "Enable API Server")}
             </span>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-[var(--color-textMuted)]">
               {mgr.t(
                 "settings.api.enableDescription",
                 "Start an HTTP server for remote control",
@@ -72,7 +65,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
           <div className="sor-settings-card">
             <label className="flex items-center space-x-3 cursor-pointer group">
               <Checkbox checked={settings.restApi?.startOnLaunch || false} onChange={(v: boolean) => mgr.updateRestApi({ startOnLaunch: v })} />
-              <Clock className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
+              <Clock className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-green-400" />
               <div>
                 <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                   {mgr.t(
@@ -80,7 +73,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                     "Start on Application Launch",
                   )}
                 </span>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[var(--color-textMuted)]">
                   {mgr.t(
                     "settings.api.startOnLaunchDescription",
                     "Automatically start the API server when the application opens",
@@ -103,7 +96,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                     ? "bg-green-500/20 text-green-400"
                     : mgr.serverStatus === "starting" || mgr.serverStatus === "stopping"
                       ? "bg-yellow-500/20 text-yellow-400"
-                      : "bg-gray-600/50 text-[var(--color-textSecondary)]"
+                      : "bg-[var(--color-surfaceHover)]/50 text-[var(--color-textSecondary)]"
                 }`}
               >
                 <div
@@ -113,7 +106,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                       : mgr.serverStatus === "starting" ||
                           mgr.serverStatus === "stopping"
                         ? "bg-yellow-400 animate-pulse"
-                        : "bg-gray-500"
+                        : "bg-[var(--color-secondary)]"
                   }`}
                 />
                 {mgr.serverStatus === "running"
@@ -140,7 +133,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                   mgr.serverStatus === "starting" ||
                   mgr.serverStatus === "stopping"
                 }
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-500 disabled:bg-[var(--color-border)] disabled:text-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-500 disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-md transition-colors"
               >
                 <Play className="w-4 h-4" />
                 {mgr.t("settings.api.start", "Start")}
@@ -153,7 +146,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                   mgr.serverStatus === "starting" ||
                   mgr.serverStatus === "stopping"
                 }
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 disabled:bg-[var(--color-border)] disabled:text-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-red-600 hover:bg-red-500 disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-md transition-colors"
               >
                 <Square className="w-4 h-4" />
                 {mgr.t("settings.api.stop", "Stop")}
@@ -166,7 +159,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                   mgr.serverStatus === "starting" ||
                   mgr.serverStatus === "stopping"
                 }
-                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-[var(--color-border)] disabled:text-gray-500 text-[var(--color-text)] rounded-md transition-colors"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-orange-600 hover:bg-orange-500 disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded-md transition-colors"
               >
                 <RotateCcw className="w-4 h-4" />
                 {mgr.t("settings.api.restart", "Restart")}
@@ -176,7 +169,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
 
           {/* Port Configuration */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="sor-section-heading">
               <Globe className="w-4 h-4 text-blue-400" />
               {mgr.t("settings.api.network", "Network")}
             </h4>
@@ -211,7 +204,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                       )}
                     </span>
                   </label>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-[var(--color-textMuted)]">
                     {mgr.t(
                       "settings.api.portDescription",
                       "Port number for the API server (1-65535)",
@@ -232,7 +225,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                           "Allow Remote Connections",
                         )}
                       </span>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-[var(--color-textMuted)]">
                         {mgr.t(
                           "settings.api.allowRemoteDescription",
                           "Listen on all interfaces instead of localhost only",
@@ -258,7 +251,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
 
           {/* Authentication */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="sor-section-heading">
               <Shield className="w-4 h-4 text-green-400" />
               {mgr.t("settings.api.authentication", "Authentication")}
             </h4>
@@ -266,12 +259,12 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
             <div className="sor-settings-card space-y-4">
               <label className="flex items-center space-x-3 cursor-pointer group">
                 <Checkbox checked={settings.restApi?.authentication || false} onChange={(v: boolean) => mgr.updateRestApi({ authentication: v })} />
-                <Key className="w-4 h-4 text-gray-500 group-hover:text-green-400" />
+                <Key className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-green-400" />
                 <div>
                   <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                     {mgr.t("settings.api.requireAuth", "Require Authentication")}
                   </span>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-[var(--color-textMuted)]">
                     {mgr.t(
                       "settings.api.requireAuthDescription",
                       "Require an API key for all requests",
@@ -315,7 +308,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                       <RefreshCw className="w-4 h-4" />
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-[var(--color-textMuted)]">
                     {mgr.t(
                       "settings.api.apiKeyDescription",
                       "Include this key in the X-API-Key header for all requests",
@@ -328,7 +321,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
 
           {/* SSL/TLS */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="sor-section-heading">
               <FileKey className="w-4 h-4 text-purple-400" />
               {mgr.t("settings.api.ssl", "SSL/TLS")}
             </h4>
@@ -336,12 +329,12 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
             <div className="sor-settings-card space-y-4">
               <label className="flex items-center space-x-3 cursor-pointer group">
                 <Checkbox checked={settings.restApi?.sslEnabled || false} onChange={(v: boolean) => mgr.updateRestApi({ sslEnabled: v })} />
-                <Shield className="w-4 h-4 text-gray-500 group-hover:text-purple-400" />
+                <Shield className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-purple-400" />
                 <div>
                   <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
                     {mgr.t("settings.api.enableSsl", "Enable HTTPS")}
                   </span>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-[var(--color-textMuted)]">
                     {mgr.t(
                       "settings.api.enableSslDescription",
                       "Use SSL/TLS encryption for API connections",
@@ -443,7 +436,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                           className="sor-settings-input w-full"
                           placeholder="api.example.com"
                         />
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-[var(--color-textMuted)]">
                           {mgr.t(
                             "settings.api.sslDomainDescription",
                             "Must be a valid domain pointing to this server",
@@ -468,7 +461,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                           className="sor-settings-input w-full"
                           placeholder="admin@example.com"
                         />
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-[var(--color-textMuted)]">
                           {mgr.t(
                             "settings.api.sslEmailDescription",
                             "Let's Encrypt will send renewal reminders to this email",
@@ -484,7 +477,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
 
           {/* Performance & Threading */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="sor-section-heading">
               <Cpu className="w-4 h-4 text-cyan-400" />
               {mgr.t("settings.api.performance", "Performance")}
             </h4>
@@ -499,7 +492,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                   <NumberInput value={settings.restApi?.maxThreads || 4} onChange={(v: number) => mgr.updateRestApi({
                         maxThreads: v,
                       })} className="w-full" min={1} max={64} />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-[var(--color-textMuted)]">
                     {mgr.t(
                       "settings.api.maxThreadsDescription",
                       "Number of threads to handle requests (1-64)",
@@ -518,7 +511,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                   <NumberInput value={settings.restApi?.requestTimeout || 30} onChange={(v: number) => mgr.updateRestApi({
                         requestTimeout: v,
                       })} className="w-full" min={1} max={300} />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-[var(--color-textMuted)]">
                     {mgr.t(
                       "settings.api.requestTimeoutDescription",
                       "Maximum time for a request before timeout",
@@ -531,7 +524,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
 
           {/* Rate Limiting */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="sor-section-heading">
               <Clock className="w-4 h-4 text-orange-400" />
               {mgr.t("settings.api.rateLimit", "Rate Limiting")}
             </h4>
@@ -545,7 +538,7 @@ export const ApiSettings: React.FC<ApiSettingsProps> = ({
                 <NumberInput value={settings.restApi?.maxRequestsPerMinute || 60} onChange={(v: number) => mgr.updateRestApi({
                       maxRequestsPerMinute: v,
                     })} className="w-full" min={0} max={10000} />
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[var(--color-textMuted)]">
                   {mgr.t(
                     "settings.api.maxRequestsDescription",
                     "Set to 0 to disable rate limiting. Recommended: 60-120 for normal use.",

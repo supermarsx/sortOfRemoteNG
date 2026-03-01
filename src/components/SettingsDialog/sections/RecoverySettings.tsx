@@ -1,3 +1,4 @@
+import SectionHeading from '../../ui/SectionHeading';
 import React from "react";
 import {
   RefreshCw,
@@ -25,18 +26,11 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-        <RotateCcw className="w-5 h-5" />
-        Recovery
-      </h3>
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Use these options to troubleshoot issues or reset the application to a
-        clean state.
-      </p>
+      <SectionHeading icon={<RotateCcw className="w-5 h-5" />} title="Recovery" description="Use these options to troubleshoot issues or reset the application to a clean state." />
 
       {/* Data Management */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Database className="w-4 h-4 text-blue-400" />
           Data Management
         </h4>
@@ -48,7 +42,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
                 <FolderX className="w-4 h-4 text-orange-400" />
                 Delete App Data
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[var(--color-textMuted)] mt-1">
                 Delete settings, theme preferences, and cached data. Collections
                 are preserved.
               </p>
@@ -69,7 +63,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
                   <Trash2 className="w-4 h-4 text-red-400" />
                   Delete All Data & Collections
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-[var(--color-textMuted)] mt-1">
                   Permanently delete everything including collections and
                   passwords. Cannot be undone!
                 </p>
@@ -88,7 +82,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
 
       {/* Reset Settings */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <RotateCcw className="w-4 h-4 text-yellow-400" />
           Reset Options
         </h4>
@@ -100,7 +94,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
                 <RotateCcw className="w-4 h-4 text-yellow-400" />
                 Reset All Settings
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[var(--color-textMuted)] mt-1">
                 Reset all settings to their default values. Your collections
                 will not be affected.
               </p>
@@ -118,7 +112,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
 
       {/* Restart Options */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <RefreshCw className="w-4 h-4 text-green-400" />
           Restart Options
         </h4>
@@ -130,7 +124,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
                 <RefreshCw className="w-4 h-4 text-blue-400" />
                 Soft Restart
               </div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[var(--color-textMuted)] mt-1">
                 Reload the frontend without restarting the application. Quick
                 way to apply changes.
               </p>
@@ -151,7 +145,7 @@ export const RecoverySettings: React.FC<RecoverySettingsProps> = ({
                   <Power className="w-4 h-4 text-green-400" />
                   Hard Restart
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-[var(--color-textMuted)] mt-1">
                   Completely restart the application including the backend.
                 </p>
               </div>

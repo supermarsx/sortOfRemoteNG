@@ -38,7 +38,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-surface)]/40 hover:bg-[var(--color-surface)]/60 transition-colors"
+        className="sor-settings-row"
       >
         <div className="flex items-center space-x-2">
           <LifeBuoy size={16} className="text-[var(--color-textSecondary)]" />
@@ -46,7 +46,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
             Recovery Information
           </span>
           {filledCount > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-full">
+            <span className="sor-micro-badge">
               {filledCount} field{filledCount !== 1 ? 's' : ''}
             </span>
           )}
@@ -56,7 +56,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
 
       {expanded && (
         <div className="px-4 py-3 space-y-3 border-t border-[var(--color-border)]">
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[var(--color-textMuted)]">
             Store recovery contact details and seed phrases for this connection's account.
           </p>
 
@@ -70,7 +70,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
               value={info.phone ?? ''}
               onChange={(e) => updateInfo({ phone: e.target.value })}
               placeholder="+1 (555) 123-4567"
-              className="w-full px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500"
+              className="sor-form-input-xs"
             />
           </div>
 
@@ -84,7 +84,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
               value={info.alternativeEmail ?? ''}
               onChange={(e) => updateInfo({ alternativeEmail: e.target.value })}
               placeholder="recovery@example.com"
-              className="w-full px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500"
+              className="sor-form-input-xs"
             />
           </div>
 
@@ -98,7 +98,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
               value={info.alternativePhone ?? ''}
               onChange={(e) => updateInfo({ alternativePhone: e.target.value })}
               placeholder="+1 (555) 987-6543"
-              className="w-full px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500"
+              className="sor-form-input-xs"
             />
           </div>
 
@@ -112,7 +112,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
               value={info.alternativeEquipment ?? ''}
               onChange={(e) => updateInfo({ alternativeEquipment: e.target.value })}
               placeholder="Hardware key, backup device, etc."
-              className="w-full px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500"
+              className="sor-form-input-xs"
             />
           </div>
 
@@ -125,7 +125,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
               <button
                 type="button"
                 onClick={() => setShowSeed(!showSeed)}
-                className="p-0.5 text-gray-500 hover:text-[var(--color-text)] transition-colors"
+                className="p-0.5 text-[var(--color-textMuted)] hover:text-[var(--color-text)] transition-colors"
                 title={showSeed ? 'Hide seed phrase' : 'Show seed phrase'}
               >
                 {showSeed ? <EyeOff size={11} /> : <Eye size={11} />}
@@ -135,7 +135,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
               value={info.seedPhrase ?? ''}
               onChange={(e) => updateInfo({ seedPhrase: e.target.value })}
               placeholder="Enter recovery seed phrase words"
-              className={`w-full h-16 px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-gray-500 resize-none ${!showSeed && info.seedPhrase ? 'blur-sm hover:blur-none focus:blur-none' : ''}`}
+              className={`w-full h-16 px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)] resize-none ${!showSeed && info.seedPhrase ? 'blur-sm hover:blur-none focus:blur-none' : ''}`}
             />
           </div>
         </div>

@@ -99,7 +99,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
             <PasswordInput
               value={exportPassword}
               onChange={e => setExportPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="sor-form-input"
               placeholder="Enter encryption password"
             />
           </div>
@@ -109,7 +109,7 @@ const ExportTab: React.FC<ExportTabProps> = ({
       <button
         onClick={handleExport}
         disabled={isProcessing || connections.length === 0 || (exportEncrypted && !exportPassword)}
-        className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center space-x-2"
+        className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] disabled:cursor-not-allowed text-[var(--color-text)] rounded-lg transition-colors flex items-center justify-center space-x-2"
       >
         {isProcessing ? (
           <>

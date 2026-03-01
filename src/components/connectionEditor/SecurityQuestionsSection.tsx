@@ -20,7 +20,7 @@ export const SecurityQuestionsSection: React.FC<SecurityQuestionsSectionProps> =
       <button
         type="button"
         onClick={() => mgr.setExpanded(!mgr.expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-[var(--color-surface)]/40 hover:bg-[var(--color-surface)]/60 transition-colors"
+        className="sor-settings-row"
       >
         <div className="flex items-center space-x-2">
           <ShieldQuestion size={16} className="text-[var(--color-textSecondary)]" />
@@ -28,7 +28,7 @@ export const SecurityQuestionsSection: React.FC<SecurityQuestionsSectionProps> =
             Security Questions
           </span>
           {mgr.questions.length > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-full">
+            <span className="sor-micro-badge">
               {mgr.questions.length}
             </span>
           )}
@@ -38,7 +38,7 @@ export const SecurityQuestionsSection: React.FC<SecurityQuestionsSectionProps> =
 
       {mgr.expanded && (
         <div className="px-4 py-3 space-y-3 border-t border-[var(--color-border)]">
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[var(--color-textMuted)]">
             Store security questions and answers for this connection's account recovery.
           </p>
 
@@ -51,7 +51,7 @@ export const SecurityQuestionsSection: React.FC<SecurityQuestionsSectionProps> =
                   <button
                     type="button"
                     onClick={() => mgr.toggleReveal(i)}
-                    className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-[var(--color-text)] transition-colors"
+                    className="sor-icon-btn-sm"
                     title={mgr.revealedAnswers.has(i) ? 'Hide answer' : 'Show answer'}
                   >
                     {mgr.revealedAnswers.has(i) ? <EyeOff size={12} /> : <Eye size={12} />}
@@ -59,7 +59,7 @@ export const SecurityQuestionsSection: React.FC<SecurityQuestionsSectionProps> =
                   <button
                     type="button"
                     onClick={() => mgr.removeQuestion(i)}
-                    className="p-1 hover:bg-[var(--color-border)] rounded text-[var(--color-textSecondary)] hover:text-red-400 transition-colors"
+                    className="sor-icon-btn-danger"
                     title="Remove"
                   >
                     <Trash2 size={12} />
@@ -79,7 +79,7 @@ export const SecurityQuestionsSection: React.FC<SecurityQuestionsSectionProps> =
               value={mgr.newQuestion}
               onChange={(e) => mgr.setNewQuestion(e.target.value)}
               placeholder="Security question"
-              className="w-full px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] placeholder-gray-500"
+              className="sor-form-input-xs"
             />
             <input
               type="text"
@@ -87,14 +87,14 @@ export const SecurityQuestionsSection: React.FC<SecurityQuestionsSectionProps> =
               onChange={(e) => mgr.setNewAnswer(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') mgr.addQuestion(); }}
               placeholder="Answer"
-              className="w-full px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-gray-500"
+              className="w-full px-2 py-1.5 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-xs text-[var(--color-text)] font-mono placeholder-[var(--color-textMuted)]"
             />
             <div className="flex justify-end">
               <button
                 type="button"
                 onClick={mgr.addQuestion}
                 disabled={!mgr.newQuestion.trim() || !mgr.newAnswer.trim()}
-                className="flex items-center space-x-1 px-2.5 py-1 text-[10px] bg-gray-600 hover:bg-gray-500 disabled:bg-[var(--color-border)] disabled:text-gray-600 text-[var(--color-text)] rounded transition-colors"
+                className="flex items-center space-x-1 px-2.5 py-1 text-[10px] bg-[var(--color-surfaceHover)] hover:bg-[var(--color-secondary)] disabled:bg-[var(--color-border)] disabled:text-[var(--color-textMuted)] text-[var(--color-text)] rounded transition-colors"
               >
                 <Plus size={10} />
                 <span>Add</span>

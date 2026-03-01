@@ -234,7 +234,7 @@ export const GeneralSection: React.FC<GeneralSectionProps> = ({
                 <div className="w-full px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-textSecondary)]">
                   Rust SSH Library
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-[var(--color-textMuted)] mt-1">
                   Using secure Rust-based SSH implementation
                 </p>
               </div>

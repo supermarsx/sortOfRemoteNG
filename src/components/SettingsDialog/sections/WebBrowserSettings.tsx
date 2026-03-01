@@ -2,6 +2,7 @@ import React from "react";
 import { Globe, Wifi, Bookmark, RefreshCw, Trash2 } from "lucide-react";
 import { GlobalSettings } from "../../../types/settings";
 import { Checkbox, NumberInput } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 interface WebBrowserSettingsProps {
   settings: GlobalSettings;
@@ -14,18 +15,11 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
 }) => {
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-        <Globe className="w-5 h-5" />
-        Web Browser
-      </h3>
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Internal proxy keepalive, bookmarks, and web browser connection
-        settings.
-      </p>
+      <SectionHeading icon={<Globe className="w-5 h-5" />} title="Web Browser" description="Internal proxy keepalive, bookmarks, and web browser connection settings." />
 
       {/* ── Proxy Keepalive ── */}
       <section>
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Wifi className="w-4 h-4 text-blue-400" />
           Internal Proxy Keepalive
         </h4>
@@ -118,7 +112,7 @@ const WebBrowserSettings: React.FC<WebBrowserSettingsProps> = ({
 
       {/* ── Bookmarks ── */}
       <section>
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Bookmark className="w-4 h-4 text-yellow-400" />
           Bookmarks
         </h4>

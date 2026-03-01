@@ -33,6 +33,7 @@ import {
   Disc,
 } from "lucide-react";
 import { Checkbox } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 interface LayoutSettingsProps {
   settings: GlobalSettings;
@@ -45,44 +46,37 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
 }) => {
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-        <LayoutGrid className="w-5 h-5" />
-        Layout
-      </h3>
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Window persistence, sidebar behavior, tab reordering, and secondary bar
-        icon visibility.
-      </p>
+      <SectionHeading icon={<LayoutGrid className="w-5 h-5" />} title="Layout" description="Window persistence, sidebar behavior, tab reordering, and secondary bar icon visibility." />
 
       {/* Window Persistence Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Maximize2 className="w-4 h-4 text-blue-400" />
           Window Persistence
         </h4>
         <div className="space-y-3 ml-1">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.persistWindowSize} onChange={(v: boolean) => updateSettings({ persistWindowSize: v })} />
-            <Maximize2 className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
+            <Maximize2 className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Remember window size
             </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.persistWindowPosition} onChange={(v: boolean) => updateSettings({ persistWindowPosition: v })} />
-            <Move className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
+            <Move className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Remember window position
             </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.autoRepatriateWindow} onChange={(v: boolean) => updateSettings({ autoRepatriateWindow: v })} />
-            <ScreenShare className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
+            <ScreenShare className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Auto-repatriate window if off-screen
             </span>
           </label>
-          <p className="text-xs text-gray-500 ml-7">
+          <p className="text-xs text-[var(--color-textMuted)] ml-7">
             When enabled, automatically brings window back to a visible monitor
             if the saved position is off-screen (e.g., after disconnecting an
             external monitor).
@@ -92,28 +86,28 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
 
       {/* Sidebar Persistence Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <PanelLeft className="w-4 h-4 text-green-400" />
           Sidebar Persistence
         </h4>
         <div className="space-y-3 ml-1">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.persistSidebarWidth} onChange={(v: boolean) => updateSettings({ persistSidebarWidth: v })} />
-            <ArrowLeftRight className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
+            <ArrowLeftRight className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Remember sidebar width
             </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.persistSidebarPosition} onChange={(v: boolean) => updateSettings({ persistSidebarPosition: v })} />
-            <Move className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
+            <Move className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Remember sidebar position
             </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.persistSidebarCollapsed} onChange={(v: boolean) => updateSettings({ persistSidebarCollapsed: v })} />
-            <FoldVertical className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
+            <FoldVertical className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Remember sidebar collapsed state
             </span>
@@ -123,21 +117,21 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
 
       {/* Reordering Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <GripVertical className="w-4 h-4 text-purple-400" />
           Tab Interaction
         </h4>
         <div className="space-y-3 ml-1">
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enableTabReorder} onChange={(v: boolean) => updateSettings({ enableTabReorder: v })} />
-            <FileStack className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
+            <FileStack className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Allow tab reordering
             </span>
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.enableConnectionReorder} onChange={(v: boolean) => updateSettings({ enableConnectionReorder: v })} />
-            <Network className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
+            <Network className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Allow connection reordering
             </span>
@@ -147,7 +141,7 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
 
       {/* Secondary Bar Icons Section */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Settings className="w-4 h-4 text-purple-400" />
           Secondary Bar Icons
         </h4>
@@ -175,7 +169,7 @@ export const LayoutSettings: React.FC<LayoutSettingsProps> = ({
           </label>
           <label className="flex items-center space-x-3 cursor-pointer group">
             <Checkbox checked={settings.showSettingsIcon} onChange={(v: boolean) => updateSettings({ showSettingsIcon: v })} />
-            <Settings className="w-4 h-4 text-gray-500 group-hover:text-[var(--color-textSecondary)]" />
+            <Settings className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-[var(--color-textSecondary)]" />
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Settings
             </span>

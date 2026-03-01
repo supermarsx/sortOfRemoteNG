@@ -21,6 +21,7 @@ import {
 } from "../../../utils/trustStore";
 import { useTrustVerificationSettings } from "../../../hooks/settings/useTrustVerificationSettings";
 import { Checkbox, NumberInput, Select } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 type Mgr = ReturnType<typeof useTrustVerificationSettings>;
 
@@ -60,14 +61,7 @@ const POLICY_OPTIONS: { value: string; label: string; description: string }[] =
 
 const SectionHeader: React.FC = () => (
   <div>
-    <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-      <Fingerprint className="w-5 h-5" />
-      Trust Center
-    </h3>
-    <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-      Control how TLS certificates and SSH host keys are verified and memorized.
-      These settings apply globally but can be overridden per connection.
-    </p>
+    <SectionHeading icon={<Fingerprint className="w-5 h-5" />} title="Trust Center" description="Control how TLS certificates and SSH host keys are verified and memorized. These settings apply globally but can be overridden per connection." />
   </div>
 );
 
@@ -84,7 +78,7 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           mgr.updateSettings({
             tlsTrustPolicy: v as GlobalSettings["tlsTrustPolicy"],
           })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
-      <p className="text-xs text-gray-500 mt-2">
+      <p className="text-xs text-[var(--color-textMuted)] mt-2">
         {
           POLICY_OPTIONS.find((o) => o.value === mgr.settings.tlsTrustPolicy)
             ?.description
@@ -103,7 +97,7 @@ const GlobalPolicies: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           mgr.updateSettings({
             sshTrustPolicy: v as GlobalSettings["sshTrustPolicy"],
           })} options={[...POLICY_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))]} className="sor-settings-select w-full text-sm" />
-      <p className="text-xs text-gray-500 mt-2">
+      <p className="text-xs text-[var(--color-textMuted)] mt-2">
         {
           POLICY_OPTIONS.find((o) => o.value === mgr.settings.sshTrustPolicy)
             ?.description
@@ -245,7 +239,7 @@ const ClearAllButton: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div>
     <div className="flex items-center justify-between mb-3">
-      <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+      <h4 className="sor-section-heading">
         <ShieldAlert size={16} className="text-yellow-400" />
         Stored Identities ({mgr.totalCount})
       </h4>
@@ -254,9 +248,9 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
     {mgr.totalCount === 0 ? (
       <div className="bg-[var(--color-surface)] rounded-lg p-6 border border-[var(--color-border)] text-center">
-        <ShieldCheck size={24} className="text-gray-500 mx-auto mb-2" />
-        <p className="text-sm text-gray-500">No stored identities yet.</p>
-        <p className="text-xs text-gray-600 mt-1">
+        <ShieldCheck size={24} className="text-[var(--color-textMuted)] mx-auto mb-2" />
+        <p className="text-sm text-[var(--color-textMuted)]">No stored identities yet.</p>
+        <p className="text-xs text-[var(--color-textMuted)] mt-1">
           Identities will appear here as you connect to servers.
         </p>
       </div>
@@ -265,7 +259,7 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         {/* Global Store */}
         {mgr.trustRecords.length > 0 && (
           <details className="group" open>
-            <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
+            <summary className="cursor-pointer select-none sor-sub-heading">
               <ChevronRight
                 size={12}
                 className="transition-transform group-open:rotate-90"
@@ -276,7 +270,7 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             <div className="space-y-3 ml-4">
               {mgr.tlsRecords.length > 0 && (
                 <div>
-                  <h5 className="text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <h5 className="sor-sub-heading">
                     <Lock size={12} /> TLS Certificates ({mgr.tlsRecords.length}
                     )
                   </h5>
@@ -295,7 +289,7 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 
               {mgr.sshRecords.length > 0 && (
                 <div>
-                  <h5 className="text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
+                  <h5 className="sor-sub-heading">
                     <Fingerprint size={12} /> SSH Host Keys (
                     {mgr.sshRecords.length})
                   </h5>
@@ -321,7 +315,7 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           const connSsh = group.records.filter((r) => r.type === "ssh");
           return (
             <details key={group.connectionId} className="group">
-              <summary className="cursor-pointer select-none text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
+              <summary className="cursor-pointer select-none sor-sub-heading">
                 <ChevronRight
                   size={12}
                   className="transition-transform group-open:rotate-90"
@@ -333,7 +327,7 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               <div className="space-y-3 ml-4">
                 {connTls.length > 0 && (
                   <div>
-                    <h5 className="text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <h5 className="sor-sub-heading">
                       <Lock size={12} /> TLS Certificates ({connTls.length})
                     </h5>
                     <div className="space-y-2">
@@ -353,7 +347,7 @@ const StoredIdentitiesSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
                 )}
                 {connSsh.length > 0 && (
                   <div>
-                    <h5 className="text-xs font-medium text-[var(--color-textSecondary)] uppercase tracking-wider mb-2 flex items-center gap-1">
+                    <h5 className="sor-sub-heading">
                       <Fingerprint size={12} /> SSH Host Keys ({connSsh.length})
                     </h5>
                     <div className="space-y-2">
@@ -447,7 +441,7 @@ function TrustRecordRow({
               }}
               onBlur={saveNickname}
               placeholder="Nickname…"
-              className="sor-settings-input sor-settings-input-compact w-40 text-sm text-gray-200 placeholder-gray-500"
+              className="sor-settings-input sor-settings-input-compact w-40 text-sm text-[var(--color-textSecondary)] placeholder-[var(--color-textMuted)]"
             />
           ) : (
             <>
@@ -455,7 +449,7 @@ function TrustRecordRow({
                 {record.nickname || record.host}
               </span>
               {record.nickname && (
-                <span className="text-xs text-gray-500 truncate">
+                <span className="text-xs text-[var(--color-textMuted)] truncate">
                   ({record.host})
                 </span>
               )}
@@ -464,7 +458,7 @@ function TrustRecordRow({
                   setNickDraft(record.nickname ?? "");
                   setEditingNick(true);
                 }}
-                className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5 transition-colors flex-shrink-0"
+                className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] p-0.5 transition-colors flex-shrink-0"
                 title={record.nickname ? "Edit nickname" : "Add nickname"}
               >
                 <Pencil size={10} />
@@ -484,17 +478,17 @@ function TrustRecordRow({
             </span>
           )}
         </div>
-        <p className="text-[11px] font-mono text-gray-500 truncate mt-0.5">
+        <p className="text-[11px] font-mono text-[var(--color-textMuted)] truncate mt-0.5">
           {formatFingerprint(record.identity.fingerprint)}
         </p>
-        <p className="text-[10px] text-gray-600 mt-0.5">
+        <p className="text-[10px] text-[var(--color-textMuted)] mt-0.5">
           First seen: {new Date(record.identity.firstSeen).toLocaleDateString()}{" "}
           · Last: {new Date(record.identity.lastSeen).toLocaleDateString()}
         </p>
       </div>
       <button
         onClick={() => onRemove(record)}
-        className="text-gray-500 hover:text-red-400 p-1 transition-colors flex-shrink-0"
+        className="text-[var(--color-textMuted)] hover:text-red-400 p-1 transition-colors flex-shrink-0"
         title="Remove stored identity"
       >
         <Trash2 size={14} />

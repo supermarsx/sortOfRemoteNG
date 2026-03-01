@@ -1,3 +1,4 @@
+import SectionHeading from '../../ui/SectionHeading';
 import React from "react";
 import { GlobalSettings, Theme, ColorScheme } from "../../../types/settings";
 import { Palette, Droplets, Sparkles, Eye, Code, Zap } from "lucide-react";
@@ -19,7 +20,7 @@ const AppearanceSection: React.FC<{
   updateSettings: (u: Partial<GlobalSettings>) => void;
 }> = ({ mgr, settings, updateSettings }) => (
   <div className="space-y-4">
-    <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+    <h4 className="sor-section-heading">
       <Droplets className="w-4 h-4" />
       {mgr.t("settings.theme.appearance", "Appearance")}
     </h4>
@@ -32,7 +33,7 @@ const AppearanceSection: React.FC<{
         <label className="text-sm text-[var(--color-textSecondary)]">Custom Accent</label>
         <div className="flex items-center gap-2">
           <input type="color" value={settings.primaryAccentColor || "#3b82f6"} onChange={(e) => mgr.handleAccentChange(e.target.value)} className="w-12 h-10 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md cursor-pointer" />
-          <span className="text-xs text-gray-500 bg-[var(--color-surface)] px-2 py-1 rounded">{settings.primaryAccentColor || "#3b82f6"}</span>
+          <span className="text-xs text-[var(--color-textMuted)] bg-[var(--color-surface)] px-2 py-1 rounded">{settings.primaryAccentColor || "#3b82f6"}</span>
         </div>
       </div>
     </div>
@@ -56,7 +57,7 @@ const GlowSection: React.FC<{
   updateSettings: (u: Partial<GlobalSettings>) => void;
 }> = ({ mgr, settings, updateSettings }) => (
   <div className="space-y-4">
-    <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+    <h4 className="sor-section-heading">
       <Sparkles className="w-4 h-4" />
       {mgr.t("settings.theme.backgroundGlow", "Background Glow")}
     </h4>
@@ -87,7 +88,7 @@ const GlowSection: React.FC<{
           <NumberInput value={settings.backgroundGlowBlur} onChange={(v: number) => updateSettings({ backgroundGlowBlur: v })} className="w-full" min={40} max={320} />
         </div>
       </div>
-      <p className="text-xs text-gray-500">The glow effect appears centered in the main content area for an exquisite visual experience.</p>
+      <p className="text-xs text-[var(--color-textMuted)]">The glow effect appears centered in the main content area for an exquisite visual experience.</p>
     </div>
   </div>
 );
@@ -98,18 +99,18 @@ const TransparencySection: React.FC<{
   updateSettings: (u: Partial<GlobalSettings>) => void;
 }> = ({ mgr, settings, updateSettings }) => (
   <div className="space-y-4">
-    <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+    <h4 className="sor-section-heading">
       <Eye className="w-4 h-4" />
       {mgr.t("settings.theme.transparency", "Window Transparency")}
       <span className="ml-1 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded">Experimental</span>
     </h4>
-    <p className="text-xs text-gray-500">Window transparency is experimental and may cause visual artifacts on some platforms or compositors. Disabled by default.</p>
+    <p className="text-xs text-[var(--color-textMuted)]">Window transparency is experimental and may cause visual artifacts on some platforms or compositors. Disabled by default.</p>
     <div className="sor-settings-card">
       <label data-setting-key="windowTransparencyEnabled" className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={settings.windowTransparencyEnabled} onChange={(v: boolean) => updateSettings({ windowTransparencyEnabled: v })} />
         <div>
-          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Enable window transparency</span>
-          <p className="text-[10px] text-gray-500">Make the application window semi-transparent</p>
+          <span className="sor-toggle-label">Enable window transparency</span>
+          <p className="text-[10px] text-[var(--color-textMuted)]">Make the application window semi-transparent</p>
         </div>
       </label>
       <div className={`space-y-2 ${!settings.windowTransparencyEnabled ? "opacity-50 pointer-events-none" : ""}`}>
@@ -122,8 +123,8 @@ const TransparencySection: React.FC<{
       <label data-setting-key="showTransparencyToggle" className="flex items-center space-x-3 cursor-pointer group">
         <Checkbox checked={settings.showTransparencyToggle ?? false} onChange={(v: boolean) => updateSettings({ showTransparencyToggle: v })} />
         <div>
-          <span className="text-sm text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">Show transparency toggle in title bar</span>
-          <p className="text-[10px] text-gray-500">Add a quick-toggle button to the window title bar</p>
+          <span className="sor-toggle-label">Show transparency toggle in title bar</span>
+          <p className="text-[10px] text-[var(--color-textMuted)]">Add a quick-toggle button to the window title bar</p>
         </div>
       </label>
     </div>
@@ -136,7 +137,7 @@ const AnimationsSection: React.FC<{
   updateSettings: (u: Partial<GlobalSettings>) => void;
 }> = ({ mgr, settings, updateSettings }) => (
   <div className="space-y-4">
-    <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+    <h4 className="sor-section-heading">
       <Zap className="w-4 h-4" />
       {mgr.t("settings.theme.animations", "Animations")}
     </h4>
@@ -166,7 +167,7 @@ const CustomCssSection: React.FC<{
   updateSettings: (u: Partial<GlobalSettings>) => void;
 }> = ({ mgr, settings, updateSettings }) => (
   <div className="space-y-4">
-    <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+    <h4 className="sor-section-heading">
       <Code className="w-4 h-4" />
       {mgr.t("settings.theme.customCss", "Custom CSS")}
     </h4>
@@ -174,7 +175,7 @@ const CustomCssSection: React.FC<{
       <pre ref={mgr.cssHighlightRef} className="css-editor-highlight" aria-hidden="true" dangerouslySetInnerHTML={{ __html: mgr.highlightedCss + (mgr.highlightedCss.endsWith("\n") ? "" : "\n") }} />
       <textarea value={settings.customCss || ""} onChange={(e) => updateSettings({ customCss: e.target.value })} onScroll={mgr.handleCssScroll} rows={6} spellCheck={false} className="css-editor-input" placeholder="/* Enter custom CSS rules... */" />
     </div>
-    <p className="text-xs text-gray-500">Add custom styles to personalize the application appearance.</p>
+    <p className="text-xs text-[var(--color-textMuted)]">Add custom styles to personalize the application appearance.</p>
   </div>
 );
 
@@ -188,13 +189,7 @@ export const ThemeSettings: React.FC<ThemeSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-        <Palette className="w-5 h-5" />
-        Theme
-      </h3>
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Color scheme, background glow, window transparency, animations, and custom CSS.
-      </p>
+      <SectionHeading icon={<Palette className="w-5 h-5" />} title="Theme" description="Color scheme, background glow, window transparency, animations, and custom CSS." />
       <AppearanceSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
       <GlowSection mgr={mgr} settings={settings} updateSettings={updateSettings} />
       <TransparencySection mgr={mgr} settings={settings} updateSettings={updateSettings} />

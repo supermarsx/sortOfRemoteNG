@@ -10,6 +10,7 @@ import {
   Layers,
 } from "lucide-react";
 import { Checkbox, NumberInput, Select } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 interface BackendSettingsProps {
   settings: GlobalSettings;
@@ -19,7 +20,7 @@ interface BackendSettingsProps {
 const selectClass = "sor-settings-select w-full";
 const inputClass = "sor-settings-input w-full";
 const labelClass = "block sor-settings-row-label mb-1";
-const descClass = "text-xs text-gray-500 mt-0.5";
+const descClass = "text-xs text-[var(--color-textMuted)] mt-0.5";
 
 const DEFAULT_BACKEND: BackendConfig = {
   logLevel: "info",
@@ -56,19 +57,12 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-          <Cpu className="w-5 h-5" />
-          Backend
-        </h3>
-        <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-          Tauri runtime and backend service configuration. Changes may require
-          an application restart.
-        </p>
+        <SectionHeading icon={<Cpu className="w-5 h-5" />} title="Backend" description="Tauri runtime and backend service configuration. Changes may require an application restart." />
       </div>
 
       {/* ─── Runtime ─────────────────────────────────────────── */}
       <div className="sor-settings-card">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Cpu className="w-4 h-4 text-blue-400" />
           Runtime
         </h4>
@@ -96,7 +90,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── RDP Engine ──────────────────────────────────────── */}
       <div className="sor-settings-card">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Layers className="w-4 h-4 text-cyan-400" />
           RDP Engine
         </h4>
@@ -126,7 +120,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Network ─────────────────────────────────────────── */}
       <div className="sor-settings-card">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Network className="w-4 h-4 text-green-400" />
           Network
         </h4>
@@ -155,7 +149,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Storage ─────────────────────────────────────────── */}
       <div className="sor-settings-card">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <HardDrive className="w-4 h-4 text-amber-400" />
           Storage
         </h4>
@@ -187,7 +181,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
                   })
                 }
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                  cfg.tempFileCleanupEnabled ? "bg-blue-600" : "bg-gray-600"
+                  cfg.tempFileCleanupEnabled ? "bg-blue-600" : "bg-[var(--color-surfaceHover)]"
                 }`}
               >
                 <span
@@ -215,7 +209,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Security ────────────────────────────────────────── */}
       <div className="sor-settings-card">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Shield className="w-4 h-4 text-red-400" />
           Security
         </h4>
@@ -247,7 +241,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
 
       {/* ─── Internal API Server ─────────────────────────────── */}
       <div className="sor-settings-card">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+        <h4 className="sor-section-heading">
           <Globe className="w-4 h-4 text-purple-400" />
           Internal API Server
         </h4>
@@ -267,7 +261,7 @@ export const BackendSettings: React.FC<BackendSettingsProps> = ({
               update({ enableInternalApi: !cfg.enableInternalApi })
             }
             className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              cfg.enableInternalApi ? "bg-blue-600" : "bg-gray-600"
+              cfg.enableInternalApi ? "bg-blue-600" : "bg-[var(--color-surfaceHover)]"
             }`}
           >
             <span

@@ -1,6 +1,5 @@
 import React from "react";
 import {
-  X,
   Save,
   RotateCcw,
   Loader2,
@@ -24,12 +23,13 @@ import BackupSettings from "./sections/BackupSettings";
 import CloudSyncSettings from "./sections/CloudSyncSettings";
 import { TrustVerificationSettings } from "./sections/TrustVerificationSettings";
 import WebBrowserSettings from "./sections/WebBrowserSettings";
-import RdpDefaultSettings from "./sections/RdpDefaultSettings";
+import RDPDefaultSettings from "./sections/RDPDefaultSettings";
 import BackendSettings from "./sections/BackendSettings";
 import RecordingSettings from "./sections/RecordingSettings";
 import MacroSettings from "./sections/MacroSettings";
-import { ConfirmDialog } from "../ConfirmDialog";
+import { ConfirmDialog } from "../shared/ConfirmDialog";
 import { Modal } from "../ui/overlays/Modal";
+import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { SETTINGS_TABS, TAB_DEFAULTS } from "./settingsConstants";
 import {
   useSettingsDialog,
@@ -71,7 +71,7 @@ const Sidebar: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
               mgr.setHighlightKey(null);
             }}
             placeholder="Search settings..."
-            className="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-gray-500 outline-none"
+            className="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] outline-none"
           />
           {mgr.searchQuery && (
             <button
@@ -136,7 +136,7 @@ const Sidebar: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
           );
         })}
         {mgr.searchQuery && mgr.searchResult.matchedSections.size === 0 && (
-          <div className="p-4 text-center text-xs text-gray-500">
+          <div className="p-4 text-center text-xs text-[var(--color-textMuted)]">
             No settings match &quot;{mgr.searchQuery}&quot;
           </div>
         )}
@@ -190,7 +190,7 @@ const ContentPanel: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
           <PerformanceSettings settings={s} updateSettings={u} />
         )}
         {mgr.activeTab === "rdpDefaults" && (
-          <RdpDefaultSettings settings={s} updateSettings={u} />
+          <RDPDefaultSettings settings={s} updateSettings={u} />
         )}
         {mgr.activeTab === "backup" && (
           <BackupSettings settings={s} updateSettings={u} />
@@ -272,7 +272,7 @@ const BenchmarkOverlay: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
           <p className="text-sm text-[var(--color-textSecondary)] mb-4">
             Testing encryption performance to find optimal iteration count...
           </p>
-          <div className="flex items-center gap-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2 text-xs text-[var(--color-textMuted)]">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span>
               This may take{" "}
@@ -310,17 +310,12 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
         className={`bg-[var(--color-surface)] rounded-xl shadow-xl w-full h-[90vh] overflow-hidden flex flex-col border border-[var(--color-border)] ${mgr.contextSettings.backgroundGlowEnabled ? "settings-glow" : ""} relative`}
       >
         {/* Header bar */}
-        <div className="sticky top-0 z-10 border-b border-[var(--color-border)] px-5 py-4 flex items-center justify-between bg-[var(--color-surface)]">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <SettingsIcon size={18} className="text-blue-500" />
-            </div>
-            <h2 className="text-lg font-semibold text-[var(--color-text)]">
-              {mgr.t("settings.title")}
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
-            {mgr.dialogConfig.showSaveButton && (
+        <DialogHeader
+          icon={SettingsIcon}
+          title={mgr.t("settings.title")}
+          sticky
+          actions={
+            mgr.dialogConfig.showSaveButton ? (
               <button
                 onClick={mgr.handleSave}
                 data-tooltip={mgr.t("settings.save")}
@@ -329,17 +324,10 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({
               >
                 <Save size={16} />
               </button>
-            )}
-            <button
-              onClick={onClose}
-              data-tooltip={mgr.t("settings.cancel")}
-              aria-label={mgr.t("settings.cancel")}
-              className="p-2 hover:bg-[var(--color-surfaceHover)] rounded-lg transition-colors text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
+            ) : undefined
+          }
+          onClose={onClose}
+        />
 
         <div className="flex flex-1 min-h-0">
           <Sidebar mgr={mgr} />

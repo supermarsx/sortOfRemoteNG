@@ -17,6 +17,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { Checkbox } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 interface StartupSettingsProps {
   settings: GlobalSettings;
@@ -42,18 +43,11 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-        <Power className="w-5 h-5" />
-        {t("settings.startup.title", "Startup & Tray")}
-      </h3>
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Application launch behavior, system tray options, and welcome screen
-        customization.
-      </p>
+      <SectionHeading icon={<Power className="w-5 h-5" />} title={t("settings.startup.title", "Startup & Tray")} description="Application launch behavior, system tray options, and welcome screen customization." />
 
       {/* Startup Behavior */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2">
+        <h4 className="sor-section-heading">
           {t("settings.startup.behavior", "Startup Behavior")}
         </h4>
 
@@ -122,7 +116,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Tray Behavior */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2">
+        <h4 className="sor-section-heading">
           {t("settings.startup.trayBehavior", "System Tray Behavior")}
         </h4>
 
@@ -171,7 +165,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
 
       {/* Welcome Screen */}
       <div className="space-y-4">
-        <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2">
+        <h4 className="sor-section-heading">
           {t("settings.startup.welcomeScreen", "Welcome Screen")}
         </h4>
 

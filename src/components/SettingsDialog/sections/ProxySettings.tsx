@@ -4,6 +4,7 @@ import { PasswordInput } from "../../ui/forms/PasswordInput";
 import { GlobalSettings, ProxyConfig } from "../../../types/settings";
 import { Shield, Globe, Server, Hash, User, Lock, Wifi } from "lucide-react";
 import { Checkbox, NumberInput } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 interface ProxySettingsProps {
   settings: GlobalSettings;
@@ -24,24 +25,18 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
   const { t } = useTranslation();
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-        <Wifi className="w-5 h-5" />
-        Proxy
-      </h3>
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Configure a global proxy server for routing all connections.
-      </p>
+      <SectionHeading icon={<Wifi className="w-5 h-5" />} title="Proxy" description="Configure a global proxy server for routing all connections." />
 
       {/* Enable Global Proxy */}
       <div className="sor-settings-card">
         <label className="flex items-center space-x-3 cursor-pointer group">
           <Checkbox checked={settings.globalProxy?.enabled || false} onChange={(v: boolean) => updateProxy({ enabled: v })} />
-          <Shield className="w-4 h-4 text-gray-500 group-hover:text-blue-400" />
+          <Shield className="w-4 h-4 text-[var(--color-textMuted)] group-hover:text-blue-400" />
           <div>
             <span className="text-[var(--color-textSecondary)] group-hover:text-[var(--color-text)]">
               Enable Global Proxy
             </span>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-[var(--color-textMuted)]">
               Route all connections through a proxy server
             </p>
           </div>
@@ -52,7 +47,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
         <>
           {/* Proxy Type Section */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="sor-section-heading">
               <Globe className="w-4 h-4 text-blue-400" />
               Proxy Type
             </h4>
@@ -82,7 +77,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
 
           {/* Connection Details Section */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="sor-section-heading">
               <Server className="w-4 h-4 text-green-400" />
               Connection Details
             </h4>
@@ -116,7 +111,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
 
           {/* Authentication Section */}
           <div className="space-y-4">
-            <h4 className="text-sm font-medium text-[var(--color-textSecondary)] border-b border-[var(--color-border)] pb-2 flex items-center gap-2">
+            <h4 className="sor-section-heading">
               <Lock className="w-4 h-4 text-yellow-400" />
               Authentication (Optional)
             </h4>
@@ -150,7 +145,7 @@ export const ProxySettings: React.FC<ProxySettingsProps> = ({
                   />
                 </div>
               </div>
-              <p className="text-xs text-gray-500 mt-3">
+              <p className="text-xs text-[var(--color-textMuted)] mt-3">
                 Leave blank if your proxy server doesn't require authentication
               </p>
             </div>

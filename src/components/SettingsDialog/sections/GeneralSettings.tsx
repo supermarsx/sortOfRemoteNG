@@ -19,6 +19,7 @@ import {
   SettingsToggleRow as Toggle,
 } from "../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select } from '../../ui/forms';
+import SectionHeading from '../../ui/SectionHeading';
 
 interface GeneralSettingsProps {
   settings: GlobalSettings;
@@ -36,14 +37,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-medium text-[var(--color-text)] flex items-center gap-2">
-        <Monitor className="w-5 h-5" />
-        General
-      </h3>
-      <p className="text-xs text-[var(--color-textSecondary)] mb-4">
-        Language, autosave, connection timeouts, and general application
-        preferences.
-      </p>
+      <SectionHeading icon={<Monitor className="w-5 h-5" />} title="General" description="Language, autosave, connection timeouts, and general application preferences." />
 
       <div className="space-y-4">
         <SectionHeader
@@ -163,13 +157,13 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({
               type="button"
               onClick={() => updateSettings({ quickConnectHistory: [] })}
               disabled={(settings.quickConnectHistory?.length ?? 0) === 0}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md bg-[var(--color-border)] text-gray-200 hover:bg-red-600/20 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md bg-[var(--color-border)] text-[var(--color-textSecondary)] hover:bg-red-600/20 hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Trash2 className="w-3 h-3" />
               Clear history
             </button>
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[var(--color-textMuted)]">
             {settings.quickConnectHistory?.length || 0} entries stored
           </p>
         </Card>

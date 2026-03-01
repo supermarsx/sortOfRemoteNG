@@ -159,27 +159,27 @@ const ImportTab: React.FC<ImportTabProps> = ({
         
         {/* Supported Formats Info */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
+          <div className="sor-info-pill">
             <FileCode className="w-4 h-4 text-blue-400" />
             mRemoteNG
           </div>
-          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
+          <div className="sor-info-pill">
             <FileCode className="w-4 h-4 text-green-400" />
             RDCMan
           </div>
-          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
+          <div className="sor-info-pill">
             <FileCode className="w-4 h-4 text-purple-400" />
             MobaXterm
           </div>
-          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
+          <div className="sor-info-pill">
             <FileCode className="w-4 h-4 text-yellow-400" />
             PuTTY
           </div>
-          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
+          <div className="sor-info-pill">
             <FileCode className="w-4 h-4 text-cyan-400" />
             Termius
           </div>
-          <div className="flex items-center gap-2 p-2 bg-[var(--color-surface)]/50 rounded text-xs text-[var(--color-textSecondary)]">
+          <div className="sor-info-pill">
             <FileText className="w-4 h-4 text-orange-400" />
             CSV / JSON
           </div>
@@ -193,7 +193,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
           <button
             onClick={handleImport}
             disabled={isProcessing}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 mx-auto"
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-[var(--color-surfaceHover)] text-[var(--color-text)] rounded-lg transition-colors flex items-center space-x-2 mx-auto"
           >
             {isProcessing ? (
               <>
@@ -207,7 +207,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
               </>
             )}
           </button>
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-[var(--color-textMuted)] mt-2">
             Formats auto-detected: .json, .xml, .csv, .ini, .reg
           </p>
           
@@ -281,7 +281,7 @@ const ImportTab: React.FC<ImportTabProps> = ({
               </button>
               <button
                 onClick={cancelImport}
-                className="px-4 py-2 bg-gray-600 hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
+                className="px-4 py-2 bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-lg transition-colors"
               >
                 Cancel
               </button>

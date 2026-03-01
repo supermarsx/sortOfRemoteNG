@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Key, Fingerprint, Trash2, Pencil } from "lucide-react";
 import { PasswordInput } from "../ui/forms/PasswordInput";
 import { Connection } from "../../types/connection";
-import { SSHKeyManager } from "../SSHKeyManager";
+import { SSHKeyManager } from "../ssh/SSHKeyManager";
 import { SSHTerminalOverrides } from "./SSHTerminalOverrides";
 import { SSHConnectionOverrides } from "./SSHConnectionOverrides";
 import {
@@ -72,7 +72,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                           | "always-trust"
                           | "strict"),
                 })} options={[{ value: "", label: "Use global default" }, { value: "tofu", label: "Trust On First Use (TOFU)" }, { value: "always-ask", label: "Always Ask" }, { value: "always-trust", label: "Always Trust (skip verification)" }, { value: "strict", label: "Strict (reject unless pre-approved)" }]} variant="form" />
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-[var(--color-textMuted)] mt-1">
               How to handle host key verification for this connection.
             </p>
           </div>
@@ -96,7 +96,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                         clearAllTrustRecords(formData.id);
                         setFormData({ ...formData }); // force re-render
                       }}
-                      className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+                      className="text-xs text-[var(--color-textMuted)] hover:text-red-400 transition-colors"
                     >
                       Clear all
                     </button>
@@ -115,12 +115,12 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                                 {record.nickname || record.host}
                               </p>
                               {record.nickname && (
-                                <p className="text-gray-500 truncate">
+                                <p className="text-[var(--color-textMuted)] truncate">
                                   ({record.host})
                                 </p>
                               )}
                             </div>
-                            <p className="font-mono text-gray-500 truncate">
+                            <p className="font-mono text-[var(--color-textMuted)] truncate">
                               {formatFingerprint(record.identity.fingerprint)}
                             </p>
                           </div>
@@ -140,7 +140,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                               );
                               setFormData({ ...formData }); // force re-render
                             }}
-                            className="text-gray-500 hover:text-red-400 p-0.5 transition-colors flex-shrink-0"
+                            className="text-[var(--color-textMuted)] hover:text-red-400 p-0.5 transition-colors flex-shrink-0"
                             title="Remove"
                           >
                             <Trash2 size={12} />
@@ -314,7 +314,7 @@ function NicknameEditButton({
           onSaved();
         }}
         placeholder="Nickname…"
-        className="sor-form-input-xs w-24 text-gray-200"
+        className="sor-form-input-xs w-24 text-[var(--color-textSecondary)]"
       />
     );
   }
@@ -325,7 +325,7 @@ function NicknameEditButton({
         setDraft(record.nickname ?? "");
         setEditing(true);
       }}
-      className="text-gray-500 hover:text-[var(--color-textSecondary)] p-0.5 transition-colors flex-shrink-0"
+      className="text-[var(--color-textMuted)] hover:text-[var(--color-textSecondary)] p-0.5 transition-colors flex-shrink-0"
       title={record.nickname ? `Nickname: ${record.nickname}` : "Add nickname"}
     >
       <Pencil size={10} />
