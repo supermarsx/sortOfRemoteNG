@@ -803,6 +803,278 @@ pub struct RegistryKeyInfo {
     pub values: Vec<RegistryValue>,
 }
 
+/// Recursive tree representation of a registry key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryTreeNode {
+    pub hive: RegistryHive,
+    pub path: String,
+    pub name: String,
+    pub values: Vec<RegistryValue>,
+    pub children: Vec<RegistryTreeNode>,
+}
+
+/// Filter parameters for registry search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrySearchFilter {
+    /// The hive to search in.
+    pub hive: RegistryHive,
+    /// Root path to start the search from.
+    pub root_path: String,
+    /// Text pattern to match (case-insensitive substring by default).
+    pub pattern: String,
+    /// Whether to treat the pattern as a regex.
+    #[serde(default)]
+    pub is_regex: bool,
+    /// Search key names.
+    #[serde(default = "default_true")]
+    pub search_keys: bool,
+    /// Search value names.
+    #[serde(default = "default_true")]
+    pub search_value_names: bool,
+    /// Search value data (strings only).
+    #[serde(default)]
+    pub search_value_data: bool,
+    /// Maximum recursion depth (0 = unlimited).
+    #[serde(default)]
+    pub max_depth: u32,
+    /// Maximum results.
+    #[serde(default = "default_search_max")]
+    pub max_results: u32,
+}
+
+fn default_search_max() -> u32 {
+    500
+}
+
+/// A single result from a registry search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrySearchResult {
+    pub hive: RegistryHive,
+    pub path: String,
+    pub match_type: RegistrySearchMatchType,
+    /// The matching key name, value name, or value data.
+    pub matched_text: String,
+    /// The value (if the match was on a value name or value data).
+    pub value: Option<RegistryValue>,
+}
+
+/// What part of the registry matched the search.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum RegistrySearchMatchType {
+    KeyName,
+    ValueName,
+    ValueData,
+}
+
+/// Export format for registry data.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum RegistryExportFormat {
+    /// Windows .reg file format (REGEDIT4 / Windows Registry Editor 5.00).
+    RegFile,
+    /// JSON representation.
+    Json,
+}
+
+impl Default for RegistryExportFormat {
+    fn default() -> Self {
+        Self::RegFile
+    }
+}
+
+/// A snapshot of a registry subtree for comparison.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrySnapshot {
+    pub hive: RegistryHive,
+    pub root_path: String,
+    pub computer_name: String,
+    pub captured_at: DateTime<Utc>,
+    pub keys: Vec<RegistrySnapshotKey>,
+}
+
+/// A single key within a snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistrySnapshotKey {
+    pub path: String,
+    pub values: Vec<RegistryValue>,
+}
+
+/// Result of comparing two registry snapshots.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryDiff {
+    pub source: RegistryDiffSide,
+    pub target: RegistryDiffSide,
+    pub entries: Vec<RegistryDiffEntry>,
+    pub summary: RegistryDiffSummary,
+}
+
+/// Identifies one side of a registry comparison.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryDiffSide {
+    pub computer_name: String,
+    pub hive: RegistryHive,
+    pub root_path: String,
+    pub captured_at: DateTime<Utc>,
+}
+
+/// Summary statistics of a diff.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryDiffSummary {
+    pub keys_only_in_source: u32,
+    pub keys_only_in_target: u32,
+    pub values_only_in_source: u32,
+    pub values_only_in_target: u32,
+    pub values_different: u32,
+    pub values_identical: u32,
+}
+
+/// A single difference between two snapshots.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryDiffEntry {
+    pub path: String,
+    pub diff_type: RegistryDiffType,
+    pub value_name: Option<String>,
+    pub source_value: Option<RegistryValue>,
+    pub target_value: Option<RegistryValue>,
+}
+
+/// Classification of a diff entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum RegistryDiffType {
+    /// Key exists only in source.
+    KeyOnlyInSource,
+    /// Key exists only in target.
+    KeyOnlyInTarget,
+    /// Value exists only in source.
+    ValueOnlyInSource,
+    /// Value exists only in target.
+    ValueOnlyInTarget,
+    /// Value exists in both but differs.
+    ValueDifferent,
+}
+
+/// A set of registry values to write in one batch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryBulkSetRequest {
+    pub hive: RegistryHive,
+    pub path: String,
+    pub values: Vec<RegistryBulkValue>,
+    /// Create the key if it doesn't exist.
+    #[serde(default = "default_true")]
+    pub create_key: bool,
+}
+
+/// A value to set in a bulk operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryBulkValue {
+    pub name: String,
+    pub value_type: RegistryValueType,
+    pub data: serde_json::Value,
+}
+
+/// Result of a bulk set operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryBulkSetResult {
+    pub total: u32,
+    pub succeeded: u32,
+    pub failed: u32,
+    pub errors: Vec<RegistryBulkError>,
+}
+
+/// Error from a single item in a bulk operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryBulkError {
+    pub name: String,
+    pub error: String,
+}
+
+/// Security information for a registry key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryKeySecurity {
+    pub hive: RegistryHive,
+    pub path: String,
+    pub owner: Option<String>,
+    pub group: Option<String>,
+    /// Raw SDDL string.
+    pub sddl: Option<String>,
+    pub permissions: Vec<RegistryAce>,
+}
+
+/// An Access Control Entry for a registry key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryAce {
+    pub trustee: String,
+    pub access_mask: u32,
+    pub ace_type: String,
+    pub ace_flags: u32,
+    /// Human-readable permissions.
+    pub permissions: Vec<String>,
+}
+
+/// Parameters for importing registry data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryImportRequest {
+    /// The .reg file content or JSON string to import.
+    pub content: String,
+    /// Format of the content.
+    #[serde(default)]
+    pub format: RegistryExportFormat,
+    /// If true, simulate the import without applying changes.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+/// Result of a registry import operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryImportResult {
+    pub keys_created: u32,
+    pub values_set: u32,
+    pub values_deleted: u32,
+    pub errors: Vec<String>,
+    pub dry_run: bool,
+}
+
+/// Parameters for a recursive registry key copy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryCopyRequest {
+    pub source_hive: RegistryHive,
+    pub source_path: String,
+    pub dest_hive: RegistryHive,
+    pub dest_path: String,
+    /// Overwrite existing values.
+    #[serde(default)]
+    pub overwrite: bool,
+}
+
+/// Result of a registry copy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegistryCopyResult {
+    pub keys_created: u32,
+    pub values_copied: u32,
+    pub errors: Vec<String>,
+}
+
 // ─── Scheduled Tasks ─────────────────────────────────────────────────
 
 /// A scheduled task on the remote host.

@@ -658,6 +658,238 @@ pub async fn winmgmt_registry_key_exists(
     RegistryManager::key_exists(transport, &hive, &path).await
 }
 
+// ── Registry: Write extended types ───────────────────────────────────
+
+#[tauri::command]
+pub async fn winmgmt_registry_set_qword(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+    name: String,
+    value: u64,
+) -> Result<(), String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::set_qword_value(transport, &hive, &path, &name, value).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_registry_set_multi_string(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+    name: String,
+    values: Vec<String>,
+) -> Result<(), String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::set_multi_string_value(transport, &hive, &path, &name, &values).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_registry_set_binary(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+    name: String,
+    data: Vec<u8>,
+) -> Result<(), String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::set_binary_value(transport, &hive, &path, &name, &data).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_registry_set_expand_string(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+    name: String,
+    value: String,
+) -> Result<(), String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::set_expanded_string_value(transport, &hive, &path, &name, &value).await
+}
+
+// ── Registry: Recursive operations ───────────────────────────────────
+
+#[tauri::command]
+pub async fn winmgmt_registry_recursive_enum(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+    max_depth: Option<u32>,
+) -> Result<RegistryTreeNode, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::recursive_enum(transport, &hive, &path, max_depth.unwrap_or(0)).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_registry_recursive_delete(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+) -> Result<u32, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::recursive_delete(transport, &hive, &path).await
+}
+
+// ── Registry: Search ─────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn winmgmt_registry_search(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    filter: RegistrySearchFilter,
+) -> Result<Vec<RegistrySearchResult>, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::search(transport, &filter).await
+}
+
+// ── Registry: Export & Import ────────────────────────────────────────
+
+#[tauri::command]
+pub async fn winmgmt_registry_export(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+    format: Option<RegistryExportFormat>,
+    max_depth: Option<u32>,
+) -> Result<String, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::export(
+        transport,
+        &hive,
+        &path,
+        &format.unwrap_or_default(),
+        max_depth.unwrap_or(0),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn winmgmt_registry_import(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    request: RegistryImportRequest,
+) -> Result<RegistryImportResult, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::import(transport, &request).await
+}
+
+// ── Registry: Snapshots & Comparison ─────────────────────────────────
+
+#[tauri::command]
+pub async fn winmgmt_registry_snapshot(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+    max_depth: Option<u32>,
+) -> Result<RegistrySnapshot, String> {
+    let mut svc = state.lock().await;
+    // Use the session's computer name for the snapshot
+    let computer_name = {
+        let sessions = svc.list_sessions();
+        sessions
+            .iter()
+            .find(|s| s.session_id == session_id)
+            .map(|s| s.hostname.clone())
+            .unwrap_or_else(|| "unknown".to_string())
+    };
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::snapshot(transport, &hive, &path, &computer_name, max_depth.unwrap_or(0))
+        .await
+}
+
+#[tauri::command]
+pub async fn winmgmt_registry_compare(
+    source: RegistrySnapshot,
+    target: RegistrySnapshot,
+) -> Result<RegistryDiff, String> {
+    Ok(RegistryManager::compare_snapshots(&source, &target))
+}
+
+// ── Registry: Bulk operations ────────────────────────────────────────
+
+#[tauri::command]
+pub async fn winmgmt_registry_bulk_set(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    request: RegistryBulkSetRequest,
+) -> Result<RegistryBulkSetResult, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::bulk_set(transport, &request).await
+}
+
+// ── Registry: Copy & Rename ──────────────────────────────────────────
+
+#[tauri::command]
+pub async fn winmgmt_registry_copy_key(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    request: RegistryCopyRequest,
+) -> Result<RegistryCopyResult, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::copy_key(transport, &request).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_registry_rename_value(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+    old_name: String,
+    new_name: String,
+) -> Result<(), String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::rename_value(transport, &hive, &path, &old_name, &new_name).await
+}
+
+// ── Registry: Security ───────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn winmgmt_registry_get_security(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+) -> Result<RegistryKeySecurity, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::get_security(transport, &hive, &path).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_registry_check_access(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    hive: RegistryHive,
+    path: String,
+    access_mask: u32,
+) -> Result<bool, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    RegistryManager::check_access(transport, &hive, &path, access_mask).await
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Scheduled Tasks
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
