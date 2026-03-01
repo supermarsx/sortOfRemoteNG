@@ -188,20 +188,26 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "sorng-1password",
  "sorng-ai-agent",
  "sorng-ard",
  "sorng-auth",
+ "sorng-aws",
  "sorng-bitwarden",
  "sorng-cloud",
  "sorng-core",
+ "sorng-dashlane",
+ "sorng-google-passwords",
  "sorng-gpo",
  "sorng-keepass",
+ "sorng-lastpass",
  "sorng-mongodb",
  "sorng-mssql",
  "sorng-mysql",
  "sorng-network",
  "sorng-passbolt",
  "sorng-postgres",
+ "sorng-powershell",
  "sorng-protocols",
  "sorng-rdp",
  "sorng-redis",
@@ -215,6 +221,7 @@ dependencies = [
  "sorng-telnet",
  "sorng-vnc",
  "sorng-vpn",
+ "sorng-winmgmt",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -7927,6 +7934,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-1password"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "hmac 0.12.1",
+ "log",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-core",
+ "tauri",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-ai-agent"
 version = "0.1.0"
 dependencies = [
@@ -8012,6 +8041,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-aws"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "bytes",
+ "chrono",
+ "hex",
+ "hmac 0.12.1",
+ "log",
+ "percent-encoding",
+ "quick-xml 0.31.0",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-bitwarden"
 version = "0.1.0"
 dependencies = [
@@ -8066,6 +8118,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-dashlane"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "hex",
+ "hmac 0.12.1",
+ "log",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-core",
+ "tauri",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-google-passwords"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-core",
+ "tauri",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-gpo"
 version = "0.1.0"
 dependencies = [
@@ -8095,6 +8189,32 @@ dependencies = [
  "sorng-core",
  "tauri",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-lastpass"
+version = "0.1.0"
+dependencies = [
+ "aes 0.8.4",
+ "base64 0.21.7",
+ "cbc 0.1.2",
+ "chrono",
+ "hex",
+ "hmac 0.12.1",
+ "log",
+ "pbkdf2 0.12.2",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-core",
+ "tauri",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
  "uuid",
 ]
 
@@ -8210,6 +8330,33 @@ dependencies = [
  "tauri",
  "thiserror 1.0.69",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-powershell"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "futures",
+ "hex",
+ "hmac 0.12.1",
+ "lazy_static",
+ "log",
+ "md-5 0.10.6",
+ "quick-xml 0.31.0",
+ "rand 0.8.5",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-core",
+ "tauri",
+ "tokio",
+ "url",
  "uuid",
 ]
 
@@ -8502,6 +8649,31 @@ dependencies = [
  "tauri",
  "tokio",
  "tokio-tungstenite",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-winmgmt"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "futures",
+ "hex",
+ "hmac 0.12.1",
+ "log",
+ "md-5 0.10.6",
+ "quick-xml 0.31.0",
+ "rand 0.8.5",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio",
+ "url",
  "uuid",
 ]
 

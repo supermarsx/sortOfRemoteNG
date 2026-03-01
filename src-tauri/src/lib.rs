@@ -85,7 +85,7 @@ pub use sorng_vpn::proxy;
 pub use sorng_vpn::chaining;
 
 // Cloud
-pub use sorng_cloud::aws;
+pub use sorng_aws as aws;
 pub use sorng_cloud::gcp;
 pub use sorng_cloud::azure;
 pub use sorng_cloud::ibm;
@@ -130,6 +130,18 @@ pub use sorng_redis::redis;
 
 // AI Agent (dedicated crate)
 pub use sorng_ai_agent::ai_agent;
+
+// 1Password (dedicated crate)
+pub use sorng_1password::onepassword;
+
+// LastPass (dedicated crate)
+pub use sorng_lastpass::lastpass;
+
+// Google Passwords (dedicated crate)
+pub use sorng_google_passwords::google_passwords;
+
+// Dashlane (dedicated crate)
+pub use sorng_dashlane::dashlane;
 
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
@@ -199,8 +211,13 @@ use sqlite::service::SqliteServiceState;
 use mongodb::service::MongoServiceState;
 use redis::service::RedisServiceState;
 use ai_agent::types::AiAgentServiceState;
+use onepassword::service::OnePasswordServiceState;
+use lastpass::service::LastPassServiceState;
+use google_passwords::service::GooglePasswordsServiceState;
+use dashlane::service::DashlaneServiceState;
 
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tauri::Manager;
 use std::env;
 use serde::Serialize;
@@ -553,6 +570,22 @@ pub fn run() {
       let ai_agent_service: AiAgentServiceState = ai_agent::service::AiAgentService::new();
       app.manage(ai_agent_service);
 
+      // Initialize 1Password service
+      let onepassword_service: OnePasswordServiceState = Arc::new(Mutex::new(onepassword::service::OnePasswordService::new()));
+      app.manage(onepassword_service);
+
+      // Initialize LastPass service
+      let lastpass_service: LastPassServiceState = Arc::new(Mutex::new(lastpass::service::LastPassService::new()));
+      app.manage(lastpass_service);
+
+      // Initialize Google Passwords service
+      let google_passwords_service: GooglePasswordsServiceState = Arc::new(Mutex::new(google_passwords::service::GooglePasswordsService::new()));
+      app.manage(google_passwords_service);
+
+      // Initialize Dashlane service
+      let dashlane_service: DashlaneServiceState = Arc::new(Mutex::new(dashlane::service::DashlaneService::new()));
+      app.manage(dashlane_service);
+
       // Initialize API service
       let api_service = ApiService::new(
         auth_service.clone(),
@@ -808,12 +841,25 @@ pub fn run() {
         aws::get_aws_session,
         aws::list_ec2_instances,
         aws::list_s3_buckets,
+        aws::get_s3_objects,
         aws::list_rds_instances,
         aws::list_lambda_functions,
         aws::get_cloudwatch_metrics,
         aws::execute_ec2_action,
         aws::create_s3_bucket,
         aws::invoke_lambda_function,
+        aws::list_iam_users,
+        aws::list_iam_roles,
+        aws::get_caller_identity,
+        aws::get_ssm_parameter,
+        aws::get_secret_value,
+        aws::list_secrets,
+        aws::list_ecs_clusters,
+        aws::list_ecs_services,
+        aws::list_hosted_zones,
+        aws::list_sns_topics,
+        aws::list_sqs_queues,
+        aws::list_cloudformation_stacks,
         vercel::connect_vercel,
         vercel::disconnect_vercel,
         vercel::list_vercel_sessions,
@@ -1776,6 +1822,147 @@ pub fn run() {
         ai_agent::commands::ai_update_settings,
         ai_agent::commands::ai_diagnostics,
         ai_agent::commands::ai_estimate_cost,
+
+        // ── 1Password ────────────────────────────────────────────────
+        onepassword::op_get_config,
+        onepassword::op_set_config,
+        onepassword::op_connect,
+        onepassword::op_disconnect,
+        onepassword::op_is_authenticated,
+        onepassword::op_list_vaults,
+        onepassword::op_get_vault,
+        onepassword::op_find_vault_by_name,
+        onepassword::op_get_vault_stats,
+        onepassword::op_list_items,
+        onepassword::op_get_item,
+        onepassword::op_find_items_by_title,
+        onepassword::op_create_item,
+        onepassword::op_update_item,
+        onepassword::op_patch_item,
+        onepassword::op_delete_item,
+        onepassword::op_archive_item,
+        onepassword::op_restore_item,
+        onepassword::op_search_all_vaults,
+        onepassword::op_get_password,
+        onepassword::op_get_username,
+        onepassword::op_add_field,
+        onepassword::op_update_field_value,
+        onepassword::op_remove_field,
+        onepassword::op_list_files,
+        onepassword::op_download_file,
+        onepassword::op_get_totp_code,
+        onepassword::op_add_totp,
+        onepassword::op_watchtower_analyze_all,
+        onepassword::op_watchtower_analyze_vault,
+        onepassword::op_heartbeat,
+        onepassword::op_health,
+        onepassword::op_is_healthy,
+        onepassword::op_get_activity,
+        onepassword::op_list_favorites,
+        onepassword::op_toggle_favorite,
+        onepassword::op_export_vault_json,
+        onepassword::op_export_vault_csv,
+        onepassword::op_import_json,
+        onepassword::op_import_csv,
+        onepassword::op_generate_password,
+        onepassword::op_generate_passphrase,
+        onepassword::op_rate_password_strength,
+        onepassword::op_list_categories,
+        onepassword::op_invalidate_cache,
+
+        // ── LastPass ─────────────────────────────────────────────────
+        lastpass::lp_configure,
+        lastpass::lp_login,
+        lastpass::lp_logout,
+        lastpass::lp_is_logged_in,
+        lastpass::lp_is_configured,
+        lastpass::lp_list_accounts,
+        lastpass::lp_get_account,
+        lastpass::lp_search_accounts,
+        lastpass::lp_search_by_url,
+        lastpass::lp_create_account,
+        lastpass::lp_update_account,
+        lastpass::lp_delete_account,
+        lastpass::lp_toggle_favorite,
+        lastpass::lp_move_account,
+        lastpass::lp_get_favorites,
+        lastpass::lp_get_duplicates,
+        lastpass::lp_list_folders,
+        lastpass::lp_create_folder,
+        lastpass::lp_security_challenge,
+        lastpass::lp_export_csv,
+        lastpass::lp_export_json,
+        lastpass::lp_import_csv,
+        lastpass::lp_generate_password,
+        lastpass::lp_generate_passphrase,
+        lastpass::lp_check_password_strength,
+        lastpass::lp_get_stats,
+        lastpass::lp_invalidate_cache,
+
+        // ── Google Passwords ─────────────────────────────────────────
+        google_passwords::gp_configure,
+        google_passwords::gp_is_configured,
+        google_passwords::gp_is_authenticated,
+        google_passwords::gp_get_auth_url,
+        google_passwords::gp_authenticate,
+        google_passwords::gp_refresh_auth,
+        google_passwords::gp_logout,
+        google_passwords::gp_list_credentials,
+        google_passwords::gp_get_credential,
+        google_passwords::gp_search_credentials,
+        google_passwords::gp_search_by_url,
+        google_passwords::gp_create_credential,
+        google_passwords::gp_update_credential,
+        google_passwords::gp_delete_credential,
+        google_passwords::gp_run_checkup,
+        google_passwords::gp_get_insecure_urls,
+        google_passwords::gp_import_csv,
+        google_passwords::gp_export_csv,
+        google_passwords::gp_export_json,
+        google_passwords::gp_generate_password,
+        google_passwords::gp_check_password_strength,
+        google_passwords::gp_get_stats,
+        google_passwords::gp_get_sync_info,
+
+        // ── Dashlane ─────────────────────────────────────────────────
+        dashlane::dl_configure,
+        dashlane::dl_login,
+        dashlane::dl_login_with_token,
+        dashlane::dl_logout,
+        dashlane::dl_is_authenticated,
+        dashlane::dl_list_credentials,
+        dashlane::dl_get_credential,
+        dashlane::dl_search_credentials,
+        dashlane::dl_search_by_url,
+        dashlane::dl_create_credential,
+        dashlane::dl_update_credential,
+        dashlane::dl_delete_credential,
+        dashlane::dl_find_duplicate_passwords,
+        dashlane::dl_get_categories,
+        dashlane::dl_list_notes,
+        dashlane::dl_get_note,
+        dashlane::dl_search_notes,
+        dashlane::dl_create_note,
+        dashlane::dl_delete_note,
+        dashlane::dl_list_identities,
+        dashlane::dl_create_identity,
+        dashlane::dl_list_secrets,
+        dashlane::dl_create_secret,
+        dashlane::dl_list_devices,
+        dashlane::dl_deregister_device,
+        dashlane::dl_list_sharing_groups,
+        dashlane::dl_create_sharing_group,
+        dashlane::dl_get_dark_web_alerts,
+        dashlane::dl_get_active_dark_web_alerts,
+        dashlane::dl_dismiss_dark_web_alert,
+        dashlane::dl_get_password_health,
+        dashlane::dl_generate_password,
+        dashlane::dl_generate_passphrase,
+        dashlane::dl_check_password_strength,
+        dashlane::dl_export_csv,
+        dashlane::dl_export_json,
+        dashlane::dl_import_csv,
+        dashlane::dl_get_stats,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
