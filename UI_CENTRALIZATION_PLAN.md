@@ -271,7 +271,12 @@ All major consolidation is complete:
     - `.sor-notification-dot` — notification badge dot (3 occurrences)
     - `.sor-settings-sub-card` — settings sub-card container (3 occurrences)
     - `.sor-form-label-icon` — form label with icon (3 occurrences)
-18. ✅ Barrel exports — added `index.ts` to all 21 sub-component directories for clean re-exports
+18. ✅ Barrel exports — added `index.ts` to all 21 sub-component directories for clean re-exports (later removed 19 convenience-only barrels; only `ui/forms` and `ui/display` barrels remain as they are imported by 168 consumer files)
+19. ✅ OOM test fix — changed `package.json` test script to `node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs --run`; all 84 test files (580 tests) pass reliably; added `.claude` worktree exclusion to `vitest.config.ts`
+20. ✅ TextInput adoption — replaced 6 raw `<input type="text">` elements with `<TextInput variant="form">` across 3 files: `NetworkDiscovery` (3), `WakeScheduleManager` (2), `ProxyChainEditor` (1)
+21. ✅ ApiSettings split — `ApiSettings.tsx` (557 lines) → 41-line orchestrator + 7 sub-files in `settingsDialog/sections/apiSettings/`: types.ts, EnableSection, ServerControlsSection, NetworkSection, AuthenticationSection, SslSection, PerformanceSection, RateLimitSection
+22. ✅ useComposeTab hook extraction — extracted 13 `useState` hooks + `handleSend` + derived state from `ComposeTab.tsx` (281→177 lines) into `protocol/whatsApp/useComposeTab.ts` (136 lines)
+23. ✅ BehaviorSettings duplicate import fix — removed 14 duplicate `import SectionHeading` lines (corruption from prior session)
 
 ## Guardrails
 
