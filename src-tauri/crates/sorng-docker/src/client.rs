@@ -74,18 +74,16 @@ impl DockerClient {
 
             if let Some(ref cert_pem) = tls.client_cert_pem {
                 let key_pem = tls.client_key_pem.as_deref().unwrap_or("");
-                let combined = format!("{}\n{}", cert_pem, key_pem);
-                let identity = reqwest::Identity::from_pem(combined.as_bytes())
+                let identity = reqwest::Identity::from_pkcs8_pem(cert_pem.as_bytes(), key_pem.as_bytes())
                     .map_err(|e| DockerError::connection(&format!("Invalid client cert: {}", e)))?;
                 builder = builder.identity(identity);
             } else if let Some(ref cert_path) = tls.client_cert_path {
                 let key_path = tls.client_key_path.as_deref().unwrap_or(cert_path);
-                let cert_pem = std::fs::read_to_string(cert_path)
+                let cert_pem = std::fs::read(cert_path)
                     .map_err(|e| DockerError::connection(&format!("Cannot read client cert: {}", e)))?;
-                let key_pem = std::fs::read_to_string(key_path)
+                let key_pem = std::fs::read(key_path)
                     .map_err(|e| DockerError::connection(&format!("Cannot read client key: {}", e)))?;
-                let combined = format!("{}\n{}", cert_pem, key_pem);
-                let identity = reqwest::Identity::from_pem(combined.as_bytes())
+                let identity = reqwest::Identity::from_pkcs8_pem(&cert_pem, &key_pem)
                     .map_err(|e| DockerError::connection(&format!("Invalid client cert: {}", e)))?;
                 builder = builder.identity(identity);
             }
