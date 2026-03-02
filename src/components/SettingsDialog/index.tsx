@@ -71,7 +71,7 @@ const Sidebar: React.FC<{ mgr: SettingsDialogMgr }> = ({ mgr }) => {
               mgr.setHighlightKey(null);
             }}
             placeholder="Search settings..."
-            className="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] outline-none"
+            className="sor-search-inline"
           />
           {mgr.searchQuery && (
             <button

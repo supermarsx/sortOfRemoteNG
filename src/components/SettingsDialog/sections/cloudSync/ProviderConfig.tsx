@@ -171,7 +171,7 @@ function ProviderConfig({
                     ...cs.nextcloud,
                     useAppPassword: v,
                   },
-                })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+                })} className="sor-checkbox-sm" />
             <span className="text-sm text-[var(--color-text)]">
               Use App Password (Recommended)
             </span>

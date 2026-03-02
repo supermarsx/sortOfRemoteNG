@@ -18,7 +18,7 @@ const EnableBackup: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           </p>
         </div>
       </div>
-      <Checkbox checked={mgr.backup.enabled} onChange={(v: boolean) => mgr.updateBackup({ enabled: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+      <Checkbox checked={mgr.backup.enabled} onChange={(v: boolean) => mgr.updateBackup({ enabled: v })} className="sor-checkbox-lg" />
     </label>
   </div>
 );

@@ -97,7 +97,7 @@ function BackupCodesDisplay({
   return (
     <div className="px-3 py-2 border-t border-[var(--color-border)]/50 bg-[var(--color-surface)]/60">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] text-[var(--color-textSecondary)] font-semibold uppercase tracking-wider">
+        <span className="sor-totp-label">
           Backup Codes
         </span>
         <button
@@ -150,7 +150,7 @@ function ImportModal({
 
   return (
     <div className="p-3 border-b border-[var(--color-border)] space-y-2">
-      <div className="text-[10px] text-[var(--color-textSecondary)] font-semibold uppercase tracking-wider">
+      <div className="sor-totp-label">
         Import TOTP Configs (JSON)
       </div>
       <textarea
@@ -166,7 +166,7 @@ function ImportModal({
       <div className="flex justify-end space-x-2">
         <button
           onClick={onClose}
-          className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          className="sor-totp-action"
         >
           Cancel
         </button>
@@ -291,7 +291,7 @@ const TotpEditRow: React.FC<{ mgr: RDPTotpPanelMgr }> = ({ mgr }) => (
       <Select value={mgr.editData.algorithm ?? 'sha1'} onChange={(v: string) => mgr.setEditData((d) => ({ ...d, algorithm: v as TOTPConfig['algorithm'] }))} options={[{ value: "sha1", label: "SHA-1" }, { value: "sha256", label: "SHA-256" }, { value: "sha512", label: "SHA-512" }]} className="sor-form-input-xs flex-1" />
     </div>
     <div className="flex justify-end space-x-2">
-      <button onClick={mgr.cancelEdit} className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]">
+      <button onClick={mgr.cancelEdit} className="sor-totp-action">
         Cancel
       </button>
       <button onClick={mgr.saveEdit} className="px-2 py-1 text-[10px] bg-blue-600 hover:bg-blue-700 text-[var(--color-text)] rounded">

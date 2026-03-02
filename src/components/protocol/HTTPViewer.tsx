@@ -97,7 +97,7 @@ function ActionButtons({ m }: { m: Mgr }) {
         <button type="button" onClick={() => m.setShowTotpPanel(!m.showTotpPanel)} className={`p-1.5 rounded relative ${m.showTotpPanel ? 'text-blue-400 bg-blue-600/20' : 'text-[var(--color-textSecondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]'}`} title="2FA Codes">
           <Shield className="w-4 h-4" />
           {m.totpConfigs.length > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[var(--color-secondary)] text-[var(--color-text)] text-[8px] font-bold rounded-full flex items-center justify-center">{m.totpConfigs.length}</span>
+            <span className="sor-notification-dot">{m.totpConfigs.length}</span>
           )}
         </button>
         {m.showTotpPanel && (

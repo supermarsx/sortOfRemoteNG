@@ -36,7 +36,7 @@ function ProviderList({ mgr }: { mgr: Mgr }) {
               <div className="flex items-center justify-between p-3">
                 <div className="flex items-center gap-3">
                   <label className="flex items-center cursor-pointer">
-                    <Checkbox checked={isEnabled} onChange={() => mgr.toggleProvider(provider)} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+                    <Checkbox checked={isEnabled} onChange={() => mgr.toggleProvider(provider)} className="sor-checkbox-sm" />
                   </label>
                   <div className="flex items-center gap-2">
                     {providerIcons[provider]}

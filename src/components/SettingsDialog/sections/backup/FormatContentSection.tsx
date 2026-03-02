@@ -65,7 +65,7 @@ const FormatContentSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
           className="flex items-center justify-between cursor-pointer"
         >
           <span className="text-[var(--color-text)]">{label}</span>
-          <Checkbox checked={mgr.backup[key]} onChange={(v: boolean) => mgr.updateBackup({ [key]: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+          <Checkbox checked={mgr.backup[key]} onChange={(v: boolean) => mgr.updateBackup({ [key]: v })} className="sor-checkbox-lg" />
         </label>
       ))}
     </div>

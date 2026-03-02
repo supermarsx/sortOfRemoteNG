@@ -4,7 +4,7 @@ import { Checkbox } from "../../../ui/forms";
 import type { Mgr } from "./types";
 function EncryptionSection({ mgr }: { mgr: Mgr }) {
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-4 space-y-4">
+    <div className="sor-settings-sub-card">
       <label className="flex items-center justify-between cursor-pointer">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-green-500/20 rounded-lg">
@@ -19,7 +19,7 @@ function EncryptionSection({ mgr }: { mgr: Mgr }) {
             </p>
           </div>
         </div>
-        <Checkbox checked={mgr.cloudSync.encryptBeforeSync} onChange={(v: boolean) => mgr.updateCloudSync({ encryptBeforeSync: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+        <Checkbox checked={mgr.cloudSync.encryptBeforeSync} onChange={(v: boolean) => mgr.updateCloudSync({ encryptBeforeSync: v })} className="sor-checkbox-lg" />
       </label>
 
       {mgr.cloudSync.encryptBeforeSync && (

@@ -143,7 +143,7 @@ const NavigationBar: React.FC<SectionProps> = ({ mgr }) => (
       >
         <Shield size={16} />
         {mgr.totpConfigs.length > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[var(--color-secondary)] text-[var(--color-text)] text-[8px] font-bold rounded-full flex items-center justify-center">
+          <span className="sor-notification-dot">
             {mgr.totpConfigs.length}
           </span>
         )}

@@ -203,10 +203,10 @@ Consolidate reusable UI structure and CSS for:
 
 ### CSS Consolidation Follow-Up (Minimal Tail)
 
-- ~560 inline classNames with 90+ chars remain, but these are highly fragmented (max 3 identical duplicates per pattern) — diminishing returns for further consolidation.
-- 547 hardcoded gray colors have been migrated to CSS variables — theme compliance is now comprehensive.
+- ~17 inline classNames with 80+ chars and 3+ occurrences remain, but these are almost entirely within-file duplicates (e.g., 9x in LayoutSettings alone) or fragmented 3x patterns across 2-3 files — further consolidation has no practical benefit.
+- Zero hardcoded gray colors remain in components or hooks — theme compliance is 100% complete.
 - Remaining long classNames include component-specific layouts (modal/dialog shells, specific grid containers, unique color variants) that are intentionally one-off.
-- New components should use `sor-*` CSS primitives from `src/index.css` instead of raw Tailwind stacks.
+- New components should use `sor-*` CSS primitives from `src/styles/primitives.css` instead of raw Tailwind stacks.
 
 ## Execution Plan (Completed)
 
@@ -246,6 +246,32 @@ All major consolidation is complete:
     - `src/components/ui/OverrideToggle.tsx` — checkbox toggle for connection-level setting overrides (shows global value when disabled)
     - `sshOverrides/OverrideToggle.tsx` converted to re-export wrapper; duplicate removed from `SSHTerminalOverrides.tsx`
     - `SectionHeading` adopted across 18 settings panel files (replacing inline `<h3>` + `<p>` heading patterns)
+    - `CollapsibleSection` adopted in backup/AdvancedSection and cloudSync/AdvancedSection (replacing manual expand/collapse)
+    - `SectionHeading` adopted in ApiSettings and StartupSettings
+15. ✅ Component splitting — Wave 3 (9 large files → 76 sub-files in 9 directories):
+    - `ConnectionTree` (584 lines) → `connection/connectionTree/` (6 sub-files)
+    - `HTTPOptions` (658 lines) → `connectionEditor/httpOptions/` (10 sub-files)
+    - `PerformanceMonitor` (503 lines) → `monitoring/performanceMonitor/` (6 sub-files)
+    - `ProxyChainMenu` (685 lines) → `network/proxyChainMenu/` (5 sub-files)
+    - `WhatsAppPanel` (1059 lines) → `protocol/whatsApp/` (11 sub-files)
+    - `RDPClientHeader` (552 lines) → `rdp/rdpClientHeader/` (9 sub-files)
+    - `ScriptManager` (492 lines) → `recording/scriptManager/` (10 sub-files)
+    - `BulkSSHCommander` (605 lines) → `ssh/bulkCommander/` (8 sub-files)
+    - `WebTerminal` (601 lines) → `ssh/webTerminal/` (11 sub-files)
+16. ✅ Remaining hardcoded gray color cleanup — replaced ~40 remaining `gray-*` Tailwind classes with CSS variable references across wave 1-3 sub-files and rdpDefaults (including final 2 in RDPErrorScreen gradient stops)
+17. ✅ CSS primitive pass 3 — extracted 18 new `sor-*` CSS classes, 80 replacements across 48 files:
+    - `.sor-checkbox-lg` / `.sor-checkbox-sm` — checkbox input styling (16 occurrences)
+    - `.sor-diag-panel` / `.sor-diag-heading` / `.sor-diag-empty` — diagnostics card/heading/empty (15 occurrences)
+    - `.sor-totp-label` / `.sor-totp-action` — TOTP micro labels and actions (12 occurrences)
+    - `.sor-modal-cancel` / `.sor-modal-primary` — modal button styles (7 occurrences)
+    - `.sor-delete-btn-xs` — danger micro button (4 occurrences)
+    - `.sor-recording-row` — recording list row (3 occurrences)
+    - `.sor-perf-heading` — performance monitor section heading (3 occurrences)
+    - `.sor-search-clear` / `.sor-search-icon-abs` / `.sor-search-inline` — search field primitives (11 occurrences)
+    - `.sor-notification-dot` — notification badge dot (3 occurrences)
+    - `.sor-settings-sub-card` — settings sub-card container (3 occurrences)
+    - `.sor-form-label-icon` — form label with icon (3 occurrences)
+18. ✅ Barrel exports — added `index.ts` to all 21 sub-component directories for clean re-exports
 
 ## Guardrails
 

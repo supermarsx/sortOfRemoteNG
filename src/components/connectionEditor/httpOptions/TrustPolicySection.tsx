@@ -37,7 +37,7 @@ const TrustPolicySection: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
           return (
             <div className="mt-3">
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
+                <label className="sor-form-label-icon">
                   <Lock size={14} className="text-green-400" />
                   Stored Certificates ({records.length})
                 </label>

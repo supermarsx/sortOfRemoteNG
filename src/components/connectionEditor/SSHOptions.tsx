@@ -86,7 +86,7 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
               return (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
+                    <label className="sor-form-label-icon">
                       <Fingerprint size={14} className="text-green-400" />
                       Stored Host Keys ({records.length})
                     </label>

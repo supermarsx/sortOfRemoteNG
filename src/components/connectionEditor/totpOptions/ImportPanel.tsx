@@ -4,7 +4,7 @@ const ImportPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
   if (!mgr.showImport) return null;
   return (
     <div className="bg-[var(--color-surface)] rounded-lg p-3 space-y-2">
-      <div className="text-[10px] text-[var(--color-textSecondary)] font-semibold uppercase tracking-wider">
+      <div className="sor-totp-label">
         Import TOTP Configs (JSON)
       </div>
       <textarea
@@ -27,7 +27,7 @@ const ImportPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
             mgr.setImportText("");
             mgr.setImportError("");
           }}
-          className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          className="sor-totp-action"
         >
           Cancel
         </button>

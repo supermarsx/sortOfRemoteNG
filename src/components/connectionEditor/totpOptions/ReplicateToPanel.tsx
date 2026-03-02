@@ -6,7 +6,7 @@ const ReplicateToPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
   if (!mgr.showReplicateTo) return null;
   return (
     <div className="bg-[var(--color-surface)] rounded-lg p-3 space-y-2">
-      <div className="text-[10px] text-[var(--color-textSecondary)] font-semibold uppercase tracking-wider">
+      <div className="sor-totp-label">
         Replicate {mgr.configs.length} 2FA config
         {mgr.configs.length !== 1 ? "s" : ""} to connections
       </div>
@@ -43,7 +43,7 @@ const ReplicateToPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
             onClick={() => {
               mgr.setShowReplicateTo(false);
             }}
-            className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+            className="sor-totp-action"
           >
             Cancel
           </button>

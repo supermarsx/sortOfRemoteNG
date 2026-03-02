@@ -1,3 +1,5 @@
+import { Monitor, Terminal, Eye, Globe, Phone, Database, Server, Shield, Cloud, Folder, Star, HardDrive } from 'lucide-react';
+import { Connection } from '../../../types/connection';
 
 export const getProtocolIcon = (protocol: string) => {
   switch (protocol) {

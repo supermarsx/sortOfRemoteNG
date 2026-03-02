@@ -32,4 +32,6 @@ export const HTTPOptions: React.FC<HTTPOptionsProps> = ({
   );
 };
 
+export default HTTPOptions;
+
 /** Inline nickname edit button for trust record rows */

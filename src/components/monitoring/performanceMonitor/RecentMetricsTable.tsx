@@ -7,7 +7,7 @@ const RecentMetricsTable: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   const { t } = useTranslation();
   return (
     <div>
-      <h3 className="text-sm font-medium text-[var(--color-textSecondary)] uppercase tracking-wide mb-3">
+      <h3 className="sor-perf-heading">
         {t("performance.recentMetrics", "Recent Metrics")}
       </h3>
       <div className="sor-metric-table-shell">

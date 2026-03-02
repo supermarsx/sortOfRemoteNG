@@ -58,9 +58,9 @@ const HEADER_COLOR: Record<RDPErrorCategory, string> = {
   credssp_post_auth: 'from-red-900/60 to-red-950/40',
   credssp_oracle: 'from-purple-900/60 to-purple-950/40',
   credentials: 'from-orange-900/60 to-orange-950/40',
-  network: 'from-gray-800/60 to-gray-900/40',
+  network: 'from-[var(--color-surfaceHover)]/60 to-[var(--color-surface)]/40',
   tls: 'from-blue-900/60 to-blue-950/40',
-  unknown: 'from-gray-800/60 to-gray-900/40',
+  unknown: 'from-[var(--color-surfaceHover)]/60 to-[var(--color-surface)]/40',
 };
 
 /* ── Sub-components ────────────────────────────────────────────────── */

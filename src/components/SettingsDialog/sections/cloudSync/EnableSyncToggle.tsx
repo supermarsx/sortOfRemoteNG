@@ -18,7 +18,7 @@ function EnableSyncToggle({ mgr }: { mgr: Mgr }) {
             </p>
           </div>
         </div>
-        <Checkbox checked={mgr.cloudSync.enabled} onChange={(v: boolean) => mgr.updateCloudSync({ enabled: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+        <Checkbox checked={mgr.cloudSync.enabled} onChange={(v: boolean) => mgr.updateCloudSync({ enabled: v })} className="sor-checkbox-lg" />
       </label>
     </div>
   );

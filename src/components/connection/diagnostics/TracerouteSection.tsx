@@ -7,8 +7,8 @@ const TracerouteSection = ({ mgr }: { mgr: DiagnosticsMgr }) => {
   const { results, isRunning } = mgr;
 
   return (
-    <div className="bg-[var(--color-surfaceHover)]/50 border border-[var(--color-border)] rounded-lg p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-textSecondary)] mb-3 flex items-center gap-2">
+    <div className="sor-diag-panel">
+      <h3 className="sor-diag-heading">
         <Router size={12} />
         {t("diagnostics.traceroute", "Traceroute")}
         {results.traceroute.length > 0 && (
@@ -52,7 +52,7 @@ const TracerouteSection = ({ mgr }: { mgr: DiagnosticsMgr }) => {
           ))}
         </div>
       ) : isRunning ? (
-        <div className="flex items-center justify-center p-4 bg-[var(--color-surface)] rounded-lg border border-[var(--color-border)]">
+        <div className="sor-diag-empty">
           <Loader2
             size={20}
             className="text-[var(--color-textMuted)] animate-spin"

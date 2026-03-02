@@ -37,7 +37,7 @@ export const SSHRecordingRow: React.FC<SSHRecordingRowProps> = ({
     <div className={isExpanded ? "bg-[var(--color-surface)]/30" : ""}>
       <div
         onClick={onToggle}
-        className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-[var(--color-surface)]/60"
+        className="sor-recording-row"
       >
         <Terminal size={16} className="text-green-400 flex-shrink-0" />
         <div className="flex-1 min-w-0">
@@ -135,7 +135,7 @@ export const SSHRecordingRow: React.FC<SSHRecordingRowProps> = ({
               <div className="flex-1" />
               <button
                 onClick={onDelete}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 rounded"
+                className="sor-delete-btn-xs"
               >
                 <Trash2 size={12} /> Delete
               </button>

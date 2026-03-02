@@ -12,7 +12,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       Encryption
     </h4>
 
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-4 space-y-4">
+    <div className="sor-settings-sub-card">
       <label className="flex items-center justify-between cursor-pointer">
         <div>
           <span className="text-[var(--color-text)]">Encrypt Backups</span>
@@ -20,7 +20,7 @@ const EncryptionSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             Password-protect backup files
           </p>
         </div>
-        <Checkbox checked={mgr.backup.encryptBackups} onChange={(v: boolean) => mgr.updateBackup({ encryptBackups: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+        <Checkbox checked={mgr.backup.encryptBackups} onChange={(v: boolean) => mgr.updateBackup({ encryptBackups: v })} className="sor-checkbox-lg" />
       </label>
 
       {mgr.backup.encryptBackups && (

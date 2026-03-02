@@ -22,3 +22,5 @@ export const HighlightedCode: React.FC<{ code: string; language: ScriptLanguage 
     </code>
   );
 };
+
+export default HighlightedCode;

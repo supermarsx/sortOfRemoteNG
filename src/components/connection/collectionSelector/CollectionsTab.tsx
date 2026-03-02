@@ -147,7 +147,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
                 />
                 <button
                   onClick={() => mgr.setShowPassword(!mgr.showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+                  className="sor-search-clear"
                 >
                   {mgr.showPassword ? (
                     <EyeOff size={16} />

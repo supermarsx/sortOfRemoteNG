@@ -56,7 +56,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           {onCancel && (
             <button
               onClick={onCancel}
-              className="px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-md transition-colors"
+              className="sor-modal-cancel"
             >
               {cancelText}
             </button>

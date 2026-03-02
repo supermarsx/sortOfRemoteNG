@@ -30,7 +30,7 @@ const PasteArea: React.FC<{ secret: string; mgr: Mgr }> = ({ secret, mgr }) => (
         <button
           type="button"
           onClick={mgr.cancelPaste}
-          className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          className="sor-totp-action"
         >
           Cancel
         </button>

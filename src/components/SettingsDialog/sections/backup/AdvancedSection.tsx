@@ -20,7 +20,7 @@ const AdvancedSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               Create a backup when closing the application
             </p>
           </div>
-          <Checkbox checked={mgr.backup.backupOnClose} onChange={(v: boolean) => mgr.updateBackup({ backupOnClose: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+          <Checkbox checked={mgr.backup.backupOnClose} onChange={(v: boolean) => mgr.updateBackup({ backupOnClose: v })} className="sor-checkbox-lg" />
         </label>
 
         <label className="flex items-center justify-between cursor-pointer">
@@ -32,7 +32,7 @@ const AdvancedSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
               Display a notification after successful backup
             </p>
           </div>
-          <Checkbox checked={mgr.backup.notifyOnBackup} onChange={(v: boolean) => mgr.updateBackup({ notifyOnBackup: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+          <Checkbox checked={mgr.backup.notifyOnBackup} onChange={(v: boolean) => mgr.updateBackup({ notifyOnBackup: v })} className="sor-checkbox-lg" />
         </label>
     </CollapsibleSection>
   </div>

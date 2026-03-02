@@ -112,7 +112,7 @@ const ConfigRow: React.FC<{ cfg: TOTPConfig; mgr: TOTPOptionsMgr }> = ({
       {showingBackup && (
         <div className="bg-[var(--color-surface)]/60 rounded-b-lg px-3 py-2 -mt-1 space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-[var(--color-textSecondary)] font-semibold uppercase tracking-wider">
+            <span className="sor-totp-label">
               Backup Codes
             </span>
             <button

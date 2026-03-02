@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUp, Edit, FolderOpen, Pencil, Plus, Star, Trash2 } from
 const BookmarksSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="md:col-span-2">
     <div className="flex items-center justify-between mb-2">
-      <label className="block text-sm font-medium text-[var(--color-textSecondary)] flex items-center gap-1.5">
+      <label className="sor-form-label-icon">
         <Star size={14} className="text-yellow-400" />
         Bookmarks ({(mgr.formData.httpBookmarks || []).length})
       </label>

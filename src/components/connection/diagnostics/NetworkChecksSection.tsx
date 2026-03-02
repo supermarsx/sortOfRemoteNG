@@ -8,8 +8,8 @@ const NetworkChecksSection = ({ mgr }: { mgr: DiagnosticsMgr }) => {
   const { results } = mgr;
 
   return (
-    <div className="bg-[var(--color-surfaceHover)]/50 border border-[var(--color-border)] rounded-lg p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--color-textSecondary)] mb-3 flex items-center gap-2">
+    <div className="sor-diag-panel">
+      <h3 className="sor-diag-heading">
         <Globe size={12} />
         {t("diagnostics.networkChecks", "Network Checks")}
       </h3>

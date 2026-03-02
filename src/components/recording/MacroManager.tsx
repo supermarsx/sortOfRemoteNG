@@ -28,7 +28,7 @@ const Toolbar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface)]/40 border-b border-[var(--color-border)]/50">
     <div className="flex-1 flex items-center gap-2 px-3 py-1.5 bg-[var(--color-border)]/40 border border-[var(--color-border)]/50 rounded-lg">
       <Search size={14} className="text-[var(--color-textSecondary)]" />
-      <input type="text" value={mgr.searchQuery} onChange={(e) => mgr.setSearchQuery(e.target.value)} placeholder="Search..." className="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] outline-none" />
+      <input type="text" value={mgr.searchQuery} onChange={(e) => mgr.setSearchQuery(e.target.value)} placeholder="Search..." className="sor-search-inline" />
     </div>
     {mgr.activeTab === 'macros' && (
       <>
@@ -231,7 +231,7 @@ const RecordingRow: React.FC<RecordingRowProps> = ({
               <div className="flex-1" />
               <button
                 onClick={onDelete}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 rounded"
+                className="sor-delete-btn-xs"
               >
                 <Trash2 size={12} /> Delete
               </button>

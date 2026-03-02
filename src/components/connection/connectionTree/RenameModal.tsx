@@ -32,8 +32,8 @@ function RenameModal({ mgr }: { mgr: ConnectionTreeMgr }) {
             placeholder="New name"
           />
           <div className="flex justify-end space-x-3 mt-6">
-            <button type="button" onClick={() => mgr.setRenameTarget(null)} className="px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-md transition-colors">Cancel</button>
-            <button type="button" onClick={mgr.handleRenameSubmit} className="px-4 py-2 text-[var(--color-text)] bg-blue-600 hover:bg-blue-700 rounded-md transition-colors">Save</button>
+            <button type="button" onClick={() => mgr.setRenameTarget(null)} className="sor-modal-cancel">Cancel</button>
+            <button type="button" onClick={mgr.handleRenameSubmit} className="sor-modal-primary">Save</button>
           </div>
         </div>
       </div>

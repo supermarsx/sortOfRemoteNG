@@ -60,7 +60,7 @@ function SyncItemsGrid({ mgr }: { mgr: Mgr }) {
             key={key}
             className="sor-toggle-card"
           >
-            <Checkbox checked={mgr.cloudSync[key]} onChange={(v: boolean) => mgr.updateCloudSync({ [key]: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+            <Checkbox checked={mgr.cloudSync[key]} onChange={(v: boolean) => mgr.updateCloudSync({ [key]: v })} className="sor-checkbox-sm" />
             {icon}
             <span className="text-sm text-[var(--color-text)]">{label}</span>
           </label>

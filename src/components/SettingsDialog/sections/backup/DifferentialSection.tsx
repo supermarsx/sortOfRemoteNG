@@ -9,7 +9,7 @@ const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       Differential Backups
     </h4>
 
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surfaceHover)]/30 p-4 space-y-4">
+    <div className="sor-settings-sub-card">
       <label className="flex items-center justify-between cursor-pointer">
         <div>
           <span className="text-[var(--color-text)]">
@@ -19,7 +19,7 @@ const DifferentialSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             Only backup changes since the last full backup (saves space)
           </p>
         </div>
-        <Checkbox checked={mgr.backup.differentialEnabled} onChange={(v: boolean) => mgr.updateBackup({ differentialEnabled: v })} className="w-5 h-5 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+        <Checkbox checked={mgr.backup.differentialEnabled} onChange={(v: boolean) => mgr.updateBackup({ differentialEnabled: v })} className="sor-checkbox-lg" />
       </label>
 
       {mgr.backup.differentialEnabled && (

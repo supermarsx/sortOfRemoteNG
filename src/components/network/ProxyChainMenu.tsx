@@ -3,7 +3,7 @@ import { Network, RefreshCw, Wifi, Link2, Route, PlugZap } from "lucide-react";
 import { useProxyChainManager } from "../../hooks/network/useProxyChainManager";
 import Modal from "../ui/overlays/Modal";
 import DialogHeader from "../ui/overlays/DialogHeader";
-import SSHTunnelDialog from "./SSHTunnelDialog";
+import SSHTunnelDialog from "../ssh/SSHTunnelDialog";
 import ProxyProfileEditor from "./ProxyProfileEditor";
 import ProxyChainEditor from "./ProxyChainEditor";
 import { ProxyChainMenuProps } from "./proxyChainMenu/types";

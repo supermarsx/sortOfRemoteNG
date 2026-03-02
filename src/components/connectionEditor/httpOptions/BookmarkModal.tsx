@@ -67,14 +67,14 @@ const BookmarkModal: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
             <button
               type="button"
               onClick={() => mgr.setShowAddBookmark(false)}
-              className="px-4 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-textSecondary)] rounded-md transition-colors"
+              className="sor-modal-cancel"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={mgr.handleSaveBookmark}
-              className="px-4 py-2 text-[var(--color-text)] bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+              className="sor-modal-primary"
             >
               {mgr.editingBookmarkIdx !== null ? "Save" : "Add"}
             </button>

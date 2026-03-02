@@ -47,7 +47,7 @@ const Toolbar: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         value={mgr.searchQuery}
         onChange={(e) => mgr.setSearchQuery(e.target.value)}
         placeholder="Search recordings..."
-        className="flex-1 bg-transparent text-sm text-[var(--color-text)] placeholder-[var(--color-textMuted)] outline-none"
+        className="sor-search-inline"
       />
     </div>
     {mgr.activeTab === "ssh" && mgr.sshRecordings.length > 0 && (

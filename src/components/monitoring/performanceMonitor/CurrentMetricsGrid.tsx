@@ -10,7 +10,7 @@ const CurrentMetricsGrid: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
   return (
     <div className="mb-6">
-      <h3 className="text-sm font-medium text-[var(--color-textSecondary)] uppercase tracking-wide mb-3">
+      <h3 className="sor-perf-heading">
         {t("performance.currentPerformance", "Current Performance")}
       </h3>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

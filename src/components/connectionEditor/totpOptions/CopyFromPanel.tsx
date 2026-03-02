@@ -5,7 +5,7 @@ const CopyFromPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
   if (!mgr.showCopyFrom) return null;
   return (
     <div className="bg-[var(--color-surface)] rounded-lg p-3 space-y-2">
-      <div className="text-[10px] text-[var(--color-textSecondary)] font-semibold uppercase tracking-wider">
+      <div className="sor-totp-label">
         Copy 2FA from another connection
       </div>
       <div className="max-h-40 overflow-y-auto space-y-1">
@@ -39,7 +39,7 @@ const CopyFromPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
         <button
           type="button"
           onClick={() => mgr.setShowCopyFrom(false)}
-          className="px-2 py-1 text-[10px] text-[var(--color-textSecondary)] hover:text-[var(--color-text)]"
+          className="sor-totp-action"
         >
           Cancel
         </button>

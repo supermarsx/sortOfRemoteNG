@@ -12,7 +12,7 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
         onToggle={(v) => mgr.setShowAdvanced(v)}
       >
           <label className="flex items-center gap-2 cursor-pointer">
-            <Checkbox checked={mgr.cloudSync.compressionEnabled} onChange={(v: boolean) => mgr.updateCloudSync({ compressionEnabled: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-input)] text-blue-600" />
+            <Checkbox checked={mgr.cloudSync.compressionEnabled} onChange={(v: boolean) => mgr.updateCloudSync({ compressionEnabled: v })} className="sor-checkbox-sm" />
             <span className="text-sm text-[var(--color-text)]">
               Enable Compression
             </span>
