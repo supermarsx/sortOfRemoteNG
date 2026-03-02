@@ -253,7 +253,7 @@ async fn login(
     State(services): State<Arc<ApiService>>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    let auth = services.auth_service.lock().await;
+    let mut auth = services.auth_service.lock().await;
     match auth.verify_user(&req.username, &req.password).await {
         Ok(true) => Ok(Json(serde_json::json!({
             "success": true,
@@ -301,6 +301,7 @@ async fn connect_ssh(
         jump_hosts: Vec::new(),
         proxy_config: None,
         proxy_chain: None,
+        mixed_chain: None,
         openvpn_config: None,
         connect_timeout: None,
         keep_alive_interval: None,
@@ -320,6 +321,10 @@ async fn connect_ssh(
         preferred_macs: vec![],
         preferred_kex: vec![],
         preferred_host_key_algorithms: vec![],
+        x11_forwarding: None,
+        proxy_command: None,
+        pty_type: None,
+        environment: std::collections::HashMap::new(),
     };
 
     let mut ssh = services.ssh_service.lock().await;

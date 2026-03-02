@@ -201,6 +201,7 @@ dependencies = [
  "sorng-collaboration",
  "sorng-core",
  "sorng-dashlane",
+ "sorng-dns",
  "sorng-dropbox",
  "sorng-extensions",
  "sorng-ftp",
@@ -222,6 +223,7 @@ dependencies = [
  "sorng-nextcloud",
  "sorng-onedrive",
  "sorng-openvpn",
+ "sorng-p2p",
  "sorng-passbolt",
  "sorng-postgres",
  "sorng-powershell",
@@ -238,6 +240,7 @@ dependencies = [
  "sorng-sqlite",
  "sorng-ssh",
  "sorng-storage",
+ "sorng-tailscale",
  "sorng-telegram",
  "sorng-telnet",
  "sorng-terminal-themes",
@@ -249,6 +252,8 @@ dependencies = [
  "sorng-vpn",
  "sorng-whatsapp",
  "sorng-winmgmt",
+ "sorng-wireguard",
+ "sorng-zerotier",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -8570,6 +8575,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-dns"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-dropbox"
 version = "0.1.0"
 dependencies = [
@@ -8652,6 +8673,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sorng-dns",
  "tauri",
  "tokio",
  "url",
@@ -8904,6 +8926,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sorng-core",
+ "sorng-dns",
  "tauri",
  "tokio",
  "uuid",
@@ -8966,7 +8989,24 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sorng-dns",
  "tauri",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-p2p"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-dns",
  "tokio",
  "uuid",
 ]
@@ -9099,6 +9139,7 @@ dependencies = [
  "socket2 0.5.10",
  "softbuffer",
  "sorng-core",
+ "sorng-dns",
  "tauri",
  "tokio",
  "uuid",
@@ -9267,6 +9308,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sorng-dns",
  "tauri",
  "tokio",
  "tokio-rustls 0.25.0",
@@ -9315,6 +9357,7 @@ dependencies = [
  "sha2 0.10.9",
  "shell-escape",
  "sorng-core",
+ "sorng-dns",
  "ssh-key",
  "ssh2",
  "tauri",
@@ -9340,6 +9383,19 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tauri",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-tailscale"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
+ "sorng-dns",
  "tokio",
  "uuid",
 ]
@@ -9573,6 +9629,34 @@ dependencies = [
  "tauri",
  "tokio",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-wireguard"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sorng-dns",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-zerotier"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
+ "sorng-dns",
+ "tokio",
  "uuid",
 ]
 

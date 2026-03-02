@@ -48,6 +48,7 @@ members = [
   "crates/sorng-dropbox",
   "crates/sorng-nextcloud",
   "crates/sorng-gdrive",
+  "crates/sorng-onedrive",
   "crates/sorng-recording",
   "crates/sorng-gcp",
   "crates/sorng-azure",
@@ -60,6 +61,11 @@ members = [
   "crates/sorng-gateway",
   "crates/sorng-biometrics",
   "crates/sorng-vault",
+  "crates/sorng-p2p",
+  "crates/sorng-tailscale",
+  "crates/sorng-zerotier",
+  "crates/sorng-wireguard",
+  "crates/sorng-dns",
 ]
 
 [workspace.dependencies]
@@ -157,6 +163,11 @@ sorng-collaboration = { path = "crates/sorng-collaboration" }
 sorng-gateway = { path = "crates/sorng-gateway" }
 sorng-biometrics = { path = "crates/sorng-biometrics" }
 sorng-vault = { path = "crates/sorng-vault" }
+sorng-p2p = { path = "crates/sorng-p2p" }
+sorng-tailscale = { path = "crates/sorng-tailscale" }
+sorng-zerotier = { path = "crates/sorng-zerotier" }
+sorng-wireguard = { path = "crates/sorng-wireguard" }
+sorng-dns = { path = "crates/sorng-dns" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"

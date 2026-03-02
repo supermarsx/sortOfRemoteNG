@@ -18,6 +18,10 @@
 //! - **sorng-rdp** — RDP connectivity and graphics pipeline
 //! - **sorng-protocols** — VNC, Telnet, Serial, FTP, DB, HTTP, and more
 //! - **sorng-vpn** — VPN services, proxy, and connection chaining
+//! - **sorng-p2p** — P2P connectivity: STUN/TURN/ICE, NAT traversal, signaling, peer discovery
+//! - **sorng-tailscale** — Tailscale mesh networking: daemon, ACLs, MagicDNS, Funnel, Serve, SSH
+//! - **sorng-zerotier** — ZeroTier networking: daemon, flow rules, self-hosted controller
+//! - **sorng-wireguard** — WireGuard tunnels: config management, key generation, routing, NAT keepalive
 //! - **sorng-cloud** — Cloud provider integrations
 //! - **sorng-remote-mgmt** — Remote management tools (WMI, RPC, AnyDesk, etc.)
 //!
@@ -41,6 +45,7 @@ pub use sorng_auth::bearer_auth;
 pub use sorng_auth::passkey;
 pub use sorng_auth::login_detection;
 pub use sorng_auth::auto_lock;
+pub use sorng_auth::legacy_crypto;
 
 // Storage
 pub use sorng_storage::storage;
@@ -203,6 +208,21 @@ pub use sorng_collaboration as collaboration;
 // Gateway — headless connection proxy, tunnels, policies, metrics (dedicated crate)
 pub use sorng_gateway as gateway;
 
+// P2P — STUN/TURN/ICE, NAT traversal, hole punching, signaling, peer discovery (dedicated crate)
+pub use sorng_p2p as p2p;
+
+// Tailscale — daemon management, ACLs, MagicDNS, Funnel, Serve, SSH, exit nodes (dedicated crate)
+pub use sorng_tailscale as tailscale_dedicated;
+
+// ZeroTier — daemon, networks, peers, flow rules, self-hosted controller (dedicated crate)
+pub use sorng_zerotier as zerotier_dedicated;
+
+// WireGuard — config management, key generation, routing, DNS leak prevention, NAT keepalive (dedicated crate)
+pub use sorng_wireguard as wireguard_dedicated;
+
+// DNS — unified DNS resolution: DoH, DoT, ODoH, DNSSEC, caching, mDNS, leak detection (dedicated crate)
+pub use sorng_dns as dns;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -245,6 +265,7 @@ use cert_gen::CertGenService;
 use two_factor::TwoFactorService;
 use bearer_auth::BearerAuthService;
 use auto_lock::AutoLockService;
+use legacy_crypto::LegacyCryptoPolicyState;
 use gpo::GpoService;
 use login_detection::LoginDetectionService;
 use telnet::TelnetService;
@@ -520,6 +541,10 @@ pub fn run() {
       let cert_gen_service = CertGenService::new("cert_gen_store.json".to_string());
       app.manage(cert_gen_service.clone());
 
+      // Initialize Legacy Crypto Policy (all disabled by default)
+      let legacy_crypto_policy_state = legacy_crypto::new_policy_state();
+      app.manage(legacy_crypto_policy_state);
+
       // Initialize Two-Factor Authentication service
       let two_factor_service = TwoFactorService::new();
       app.manage(two_factor_service.clone());
@@ -656,7 +681,7 @@ pub fn run() {
       app.manage(redis_service);
 
       // Initialize AI Agent service
-      let ai_agent_service: AiAgentServiceState = ai_agent::service::AiAgentService::new();
+      let ai_agent_service: AiAgentServiceState = Arc::new(Mutex::new(ai_agent::service::AiAgentService::new()));
       app.manage(ai_agent_service);
 
       // Initialize 1Password service
@@ -684,8 +709,8 @@ pub fn run() {
       app.manage(vmware_service);
 
       // Initialize MeshCentral service
-      let meshcentral_service = MeshCentralService::new();
-      app.manage(meshcentral_service);
+      let meshcentral_dedicated_service = MeshCentralService::new();
+      app.manage(meshcentral_dedicated_service);
 
       // Initialize mRemoteNG import/export service
       let mremoteng_service = MremotengService::new();
@@ -727,7 +752,10 @@ pub fn run() {
       app.manage(llm_state.clone());
 
       // Initialize AI Assist service
-      let ai_assist_state: AiAssistServiceState = ai_assist::service::create_ai_assist_state();
+      let ai_assist_state: AiAssistServiceState = ai_assist::service::create_ai_assist_state(
+          ai_assist::AiAssistConfig::default(),
+          Some(llm_state.clone()),
+      );
       app.manage(ai_assist_state.clone());
 
       // Initialize Terminal Themes engine
@@ -822,6 +850,10 @@ pub fn run() {
         ssh::disconnect_ssh,
         ssh::get_session_info,
         ssh::list_sessions,
+        ssh::validate_mixed_chain,
+        ssh::jump_hosts_to_mixed_chain,
+        ssh::proxy_chain_to_mixed_chain,
+        ssh::test_mixed_chain_connection,
         rdp::connect_rdp,
         rdp::disconnect_rdp,
         rdp::attach_rdp_session,
@@ -1151,6 +1183,16 @@ pub fn run() {
         // NOTE: pause_shell and resume_shell removed - buffer always captures full session
         ssh::get_ssh_host_key_info,
         ssh::diagnose_ssh_connection,
+        // X11 forwarding
+        ssh::enable_x11_forwarding,
+        ssh::disable_x11_forwarding,
+        ssh::get_x11_forward_status,
+        ssh::list_x11_forwards,
+        // ProxyCommand
+        ssh::get_proxy_command_info,
+        ssh::stop_proxy_command_cmd,
+        ssh::test_proxy_command,
+        ssh::expand_proxy_command,
         http::http_fetch,
         http::http_get,
         http::http_post,
@@ -1213,6 +1255,15 @@ pub fn run() {
         cert_gen::cert_gen_delete_csr,
         cert_gen::cert_gen_update_label,
         cert_gen::cert_gen_get_chain,
+        // Legacy crypto policy commands
+        legacy_crypto::get_legacy_crypto_policy,
+        legacy_crypto::set_legacy_crypto_policy,
+        legacy_crypto::get_legacy_crypto_warnings,
+        legacy_crypto::get_legacy_ssh_ciphers,
+        legacy_crypto::get_legacy_ssh_kex,
+        legacy_crypto::get_legacy_ssh_macs,
+        legacy_crypto::get_legacy_ssh_host_key_algorithms,
+        legacy_crypto::is_legacy_algorithm_allowed,
         // Certificate authentication commands
         cert_auth::parse_certificate,
         cert_auth::validate_certificate,
@@ -2206,68 +2257,68 @@ pub fn run() {
         redis::commands::redis_select_db,
 
         // ── AI Agent ──────────────────────────────────────────────
-        ai_agent::commands::ai_register_provider,
+        ai_agent::commands::ai_get_settings,
+        ai_agent::commands::ai_update_settings,
+        ai_agent::commands::ai_add_provider,
         ai_agent::commands::ai_remove_provider,
         ai_agent::commands::ai_list_providers,
-        ai_agent::commands::ai_list_models,
-        ai_agent::commands::ai_health_check,
-        ai_agent::commands::ai_chat,
-        ai_agent::commands::ai_chat_stream_start,
-        ai_agent::commands::ai_chat_stream_poll,
-        ai_agent::commands::ai_chat_stream_cancel,
+        ai_agent::commands::ai_check_provider_health,
         ai_agent::commands::ai_create_conversation,
         ai_agent::commands::ai_get_conversation,
-        ai_agent::commands::ai_list_conversations,
         ai_agent::commands::ai_delete_conversation,
+        ai_agent::commands::ai_list_conversations,
         ai_agent::commands::ai_rename_conversation,
+        ai_agent::commands::ai_pin_conversation,
+        ai_agent::commands::ai_archive_conversation,
+        ai_agent::commands::ai_set_conversation_tags,
         ai_agent::commands::ai_fork_conversation,
-        ai_agent::commands::ai_send_message,
-        ai_agent::commands::ai_add_user_message,
-        ai_agent::commands::ai_remove_message,
-        ai_agent::commands::ai_edit_message,
         ai_agent::commands::ai_search_conversations,
-        ai_agent::commands::ai_toggle_pin_conversation,
-        ai_agent::commands::ai_toggle_archive_conversation,
         ai_agent::commands::ai_export_conversation,
+        ai_agent::commands::ai_import_conversation,
+        ai_agent::commands::ai_send_message,
+        ai_agent::commands::ai_get_messages,
+        ai_agent::commands::ai_clear_messages,
+        ai_agent::commands::ai_chat_completion,
         ai_agent::commands::ai_run_agent,
-        ai_agent::commands::ai_list_tools,
-        ai_agent::commands::ai_execute_tool,
+        ai_agent::commands::ai_code_assist,
+        ai_agent::commands::ai_code_generate,
+        ai_agent::commands::ai_code_review,
+        ai_agent::commands::ai_code_refactor,
+        ai_agent::commands::ai_code_explain,
+        ai_agent::commands::ai_code_document,
+        ai_agent::commands::ai_code_find_bugs,
+        ai_agent::commands::ai_code_optimize,
+        ai_agent::commands::ai_code_write_tests,
+        ai_agent::commands::ai_code_convert,
+        ai_agent::commands::ai_code_fix_error,
         ai_agent::commands::ai_list_templates,
         ai_agent::commands::ai_get_template,
         ai_agent::commands::ai_create_template,
         ai_agent::commands::ai_delete_template,
         ai_agent::commands::ai_render_template,
-        ai_agent::commands::ai_count_tokens,
-        ai_agent::commands::ai_count_message_tokens,
-        ai_agent::commands::ai_set_budget,
-        ai_agent::commands::ai_get_budget_status,
-        ai_agent::commands::ai_get_global_usage,
-        ai_agent::commands::ai_reset_global_usage,
-        ai_agent::commands::ai_generate_embeddings,
-        ai_agent::commands::ai_vector_upsert,
-        ai_agent::commands::ai_vector_search,
-        ai_agent::commands::ai_vector_list_collections,
-        ai_agent::commands::ai_vector_drop_collection,
-        ai_agent::commands::ai_rag_create_pipeline,
-        ai_agent::commands::ai_rag_ingest_document,
-        ai_agent::commands::ai_rag_list_documents,
-        ai_agent::commands::ai_code_assist,
-        ai_agent::commands::ai_code_generate,
-        ai_agent::commands::ai_code_review,
-        ai_agent::commands::ai_code_explain,
+        ai_agent::commands::ai_add_memory,
+        ai_agent::commands::ai_search_memory,
+        ai_agent::commands::ai_list_memory,
+        ai_agent::commands::ai_remove_memory,
+        ai_agent::commands::ai_clear_memory,
+        ai_agent::commands::ai_get_memory_config,
+        ai_agent::commands::ai_update_memory_config,
+        ai_agent::commands::ai_add_vector,
+        ai_agent::commands::ai_search_vectors,
+        ai_agent::commands::ai_ingest_document,
+        ai_agent::commands::ai_remove_document,
+        ai_agent::commands::ai_search_rag,
+        ai_agent::commands::ai_list_rag_collections,
         ai_agent::commands::ai_create_workflow,
-        ai_agent::commands::ai_list_workflows,
         ai_agent::commands::ai_get_workflow,
         ai_agent::commands::ai_delete_workflow,
+        ai_agent::commands::ai_list_workflows,
         ai_agent::commands::ai_run_workflow,
-        ai_agent::commands::ai_get_workflow_progress,
-        ai_agent::commands::ai_memory_list_keys,
-        ai_agent::commands::ai_memory_clear,
-        ai_agent::commands::ai_memory_clear_all,
-        ai_agent::commands::ai_get_settings,
-        ai_agent::commands::ai_update_settings,
+        ai_agent::commands::ai_count_tokens,
+        ai_agent::commands::ai_get_budget_status,
+        ai_agent::commands::ai_update_budget,
+        ai_agent::commands::ai_reset_budget,
         ai_agent::commands::ai_diagnostics,
-        ai_agent::commands::ai_estimate_cost,
 
         // ── 1Password ────────────────────────────────────────────────
         onepassword::op_get_config,
@@ -3222,21 +3273,22 @@ pub fn run() {
         llm::commands::llm_remove_provider,
         llm::commands::llm_update_provider,
         llm::commands::llm_list_providers,
-        llm::commands::llm_get_provider,
+        llm::commands::llm_set_default_provider,
         llm::commands::llm_chat_completion,
-        llm::commands::llm_embedding,
+        llm::commands::llm_create_embedding,
         llm::commands::llm_list_models,
+        llm::commands::llm_models_for_provider,
+        llm::commands::llm_model_info,
         llm::commands::llm_health_check,
-        llm::commands::llm_health_all,
-        llm::commands::llm_usage_report,
-        llm::commands::llm_usage_reset,
+        llm::commands::llm_health_check_all,
+        llm::commands::llm_usage_summary,
         llm::commands::llm_cache_stats,
-        llm::commands::llm_cache_clear,
+        llm::commands::llm_clear_cache,
+        llm::commands::llm_status,
         llm::commands::llm_get_config,
         llm::commands::llm_update_config,
         llm::commands::llm_set_balancer_strategy,
         llm::commands::llm_estimate_tokens,
-        llm::commands::llm_estimate_cost,
         // AI Assist commands
         ai_assist::commands::ai_assist_create_session,
         ai_assist::commands::ai_assist_remove_session,
@@ -3471,7 +3523,7 @@ async fn verify_user(
   password: String,
   auth_service: tauri::State<'_, AuthServiceState>,
 ) -> Result<bool, String> {
-  let service = auth_service.lock().await;
+  let mut service = auth_service.lock().await;
   service.verify_user(&username, &password).await
 }
 
