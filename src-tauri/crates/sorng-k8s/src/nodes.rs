@@ -161,7 +161,8 @@ impl NodeManager {
     pub async fn list_persistent_volumes(client: &K8sClient, opts: &ListOptions) -> K8sResult<Vec<PersistentVolumeInfo>> {
         let url = format!("{}/api/v1/persistentvolumes{}", client.base_url, K8sClient::list_query(opts));
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 
@@ -169,7 +170,8 @@ impl NodeManager {
     pub async fn list_pvcs(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<PersistentVolumeClaimInfo>> {
         let url = format!("{}{}", client.namespaced_url(namespace, "persistentvolumeclaims"), K8sClient::list_query(opts));
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 
@@ -177,7 +179,8 @@ impl NodeManager {
     pub async fn list_storage_classes(client: &K8sClient) -> K8sResult<Vec<StorageClassInfo>> {
         let url = client.storage_v1_url("storageclasses");
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 }

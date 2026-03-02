@@ -268,7 +268,8 @@ impl DeploymentManager {
     pub async fn list_statefulsets(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<StatefulSetInfo>> {
         let url = format!("{}{}", client.apps_v1_url(namespace, "statefulsets"), K8sClient::list_query(opts));
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 
@@ -276,7 +277,8 @@ impl DeploymentManager {
     pub async fn list_daemonsets(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<DaemonSetInfo>> {
         let url = format!("{}{}", client.apps_v1_url(namespace, "daemonsets"), K8sClient::list_query(opts));
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 
@@ -284,7 +286,8 @@ impl DeploymentManager {
     pub async fn list_replicasets(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<ReplicaSetInfo>> {
         let url = format!("{}{}", client.apps_v1_url(namespace, "replicasets"), K8sClient::list_query(opts));
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 }

@@ -4,6 +4,7 @@
 use crate::client::K8sClient;
 use crate::error::{K8sError, K8sResult};
 use crate::types::*;
+use chrono::Utc;
 
 /// Metrics collection operations (requires metrics-server deployed in the cluster).
 pub struct MetricsManager;
@@ -91,8 +92,8 @@ impl MetricsManager {
         let node_metrics = Self::list_node_metrics(client).await?;
         let pod_metrics = Self::list_all_pod_metrics(client).await?;
 
-        let total_cpu_millicores: i64 = node_metrics.iter().map(|n| n.cpu_usage_millicores).sum();
-        let total_memory_bytes: i64 = node_metrics.iter().map(|n| n.memory_usage_bytes).sum();
+        let total_cpu_millicores: i64 = node_metrics.iter().map(|n| parse_cpu_to_millicores(&n.usage.cpu)).sum();
+        let total_memory_bytes: i64 = node_metrics.iter().map(|n| parse_memory_to_bytes(&n.usage.memory)).sum();
 
         let mut total_cpu_capacity: i64 = 0;
         let mut total_memory_capacity: i64 = 0;
@@ -118,22 +119,20 @@ impl MetricsManager {
         }
 
         Ok(ClusterResourceSummary {
-            total_nodes: node_metrics.len() as i32,
-            total_pods: pod_metrics.len() as i32,
-            total_cpu_usage_millicores: total_cpu_millicores,
-            total_memory_usage_bytes: total_memory_bytes,
-            total_cpu_capacity_millicores: total_cpu_capacity,
-            total_memory_capacity_bytes: total_memory_capacity,
-            cpu_utilization_percent: if total_cpu_capacity > 0 {
-                (total_cpu_millicores as f64 / total_cpu_capacity as f64) * 100.0
-            } else {
-                0.0
-            },
-            memory_utilization_percent: if total_memory_capacity > 0 {
-                (total_memory_bytes as f64 / total_memory_capacity as f64) * 100.0
-            } else {
-                0.0
-            },
+            total_nodes: node_metrics.len(),
+            ready_nodes: node_metrics.len(),
+            total_pods: pod_metrics.len(),
+            running_pods: pod_metrics.len(),
+            total_cpu_capacity: format!("{}m", total_cpu_capacity),
+            total_cpu_allocatable: format!("{}m", total_cpu_capacity),
+            total_cpu_usage: Some(format!("{}m", total_cpu_millicores)),
+            total_memory_capacity: total_memory_capacity.to_string(),
+            total_memory_allocatable: total_memory_capacity.to_string(),
+            total_memory_usage: Some(total_memory_bytes.to_string()),
+            total_namespaces: 0,
+            total_deployments: 0,
+            total_services: 0,
+            total_persistent_volumes: 0,
         })
     }
 
@@ -162,11 +161,19 @@ fn parse_node_metrics(val: &serde_json::Value) -> Option<NodeMetrics> {
         .to_string();
 
     Some(NodeMetrics {
-        name,
-        cpu_usage_millicores: parse_cpu_to_millicores(cpu_str),
-        memory_usage_bytes: parse_memory_to_bytes(mem_str),
-        timestamp,
+        metadata: ObjectMeta {
+            name,
+            ..Default::default()
+        },
+        timestamp: chrono::DateTime::parse_from_rfc3339(&timestamp)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now),
         window,
+        usage: NodeResourceUsage {
+            cpu: cpu_str.to_string(),
+            memory: mem_str.to_string(),
+        },
     })
 }
 
@@ -192,19 +199,27 @@ fn parse_pod_metrics(val: &serde_json::Value) -> Option<PodMetrics> {
                 let mem = usage.get("memory").and_then(|v| v.as_str()).unwrap_or("0");
                 Some(ContainerMetrics {
                     name: cname,
-                    cpu_usage_millicores: parse_cpu_to_millicores(cpu),
-                    memory_usage_bytes: parse_memory_to_bytes(mem),
+                    usage: ContainerResourceUsage {
+                        cpu: cpu.to_string(),
+                        memory: mem.to_string(),
+                    },
                 })
             }).collect()
         })
         .unwrap_or_default();
 
     Some(PodMetrics {
-        name,
-        namespace,
-        containers,
-        timestamp,
+        metadata: ObjectMeta {
+            name,
+            namespace: Some(namespace),
+            ..Default::default()
+        },
+        timestamp: chrono::DateTime::parse_from_rfc3339(&timestamp)
+            .ok()
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now),
         window,
+        containers,
     })
 }
 

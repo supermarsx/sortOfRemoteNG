@@ -92,7 +92,8 @@ impl EventManager {
     pub async fn list_crds(client: &K8sClient, opts: &ListOptions) -> K8sResult<Vec<CrdInfo>> {
         let url = format!("{}{}", client.apiextensions_v1_url("customresourcedefinitions"), K8sClient::list_query(opts));
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 

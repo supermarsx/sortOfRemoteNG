@@ -65,7 +65,8 @@ impl IngressManager {
     pub async fn list_ingress_classes(client: &K8sClient) -> K8sResult<Vec<IngressClassInfo>> {
         let url = format!("{}/apis/networking.k8s.io/v1/ingressclasses", client.base_url);
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 
@@ -73,7 +74,8 @@ impl IngressManager {
     pub async fn list_network_policies(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<NetworkPolicyInfo>> {
         let url = format!("{}{}", client.networking_v1_url(namespace, "networkpolicies"), K8sClient::list_query(opts));
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 

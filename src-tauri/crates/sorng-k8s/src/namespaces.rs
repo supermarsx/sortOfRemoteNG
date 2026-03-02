@@ -63,7 +63,8 @@ impl NamespaceManager {
     pub async fn list_resource_quotas(client: &K8sClient, namespace: &str) -> K8sResult<Vec<ResourceQuotaInfo>> {
         let url = client.namespaced_url(namespace, "resourcequotas");
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 
@@ -101,7 +102,8 @@ impl NamespaceManager {
     pub async fn list_limit_ranges(client: &K8sClient, namespace: &str) -> K8sResult<Vec<LimitRangeInfo>> {
         let url = client.namespaced_url(namespace, "limitranges");
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 }

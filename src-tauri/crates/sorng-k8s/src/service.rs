@@ -40,7 +40,7 @@ impl K8sService {
     pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
-            helm: HelmManager::new(),
+            helm: HelmManager,
         }
     }
 
@@ -56,11 +56,12 @@ impl K8sService {
 
         let info = ClusterInfo {
             name: id.clone(),
-            server: client.base_url.clone(),
+            server_url: client.base_url.clone(),
             version,
-            status: if healthy { ClusterStatus::Connected } else { ClusterStatus::Degraded },
-            node_count: None,
-            namespace_count: None,
+            platform: None,
+            node_count: 0,
+            namespace_count: 0,
+            status: if healthy { ClusterStatus::Connected } else { ClusterStatus::Unknown },
             api_resources,
         };
         self.connections.insert(id, client);
@@ -76,30 +77,40 @@ impl K8sService {
     ) -> K8sResult<ClusterInfo> {
         let path = match kubeconfig_path {
             Some(p) => p,
-            None => KubeconfigManager::default_path()?,
+            None => KubeconfigManager::default_path()?
+                .to_string_lossy().to_string(),
         };
-        let raw = KubeconfigManager::load(&path)?;
-        let kc = KubeconfigManager::parse(&raw)?;
-        let ctx_name = context.unwrap_or_else(|| kc.current_context.clone().unwrap_or_default());
+        let kc = KubeconfigManager::load(&path)?;
+        let ctx_name = context.unwrap_or_else(|| kc.current_context.clone());
         let (endpoint, creds) = KubeconfigManager::resolve_context(&kc, &ctx_name)?;
 
+        let now = chrono::Utc::now();
         let config = K8sConnectionConfig {
+            id: id.clone(),
             name: id.clone(),
-            server: endpoint.server.clone(),
-            auth_method: K8sAuthMethod::Kubeconfig {
-                path: Some(path),
-                context: Some(ctx_name),
-            },
-            tls: K8sTlsConfig {
-                ca_cert: endpoint.certificate_authority_data.clone(),
+            kubeconfig_path: Some(path),
+            kubeconfig_inline: None,
+            context_name: Some(ctx_name),
+            api_server_url: Some(endpoint.server.clone()),
+            auth_method: K8sAuthMethod::Kubeconfig,
+            namespace: Some("default".to_string()),
+            tls_config: Some(K8sTlsConfig {
+                ca_cert_data: endpoint.certificate_authority_data.clone(),
                 ca_cert_path: endpoint.certificate_authority.clone(),
-                client_cert: creds.client_certificate_data.clone(),
-                client_key: creds.client_key_data.clone(),
-                insecure_skip_tls_verify: endpoint.insecure_skip_tls_verify.unwrap_or(false),
-            },
-            default_namespace: Some("default".to_string()),
+                client_cert_data: creds.client_certificate_data.clone(),
+                client_cert_path: creds.client_certificate.clone(),
+                client_key_data: creds.client_key_data.clone(),
+                client_key_path: creds.client_key.clone(),
+                insecure_skip_verify: endpoint.insecure_skip_tls_verify.unwrap_or(false),
+                server_name: endpoint.tls_server_name.clone(),
+            }),
             proxy_url: endpoint.proxy_url.clone(),
-            timeout_seconds: Some(30),
+            request_timeout_secs: Some(30),
+            watch_timeout_secs: None,
+            labels: HashMap::new(),
+            annotations: HashMap::new(),
+            created_at: now,
+            updated_at: now,
         };
 
         self.connect(id, config).await
@@ -127,10 +138,12 @@ impl K8sService {
 
     pub fn kubeconfig_default_path(&self) -> K8sResult<String> {
         KubeconfigManager::default_path()
+            .map(|p| p.to_string_lossy().to_string())
     }
 
     pub fn kubeconfig_load(&self, path: &str) -> K8sResult<String> {
-        KubeconfigManager::load(path)
+        std::fs::read_to_string(path)
+            .map_err(|e| K8sError::kubeconfig(format!("Failed to read kubeconfig: {}", e)))
     }
 
     pub fn kubeconfig_parse(&self, yaml: &str) -> K8sResult<Kubeconfig> {
@@ -156,11 +169,12 @@ impl K8sService {
         let apis = c.api_resources().await.unwrap_or_default();
         Ok(ClusterInfo {
             name: id.to_string(),
-            server: c.base_url.clone(),
+            server_url: c.base_url.clone(),
             version,
-            status: if healthy { ClusterStatus::Connected } else { ClusterStatus::Degraded },
-            node_count: None,
-            namespace_count: None,
+            platform: None,
+            node_count: 0,
+            namespace_count: 0,
+            status: if healthy { ClusterStatus::Connected } else { ClusterStatus::Unknown },
             api_resources: apis,
         })
     }
@@ -184,7 +198,7 @@ impl K8sService {
     }
 
     pub async fn delete_namespace(&self, id: &str, name: &str) -> K8sResult<()> {
-        NamespaceManager::delete(self.client(id)?, name).await
+        NamespaceManager::delete(self.client(id)?, name).await.map(|_| ())
     }
 
     // ── Pods ──────────────────────────────────────────────────────
@@ -202,7 +216,7 @@ impl K8sService {
     }
 
     pub async fn delete_pod(&self, id: &str, ns: &str, name: &str, opts: Option<&DeleteOptions>) -> K8sResult<()> {
-        PodManager::delete(self.client(id)?, ns, name, opts).await
+        PodManager::delete(self.client(id)?, ns, name, opts).await.map(|_| ())
     }
 
     pub async fn pod_logs(&self, id: &str, ns: &str, name: &str, log_opts: &PodLogOptions) -> K8sResult<String> {
@@ -210,7 +224,7 @@ impl K8sService {
     }
 
     pub async fn evict_pod(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        PodManager::evict(self.client(id)?, ns, name).await
+        PodManager::evict(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     pub async fn list_all_pods(&self, id: &str, opts: &ListOptions) -> K8sResult<Vec<PodInfo>> {
@@ -232,27 +246,27 @@ impl K8sService {
     }
 
     pub async fn delete_deployment(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        DeploymentManager::delete(self.client(id)?, ns, name).await
+        DeploymentManager::delete(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     pub async fn scale_deployment(&self, id: &str, ns: &str, name: &str, replicas: i32) -> K8sResult<()> {
-        DeploymentManager::scale(self.client(id)?, ns, name, replicas).await
+        DeploymentManager::scale(self.client(id)?, ns, name, replicas).await.map(|_| ())
     }
 
     pub async fn restart_deployment(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        DeploymentManager::restart(self.client(id)?, ns, name).await
+        DeploymentManager::restart(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     pub async fn pause_deployment(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        DeploymentManager::pause(self.client(id)?, ns, name).await
+        DeploymentManager::pause(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     pub async fn resume_deployment(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        DeploymentManager::resume(self.client(id)?, ns, name).await
+        DeploymentManager::resume(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     pub async fn set_deployment_image(&self, id: &str, ns: &str, name: &str, container: &str, image: &str) -> K8sResult<()> {
-        DeploymentManager::set_image(self.client(id)?, ns, name, container, image).await
+        DeploymentManager::set_image(self.client(id)?, ns, name, container, image).await.map(|_| ())
     }
 
     pub async fn deployment_rollout_status(&self, id: &str, ns: &str, name: &str) -> K8sResult<RolloutInfo> {
@@ -260,7 +274,7 @@ impl K8sService {
     }
 
     pub async fn rollback_deployment(&self, id: &str, ns: &str, name: &str, revision: Option<i64>) -> K8sResult<()> {
-        DeploymentManager::rollback(self.client(id)?, ns, name, revision).await
+        DeploymentManager::rollback(self.client(id)?, ns, name, revision).await.map(|_| ())
     }
 
     // ── StatefulSets / DaemonSets / ReplicaSets ───────────────────
@@ -292,7 +306,7 @@ impl K8sService {
     }
 
     pub async fn delete_service(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        ServiceManager::delete(self.client(id)?, ns, name).await
+        ServiceManager::delete(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     pub async fn get_endpoints(&self, id: &str, ns: &str, name: &str) -> K8sResult<EndpointInfo> {
@@ -314,7 +328,7 @@ impl K8sService {
     }
 
     pub async fn delete_configmap(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        ConfigMapManager::delete(self.client(id)?, ns, name).await
+        ConfigMapManager::delete(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     // ── Secrets ───────────────────────────────────────────────────
@@ -332,7 +346,7 @@ impl K8sService {
     }
 
     pub async fn delete_secret(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        SecretManager::delete(self.client(id)?, ns, name).await
+        SecretManager::delete(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     // ── Ingress ───────────────────────────────────────────────────
@@ -350,11 +364,11 @@ impl K8sService {
     }
 
     pub async fn delete_ingress(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        IngressManager::delete(self.client(id)?, ns, name).await
+        IngressManager::delete(self.client(id)?, ns, name).await.map(|_| ())
     }
 
-    pub async fn list_ingress_classes(&self, id: &str, opts: &ListOptions) -> K8sResult<Vec<IngressClassInfo>> {
-        IngressManager::list_ingress_classes(self.client(id)?, opts).await
+    pub async fn list_ingress_classes(&self, id: &str, _opts: &ListOptions) -> K8sResult<Vec<IngressClassInfo>> {
+        IngressManager::list_ingress_classes(self.client(id)?).await
     }
 
     // ── Network Policies ──────────────────────────────────────────
@@ -368,7 +382,7 @@ impl K8sService {
     }
 
     pub async fn delete_network_policy(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        IngressManager::delete_network_policy(self.client(id)?, ns, name).await
+        IngressManager::delete_network_policy(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     // ── Jobs ──────────────────────────────────────────────────────
@@ -386,15 +400,15 @@ impl K8sService {
     }
 
     pub async fn delete_job(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        JobManager::delete_job(self.client(id)?, ns, name).await
+        JobManager::delete_job(self.client(id)?, ns, name, None).await.map(|_| ())
     }
 
     pub async fn suspend_job(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        JobManager::suspend_job(self.client(id)?, ns, name).await
+        JobManager::suspend_job(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     pub async fn resume_job(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        JobManager::resume_job(self.client(id)?, ns, name).await
+        JobManager::resume_job(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     // ── CronJobs ──────────────────────────────────────────────────
@@ -412,7 +426,7 @@ impl K8sService {
     }
 
     pub async fn delete_cronjob(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
-        JobManager::delete_cronjob(self.client(id)?, ns, name).await
+        JobManager::delete_cronjob(self.client(id)?, ns, name).await.map(|_| ())
     }
 
     pub async fn trigger_cronjob(&self, id: &str, ns: &str, name: &str) -> K8sResult<JobInfo> {
@@ -430,23 +444,23 @@ impl K8sService {
     }
 
     pub async fn cordon_node(&self, id: &str, name: &str) -> K8sResult<()> {
-        NodeManager::cordon(self.client(id)?, name).await
+        NodeManager::cordon(self.client(id)?, name).await.map(|_| ())
     }
 
     pub async fn uncordon_node(&self, id: &str, name: &str) -> K8sResult<()> {
-        NodeManager::uncordon(self.client(id)?, name).await
+        NodeManager::uncordon(self.client(id)?, name).await.map(|_| ())
     }
 
     pub async fn drain_node(&self, id: &str, name: &str) -> K8sResult<Vec<String>> {
-        NodeManager::drain(self.client(id)?, name).await
+        NodeManager::drain(self.client(id)?, name, true, true, None).await
     }
 
     pub async fn add_node_taint(&self, id: &str, name: &str, taint: &Taint) -> K8sResult<()> {
-        NodeManager::add_taint(self.client(id)?, name, taint).await
+        NodeManager::add_taint(self.client(id)?, name, taint).await.map(|_| ())
     }
 
     pub async fn remove_node_taint(&self, id: &str, name: &str, taint_key: &str) -> K8sResult<()> {
-        NodeManager::remove_taint(self.client(id)?, name, taint_key).await
+        NodeManager::remove_taint(self.client(id)?, name, taint_key, None).await.map(|_| ())
     }
 
     // ── Storage ───────────────────────────────────────────────────
@@ -459,8 +473,8 @@ impl K8sService {
         NodeManager::list_pvcs(self.client(id)?, ns, opts).await
     }
 
-    pub async fn list_storage_classes(&self, id: &str, opts: &ListOptions) -> K8sResult<Vec<StorageClassInfo>> {
-        NodeManager::list_storage_classes(self.client(id)?, opts).await
+    pub async fn list_storage_classes(&self, id: &str, _opts: &ListOptions) -> K8sResult<Vec<StorageClassInfo>> {
+        NodeManager::list_storage_classes(self.client(id)?).await
     }
 
     // ── RBAC ──────────────────────────────────────────────────────
@@ -493,73 +507,92 @@ impl K8sService {
         audiences: Vec<String>,
         expiration_seconds: Option<i64>,
     ) -> K8sResult<String> {
-        RbacManager::create_token(self.client(id)?, ns, sa_name, audiences, expiration_seconds).await
+        let audience = audiences.first().map(|s| s.as_str());
+        RbacManager::create_token(self.client(id)?, ns, sa_name, audience, expiration_seconds).await
     }
 
     // ── Helm ──────────────────────────────────────────────────────
 
     pub fn helm_is_available(&self) -> bool {
-        self.helm.is_available()
+        HelmManager::is_available()
     }
 
     pub fn helm_version(&self) -> K8sResult<String> {
-        self.helm.version()
+        HelmManager::version()
     }
 
     pub fn helm_list_releases(&self, namespace: Option<&str>, all_namespaces: bool) -> K8sResult<Vec<HelmRelease>> {
-        self.helm.list_releases(namespace, all_namespaces)
+        HelmManager::list_releases(namespace, all_namespaces, None)
     }
 
     pub fn helm_get_release(&self, name: &str, namespace: &str) -> K8sResult<HelmRelease> {
-        self.helm.get_release(name, namespace)
+        HelmManager::get_release(name, namespace, None)
     }
 
     pub fn helm_install(&self, config: &HelmInstallConfig) -> K8sResult<HelmRelease> {
-        self.helm.install(config)
+        let output = HelmManager::install(config, None)?;
+        // After install, get the release status
+        HelmManager::get_release(&config.release_name, &config.namespace, None)
+            .or_else(|_| Err(K8sError::helm(format!("Install succeeded but could not fetch release status: {}", output))))
     }
 
     pub fn helm_upgrade(&self, config: &HelmUpgradeConfig) -> K8sResult<HelmRelease> {
-        self.helm.upgrade(config)
+        let output = HelmManager::upgrade(config, None)?;
+        HelmManager::get_release(&config.release_name, &config.namespace, None)
+            .or_else(|_| Err(K8sError::helm(format!("Upgrade succeeded but could not fetch release status: {}", output))))
     }
 
     pub fn helm_rollback(&self, config: &HelmRollbackConfig) -> K8sResult<()> {
-        self.helm.rollback(config)
+        HelmManager::rollback(config, None).map(|_| ())
     }
 
     pub fn helm_uninstall(&self, config: &HelmUninstallConfig) -> K8sResult<()> {
-        self.helm.uninstall(config)
+        HelmManager::uninstall(config, None).map(|_| ())
     }
 
     pub fn helm_get_values(&self, name: &str, namespace: &str) -> K8sResult<String> {
-        self.helm.get_values(name, namespace)
+        let val = HelmManager::get_values(name, namespace, false, None)?;
+        Ok(serde_json::to_string_pretty(&val).unwrap_or_default())
     }
 
     pub fn helm_history(&self, name: &str, namespace: &str) -> K8sResult<Vec<HelmHistory>> {
-        self.helm.history(name, namespace)
+        HelmManager::history(name, namespace, None)
     }
 
     pub fn helm_list_repos(&self) -> K8sResult<Vec<HelmRepository>> {
-        self.helm.list_repos()
+        HelmManager::list_repos()
     }
 
     pub fn helm_add_repo(&self, name: &str, url: &str) -> K8sResult<()> {
-        self.helm.add_repo(name, url)
+        let repo = HelmRepository {
+            name: name.to_string(),
+            url: url.to_string(),
+            username: None,
+            password: None,
+            ca_file: None,
+            cert_file: None,
+            key_file: None,
+            insecure_skip_tls_verify: None,
+            pass_credentials_all: None,
+            oci: false,
+        };
+        HelmManager::add_repo(&repo).map(|_| ())
     }
 
     pub fn helm_remove_repo(&self, name: &str) -> K8sResult<()> {
-        self.helm.remove_repo(name)
+        HelmManager::remove_repo(name).map(|_| ())
     }
 
     pub fn helm_update_repos(&self) -> K8sResult<()> {
-        self.helm.update_repos()
+        HelmManager::update_repos().map(|_| ())
     }
 
     pub fn helm_search_charts(&self, keyword: &str) -> K8sResult<Vec<HelmChart>> {
-        self.helm.search_charts(keyword)
+        HelmManager::search_charts(keyword, false)
     }
 
     pub fn helm_template(&self, config: &HelmTemplateConfig) -> K8sResult<String> {
-        self.helm.template(config)
+        HelmManager::template(config, None)
     }
 
     // ── Events ────────────────────────────────────────────────────
