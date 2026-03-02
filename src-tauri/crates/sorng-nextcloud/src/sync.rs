@@ -13,7 +13,7 @@ use crate::files;
 use crate::folders;
 use crate::types::*;
 use chrono::Utc;
-use log::{debug, info, warn};
+use log::{info, warn};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -22,6 +22,12 @@ pub struct SyncManager {
     configs: HashMap<String, SyncConfig>,
     /// Cached ETags from the last sync keyed by (config_id, remote_path).
     etag_cache: HashMap<(String, String), String>,
+}
+
+impl Default for SyncManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SyncManager {

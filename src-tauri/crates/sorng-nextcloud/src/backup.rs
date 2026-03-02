@@ -24,6 +24,12 @@ pub struct BackupManager {
     max_history: usize,
 }
 
+impl Default for BackupManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BackupManager {
     pub fn new() -> Self {
         Self {

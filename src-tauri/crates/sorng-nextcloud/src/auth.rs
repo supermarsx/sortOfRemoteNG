@@ -10,7 +10,7 @@
 
 use crate::client::NextcloudClient;
 use crate::types::*;
-use log::{debug, info, warn};
+use log::{debug, info};
 
 // ── Login Flow v2 ────────────────────────────────────────────────────────────
 // Docs: https://docs.nextcloud.com/server/latest/developer_manual/client_apis/LoginFlow/index.html#login-flow-v2

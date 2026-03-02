@@ -29,6 +29,12 @@ pub struct NextcloudClient {
     bearer_token: Option<String>,
 }
 
+impl Default for NextcloudClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NextcloudClient {
     // ── Constructors ─────────────────────────────────────────────────────
 
@@ -455,7 +461,7 @@ impl NextcloudClient {
     async fn send_with_retry(&self, req: RequestBuilder) -> Result<Response, String> {
         // reqwest::RequestBuilder is not Clone, so we must try_clone for retries.
         // If try_clone fails (stream body), we just send once.
-        let mut last_err = String::new();
+        let mut last_err;
 
         // Build a clonable request
         let request = req.build().map_err(|e| format!("build request: {}", e))?;
@@ -601,12 +607,12 @@ pub fn parse_multistatus_xml(xml: &str) -> Result<Vec<DavResource>, String> {
     use quick_xml::Reader;
 
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
+    reader.trim_text(true);
 
     let mut resources: Vec<DavResource> = Vec::new();
     let mut current: Option<DavResource> = None;
-    let mut in_response = false;
-    let mut in_propstat = false;
+    let mut _in_response = false;
+    let mut _in_propstat = false;
     let mut current_tag: Option<String> = None;
     let mut buf = Vec::new();
     let mut is_collection = false;
@@ -618,11 +624,11 @@ pub fn parse_multistatus_xml(xml: &str) -> Result<Vec<DavResource>, String> {
                 let local = local_name(e.name().as_ref());
                 match local.as_str() {
                     "response" => {
-                        in_response = true;
+                        _in_response = true;
                         current = Some(DavResource::default());
                         is_collection = false;
                     }
-                    "propstat" => in_propstat = true,
+                    "propstat" => _in_propstat = true,
                     "resourcetype" => in_resourcetype = true,
                     "collection" if in_resourcetype => is_collection = true,
                     "href" | "displayname" | "getcontenttype" | "getcontentlength"
@@ -694,9 +700,9 @@ pub fn parse_multistatus_xml(xml: &str) -> Result<Vec<DavResource>, String> {
                             }
                             resources.push(res);
                         }
-                        in_response = false;
+                        _in_response = false;
                     }
-                    "propstat" => in_propstat = false,
+                    "propstat" => _in_propstat = false,
                     "resourcetype" => in_resourcetype = false,
                     _ => {
                         // Close whatever text tag we were reading

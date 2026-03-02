@@ -139,7 +139,6 @@ pub async fn nextcloud_start_login_flow(
     server_url: String,
 ) -> Result<serde_json::Value, String> {
     let flow = auth::start_login_flow_v2(&server_url).await?;
-    let login_url = flow.login_url.clone();
     {
         let mut svc = state.lock().map_err(|e| e.to_string())?;
         svc.server_url = Some(server_url.trim_end_matches('/').to_string());
@@ -291,7 +290,7 @@ pub async fn nextcloud_upload(
     state: State<'_, NextcloudServiceState>,
     remote_path: String,
     data: Vec<u8>,
-    content_type: Option<String>,
+    _content_type: Option<String>,
 ) -> Result<String, String> {
     let client = get_client(&state)?;
     let args = files::build_upload_args(&remote_path, true);
@@ -402,29 +401,28 @@ pub async fn nextcloud_set_tags(
     tags: Vec<String>,
 ) -> Result<String, String> {
     let client = get_client(&state)?;
-    let tag_refs: Vec<&str> = tags.iter().map(|s| s.as_str()).collect();
-    files::set_tags(&client, &remote_path, &tag_refs).await?;
+    files::set_tags(&client, &remote_path, &tags).await?;
     Ok("tags_set".into())
 }
 
 #[tauri::command]
 pub async fn nextcloud_list_versions(
     state: State<'_, NextcloudServiceState>,
-    file_id: String,
+    file_id: u64,
 ) -> Result<serde_json::Value, String> {
     let client = get_client(&state)?;
-    let versions = files::list_versions(&client, &file_id).await?;
+    let versions = files::list_versions(&client, file_id).await?;
     serde_json::to_value(&versions).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn nextcloud_restore_version(
     state: State<'_, NextcloudServiceState>,
-    file_id: String,
+    file_id: u64,
     version_id: String,
 ) -> Result<String, String> {
     let client = get_client(&state)?;
-    files::restore_version(&client, &file_id, &version_id).await?;
+    files::restore_version(&client, file_id, &version_id).await?;
     Ok("restored".into())
 }
 
@@ -477,9 +475,10 @@ pub async fn nextcloud_search(
     let client = get_client(&state)?;
     let query = SearchQuery {
         term,
-        base_path: path,
+        path_prefix: path,
         limit,
-        content_types: Vec::new(),
+        mime_types: Vec::new(),
+        ..Default::default()
     };
     let result = files::unified_search(&client, &query).await?;
     serde_json::to_value(&result).map_err(|e| e.to_string())
@@ -577,10 +576,10 @@ pub async fn nextcloud_list_subfolders(
 pub async fn nextcloud_list_folder_recursive(
     state: State<'_, NextcloudServiceState>,
     remote_path: String,
-    max_depth: Option<u32>,
+    _max_depth: Option<u32>,
 ) -> Result<serde_json::Value, String> {
     let client = get_client(&state)?;
-    let result = folders::list_folder_recursive(&client, &remote_path, max_depth.unwrap_or(5)).await?;
+    let result = folders::list_folder_recursive(&client, &remote_path).await?;
     serde_json::to_value(&result).map_err(|e| e.to_string())
 }
 
@@ -880,10 +879,10 @@ pub async fn nextcloud_list_notifications(
 #[tauri::command]
 pub async fn nextcloud_delete_notification(
     state: State<'_, NextcloudServiceState>,
-    notification_id: String,
+    notification_id: u64,
 ) -> Result<String, String> {
     let client = get_client(&state)?;
-    users::delete_notification(&client, &notification_id).await?;
+    users::delete_notification(&client, notification_id).await?;
     Ok("deleted".into())
 }
 
@@ -945,6 +944,7 @@ pub async fn nextcloud_list_activities(
 ) -> Result<serde_json::Value, String> {
     let client = get_client(&state)?;
     let query = ActivityQuery {
+        filter: None,
         since,
         limit,
         object_type,
@@ -962,7 +962,7 @@ pub async fn nextcloud_activities_for_file(
     limit: Option<u32>,
 ) -> Result<serde_json::Value, String> {
     let client = get_client(&state)?;
-    let result = activity::activities_for_file(&client, file_id, limit).await?;
+    let result = activity::activities_for_file(&client, file_id, limit, None).await?;
     serde_json::to_value(&result).map_err(|e| e.to_string())
 }
 
@@ -1084,17 +1084,13 @@ pub fn nextcloud_backup_add(
     include_credentials: Option<bool>,
     include_settings: Option<bool>,
     include_scripts: Option<bool>,
-    include_templates: Option<bool>,
 ) -> Result<String, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
-    let includes = BackupIncludes {
-        connections: include_connections.unwrap_or(true),
-        credentials: include_credentials.unwrap_or(false),
-        settings: include_settings.unwrap_or(true),
-        scripts: include_scripts.unwrap_or(false),
-        templates: include_templates.unwrap_or(false),
-    };
-    let config = crate::backup::build_backup_config(&remote_path, includes);
+    let mut config = crate::backup::build_backup_config("backup", &remote_path);
+    config.includes.connections = include_connections.unwrap_or(true);
+    config.includes.credentials = include_credentials.unwrap_or(false);
+    config.includes.settings = include_settings.unwrap_or(true);
+    config.includes.scripts = include_scripts.unwrap_or(false);
     let id = config.id.clone();
     svc.backup_manager.add_config(config);
     Ok(id)
@@ -1141,7 +1137,7 @@ pub fn nextcloud_backup_set_max_versions(
 ) -> Result<bool, String> {
     let mut svc = state.lock().map_err(|e| e.to_string())?;
     if let Some(c) = svc.backup_manager.get_config_mut(&id) {
-        c.max_versions = count;
+        c.retention_count = count;
         Ok(true)
     } else {
         Ok(false)
@@ -1177,7 +1173,7 @@ pub fn nextcloud_backup_total_size(
     state: State<'_, NextcloudServiceState>,
 ) -> Result<u64, String> {
     let svc = state.lock().map_err(|e| e.to_string())?;
-    let total = svc.backup_manager.history().iter().filter_map(|r| r.bytes_written).sum();
+    let total: u64 = svc.backup_manager.history().iter().map(|r| r.size_bytes).sum();
     Ok(total)
 }
 

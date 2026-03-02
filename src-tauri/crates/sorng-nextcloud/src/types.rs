@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Account-level Nextcloud configuration persisted by the front-end.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct NextcloudAccountConfig {
     /// Human-readable label for this account.
     pub name: String,
@@ -32,17 +33,6 @@ pub struct NextcloudAccountConfig {
     pub enabled: bool,
 }
 
-impl Default for NextcloudAccountConfig {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            server_url: String::new(),
-            username: String::new(),
-            app_password: String::new(),
-            enabled: false,
-        }
-    }
-}
 
 // ── Authentication ──────────────────────────────────────────────────────────
 
@@ -92,20 +82,17 @@ pub struct OAuthTokenResponse {
 
 /// Tracks current auth method.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub enum AuthMethod {
     /// Basic auth with app password / regular password.
     AppPassword,
     /// OAuth 2 bearer token.
     OAuth2,
     /// Not yet configured – no credentials.
+    #[default]
     None,
 }
 
-impl Default for AuthMethod {
-    fn default() -> Self {
-        Self::None
-    }
-}
 
 // ── Generic OCS envelope ─────────────────────────────────────────────────────
 
@@ -298,6 +285,7 @@ pub struct FileVersion {
 
 /// Search query for Nextcloud unified search or WebDAV SEARCH.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct SearchQuery {
     /// Search term.
     pub term: String,
@@ -323,23 +311,6 @@ pub struct SearchQuery {
     pub favorite_only: bool,
 }
 
-impl Default for SearchQuery {
-    fn default() -> Self {
-        Self {
-            term: String::new(),
-            provider: None,
-            limit: None,
-            cursor: None,
-            path_prefix: None,
-            mime_types: Vec::new(),
-            min_size: None,
-            max_size: None,
-            modified_after: None,
-            modified_before: None,
-            favorite_only: false,
-        }
-    }
-}
 
 /// A single search result item.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -648,6 +619,7 @@ pub struct ActivityPreview {
 
 /// Parameters for querying the activity feed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ActivityQuery {
     /// Filter by type ("all", "self", "by", "filter").
     pub filter: Option<String>,
@@ -663,18 +635,6 @@ pub struct ActivityQuery {
     pub sort: Option<String>,
 }
 
-impl Default for ActivityQuery {
-    fn default() -> Self {
-        Self {
-            filter: None,
-            since: None,
-            limit: None,
-            object_type: None,
-            object_id: None,
-            sort: None,
-        }
-    }
-}
 
 // ── Notifications ────────────────────────────────────────────────────────────
 
@@ -910,6 +870,7 @@ pub struct FileChange {
 
 /// Cumulative account usage statistics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct AccountStats {
     pub total_api_calls: u64,
     pub total_bytes_uploaded: u64,
@@ -921,20 +882,6 @@ pub struct AccountStats {
     pub last_activity: Option<DateTime<Utc>>,
 }
 
-impl Default for AccountStats {
-    fn default() -> Self {
-        Self {
-            total_api_calls: 0,
-            total_bytes_uploaded: 0,
-            total_bytes_downloaded: 0,
-            total_files_listed: 0,
-            total_shares_created: 0,
-            total_sync_runs: 0,
-            total_backup_runs: 0,
-            last_activity: None,
-        }
-    }
-}
 
 // ── Activity Log ─────────────────────────────────────────────────────────────
 

@@ -454,7 +454,7 @@ pub async fn unified_search(
 }
 
 /// Build a WebDAV REPORT / SEARCH body for filename search.
-pub fn build_search_report_body(term: &str, path_prefix: &str, limit: u32) -> String {
+pub fn build_search_report_body(term: &str, _path_prefix: &str, _limit: u32) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <oc:filter-files xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">
