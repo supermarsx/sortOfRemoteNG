@@ -1,0 +1,13 @@
+[package]
+name = "sorng-zerotier"
+version = "0.1.0"
+edition = "2021"
+description = "Comprehensive ZeroTier network management for SortOfRemoteNG"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }

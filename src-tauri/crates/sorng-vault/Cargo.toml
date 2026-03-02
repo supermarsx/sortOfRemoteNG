@@ -1,0 +1,40 @@
+[package]
+name = "sorng-vault"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-platform native OS vault/keychain integration — Windows Credential Manager + DPAPI, macOS Keychain, Linux Secret Service"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.9.5", features = ["devtools"] }
+log = "0.4"
+sha2 = "0.10"
+rand = "0.8"
+base64 = "0.21"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4"] }
+aes-gcm = "0.10.3"
+argon2 = "0.5"
+thiserror = "1.0"
+dirs = "5.0"
+hostname = "0.3"
+
+# Sibling crate for biometric gating
+sorng-biometrics = { path = "../sorng-biometrics" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Security_Credentials",
+  "Win32_Security_Cryptography",
+  "Win32_System_Memory",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "2.11"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# For Secret Service D-Bus protocol (GNOME Keyring / KDE Wallet)
+zbus = { version = "4", features = ["tokio"] }
