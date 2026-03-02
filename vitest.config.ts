@@ -7,12 +7,6 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './vitest.setup.ts',
-    pool: 'forks',
-    poolOptions: {
-      forks: {
-        execArgv: ['--max-old-space-size=8192'],
-      },
-    },
     exclude: [
       '**/node_modules/**',
       '**/dist/**',

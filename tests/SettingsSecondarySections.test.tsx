@@ -25,15 +25,19 @@ vi.mock("../src/utils/settingsManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/themeManager", () => ({
-  ThemeManager: {
-    getInstance: () => ({
-      applyTheme: vi.fn(),
-      getCurrentTheme: vi.fn().mockReturnValue("dark"),
-      getCurrentColorScheme: vi.fn().mockReturnValue("blue"),
-    }),
-  },
-}));
+vi.mock("../src/utils/themeManager", () => {
+  const inst = {
+    applyTheme: vi.fn(),
+    getCurrentTheme: vi.fn().mockReturnValue("dark"),
+    getCurrentColorScheme: vi.fn().mockReturnValue("blue"),
+    getAvailableThemes: vi.fn().mockReturnValue(["dark", "light"]),
+    getAvailableColorSchemes: vi.fn().mockReturnValue(["blue", "red"]),
+    getColorSchemeConfig: vi.fn().mockReturnValue({ primary: "#3b82f6" }),
+  };
+  return {
+    ThemeManager: { getInstance: () => inst },
+  };
+});
 
 const baseSettings = {
   retryAttempts: 3,
