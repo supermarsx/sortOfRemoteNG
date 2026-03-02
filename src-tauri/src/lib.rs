@@ -35,6 +35,7 @@ pub use sorng_core::native_renderer;
 pub use sorng_auth::auth;
 pub use sorng_auth::security;
 pub use sorng_auth::cert_auth;
+pub use sorng_auth::cert_gen;
 pub use sorng_auth::two_factor;
 pub use sorng_auth::bearer_auth;
 pub use sorng_auth::passkey;
@@ -44,6 +45,13 @@ pub use sorng_auth::auto_lock;
 // Storage
 pub use sorng_storage::storage;
 pub use sorng_storage::backup;
+pub use sorng_storage::trust_store;
+
+// Biometrics (native OS biometric authentication)
+pub use sorng_biometrics as biometrics;
+
+// Vault (native OS vault / keychain integration)
+pub use sorng_vault as vault;
 
 // GPO
 pub use sorng_gpo::gpo;
@@ -189,6 +197,12 @@ pub use sorng_terminal_themes as terminal_themes;
 // Extensions engine (dedicated crate)
 pub use sorng_extensions as extensions;
 
+// Collaboration — multi-user workspace sharing, presence tracking, RBAC (dedicated crate)
+pub use sorng_collaboration as collaboration;
+
+// Gateway — headless connection proxy, tunnels, policies, metrics (dedicated crate)
+pub use sorng_gateway as gateway;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -202,6 +216,7 @@ mod tests {
 
 use auth::{AuthService, AuthServiceState};
 use storage::SecureStorage;
+use trust_store::TrustStoreService;
 use ssh::SshService;
 use sftp::SftpService;
 use rdp::RdpService;
@@ -226,6 +241,7 @@ use keepass::KeePassService;
 use passbolt::PassboltService;
 use api::ApiService;
 use cert_auth::CertAuthService;
+use cert_gen::CertGenService;
 use two_factor::TwoFactorService;
 use bearer_auth::BearerAuthService;
 use auto_lock::AutoLockService;
@@ -373,6 +389,11 @@ pub fn run() {
       let secure_storage = SecureStorage::new(storage_path.to_string_lossy().to_string());
       app.manage(secure_storage);
 
+      // Initialize trust store
+      let trust_store_path = app_dir.join("trust_store.json");
+      let trust_store_service = TrustStoreService::new(trust_store_path.to_string_lossy().to_string());
+      app.manage(trust_store_service);
+
       // Initialize SSH service
       let ssh_service = SshService::new();
       app.manage(ssh_service.clone());
@@ -494,6 +515,10 @@ pub fn run() {
       // Initialize Certificate Authentication service
       let cert_auth_service = CertAuthService::new("certificates.db".to_string());
       app.manage(cert_auth_service.clone());
+
+      // Initialize Certificate Generation service
+      let cert_gen_service = CertGenService::new("cert_gen_store.json".to_string());
+      app.manage(cert_gen_service.clone());
 
       // Initialize Two-Factor Authentication service
       let two_factor_service = TwoFactorService::new();
@@ -764,6 +789,26 @@ pub fn run() {
         storage::load_data,
         storage::clear_storage,
         storage::set_storage_password,
+        // Trust store commands
+        trust_store::trust_verify_identity,
+        trust_store::trust_store_identity,
+        trust_store::trust_store_identity_with_reason,
+        trust_store::trust_remove_identity,
+        trust_store::trust_get_identity,
+        trust_store::trust_get_all_records,
+        trust_store::trust_clear_all,
+        trust_store::trust_update_nickname,
+        trust_store::trust_get_policy,
+        trust_store::trust_set_policy,
+        trust_store::trust_get_policy_config,
+        trust_store::trust_set_policy_config,
+        trust_store::trust_set_host_policy,
+        trust_store::trust_revoke_identity,
+        trust_store::trust_reinstate_identity,
+        trust_store::trust_set_record_tags,
+        trust_store::trust_get_identity_history,
+        trust_store::trust_get_verification_stats,
+        trust_store::trust_get_summary,
         ssh::connect_ssh,
         ssh::execute_command,
         ssh::execute_command_interactive,
@@ -1131,13 +1176,50 @@ pub fn run() {
         passkey::passkey_register,
         passkey::passkey_list_credentials,
         passkey::passkey_remove_credential,
-        // Authentication services - commented out until Tauri integration is complete
-        // cert_auth::parse_certificate,
-        // cert_auth::validate_certificate,
-        // cert_auth::authenticate_with_cert,
-        // cert_auth::register_certificate,
-        // cert_auth::list_certificates,
-        // cert_auth::revoke_certificate,
+        // Biometrics (native OS)
+        biometrics::commands::biometric_check_availability,
+        biometrics::commands::biometric_is_available,
+        biometrics::commands::biometric_verify,
+        biometrics::commands::biometric_verify_and_derive_key,
+        // Vault (native OS keychain)
+        vault::commands::vault_status,
+        vault::commands::vault_is_available,
+        vault::commands::vault_backend_name,
+        vault::commands::vault_store_secret,
+        vault::commands::vault_read_secret,
+        vault::commands::vault_delete_secret,
+        vault::commands::vault_ensure_dek,
+        vault::commands::vault_envelope_encrypt,
+        vault::commands::vault_envelope_decrypt,
+        vault::commands::vault_biometric_store,
+        vault::commands::vault_biometric_read,
+        vault::commands::vault_needs_migration,
+        vault::commands::vault_migrate,
+        vault::commands::vault_load_storage,
+        vault::commands::vault_save_storage,
+        // Certificate generation commands
+        cert_gen::cert_gen_self_signed,
+        cert_gen::cert_gen_ca,
+        cert_gen::cert_gen_csr,
+        cert_gen::cert_sign_csr,
+        cert_gen::cert_gen_issue,
+        cert_gen::cert_gen_export_pem,
+        cert_gen::cert_gen_export_der,
+        cert_gen::cert_gen_export_chain,
+        cert_gen::cert_gen_list,
+        cert_gen::cert_gen_get,
+        cert_gen::cert_gen_delete,
+        cert_gen::cert_gen_list_csrs,
+        cert_gen::cert_gen_delete_csr,
+        cert_gen::cert_gen_update_label,
+        cert_gen::cert_gen_get_chain,
+        // Certificate authentication commands
+        cert_auth::parse_certificate,
+        cert_auth::validate_certificate,
+        cert_auth::authenticate_with_cert,
+        cert_auth::register_certificate,
+        cert_auth::list_certificates,
+        cert_auth::revoke_certificate,
         // two_factor::enable_totp,
         // two_factor::verify_2fa,
         // two_factor::confirm_2fa_setup,

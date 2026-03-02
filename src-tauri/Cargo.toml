@@ -56,6 +56,10 @@ members = [
   "crates/sorng-ai-assist",
   "crates/sorng-terminal-themes",
   "crates/sorng-extensions",
+  "crates/sorng-collaboration",
+  "crates/sorng-gateway",
+  "crates/sorng-biometrics",
+  "crates/sorng-vault",
 ]
 
 [workspace.dependencies]
@@ -149,6 +153,10 @@ sorng-llm = { path = "crates/sorng-llm" }
 sorng-ai-assist = { path = "crates/sorng-ai-assist" }
 sorng-terminal-themes = { path = "crates/sorng-terminal-themes" }
 sorng-extensions = { path = "crates/sorng-extensions" }
+sorng-collaboration = { path = "crates/sorng-collaboration" }
+sorng-gateway = { path = "crates/sorng-gateway" }
+sorng-biometrics = { path = "crates/sorng-biometrics" }
+sorng-vault = { path = "crates/sorng-vault" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
