@@ -88,6 +88,7 @@ pub use sorng_vpn::chaining;
 pub use sorng_aws as aws;
 pub use sorng_gcp as gcp;
 pub use sorng_azure as azure;
+pub use sorng_smtp as smtp;
 pub use sorng_cloud::ibm;
 pub use sorng_cloud::digital_ocean;
 pub use sorng_cloud::heroku;
@@ -176,6 +177,18 @@ pub use sorng_gdrive as gdrive;
 // Recording engine – session capture, encoding, compression, storage (dedicated crate)
 pub use sorng_recording as recording;
 
+// LLM backend management (dedicated crate)
+pub use sorng_llm as llm;
+
+// AI Assist for SSH autocomplete (dedicated crate)
+pub use sorng_ai_assist as ai_assist;
+
+// Terminal theming engine (dedicated crate)
+pub use sorng_terminal_themes as terminal_themes;
+
+// Extensions engine (dedicated crate)
+pub use sorng_extensions as extensions;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -224,6 +237,7 @@ use rlogin::RloginService;
 use raw_socket::RawSocketService;
 use gcp::GcpService;
 use azure::service::AzureService;
+use smtp::service::SmtpService;
 use ibm::IbmService;
 use digital_ocean::DigitalOceanService;
 use heroku::HerokuService;
@@ -257,6 +271,10 @@ use whatsapp::WhatsAppServiceState;
 use telegram::TelegramServiceState;
 use dropbox::DropboxServiceState;
 use recording::RecordingServiceState;
+use llm::service::LlmServiceState;
+use ai_assist::service::AiAssistServiceState;
+use terminal_themes::ThemeEngineState;
+use extensions::service::ExtensionsServiceState;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -528,6 +546,10 @@ pub fn run() {
       let azure_service = AzureService::new();
       app.manage(azure_service.clone());
 
+      // Initialize SMTP service
+      let smtp_service = SmtpService::new();
+      app.manage(smtp_service.clone());
+
       // Initialize IBM Cloud service
       let ibm_service = IbmService::new();
       app.manage(ibm_service.clone());
@@ -674,6 +696,22 @@ pub fn run() {
       let rec_app_dir = app_dir.to_string_lossy().to_string();
       let rec_state: RecordingServiceState = recording::service::new_service_state(&rec_app_dir);
       app.manage(rec_state);
+
+      // Initialize LLM service
+      let llm_state: LlmServiceState = llm::service::create_llm_state();
+      app.manage(llm_state.clone());
+
+      // Initialize AI Assist service
+      let ai_assist_state: AiAssistServiceState = ai_assist::service::create_ai_assist_state();
+      app.manage(ai_assist_state.clone());
+
+      // Initialize Terminal Themes engine
+      let theme_engine_state: ThemeEngineState = terminal_themes::engine::create_theme_engine_state();
+      app.manage(theme_engine_state.clone());
+
+      // Initialize Extensions engine
+      let extensions_state: ExtensionsServiceState = extensions::service::ExtensionsService::new();
+      app.manage(extensions_state.clone());
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -1303,6 +1341,75 @@ pub fn run() {
         azure::commands::azure_list_budgets,
         azure::commands::azure_get_budget,
         azure::commands::azure_search_resources,
+        // SMTP commands
+        smtp::commands::smtp_add_profile,
+        smtp::commands::smtp_update_profile,
+        smtp::commands::smtp_delete_profile,
+        smtp::commands::smtp_get_profile,
+        smtp::commands::smtp_find_profile_by_name,
+        smtp::commands::smtp_list_profiles,
+        smtp::commands::smtp_set_default_profile,
+        smtp::commands::smtp_get_default_profile,
+        smtp::commands::smtp_add_template,
+        smtp::commands::smtp_update_template,
+        smtp::commands::smtp_delete_template,
+        smtp::commands::smtp_get_template,
+        smtp::commands::smtp_find_template_by_name,
+        smtp::commands::smtp_list_templates,
+        smtp::commands::smtp_render_template,
+        smtp::commands::smtp_extract_template_variables,
+        smtp::commands::smtp_validate_template,
+        smtp::commands::smtp_add_contact,
+        smtp::commands::smtp_update_contact,
+        smtp::commands::smtp_delete_contact,
+        smtp::commands::smtp_get_contact,
+        smtp::commands::smtp_find_contact_by_email,
+        smtp::commands::smtp_search_contacts,
+        smtp::commands::smtp_list_contacts,
+        smtp::commands::smtp_list_contacts_in_group,
+        smtp::commands::smtp_list_contacts_by_tag,
+        smtp::commands::smtp_add_contact_to_group,
+        smtp::commands::smtp_remove_contact_from_group,
+        smtp::commands::smtp_add_contact_tag,
+        smtp::commands::smtp_remove_contact_tag,
+        smtp::commands::smtp_all_contact_tags,
+        smtp::commands::smtp_create_contact_group,
+        smtp::commands::smtp_delete_contact_group,
+        smtp::commands::smtp_rename_contact_group,
+        smtp::commands::smtp_list_contact_groups,
+        smtp::commands::smtp_get_contact_group,
+        smtp::commands::smtp_export_contacts_csv,
+        smtp::commands::smtp_import_contacts_csv,
+        smtp::commands::smtp_export_contacts_json,
+        smtp::commands::smtp_import_contacts_json,
+        smtp::commands::smtp_send_email,
+        smtp::commands::smtp_enqueue,
+        smtp::commands::smtp_enqueue_scheduled,
+        smtp::commands::smtp_process_queue,
+        smtp::commands::smtp_bulk_enqueue,
+        smtp::commands::smtp_queue_summary,
+        smtp::commands::smtp_queue_list,
+        smtp::commands::smtp_queue_get,
+        smtp::commands::smtp_queue_cancel,
+        smtp::commands::smtp_queue_retry_failed,
+        smtp::commands::smtp_queue_purge_completed,
+        smtp::commands::smtp_queue_clear,
+        smtp::commands::smtp_set_queue_config,
+        smtp::commands::smtp_get_queue_config,
+        smtp::commands::smtp_run_diagnostics,
+        smtp::commands::smtp_quick_deliverability_check,
+        smtp::commands::smtp_lookup_mx,
+        smtp::commands::smtp_check_port,
+        smtp::commands::smtp_suggest_security,
+        smtp::commands::smtp_get_dns_txt,
+        smtp::commands::smtp_validate_dkim_config,
+        smtp::commands::smtp_generate_dkim_dns_record,
+        smtp::commands::smtp_connection_summary,
+        smtp::commands::smtp_stats,
+        smtp::commands::smtp_build_message,
+        smtp::commands::smtp_validate_email_address,
+        smtp::commands::smtp_parse_email_address,
+        smtp::commands::smtp_reverse_dns,
         // ibm::connect_ibm,
         // ibm::disconnect_ibm,
         // ibm::list_ibm_virtual_servers,
@@ -3028,6 +3135,113 @@ pub fn run() {
         // Cleanup & storage
         recording::commands::rec_run_cleanup,
         recording::commands::rec_storage_size,
+        // LLM backend commands
+        llm::commands::llm_add_provider,
+        llm::commands::llm_remove_provider,
+        llm::commands::llm_update_provider,
+        llm::commands::llm_list_providers,
+        llm::commands::llm_get_provider,
+        llm::commands::llm_chat_completion,
+        llm::commands::llm_embedding,
+        llm::commands::llm_list_models,
+        llm::commands::llm_health_check,
+        llm::commands::llm_health_all,
+        llm::commands::llm_usage_report,
+        llm::commands::llm_usage_reset,
+        llm::commands::llm_cache_stats,
+        llm::commands::llm_cache_clear,
+        llm::commands::llm_get_config,
+        llm::commands::llm_update_config,
+        llm::commands::llm_set_balancer_strategy,
+        llm::commands::llm_estimate_tokens,
+        llm::commands::llm_estimate_cost,
+        // AI Assist commands
+        ai_assist::commands::ai_assist_create_session,
+        ai_assist::commands::ai_assist_remove_session,
+        ai_assist::commands::ai_assist_list_sessions,
+        ai_assist::commands::ai_assist_update_context,
+        ai_assist::commands::ai_assist_record_command,
+        ai_assist::commands::ai_assist_set_tools,
+        ai_assist::commands::ai_assist_complete,
+        ai_assist::commands::ai_assist_explain_error,
+        ai_assist::commands::ai_assist_lookup_command,
+        ai_assist::commands::ai_assist_search_commands,
+        ai_assist::commands::ai_assist_translate,
+        ai_assist::commands::ai_assist_assess_risk,
+        ai_assist::commands::ai_assist_quick_risk,
+        ai_assist::commands::ai_assist_list_snippets,
+        ai_assist::commands::ai_assist_search_snippets,
+        ai_assist::commands::ai_assist_get_snippet,
+        ai_assist::commands::ai_assist_render_snippet,
+        ai_assist::commands::ai_assist_add_snippet,
+        ai_assist::commands::ai_assist_remove_snippet,
+        ai_assist::commands::ai_assist_analyze_history,
+        ai_assist::commands::ai_assist_get_config,
+        ai_assist::commands::ai_assist_update_config,
+        // Terminal Themes commands
+        terminal_themes::commands::terminal_themes_list,
+        terminal_themes::commands::terminal_themes_list_dark,
+        terminal_themes::commands::terminal_themes_list_light,
+        terminal_themes::commands::terminal_themes_list_by_category,
+        terminal_themes::commands::terminal_themes_search,
+        terminal_themes::commands::terminal_themes_get,
+        terminal_themes::commands::terminal_themes_get_active,
+        terminal_themes::commands::terminal_themes_get_active_id,
+        terminal_themes::commands::terminal_themes_get_session_theme,
+        terminal_themes::commands::terminal_themes_get_xterm,
+        terminal_themes::commands::terminal_themes_get_css_vars,
+        terminal_themes::commands::terminal_themes_recent,
+        terminal_themes::commands::terminal_themes_count,
+        terminal_themes::commands::terminal_themes_set_active,
+        terminal_themes::commands::terminal_themes_set_session,
+        terminal_themes::commands::terminal_themes_clear_session,
+        terminal_themes::commands::terminal_themes_register,
+        terminal_themes::commands::terminal_themes_update,
+        terminal_themes::commands::terminal_themes_remove,
+        terminal_themes::commands::terminal_themes_duplicate,
+        terminal_themes::commands::terminal_themes_create_custom,
+        terminal_themes::commands::terminal_themes_derive_hue,
+        terminal_themes::commands::terminal_themes_generate_from_accent,
+        terminal_themes::commands::terminal_themes_export_json,
+        terminal_themes::commands::terminal_themes_export_iterm2,
+        terminal_themes::commands::terminal_themes_export_windows_terminal,
+        terminal_themes::commands::terminal_themes_export_alacritty,
+        terminal_themes::commands::terminal_themes_export_xterm,
+        terminal_themes::commands::terminal_themes_import,
+        terminal_themes::commands::terminal_themes_check_contrast,
+        terminal_themes::commands::terminal_themes_blend_colors,
+        terminal_themes::commands::terminal_themes_validate,
+
+        // Extensions engine commands
+        extensions::commands::ext_install,
+        extensions::commands::ext_install_with_manifest,
+        extensions::commands::ext_enable,
+        extensions::commands::ext_disable,
+        extensions::commands::ext_uninstall,
+        extensions::commands::ext_update,
+        extensions::commands::ext_execute_handler,
+        extensions::commands::ext_dispatch_event,
+        extensions::commands::ext_storage_get,
+        extensions::commands::ext_storage_set,
+        extensions::commands::ext_storage_delete,
+        extensions::commands::ext_storage_list_keys,
+        extensions::commands::ext_storage_clear,
+        extensions::commands::ext_storage_export,
+        extensions::commands::ext_storage_import,
+        extensions::commands::ext_storage_summary,
+        extensions::commands::ext_get_setting,
+        extensions::commands::ext_set_setting,
+        extensions::commands::ext_get_extension,
+        extensions::commands::ext_list_extensions,
+        extensions::commands::ext_engine_stats,
+        extensions::commands::ext_validate_manifest,
+        extensions::commands::ext_create_manifest_template,
+        extensions::commands::ext_api_documentation,
+        extensions::commands::ext_permission_groups,
+        extensions::commands::ext_get_config,
+        extensions::commands::ext_update_config,
+        extensions::commands::ext_audit_log,
+        extensions::commands::ext_dispatch_log,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
