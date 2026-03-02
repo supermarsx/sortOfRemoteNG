@@ -5,6 +5,7 @@ import {
   CustomScript,
   defaultBackupConfig,
   defaultSSHTerminalConfig,
+  defaultSSHConnectionConfig,
   defaultCloudSyncConfig,
 } from '../types/settings';
 import { SecureStorage } from './storage';
@@ -317,6 +318,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   exportPassword: undefined,
 
   sshTerminal: defaultSSHTerminalConfig,
+  sshConnection: defaultSSHConnectionConfig,
   backup: defaultBackupConfig,
   cloudSync: defaultCloudSyncConfig,
 

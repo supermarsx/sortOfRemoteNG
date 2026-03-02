@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { GlobalSettings, defaultSSHTerminalConfig, defaultBackupConfig, defaultCloudSyncConfig } from '../types/settings';
+import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultBackupConfig, defaultCloudSyncConfig } from '../types/settings';
 import { SettingsManager } from '../utils/settingsManager';
 
 interface SettingsContextType {
@@ -259,6 +259,7 @@ const defaultSettings: GlobalSettings = {
   exportEncryption: true,
   // SSH Terminal Settings
   sshTerminal: defaultSSHTerminalConfig,
+  sshConnection: defaultSSHConnectionConfig,
   // Backup Settings
   backup: defaultBackupConfig,
   // Cloud Sync Settings

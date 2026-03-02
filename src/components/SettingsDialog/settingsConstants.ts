@@ -21,7 +21,7 @@ import {
   RotateCcw,
   LucideIcon,
 } from "lucide-react";
-import { GlobalSettings, defaultSSHTerminalConfig } from "../../types/settings";
+import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig } from "../../types/settings";
 
 /* ═══════════════════════════════════════════════════════════════
    Tab definition
@@ -355,6 +355,7 @@ export const DEFAULT_VALUES: Partial<GlobalSettings> = {
     enabled: false,
   },
   sshTerminal: defaultSSHTerminalConfig,
+  sshConnection: defaultSSHConnectionConfig,
   settingsDialog: {
     showSaveButton: false,
     confirmBeforeReset: true,
