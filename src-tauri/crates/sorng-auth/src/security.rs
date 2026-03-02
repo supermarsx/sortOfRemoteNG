@@ -90,19 +90,29 @@ impl SecurityService {
             .map_err(|e| format!("UTF-8 decode failed: {}", e))
     }
 
-    // Simple key derivation - in production, use proper KDF like PBKDF2
+    /// Derive a 256-bit key from a password using PBKDF2-HMAC-SHA256.
+    ///
+    /// Uses 600 000 iterations (OWASP 2023 recommendation) with a
+    /// deterministic salt derived from the password itself. For even
+    /// stronger security a random salt should be persisted alongside
+    /// the ciphertext, but this keeps backward-compatible API parity
+    /// (encrypt/decrypt with the same key string always matches).
     fn derive_key(password: &str) -> [u8; 32] {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
+        use sha2::{Sha256, Digest};
 
-        let mut hasher = DefaultHasher::new();
-        password.hash(&mut hasher);
-        let hash = hasher.finish();
+        // Deterministic salt = SHA-256("sorng-kdf-salt:" || password)
+        let mut salt_hasher = Sha256::new();
+        salt_hasher.update(b"sorng-kdf-salt:");
+        salt_hasher.update(password.as_bytes());
+        let salt = salt_hasher.finalize();
 
         let mut key = [0u8; 32];
-        for (i, chunk) in hash.to_le_bytes().iter().cycle().take(32).enumerate() {
-            key[i] = *chunk;
-        }
+        pbkdf2::pbkdf2_hmac::<Sha256>(
+            password.as_bytes(),
+            &salt,
+            600_000,
+            &mut key,
+        );
         key
     }
 }
