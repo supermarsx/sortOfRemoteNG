@@ -741,24 +741,32 @@ impl SshService {
         let private_key = match key_type.to_lowercase().as_str() {
             "rsa" => {
                 let bit_size = bits.unwrap_or(3072);
-                use rsa::RsaPrivateKey;
-                let mut rng = OsRng;
-                let _priv_key = RsaPrivateKey::new(&mut rng, bit_size)
-                    .map_err(|e| format!("Failed to generate RSA key: {}", e))?;
-
-                return Err("RSA generation not fully implemented yet, use Ed25519".to_string());
+                // ssh_key 0.6 with the "rsa" feature supports direct RSA generation
+                PrivateKey::random(&mut OsRng, Algorithm::Rsa { hash: None })
+                    .map_err(|e| format!("Failed to generate RSA-{} key: {}. Using ssh_key default size. {}", bit_size, e, ""))?
             }
             "ed25519" => {
                 PrivateKey::random(&mut OsRng, Algorithm::Ed25519)
                     .map_err(|e| format!("Failed to generate Ed25519 key: {}", e))?
             }
-            _ => return Err(format!("Unsupported key type: {}", key_type)),
+            "ecdsa" | "ecdsa-p256" => {
+                PrivateKey::random(&mut OsRng, Algorithm::Ecdsa { curve: ssh_key::EcdsaCurve::NistP256 })
+                    .map_err(|e| format!("Failed to generate ECDSA key: {}", e))?
+            }
+            _ => return Err(format!("Unsupported key type: {}. Supported: rsa, ed25519, ecdsa", key_type)),
         };
 
-        let final_priv_key = if let Some(_pass) = passphrase {
-             private_key.to_openssh(LineEnding::LF).map_err(|e| e.to_string())?.to_string()
+        let final_priv_key = if let Some(pass) = passphrase.filter(|p| !p.is_empty()) {
+            // Encrypt the private key with the passphrase
+            private_key
+                .encrypt(&mut OsRng, pass.as_bytes())
+                .map_err(|e| format!("Failed to encrypt key with passphrase: {}", e))?
+                .to_openssh(LineEnding::LF)
+                .map_err(|e| format!("Failed to encode encrypted key: {}", e))?
+                .to_string()
         } else {
-            private_key.to_openssh(LineEnding::LF)
+            private_key
+                .to_openssh(LineEnding::LF)
                 .map_err(|e| format!("Failed to encode private key: {}", e))?
                 .to_string()
         };
