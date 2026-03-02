@@ -47,6 +47,13 @@ pub struct HttpConnectionConfig {
     /// Whether to verify SSL certificates
     #[serde(default = "default_verify_ssl")]
     pub verify_ssl: bool,
+    /// Minimum TLS version to accept ("1.0", "1.1", "1.2", "1.3").
+    /// Defaults to "1.2".  Setting this below 1.2 requires the
+    /// corresponding `LegacyCryptoPolicy` flags to be acknowledged.
+    /// Note: SSL 3.0 is not supported — `native-tls` / `rustls` do not
+    /// implement it.  The floor is TLS 1.0.
+    #[serde(default = "default_min_tls_version")]
+    pub min_tls_version: String,
 }
 
 fn default_method() -> String {
@@ -63,6 +70,24 @@ fn default_follow_redirects() -> bool {
 
 fn default_verify_ssl() -> bool {
     true
+}
+
+fn default_min_tls_version() -> String {
+    "1.2".to_string()
+}
+
+/// Resolve a version string to a `reqwest::tls::Version`.
+///
+/// Accepted values: `"1.0"`, `"1.1"`, `"1.2"`, `"1.3"`.
+/// Anything else (including `"ssl3"`) falls back to TLS 1.2.
+fn resolve_min_tls_version(v: &str) -> reqwest::tls::Version {
+    match v.trim() {
+        "1.0" => reqwest::tls::Version::TLS_1_0,
+        "1.1" => reqwest::tls::Version::TLS_1_1,
+        "1.3" => reqwest::tls::Version::TLS_1_3,
+        // default / unknown → TLS 1.2 (safe default)
+        _ => reqwest::tls::Version::TLS_1_2,
+    }
 }
 
 /// Response from an HTTP request
@@ -109,6 +134,7 @@ impl HttpService {
                 reqwest::redirect::Policy::none()
             })
             .danger_accept_invalid_certs(!config.verify_ssl)
+            .min_tls_version(resolve_min_tls_version(&config.min_tls_version))
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
@@ -231,6 +257,7 @@ pub async fn http_get(
         timeout: 30,
         follow_redirects: true,
         verify_ssl: true,
+        min_tls_version: "1.2".to_string(),
     };
 
     let service = service.lock().await;
@@ -259,6 +286,7 @@ pub async fn http_post(
         timeout: 30,
         follow_redirects: true,
         verify_ssl: true,
+        min_tls_version: "1.2".to_string(),
     };
 
     let service = service.lock().await;
@@ -280,6 +308,10 @@ pub struct BasicAuthProxyConfig {
     /// Whether to verify SSL certificates
     #[serde(default = "default_verify_ssl")]
     pub verify_ssl: bool,
+    /// Minimum TLS version for outbound requests ("1.0", "1.1", "1.2", "1.3").
+    /// Defaults to "1.2".  SSL 3.0 is NOT supported by the TLS backend.
+    #[serde(default = "default_min_tls_version")]
+    pub min_tls_version: String,
     /// Connection ID that owns this proxy session (for per-connection isolation)
     #[serde(default)]
     pub connection_id: String,
@@ -320,6 +352,10 @@ pub(crate) struct ProxySessionEntry {
     pub connection_id: String,
     pub created_at: String,
     pub local_port: u16,
+    /// Minimum TLS version used when creating the reqwest client.
+    pub min_tls_version: String,
+    /// Whether SSL certificate verification is enabled.
+    pub verify_ssl: bool,
     pub request_count: Arc<AtomicU64>,
     pub error_count: Arc<AtomicU64>,
     pub last_error: Arc<std::sync::Mutex<Option<String>>>,
@@ -784,6 +820,7 @@ pub async fn start_basic_auth_proxy(
     let session_id = uuid::Uuid::new_v4().to_string();
     let target_url = config.target_url.clone();
     let verify_ssl = config.verify_ssl;
+    let min_tls = config.min_tls_version.clone();
     let connection_id = config.connection_id.clone();
 
     // ---- Per-connection isolation ----
@@ -831,6 +868,7 @@ pub async fn start_basic_auth_proxy(
         .tcp_keepalive(std::time::Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::limited(10))
         .danger_accept_invalid_certs(!verify_ssl)
+        .min_tls_version(resolve_min_tls_version(&min_tls))
         .cookie_store(true)
         .build()
         .map_err(|e| format!("Failed to create proxy HTTP client: {}", e))?;
@@ -895,6 +933,8 @@ pub async fn start_basic_auth_proxy(
                 connection_id,
                 created_at: chrono::Utc::now().to_rfc3339(),
                 local_port,
+                min_tls_version: min_tls,
+                verify_ssl,
                 request_count,
                 error_count,
                 last_error,
@@ -1109,7 +1149,7 @@ pub async fn restart_proxy_session(
     sessions: tauri::State<'_, ProxySessionManagerState>,
 ) -> Result<ProxyMediatorResponse, String> {
     // Extract the config from the existing (dead) session entry.
-    let (target_url, username, password, target_origin, connection_id, verify_ssl) = {
+    let (target_url, username, password, target_origin, connection_id, verify_ssl, min_tls) = {
         let mgr = sessions
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
@@ -1123,11 +1163,8 @@ pub async fn restart_proxy_session(
             entry.password.clone(),
             entry.target_origin.clone(),
             entry.connection_id.clone(),
-            // We don't persist verify_ssl in the entry, but the client will
-            // pass verify_ssl when it creates the proxy.  For restart we
-            // default to true (the safe option) — the client overrides this
-            // if needed.
-            true,
+            entry.verify_ssl,
+            entry.min_tls_version.clone(),
         )
     };
 
@@ -1152,6 +1189,7 @@ pub async fn restart_proxy_session(
         .tcp_keepalive(std::time::Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::limited(10))
         .danger_accept_invalid_certs(!verify_ssl)
+        .min_tls_version(resolve_min_tls_version(&min_tls))
         .cookie_store(true)
         .build()
         .map_err(|e| format!("Failed to create proxy HTTP client: {}", e))?;
@@ -1214,6 +1252,8 @@ pub async fn restart_proxy_session(
                 connection_id,
                 created_at: chrono::Utc::now().to_rfc3339(),
                 local_port,
+                min_tls_version: min_tls,
+                verify_ssl,
                 request_count,
                 error_count,
                 last_error,

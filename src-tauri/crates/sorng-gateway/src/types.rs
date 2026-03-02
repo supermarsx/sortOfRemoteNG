@@ -407,7 +407,15 @@ pub struct TlsConfig {
     pub ca_cert_path: Option<String>,
     /// Whether to require client certificates (mutual TLS)
     pub require_client_cert: bool,
-    /// Minimum TLS version ("1.2" or "1.3")
+    /// Minimum TLS version.
+    ///
+    /// Accepted values: `"1.0"`, `"1.1"`, `"1.2"` (default), `"1.3"`.
+    ///
+    /// **`"ssl3"`** is recognised for configuration purposes (maps to the
+    /// `allow_ssl_3_0` policy flag) but is *not* enforceable at the
+    /// transport layer — neither `rustls` nor `native-tls` implement
+    /// SSL 3.0.  When `"ssl3"` is set, the effective floor is TLS 1.0
+    /// and a warning is emitted.
     pub min_version: String,
 }
 
