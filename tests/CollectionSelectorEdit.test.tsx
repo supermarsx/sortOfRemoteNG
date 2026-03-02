@@ -10,9 +10,44 @@ import { ConnectionCollection } from '../src/types/connection';
 const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';
 
-// simple i18n mock for components using react-i18next
+// ── Mocks to prevent OOM from transitive dependency graph ──
+
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key })
+  useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+vi.mock('../src/utils/settingsManager', () => ({
+  SettingsManager: {
+    getInstance: () => ({
+      logAction: vi.fn(),
+      getSettings: vi.fn().mockReturnValue({}),
+      loadSettings: vi.fn().mockResolvedValue({}),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+    }),
+  },
+}));
+
+vi.mock('../src/contexts/useConnections', () => ({
+  useConnections: () => ({
+    state: { connections: [], sessions: [], selectedConnection: null },
+    dispatch: vi.fn(),
+  }),
+}));
+
+vi.mock('../src/contexts/ToastContext', () => ({
+  useToastContext: () => ({
+    toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
+  }),
+  ToastProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+vi.mock('../src/utils/themeManager', () => ({
+  ThemeManager: {
+    getInstance: () => ({
+      applyTheme: vi.fn(),
+      getCurrentTheme: vi.fn().mockReturnValue('dark'),
+    }),
+  },
 }));
 
 describe('CollectionSelector editing', () => {

@@ -6,6 +6,35 @@ import ThemeSettings from "../src/components/settingsDialog/sections/ThemeSettin
 import ProxySettings from "../src/components/settingsDialog/sections/ProxySettings";
 import StartupSettings from "../src/components/settingsDialog/sections/StartupSettings";
 
+// ── Mocks to prevent OOM from transitive dependency graph ──
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, fallback?: string) => fallback || key,
+  }),
+}));
+
+vi.mock("../src/utils/settingsManager", () => ({
+  SettingsManager: {
+    getInstance: () => ({
+      logAction: vi.fn(),
+      getSettings: vi.fn().mockReturnValue({}),
+      loadSettings: vi.fn().mockResolvedValue({}),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+    }),
+  },
+}));
+
+vi.mock("../src/utils/themeManager", () => ({
+  ThemeManager: {
+    getInstance: () => ({
+      applyTheme: vi.fn(),
+      getCurrentTheme: vi.fn().mockReturnValue("dark"),
+      getCurrentColorScheme: vi.fn().mockReturnValue("blue"),
+    }),
+  },
+}));
+
 const baseSettings = {
   retryAttempts: 3,
   retryDelay: 5000,

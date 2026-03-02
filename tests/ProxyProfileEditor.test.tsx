@@ -2,6 +2,34 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ProxyProfileEditor } from "../src/components/network/ProxyProfileEditor";
 
+// ── Mocks to prevent OOM from transitive dependency graph ──
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, fallback?: string) => fallback || key,
+  }),
+}));
+
+vi.mock("../src/utils/settingsManager", () => ({
+  SettingsManager: {
+    getInstance: () => ({
+      logAction: vi.fn(),
+      getSettings: vi.fn().mockReturnValue({}),
+      loadSettings: vi.fn().mockResolvedValue({}),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+    }),
+  },
+}));
+
+vi.mock("../src/utils/themeManager", () => ({
+  ThemeManager: {
+    getInstance: () => ({
+      applyTheme: vi.fn(),
+      getCurrentTheme: vi.fn().mockReturnValue("dark"),
+    }),
+  },
+}));
+
 describe("ProxyProfileEditor", () => {
   it("does not render when closed", () => {
     render(

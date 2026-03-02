@@ -6,9 +6,37 @@ const mocks = vi.hoisted(() => ({
   getProfiles: vi.fn(),
 }));
 
+// ── Mocks to prevent OOM from transitive dependency graph ──
+
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({
+    t: (key: string, fallback?: string) => fallback || key,
+  }),
+}));
+
 vi.mock("../src/utils/proxyCollectionManager", () => ({
   proxyCollectionManager: {
     getProfiles: mocks.getProfiles,
+  },
+}));
+
+vi.mock("../src/utils/settingsManager", () => ({
+  SettingsManager: {
+    getInstance: () => ({
+      logAction: vi.fn(),
+      getSettings: vi.fn().mockReturnValue({}),
+      loadSettings: vi.fn().mockResolvedValue({}),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+    }),
+  },
+}));
+
+vi.mock("../src/utils/themeManager", () => ({
+  ThemeManager: {
+    getInstance: () => ({
+      applyTheme: vi.fn(),
+      getCurrentTheme: vi.fn().mockReturnValue("dark"),
+    }),
   },
 }));
 

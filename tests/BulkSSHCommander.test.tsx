@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BulkSSHCommander } from "../src/components/ssh/BulkSSHCommander";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
-// Mock dependencies
+// ── Mocks to prevent OOM from transitive dependency graph ──
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => fallback || key,
@@ -12,6 +13,36 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+}));
+
+vi.mock("../src/utils/settingsManager", () => ({
+  SettingsManager: {
+    getInstance: () => ({
+      logAction: vi.fn(),
+      getSettings: vi.fn().mockReturnValue({}),
+      loadSettings: vi.fn().mockResolvedValue({}),
+      saveSettings: vi.fn().mockResolvedValue(undefined),
+    }),
+  },
+}));
+
+vi.mock("../src/utils/collectionManager", () => ({
+  CollectionManager: {
+    getInstance: () => ({
+      getAllCollections: vi.fn().mockResolvedValue([]),
+      getCurrentCollection: vi.fn().mockReturnValue(null),
+    }),
+    resetInstance: vi.fn(),
+  },
+}));
+
+vi.mock("../src/utils/themeManager", () => ({
+  ThemeManager: {
+    getInstance: () => ({
+      applyTheme: vi.fn(),
+      getCurrentTheme: vi.fn().mockReturnValue("dark"),
+    }),
+  },
 }));
 
 // Mock the useConnections hook
