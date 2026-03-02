@@ -280,3 +280,194 @@
   align-items: center;
   gap: 0.25rem;
 }
+
+/* ── Checkbox inputs ─────────────────────────────────────────── */
+.sor-checkbox-lg {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-input);
+  color: #2563eb;
+}
+.sor-checkbox-sm {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-input);
+  color: #2563eb;
+}
+
+/* ── Diagnostics panels ──────────────────────────────────────── */
+.sor-diag-panel {
+  background: color-mix(in srgb, var(--color-surfaceHover) 50%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+.sor-diag-heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-textSecondary);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.sor-diag-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--color-surface);
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+}
+
+/* ── TOTP micro labels/actions ───────────────────────────────── */
+.sor-totp-label {
+  font-size: 10px;
+  color: var(--color-textSecondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.sor-totp-action {
+  padding: 0.25rem 0.5rem;
+  font-size: 10px;
+  color: var(--color-textSecondary);
+}
+.sor-totp-action:hover {
+  color: var(--color-text);
+}
+
+/* ── Modal buttons ───────────────────────────────────────────── */
+.sor-modal-cancel {
+  padding: 0.5rem 1rem;
+  background: var(--color-border);
+  color: var(--color-textSecondary);
+  border-radius: 0.375rem;
+  transition: colors 150ms;
+}
+.sor-modal-cancel:hover {
+  background: var(--color-border);
+}
+.sor-modal-primary {
+  padding: 0.5rem 1rem;
+  color: var(--color-text);
+  background: #2563eb;
+  border-radius: 0.375rem;
+  transition: colors 150ms;
+}
+.sor-modal-primary:hover {
+  background: #1d4ed8;
+}
+
+/* ── Delete/danger micro button ──────────────────────────────── */
+.sor-delete-btn-xs {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: #f87171;
+  border-radius: 0.25rem;
+}
+.sor-delete-btn-xs:hover {
+  background: color-mix(in srgb, #ef4444 10%, transparent);
+}
+
+/* ── Recording row ───────────────────────────────────────────── */
+.sor-recording-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  cursor: pointer;
+}
+.sor-recording-row:hover {
+  background: color-mix(in srgb, var(--color-surface) 60%, transparent);
+}
+
+/* ── Performance heading ─────────────────────────────────────── */
+.sor-perf-heading {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-textSecondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+}
+
+/* ── Search field icons ──────────────────────────────────────── */
+.sor-search-clear {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-textSecondary);
+}
+.sor-search-clear:hover {
+  color: var(--color-text);
+}
+.sor-search-icon-abs {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-textSecondary);
+}
+.sor-search-inline {
+  flex: 1;
+  background: transparent;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  outline: none;
+}
+.sor-search-inline::placeholder {
+  color: var(--color-textMuted);
+}
+
+/* ── Notification dot ────────────────────────────────────────── */
+.sor-notification-dot {
+  position: absolute;
+  top: -0.125rem;
+  right: -0.125rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  background: var(--color-secondary);
+  color: var(--color-text);
+  font-size: 8px;
+  font-weight: 700;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Settings sub-card ───────────────────────────────────────── */
+.sor-settings-sub-card {
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surfaceHover) 30%, transparent);
+  padding: 1rem;
+}
+.sor-settings-sub-card > * + * {
+  margin-top: 1rem;
+}
+
+/* ── Form label with icon ────────────────────────────────────── */
+.sor-form-label-icon {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-textSecondary);
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
