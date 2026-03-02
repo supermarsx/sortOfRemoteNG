@@ -15,7 +15,7 @@ import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { EmptyState } from '../ui/display';
 import { useWakeScheduleManager, formatMac } from "../../hooks/network/useWakeScheduleManager";
-import { NumberInput, Select } from '../ui/forms';
+import { NumberInput, Select, TextInput } from '../ui/forms';
 
 type Mgr = ReturnType<typeof useWakeScheduleManager>;
 
@@ -70,7 +70,7 @@ const ScheduleForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     </div>
     <div>
       <label className="sor-form-label-xs">MAC Address</label>
-      <input type="text" placeholder="00:11:22:33:44:55" className="sor-form-input font-mono" value={mgr.form.macAddress} onChange={(e) => mgr.setForm({ ...mgr.form, macAddress: formatMac(e.target.value) })} />
+      <TextInput placeholder="00:11:22:33:44:55" variant="form" className="font-mono" value={mgr.form.macAddress} onChange={(e) => mgr.setForm({ ...mgr.form, macAddress: formatMac(e.target.value) })} />
     </div>
     <div>
       <label className="sor-form-label-xs">Wake Time</label>
@@ -79,7 +79,7 @@ const ScheduleForm: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
     <div className="grid grid-cols-2 gap-3">
       <div>
         <label className="sor-form-label-xs">Broadcast Address</label>
-        <input type="text" placeholder="255.255.255.255" className="sor-form-input" value={mgr.form.broadcastAddress ?? ""} onChange={(e) => mgr.setForm({ ...mgr.form, broadcastAddress: e.target.value })} />
+        <TextInput placeholder="255.255.255.255" variant="form" value={mgr.form.broadcastAddress ?? ""} onChange={(e) => mgr.setForm({ ...mgr.form, broadcastAddress: e.target.value })} />
       </div>
       <div>
         <label className="sor-form-label-xs">UDP Port</label>

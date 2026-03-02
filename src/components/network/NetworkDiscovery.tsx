@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { DiscoveredHost, DiscoveredService } from "../../types/connection";
 import { useNetworkDiscovery } from "../../hooks/network/useNetworkDiscovery";
-import { Modal } from "../ui/overlays/Modal";import { DialogHeader } from '../ui/overlays/DialogHeader';import { Checkbox, NumberInput } from '../ui/forms';
+import { Modal } from "../ui/overlays/Modal";import { DialogHeader } from '../ui/overlays/DialogHeader';import { Checkbox, NumberInput, TextInput } from '../ui/forms';
 
 interface NetworkDiscoveryProps {
   isOpen: boolean;
@@ -59,7 +59,7 @@ const ScanConfig: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
     <div>
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mgr.t("networkDiscovery.ipRange")}</label>
-      <input type="text" value={mgr.config.ipRange} onChange={(e) => mgr.setConfig({ ...mgr.config, ipRange: e.target.value })} className="sor-form-input" placeholder={mgr.t("networkDiscovery.ipRangePlaceholder")} />
+      <TextInput value={mgr.config.ipRange} onChange={(e) => mgr.setConfig({ ...mgr.config, ipRange: e.target.value })} variant="form" placeholder={mgr.t("networkDiscovery.ipRangePlaceholder")} />
     </div>
     <div>
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mgr.t("networkDiscovery.timeout")}</label>
@@ -80,7 +80,7 @@ const AdvancedConfig: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mgr.t("networkDiscovery.portRanges")}</label>
-          <input type="text" value={mgr.config.portRanges.join(", ")} onChange={(e) => mgr.setConfig({ ...mgr.config, portRanges: e.target.value.split(",").map((p) => p.trim()) })} className="sor-form-input w-full" placeholder={mgr.t("networkDiscovery.portRangesPlaceholder")} />
+          <TextInput value={mgr.config.portRanges.join(", ")} onChange={(e) => mgr.setConfig({ ...mgr.config, portRanges: e.target.value.split(",").map((p) => p.trim()) })} variant="form" className="w-full" placeholder={mgr.t("networkDiscovery.portRangesPlaceholder")} />
         </div>
         <div>
           <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">{mgr.t("networkDiscovery.protocols")}</label>
@@ -171,7 +171,7 @@ const HostsList: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-medium text-[var(--color-text)]">{mgr.t("networkDiscovery.discoveredHosts", { count: mgr.filteredHosts.length })}</h3>
         <div className="flex items-center space-x-2">
-          <input type="text" value={mgr.filterText} onChange={(e) => mgr.setFilterText(e.target.value)} placeholder={mgr.t("networkDiscovery.filterPlaceholder")} className="px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)]" />
+          <TextInput value={mgr.filterText} onChange={(e) => mgr.setFilterText(e.target.value)} placeholder={mgr.t("networkDiscovery.filterPlaceholder")} variant="form" />
           <button onClick={mgr.handleExportCSV} className="px-3 py-2 bg-[var(--color-border)] hover:bg-[var(--color-border)] text-[var(--color-text)] rounded-md transition-colors flex items-center space-x-2">
             <Download size={14} />
             <span>{mgr.t("networkDiscovery.exportCsv")}</span>

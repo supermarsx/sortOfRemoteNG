@@ -14,7 +14,7 @@ import {
 } from "../../types/settings";
 import { useProxyChainEditor, LAYER_TYPES } from "../../hooks/network/useProxyChainEditor";
 import { Modal, ModalHeader } from "../ui/overlays/Modal";
-import { Select, Textarea} from '../ui/forms';
+import { Select, Textarea, TextInput} from '../ui/forms';
 
 type Mgr = ReturnType<typeof useProxyChainEditor>;
 
@@ -144,7 +144,7 @@ const TagsSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       ))}
     </div>
     <div className="flex gap-2">
-      <input type="text" value={mgr.tagInput} onChange={(e) => mgr.setTagInput(e.target.value)} onKeyDown={mgr.handleTagKeyDown} placeholder="Add tag..." className="flex-1 px-3 py-1.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm" />
+      <TextInput value={mgr.tagInput} onChange={(e) => mgr.setTagInput(e.target.value)} onKeyDown={mgr.handleTagKeyDown} placeholder="Add tag..." variant="form" className="flex-1" />
       <button onClick={mgr.handleAddTag} disabled={!mgr.tagInput.trim()} className="px-3 py-1.5 text-xs rounded-md bg-[var(--color-surfaceHover)] hover:bg-[var(--color-border)] text-[var(--color-text)] disabled:opacity-50">Add</button>
     </div>
   </div>

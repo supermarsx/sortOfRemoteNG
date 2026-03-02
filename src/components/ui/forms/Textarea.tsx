@@ -25,7 +25,7 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
  */
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ variant = 'form', className, ...rest }, ref) => (
-    <Textarea
+    <textarea
       ref={ref}
       className={cx(VARIANT_CLASS[variant], className)}
       {...rest}
