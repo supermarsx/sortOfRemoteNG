@@ -15,6 +15,7 @@ use crate::types::*;
 use crate::usage::{RequestType, UsageTracker};
 
 /// Tauri-managed state wrapper
+#[derive(Clone)]
 pub struct LlmServiceState(pub Arc<RwLock<LlmService>>);
 
 /// Unified LLM service — routes requests through cache → rate limiter → load balancer → provider
@@ -342,4 +343,9 @@ impl LlmService {
     pub fn set_balancer_strategy(&mut self, strategy: BalancerStrategy) {
         self.balancer.set_strategy(strategy);
     }
+}
+
+/// Create a default LLM service state — convenience factory for Tauri setup.
+pub fn create_llm_state() -> LlmServiceState {
+    LlmServiceState(Arc::new(RwLock::new(LlmService::new(LlmConfig::default()))))
 }

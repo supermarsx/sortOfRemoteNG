@@ -621,11 +621,21 @@ impl BackupService {
     }
 
     fn derive_key(&self, password: &str) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(password.as_bytes());
-        let result = hasher.finalize();
+        // Use PBKDF2-HMAC-SHA256 with 600k iterations (OWASP 2023) instead of
+        // a single SHA-256 pass. Salt is deterministic so existing backups
+        // encrypted with the same password can still be decrypted.
+        let mut salt_hasher = Sha256::new();
+        salt_hasher.update(b"sorng-backup-kdf-salt:");
+        salt_hasher.update(password.as_bytes());
+        let salt = salt_hasher.finalize();
+
         let mut key = [0u8; 32];
-        key.copy_from_slice(&result[..32]);
+        pbkdf2::pbkdf2_hmac::<Sha256>(
+            password.as_bytes(),
+            &salt,
+            600_000,
+            &mut key,
+        );
         key
     }
 }

@@ -6,6 +6,10 @@ use crate::types::*;
 use chrono::Utc;
 use log::{debug, info, warn};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+pub type TailscaleServiceState = Arc<Mutex<TailscaleService>>;
 
 /// The Tailscale service — manages connections, peers, and all TS features.
 pub struct TailscaleService {

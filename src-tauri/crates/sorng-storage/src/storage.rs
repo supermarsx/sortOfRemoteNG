@@ -217,17 +217,23 @@ impl SecureStorage {
     pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
         let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
 
-        if use_password {
+        let content = if use_password {
             if let Some(password) = &self.password {
                 let encrypted = Self::encrypt_bytes(json.as_bytes(), password)?;
                 let encoded = general_purpose::STANDARD.encode(&encrypted);
-                let output = format!("SORNG_ENC:{}", encoded);
-                return fs::write(&self.store_path, output).map_err(|e| e.to_string());
+                format!("SORNG_ENC:{}", encoded)
+            } else {
+                json
             }
-        }
+        } else {
+            json
+        };
 
-        // Save as plain JSON if no password or use_password=false
-        fs::write(&self.store_path, json).map_err(|e| e.to_string())
+        // Atomic write: write to a temp file first, then rename.
+        // This prevents data loss if the process crashes mid-write.
+        let tmp_path = format!("{}.tmp", &self.store_path);
+        fs::write(&tmp_path, &content).map_err(|e| format!("Failed to write temp file: {}", e))?;
+        fs::rename(&tmp_path, &self.store_path).map_err(|e| format!("Failed to rename temp file: {}", e))
     }
 
     /// Loads data from persistent storage.

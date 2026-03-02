@@ -7,6 +7,10 @@ use crate::types::*;
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+pub type P2pServiceState = Arc<Mutex<P2pService>>;
 
 /// The P2P service — manages all P2P sessions and coordinates the connection lifecycle.
 pub struct P2pService {

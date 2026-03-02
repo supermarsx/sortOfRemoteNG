@@ -187,7 +187,7 @@ pub fn filter_by_connection(
 }
 
 /// Filter peers by tag.
-pub fn filter_by_tag(peers: &[PeerDetail], tag: &str) -> Vec<&PeerDetail> {
+pub fn filter_by_tag<'a>(peers: &'a [PeerDetail], tag: &str) -> Vec<&'a PeerDetail> {
     peers
         .iter()
         .filter(|p| p.tags.iter().any(|t| t == tag))

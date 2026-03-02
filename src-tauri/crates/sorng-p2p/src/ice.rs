@@ -514,7 +514,7 @@ fn compute_foundation(
     use sha2::{Digest, Sha256};
     let input = format!("{:?}:{}:{}", candidate_type, base_addr, transport);
     let hash = Sha256::digest(input.as_bytes());
-    hex::encode(&hash[..4])
+    hash[..4].iter().map(|b| format!("{:02x}", b)).collect::<String>()
 }
 
 /// Generate a random ICE credential (ufrag or password).
