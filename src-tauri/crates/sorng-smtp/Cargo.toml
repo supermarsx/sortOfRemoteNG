@@ -16,7 +16,7 @@ base64 = "0.21"
 rand = "0.8"
 sha2 = "0.10"
 hmac = "0.12"
-md5 = "0.7"
+md-5 = "0.10"
 hex = "0.4"
 rsa = { version = "0.9", features = ["sha2"] }
 tokio-rustls = "0.25"

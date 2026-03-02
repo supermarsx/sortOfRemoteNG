@@ -166,8 +166,8 @@ fn cram_md5_digest(password: &str, challenge: &[u8]) -> String {
     use hmac::{Hmac, Mac};
     type HmacMd5 = Hmac<md5::Md5>;
 
-    let mut mac = HmacMd5::new_from_slice(password.as_bytes())
-        .expect("HMAC can take key of any size");
+    let mut mac =
+        HmacMd5::new_from_slice(password.as_bytes()).expect("HMAC can take key of any size");
     mac.update(challenge);
     let result = mac.finalize();
     hex::encode(result.into_bytes())
