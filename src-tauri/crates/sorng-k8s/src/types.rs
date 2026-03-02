@@ -786,7 +786,7 @@ pub enum ContainerState {
 
 // ─── Pod Operations ─────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PodLogOptions {
     pub container: Option<String>,
     pub follow: bool,

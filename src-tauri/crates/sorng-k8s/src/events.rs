@@ -107,7 +107,8 @@ impl EventManager {
     pub async fn list_hpas(client: &K8sClient, namespace: &str, opts: &ListOptions) -> K8sResult<Vec<HpaInfo>> {
         let url = format!("{}{}", client.autoscaling_v2_url(namespace, "horizontalpodautoscalers"), K8sClient::list_query(opts));
         let resp: serde_json::Value = client.get(&url).await?;
-        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&vec![]);
+        let empty = vec![];
+        let items = resp.get("items").and_then(|v| v.as_array()).unwrap_or(&empty);
         Ok(items.iter().filter_map(|i| serde_json::from_value(i.clone()).ok()).collect())
     }
 

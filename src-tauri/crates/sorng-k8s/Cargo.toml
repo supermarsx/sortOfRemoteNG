@@ -13,7 +13,7 @@ tauri = { version = "2.9.5", features = ["devtools"] }
 uuid = { version = "1.0", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
-reqwest = { version = "0.11", features = ["json", "cookies"] }
+reqwest = { version = "0.11", features = ["json", "cookies", "native-tls"] }
 base64 = "0.21"
 url = "2.5"
 async-trait = "0.1"
