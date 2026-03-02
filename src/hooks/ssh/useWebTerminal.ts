@@ -18,7 +18,7 @@ import { listen, emit } from "@tauri-apps/api/event";
 import { ConnectionSession } from "../../types/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
-import { mergeSSHTerminalConfig } from "../../types/settings";
+import { mergeSSHTerminalConfig, mergeSSHConnectionConfig, defaultSSHConnectionConfig } from "../../types/settings";
 import { ManagedScript, getDefaultScripts, OSTag } from "../../components/recording/ScriptManager";
 import {
   verifyIdentity,
@@ -58,6 +58,15 @@ export function useWebTerminal(
         connection?.sshTerminalConfigOverride,
       ),
     [settings.sshTerminal, connection?.sshTerminalConfigOverride],
+  );
+
+  const sshConnectionConfig = useMemo(
+    () =>
+      mergeSSHConnectionConfig(
+        settings.sshConnection ?? defaultSSHConnectionConfig,
+        connection?.sshConnectionConfigOverride,
+      ),
+    [settings.sshConnection, connection?.sshConnectionConfigOverride],
   );
 
   /* ── terminal refs ── */
@@ -485,6 +494,40 @@ export function useWebTerminal(
         preferred_macs: sshTerminalConfig?.preferredMACs ?? [],
         preferred_kex: sshTerminalConfig?.preferredKeyExchanges ?? [],
         preferred_host_key_algorithms: sshTerminalConfig?.preferredHostKeyAlgorithms ?? [],
+
+        // ── Agent forwarding ──
+        agent_forwarding: sshConnectionConfig.agentForwarding ?? false,
+
+        // ── PTY type & environment ──
+        pty_type: sshConnectionConfig.ptyType || null,
+        environment: sshConnectionConfig.environment ?? {},
+
+        // ── X11 forwarding ──
+        x11_forwarding: sshConnectionConfig.enableX11Forwarding
+          ? {
+              enabled: true,
+              trusted: sshConnectionConfig.x11Trusted ?? false,
+              display_offset: sshConnectionConfig.x11DisplayOffset ?? 10,
+              screen: sshConnectionConfig.x11Screen ?? 0,
+              display_override: sshConnectionConfig.x11DisplayOverride || null,
+              xauthority_path: sshConnectionConfig.x11XauthorityPath || null,
+              timeout_secs: sshConnectionConfig.x11TimeoutSecs ?? 0,
+            }
+          : null,
+
+        // ── ProxyCommand ──
+        proxy_command: sshConnectionConfig.proxyCommand || sshConnectionConfig.proxyCommandTemplate
+          ? {
+              command: sshConnectionConfig.proxyCommand || null,
+              template: sshConnectionConfig.proxyCommandTemplate || null,
+              proxy_host: sshConnectionConfig.proxyCommandHost || null,
+              proxy_port: sshConnectionConfig.proxyCommandPort || null,
+              proxy_username: sshConnectionConfig.proxyCommandUsername || null,
+              proxy_password: sshConnectionConfig.proxyCommandPassword || null,
+              proxy_type: sshConnectionConfig.proxyCommandProxyType || null,
+              timeout_secs: sshConnectionConfig.proxyCommandTimeout || null,
+            }
+          : null,
       };
 
       switch (authMethod) {

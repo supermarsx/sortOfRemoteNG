@@ -8,6 +8,8 @@ pub mod recording;
 pub mod automation;
 pub mod tunnels;
 pub mod diagnostics;
+pub mod x11;
+pub mod proxy_command;
 
 // Maximum buffer size in bytes (1MB)
 pub(crate) const MAX_BUFFER_SIZE: usize = 1024 * 1024;
@@ -59,3 +61,5 @@ pub use recording::*;
 pub use automation::*;
 pub use tunnels::*;
 pub use diagnostics::*;
+pub use x11::*;
+pub use proxy_command::*;

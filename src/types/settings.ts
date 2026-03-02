@@ -8,7 +8,7 @@ export * from './sshSettings';
 import type { BackupConfig } from './backupSettings';
 import type { CloudSyncConfig } from './cloudSyncSettings';
 import type { OpenVPNConfig } from './vpnSettings';
-import type { SSHTerminalConfig } from './sshSettings';
+import type { SSHTerminalConfig, SSHConnectionConfig } from './sshSettings';
 import type { RDPRecordingConfig, WebRecordingConfig } from './macroTypes';
 
 export const Themes = [
@@ -371,6 +371,9 @@ export interface GlobalSettings {
 
   // SSH Terminal Settings
   sshTerminal: SSHTerminalConfig;
+
+  // SSH Connection Settings (protocol-level)
+  sshConnection: SSHConnectionConfig;
 
   // Backup Settings
   backup: BackupConfig;

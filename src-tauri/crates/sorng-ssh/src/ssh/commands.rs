@@ -283,3 +283,41 @@ pub async fn reattach_session(
 
     ssh.start_shell(&session_id, app_handle).await
 }
+
+// ===============================
+// Mixed-chain / jump-host Tauri Commands
+// ===============================
+
+/// Validate a mixed chain configuration and return per-hop info.
+#[tauri::command]
+pub fn validate_mixed_chain(
+    chain: super::types::MixedChainConfig,
+) -> Result<super::types::MixedChainStatus, String> {
+    super::service::SshService::validate_mixed_chain(&chain)
+}
+
+/// Convert legacy jump_hosts list into a MixedChainConfig.
+#[tauri::command]
+pub fn jump_hosts_to_mixed_chain(
+    jump_hosts: Vec<super::types::JumpHostConfig>,
+) -> super::types::MixedChainConfig {
+    super::service::SshService::jump_hosts_to_mixed_chain(&jump_hosts)
+}
+
+/// Convert legacy proxy_chain into a MixedChainConfig.
+#[tauri::command]
+pub fn proxy_chain_to_mixed_chain(
+    proxy_chain: super::types::ProxyChainConfig,
+) -> super::types::MixedChainConfig {
+    super::service::SshService::proxy_chain_to_mixed_chain(&proxy_chain)
+}
+
+/// Test connectivity through a full mixed chain to the target SSH host.
+#[tauri::command]
+pub async fn test_mixed_chain_connection(
+    state: tauri::State<'_, SshServiceState>,
+    config: super::types::SshConnectionConfig,
+) -> Result<String, String> {
+    let ssh = state.lock().await;
+    ssh.test_ssh_connection(config).await
+}

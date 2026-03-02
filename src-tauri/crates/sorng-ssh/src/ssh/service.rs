@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::net::TcpStream as AsyncTcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use ssh2::{Session, KeyboardInteractivePrompt, Prompt};
+use ssh2::{MethodType, Session, KeyboardInteractivePrompt, Prompt};
 use uuid::Uuid;
 use chrono::Utc;
 use tauri::Emitter;
@@ -62,23 +62,50 @@ impl SshService {
     pub async fn connect_ssh(&mut self, config: SshConnectionConfig) -> Result<String, String> {
         let session_id = Uuid::new_v4().to_string();
 
-        // Determine connection method in priority order:
-        // 1. Proxy chain (if specified)
-        // 2. Single proxy (if specified)
-        // 3. OpenVPN (if specified)
-        // 4. Jump hosts (if specified)
-        // 5. Direct connection
-        let final_stream = if let Some(ref proxy_chain) = config.proxy_chain {
-            self.establish_proxy_chain_connection(&config, proxy_chain).await?
-        } else if let Some(ref proxy_config) = config.proxy_config {
-            self.establish_proxy_connection(&config, proxy_config).await?
-        } else if let Some(ref openvpn_config) = config.openvpn_config {
-            self.establish_openvpn_connection(&config, openvpn_config).await?
-        } else if !config.jump_hosts.is_empty() {
-            self.establish_jump_connection(&config).await?
-        } else {
-            self.establish_direct_connection(&config).await?
-        };
+        // Connection method priority:
+        // 0. ProxyCommand (spawns external command whose stdio IS the transport)
+        // 1. Mixed chain  (SSH jumps + proxy hops interleaved)
+        // 2. Proxy chain  (multiple proxies)
+        // 3. Single proxy
+        // 4. OpenVPN
+        // 5. Jump hosts   (pure SSH multi-hop)
+        // 6. Direct
+
+        let (final_stream, intermediate_sessions, bridge_handles) =
+            if let Some(ref proxy_cmd) = config.proxy_command {
+                if proxy_cmd.command.is_some() || proxy_cmd.template.is_some() {
+                    let s = super::proxy_command::spawn_proxy_command(
+                        &session_id,
+                        proxy_cmd,
+                        &config.host,
+                        config.port,
+                        &config.username,
+                        config.connect_timeout.unwrap_or(15),
+                    )?;
+                    (s, Vec::new(), Vec::new())
+                } else if let Some(ref mixed_chain) = config.mixed_chain {
+                    self.establish_mixed_chain_connection(&config, mixed_chain).await?
+                } else {
+                    let s = self.establish_direct_connection(&config).await?;
+                    (s, Vec::new(), Vec::new())
+                }
+            } else if let Some(ref mixed_chain) = config.mixed_chain {
+                self.establish_mixed_chain_connection(&config, mixed_chain).await?
+            } else if let Some(ref proxy_chain) = config.proxy_chain {
+                let s = self.establish_proxy_chain_connection(&config, proxy_chain).await?;
+                (s, Vec::new(), Vec::new())
+            } else if let Some(ref proxy_config) = config.proxy_config {
+                let s = self.establish_proxy_connection(&config, proxy_config).await?;
+                (s, Vec::new(), Vec::new())
+            } else if let Some(ref openvpn_config) = config.openvpn_config {
+                let s = self.establish_openvpn_connection(&config, openvpn_config).await?;
+                (s, Vec::new(), Vec::new())
+            } else if !config.jump_hosts.is_empty() {
+                self.establish_jump_connection(&config).await?
+            } else {
+                let s = self.establish_direct_connection(&config).await?;
+                (s, Vec::new(), Vec::new())
+            };
 
         // Apply TCP options to the stream for optimal performance
         final_stream.set_nodelay(config.tcp_no_delay).ok();
@@ -92,6 +119,32 @@ impl SshService {
 
         if config.compression {
             sess.set_compress(true);
+        }
+
+        // ── Apply cipher / KEX / MAC / host-key preferences ────────────
+        if !config.preferred_ciphers.is_empty() {
+            let ciphers = config.preferred_ciphers.join(",");
+            sess.method_pref(MethodType::CryptCs, &ciphers)
+                .map_err(|e| format!("Failed to set client→server ciphers: {}", e))?;
+            sess.method_pref(MethodType::CryptSc, &ciphers)
+                .map_err(|e| format!("Failed to set server→client ciphers: {}", e))?;
+        }
+        if !config.preferred_macs.is_empty() {
+            let macs = config.preferred_macs.join(",");
+            sess.method_pref(MethodType::MacCs, &macs)
+                .map_err(|e| format!("Failed to set client→server MACs: {}", e))?;
+            sess.method_pref(MethodType::MacSc, &macs)
+                .map_err(|e| format!("Failed to set server→client MACs: {}", e))?;
+        }
+        if !config.preferred_kex.is_empty() {
+            let kex = config.preferred_kex.join(",");
+            sess.method_pref(MethodType::Kex, &kex)
+                .map_err(|e| format!("Failed to set KEX preferences: {}", e))?;
+        }
+        if !config.preferred_host_key_algorithms.is_empty() {
+            let host_keys = config.preferred_host_key_algorithms.join(",");
+            sess.method_pref(MethodType::HostKey, &host_keys)
+                .map_err(|e| format!("Failed to set host-key algorithm preferences: {}", e))?;
         }
 
         sess.handshake().map_err(|e| format!("SSH handshake failed: {}", e))?;
@@ -110,6 +163,8 @@ impl SshService {
             last_activity: Utc::now(),
             port_forwards: HashMap::new(),
             keep_alive_handle: None,
+            intermediate_sessions,
+            bridge_handles,
         };
 
         if let Some(interval) = config.keep_alive_interval {
@@ -538,27 +593,317 @@ impl SshService {
         Err("OpenVPN connections not yet implemented for SSH".to_string())
     }
 
-    async fn establish_jump_connection(&self, config: &SshConnectionConfig) -> Result<TcpStream, String> {
-        let mut current_stream = self.establish_direct_connection(config).await?;
+    // ── Bridge helper ────────────────────────────────────────────────
+    //
+    // Converts an ssh2::Channel into a regular TcpStream by spawning a
+    // relay thread with a local TCP socket pair.  The Session that owns
+    // the channel **must** be set to non-blocking (`set_blocking(false)`)
+    // *before* this function is called.
+    //
+    fn bridge_channel_to_stream(
+        mut channel: ssh2::Channel,
+    ) -> Result<(TcpStream, std::thread::JoinHandle<()>), String> {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| format!("Bridge bind failed: {}", e))?;
+        let local_addr = listener.local_addr()
+            .map_err(|e| format!("Bridge addr failed: {}", e))?;
 
-        for jump_host in &config.jump_hosts {
-            let local_addr = current_stream.local_addr()
-                .map_err(|e| format!("Failed to get local address: {}", e))?;
-            let _local_port = local_addr.port();
+        let handle = std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else { return; };
+            drop(listener);
 
-            let mut jump_session = Session::new()
-                .map_err(|e| format!("Failed to create jump session: {}", e))?;
-            jump_session.set_tcp_stream(current_stream);
-            jump_session.handshake()
-                .map_err(|e| format!("Jump host handshake failed: {}", e))?;
+            stream.set_read_timeout(Some(Duration::from_millis(2))).ok();
+            stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
 
-            self.authenticate_jump_session(&mut jump_session, jump_host)?;
+            let mut buf = [0u8; 32768];
+            loop {
+                // channel → local stream
+                match channel.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if stream.write_all(&buf[..n]).is_err() { break; }
+                        stream.flush().ok();
+                    }
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
+                    Err(_) => break,
+                }
 
-            current_stream = TcpStream::connect((jump_host.host.as_str(), jump_host.port))
-                .map_err(|e| format!("Failed to connect to jump host: {}", e))?;
+                // local stream → channel
+                match stream.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if channel.write_all(&buf[..n]).is_err() { break; }
+                        channel.flush().ok();
+                    }
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {}
+                    Err(ref e) if e.kind() == ErrorKind::TimedOut => {}
+                    Err(_) => break,
+                }
+
+                if channel.eof() { break; }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+
+        let stream = TcpStream::connect(local_addr)
+            .map_err(|e| format!("Bridge connect failed: {}", e))?;
+        Ok((stream, handle))
+    }
+
+    // ── Proper multi-hop SSH jump chaining ────────────────────────────
+    //
+    // For N jump hosts J0..J(N-1) reaching final target T:
+    //   1. TCP-connect to J0
+    //   2. SSH session + auth on J0
+    //   3. For each subsequent jump Ji (i=1..N-1):
+    //        channel_direct_tcpip(Ji) → bridge → TcpStream
+    //        SSH session + auth on Ji
+    //   4. channel_direct_tcpip(T) → bridge → TcpStream
+    //   5. Return that stream (plus all intermediate sessions/handles)
+    //
+    async fn establish_jump_connection(
+        &self,
+        config: &SshConnectionConfig,
+    ) -> Result<(TcpStream, Vec<Session>, Vec<std::thread::JoinHandle<()>>), String> {
+        if config.jump_hosts.is_empty() {
+            return Err("No jump hosts configured".to_string());
         }
 
-        Ok(current_stream)
+        let mut intermediate_sessions: Vec<Session> = Vec::new();
+        let mut bridge_handles: Vec<std::thread::JoinHandle<()>> = Vec::new();
+
+        // 1. TCP-connect to the first jump host
+        let first = &config.jump_hosts[0];
+        let addr = format!("{}:{}", first.host, first.port);
+        let timeout = config.connect_timeout.unwrap_or(15);
+        let async_stream = tokio::time::timeout(
+            Duration::from_secs(timeout),
+            AsyncTcpStream::connect(&addr),
+        )
+        .await
+        .map_err(|_| format!("Timeout connecting to first jump host {}", addr))?
+        .map_err(|e| format!("Failed to connect to first jump host {}: {}", addr, e))?;
+
+        let current_stream = async_stream
+            .into_std()
+            .map_err(|e| format!("Stream conversion failed: {}", e))?;
+        current_stream
+            .set_nonblocking(false)
+            .map_err(|e| format!("set_nonblocking failed: {}", e))?;
+
+        // 2. SSH session on first jump host
+        let mut sess = Session::new()
+            .map_err(|e| format!("Failed to create jump session: {}", e))?;
+        Self::apply_jump_cipher_prefs(&mut sess, first);
+        sess.set_tcp_stream(current_stream);
+        sess.handshake()
+            .map_err(|e| format!("Jump host {} handshake failed: {}", first.host, e))?;
+        self.authenticate_jump_session(&mut sess, first)?;
+
+        // 3. Chain through remaining jump hosts
+        for (i, jump) in config.jump_hosts.iter().skip(1).enumerate() {
+            log::info!("Chaining through jump host {}: {}:{}", i + 1, jump.host, jump.port);
+
+            let channel = sess
+                .channel_direct_tcpip(&jump.host, jump.port, None)
+                .map_err(|e| format!("channel_direct_tcpip to {}:{} failed: {}", jump.host, jump.port, e))?;
+
+            // Switch session to non-blocking so the bridge thread can poll
+            sess.set_blocking(false);
+            let (bridged, handle) = Self::bridge_channel_to_stream(channel)?;
+            bridge_handles.push(handle);
+            intermediate_sessions.push(sess);
+
+            sess = Session::new()
+                .map_err(|e| format!("Failed to create jump session: {}", e))?;
+            Self::apply_jump_cipher_prefs(&mut sess, jump);
+            sess.set_tcp_stream(bridged);
+            sess.handshake()
+                .map_err(|e| format!("Jump host {} handshake failed: {}", jump.host, e))?;
+            self.authenticate_jump_session(&mut sess, jump)?;
+        }
+
+        // 4. Final tunnel to the actual target
+        log::info!("Final tunnel through last jump host to {}:{}", config.host, config.port);
+        let channel = sess
+            .channel_direct_tcpip(&config.host, config.port, None)
+            .map_err(|e| format!("channel_direct_tcpip to {}:{} failed: {}", config.host, config.port, e))?;
+
+        sess.set_blocking(false);
+        let (final_stream, handle) = Self::bridge_channel_to_stream(channel)?;
+        bridge_handles.push(handle);
+        intermediate_sessions.push(sess);
+
+        Ok((final_stream, intermediate_sessions, bridge_handles))
+    }
+
+    // ── Mixed chain (SSH jumps + proxy hops interleaved) ──────────────
+    //
+    // Processes hops left-to-right.  For each hop[i] the current stream
+    // already reaches that hop; the hop then connects onward to the
+    // *next* hop (or the final SSH target if it is the last).
+    //
+    async fn establish_mixed_chain_connection(
+        &self,
+        config: &SshConnectionConfig,
+        chain: &MixedChainConfig,
+    ) -> Result<(TcpStream, Vec<Session>, Vec<std::thread::JoinHandle<()>>), String> {
+        if chain.hops.is_empty() {
+            return Err("Mixed chain has no hops".to_string());
+        }
+
+        let mut intermediate_sessions: Vec<Session> = Vec::new();
+        let mut bridge_handles: Vec<std::thread::JoinHandle<()>> = Vec::new();
+
+        // Build the target list: for hop[i] the target is hop[i+1].address(),
+        // except for the last hop whose target is the final SSH destination.
+        let targets: Vec<(String, u16)> = (0..chain.hops.len())
+            .map(|i| {
+                if i + 1 < chain.hops.len() {
+                    chain.hops[i + 1].address()
+                } else {
+                    (config.host.clone(), config.port)
+                }
+            })
+            .collect();
+
+        // TCP-connect to the first hop
+        let first_addr = chain.hops[0].address();
+        let timeout = config.connect_timeout.unwrap_or(15);
+        let first_stream = tokio::time::timeout(
+            Duration::from_secs(timeout),
+            AsyncTcpStream::connect(format!("{}:{}", first_addr.0, first_addr.1)),
+        )
+        .await
+        .map_err(|_| format!("Timeout connecting to first chain hop {}:{}", first_addr.0, first_addr.1))?
+        .map_err(|e| format!("Failed to connect to first chain hop: {}", e))?;
+
+        // We track the stream in an enum so we can switch between async / sync
+        // as needed by different hop types.
+        enum MixedStream {
+            Async(AsyncTcpStream),
+            Sync(TcpStream),
+        }
+
+        impl MixedStream {
+            fn into_async(self) -> Result<AsyncTcpStream, String> {
+                match self {
+                    MixedStream::Async(s) => Ok(s),
+                    MixedStream::Sync(s) => {
+                        s.set_nonblocking(true)
+                            .map_err(|e| format!("set_nonblocking: {}", e))?;
+                        AsyncTcpStream::from_std(s)
+                            .map_err(|e| format!("from_std: {}", e))
+                    }
+                }
+            }
+
+            fn into_sync(self) -> Result<TcpStream, String> {
+                match self {
+                    MixedStream::Sync(s) => Ok(s),
+                    MixedStream::Async(s) => {
+                        let s = s.into_std()
+                            .map_err(|e| format!("into_std: {}", e))?;
+                        s.set_nonblocking(false)
+                            .map_err(|e| format!("set_nonblocking: {}", e))?;
+                        Ok(s)
+                    }
+                }
+            }
+        }
+
+        let mut current = MixedStream::Async(first_stream);
+
+        for (i, hop) in chain.hops.iter().enumerate() {
+            let (target_host, target_port) = &targets[i];
+            let target_str = format!("{}:{}", target_host, target_port);
+
+            log::info!(
+                "Mixed chain hop {}/{}: {} → {}",
+                i + 1,
+                chain.hops.len(),
+                hop.label(),
+                target_str,
+            );
+
+            match hop {
+                ChainHop::Proxy(proxy) => {
+                    let async_stream = current.into_async()?;
+                    match proxy.proxy_type {
+                        ProxyType::Socks5 => {
+                            let (s, _) = self
+                                .socks5_connect_internal(async_stream, &target_str, proxy)
+                                .await?;
+                            current = MixedStream::Async(s);
+                        }
+                        ProxyType::Http | ProxyType::Https => {
+                            let std_s = self
+                                .connect_through_http_proxy(async_stream, &target_str, proxy)
+                                .await?;
+                            current = MixedStream::Sync(std_s);
+                        }
+                        ProxyType::Socks4 => {
+                            let std_s = self
+                                .connect_through_socks4(async_stream, &target_str, proxy)
+                                .await?;
+                            current = MixedStream::Sync(std_s);
+                        }
+                    }
+                }
+                ChainHop::SshJump(jump) => {
+                    let std_stream = current.into_sync()?;
+
+                    let mut sess = Session::new()
+                        .map_err(|e| format!("Session::new failed: {}", e))?;
+                    Self::apply_jump_cipher_prefs(&mut sess, jump);
+                    sess.set_tcp_stream(std_stream);
+                    sess.handshake()
+                        .map_err(|e| format!("SSH jump {} handshake failed: {}", jump.host, e))?;
+                    self.authenticate_jump_session(&mut sess, jump)?;
+
+                    let channel = sess
+                        .channel_direct_tcpip(target_host, *target_port, None)
+                        .map_err(|e| {
+                            format!(
+                                "channel_direct_tcpip to {} failed: {}",
+                                target_str, e
+                            )
+                        })?;
+
+                    sess.set_blocking(false);
+                    let (bridged, handle) = Self::bridge_channel_to_stream(channel)?;
+                    bridge_handles.push(handle);
+                    intermediate_sessions.push(sess);
+
+                    current = MixedStream::Sync(bridged);
+                }
+            }
+        }
+
+        let final_stream = current.into_sync()?;
+        Ok((final_stream, intermediate_sessions, bridge_handles))
+    }
+
+    /// Apply per-hop cipher / KEX / MAC / host-key preferences.
+    fn apply_jump_cipher_prefs(sess: &mut Session, jump: &JumpHostConfig) {
+        if !jump.preferred_ciphers.is_empty() {
+            let list = jump.preferred_ciphers.join(",");
+            let _ = sess.method_pref(MethodType::CryptCs, &list);
+            let _ = sess.method_pref(MethodType::CryptSc, &list);
+        }
+        if !jump.preferred_macs.is_empty() {
+            let list = jump.preferred_macs.join(",");
+            let _ = sess.method_pref(MethodType::MacCs, &list);
+            let _ = sess.method_pref(MethodType::MacSc, &list);
+        }
+        if !jump.preferred_kex.is_empty() {
+            let list = jump.preferred_kex.join(",");
+            let _ = sess.method_pref(MethodType::Kex, &list);
+        }
+        if !jump.preferred_host_key_algorithms.is_empty() {
+            let list = jump.preferred_host_key_algorithms.join(",");
+            let _ = sess.method_pref(MethodType::HostKey, &list);
+        }
     }
 
     fn authenticate_session(&self, session: &mut Session, config: &SshConnectionConfig) -> Result<(), String> {
@@ -648,23 +993,97 @@ impl SshService {
     }
 
     fn authenticate_jump_session(&self, session: &mut Session, jump_config: &JumpHostConfig) -> Result<(), String> {
+        // 1. Public key
         if let Some(private_key_path) = &jump_config.private_key_path {
+            let passphrase = jump_config.private_key_passphrase.as_deref();
             if session.userauth_pubkey_file(
                 &jump_config.username,
                 None,
                 Path::new(private_key_path),
-                None,
-                ).is_ok() {
-                    return Ok(());
-                }
+                passphrase,
+            ).is_ok() {
+                return Ok(());
+            }
         }
 
+        // 2. Password
         if let Some(password) = &jump_config.password {
             if session.userauth_password(&jump_config.username, password).is_ok() {
                 return Ok(());
             }
         }
 
+        // 3. Keyboard-interactive (TOTP / MFA)
+        if jump_config.password.is_some()
+            || jump_config.totp_secret.is_some()
+            || !jump_config.keyboard_interactive_responses.is_empty()
+        {
+            struct JumpKbdHandler {
+                password: Option<String>,
+                totp_secret: Option<String>,
+                responses: Vec<String>,
+            }
+
+            impl KeyboardInteractivePrompt for JumpKbdHandler {
+                fn prompt(
+                    &mut self,
+                    _username: &str,
+                    _instructions: &str,
+                    prompts: &[Prompt],
+                ) -> Vec<String> {
+                    prompts
+                        .iter()
+                        .map(|prompt| {
+                            let lower = prompt.text.to_lowercase();
+
+                            // OTP / TOTP
+                            if lower.contains("verification")
+                                || lower.contains("code")
+                                || lower.contains("token")
+                                || lower.contains("otp")
+                                || lower.contains("2fa")
+                                || lower.contains("mfa")
+                            {
+                                if let Some(ref secret) = self.totp_secret {
+                                    if let Ok(code) = generate_totp_code(secret) {
+                                        return code;
+                                    }
+                                }
+                                for r in &self.responses {
+                                    if !r.is_empty() {
+                                        return r.clone();
+                                    }
+                                }
+                            }
+
+                            // Password
+                            if lower.contains("password") {
+                                if let Some(ref p) = self.password {
+                                    return p.clone();
+                                }
+                            }
+
+                            self.password.clone().unwrap_or_default()
+                        })
+                        .collect()
+                }
+            }
+
+            let mut handler = JumpKbdHandler {
+                password: jump_config.password.clone(),
+                totp_secret: jump_config.totp_secret.clone(),
+                responses: jump_config.keyboard_interactive_responses.clone(),
+            };
+
+            if session
+                .userauth_keyboard_interactive(&jump_config.username, &mut handler)
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+
+        // 4. SSH agent
         if session.userauth_agent(&jump_config.username).is_ok() {
             return Ok(());
         }
@@ -778,11 +1197,22 @@ impl SshService {
     }
 
     pub async fn test_ssh_connection(&self, config: SshConnectionConfig) -> Result<String, String> {
-        let final_stream = if config.jump_hosts.is_empty() {
-            self.establish_direct_connection(&config).await?
-        } else {
-            self.establish_jump_connection(&config).await?
-        };
+        // Use the same priority as connect_ssh
+        let (final_stream, _intermediate, _handles) =
+            if let Some(ref mixed_chain) = config.mixed_chain {
+                self.establish_mixed_chain_connection(&config, mixed_chain).await?
+            } else if let Some(ref proxy_chain) = config.proxy_chain {
+                let s = self.establish_proxy_chain_connection(&config, proxy_chain).await?;
+                (s, Vec::new(), Vec::new())
+            } else if let Some(ref proxy_config) = config.proxy_config {
+                let s = self.establish_proxy_connection(&config, proxy_config).await?;
+                (s, Vec::new(), Vec::new())
+            } else if !config.jump_hosts.is_empty() {
+                self.establish_jump_connection(&config).await?
+            } else {
+                let s = self.establish_direct_connection(&config).await?;
+                (s, Vec::new(), Vec::new())
+            };
 
         let mut sess = Session::new().map_err(|e| format!("Failed to create test session: {}", e))?;
         sess.set_tcp_stream(final_stream);
@@ -790,6 +1220,7 @@ impl SshService {
 
         self.authenticate_session(&mut sess, &config)?;
 
+        // _intermediate sessions and _handles will be dropped, cleaning up the tunnel.
         Ok("SSH connection test successful".to_string())
     }
 
@@ -873,13 +1304,49 @@ impl SshService {
             }
         }
 
-        channel.request_pty("xterm", None, None)
+        // ── X11 forwarding ──────────────────────────────────────────
+        let mut x11_to_enable: Option<X11ForwardingConfig> = None;
+        if let Some(ref x11_cfg) = session.config.x11_forwarding {
+            if x11_cfg.enabled {
+                if let Err(e) = channel.handle_extended_data(ssh2::ExtendedData::Merge) {
+                    log::warn!("Failed to set up X11 forwarding: {} (continuing without)", e);
+                } else {
+                    log::info!("[{}] X11 forwarding requested (trusted={})", session_id, x11_cfg.trusted);
+                    x11_to_enable = Some(x11_cfg.clone());
+                }
+            }
+        }
+
+        // ── Environment variables ───────────────────────────────────
+        for (key, value) in &session.config.environment {
+            if let Err(e) = channel.setenv(key, value) {
+                log::warn!("Failed to set env {}={}: {} (server may reject setenv)", key, value, e);
+            }
+        }
+
+        // ── PTY type ────────────────────────────────────────────────
+        let pty_type = session.config.pty_type.as_deref().unwrap_or("xterm");
+        channel.request_pty(pty_type, None, None)
             .map_err(|e| format!("Failed to request PTY: {}", e))?;
 
         channel.shell()
             .map_err(|e| format!("Failed to start shell: {}", e))?;
 
         session.session.set_blocking(false);
+
+        // Release the mutable borrow on self.sessions before calling self.enable_x11_forwarding
+        let _ = session;
+
+        // Enable X11 proxy listener if requested (after releasing session borrow)
+        if let Some(x11_cfg) = x11_to_enable {
+            if let Err(e) = self.enable_x11_forwarding(session_id, x11_cfg) {
+                log::warn!("[{}] Failed to start X11 proxy: {}", session_id, e);
+            }
+        }
+
+        // Re-borrow session for the remaining work
+        let _session = self.sessions.get_mut(session_id)
+            .ok_or("Session not found")?;
 
         let (tx, mut rx) = mpsc::unbounded_channel::<SshShellCommand>();
         let shell_id = Uuid::new_v4().to_string();
@@ -1654,6 +2121,13 @@ impl SshService {
 
     pub async fn disconnect_ssh(&mut self, session_id: &str) -> Result<(), String> {
         let _ = self.stop_shell(session_id).await;
+
+        // Clean up X11 forwarding
+        let _ = self.disable_x11_forwarding(session_id);
+
+        // Clean up ProxyCommand
+        let _ = super::proxy_command::stop_proxy_command(session_id);
+
         if let Some(mut session) = self.sessions.remove(session_id) {
             if let Some(handle) = session.keep_alive_handle.take() {
                 handle.abort();
@@ -1663,7 +2137,19 @@ impl SshService {
                 forward.handle.abort();
             }
 
-            // Session will be dropped automatically
+            // Drop the main session first (closes its channel_direct_tcpip channels)
+            drop(session.session);
+
+            // Drop intermediate sessions in reverse order (innermost hop first)
+            while let Some(sess) = session.intermediate_sessions.pop() {
+                drop(sess);
+            }
+
+            // Bridge threads will naturally terminate once the channels are dropped;
+            // join them with a bounded wait so we don't block forever.
+            for handle in session.bridge_handles.drain(..) {
+                let _ = handle.join();
+            }
         }
         Ok(())
     }
@@ -1689,6 +2175,62 @@ impl SshService {
             last_activity: session.last_activity,
             is_alive: true,
         }).collect()
+    }
+
+    // ── Mixed-chain helpers exposed to commands layer ───────────────────
+
+    /// Validate a mixed chain config and return per-hop info.
+    pub fn validate_mixed_chain(chain: &MixedChainConfig) -> Result<MixedChainStatus, String> {
+        if chain.hops.is_empty() {
+            return Err("Mixed chain has no hops".to_string());
+        }
+
+        let mut ssh_jump_count = 0usize;
+        let mut proxy_count = 0usize;
+        let mut hops = Vec::with_capacity(chain.hops.len());
+
+        for (i, hop) in chain.hops.iter().enumerate() {
+            let (hop_type, host, port) = match hop {
+                ChainHop::SshJump(j) => {
+                    ssh_jump_count += 1;
+                    ("ssh_jump".to_string(), j.host.clone(), j.port)
+                }
+                ChainHop::Proxy(p) => {
+                    proxy_count += 1;
+                    (format!("{:?}", p.proxy_type).to_lowercase(), p.host.clone(), p.port)
+                }
+            };
+            hops.push(ChainHopInfo {
+                index: i,
+                label: hop.label(),
+                hop_type,
+                host,
+                port,
+            });
+        }
+
+        Ok(MixedChainStatus {
+            total_hops: chain.hops.len(),
+            ssh_jump_count,
+            proxy_count,
+            hops,
+        })
+    }
+
+    /// Build a MixedChainConfig from the legacy `jump_hosts` field.
+    pub fn jump_hosts_to_mixed_chain(jump_hosts: &[JumpHostConfig]) -> MixedChainConfig {
+        MixedChainConfig {
+            hops: jump_hosts.iter().cloned().map(ChainHop::SshJump).collect(),
+            hop_timeout_ms: 10000,
+        }
+    }
+
+    /// Build a MixedChainConfig from the legacy `proxy_chain` field.
+    pub fn proxy_chain_to_mixed_chain(proxy_chain: &ProxyChainConfig) -> MixedChainConfig {
+        MixedChainConfig {
+            hops: proxy_chain.proxies.iter().cloned().map(ChainHop::Proxy).collect(),
+            hop_timeout_ms: proxy_chain.hop_timeout_ms,
+        }
     }
 
     // Advanced SSH features

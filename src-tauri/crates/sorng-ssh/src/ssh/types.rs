@@ -39,6 +39,9 @@ pub struct SshConnectionConfig {
     /// Proxy chain for routing through multiple proxies
     #[serde(default)]
     pub proxy_chain: Option<ProxyChainConfig>,
+    /// Mixed chain of SSH jumps + proxy hops (highest priority)
+    #[serde(default)]
+    pub mixed_chain: Option<MixedChainConfig>,
     pub openvpn_config: Option<OpenVPNConfig>,
     pub connect_timeout: Option<u64>,
     pub keep_alive_interval: Option<u64>,
@@ -78,6 +81,18 @@ pub struct SshConnectionConfig {
     pub preferred_kex: Vec<String>,
     #[serde(default)]
     pub preferred_host_key_algorithms: Vec<String>,
+    // X11 forwarding
+    #[serde(default)]
+    pub x11_forwarding: Option<X11ForwardingConfig>,
+    // ProxyCommand — spawn external command whose stdio becomes the SSH transport
+    #[serde(default)]
+    pub proxy_command: Option<ProxyCommandConfig>,
+    // PTY type (xterm, xterm-256color, vt100, etc.)
+    #[serde(default)]
+    pub pty_type: Option<String>,
+    // Environment variables to send to the remote shell
+    #[serde(default)]
+    pub environment: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -138,6 +153,93 @@ pub struct JumpHostConfig {
     pub username: String,
     pub password: Option<String>,
     pub private_key_path: Option<String>,
+    /// Passphrase for the private key (if encrypted)
+    #[serde(default)]
+    pub private_key_passphrase: Option<String>,
+    /// Enable SSH agent forwarding through this hop
+    #[serde(default)]
+    pub agent_forwarding: bool,
+    /// TOTP secret for keyboard-interactive auth on this hop
+    #[serde(default)]
+    pub totp_secret: Option<String>,
+    /// Pre-configured responses for keyboard-interactive prompts
+    #[serde(default)]
+    pub keyboard_interactive_responses: Vec<String>,
+    /// Per-hop cipher preferences
+    #[serde(default)]
+    pub preferred_ciphers: Vec<String>,
+    /// Per-hop MAC preferences
+    #[serde(default)]
+    pub preferred_macs: Vec<String>,
+    /// Per-hop key-exchange preferences
+    #[serde(default)]
+    pub preferred_kex: Vec<String>,
+    /// Per-hop host-key algorithm preferences
+    #[serde(default)]
+    pub preferred_host_key_algorithms: Vec<String>,
+}
+
+// ===============================
+// Mixed Chain Types
+// ===============================
+
+/// A single hop in a mixed chain – may be an SSH jump or a proxy.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type")]
+pub enum ChainHop {
+    /// SSH jump host hop – full SSH session + channel_direct_tcpip
+    #[serde(rename = "ssh_jump")]
+    SshJump(JumpHostConfig),
+    /// Proxy hop – SOCKS4, SOCKS5, HTTP CONNECT, or HTTPS CONNECT
+    #[serde(rename = "proxy")]
+    Proxy(ProxyConfig),
+}
+
+impl ChainHop {
+    /// Return the network address of this hop.
+    pub fn address(&self) -> (String, u16) {
+        match self {
+            ChainHop::SshJump(j) => (j.host.clone(), j.port),
+            ChainHop::Proxy(p) => (p.host.clone(), p.port),
+        }
+    }
+
+    /// Human-readable label.
+    pub fn label(&self) -> String {
+        match self {
+            ChainHop::SshJump(j) => format!("SSH {}@{}:{}", j.username, j.host, j.port),
+            ChainHop::Proxy(p) => format!("{:?} {}:{}", p.proxy_type, p.host, p.port),
+        }
+    }
+}
+
+/// Configuration for a mixed chain of SSH jumps and proxy hops.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MixedChainConfig {
+    /// Ordered list of hops (processed left-to-right).
+    pub hops: Vec<ChainHop>,
+    /// Timeout per hop in milliseconds (default 10 000).
+    #[serde(default = "default_proxy_timeout")]
+    pub hop_timeout_ms: u64,
+}
+
+/// Per-hop status returned by `validate_mixed_chain` / diagnostics.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChainHopInfo {
+    pub index: usize,
+    pub label: String,
+    pub hop_type: String,
+    pub host: String,
+    pub port: u16,
+}
+
+/// Overall status of a mixed chain.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MixedChainStatus {
+    pub total_hops: usize,
+    pub ssh_jump_count: usize,
+    pub proxy_count: usize,
+    pub hops: Vec<ChainHopInfo>,
 }
 
 // ===============================
@@ -173,6 +275,11 @@ pub struct SshSession {
     pub last_activity: DateTime<Utc>,
     pub port_forwards: HashMap<String, PortForwardHandle>,
     pub keep_alive_handle: Option<tokio::task::JoinHandle<()>>,
+    /// Intermediate SSH sessions kept alive for multi-hop jump / mixed chains.
+    /// These own the `channel_direct_tcpip` channels that form the tunnel.
+    pub intermediate_sessions: Vec<Session>,
+    /// Bridge threads that relay data between SSH channels and local TCP sockets.
+    pub bridge_handles: Vec<std::thread::JoinHandle<()>>,
 }
 
 // ===============================
@@ -557,3 +664,152 @@ pub struct SshHostKeyInfo {
 // ===============================
 
 pub type SshServiceState = Arc<Mutex<SshService>>;
+
+// ===============================
+// X11 Forwarding Types
+// ===============================
+
+pub(crate) fn default_x11_display_offset() -> u32 { 10 }
+pub(crate) fn default_x11_screen() -> u32 { 0 }
+pub(crate) fn default_x11_timeout() -> u64 { 0 }
+
+/// X11 forwarding configuration.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct X11ForwardingConfig {
+    /// Whether X11 forwarding is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Use trusted forwarding (ForwardX11Trusted / -Y).  Trusted mode skips
+    /// the X11 SECURITY extension — the remote app gets full access to the
+    /// local display.  Untrusted (default) is safer.
+    #[serde(default)]
+    pub trusted: bool,
+    /// Display offset on the remote side (default 10, mirrors OpenSSH).
+    #[serde(default = "default_x11_display_offset")]
+    pub display_offset: u32,
+    /// X11 screen number (default 0).
+    #[serde(default = "default_x11_screen")]
+    pub screen: u32,
+    /// Override the local DISPLAY value (e.g. "localhost:10.0").  When empty
+    /// the runtime auto-detects from $DISPLAY / Xauthority.
+    #[serde(default)]
+    pub display_override: Option<String>,
+    /// Path to the local Xauthority file.  When empty, $XAUTHORITY or
+    /// ~/.Xauthority is used.
+    #[serde(default)]
+    pub xauthority_path: Option<String>,
+    /// Timeout in seconds to wait for X11 channel open (0 = no timeout).
+    #[serde(default = "default_x11_timeout")]
+    pub timeout_secs: u64,
+}
+
+impl Default for X11ForwardingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            trusted: false,
+            display_offset: default_x11_display_offset(),
+            screen: default_x11_screen(),
+            display_override: None,
+            xauthority_path: None,
+            timeout_secs: default_x11_timeout(),
+        }
+    }
+}
+
+/// Runtime state for an active X11 forwarding session.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct X11ForwardInfo {
+    pub session_id: String,
+    /// Local DISPLAY string handed to the remote (e.g. "localhost:10.0").
+    pub remote_display: String,
+    /// Local TCP listener address (e.g. "127.0.0.1:6010").
+    pub local_bind: String,
+    /// Whether trusted mode is active.
+    pub trusted: bool,
+    /// Number of currently-open X11 channels.
+    pub active_channels: u32,
+    /// Monotonically increasing counter of channels opened since start.
+    pub total_channels_opened: u64,
+}
+
+/// Status summary returned by `get_x11_forward_status`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct X11ForwardStatus {
+    pub session_id: String,
+    pub enabled: bool,
+    pub info: Option<X11ForwardInfo>,
+}
+
+// ===============================
+// ProxyCommand Types
+// ===============================
+
+/// ProxyCommand configuration — the command is spawned as a child process
+/// and its stdin/stdout are spliced to the SSH transport layer, replacing
+/// the usual TCP connection.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProxyCommandConfig {
+    /// Full shell command (expanded).  Supports `%h` (host), `%p` (port),
+    /// `%r` (username) placeholders that are substituted at connect time.
+    /// Example: `ssh -W %h:%p jumpbox` or `nc -X 5 -x proxy:1080 %h %p`
+    #[serde(default)]
+    pub command: Option<String>,
+    /// Or pick a built-in template and fill in the proxy coordinates.
+    #[serde(default)]
+    pub template: Option<ProxyCommandTemplate>,
+    /// Proxy host used by templates.
+    #[serde(default)]
+    pub proxy_host: Option<String>,
+    /// Proxy port used by templates.
+    #[serde(default)]
+    pub proxy_port: Option<u16>,
+    /// Proxy username (for templates that support auth).
+    #[serde(default)]
+    pub proxy_username: Option<String>,
+    /// Proxy password (for templates that support auth).
+    #[serde(default)]
+    pub proxy_password: Option<String>,
+    /// Proxy type hint used by some templates (socks4 / socks5 / http).
+    #[serde(default)]
+    pub proxy_type: Option<String>,
+    /// Timeout in seconds for the ProxyCommand to produce a usable stdio
+    /// pipe (default: same as connect_timeout, or 15s).
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+}
+
+/// Built-in ProxyCommand templates.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum ProxyCommandTemplate {
+    /// `nc %h %p`  (OpenBSD netcat)
+    #[serde(rename = "nc")]
+    Nc,
+    /// `ncat --proxy-type <type> --proxy <host:port> %h %p`
+    #[serde(rename = "ncat")]
+    Ncat,
+    /// `socat - TCP:%h:%p`
+    #[serde(rename = "socat")]
+    Socat,
+    /// `connect -H <host:port> %h %p`  (BSD/GNU connect-proxy for HTTP)
+    #[serde(rename = "connect")]
+    Connect,
+    /// `corkscrew <proxy_host> <proxy_port> %h %p`
+    #[serde(rename = "corkscrew")]
+    Corkscrew,
+    /// `ssh -W %h:%p <jumpbox>`  (ProxyJump via OpenSSH stdio forward)
+    #[serde(rename = "ssh_stdio")]
+    SshStdio,
+}
+
+/// Status of a ProxyCommand child process.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProxyCommandStatus {
+    pub session_id: String,
+    /// The expanded command string that was executed.
+    pub command: String,
+    /// Whether the child process is still alive.
+    pub alive: bool,
+    /// OS process id of the child.
+    pub pid: Option<u32>,
+}

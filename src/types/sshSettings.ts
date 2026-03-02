@@ -328,6 +328,64 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
   remoteControlledPrinting: false,
 };
 
+// ===================================
+// Jump Host & Mixed Chain Types
+// ===================================
+
+/** Configuration for a single SSH jump host. */
+export interface JumpHostConfig {
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  privateKeyPath?: string;
+  privateKeyPassphrase?: string;
+  agentForwarding?: boolean;
+  totpSecret?: string;
+  keyboardInteractiveResponses?: string[];
+  preferredCiphers?: string[];
+  preferredMacs?: string[];
+  preferredKex?: string[];
+  preferredHostKeyAlgorithms?: string[];
+}
+
+/** Proxy hop used inside a mixed chain. */
+export interface ProxyConfig {
+  proxyType: 'http' | 'https' | 'socks4' | 'socks5';
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+}
+
+/** A single hop in a mixed chain. */
+export type ChainHop =
+  | { type: 'ssh_jump' } & JumpHostConfig
+  | { type: 'proxy' } & ProxyConfig;
+
+/** Configuration for a mixed chain of SSH jumps + proxy hops. */
+export interface MixedChainConfig {
+  hops: ChainHop[];
+  hopTimeoutMs?: number;
+}
+
+/** Per-hop descriptive info returned by validate_mixed_chain. */
+export interface ChainHopInfo {
+  index: number;
+  label: string;
+  hopType: string;
+  host: string;
+  port: number;
+}
+
+/** Overall status / validation result of a mixed chain. */
+export interface MixedChainStatus {
+  totalHops: number;
+  sshJumpCount: number;
+  proxyCount: number;
+  hops: ChainHopInfo[];
+}
+
 /**
  * SSH Connection Configuration - protocol-level settings for SSH connections.
  * These settings control the SSH transport layer, authentication, and tunneling.
@@ -365,12 +423,27 @@ export interface SSHConnectionConfig {
   // Port forwarding defaults
   enableX11Forwarding: boolean;
   x11DisplayOffset: number;
+  x11Trusted: boolean;
+  x11Screen: number;
+  x11DisplayOverride?: string;
+  x11XauthorityPath?: string;
+  x11TimeoutSecs: number;
   enableTcpForwarding: boolean;
 
   // Jump host / ProxyCommand
   enableJumpHost: boolean;
   jumpHostConnectionId?: string;
   proxyCommand?: string;
+  proxyCommandTemplate?: ProxyCommandTemplate;
+  proxyCommandHost?: string;
+  proxyCommandPort?: number;
+  proxyCommandUsername?: string;
+  proxyCommandPassword?: string;
+  proxyCommandProxyType?: string;
+  proxyCommandTimeout?: number;
+
+  // Mixed chain (SSH jumps + proxy hops)
+  mixedChain?: MixedChainConfig;
 
   // Session settings
   requestPty: boolean;
@@ -393,6 +466,9 @@ export interface SSHConnectionConfig {
 
 export const SSHAuthMethods = ['password', 'publickey', 'keyboard-interactive', 'gssapi-with-mic', 'hostbased', 'none'] as const;
 export type SSHAuthMethod = (typeof SSHAuthMethods)[number];
+
+export const ProxyCommandTemplates = ['nc', 'ncat', 'socat', 'connect', 'corkscrew', 'ssh_stdio'] as const;
+export type ProxyCommandTemplate = (typeof ProxyCommandTemplates)[number];
 
 export const defaultSSHConnectionConfig: SSHConnectionConfig = {
   // Connection behavior
@@ -427,12 +503,24 @@ export const defaultSSHConnectionConfig: SSHConnectionConfig = {
   // Port forwarding defaults
   enableX11Forwarding: false,
   x11DisplayOffset: 10,
+  x11Trusted: false,
+  x11Screen: 0,
+  x11DisplayOverride: undefined,
+  x11XauthorityPath: undefined,
+  x11TimeoutSecs: 0,
   enableTcpForwarding: true,
 
   // Jump host / ProxyCommand
   enableJumpHost: false,
   jumpHostConnectionId: undefined,
   proxyCommand: undefined,
+  proxyCommandTemplate: undefined,
+  proxyCommandHost: undefined,
+  proxyCommandPort: undefined,
+  proxyCommandUsername: undefined,
+  proxyCommandPassword: undefined,
+  proxyCommandProxyType: undefined,
+  proxyCommandTimeout: undefined,
 
   // Session settings
   requestPty: true,

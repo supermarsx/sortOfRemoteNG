@@ -101,6 +101,7 @@ impl ScriptService {
                                                                     jump_hosts: vec![],
                                                                     proxy_config: None,
                                                                     proxy_chain: None,
+                                                                    mixed_chain: None,
                                                                     openvpn_config: None,
                                                                     connect_timeout: Some(30),
                                                                     keep_alive_interval: Some(60),
@@ -120,6 +121,10 @@ impl ScriptService {
                                                                     preferred_macs: vec![],
                                                                     preferred_kex: vec![],
                                                                     preferred_host_key_algorithms: vec![],
+                                                                    x11_forwarding: None,
+                                                                    proxy_command: None,
+                                                                    pty_type: None,
+                                                                    environment: std::collections::HashMap::new(),
                                                                 };
                                                                 
                                                                 let mut service = ssh_service.lock().await;
