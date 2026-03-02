@@ -3,6 +3,7 @@ import ErrorMsg from "./ErrorMsg";
 import LoadingSpinner from "./LoadingSpinner";
 import React, { useState } from "react";
 import { CheckCircle, FileText, Image, MapPin, Music, Send, SmilePlus, Video } from "lucide-react";
+import { Textarea } from '../../ui/forms';
 
 // ── Compose Tab ──────────────────────────────────────────────────────
 
@@ -155,7 +156,7 @@ const ComposeTab: React.FC<{ wa: ReturnType<typeof useWhatsApp> }> = ({
       {/* Type-specific fields */}
       {msgType === "text" && (
         <div className="space-y-2">
-          <textarea
+          <Textarea
             rows={4}
             value={textBody}
             onChange={(e) => setTextBody(e.target.value)}

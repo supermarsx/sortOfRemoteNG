@@ -7,14 +7,14 @@ const ImportPanel: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => {
       <div className="sor-totp-label">
         Import TOTP Configs (JSON)
       </div>
-      <textarea
+      <Textarea
         value={mgr.importText}
         onChange={(e) => {
           mgr.setImportText(e.target.value);
           mgr.setImportError("");
         }}
         placeholder='[{"secret":"...","account":"...","issuer":"...","digits":6,"period":30,"algorithm":"sha1"}]'
-        className="sor-form-textarea-xs w-full h-20 font-mono resize-none"
+        variant="form-xs" className="w-full h-20 font-mono resize-none"
       />
       {mgr.importError && (
         <div className="text-[10px] text-red-400">{mgr.importError}</div>

@@ -14,7 +14,7 @@ import {
 } from "../../types/settings";
 import { useProxyChainEditor, LAYER_TYPES } from "../../hooks/network/useProxyChainEditor";
 import { Modal, ModalHeader } from "../ui/overlays/Modal";
-import { Select } from '../ui/forms';
+import { Select, Textarea} from '../ui/forms';
 
 type Mgr = ReturnType<typeof useProxyChainEditor>;
 
@@ -48,7 +48,7 @@ const NameField: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
 const DescriptionField: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
   <div>
     <label className="block text-sm font-medium text-[var(--color-text)] mb-1">Description</label>
-    <textarea
+    <Textarea
       value={mgr.description}
       onChange={(e) => mgr.setDescription(e.target.value)}
       placeholder="Optional description for this chain"

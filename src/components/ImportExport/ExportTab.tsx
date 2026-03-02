@@ -1,6 +1,6 @@
 import React from 'react';
 import { Download, FileText, Database, Settings, Lock } from 'lucide-react';
-import { PasswordInput } from '../ui/forms/PasswordInput';
+import { PasswordInput } from '../ui/forms';
 import { Checkbox } from '../ui/forms';
 import { Connection } from '../../types/connection';
 

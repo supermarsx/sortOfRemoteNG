@@ -21,7 +21,7 @@ import { TOTPService } from '../../utils/totpService';
 import { TotpImportDialog } from '../security/TotpImportDialog';
 import { PopoverSurface } from '../ui/overlays/PopoverSurface';
 import { useRDPTotpPanel, type RDPTotpPanelMgr } from '../../hooks/rdp/useRDPTotpPanel';
-import { Select } from '../ui/forms';
+import { Select, Textarea} from '../ui/forms';
 
 // ─── Props ───────────────────────────────────────────────────────────
 
@@ -153,7 +153,7 @@ function ImportModal({
       <div className="sor-totp-label">
         Import TOTP Configs (JSON)
       </div>
-      <textarea
+      <Textarea
         value={text}
         onChange={(e) => {
           setText(e.target.value);

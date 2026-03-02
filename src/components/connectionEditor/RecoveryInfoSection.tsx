@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { LifeBuoy, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
 import { Connection, RecoveryInfo } from '../../types/connection';
+import { Textarea } from '../ui/forms';
 
 interface RecoveryInfoSectionProps {
   formData: Partial<Connection>;
@@ -131,7 +132,7 @@ export const RecoveryInfoSection: React.FC<RecoveryInfoSectionProps> = ({ formDa
                 {showSeed ? <EyeOff size={11} /> : <Eye size={11} />}
               </button>
             </div>
-            <textarea
+            <Textarea
               value={info.seedPhrase ?? ''}
               onChange={(e) => updateInfo({ seedPhrase: e.target.value })}
               placeholder="Enter recovery seed phrase words"

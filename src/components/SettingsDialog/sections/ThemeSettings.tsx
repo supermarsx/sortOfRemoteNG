@@ -3,7 +3,7 @@ import React from "react";
 import { GlobalSettings, Theme, ColorScheme } from "../../../types/settings";
 import { Palette, Droplets, Sparkles, Eye, Code, Zap } from "lucide-react";
 import { useThemeSettings, formatLabel } from "../../../hooks/settings/useThemeSettings";
-import { Checkbox, NumberInput, Slider, Select } from '../../ui/forms';
+import { Checkbox, NumberInput, Slider, Select, Textarea} from '../../ui/forms';
 
 type Mgr = ReturnType<typeof useThemeSettings>;
 
@@ -173,7 +173,7 @@ const CustomCssSection: React.FC<{
     </h4>
     <div className="css-editor">
       <pre ref={mgr.cssHighlightRef} className="css-editor-highlight" aria-hidden="true" dangerouslySetInnerHTML={{ __html: mgr.highlightedCss + (mgr.highlightedCss.endsWith("\n") ? "" : "\n") }} />
-      <textarea value={settings.customCss || ""} onChange={(e) => updateSettings({ customCss: e.target.value })} onScroll={mgr.handleCssScroll} rows={6} spellCheck={false} className="css-editor-input" placeholder="/* Enter custom CSS rules... */" />
+      <Textarea value={settings.customCss || ""} onChange={(e) => updateSettings({ customCss: e.target.value })} onScroll={mgr.handleCssScroll} rows={6} spellCheck={false} className="css-editor-input" placeholder="/* Enter custom CSS rules... */" />
     </div>
     <p className="text-xs text-[var(--color-textMuted)]">Add custom styles to personalize the application appearance.</p>
   </div>

@@ -1,4 +1,4 @@
-import { PasswordInput } from "../../../ui/forms/PasswordInput";
+import { PasswordInput } from '../../../ui/forms';
 import { X } from "lucide-react";
 import { Modal } from "../../../ui/overlays/Modal";
 import { NumberInput } from "../../../ui/forms";

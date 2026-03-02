@@ -1,5 +1,5 @@
 import { Upload, Download, Zap } from "lucide-react";
-import { Checkbox, NumberInput } from "../../../ui/forms";
+import { Checkbox, NumberInput, Textarea} from '../../../ui/forms';
 import type { Mgr } from "./types";
 import CollapsibleSection from "../../../ui/CollapsibleSection";
 function AdvancedSection({ mgr }: { mgr: Mgr }) {
@@ -53,7 +53,7 @@ function AdvancedSection({ mgr }: { mgr: Mgr }) {
             <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
               Exclude Patterns (one per line)
             </label>
-            <textarea
+            <Textarea
               value={mgr.cloudSync.excludePatterns.join("\n")}
               onChange={(e) =>
                 mgr.updateCloudSync({

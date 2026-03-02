@@ -3,7 +3,7 @@ import HighlightedCode from "../../ui/display/HighlightedCode";
 import { useTranslation } from "react-i18next";
 import { detectLanguage } from "../../../utils/scriptSyntax";
 import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
-import { Select } from "../../ui/forms";
+import { Select, Textarea} from '../../ui/forms';
 
 function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
   const { t } = useTranslation();
@@ -99,7 +99,7 @@ function ScriptEditForm({ mgr }: { mgr: ScriptManagerMgr }) {
             {t('scriptManager.script', 'Script')} *
           </label>
           <div className="relative">
-            <textarea
+            <Textarea
               value={mgr.editScript}
               onChange={(e) => mgr.setEditScript(e.target.value)}
               placeholder={t('scriptManager.scriptPlaceholder', 'Enter your script here...')}

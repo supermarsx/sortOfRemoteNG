@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "../ui/forms/PasswordInput";
+import { PasswordInput } from '../ui/forms';
 import {
   Database,
   Plus,

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Key, Fingerprint, Trash2, Pencil } from "lucide-react";
-import { PasswordInput } from "../ui/forms/PasswordInput";
+import { PasswordInput, Textarea} from '../ui/forms';
 import { Connection } from "../../types/connection";
 import { SSHKeyManager } from "../ssh/SSHKeyManager";
 import { SSHTerminalOverrides } from "./SSHTerminalOverrides";
@@ -216,13 +216,13 @@ export const SSHOptions: React.FC<SSHOptionsProps> = ({
                 Manage Keys
               </button>
             </div>
-            <textarea
+            <Textarea
               value={formData.privateKey || ""}
               onChange={(e) =>
                 setFormData({ ...formData, privateKey: e.target.value })
               }
               rows={4}
-              className="sor-form-textarea resize-none"
+              className="resize-none"
               placeholder="-----BEGIN PRIVATE KEY-----"
             />
             <input

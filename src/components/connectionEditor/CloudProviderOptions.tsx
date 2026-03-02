@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "../ui/forms/PasswordInput";
+import { PasswordInput, Textarea} from '../ui/forms';
 import { Connection } from "../../types/connection";
 
 interface CloudProviderOptionsProps {
@@ -102,12 +102,12 @@ export const CloudProviderOptions: React.FC<CloudProviderOptionsProps> = ({
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Service Account Key (JSON)
               </label>
-              <textarea
+              <Textarea
                 value={cloudProvider.serviceAccountKey || ""}
                 onChange={(e) =>
                   updateCloudProvider({ serviceAccountKey: e.target.value })
                 }
-                className="sor-form-textarea"
+                
                 rows={4}
                 placeholder="Paste your GCP service account key JSON here"
               />

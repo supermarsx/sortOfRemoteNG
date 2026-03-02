@@ -282,4 +282,183 @@ export class SecureStorage {
       this.clearPassword();
     }
   }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  //  Vault integration (native OS keychain / biometrics)
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  /**
+   * Check if the native OS vault is available.
+   * Returns `false` when running in a browser (no Tauri).
+   */
+  static async isVaultAvailable(): Promise<boolean> {
+    if (!this.useTauri || !invoke) return false;
+    try {
+      return await invoke('vault_is_available') as boolean;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get the vault backend name (e.g. "Windows Credential Manager + DPAPI").
+   */
+  static async getVaultBackendName(): Promise<string> {
+    if (!this.useTauri || !invoke) return 'none';
+    try {
+      return await invoke('vault_backend_name') as string;
+    } catch {
+      return 'none';
+    }
+  }
+
+  /**
+   * Check if biometric authentication is available.
+   */
+  static async isBiometricAvailable(): Promise<boolean> {
+    if (!this.useTauri || !invoke) return false;
+    try {
+      return await invoke('biometric_is_available') as boolean;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get detailed biometric status (hardware, enrollment, kinds).
+   */
+  static async getBiometricStatus(): Promise<Record<string, unknown> | null> {
+    if (!this.useTauri || !invoke) return null;
+    try {
+      return await invoke('biometric_check_availability') as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Prompt the user for biometric verification.
+   * @param reason - Message shown to the user during the biometric prompt.
+   * @returns `true` if verification succeeded.
+   */
+  static async biometricVerify(reason: string): Promise<boolean> {
+    if (!this.useTauri || !invoke) throw new Error('Biometrics not available');
+    return await invoke('biometric_verify', { reason }) as boolean;
+  }
+
+  /**
+   * Check whether legacy storage needs migration to vault-backed storage.
+   */
+  static async needsVaultMigration(storagePath: string): Promise<boolean> {
+    if (!this.useTauri || !invoke) return false;
+    try {
+      return await invoke('vault_needs_migration', { storagePath }) as boolean;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Migrate legacy plain-JSON storage to vault-backed encrypted storage.
+   * The DEK (data encryption key) is stored in the OS vault.
+   */
+  static async migrateToVault(
+    storagePath: string,
+    oldPassword?: string,
+  ): Promise<{ success: boolean; message: string; backupPath?: string }> {
+    if (!this.useTauri || !invoke) {
+      throw new Error('Vault migration requires Tauri');
+    }
+    return await invoke('vault_migrate', {
+      storagePath,
+      oldPassword: oldPassword ?? null,
+    }) as { success: boolean; message: string; backupPath?: string };
+  }
+
+  /**
+   * Save data using vault-backed encryption (DEK stored in OS keychain).
+   */
+  static async saveDataVault(
+    storagePath: string,
+    data: StorageData,
+  ): Promise<void> {
+    if (!this.useTauri || !invoke) {
+      throw new Error('Vault storage requires Tauri');
+    }
+    const jsonData = JSON.stringify(data);
+    await invoke('vault_save_storage', { storagePath, jsonData });
+  }
+
+  /**
+   * Load data from vault-backed encrypted storage (DEK from OS keychain).
+   */
+  static async loadDataVault(storagePath: string): Promise<StorageData | null> {
+    if (!this.useTauri || !invoke) return null;
+    try {
+      const json = await invoke('vault_load_storage', { storagePath }) as string;
+      return JSON.parse(json) as StorageData;
+    } catch (err) {
+      console.error('Failed to load vault storage:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Store a secret in the OS vault (Credential Manager / Keychain / SecretService).
+   */
+  static async vaultStoreSecret(
+    service: string,
+    account: string,
+    secret: string,
+  ): Promise<void> {
+    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    await invoke('vault_store_secret', { service, account, secret });
+  }
+
+  /**
+   * Read a secret from the OS vault.
+   */
+  static async vaultReadSecret(
+    service: string,
+    account: string,
+  ): Promise<string> {
+    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    return await invoke('vault_read_secret', { service, account }) as string;
+  }
+
+  /**
+   * Delete a secret from the OS vault.
+   */
+  static async vaultDeleteSecret(
+    service: string,
+    account: string,
+  ): Promise<void> {
+    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    await invoke('vault_delete_secret', { service, account });
+  }
+
+  /**
+   * Store a secret gated behind biometric verification.
+   */
+  static async vaultBiometricStore(
+    service: string,
+    account: string,
+    secret: string,
+    reason: string,
+  ): Promise<void> {
+    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    await invoke('vault_biometric_store', { service, account, secret, reason });
+  }
+
+  /**
+   * Read a secret gated behind biometric verification.
+   */
+  static async vaultBiometricRead(
+    service: string,
+    account: string,
+    reason: string,
+  ): Promise<string> {
+    if (!this.useTauri || !invoke) throw new Error('Vault not available');
+    return await invoke('vault_biometric_read', { service, account, reason }) as string;
+  }
 }

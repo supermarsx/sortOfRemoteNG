@@ -1,4 +1,4 @@
-import { PasswordInput } from "../../ui/forms/PasswordInput";
+import { PasswordInput } from '../../ui/forms';
 import { Mgr } from "./types";
 import React from "react";
 

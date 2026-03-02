@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "../ui/forms/PasswordInput";
+import { PasswordInput } from '../ui/forms';
 import { Clock, Play, Trash2, Zap } from "lucide-react";
 import { QuickConnectHistoryEntry } from "../../types/settings";
 import { Modal } from "../ui/overlays/Modal";

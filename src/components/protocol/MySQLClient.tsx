@@ -2,7 +2,7 @@ import React from 'react';
 import { Database, Play, RefreshCw, Table, Code, BarChart3 } from 'lucide-react';
 import { ConnectionSession } from '../../types/connection';
 import { useMySQLClient } from '../../hooks/protocol/useMySQLClient';
-import { Select } from '../ui/forms';
+import { Select, Textarea} from '../ui/forms';
 
 type Mgr = ReturnType<typeof useMySQLClient>;
 
@@ -131,7 +131,7 @@ const QueryEditor: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
         </button>
       </div>
     </div>
-    <textarea
+    <Textarea
       value={mgr.query}
       onChange={(e) => mgr.setQuery(e.target.value)}
       className="w-full h-32 px-3 py-2 bg-[var(--color-border)] border border-[var(--color-border)] rounded text-[var(--color-text)] font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"

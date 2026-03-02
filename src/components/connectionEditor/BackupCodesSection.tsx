@@ -6,6 +6,7 @@ import {
 import { Connection } from '../../types/connection';
 import { TOTPConfig } from '../../types/settings';
 import { useBackupCodesSection } from '../../hooks/security/useBackupCodesSection';
+import { Textarea } from '../ui/forms';
 
 type Mgr = ReturnType<typeof useBackupCodesSection>;
 
@@ -13,7 +14,7 @@ type Mgr = ReturnType<typeof useBackupCodesSection>;
 
 const PasteArea: React.FC<{ secret: string; mgr: Mgr }> = ({ secret, mgr }) => (
   <div className="space-y-1.5">
-    <textarea
+    <Textarea
       value={mgr.pasteText}
       onChange={(e) => mgr.setPasteText(e.target.value)}
       placeholder="Paste recovery codes here (one per line, or comma-separated)"

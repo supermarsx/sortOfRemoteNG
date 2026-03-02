@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "../../../ui/forms/PasswordInput";
+import { PasswordInput } from '../../../ui/forms';
 import { Lock, Key, Shield } from "lucide-react";
 import { BackupEncryptionAlgorithms, BackupEncryptionAlgorithm } from "../../../../types/settings";
 import { encryptionAlgorithmLabels, encryptionAlgorithmDescriptions } from "../../../../hooks/settings/useBackupSettings";

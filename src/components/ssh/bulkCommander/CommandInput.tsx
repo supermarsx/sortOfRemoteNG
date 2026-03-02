@@ -1,12 +1,13 @@
 import { Mgr, TFunc } from "./types";
 import { Send, StopCircle } from "lucide-react";
+import { Textarea } from '../../ui/forms';
 
 function CommandInput({ mgr, t }: { mgr: Mgr; t: TFunc }) {
   return (
     <div className="p-4 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex gap-3">
         <div className="flex-1">
-          <textarea
+          <Textarea
             ref={mgr.commandInputRef}
             value={mgr.command}
             onChange={(e) => mgr.setCommand(e.target.value)}

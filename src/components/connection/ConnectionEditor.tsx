@@ -34,7 +34,7 @@ import {
   PROTOCOL_COLOR_MAP,
   type ConnectionEditorMgr,
 } from "../../hooks/connection/useConnectionEditor";
-import { Checkbox, NumberInput, Select } from '../ui/forms';
+import { Checkbox, NumberInput, Select, Textarea} from '../ui/forms';
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -400,7 +400,7 @@ const DescriptionSection: React.FC<{ mgr: ConnectionEditorMgr }> = ({
     </button>
     {mgr.expandedSections.description && (
       <div className="p-4 border-t border-[var(--color-border)]">
-        <textarea
+        <Textarea
           value={mgr.formData.description || ""}
           onChange={(e) =>
             mgr.setFormData({ ...mgr.formData, description: e.target.value })

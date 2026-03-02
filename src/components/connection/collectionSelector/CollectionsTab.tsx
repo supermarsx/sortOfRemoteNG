@@ -1,4 +1,4 @@
-import { PasswordInput } from "../../ui/forms/PasswordInput";
+import { PasswordInput, Textarea} from '../../ui/forms';
 import { Database, Lock, Trash2, Edit, Eye, EyeOff, Download, Upload } from "lucide-react";
 import { Checkbox } from "../../ui/forms";
 
@@ -38,7 +38,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Description
               </label>
-              <textarea
+              <Textarea
                 value={mgr.newCollection.description}
                 onChange={(e) =>
                   mgr.setNewCollection({
@@ -385,7 +385,7 @@ function CollectionsTab({ mgr }: { mgr: Mgr }) {
               <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">
                 Description
               </label>
-              <textarea
+              <Textarea
                 value={mgr.editingCollection.description || ""}
                 onChange={(e) =>
                   mgr.setEditingCollection({

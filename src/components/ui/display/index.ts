@@ -12,12 +12,7 @@ export type { ErrorBannerProps } from './ErrorBanner';
 
 export { HighlightedCode } from './HighlightedCode';
 
-export {
-  OptionList,
-  OptionGroup,
-  OptionItemButton,
-  OptionEmptyState,
-} from './OptionList';
+export { OptionList, OptionGroup, OptionItemButton, OptionEmptyState } from './OptionList';
 
 export { StatusBar } from './StatusBar';
 export type { StatusBarProps } from './StatusBar';

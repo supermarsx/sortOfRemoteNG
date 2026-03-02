@@ -1,4 +1,4 @@
-import { PasswordInput } from "../../../ui/forms/PasswordInput";
+import { PasswordInput } from '../../../ui/forms';
 import { Shield, Lock, Info } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";
 import type { Mgr } from "./types";

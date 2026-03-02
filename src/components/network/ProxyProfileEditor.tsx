@@ -1,5 +1,5 @@
 import React from "react";
-import { PasswordInput } from "../ui/forms/PasswordInput";
+import { PasswordInput, Textarea} from '../ui/forms';
 import {
   X,
   Save,
@@ -89,12 +89,12 @@ const BasicInfoSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
       <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-1">
         Description
       </label>
-      <textarea
+      <Textarea
         value={mgr.description}
         onChange={(e) => mgr.setDescription(e.target.value)}
         placeholder="Optional description..."
         rows={2}
-        className="sor-form-textarea resize-none"
+        className="resize-none"
       />
     </div>
   </div>

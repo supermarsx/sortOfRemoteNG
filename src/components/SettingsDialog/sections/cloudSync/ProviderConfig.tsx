@@ -1,4 +1,4 @@
-import { PasswordInput } from "../../../ui/forms/PasswordInput";
+import { PasswordInput, Textarea} from '../../../ui/forms';
 import { Check, Globe, Folder, Key } from "lucide-react";
 import { CloudSyncProvider } from "../../../../types/settings";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
@@ -398,7 +398,7 @@ function ProviderConfig({
                 <label className="block text-sm text-[var(--color-textSecondary)] mb-1">
                   Private Key
                 </label>
-                <textarea
+                <Textarea
                   value={cs.sftp.privateKey || ""}
                   onChange={(e) =>
                     mgr.updateCloudSync({

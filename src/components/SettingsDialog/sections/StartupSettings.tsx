@@ -16,7 +16,7 @@ import {
   MessageSquare,
   RotateCcw,
 } from "lucide-react";
-import { Checkbox } from '../../ui/forms';
+import { Checkbox, Textarea} from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
 
 interface StartupSettingsProps {
@@ -253,7 +253,7 @@ export const StartupSettings: React.FC<StartupSettingsProps> = ({
                 <MessageSquare className="w-4 h-4 text-[var(--color-textSecondary)]" />
                 {t("settings.startup.customMessage", "Custom Message")}
               </label>
-              <textarea
+              <Textarea
                 value={settings.welcomeScreenMessage ?? ""}
                 onChange={(e) =>
                   updateSettings({

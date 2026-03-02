@@ -1,4 +1,4 @@
-import { PasswordInput } from "../../ui/forms/PasswordInput";
+import { PasswordInput, Textarea} from '../../ui/forms';
 import PanelContextMenu from "./PanelContextMenu";
 import Modal from "../../ui/overlays/Modal";
 import type { ConnectionTreeMgr } from "../../../hooks/connection/useConnectionTree";
@@ -53,7 +53,7 @@ function ConnectOptionsModal({ mgr }: { mgr: ConnectionTreeMgr }) {
                 <>
                   <div>
                     <label className="block text-sm font-medium text-[var(--color-textSecondary)] mb-2">Private Key</label>
-                    <textarea
+                    <Textarea
                       value={data.privateKey}
                       onChange={(e) => update({ privateKey: e.target.value })}
                       rows={3}
