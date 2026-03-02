@@ -32,6 +32,11 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
+use aes_gcm::{Aes256Gcm, Nonce};
+use aes_gcm::aead::{Aead, KeyInit};
+use base64::{Engine as _, engine::general_purpose};
+use rand::RngCore;
+use sha2::Sha256;
 
 /// Represents the structure of data stored by the secure storage system.
 ///
@@ -124,8 +129,66 @@ impl SecureStorage {
     ///
     /// This will return true in future versions when encryption is implemented.
     pub async fn is_storage_encrypted(&self) -> Result<bool, String> {
-        // For now, assume not encrypted
-        Ok(false)
+        if !Path::new(&self.store_path).exists() {
+            return Ok(false);
+        }
+        let data = fs::read_to_string(&self.store_path).map_err(|e| e.to_string())?;
+        // Encrypted files start with "SORNG_ENC:" magic prefix
+        Ok(data.starts_with("SORNG_ENC:"))
+    }
+
+    /// Derive a 256-bit encryption key from a password using PBKDF2-HMAC-SHA256.
+    fn derive_encryption_key(password: &str, salt: &[u8]) -> [u8; 32] {
+        let mut key = [0u8; 32];
+        pbkdf2::pbkdf2_hmac::<Sha256>(
+            password.as_bytes(),
+            salt,
+            600_000,
+            &mut key,
+        );
+        key
+    }
+
+    /// Encrypt data with AES-256-GCM.
+    fn encrypt_bytes(data: &[u8], password: &str) -> Result<Vec<u8>, String> {
+        // Generate random salt (32 bytes) and nonce (12 bytes)
+        let mut salt = [0u8; 32];
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut salt);
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+
+        let key = Self::derive_encryption_key(password, &salt);
+        let cipher = Aes256Gcm::new(&key.into());
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        let ciphertext = cipher
+            .encrypt(nonce, data)
+            .map_err(|e| format!("Encryption failed: {:?}", e))?;
+
+        // Format: salt (32) || nonce (12) || ciphertext
+        let mut combined = Vec::with_capacity(32 + 12 + ciphertext.len());
+        combined.extend_from_slice(&salt);
+        combined.extend_from_slice(&nonce_bytes);
+        combined.extend(ciphertext);
+        Ok(combined)
+    }
+
+    /// Decrypt data with AES-256-GCM.
+    fn decrypt_bytes(combined: &[u8], password: &str) -> Result<Vec<u8>, String> {
+        if combined.len() < 44 {
+            return Err("Encrypted data too short".to_string());
+        }
+        let salt = &combined[..32];
+        let nonce_bytes = &combined[32..44];
+        let ciphertext = &combined[44..];
+
+        let key = Self::derive_encryption_key(password, salt);
+        let cipher = Aes256Gcm::new(&key.into());
+        let nonce = Nonce::from_slice(nonce_bytes);
+
+        cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|e| format!("Decryption failed (wrong password?): {:?}", e))
     }
 
     /// Saves data to persistent storage.
@@ -152,9 +215,18 @@ impl SecureStorage {
     /// # Example
     ///
     pub async fn save_data(&self, data: StorageData, use_password: bool) -> Result<(), String> {
-        let _password = if use_password { self.password.clone() } else { None };
-        // For now, just save without encryption
         let json = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+
+        if use_password {
+            if let Some(password) = &self.password {
+                let encrypted = Self::encrypt_bytes(json.as_bytes(), password)?;
+                let encoded = general_purpose::STANDARD.encode(&encrypted);
+                let output = format!("SORNG_ENC:{}", encoded);
+                return fs::write(&self.store_path, output).map_err(|e| e.to_string());
+            }
+        }
+
+        // Save as plain JSON if no password or use_password=false
         fs::write(&self.store_path, json).map_err(|e| e.to_string())
     }
 
@@ -180,9 +252,30 @@ impl SecureStorage {
         if !Path::new(&self.store_path).exists() {
             return Ok(None);
         }
-        let data = fs::read_to_string(&self.store_path).map_err(|e| e.to_string())?;
-        let storage_data: StorageData = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-        Ok(Some(storage_data))
+        let raw = fs::read_to_string(&self.store_path).map_err(|e| e.to_string())?;
+
+        if raw.starts_with("SORNG_ENC:") {
+            // Encrypted data
+            let password = self
+                .password
+                .as_ref()
+                .ok_or_else(|| "Storage is encrypted but no password is set".to_string())?;
+            let encoded = &raw["SORNG_ENC:".len()..];
+            let combined = general_purpose::STANDARD
+                .decode(encoded.as_bytes())
+                .map_err(|e| format!("Base64 decode: {}", e))?;
+            let json_bytes = Self::decrypt_bytes(&combined, password)?;
+            let json_str = String::from_utf8(json_bytes)
+                .map_err(|e| format!("UTF-8 decode: {}", e))?;
+            let storage_data: StorageData =
+                serde_json::from_str(&json_str).map_err(|e| e.to_string())?;
+            Ok(Some(storage_data))
+        } else {
+            // Plain JSON
+            let storage_data: StorageData =
+                serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+            Ok(Some(storage_data))
+        }
     }
 
     /// Clears all stored data by deleting the storage file.

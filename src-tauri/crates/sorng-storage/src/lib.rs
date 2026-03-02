@@ -4,3 +4,4 @@
 
 pub mod storage;
 pub mod backup;
+pub mod trust_store;
