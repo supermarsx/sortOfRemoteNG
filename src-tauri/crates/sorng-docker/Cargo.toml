@@ -22,7 +22,7 @@ async-trait = "0.1"
 dirs = "5.0"
 
 [target.'cfg(unix)'.dependencies]
-hyperlocal = { version = "0.4", features = ["client"] }
+hyperlocal = "0.4"
 hyper = "1.0"
 hyper-util = { version = "0.1", features = ["client-legacy", "tokio"] }
 http-body-util = "0.1"
