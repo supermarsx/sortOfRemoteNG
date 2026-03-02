@@ -5,6 +5,7 @@ edition = "2021"
 description = "Dedicated extensive Tailscale integration for SortOfRemote NG — daemon management, MagicDNS, Funnel, Serve, SSH, exit nodes, Taildrop, ACLs, peer path quality and DERP relay monitoring."
 
 [dependencies]
+sorng-dns = { path = "../sorng-dns" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

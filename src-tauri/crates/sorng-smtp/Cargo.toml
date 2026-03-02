@@ -5,6 +5,7 @@ edition = "2021"
 description = "Full-featured SMTP client — message building, MIME attachments, STARTTLS/SMTPS, DKIM signing, address books, templates, send queue, delivery diagnostics"
 
 [dependencies]
+sorng-dns = { path = "../sorng-dns" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }

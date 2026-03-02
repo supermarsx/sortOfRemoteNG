@@ -5,6 +5,7 @@ edition = "2021"
 description = "Comprehensive ZeroTier network management for SortOfRemoteNG"
 
 [dependencies]
+sorng-dns = { path = "../sorng-dns" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true }
