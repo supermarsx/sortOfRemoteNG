@@ -66,6 +66,8 @@ members = [
   "crates/sorng-zerotier",
   "crates/sorng-wireguard",
   "crates/sorng-dns",
+  "crates/sorng-k8s",
+  "crates/sorng-docker",
 ]
 
 [workspace.dependencies]
@@ -168,6 +170,8 @@ sorng-tailscale = { path = "crates/sorng-tailscale" }
 sorng-zerotier = { path = "crates/sorng-zerotier" }
 sorng-wireguard = { path = "crates/sorng-wireguard" }
 sorng-dns = { path = "crates/sorng-dns" }
+sorng-k8s = { path = "crates/sorng-k8s" }
+sorng-docker = { path = "crates/sorng-docker" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
