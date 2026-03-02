@@ -20,14 +20,16 @@ impl SecurityService {
     pub async fn generate_totp_secret(&mut self) -> Result<String, String> {
         let mut secret = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut secret);
-        let secret_b32 = general_purpose::STANDARD.encode(&secret);
+
+        // Encode as base32 (standard for authenticator apps like Google Authenticator)
+        let secret_b32 = data_encoding::BASE32_NOPAD.encode(&secret);
 
         let totp = TOTP::new(
             Algorithm::SHA1,
             6,
             1,
             30,
-            secret_b32.as_bytes().to_vec(),
+            secret.to_vec(), // raw secret bytes, NOT the encoded string
         ).map_err(|e| e.to_string())?;
         self.totp = Some(totp);
         Ok(secret_b32)

@@ -7,8 +7,10 @@
 //! - CA-signed certificate issuance
 //! - PKCS#12 / PFX export
 //! - PEM / DER export
-//! - Multiple key algorithms: RSA (2048/3072/4096/8192), ECDSA P-256/P-384, Ed25519
+//! - Multiple key algorithms: RSA (1024†/2048/3072/4096/8192), ECDSA P-256/P-384, Ed25519
 //! - Configurable signature hash: SHA-256, SHA-384, SHA-512
+//!
+//! † RSA-1024 is a **legacy** algorithm, disabled by default.
 
 use base64::Engine;
 use chrono::Utc;
@@ -49,6 +51,15 @@ pub enum KeyAlgorithm {
     EcdsaP384,
     /// Ed25519 (Edwards-curve Digital Signature Algorithm)
     Ed25519,
+
+    // ── Legacy / deprecated algorithms ─────────────────────────
+    // These are disabled by default and gated by `LegacyCryptoPolicy`.
+
+    /// **LEGACY** RSA 1024-bit — NIST deprecated since 2013.  Can be
+    /// factored with moderate resources.  Only use for interop with
+    /// equipment that cannot be upgraded.
+    #[serde(alias = "rsa-1024")]
+    Rsa1024,
 }
 
 /// Signature hash algorithm (used with RSA; ECDSA/Ed25519 have fixed hashes).
@@ -299,7 +310,7 @@ impl CertGenService {
             KeyAlgorithm::EcdsaP256 => &PKCS_ECDSA_P256_SHA256,
             KeyAlgorithm::EcdsaP384 => &PKCS_ECDSA_P384_SHA384,
             KeyAlgorithm::Ed25519 => &PKCS_ED25519,
-            // RSA — honour the caller's hash preference
+            // RSA (including legacy Rsa1024) — honour the caller's hash preference
             _ => match hash {
                 SignatureHash::Sha256 => &PKCS_RSA_SHA256,
                 SignatureHash::Sha384 => &PKCS_RSA_SHA384,
@@ -313,6 +324,7 @@ impl CertGenService {
     /// SHA-256 for RSA (will be overridden later via `rcgen_sign_algo`).
     fn generate_key_pair(algo: &KeyAlgorithm) -> Result<KeyPair, String> {
         match algo {
+            KeyAlgorithm::Rsa1024 => Self::_rsa_key_pair(1024),
             KeyAlgorithm::Rsa2048 => Self::_rsa_key_pair(2048),
             KeyAlgorithm::Rsa3072 => Self::_rsa_key_pair(3072),
             KeyAlgorithm::Rsa4096 => Self::_rsa_key_pair(4096),
@@ -689,7 +701,7 @@ impl CertGenService {
         }
 
         match params.algorithm {
-            KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa3072 | KeyAlgorithm::Rsa4096
+            KeyAlgorithm::Rsa1024 | KeyAlgorithm::Rsa2048 | KeyAlgorithm::Rsa3072 | KeyAlgorithm::Rsa4096
             | KeyAlgorithm::Rsa8192 => {
                 cp.alg = Self::rcgen_sign_algo(&params.algorithm, &params.signature_hash);
             }

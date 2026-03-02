@@ -11,3 +11,4 @@ pub mod bearer_auth;
 pub mod passkey;
 pub mod login_detection;
 pub mod auto_lock;
+pub mod legacy_crypto;

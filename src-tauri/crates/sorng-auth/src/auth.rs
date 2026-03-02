@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -51,6 +52,12 @@ pub struct AuthService {
     users: HashMap<String, String>,
     /// File path where user data is persisted
     store_path: String,
+    /// Rate limiting: track failed attempts per username (username -> (count, last_attempt))
+    failed_attempts: HashMap<String, (u32, Instant)>,
+    /// Maximum failed attempts before lockout
+    max_attempts: u32,
+    /// Lockout duration in seconds
+    lockout_duration_secs: u64,
 }
 
 impl AuthService {
@@ -73,6 +80,9 @@ impl AuthService {
         let mut service = AuthService {
             users: HashMap::new(),
             store_path,
+            failed_attempts: HashMap::new(),
+            max_attempts: 5,
+            lockout_duration_secs: 300, // 5 minutes
         };
         service.load().unwrap_or_else(|e| {
             eprintln!("Failed to load user store: {}", e);
@@ -185,12 +195,44 @@ impl AuthService {
     ///
     /// # Example
     ///
-    pub async fn verify_user(&self, username: &str, password: &str) -> Result<bool, String> {
-        if let Some(stored_hash) = self.users.get(username) {
-            verify(password, stored_hash).map_err(|e| e.to_string())
-        } else {
-            Ok(false)
+    pub async fn verify_user(&mut self, username: &str, password: &str) -> Result<bool, String> {
+        // Rate limiting: check for lockout
+        if let Some((attempts, last_attempt)) = self.failed_attempts.get(username) {
+            if *attempts >= self.max_attempts {
+                let elapsed = last_attempt.elapsed().as_secs();
+                if elapsed < self.lockout_duration_secs {
+                    return Err(format!(
+                        "Account locked due to too many failed attempts. Try again in {} seconds.",
+                        self.lockout_duration_secs - elapsed
+                    ));
+                }
+                // Lockout expired, reset
+                self.failed_attempts.remove(&username.to_string());
+            }
         }
+
+        // Constant-time path: always perform bcrypt verify to prevent timing oracle.
+        // If user doesn't exist, verify against a dummy hash so the timing is the same.
+        let dummy_hash = "$2b$12$LJ3m4ys3Lz0Y.Q5eTQJbxOgHQmEDZ0gN2X3qK8vR5tU6wP7yC9nSq";
+        let stored_hash = self.users.get(username).map(|h| h.as_str()).unwrap_or(dummy_hash);
+
+        let result = verify(password, stored_hash).unwrap_or(false);
+
+        // Only return true if the user actually exists AND password matched
+        let user_exists = self.users.contains_key(username);
+        let valid = user_exists && result;
+
+        if !valid && user_exists {
+            // Track failed attempt
+            let entry = self.failed_attempts.entry(username.to_string()).or_insert((0, Instant::now()));
+            entry.0 += 1;
+            entry.1 = Instant::now();
+        } else if valid {
+            // Reset on successful login
+            self.failed_attempts.remove(&username.to_string());
+        }
+
+        Ok(valid)
     }
 
     /// Returns a list of all registered usernames.
