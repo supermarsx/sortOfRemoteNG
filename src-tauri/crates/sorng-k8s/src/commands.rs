@@ -5,6 +5,7 @@ use tauri::State;
 
 use crate::service::K8sServiceState;
 use crate::types::*;
+use std::collections::HashMap;
 
 // ── Connection lifecycle ──────────────────────────────────────────────────────
 
@@ -154,6 +155,71 @@ pub async fn k8s_delete_namespace(
     svc.delete_namespace(&id, &name).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn k8s_update_namespace_labels(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    name: String,
+    labels: HashMap<String, String>,
+) -> Result<NamespaceInfo, String> {
+    let svc = state.lock().await;
+    svc.update_namespace_labels(&id, &name, &labels).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_list_resource_quotas(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+) -> Result<Vec<ResourceQuotaInfo>, String> {
+    let svc = state.lock().await;
+    svc.list_resource_quotas(&id, &namespace).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_get_resource_quota(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+) -> Result<ResourceQuotaInfo, String> {
+    let svc = state.lock().await;
+    svc.get_resource_quota(&id, &namespace, &name).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_create_resource_quota(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    hard: HashMap<String, String>,
+) -> Result<ResourceQuotaInfo, String> {
+    let svc = state.lock().await;
+    svc.create_resource_quota(&id, &namespace, &name, &hard).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_delete_resource_quota(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+) -> Result<(), String> {
+    let svc = state.lock().await;
+    svc.delete_resource_quota(&id, &namespace, &name).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_list_limit_ranges(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+) -> Result<Vec<LimitRangeInfo>, String> {
+    let svc = state.lock().await;
+    svc.list_limit_ranges(&id, &namespace).await.map_err(|e| e.to_string())
+}
+
 // ── Pods ──────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -232,6 +298,30 @@ pub async fn k8s_evict_pod(
 ) -> Result<(), String> {
     let svc = state.lock().await;
     svc.evict_pod(&id, &namespace, &name).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_update_pod_labels(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    labels: HashMap<String, String>,
+) -> Result<PodInfo, String> {
+    let svc = state.lock().await;
+    svc.update_pod_labels(&id, &namespace, &name, &labels).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_update_pod_annotations(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    annotations: HashMap<String, String>,
+) -> Result<PodInfo, String> {
+    let svc = state.lock().await;
+    svc.update_pod_annotations(&id, &namespace, &name, &annotations).await.map_err(|e| e.to_string())
 }
 
 // ── Deployments ───────────────────────────────────────────────────────────────
@@ -361,6 +451,40 @@ pub async fn k8s_rollback_deployment(
     svc.rollback_deployment(&id, &namespace, &name, revision).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn k8s_list_all_deployments(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    opts: Option<ListOptions>,
+) -> Result<Vec<DeploymentInfo>, String> {
+    let svc = state.lock().await;
+    svc.list_all_deployments(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_update_deployment(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    manifest: serde_json::Value,
+) -> Result<DeploymentInfo, String> {
+    let svc = state.lock().await;
+    svc.update_deployment(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_patch_deployment(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    patch: serde_json::Value,
+) -> Result<DeploymentInfo, String> {
+    let svc = state.lock().await;
+    svc.patch_deployment(&id, &namespace, &name, &patch).await.map_err(|e| e.to_string())
+}
+
 // ── StatefulSets, DaemonSets, ReplicaSets ─────────────────────────────────────
 
 #[tauri::command]
@@ -453,6 +577,40 @@ pub async fn k8s_get_endpoints(
     svc.get_endpoints(&id, &namespace, &name).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn k8s_list_all_services(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    opts: Option<ListOptions>,
+) -> Result<Vec<ServiceInfo>, String> {
+    let svc = state.lock().await;
+    svc.list_all_services(&id, &opts.unwrap_or_default()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_update_service(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    manifest: serde_json::Value,
+) -> Result<ServiceInfo, String> {
+    let svc = state.lock().await;
+    svc.update_service(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_patch_service(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    patch: serde_json::Value,
+) -> Result<ServiceInfo, String> {
+    let svc = state.lock().await;
+    svc.patch_service(&id, &namespace, &name, &patch).await.map_err(|e| e.to_string())
+}
+
 // ── ConfigMaps ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -499,6 +657,30 @@ pub async fn k8s_delete_configmap(
     svc.delete_configmap(&id, &namespace, &name).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn k8s_update_configmap(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    manifest: serde_json::Value,
+) -> Result<ConfigMapInfo, String> {
+    let svc = state.lock().await;
+    svc.update_configmap(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_patch_configmap(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    patch: serde_json::Value,
+) -> Result<ConfigMapInfo, String> {
+    let svc = state.lock().await;
+    svc.patch_configmap(&id, &namespace, &name, &patch).await.map_err(|e| e.to_string())
+}
+
 // ── Secrets ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -543,6 +725,30 @@ pub async fn k8s_delete_secret(
 ) -> Result<(), String> {
     let svc = state.lock().await;
     svc.delete_secret(&id, &namespace, &name).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_update_secret(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    manifest: serde_json::Value,
+) -> Result<SecretInfo, String> {
+    let svc = state.lock().await;
+    svc.update_secret(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_patch_secret(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    patch: serde_json::Value,
+) -> Result<SecretInfo, String> {
+    let svc = state.lock().await;
+    svc.patch_secret(&id, &namespace, &name, &patch).await.map_err(|e| e.to_string())
 }
 
 // ── Ingress ───────────────────────────────────────────────────────────────────
@@ -592,6 +798,18 @@ pub async fn k8s_delete_ingress(
 }
 
 #[tauri::command]
+pub async fn k8s_update_ingress(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+    manifest: serde_json::Value,
+) -> Result<IngressInfo, String> {
+    let svc = state.lock().await;
+    svc.update_ingress(&id, &namespace, &name, &manifest).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn k8s_list_ingress_classes(
     state: State<'_, K8sServiceState>,
     id: String,
@@ -634,6 +852,17 @@ pub async fn k8s_delete_network_policy(
 ) -> Result<(), String> {
     let svc = state.lock().await;
     svc.delete_network_policy(&id, &namespace, &name).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_get_network_policy(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+) -> Result<NetworkPolicyInfo, String> {
+    let svc = state.lock().await;
+    svc.get_network_policy(&id, &namespace, &name).await.map_err(|e| e.to_string())
 }
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
@@ -761,6 +990,28 @@ pub async fn k8s_trigger_cronjob(
     svc.trigger_cronjob(&id, &namespace, &name).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn k8s_suspend_cronjob(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+) -> Result<(), String> {
+    let svc = state.lock().await;
+    svc.suspend_cronjob(&id, &namespace, &name).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_resume_cronjob(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    name: String,
+) -> Result<(), String> {
+    let svc = state.lock().await;
+    svc.resume_cronjob(&id, &namespace, &name).await.map_err(|e| e.to_string())
+}
+
 // ── Nodes ─────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -833,6 +1084,17 @@ pub async fn k8s_remove_node_taint(
 ) -> Result<(), String> {
     let svc = state.lock().await;
     svc.remove_node_taint(&id, &name, &taint_key).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_update_node_labels(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    name: String,
+    labels: HashMap<String, String>,
+) -> Result<NodeInfo, String> {
+    let svc = state.lock().await;
+    svc.update_node_labels(&id, &name, &labels).await.map_err(|e| e.to_string())
 }
 
 // ── Storage ───────────────────────────────────────────────────────────────────
@@ -1031,6 +1293,26 @@ pub async fn k8s_helm_history(
 }
 
 #[tauri::command]
+pub async fn k8s_helm_release_history(
+    state: State<'_, K8sServiceState>,
+    name: String,
+    namespace: String,
+) -> Result<Vec<HelmHistory>, String> {
+    let svc = state.lock().await;
+    svc.helm_release_history(&name, &namespace).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_helm_get_manifest(
+    state: State<'_, K8sServiceState>,
+    name: String,
+    namespace: String,
+) -> Result<String, String> {
+    let svc = state.lock().await;
+    svc.helm_get_manifest(&name, &namespace).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn k8s_helm_list_repos(
     state: State<'_, K8sServiceState>,
 ) -> Result<Vec<HelmRepository>, String> {
@@ -1126,6 +1408,28 @@ pub async fn k8s_list_warning_events(
     svc.list_warning_events(&id, namespace.as_deref()).await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn k8s_list_events_for_resource(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: String,
+    kind: String,
+    name: String,
+) -> Result<Vec<K8sEvent>, String> {
+    let svc = state.lock().await;
+    svc.list_events_for_resource(&id, &namespace, &kind, &name).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_list_warnings(
+    state: State<'_, K8sServiceState>,
+    id: String,
+    namespace: Option<String>,
+) -> Result<Vec<K8sEvent>, String> {
+    let svc = state.lock().await;
+    svc.list_warning_events(&id, namespace.as_deref()).await.map_err(|e| e.to_string())
+}
+
 // ── CRDs / HPAs ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -1202,6 +1506,15 @@ pub async fn k8s_pod_metrics(
 
 #[tauri::command]
 pub async fn k8s_cluster_summary(
+    state: State<'_, K8sServiceState>,
+    id: String,
+) -> Result<ClusterResourceSummary, String> {
+    let svc = state.lock().await;
+    svc.cluster_summary(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn k8s_cluster_resource_summary(
     state: State<'_, K8sServiceState>,
     id: String,
 ) -> Result<ClusterResourceSummary, String> {

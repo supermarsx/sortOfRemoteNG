@@ -5,7 +5,7 @@ use crate::client::K8sClient;
 use crate::error::{K8sError, K8sResult};
 use crate::types::*;
 use log::info;
-use std::collections::HashMap;
+
 
 /// Deployment management operations.
 pub struct DeploymentManager;
@@ -159,7 +159,7 @@ impl DeploymentManager {
         image: &str,
     ) -> K8sResult<DeploymentInfo> {
         let deployment = Self::get(client, namespace, name).await?;
-        let mut containers: Vec<serde_json::Value> = deployment.spec.template.spec.containers.iter()
+        let containers: Vec<serde_json::Value> = deployment.spec.template.spec.containers.iter()
             .map(|c| {
                 let mut obj = serde_json::to_value(c).unwrap_or_default();
                 if c.name == container_name {

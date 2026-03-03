@@ -107,8 +107,8 @@ impl NodeManager {
         client: &K8sClient,
         name: &str,
         ignore_daemonsets: bool,
-        delete_emptydir_data: bool,
-        grace_period_seconds: Option<i64>,
+        _delete_emptydir_data: bool,
+        _grace_period_seconds: Option<i64>,
     ) -> K8sResult<Vec<String>> {
         use crate::pods::PodManager;
 

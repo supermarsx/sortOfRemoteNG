@@ -33,14 +33,14 @@ pub struct K8sService {
     /// Active Kubernetes connections keyed by a user-chosen id.
     connections: HashMap<String, K8sClient>,
     /// Helm manager (stateless CLI wrapper, shared across connections).
-    helm: HelmManager,
+    _helm: HelmManager,
 }
 
 impl K8sService {
     pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
-            helm: HelmManager,
+            _helm: HelmManager,
         }
     }
 
@@ -201,6 +201,30 @@ impl K8sService {
         NamespaceManager::delete(self.client(id)?, name).await.map(|_| ())
     }
 
+    pub async fn update_namespace_labels(&self, id: &str, name: &str, labels: &HashMap<String, String>) -> K8sResult<NamespaceInfo> {
+        NamespaceManager::update_labels(self.client(id)?, name, labels).await
+    }
+
+    pub async fn list_resource_quotas(&self, id: &str, ns: &str) -> K8sResult<Vec<ResourceQuotaInfo>> {
+        NamespaceManager::list_resource_quotas(self.client(id)?, ns).await
+    }
+
+    pub async fn get_resource_quota(&self, id: &str, ns: &str, name: &str) -> K8sResult<ResourceQuotaInfo> {
+        NamespaceManager::get_resource_quota(self.client(id)?, ns, name).await
+    }
+
+    pub async fn create_resource_quota(&self, id: &str, ns: &str, name: &str, hard: &HashMap<String, String>) -> K8sResult<ResourceQuotaInfo> {
+        NamespaceManager::create_resource_quota(self.client(id)?, ns, name, hard).await
+    }
+
+    pub async fn delete_resource_quota(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
+        NamespaceManager::delete_resource_quota(self.client(id)?, ns, name).await.map(|_| ())
+    }
+
+    pub async fn list_limit_ranges(&self, id: &str, ns: &str) -> K8sResult<Vec<LimitRangeInfo>> {
+        NamespaceManager::list_limit_ranges(self.client(id)?, ns).await
+    }
+
     // ── Pods ──────────────────────────────────────────────────────
 
     pub async fn list_pods(&self, id: &str, ns: &str, opts: &ListOptions) -> K8sResult<Vec<PodInfo>> {
@@ -229,6 +253,14 @@ impl K8sService {
 
     pub async fn list_all_pods(&self, id: &str, opts: &ListOptions) -> K8sResult<Vec<PodInfo>> {
         PodManager::list_all_namespaces(self.client(id)?, opts).await
+    }
+
+    pub async fn update_pod_labels(&self, id: &str, ns: &str, name: &str, labels: &HashMap<String, String>) -> K8sResult<PodInfo> {
+        PodManager::update_labels(self.client(id)?, ns, name, labels).await
+    }
+
+    pub async fn update_pod_annotations(&self, id: &str, ns: &str, name: &str, annotations: &HashMap<String, String>) -> K8sResult<PodInfo> {
+        PodManager::update_annotations(self.client(id)?, ns, name, annotations).await
     }
 
     // ── Deployments ───────────────────────────────────────────────
@@ -277,6 +309,18 @@ impl K8sService {
         DeploymentManager::rollback(self.client(id)?, ns, name, revision).await.map(|_| ())
     }
 
+    pub async fn list_all_deployments(&self, id: &str, opts: &ListOptions) -> K8sResult<Vec<DeploymentInfo>> {
+        DeploymentManager::list_all_namespaces(self.client(id)?, opts).await
+    }
+
+    pub async fn update_deployment(&self, id: &str, ns: &str, name: &str, manifest: &serde_json::Value) -> K8sResult<DeploymentInfo> {
+        DeploymentManager::update(self.client(id)?, ns, name, manifest).await
+    }
+
+    pub async fn patch_deployment(&self, id: &str, ns: &str, name: &str, patch: &serde_json::Value) -> K8sResult<DeploymentInfo> {
+        DeploymentManager::patch(self.client(id)?, ns, name, patch).await
+    }
+
     // ── StatefulSets / DaemonSets / ReplicaSets ───────────────────
 
     pub async fn list_statefulsets(&self, id: &str, ns: &str, opts: &ListOptions) -> K8sResult<Vec<StatefulSetInfo>> {
@@ -313,6 +357,18 @@ impl K8sService {
         ServiceManager::get_endpoints(self.client(id)?, ns, name).await
     }
 
+    pub async fn list_all_services(&self, id: &str, opts: &ListOptions) -> K8sResult<Vec<ServiceInfo>> {
+        ServiceManager::list_all_namespaces(self.client(id)?, opts).await
+    }
+
+    pub async fn update_service(&self, id: &str, ns: &str, name: &str, manifest: &serde_json::Value) -> K8sResult<ServiceInfo> {
+        ServiceManager::update(self.client(id)?, ns, name, manifest).await
+    }
+
+    pub async fn patch_service(&self, id: &str, ns: &str, name: &str, patch: &serde_json::Value) -> K8sResult<ServiceInfo> {
+        ServiceManager::patch(self.client(id)?, ns, name, patch).await
+    }
+
     // ── ConfigMaps ────────────────────────────────────────────────
 
     pub async fn list_configmaps(&self, id: &str, ns: &str, opts: &ListOptions) -> K8sResult<Vec<ConfigMapInfo>> {
@@ -329,6 +385,14 @@ impl K8sService {
 
     pub async fn delete_configmap(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
         ConfigMapManager::delete(self.client(id)?, ns, name).await.map(|_| ())
+    }
+
+    pub async fn update_configmap(&self, id: &str, ns: &str, name: &str, manifest: &serde_json::Value) -> K8sResult<ConfigMapInfo> {
+        ConfigMapManager::update(self.client(id)?, ns, name, manifest).await
+    }
+
+    pub async fn patch_configmap(&self, id: &str, ns: &str, name: &str, patch: &serde_json::Value) -> K8sResult<ConfigMapInfo> {
+        ConfigMapManager::patch(self.client(id)?, ns, name, patch).await
     }
 
     // ── Secrets ───────────────────────────────────────────────────
@@ -349,6 +413,14 @@ impl K8sService {
         SecretManager::delete(self.client(id)?, ns, name).await.map(|_| ())
     }
 
+    pub async fn update_secret(&self, id: &str, ns: &str, name: &str, manifest: &serde_json::Value) -> K8sResult<SecretInfo> {
+        SecretManager::update(self.client(id)?, ns, name, manifest).await
+    }
+
+    pub async fn patch_secret(&self, id: &str, ns: &str, name: &str, patch: &serde_json::Value) -> K8sResult<SecretInfo> {
+        SecretManager::patch(self.client(id)?, ns, name, patch).await
+    }
+
     // ── Ingress ───────────────────────────────────────────────────
 
     pub async fn list_ingresses(&self, id: &str, ns: &str, opts: &ListOptions) -> K8sResult<Vec<IngressInfo>> {
@@ -367,6 +439,10 @@ impl K8sService {
         IngressManager::delete(self.client(id)?, ns, name).await.map(|_| ())
     }
 
+    pub async fn update_ingress(&self, id: &str, ns: &str, name: &str, manifest: &serde_json::Value) -> K8sResult<IngressInfo> {
+        IngressManager::update(self.client(id)?, ns, name, manifest).await
+    }
+
     pub async fn list_ingress_classes(&self, id: &str, _opts: &ListOptions) -> K8sResult<Vec<IngressClassInfo>> {
         IngressManager::list_ingress_classes(self.client(id)?).await
     }
@@ -383,6 +459,10 @@ impl K8sService {
 
     pub async fn delete_network_policy(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
         IngressManager::delete_network_policy(self.client(id)?, ns, name).await.map(|_| ())
+    }
+
+    pub async fn get_network_policy(&self, id: &str, ns: &str, name: &str) -> K8sResult<NetworkPolicyInfo> {
+        IngressManager::get_network_policy(self.client(id)?, ns, name).await
     }
 
     // ── Jobs ──────────────────────────────────────────────────────
@@ -429,6 +509,14 @@ impl K8sService {
         JobManager::delete_cronjob(self.client(id)?, ns, name).await.map(|_| ())
     }
 
+    pub async fn suspend_cronjob(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
+        JobManager::suspend_cronjob(self.client(id)?, ns, name).await.map(|_| ())
+    }
+
+    pub async fn resume_cronjob(&self, id: &str, ns: &str, name: &str) -> K8sResult<()> {
+        JobManager::resume_cronjob(self.client(id)?, ns, name).await.map(|_| ())
+    }
+
     pub async fn trigger_cronjob(&self, id: &str, ns: &str, name: &str) -> K8sResult<JobInfo> {
         JobManager::trigger_cronjob(self.client(id)?, ns, name).await
     }
@@ -461,6 +549,10 @@ impl K8sService {
 
     pub async fn remove_node_taint(&self, id: &str, name: &str, taint_key: &str) -> K8sResult<()> {
         NodeManager::remove_taint(self.client(id)?, name, taint_key, None).await.map(|_| ())
+    }
+
+    pub async fn update_node_labels(&self, id: &str, name: &str, labels: &HashMap<String, String>) -> K8sResult<NodeInfo> {
+        NodeManager::update_labels(self.client(id)?, name, labels).await
     }
 
     // ── Storage ───────────────────────────────────────────────────
@@ -595,6 +687,14 @@ impl K8sService {
         HelmManager::template(config, None)
     }
 
+    pub fn helm_release_history(&self, name: &str, namespace: &str) -> K8sResult<Vec<HelmHistory>> {
+        HelmManager::history(name, namespace, None)
+    }
+
+    pub fn helm_get_manifest(&self, name: &str, namespace: &str) -> K8sResult<String> {
+        HelmManager::get_manifest(name, namespace, None)
+    }
+
     // ── Events ────────────────────────────────────────────────────
 
     pub async fn list_events(&self, id: &str, ns: &str, opts: &ListOptions) -> K8sResult<Vec<K8sEvent>> {
@@ -611,6 +711,10 @@ impl K8sService {
 
     pub async fn list_warning_events(&self, id: &str, namespace: Option<&str>) -> K8sResult<Vec<K8sEvent>> {
         EventManager::list_warnings(self.client(id)?, namespace).await
+    }
+
+    pub async fn list_events_for_resource(&self, id: &str, ns: &str, kind: &str, name: &str) -> K8sResult<Vec<K8sEvent>> {
+        EventManager::list_for_resource(self.client(id)?, ns, kind, name).await
     }
 
     // ── CRDs / HPAs ───────────────────────────────────────────────

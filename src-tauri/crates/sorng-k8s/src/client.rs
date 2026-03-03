@@ -4,9 +4,8 @@
 
 use crate::error::{K8sError, K8sResult};
 use crate::types::*;
-use log::{debug, info, warn};
+use log::{debug, info};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, CONTENT_TYPE};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -15,7 +14,7 @@ use tokio::sync::RwLock;
 pub struct K8sClient {
     pub(crate) http: reqwest::Client,
     pub(crate) base_url: String,
-    pub(crate) default_namespace: String,
+    pub(crate) _default_namespace: String,
     pub(crate) auth: Arc<RwLock<K8sAuth>>,
 }
 
@@ -50,7 +49,7 @@ impl K8sClient {
         Ok(Self {
             http,
             base_url: base_url.trim_end_matches('/').to_string(),
-            default_namespace: namespace,
+            _default_namespace: namespace,
             auth: Arc::new(RwLock::new(auth)),
         })
     }

@@ -4,8 +4,7 @@
 
 use crate::error::{K8sError, K8sResult};
 use crate::types::*;
-use log::{debug, info, warn};
-use std::collections::HashMap;
+use log::{debug, info};
 use std::process::Command;
 
 /// Helm CLI wrapper for release management.
