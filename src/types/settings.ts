@@ -243,6 +243,8 @@ export interface GlobalSettings {
   showShortcutManagerIcon: boolean;
   showWolIcon: boolean;
   showBulkSSHIcon: boolean;
+  showServerStatsIcon: boolean;
+  showOpksshIcon: boolean;
   showScriptManagerIcon: boolean;
   showMacroManagerIcon: boolean;
   showSyncBackupStatusIcon: boolean;  // Legacy combined icon
@@ -780,6 +782,8 @@ export interface ToolDisplayModes {
   actionLog: ToolDisplayModeOverride;
   shortcutManager: ToolDisplayModeOverride;
   bulkSsh: ToolDisplayModeOverride;
+  serverStats: ToolDisplayModeOverride;
+  opkssh: ToolDisplayModeOverride;
   internalProxy: ToolDisplayModeOverride;
   proxyChain: ToolDisplayModeOverride;
   wol: ToolDisplayModeOverride;

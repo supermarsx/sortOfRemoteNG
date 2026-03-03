@@ -146,6 +146,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showShortcutManagerIcon: true,
   showWolIcon: true,
   showBulkSSHIcon: true,
+  showServerStatsIcon: true,
+  showOpksshIcon: true,
   showScriptManagerIcon: true,
   showMacroManagerIcon: true,
   showSyncBackupStatusIcon: false,    // Legacy combined - disabled by default
@@ -422,6 +424,8 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     actionLog: 'inherit' as const,
     shortcutManager: 'inherit' as const,
     bulkSsh: 'inherit' as const,
+    serverStats: 'inherit' as const,
+    opkssh: 'inherit' as const,
     internalProxy: 'inherit' as const,
     proxyChain: 'inherit' as const,
     wol: 'inherit' as const,

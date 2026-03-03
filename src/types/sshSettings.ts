@@ -36,6 +36,114 @@ export const IPProtocols = [
 ] as const;
 export type IPProtocol = (typeof IPProtocols)[number];
 
+// ===================================
+// SSH Compression Types
+// ===================================
+
+/** Compression algorithms supported by the SSH transport layer (RFC 4253). */
+export const SshCompressionAlgorithms = [
+  /** No compression — raw data transfer */
+  'none',
+  /** Standard zlib compression (RFC 1950) — compresses from session start */
+  'zlib',
+  /** Delayed zlib — compression activates only after user authentication.
+   *  More secure than plain `zlib` (mitigates pre-auth exploits). */
+  'zlib_openssh',
+  /** Automatically negotiate the best available algorithm.
+   *  Preference order: zlib@openssh.com > zlib > none */
+  'auto',
+] as const;
+export type SshCompressionAlgorithm = (typeof SshCompressionAlgorithms)[number];
+
+/** Per-direction compression settings for upload (C→S) or download (S→C). */
+export interface SshDirectionalCompression {
+  /** Compression algorithm for this direction */
+  algorithm: SshCompressionAlgorithm;
+  /** Compression level 1-9 (1 = fastest, 9 = best, 0 = library default) */
+  level: number;
+}
+
+/** Adaptive compression adjusts behaviour based on data characteristics. */
+export interface SshAdaptiveCompression {
+  /** When true, compression skips already-compressed payloads */
+  enabled: boolean;
+  /** Minimum payload size (bytes) before compression kicks in */
+  minPayloadBytes: number;
+  /** Disable compression if compression ratio exceeds this (0.0–1.0) */
+  ratioThreshold: number;
+  /** File extensions that should never be compressed (already compressed) */
+  incompressibleExtensions: string[];
+}
+
+export const defaultAdaptiveCompression: SshAdaptiveCompression = {
+  enabled: false,
+  minPayloadBytes: 256,
+  ratioThreshold: 0.9,
+  incompressibleExtensions: [
+    'gz', 'bz2', 'xz', 'zst', 'lz4', 'lzma', 'zip', '7z', 'rar',
+    'tar.gz', 'tar.bz2', 'tar.xz', 'tgz',
+    'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif',
+    'mp3', 'mp4', 'mkv', 'avi', 'flac', 'ogg', 'webm',
+    'pdf', 'docx', 'xlsx',
+  ],
+};
+
+/** Comprehensive SSH compression configuration. */
+export interface SshCompressionConfig {
+  /** Master switch — when false, compression is completely disabled */
+  enabled: boolean;
+  /** Global compression algorithm preference */
+  algorithm: SshCompressionAlgorithm;
+  /** Global compression level 1-9 (1 = fastest, 9 = best, 0 = default) */
+  level: number;
+  /** Per-direction overrides (take precedence over global settings) */
+  clientToServer?: SshDirectionalCompression;
+  serverToClient?: SshDirectionalCompression;
+  /** Adaptive compression settings */
+  adaptive: SshAdaptiveCompression;
+  /** Track runtime compression statistics */
+  trackStatistics: boolean;
+  /** Compress SFTP transfer data (false = bypass compression for SFTP) */
+  compressSftp: boolean;
+  /** Allow runtime updates to compression settings */
+  allowRuntimeUpdate: boolean;
+}
+
+export const defaultCompressionConfig: SshCompressionConfig = {
+  enabled: false,
+  algorithm: 'auto',
+  level: 6,
+  clientToServer: undefined,
+  serverToClient: undefined,
+  adaptive: { ...defaultAdaptiveCompression },
+  trackStatistics: false,
+  compressSftp: false,
+  allowRuntimeUpdate: false,
+};
+
+/** Runtime compression statistics tracked per-session. */
+export interface SshCompressionStats {
+  bytesSentUncompressed: number;
+  bytesSentCompressed: number;
+  bytesRecvUncompressed: number;
+  bytesRecvCompressed: number;
+  sendRatio: number;
+  recvRatio: number;
+  negotiatedCsAlgorithm: string;
+  negotiatedScAlgorithm: string;
+  compressionActive: boolean;
+  adaptiveSkips: number;
+}
+
+/** Full compression info snapshot returned by get_ssh_compression_info. */
+export interface SshCompressionInfo {
+  sessionId: string;
+  config: SshCompressionConfig;
+  stats: SshCompressionStats;
+  negotiatedCsAlgorithm: string;
+  negotiatedScAlgorithm: string;
+}
+
 export const SSHVersions = [
   'auto',
   '1',
@@ -188,6 +296,8 @@ export interface SSHTerminalConfig {
   sshVersion: SSHVersion;
   enableCompression: boolean;
   compressionLevel: number; // 1-9
+  /** Full compression configuration — takes precedence over legacy enableCompression/compressionLevel */
+  compressionConfig: SshCompressionConfig;
 
   // Additional SSH options
   preferredCiphers: string[];
@@ -209,6 +319,159 @@ export interface SSHTerminalConfig {
   answerbackString: string;
   localPrinting: boolean;
   remoteControlledPrinting: boolean;
+
+  // Custom background, fading & overlays
+  background: TerminalBackgroundConfig;
+}
+
+// ===================================
+// Terminal Background Types
+// ===================================
+
+export const TerminalBackgroundTypes = [
+  'none',
+  'solid',
+  'gradient',
+  'image',
+  'animated',
+] as const;
+export type TerminalBackgroundType = (typeof TerminalBackgroundTypes)[number];
+
+export const GradientDirections = [
+  'to-bottom',
+  'to-right',
+  'to-bottom-right',
+  'to-bottom-left',
+  'radial',
+  'conic',
+] as const;
+export type GradientDirection = (typeof GradientDirections)[number];
+
+export const AnimatedBackgroundEffects = [
+  'matrix-rain',
+  'starfield',
+  'particles',
+  'scanlines',
+  'noise',
+  'aurora',
+  'rain',
+  'fireflies',
+] as const;
+export type AnimatedBackgroundEffect = (typeof AnimatedBackgroundEffects)[number];
+
+export const OverlayBlendModes = [
+  'normal',
+  'multiply',
+  'screen',
+  'overlay',
+  'darken',
+  'lighten',
+  'color-dodge',
+  'color-burn',
+  'soft-light',
+  'hard-light',
+] as const;
+export type OverlayBlendMode = (typeof OverlayBlendModes)[number];
+
+export const FadingEdges = [
+  'none',
+  'top',
+  'bottom',
+  'left',
+  'right',
+  'all',
+  'top-bottom',
+  'left-right',
+] as const;
+export type FadingEdge = (typeof FadingEdges)[number];
+
+export interface GradientStop {
+  color: string;
+  position: number; // 0-100
+}
+
+export interface TerminalOverlay {
+  id: string;
+  enabled: boolean;
+  type: 'color' | 'gradient' | 'vignette' | 'scanlines' | 'noise' | 'crt' | 'grid';
+  opacity: number; // 0-1
+  blendMode: OverlayBlendMode;
+  color?: string;
+  gradientStops?: GradientStop[];
+  gradientDirection?: GradientDirection;
+  /** Overlay-specific intensity (scanline spacing, noise grain, etc.) */
+  intensity?: number;
+}
+
+export interface TerminalFadingConfig {
+  enabled: boolean;
+  edge: FadingEdge;
+  /** Fade size in pixels */
+  size: number;
+  /** Fade color — defaults to terminal background */
+  color?: string;
+}
+
+export interface TerminalBackgroundConfig {
+  enabled: boolean;
+  type: TerminalBackgroundType;
+
+  // Solid color
+  solidColor?: string;
+
+  // Gradient
+  gradientStops?: GradientStop[];
+  gradientDirection?: GradientDirection;
+
+  // Image
+  imagePath?: string;
+  imageOpacity?: number; // 0-1
+  imageBlur?: number; // px
+  imageSize?: 'cover' | 'contain' | 'fill' | 'tile';
+  imagePosition?: string; // CSS background-position
+
+  // Animated effect
+  animatedEffect?: AnimatedBackgroundEffect;
+  animationSpeed?: number; // 0.1-3 multiplier
+  animationDensity?: number; // 0.1-3 multiplier
+  animationColor?: string;
+
+  // Global background opacity (applied over terminal background)
+  opacity: number; // 0-1
+
+  // Fading
+  fading: TerminalFadingConfig;
+
+  // Overlays (layered on top)
+  overlays: TerminalOverlay[];
+}
+
+export const defaultTerminalFading: TerminalFadingConfig = {
+  enabled: false,
+  edge: 'none',
+  size: 40,
+};
+
+export const defaultTerminalBackground: TerminalBackgroundConfig = {
+  enabled: false,
+  type: 'none',
+  opacity: 1,
+  solidColor: '#0b1120',
+  gradientStops: [
+    { color: '#0b1120', position: 0 },
+    { color: '#1a1a2e', position: 100 },
+  ],
+  gradientDirection: 'to-bottom',
+  imageOpacity: 0.15,
+  imageBlur: 0,
+  imageSize: 'cover',
+  imagePosition: 'center center',
+  animatedEffect: 'matrix-rain',
+  animationSpeed: 1,
+  animationDensity: 1,
+  animationColor: '#00ff41',
+  fading: { ...defaultTerminalFading },
+  overlays: [],
 }
 
 export const defaultSSHTerminalConfig: SSHTerminalConfig = {
@@ -275,6 +538,7 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
   sshVersion: 'auto',
   enableCompression: false,
   compressionLevel: 6,
+  compressionConfig: { ...defaultCompressionConfig },
 
   // Additional SSH options (ordered by performance - fastest first)
   preferredCiphers: [
@@ -326,6 +590,9 @@ export const defaultSSHTerminalConfig: SSHTerminalConfig = {
   answerbackString: '',
   localPrinting: false,
   remoteControlledPrinting: false,
+
+  // Custom background, fading & overlays
+  background: { ...defaultTerminalBackground },
 };
 
 // ===================================
@@ -407,6 +674,8 @@ export interface SSHConnectionConfig {
   sshVersion: SSHVersion;
   enableCompression: boolean;
   compressionLevel: number; // 1-9
+  /** Full compression configuration — takes precedence over legacy enableCompression/compressionLevel */
+  compressionConfig: SshCompressionConfig;
 
   // Cipher and algorithm preferences
   preferredCiphers: string[];
@@ -487,6 +756,7 @@ export const defaultSSHConnectionConfig: SSHConnectionConfig = {
   sshVersion: 'auto',
   enableCompression: false,
   compressionLevel: 6,
+  compressionConfig: { ...defaultCompressionConfig },
 
   // Cipher and algorithm preferences
   preferredCiphers: [],
@@ -561,6 +831,15 @@ export function mergeSSHConnectionConfig(
     preferredKeyExchanges: override.preferredKeyExchanges ?? globalConfig.preferredKeyExchanges,
     preferredHostKeyAlgorithms: override.preferredHostKeyAlgorithms ?? globalConfig.preferredHostKeyAlgorithms,
     revokedHostKeys: override.revokedHostKeys ?? globalConfig.revokedHostKeys,
+    // Deep merge compression config
+    compressionConfig: {
+      ...globalConfig.compressionConfig,
+      ...(override.compressionConfig || {}),
+      adaptive: {
+        ...globalConfig.compressionConfig.adaptive,
+        ...(override.compressionConfig?.adaptive || {}),
+      },
+    },
     // Merge environment variables
     environment: {
       ...(globalConfig.environment || {}),
@@ -595,6 +874,23 @@ export function mergeSSHTerminalConfig(
     bellOveruseProtection: {
       ...globalConfig.bellOveruseProtection,
       ...(override.bellOveruseProtection || {}),
+    },
+    compressionConfig: {
+      ...globalConfig.compressionConfig,
+      ...(override.compressionConfig || {}),
+      adaptive: {
+        ...globalConfig.compressionConfig.adaptive,
+        ...(override.compressionConfig?.adaptive || {}),
+      },
+    },
+    background: {
+      ...globalConfig.background,
+      ...(override.background || {}),
+      fading: {
+        ...globalConfig.background.fading,
+        ...(override.background?.fading || {}),
+      },
+      overlays: override.background?.overlays ?? globalConfig.background.overlays,
     },
   };
 }

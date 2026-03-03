@@ -34,6 +34,7 @@ import MiscSection from "./sshTerminal/MiscSection";
 import SectionHeading from '../../ui/SectionHeading';
 import TEXTAREA_CLASS from "./sshTerminal/TEXTAREA_CLASS";
 import SectionHeading from '../../ui/SectionHeading';
+import BackgroundSection from "./sshTerminal/BackgroundSection";
 
 export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
   settings,
@@ -59,6 +60,7 @@ export const SSHTerminalSettings: React.FC<SSHTerminalSettingsProps> = ({
       <CharacterSetSection cfg={cfg} up={up} t={t} />
       <FontSection cfg={cfg} up={up} t={t} />
       <ColorsSection cfg={cfg} up={up} t={t} />
+      <BackgroundSection cfg={cfg} up={up} t={t} />
       <TcpOptionsSection cfg={cfg} up={up} t={t} />
       <SSHProtocolSection cfg={cfg} up={up} t={t} />
       <ScrollbackSection cfg={cfg} up={up} t={t} />
