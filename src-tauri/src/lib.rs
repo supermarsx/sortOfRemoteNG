@@ -82,7 +82,7 @@ pub use sorng_rdp::h264;
 // Protocols
 pub use sorng_vnc::vnc;
 pub use sorng_telnet::telnet;
-pub use sorng_protocols::serial;
+pub use sorng_serial::serial;
 pub use sorng_protocols::rlogin;
 pub use sorng_protocols::raw_socket;
 pub use sorng_ftp::ftp;
@@ -163,6 +163,9 @@ pub use sorng_hyperv as hyperv;
 // VMware / vSphere (dedicated crate)
 pub use sorng_vmware as vmware;
 
+// Proxmox VE (dedicated crate)
+pub use sorng_proxmox as proxmox;
+
 // MeshCentral (dedicated crate)
 pub use sorng_meshcentral::meshcentral as meshcentral_dedicated;
 
@@ -196,6 +199,15 @@ pub use sorng_llm as llm;
 // AI Assist for SSH autocomplete (dedicated crate)
 pub use sorng_ai_assist as ai_assist;
 
+// Command Palette — unified SSH command search, history, snippets, AI completions (dedicated crate)
+pub use sorng_command_palette as command_palette;
+
+// Font management — full SSH/app font customization with 50+ built-in fonts (dedicated crate)
+pub use sorng_fonts as fonts;
+
+// Secure clipboard — password copy/paste with auto-clear, one-time paste, paste-to-terminal
+pub use sorng_secure_clip as secure_clip;
+
 // Terminal theming engine (dedicated crate)
 pub use sorng_terminal_themes as terminal_themes;
 
@@ -207,6 +219,15 @@ pub use sorng_collaboration as collaboration;
 
 // Gateway — headless connection proxy, tunnels, policies, metrics (dedicated crate)
 pub use sorng_gateway as gateway;
+
+// Let's Encrypt / ACME — automated TLS certificate management (dedicated crate)
+pub use sorng_letsencrypt as letsencrypt;
+
+// OpenSSH Agent — built-in agent, system agent bridge, key management, forwarding, constraints (dedicated crate)
+pub use sorng_ssh_agent as ssh_agent;
+
+// OpenPubkey SSH (opkssh) — OIDC-based SSH authentication (dedicated crate)
+pub use sorng_opkssh as opkssh;
 
 // P2P — STUN/TURN/ICE, NAT traversal, hole punching, signaling, peer discovery (dedicated crate)
 pub use sorng_p2p as p2p;
@@ -228,6 +249,30 @@ pub use sorng_k8s as k8s;
 
 // Docker — container lifecycle, images, volumes, networks, compose, registry (dedicated crate)
 pub use sorng_docker as docker;
+
+// Ansible — playbooks, inventory, ad-hoc commands, vault, galaxy, facts (dedicated crate)
+pub use sorng_ansible as ansible;
+
+// Terraform — init, plan, apply, state, workspaces, providers, modules, HCL, drift (dedicated crate)
+pub use sorng_terraform as terraform;
+
+// I18n — backend localisation engine with hot-reload, SSR, and Tauri commands (dedicated crate)
+pub use sorng_i18n as i18n;
+
+// Budibase — low-code platform integration: apps, tables, rows, views, users, queries, automations, datasources (dedicated crate)
+pub use sorng_budibase as budibase;
+
+// osTicket — helpdesk ticketing: tickets, users, departments, topics, agents, teams, SLA, canned responses, custom fields (dedicated crate)
+pub use sorng_osticket as osticket;
+
+// Jira — project management: issues, projects, comments, attachments, worklogs, boards, sprints, users, fields, dashboards, filters (dedicated crate)
+pub use sorng_jira as jira;
+
+// Warpgate — SSH/HTTPS/MySQL/PostgreSQL bastion host admin API: targets, users, roles, sessions, recordings, tickets, credentials, SSH keys, known hosts, LDAP, logs, parameters (dedicated crate)
+pub use sorng_warpgate as warpgate;
+
+// SSH Scripts — action-based & event-based script execution: login/logout scripts, timed/cron/interval scripts, output-match scripts, idle scripts, file-watch scripts, script chains, conditions, variables, history (dedicated crate)
+pub use sorng_ssh_scripts as ssh_scripts;
 
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
@@ -307,6 +352,7 @@ use google_passwords::service::GooglePasswordsServiceState;
 use dashlane::service::DashlaneServiceState;
 use hyperv::service::HyperVServiceState;
 use vmware::service::VmwareServiceState;
+use proxmox::service::ProxmoxServiceState;
 use meshcentral_dedicated::MeshCentralService;
 use mremoteng_dedicated::MremotengService;
 use termserv::service::TermServServiceState;
@@ -320,6 +366,20 @@ use terminal_themes::ThemeEngineState;
 use extensions::service::ExtensionsServiceState;
 use k8s::service::K8sServiceState;
 use docker::service::DockerServiceState;
+use ansible::service::AnsibleServiceState;
+use terraform::service::TerraformServiceState;
+use i18n::I18nServiceState;
+use command_palette::CommandPaletteServiceState;
+use fonts::FontServiceState;
+use secure_clip::SecureClipServiceState;
+use budibase::service::BudibaseServiceState;
+use osticket::service::OsticketServiceState;
+use jira::service::JiraServiceState;
+use warpgate::service::WarpgateServiceState;
+use letsencrypt::service::LetsEncryptServiceState;
+use ssh_agent::types::SshAgentServiceState;
+use opkssh::service::OpksshServiceState;
+use ssh_scripts::engine::SshScriptEngineState;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -716,6 +776,10 @@ pub fn run() {
       let vmware_service: VmwareServiceState = Arc::new(Mutex::new(vmware::service::VmwareService::new()));
       app.manage(vmware_service);
 
+      // Initialize Proxmox VE service
+      let proxmox_service: ProxmoxServiceState = Arc::new(Mutex::new(proxmox::service::ProxmoxService::new()));
+      app.manage(proxmox_service);
+
       // Initialize MeshCentral service
       let meshcentral_dedicated_service = MeshCentralService::new();
       app.manage(meshcentral_dedicated_service);
@@ -766,6 +830,21 @@ pub fn run() {
       );
       app.manage(ai_assist_state.clone());
 
+      // Initialize Command Palette service
+      let palette_state: CommandPaletteServiceState = command_palette::create_palette_state(
+          &app_dir,
+          Some(llm_state.clone()),
+      );
+      app.manage(palette_state.clone());
+
+      // Initialize Font service
+      let font_state: FontServiceState = fonts::create_font_state(&app_dir);
+      app.manage(font_state.clone());
+
+      // Initialize Secure Clipboard service
+      let secure_clip_state: SecureClipServiceState = secure_clip::create_secure_clip_state();
+      app.manage(secure_clip_state.clone());
+
       // Initialize Terminal Themes engine
       let theme_engine_state: ThemeEngineState = terminal_themes::engine::create_theme_engine_state();
       app.manage(theme_engine_state.clone());
@@ -781,6 +860,77 @@ pub fn run() {
       // Initialize Docker service
       let docker_state: DockerServiceState = Arc::new(Mutex::new(docker::service::DockerService::new()));
       app.manage(docker_state);
+
+      // Initialize Ansible service
+      let ansible_state: AnsibleServiceState = Arc::new(Mutex::new(ansible::service::AnsibleService::new()));
+      app.manage(ansible_state);
+
+      // Initialize Terraform service
+      let terraform_state: TerraformServiceState = Arc::new(Mutex::new(terraform::service::TerraformService::new()));
+      app.manage(terraform_state);
+
+      // Initialize Budibase service
+      let budibase_state: BudibaseServiceState = Arc::new(Mutex::new(budibase::service::BudibaseService::new()));
+      app.manage(budibase_state);
+
+      // Initialize osTicket service
+      let osticket_state: OsticketServiceState = Arc::new(Mutex::new(osticket::service::OsticketService::new()));
+      app.manage(osticket_state);
+
+      // Initialize Jira service
+      let jira_state: JiraServiceState = Arc::new(Mutex::new(jira::service::JiraService::new()));
+      app.manage(jira_state);
+
+      // Initialize Warpgate service
+      let warpgate_state: WarpgateServiceState = Arc::new(Mutex::new(warpgate::service::WarpgateService::new()));
+      app.manage(warpgate_state);
+
+      // Initialize Let's Encrypt / ACME service
+      let le_storage = app_dir.join(".letsencrypt").to_string_lossy().to_string();
+      let le_state = letsencrypt::service::LetsEncryptService::new_default(&le_storage);
+      app.manage(le_state);
+
+      // Initialize OpenPubkey SSH (opkssh) service
+      let opkssh_state: OpksshServiceState = Arc::new(Mutex::new(opkssh::service::OpksshService::new()));
+      app.manage(opkssh_state);
+
+      // Initialize SSH event-scripts engine
+      let ssh_scripts_state: SshScriptEngineState = ssh_scripts::engine::SshScriptEngine::new_state();
+      app.manage(ssh_scripts_state);
+
+      // Initialize SSH Agent service
+      let ssh_agent_state: SshAgentServiceState = Arc::new(Mutex::new(ssh_agent::service::SshAgentService::new()));
+      app.manage(ssh_agent_state);
+
+      // Initialize i18n engine with hot-reload
+      let locales_dir = app.path().resource_dir()
+          .unwrap_or_else(|_| app_dir.clone())
+          .join("locales");
+      // Fallback: also try the source tree locales used during development
+      let locales_dir = if locales_dir.exists() {
+          locales_dir
+      } else {
+          std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+              .join("..")
+              .join("src")
+              .join("i18n")
+              .join("locales")
+      };
+      let i18n_engine = match i18n::I18nEngine::new(&locales_dir, "en") {
+          Ok(e) => std::sync::Arc::new(e),
+          Err(err) => {
+              log::warn!("i18n: failed to initialise engine: {err}");
+              std::sync::Arc::new(i18n::I18nEngine::new_empty("en"))
+          }
+      };
+      let i18n_watcher = i18n::watcher::I18nWatcher::start_with_tauri_events(
+          i18n_engine.clone(),
+          app.handle().clone(),
+      ).ok();
+      app.manage(I18nServiceState {
+          engine: i18n_engine,
+          _watcher: i18n_watcher,
+      });
 
       // Initialize API service
       let api_service = ApiService::new(
@@ -1141,11 +1291,24 @@ pub fn run() {
         ssh::validate_ssh_key_file,
         ssh::test_ssh_connection,
         ssh::generate_ssh_key,
+        // FIDO2 / Security Key commands
+        ssh::check_fido2_support,
+        ssh::list_fido2_devices,
+        ssh::generate_sk_ssh_key,
+        ssh::list_fido2_resident_credentials,
+        ssh::detect_sk_key_type,
+        ssh::validate_ssh_key_file_extended,
         ssh::get_terminal_buffer,
         ssh::clear_terminal_buffer,
         ssh::is_session_alive,
         ssh::get_shell_info,
         ssh::reattach_session,
+        // SSH compression commands
+        ssh::get_ssh_compression_info,
+        ssh::update_ssh_compression_config,
+        ssh::reset_ssh_compression_stats,
+        ssh::list_ssh_compression_algorithms,
+        ssh::should_compress_sftp,
         // SSH session recording commands
         ssh::start_session_recording,
         ssh::stop_session_recording,
@@ -1162,6 +1325,16 @@ pub fn run() {
         ssh::list_active_automations,
         ssh::expect_and_send,
         ssh::execute_command_sequence,
+        // SSH terminal regex highlighting commands
+        ssh::set_highlight_rules,
+        ssh::get_highlight_rules,
+        ssh::add_highlight_rule,
+        ssh::remove_highlight_rule,
+        ssh::update_highlight_rule,
+        ssh::clear_highlight_rules,
+        ssh::get_highlight_status,
+        ssh::list_highlighted_sessions,
+        ssh::test_highlight_rules,
         // FTP over SSH tunnel commands
         ssh::setup_ftp_tunnel,
         ssh::stop_ftp_tunnel,
@@ -1323,12 +1496,38 @@ pub fn run() {
         telnet::list_telnet_sessions,
         telnet::disconnect_all_telnet,
         telnet::is_telnet_connected,
-        // serial::connect_serial,
-        // serial::disconnect_serial,
-        // serial::send_serial_data,
-        // serial::get_serial_session_info,
-        // serial::list_serial_sessions,
-        // serial::list_available_serial_ports,
+        // ── Serial (COM / RS-232) ────────────────────────────────
+        serial::serial_scan_ports,
+        serial::serial_connect,
+        serial::serial_disconnect,
+        serial::serial_disconnect_all,
+        serial::serial_send_raw,
+        serial::serial_send_line,
+        serial::serial_send_char,
+        serial::serial_send_hex,
+        serial::serial_send_break,
+        serial::serial_set_dtr,
+        serial::serial_set_rts,
+        serial::serial_read_control_lines,
+        serial::serial_reconfigure,
+        serial::serial_set_line_ending,
+        serial::serial_set_local_echo,
+        serial::serial_flush,
+        serial::serial_get_session_info,
+        serial::serial_list_sessions,
+        serial::serial_get_stats,
+        serial::serial_send_at_command,
+        serial::serial_get_modem_info,
+        serial::serial_get_signal_quality,
+        serial::serial_modem_init,
+        serial::serial_modem_dial,
+        serial::serial_modem_hangup,
+        serial::serial_get_modem_profiles,
+        serial::serial_start_logging,
+        serial::serial_stop_logging,
+        serial::serial_get_baud_rates,
+        serial::serial_hex_to_bytes,
+        serial::serial_bytes_to_hex,
         // rlogin::connect_rlogin,
         // rlogin::disconnect_rlogin,
         // rlogin::send_rlogin_command,
@@ -2698,6 +2897,136 @@ pub fn run() {
         vmware::commands::vmware_close_all_vmrc_sessions,
         vmware::commands::vmware_is_vmrc_available,
         vmware::commands::vmware_is_horizon_available,
+        // Proxmox VE commands — Connection
+        proxmox::commands::proxmox_connect,
+        proxmox::commands::proxmox_disconnect,
+        proxmox::commands::proxmox_check_session,
+        proxmox::commands::proxmox_is_connected,
+        proxmox::commands::proxmox_get_config,
+        proxmox::commands::proxmox_get_version,
+        // Proxmox VE commands — Nodes
+        proxmox::commands::proxmox_list_nodes,
+        proxmox::commands::proxmox_get_node_status,
+        proxmox::commands::proxmox_list_node_services,
+        proxmox::commands::proxmox_start_node_service,
+        proxmox::commands::proxmox_stop_node_service,
+        proxmox::commands::proxmox_restart_node_service,
+        proxmox::commands::proxmox_get_node_dns,
+        proxmox::commands::proxmox_get_node_syslog,
+        proxmox::commands::proxmox_list_apt_updates,
+        proxmox::commands::proxmox_reboot_node,
+        proxmox::commands::proxmox_shutdown_node,
+        // Proxmox VE commands — QEMU VMs
+        proxmox::commands::proxmox_list_qemu_vms,
+        proxmox::commands::proxmox_get_qemu_status,
+        proxmox::commands::proxmox_get_qemu_config,
+        proxmox::commands::proxmox_create_qemu_vm,
+        proxmox::commands::proxmox_delete_qemu_vm,
+        proxmox::commands::proxmox_start_qemu_vm,
+        proxmox::commands::proxmox_stop_qemu_vm,
+        proxmox::commands::proxmox_shutdown_qemu_vm,
+        proxmox::commands::proxmox_reboot_qemu_vm,
+        proxmox::commands::proxmox_suspend_qemu_vm,
+        proxmox::commands::proxmox_resume_qemu_vm,
+        proxmox::commands::proxmox_reset_qemu_vm,
+        proxmox::commands::proxmox_resize_qemu_disk,
+        proxmox::commands::proxmox_clone_qemu_vm,
+        proxmox::commands::proxmox_migrate_qemu_vm,
+        proxmox::commands::proxmox_convert_qemu_to_template,
+        proxmox::commands::proxmox_qemu_agent_exec,
+        proxmox::commands::proxmox_qemu_agent_network,
+        proxmox::commands::proxmox_qemu_agent_osinfo,
+        proxmox::commands::proxmox_get_next_vmid,
+        // Proxmox VE commands — LXC Containers
+        proxmox::commands::proxmox_list_lxc_containers,
+        proxmox::commands::proxmox_get_lxc_status,
+        proxmox::commands::proxmox_get_lxc_config,
+        proxmox::commands::proxmox_create_lxc_container,
+        proxmox::commands::proxmox_delete_lxc_container,
+        proxmox::commands::proxmox_start_lxc_container,
+        proxmox::commands::proxmox_stop_lxc_container,
+        proxmox::commands::proxmox_shutdown_lxc_container,
+        proxmox::commands::proxmox_reboot_lxc_container,
+        proxmox::commands::proxmox_clone_lxc_container,
+        proxmox::commands::proxmox_migrate_lxc_container,
+        // Proxmox VE commands — Storage
+        proxmox::commands::proxmox_list_storage,
+        proxmox::commands::proxmox_list_storage_content,
+        proxmox::commands::proxmox_delete_storage_volume,
+        proxmox::commands::proxmox_download_to_storage,
+        // Proxmox VE commands — Network
+        proxmox::commands::proxmox_list_network_interfaces,
+        proxmox::commands::proxmox_get_network_interface,
+        proxmox::commands::proxmox_create_network_interface,
+        proxmox::commands::proxmox_delete_network_interface,
+        proxmox::commands::proxmox_apply_network_changes,
+        proxmox::commands::proxmox_revert_network_changes,
+        // Proxmox VE commands — Cluster
+        proxmox::commands::proxmox_get_cluster_status,
+        proxmox::commands::proxmox_list_cluster_resources,
+        proxmox::commands::proxmox_get_cluster_next_id,
+        proxmox::commands::proxmox_list_users,
+        proxmox::commands::proxmox_list_roles,
+        proxmox::commands::proxmox_list_groups,
+        // Proxmox VE commands — Tasks
+        proxmox::commands::proxmox_list_tasks,
+        proxmox::commands::proxmox_get_task_status,
+        proxmox::commands::proxmox_get_task_log,
+        proxmox::commands::proxmox_stop_task,
+        // Proxmox VE commands — Backups
+        proxmox::commands::proxmox_list_backup_jobs,
+        proxmox::commands::proxmox_vzdump,
+        proxmox::commands::proxmox_restore_backup,
+        proxmox::commands::proxmox_list_backups,
+        // Proxmox VE commands — Firewall
+        proxmox::commands::proxmox_get_cluster_firewall_options,
+        proxmox::commands::proxmox_list_cluster_firewall_rules,
+        proxmox::commands::proxmox_list_security_groups,
+        proxmox::commands::proxmox_list_firewall_aliases,
+        proxmox::commands::proxmox_list_firewall_ipsets,
+        proxmox::commands::proxmox_list_guest_firewall_rules,
+        // Proxmox VE commands — Pools
+        proxmox::commands::proxmox_list_pools,
+        proxmox::commands::proxmox_get_pool,
+        proxmox::commands::proxmox_create_pool,
+        proxmox::commands::proxmox_delete_pool,
+        // Proxmox VE commands — HA
+        proxmox::commands::proxmox_list_ha_resources,
+        proxmox::commands::proxmox_list_ha_groups,
+        // Proxmox VE commands — Ceph
+        proxmox::commands::proxmox_get_ceph_status,
+        proxmox::commands::proxmox_list_ceph_pools,
+        proxmox::commands::proxmox_list_ceph_monitors,
+        proxmox::commands::proxmox_list_ceph_osds,
+        // Proxmox VE commands — SDN
+        proxmox::commands::proxmox_list_sdn_zones,
+        proxmox::commands::proxmox_list_sdn_vnets,
+        // Proxmox VE commands — Console
+        proxmox::commands::proxmox_qemu_vnc_proxy,
+        proxmox::commands::proxmox_qemu_spice_proxy,
+        proxmox::commands::proxmox_qemu_termproxy,
+        proxmox::commands::proxmox_lxc_vnc_proxy,
+        proxmox::commands::proxmox_lxc_spice_proxy,
+        proxmox::commands::proxmox_lxc_termproxy,
+        proxmox::commands::proxmox_node_termproxy,
+        // Proxmox VE commands — Snapshots
+        proxmox::commands::proxmox_list_qemu_snapshots,
+        proxmox::commands::proxmox_create_qemu_snapshot,
+        proxmox::commands::proxmox_rollback_qemu_snapshot,
+        proxmox::commands::proxmox_delete_qemu_snapshot,
+        proxmox::commands::proxmox_list_lxc_snapshots,
+        proxmox::commands::proxmox_create_lxc_snapshot,
+        proxmox::commands::proxmox_rollback_lxc_snapshot,
+        proxmox::commands::proxmox_delete_lxc_snapshot,
+        // Proxmox VE commands — Metrics / RRD
+        proxmox::commands::proxmox_node_rrd,
+        proxmox::commands::proxmox_qemu_rrd,
+        proxmox::commands::proxmox_lxc_rrd,
+        // Proxmox VE commands — Templates
+        proxmox::commands::proxmox_list_appliance_templates,
+        proxmox::commands::proxmox_download_appliance,
+        proxmox::commands::proxmox_list_isos,
+        proxmox::commands::proxmox_list_container_templates,
         // mRemoteNG commands — Format Detection
         mremoteng_dedicated::mrng_detect_format,
         mremoteng_dedicated::mrng_get_import_formats,
@@ -3328,6 +3657,117 @@ pub fn run() {
         ai_assist::commands::ai_assist_analyze_history,
         ai_assist::commands::ai_assist_get_config,
         ai_assist::commands::ai_assist_update_config,
+        // Command Palette commands
+        command_palette::commands::palette_search,
+        command_palette::commands::palette_record_command,
+        command_palette::commands::palette_search_history,
+        command_palette::commands::palette_get_history,
+        command_palette::commands::palette_pin_command,
+        command_palette::commands::palette_tag_command,
+        command_palette::commands::palette_remove_history,
+        command_palette::commands::palette_clear_history,
+        command_palette::commands::palette_add_snippet,
+        command_palette::commands::palette_get_snippet,
+        command_palette::commands::palette_update_snippet,
+        command_palette::commands::palette_remove_snippet,
+        command_palette::commands::palette_list_snippets,
+        command_palette::commands::palette_search_snippets,
+        command_palette::commands::palette_render_snippet,
+        command_palette::commands::palette_import_snippets,
+        command_palette::commands::palette_export_snippets,
+        command_palette::commands::palette_add_alias,
+        command_palette::commands::palette_remove_alias,
+        command_palette::commands::palette_list_aliases,
+        command_palette::commands::palette_get_config,
+        command_palette::commands::palette_update_config,
+        command_palette::commands::palette_get_stats,
+        command_palette::commands::palette_save,
+        command_palette::commands::palette_export,
+        command_palette::commands::palette_import,
+        // Extended palette import/export commands
+        command_palette::commands::palette_export_advanced,
+        command_palette::commands::palette_export_history,
+        command_palette::commands::palette_export_snippets_filtered,
+        command_palette::commands::palette_validate_import,
+        command_palette::commands::palette_validate_import_file,
+        command_palette::commands::palette_preview_import,
+        command_palette::commands::palette_preview_import_file,
+        command_palette::commands::palette_import_advanced,
+        command_palette::commands::palette_import_file_advanced,
+        command_palette::commands::palette_create_share_package,
+        command_palette::commands::palette_import_share_package,
+        command_palette::commands::palette_export_clipboard,
+        command_palette::commands::palette_import_clipboard,
+        command_palette::commands::palette_save_share_package,
+        command_palette::commands::palette_import_share_package_file,
+        command_palette::commands::palette_get_snapshot_stats,
+        // OS classification commands
+        command_palette::commands::palette_list_os_families,
+        command_palette::commands::palette_list_os_distros,
+        command_palette::commands::palette_snippets_by_os,
+        command_palette::commands::palette_snippets_by_os_family,
+        command_palette::commands::palette_snippets_universal,
+        command_palette::commands::palette_set_snippet_os_target,
+        command_palette::commands::palette_set_alias_os_target,
+        // Font management commands
+        fonts::commands::fonts_list_all,
+        fonts::commands::fonts_by_category,
+        fonts::commands::fonts_get,
+        fonts::commands::fonts_search,
+        fonts::commands::fonts_list_monospace,
+        fonts::commands::fonts_list_with_ligatures,
+        fonts::commands::fonts_list_with_nerd_font,
+        fonts::commands::fonts_get_stats,
+        fonts::commands::fonts_list_stacks,
+        fonts::commands::fonts_get_stack,
+        fonts::commands::fonts_create_stack,
+        fonts::commands::fonts_delete_stack,
+        fonts::commands::fonts_get_config,
+        fonts::commands::fonts_update_ssh_terminal,
+        fonts::commands::fonts_update_app_ui,
+        fonts::commands::fonts_update_code_editor,
+        fonts::commands::fonts_update_tab_bar,
+        fonts::commands::fonts_update_log_viewer,
+        fonts::commands::fonts_set_connection_override,
+        fonts::commands::fonts_remove_connection_override,
+        fonts::commands::fonts_resolve_connection,
+        fonts::commands::fonts_add_favourite,
+        fonts::commands::fonts_remove_favourite,
+        fonts::commands::fonts_get_favourites,
+        fonts::commands::fonts_get_recent,
+        fonts::commands::fonts_record_recent,
+        fonts::commands::fonts_list_presets,
+        fonts::commands::fonts_apply_preset,
+        fonts::commands::fonts_detect_system,
+        fonts::commands::fonts_detect_system_monospace,
+        fonts::commands::fonts_resolve_css,
+        fonts::commands::fonts_resolve_settings_css,
+        fonts::commands::fonts_save,
+        fonts::commands::fonts_export,
+        fonts::commands::fonts_import,
+        // Secure Clipboard commands
+        secure_clip::commands::secure_clip_copy,
+        secure_clip::commands::secure_clip_copy_password,
+        secure_clip::commands::secure_clip_copy_totp,
+        secure_clip::commands::secure_clip_copy_username,
+        secure_clip::commands::secure_clip_copy_passphrase,
+        secure_clip::commands::secure_clip_copy_api_key,
+        secure_clip::commands::secure_clip_paste,
+        secure_clip::commands::secure_clip_paste_by_id,
+        secure_clip::commands::secure_clip_paste_to_terminal,
+        secure_clip::commands::secure_clip_record_terminal_paste,
+        secure_clip::commands::secure_clip_clear,
+        secure_clip::commands::secure_clip_on_app_lock,
+        secure_clip::commands::secure_clip_on_app_exit,
+        secure_clip::commands::secure_clip_get_current,
+        secure_clip::commands::secure_clip_has_entry,
+        secure_clip::commands::secure_clip_get_stats,
+        secure_clip::commands::secure_clip_get_history,
+        secure_clip::commands::secure_clip_get_history_for_connection,
+        secure_clip::commands::secure_clip_clear_history,
+        secure_clip::commands::secure_clip_get_config,
+        secure_clip::commands::secure_clip_update_config,
+        secure_clip::commands::secure_clip_read_os_clipboard,
         // Terminal Themes commands
         terminal_themes::commands::terminal_themes_list,
         terminal_themes::commands::terminal_themes_list_dark,
@@ -3597,6 +4037,534 @@ pub fn run() {
         docker::commands::docker_compose_config,
         docker::commands::docker_registry_login,
         docker::commands::docker_registry_search,
+        // Ansible commands
+        ansible::commands::ansible_connect,
+        ansible::commands::ansible_disconnect,
+        ansible::commands::ansible_list_connections,
+        ansible::commands::ansible_is_available,
+        ansible::commands::ansible_get_info,
+        ansible::commands::ansible_inventory_parse,
+        ansible::commands::ansible_inventory_graph,
+        ansible::commands::ansible_inventory_list_hosts,
+        ansible::commands::ansible_inventory_host_vars,
+        ansible::commands::ansible_inventory_add_host,
+        ansible::commands::ansible_inventory_remove_host,
+        ansible::commands::ansible_inventory_add_group,
+        ansible::commands::ansible_inventory_remove_group,
+        ansible::commands::ansible_inventory_dynamic,
+        ansible::commands::ansible_playbook_parse,
+        ansible::commands::ansible_playbook_list,
+        ansible::commands::ansible_playbook_syntax_check,
+        ansible::commands::ansible_playbook_lint,
+        ansible::commands::ansible_playbook_run,
+        ansible::commands::ansible_playbook_check,
+        ansible::commands::ansible_playbook_diff,
+        ansible::commands::ansible_adhoc_run,
+        ansible::commands::ansible_adhoc_ping,
+        ansible::commands::ansible_adhoc_shell,
+        ansible::commands::ansible_adhoc_copy,
+        ansible::commands::ansible_adhoc_service,
+        ansible::commands::ansible_adhoc_package,
+        ansible::commands::ansible_roles_list,
+        ansible::commands::ansible_role_inspect,
+        ansible::commands::ansible_role_init,
+        ansible::commands::ansible_role_dependencies,
+        ansible::commands::ansible_role_install_deps,
+        ansible::commands::ansible_vault_encrypt,
+        ansible::commands::ansible_vault_decrypt,
+        ansible::commands::ansible_vault_view,
+        ansible::commands::ansible_vault_rekey,
+        ansible::commands::ansible_vault_encrypt_string,
+        ansible::commands::ansible_vault_is_encrypted,
+        ansible::commands::ansible_galaxy_install_role,
+        ansible::commands::ansible_galaxy_list_roles,
+        ansible::commands::ansible_galaxy_remove_role,
+        ansible::commands::ansible_galaxy_install_collection,
+        ansible::commands::ansible_galaxy_list_collections,
+        ansible::commands::ansible_galaxy_remove_collection,
+        ansible::commands::ansible_galaxy_search,
+        ansible::commands::ansible_galaxy_role_info,
+        ansible::commands::ansible_galaxy_install_requirements,
+        ansible::commands::ansible_facts_gather,
+        ansible::commands::ansible_facts_gather_min,
+        ansible::commands::ansible_config_dump,
+        ansible::commands::ansible_config_get,
+        ansible::commands::ansible_config_parse_file,
+        ansible::commands::ansible_config_detect_path,
+        ansible::commands::ansible_list_modules,
+        ansible::commands::ansible_module_doc,
+        ansible::commands::ansible_module_examples,
+        ansible::commands::ansible_list_plugins,
+        ansible::commands::ansible_history_list,
+        ansible::commands::ansible_history_get,
+        ansible::commands::ansible_history_clear,
+        // Terraform commands
+        terraform::commands::terraform_connect,
+        terraform::commands::terraform_disconnect,
+        terraform::commands::terraform_list_connections,
+        terraform::commands::terraform_is_available,
+        terraform::commands::terraform_get_info,
+        terraform::commands::terraform_init,
+        terraform::commands::terraform_init_no_backend,
+        terraform::commands::terraform_plan,
+        terraform::commands::terraform_show_plan_json,
+        terraform::commands::terraform_show_plan_text,
+        terraform::commands::terraform_apply,
+        terraform::commands::terraform_destroy,
+        terraform::commands::terraform_refresh,
+        terraform::commands::terraform_state_list,
+        terraform::commands::terraform_state_show,
+        terraform::commands::terraform_state_show_json,
+        terraform::commands::terraform_state_pull,
+        terraform::commands::terraform_state_push,
+        terraform::commands::terraform_state_mv,
+        terraform::commands::terraform_state_rm,
+        terraform::commands::terraform_state_import,
+        terraform::commands::terraform_state_taint,
+        terraform::commands::terraform_state_untaint,
+        terraform::commands::terraform_state_force_unlock,
+        terraform::commands::terraform_workspace_list,
+        terraform::commands::terraform_workspace_show,
+        terraform::commands::terraform_workspace_new,
+        terraform::commands::terraform_workspace_select,
+        terraform::commands::terraform_workspace_delete,
+        terraform::commands::terraform_validate,
+        terraform::commands::terraform_fmt,
+        terraform::commands::terraform_fmt_check,
+        terraform::commands::terraform_output_list,
+        terraform::commands::terraform_output_get,
+        terraform::commands::terraform_output_get_raw,
+        terraform::commands::terraform_providers_list,
+        terraform::commands::terraform_providers_schemas,
+        terraform::commands::terraform_providers_lock,
+        terraform::commands::terraform_providers_mirror,
+        terraform::commands::terraform_providers_parse_lock_file,
+        terraform::commands::terraform_modules_get,
+        terraform::commands::terraform_modules_list_installed,
+        terraform::commands::terraform_modules_search_registry,
+        terraform::commands::terraform_graph_generate,
+        terraform::commands::terraform_graph_plan,
+        terraform::commands::terraform_hcl_analyse,
+        terraform::commands::terraform_hcl_analyse_file,
+        terraform::commands::terraform_hcl_summarise,
+        terraform::commands::terraform_drift_detect,
+        terraform::commands::terraform_drift_has_drift,
+        terraform::commands::terraform_drift_compare_snapshots,
+        terraform::commands::terraform_history_list,
+        terraform::commands::terraform_history_get,
+        terraform::commands::terraform_history_clear,
+        // Budibase commands
+        budibase::commands::budibase_connect,
+        budibase::commands::budibase_disconnect,
+        budibase::commands::budibase_list_connections,
+        budibase::commands::budibase_ping,
+        budibase::commands::budibase_set_app_context,
+        budibase::commands::budibase_list_apps,
+        budibase::commands::budibase_search_apps,
+        budibase::commands::budibase_get_app,
+        budibase::commands::budibase_create_app,
+        budibase::commands::budibase_update_app,
+        budibase::commands::budibase_delete_app,
+        budibase::commands::budibase_publish_app,
+        budibase::commands::budibase_unpublish_app,
+        budibase::commands::budibase_list_tables,
+        budibase::commands::budibase_get_table,
+        budibase::commands::budibase_create_table,
+        budibase::commands::budibase_update_table,
+        budibase::commands::budibase_delete_table,
+        budibase::commands::budibase_get_table_schema,
+        budibase::commands::budibase_list_rows,
+        budibase::commands::budibase_search_rows,
+        budibase::commands::budibase_get_row,
+        budibase::commands::budibase_create_row,
+        budibase::commands::budibase_update_row,
+        budibase::commands::budibase_delete_row,
+        budibase::commands::budibase_bulk_create_rows,
+        budibase::commands::budibase_bulk_delete_rows,
+        budibase::commands::budibase_list_views,
+        budibase::commands::budibase_get_view,
+        budibase::commands::budibase_create_view,
+        budibase::commands::budibase_update_view,
+        budibase::commands::budibase_delete_view,
+        budibase::commands::budibase_query_view,
+        budibase::commands::budibase_list_users,
+        budibase::commands::budibase_search_users,
+        budibase::commands::budibase_get_user,
+        budibase::commands::budibase_create_user,
+        budibase::commands::budibase_update_user,
+        budibase::commands::budibase_delete_user,
+        budibase::commands::budibase_list_queries,
+        budibase::commands::budibase_get_query,
+        budibase::commands::budibase_execute_query,
+        budibase::commands::budibase_create_query,
+        budibase::commands::budibase_update_query,
+        budibase::commands::budibase_delete_query,
+        budibase::commands::budibase_list_automations,
+        budibase::commands::budibase_get_automation,
+        budibase::commands::budibase_create_automation,
+        budibase::commands::budibase_update_automation,
+        budibase::commands::budibase_delete_automation,
+        budibase::commands::budibase_trigger_automation,
+        budibase::commands::budibase_get_automation_logs,
+        budibase::commands::budibase_list_datasources,
+        budibase::commands::budibase_get_datasource,
+        budibase::commands::budibase_create_datasource,
+        budibase::commands::budibase_update_datasource,
+        budibase::commands::budibase_delete_datasource,
+        budibase::commands::budibase_test_datasource,
+        // osTicket commands
+        osticket::commands::osticket_connect,
+        osticket::commands::osticket_disconnect,
+        osticket::commands::osticket_list_connections,
+        osticket::commands::osticket_ping,
+        osticket::commands::osticket_list_tickets,
+        osticket::commands::osticket_search_tickets,
+        osticket::commands::osticket_get_ticket,
+        osticket::commands::osticket_create_ticket,
+        osticket::commands::osticket_update_ticket,
+        osticket::commands::osticket_delete_ticket,
+        osticket::commands::osticket_close_ticket,
+        osticket::commands::osticket_reopen_ticket,
+        osticket::commands::osticket_assign_ticket,
+        osticket::commands::osticket_post_ticket_reply,
+        osticket::commands::osticket_post_ticket_note,
+        osticket::commands::osticket_get_ticket_threads,
+        osticket::commands::osticket_add_ticket_collaborator,
+        osticket::commands::osticket_get_ticket_collaborators,
+        osticket::commands::osticket_remove_ticket_collaborator,
+        osticket::commands::osticket_transfer_ticket,
+        osticket::commands::osticket_merge_tickets,
+        osticket::commands::osticket_list_users,
+        osticket::commands::osticket_get_user,
+        osticket::commands::osticket_search_users,
+        osticket::commands::osticket_create_user,
+        osticket::commands::osticket_update_user,
+        osticket::commands::osticket_delete_user,
+        osticket::commands::osticket_get_user_tickets,
+        osticket::commands::osticket_list_departments,
+        osticket::commands::osticket_get_department,
+        osticket::commands::osticket_create_department,
+        osticket::commands::osticket_update_department,
+        osticket::commands::osticket_delete_department,
+        osticket::commands::osticket_get_department_agents,
+        osticket::commands::osticket_list_topics,
+        osticket::commands::osticket_get_topic,
+        osticket::commands::osticket_create_topic,
+        osticket::commands::osticket_update_topic,
+        osticket::commands::osticket_delete_topic,
+        osticket::commands::osticket_list_agents,
+        osticket::commands::osticket_get_agent,
+        osticket::commands::osticket_create_agent,
+        osticket::commands::osticket_update_agent,
+        osticket::commands::osticket_delete_agent,
+        osticket::commands::osticket_set_agent_vacation,
+        osticket::commands::osticket_get_agent_teams,
+        osticket::commands::osticket_list_teams,
+        osticket::commands::osticket_get_team,
+        osticket::commands::osticket_create_team,
+        osticket::commands::osticket_update_team,
+        osticket::commands::osticket_delete_team,
+        osticket::commands::osticket_add_team_member,
+        osticket::commands::osticket_remove_team_member,
+        osticket::commands::osticket_get_team_members,
+        osticket::commands::osticket_list_sla,
+        osticket::commands::osticket_get_sla,
+        osticket::commands::osticket_create_sla,
+        osticket::commands::osticket_update_sla,
+        osticket::commands::osticket_delete_sla,
+        osticket::commands::osticket_list_canned_responses,
+        osticket::commands::osticket_get_canned_response,
+        osticket::commands::osticket_create_canned_response,
+        osticket::commands::osticket_update_canned_response,
+        osticket::commands::osticket_delete_canned_response,
+        osticket::commands::osticket_search_canned_responses,
+        osticket::commands::osticket_list_forms,
+        osticket::commands::osticket_get_form,
+        osticket::commands::osticket_list_custom_fields,
+        osticket::commands::osticket_get_custom_field,
+        osticket::commands::osticket_create_custom_field,
+        osticket::commands::osticket_update_custom_field,
+        osticket::commands::osticket_delete_custom_field,
+        // Jira commands
+        jira::commands::jira_connect,
+        jira::commands::jira_disconnect,
+        jira::commands::jira_list_connections,
+        jira::commands::jira_ping,
+        jira::commands::jira_get_issue,
+        jira::commands::jira_create_issue,
+        jira::commands::jira_bulk_create_issues,
+        jira::commands::jira_update_issue,
+        jira::commands::jira_delete_issue,
+        jira::commands::jira_search_issues,
+        jira::commands::jira_get_transitions,
+        jira::commands::jira_transition_issue,
+        jira::commands::jira_assign_issue,
+        jira::commands::jira_get_issue_changelog,
+        jira::commands::jira_link_issues,
+        jira::commands::jira_get_watchers,
+        jira::commands::jira_add_watcher,
+        jira::commands::jira_list_projects,
+        jira::commands::jira_get_project,
+        jira::commands::jira_create_project,
+        jira::commands::jira_delete_project,
+        jira::commands::jira_get_project_statuses,
+        jira::commands::jira_get_project_components,
+        jira::commands::jira_get_project_versions,
+        jira::commands::jira_list_comments,
+        jira::commands::jira_get_comment,
+        jira::commands::jira_add_comment,
+        jira::commands::jira_update_comment,
+        jira::commands::jira_delete_comment,
+        jira::commands::jira_list_attachments,
+        jira::commands::jira_get_attachment,
+        jira::commands::jira_add_attachment,
+        jira::commands::jira_delete_attachment,
+        jira::commands::jira_list_worklogs,
+        jira::commands::jira_get_worklog,
+        jira::commands::jira_add_worklog,
+        jira::commands::jira_update_worklog,
+        jira::commands::jira_delete_worklog,
+        jira::commands::jira_list_boards,
+        jira::commands::jira_get_board,
+        jira::commands::jira_get_board_issues,
+        jira::commands::jira_get_board_backlog,
+        jira::commands::jira_get_board_configuration,
+        jira::commands::jira_list_sprints,
+        jira::commands::jira_get_sprint,
+        jira::commands::jira_create_sprint,
+        jira::commands::jira_update_sprint,
+        jira::commands::jira_delete_sprint,
+        jira::commands::jira_get_sprint_issues,
+        jira::commands::jira_move_issues_to_sprint,
+        jira::commands::jira_start_sprint,
+        jira::commands::jira_complete_sprint,
+        jira::commands::jira_get_myself,
+        jira::commands::jira_get_user,
+        jira::commands::jira_search_users,
+        jira::commands::jira_find_assignable_users,
+        jira::commands::jira_list_fields,
+        jira::commands::jira_get_all_issue_types,
+        jira::commands::jira_get_priorities,
+        jira::commands::jira_get_statuses,
+        jira::commands::jira_get_resolutions,
+        jira::commands::jira_list_dashboards,
+        jira::commands::jira_get_dashboard,
+        jira::commands::jira_get_filter,
+        jira::commands::jira_get_favourite_filters,
+        jira::commands::jira_get_my_filters,
+        jira::commands::jira_create_filter,
+        jira::commands::jira_update_filter,
+        jira::commands::jira_delete_filter,
+        // I18n commands
+        i18n::commands::i18n_translate,
+        i18n::commands::i18n_translate_plural,
+        i18n::commands::i18n_translate_batch,
+        i18n::commands::i18n_get_bundle,
+        i18n::commands::i18n_get_namespace_bundle,
+        i18n::commands::i18n_available_locales,
+        i18n::commands::i18n_status,
+        i18n::commands::i18n_detect_os_locale,
+        i18n::commands::i18n_has_key,
+        i18n::commands::i18n_missing_keys,
+        i18n::commands::i18n_reload,
+        i18n::commands::i18n_ssr_payload,
+        i18n::commands::i18n_ssr_script,
+        // Let's Encrypt / ACME certificate management
+        letsencrypt::commands::le_get_status,
+        letsencrypt::commands::le_start,
+        letsencrypt::commands::le_stop,
+        letsencrypt::commands::le_get_config,
+        letsencrypt::commands::le_update_config,
+        letsencrypt::commands::le_register_account,
+        letsencrypt::commands::le_list_accounts,
+        letsencrypt::commands::le_remove_account,
+        letsencrypt::commands::le_request_certificate,
+        letsencrypt::commands::le_renew_certificate,
+        letsencrypt::commands::le_revoke_certificate,
+        letsencrypt::commands::le_list_certificates,
+        letsencrypt::commands::le_get_certificate,
+        letsencrypt::commands::le_find_certificates_by_domain,
+        letsencrypt::commands::le_remove_certificate,
+        letsencrypt::commands::le_get_cert_paths,
+        letsencrypt::commands::le_health_check,
+        letsencrypt::commands::le_has_critical_issues,
+        letsencrypt::commands::le_fetch_ocsp,
+        letsencrypt::commands::le_get_ocsp_status,
+        letsencrypt::commands::le_recent_events,
+        letsencrypt::commands::le_drain_events,
+        letsencrypt::commands::le_check_rate_limit,
+        letsencrypt::commands::le_is_rate_limited,
+        // SSH Agent management
+        ssh_agent::commands::ssh_agent_get_status,
+        ssh_agent::commands::ssh_agent_start,
+        ssh_agent::commands::ssh_agent_stop,
+        ssh_agent::commands::ssh_agent_restart,
+        ssh_agent::commands::ssh_agent_get_config,
+        ssh_agent::commands::ssh_agent_update_config,
+        ssh_agent::commands::ssh_agent_list_keys,
+        ssh_agent::commands::ssh_agent_add_key,
+        ssh_agent::commands::ssh_agent_remove_key,
+        ssh_agent::commands::ssh_agent_remove_all_keys,
+        ssh_agent::commands::ssh_agent_lock,
+        ssh_agent::commands::ssh_agent_unlock,
+        ssh_agent::commands::ssh_agent_connect_system,
+        ssh_agent::commands::ssh_agent_disconnect_system,
+        ssh_agent::commands::ssh_agent_set_system_path,
+        ssh_agent::commands::ssh_agent_discover_system,
+        ssh_agent::commands::ssh_agent_start_forwarding,
+        ssh_agent::commands::ssh_agent_stop_forwarding,
+        ssh_agent::commands::ssh_agent_list_forwarding,
+        ssh_agent::commands::ssh_agent_audit_log,
+        ssh_agent::commands::ssh_agent_export_audit,
+        ssh_agent::commands::ssh_agent_clear_audit,
+        ssh_agent::commands::ssh_agent_run_maintenance,
+        // Warpgate bastion host admin commands
+        warpgate::commands::warpgate_connect,
+        warpgate::commands::warpgate_disconnect,
+        warpgate::commands::warpgate_list_connections,
+        warpgate::commands::warpgate_ping,
+        warpgate::commands::warpgate_list_targets,
+        warpgate::commands::warpgate_create_target,
+        warpgate::commands::warpgate_get_target,
+        warpgate::commands::warpgate_update_target,
+        warpgate::commands::warpgate_delete_target,
+        warpgate::commands::warpgate_get_target_ssh_host_keys,
+        warpgate::commands::warpgate_get_target_roles,
+        warpgate::commands::warpgate_add_target_role,
+        warpgate::commands::warpgate_remove_target_role,
+        warpgate::commands::warpgate_list_target_groups,
+        warpgate::commands::warpgate_create_target_group,
+        warpgate::commands::warpgate_get_target_group,
+        warpgate::commands::warpgate_update_target_group,
+        warpgate::commands::warpgate_delete_target_group,
+        warpgate::commands::warpgate_list_users,
+        warpgate::commands::warpgate_create_user,
+        warpgate::commands::warpgate_get_user,
+        warpgate::commands::warpgate_update_user,
+        warpgate::commands::warpgate_delete_user,
+        warpgate::commands::warpgate_get_user_roles,
+        warpgate::commands::warpgate_add_user_role,
+        warpgate::commands::warpgate_remove_user_role,
+        warpgate::commands::warpgate_unlink_user_ldap,
+        warpgate::commands::warpgate_auto_link_user_ldap,
+        warpgate::commands::warpgate_list_roles,
+        warpgate::commands::warpgate_create_role,
+        warpgate::commands::warpgate_get_role,
+        warpgate::commands::warpgate_update_role,
+        warpgate::commands::warpgate_delete_role,
+        warpgate::commands::warpgate_get_role_targets,
+        warpgate::commands::warpgate_get_role_users,
+        warpgate::commands::warpgate_list_sessions,
+        warpgate::commands::warpgate_get_session,
+        warpgate::commands::warpgate_close_session,
+        warpgate::commands::warpgate_close_all_sessions,
+        warpgate::commands::warpgate_get_session_recordings,
+        warpgate::commands::warpgate_get_recording,
+        warpgate::commands::warpgate_get_recording_cast,
+        warpgate::commands::warpgate_get_recording_tcpdump,
+        warpgate::commands::warpgate_get_recording_kubernetes,
+        warpgate::commands::warpgate_list_tickets,
+        warpgate::commands::warpgate_create_ticket,
+        warpgate::commands::warpgate_delete_ticket,
+        warpgate::commands::warpgate_list_password_credentials,
+        warpgate::commands::warpgate_create_password_credential,
+        warpgate::commands::warpgate_delete_password_credential,
+        warpgate::commands::warpgate_list_public_key_credentials,
+        warpgate::commands::warpgate_create_public_key_credential,
+        warpgate::commands::warpgate_update_public_key_credential,
+        warpgate::commands::warpgate_delete_public_key_credential,
+        warpgate::commands::warpgate_list_sso_credentials,
+        warpgate::commands::warpgate_create_sso_credential,
+        warpgate::commands::warpgate_update_sso_credential,
+        warpgate::commands::warpgate_delete_sso_credential,
+        warpgate::commands::warpgate_list_otp_credentials,
+        warpgate::commands::warpgate_create_otp_credential,
+        warpgate::commands::warpgate_delete_otp_credential,
+        warpgate::commands::warpgate_list_certificate_credentials,
+        warpgate::commands::warpgate_issue_certificate_credential,
+        warpgate::commands::warpgate_update_certificate_credential,
+        warpgate::commands::warpgate_revoke_certificate_credential,
+        warpgate::commands::warpgate_get_ssh_own_keys,
+        warpgate::commands::warpgate_list_known_hosts,
+        warpgate::commands::warpgate_add_known_host,
+        warpgate::commands::warpgate_delete_known_host,
+        warpgate::commands::warpgate_check_ssh_host_key,
+        warpgate::commands::warpgate_list_ldap_servers,
+        warpgate::commands::warpgate_create_ldap_server,
+        warpgate::commands::warpgate_get_ldap_server,
+        warpgate::commands::warpgate_update_ldap_server,
+        warpgate::commands::warpgate_delete_ldap_server,
+        warpgate::commands::warpgate_test_ldap_connection,
+        warpgate::commands::warpgate_get_ldap_users,
+        warpgate::commands::warpgate_import_ldap_users,
+        warpgate::commands::warpgate_query_logs,
+        warpgate::commands::warpgate_get_parameters,
+        warpgate::commands::warpgate_update_parameters,
+        // OpenPubkey SSH (opkssh) commands
+        opkssh::commands::opkssh_check_binary,
+        opkssh::commands::opkssh_get_download_url,
+        opkssh::commands::opkssh_login,
+        opkssh::commands::opkssh_list_keys,
+        opkssh::commands::opkssh_remove_key,
+        opkssh::commands::opkssh_get_client_config,
+        opkssh::commands::opkssh_update_client_config,
+        opkssh::commands::opkssh_well_known_providers,
+        opkssh::commands::opkssh_build_env_string,
+        opkssh::commands::opkssh_server_read_config_script,
+        opkssh::commands::opkssh_parse_server_config,
+        opkssh::commands::opkssh_get_server_config,
+        opkssh::commands::opkssh_build_add_identity_cmd,
+        opkssh::commands::opkssh_build_remove_identity_cmd,
+        opkssh::commands::opkssh_build_add_provider_cmd,
+        opkssh::commands::opkssh_build_remove_provider_cmd,
+        opkssh::commands::opkssh_build_install_cmd,
+        opkssh::commands::opkssh_build_audit_cmd,
+        opkssh::commands::opkssh_parse_audit_output,
+        opkssh::commands::opkssh_get_audit_results,
+        opkssh::commands::opkssh_get_status,
+        // SSH event-scripts commands
+        ssh_scripts::commands::ssh_scripts_create_script,
+        ssh_scripts::commands::ssh_scripts_get_script,
+        ssh_scripts::commands::ssh_scripts_list_scripts,
+        ssh_scripts::commands::ssh_scripts_update_script,
+        ssh_scripts::commands::ssh_scripts_delete_script,
+        ssh_scripts::commands::ssh_scripts_duplicate_script,
+        ssh_scripts::commands::ssh_scripts_toggle_script,
+        ssh_scripts::commands::ssh_scripts_create_chain,
+        ssh_scripts::commands::ssh_scripts_get_chain,
+        ssh_scripts::commands::ssh_scripts_list_chains,
+        ssh_scripts::commands::ssh_scripts_update_chain,
+        ssh_scripts::commands::ssh_scripts_delete_chain,
+        ssh_scripts::commands::ssh_scripts_toggle_chain,
+        ssh_scripts::commands::ssh_scripts_run_script,
+        ssh_scripts::commands::ssh_scripts_run_chain,
+        ssh_scripts::commands::ssh_scripts_record_execution,
+        ssh_scripts::commands::ssh_scripts_notify_event,
+        ssh_scripts::commands::ssh_scripts_notify_output,
+        ssh_scripts::commands::ssh_scripts_scheduler_tick,
+        ssh_scripts::commands::ssh_scripts_register_session,
+        ssh_scripts::commands::ssh_scripts_unregister_session,
+        ssh_scripts::commands::ssh_scripts_query_history,
+        ssh_scripts::commands::ssh_scripts_get_execution,
+        ssh_scripts::commands::ssh_scripts_get_chain_execution,
+        ssh_scripts::commands::ssh_scripts_get_script_stats,
+        ssh_scripts::commands::ssh_scripts_get_all_stats,
+        ssh_scripts::commands::ssh_scripts_clear_history,
+        ssh_scripts::commands::ssh_scripts_clear_script_history,
+        ssh_scripts::commands::ssh_scripts_list_timers,
+        ssh_scripts::commands::ssh_scripts_list_session_timers,
+        ssh_scripts::commands::ssh_scripts_pause_timer,
+        ssh_scripts::commands::ssh_scripts_resume_timer,
+        ssh_scripts::commands::ssh_scripts_list_by_tag,
+        ssh_scripts::commands::ssh_scripts_list_by_category,
+        ssh_scripts::commands::ssh_scripts_list_by_trigger,
+        ssh_scripts::commands::ssh_scripts_get_tags,
+        ssh_scripts::commands::ssh_scripts_get_categories,
+        ssh_scripts::commands::ssh_scripts_export,
+        ssh_scripts::commands::ssh_scripts_import,
+        ssh_scripts::commands::ssh_scripts_bulk_enable,
+        ssh_scripts::commands::ssh_scripts_bulk_delete,
+        ssh_scripts::commands::ssh_scripts_get_summary,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

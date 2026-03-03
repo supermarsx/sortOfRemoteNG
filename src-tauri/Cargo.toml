@@ -40,6 +40,7 @@ members = [
   "crates/sorng-meshcentral",
   "crates/sorng-openvpn",
   "crates/sorng-vmware",
+  "crates/sorng-proxmox",
   "crates/sorng-totp",
   "crates/sorng-mremoteng",
   "crates/sorng-termserv",
@@ -68,6 +69,19 @@ members = [
   "crates/sorng-dns",
   "crates/sorng-k8s",
   "crates/sorng-docker",
+  "crates/sorng-ansible",
+  "crates/sorng-terraform",
+  "crates/sorng-i18n",
+  "crates/sorng-command-palette",
+  "crates/sorng-fonts",
+  "crates/sorng-secure-clip",
+  "crates/sorng-budibase",
+  "crates/sorng-osticket",
+  "crates/sorng-jira",
+  "crates/sorng-letsencrypt",
+  "crates/sorng-ssh-agent",
+  "crates/sorng-warpgate",
+  "crates/sorng-ssh-scripts",
 ]
 
 [workspace.dependencies]
@@ -144,6 +158,7 @@ sorng-hyperv = { path = "crates/sorng-hyperv" }
 sorng-meshcentral = { path = "crates/sorng-meshcentral" }
 sorng-openvpn = { path = "crates/sorng-openvpn" }
 sorng-vmware = { path = "crates/sorng-vmware" }
+sorng-proxmox = { path = "crates/sorng-proxmox" }
 sorng-totp = { path = "crates/sorng-totp" }
 sorng-mremoteng = { path = "crates/sorng-mremoteng" }
 sorng-termserv = { path = "crates/sorng-termserv" }
@@ -172,6 +187,20 @@ sorng-wireguard = { path = "crates/sorng-wireguard" }
 sorng-dns = { path = "crates/sorng-dns" }
 sorng-k8s = { path = "crates/sorng-k8s" }
 sorng-docker = { path = "crates/sorng-docker" }
+sorng-ansible = { path = "crates/sorng-ansible" }
+sorng-terraform = { path = "crates/sorng-terraform" }
+sorng-i18n = { path = "crates/sorng-i18n" }
+sorng-command-palette = { path = "crates/sorng-command-palette" }
+sorng-fonts = { path = "crates/sorng-fonts" }
+sorng-secure-clip = { path = "crates/sorng-secure-clip" }
+sorng-budibase = { path = "crates/sorng-budibase" }
+sorng-osticket = { path = "crates/sorng-osticket" }
+sorng-jira = { path = "crates/sorng-jira" }
+sorng-letsencrypt = { path = "crates/sorng-letsencrypt" }
+sorng-ssh-agent = { path = "crates/sorng-ssh-agent" }
+sorng-opkssh = { path = "crates/sorng-opkssh" }
+sorng-warpgate = { path = "crates/sorng-warpgate" }
+sorng-ssh-scripts = { path = "crates/sorng-ssh-scripts" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"

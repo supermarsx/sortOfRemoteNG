@@ -191,20 +191,24 @@ dependencies = [
  "sorng-1password",
  "sorng-ai-agent",
  "sorng-ai-assist",
+ "sorng-ansible",
  "sorng-ard",
  "sorng-auth",
  "sorng-aws",
  "sorng-azure",
  "sorng-biometrics",
  "sorng-bitwarden",
+ "sorng-budibase",
  "sorng-cloud",
  "sorng-collaboration",
+ "sorng-command-palette",
  "sorng-core",
  "sorng-dashlane",
  "sorng-dns",
  "sorng-docker",
  "sorng-dropbox",
  "sorng-extensions",
+ "sorng-fonts",
  "sorng-ftp",
  "sorng-gateway",
  "sorng-gcp",
@@ -212,9 +216,12 @@ dependencies = [
  "sorng-google-passwords",
  "sorng-gpo",
  "sorng-hyperv",
+ "sorng-i18n",
+ "sorng-jira",
  "sorng-k8s",
  "sorng-keepass",
  "sorng-lastpass",
+ "sorng-letsencrypt",
  "sorng-llm",
  "sorng-meshcentral",
  "sorng-mongodb",
@@ -225,33 +232,41 @@ dependencies = [
  "sorng-nextcloud",
  "sorng-onedrive",
  "sorng-openvpn",
+ "sorng-opkssh",
+ "sorng-osticket",
  "sorng-p2p",
  "sorng-passbolt",
  "sorng-postgres",
  "sorng-powershell",
  "sorng-protocols",
+ "sorng-proxmox",
  "sorng-rdp",
  "sorng-recording",
  "sorng-redis",
  "sorng-remote-mgmt",
  "sorng-rustdesk",
  "sorng-scp",
+ "sorng-secure-clip",
  "sorng-serial",
  "sorng-sftp",
  "sorng-smtp",
  "sorng-sqlite",
  "sorng-ssh",
+ "sorng-ssh-agent",
+ "sorng-ssh-scripts",
  "sorng-storage",
  "sorng-tailscale",
  "sorng-telegram",
  "sorng-telnet",
  "sorng-terminal-themes",
  "sorng-termserv",
+ "sorng-terraform",
  "sorng-totp",
  "sorng-vault",
  "sorng-vmware",
  "sorng-vnc",
  "sorng-vpn",
+ "sorng-warpgate",
  "sorng-whatsapp",
  "sorng-winmgmt",
  "sorng-wireguard",
@@ -1486,6 +1501,7 @@ version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ddef33a339a91ea89fb53151bd0a4689cfce27055c291dfa69945475d22c747"
 dependencies = [
+ "percent-encoding 2.3.2",
  "time 0.3.44",
  "version_check",
 ]
@@ -1498,6 +1514,24 @@ checksum = "387461abbc748185c3a6e1673d826918b450b87ff22639429c694619a83b6cf6"
 dependencies = [
  "cookie 0.17.0",
  "idna 0.3.0",
+ "log 0.4.29",
+ "publicsuffix",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "time 0.3.44",
+ "url",
+]
+
+[[package]]
+name = "cookie_store"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fc4bff745c9b4c7fb1e97b25d13153da2bc7796260141df62378998d070207f"
+dependencies = [
+ "cookie 0.18.1",
+ "document-features",
+ "idna 1.1.0",
  "log 0.4.29",
  "publicsuffix",
  "serde",
@@ -1606,6 +1640,17 @@ name = "critical-section"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
+
+[[package]]
+name = "cron"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f8c3e73077b4b4a6ab1ea5047c37c57aee77657bc8ecd6f29b0af082d0b0c07"
+dependencies = [
+ "chrono",
+ "nom",
+ "once_cell",
+]
 
 [[package]]
 name = "crossbeam-channel"
@@ -1962,6 +2007,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
 dependencies = [
  "cfg-if 1.0.4",
+ "hashbrown 0.14.5",
+ "lock_api 0.4.14",
+ "once_cell",
+ "parking_lot_core 0.9.12",
+]
+
+[[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if 1.0.4",
+ "crossbeam-utils 0.8.21",
  "hashbrown 0.14.5",
  "lock_api 0.4.14",
  "once_cell",
@@ -2907,6 +2966,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
+name = "fsevent-sys"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76ee7a02da4d231650c7cea31349b889be2f45ddb3ef3032d2ec8185f6313fd2"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "fuchsia-cprng"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3551,6 +3619,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "h2"
+version = "0.4.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f44da3a8150a6703ed5d34e164b875fd14c2cdab9af1252a9a1020bde2bdc54"
+dependencies = [
+ "atomic-waker",
+ "bytes 1.11.0",
+ "fnv",
+ "futures-core",
+ "futures-sink",
+ "http 1.4.0",
+ "indexmap 2.12.1",
+ "slab 0.4.11",
+ "tokio 1.48.0",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3900,7 +3987,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
- "h2",
+ "h2 0.3.27",
  "http 0.2.12",
  "http-body 0.4.6",
  "httparse",
@@ -3924,6 +4011,7 @@ dependencies = [
  "bytes 1.11.0",
  "futures-channel",
  "futures-core",
+ "h2 0.4.13",
  "http 1.4.0",
  "http-body 1.0.1",
  "httparse",
@@ -3951,6 +4039,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyper-rustls"
+version = "0.27.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3c93eb611681b207e1fe55d5a71ecf91572ec8a6705cdb6857f7d8d5242cf58"
+dependencies = [
+ "http 1.4.0",
+ "hyper 1.8.1",
+ "hyper-util",
+ "rustls 0.23.36",
+ "rustls-pki-types",
+ "tokio 1.48.0",
+ "tokio-rustls 0.26.4",
+ "tower-service",
+]
+
+[[package]]
 name = "hyper-tls"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3961,6 +4065,22 @@ dependencies = [
  "native-tls",
  "tokio 1.48.0",
  "tokio-native-tls",
+]
+
+[[package]]
+name = "hyper-tls"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
+dependencies = [
+ "bytes 1.11.0",
+ "http-body-util",
+ "hyper 1.8.1",
+ "hyper-util",
+ "native-tls",
+ "tokio 1.48.0",
+ "tokio-native-tls",
+ "tower-service",
 ]
 
 [[package]]
@@ -3982,9 +4102,11 @@ dependencies = [
  "percent-encoding 2.3.2",
  "pin-project-lite",
  "socket2 0.6.1",
+ "system-configuration",
  "tokio 1.48.0",
  "tower-service",
  "tracing",
+ "windows-registry",
 ]
 
 [[package]]
@@ -4230,6 +4352,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "inotify"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdd168d97690d0b8c412d6b6c10360277f4d7ee495c5d0d5d5fe0854923255cc"
+dependencies = [
+ "bitflags 1.3.2",
+ "inotify-sys",
+ "libc",
+]
+
+[[package]]
+name = "inotify-sys"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e05c02b5e89bff3b946cedeca278abc628fe811e604f027c45a8aa3cf793d0eb"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4247,6 +4389,15 @@ checksum = "1603f76010ff924b616c8f44815a42eb10fb0b93d308b41deaa8da6d4251fd4b"
 dependencies = [
  "block-padding 0.4.0-rc.4",
  "hybrid-array",
+]
+
+[[package]]
+name = "instant"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
+dependencies = [
+ "cfg-if 1.0.4",
 ]
 
 [[package]]
@@ -4658,6 +4809,26 @@ name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
+
+[[package]]
+name = "kqueue"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eac30106d7dce88daf4a3fcb4879ea939476d5074a9b7ddd0fb97fa4bed5596a"
+dependencies = [
+ "kqueue-sys",
+ "libc",
+]
+
+[[package]]
+name = "kqueue-sys"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed9625ffda8729b85e45cf04090035ac368927b8cebc34898e7c120f52e4838b"
+dependencies = [
+ "bitflags 1.3.2",
+ "libc",
+]
 
 [[package]]
 name = "kuchikiki"
@@ -5192,6 +5363,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a69bcab0ad47271a0234d9422b131806bf3968021e5dc9328caf2d4cd58557fc"
 dependencies = [
  "libc",
+ "log 0.4.29",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
 ]
@@ -5532,6 +5704,46 @@ name = "normalize-line-endings"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61807f77802ff30975e01f4f071c8ba10c022052f98b3294119f3e615d13e5be"
+
+[[package]]
+name = "notify"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c533b4c39709f9ba5005d8002048266593c1cfaf3c5f0739d5b8ab0c6c504009"
+dependencies = [
+ "bitflags 2.10.0",
+ "filetime",
+ "fsevent-sys",
+ "inotify",
+ "kqueue",
+ "libc",
+ "log 0.4.29",
+ "mio 1.1.1",
+ "notify-types",
+ "walkdir",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "notify-debouncer-mini"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaa5a66d07ed97dce782be94dcf5ab4d1b457f4243f7566c7557f15cabc8c799"
+dependencies = [
+ "log 0.4.29",
+ "notify",
+ "notify-types",
+ "tempfile",
+]
+
+[[package]]
+name = "notify-types"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "585d3cb5e12e01aed9e8a1f70d5c6b5e86fe2a6e48fc8cd0b3e0b8df6f6eb174"
+dependencies = [
+ "instant",
+]
 
 [[package]]
 name = "num-bigint"
@@ -7426,16 +7638,16 @@ dependencies = [
  "base64 0.21.7",
  "bytes 1.11.0",
  "cookie 0.17.0",
- "cookie_store",
+ "cookie_store 0.20.0",
  "encoding_rs",
  "futures-core",
  "futures-util",
- "h2",
+ "h2 0.3.27",
  "http 0.2.12",
  "http-body 0.4.6",
  "hyper 0.14.32",
- "hyper-rustls",
- "hyper-tls",
+ "hyper-rustls 0.24.2",
+ "hyper-tls 0.5.0",
  "ipnet",
  "js-sys",
  "log 0.4.29",
@@ -7474,22 +7686,34 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes 1.11.0",
+ "cookie 0.18.1",
+ "cookie_store 0.22.0",
+ "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
+ "h2 0.4.13",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",
  "hyper 1.8.1",
+ "hyper-rustls 0.27.7",
+ "hyper-tls 0.6.0",
  "hyper-util",
  "js-sys",
  "log 0.4.29",
+ "mime",
+ "mime_guess",
+ "native-tls",
  "percent-encoding 2.3.2",
  "pin-project-lite",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "sync_wrapper 1.0.2",
  "tokio 1.48.0",
+ "tokio-native-tls",
  "tokio-util",
  "tower 0.5.2",
  "tower-http 0.6.8",
@@ -8444,7 +8668,7 @@ version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e56dd856803e253c8f298af3f4d7eb0ae5e23a737252cd90bb4f3b435033b2d"
 dependencies = [
- "dashmap",
+ "dashmap 5.5.3",
  "futures 0.3.31",
  "lazy_static",
  "log 0.4.29",
@@ -8811,6 +9035,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-ansible"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs 5.0.1",
+ "log 0.4.29",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-ard"
 version = "0.1.0"
 dependencies = [
@@ -8966,6 +9206,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-budibase"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-cloud"
 version = "0.1.0"
 dependencies = [
@@ -8994,6 +9249,23 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-command-palette"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "fuzzy-matcher",
+ "log 0.4.29",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sorng-llm",
+ "tauri",
  "tokio 1.48.0",
  "uuid",
 ]
@@ -9107,6 +9379,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-fonts"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+]
+
+[[package]]
 name = "sorng-ftp"
 version = "0.1.0"
 dependencies = [
@@ -9136,6 +9420,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sorng-letsencrypt",
  "tokio 1.48.0",
  "uuid",
 ]
@@ -9225,6 +9510,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-i18n"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "chrono",
+ "dashmap 6.1.0",
+ "log 0.4.29",
+ "notify",
+ "notify-debouncer-mini",
+ "serde",
+ "serde_json",
+ "sys-locale",
+ "tauri",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio 1.48.0",
+ "tokio-test",
+]
+
+[[package]]
+name = "sorng-jira"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "url",
+]
+
+[[package]]
 name = "sorng-k8s"
 version = "0.1.0"
 dependencies = [
@@ -9292,6 +9612,23 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio 1.48.0",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-letsencrypt"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio 1.48.0",
  "uuid",
 ]
 
@@ -9499,6 +9836,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-opkssh"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-osticket"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "url",
+]
+
+[[package]]
 name = "sorng-p2p"
 version = "0.1.0"
 dependencies = [
@@ -9614,6 +9978,26 @@ dependencies = [
  "uuid",
  "vnc-rs",
  "x509-parser",
+]
+
+[[package]]
+name = "sorng-proxmox"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "futures 0.3.31",
+ "log 0.4.29",
+ "native-tls",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-native-tls",
+ "url",
+ "uuid",
 ]
 
 [[package]]
@@ -9747,6 +10131,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-secure-clip"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-serial"
 version = "0.1.0"
 dependencies = [
@@ -9760,6 +10157,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "serialport",
  "tauri",
  "tokio 1.48.0",
  "uuid",
@@ -9864,8 +10262,40 @@ dependencies = [
  "ssh-key",
  "ssh2",
  "tauri",
+ "tempfile",
  "tokio 1.48.0",
  "totp-rs",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-ssh-agent"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-ssh-scripts"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "cron",
+ "log 0.4.29",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
  "uuid",
 ]
 
@@ -9967,6 +10397,21 @@ dependencies = [
  "tokio 1.48.0",
  "uuid",
  "windows 0.58.0",
+]
+
+[[package]]
+name = "sorng-terraform"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs 5.0.1",
+ "log 0.4.29",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
 ]
 
 [[package]]
@@ -10079,6 +10524,21 @@ dependencies = [
  "tauri",
  "tokio 1.48.0",
  "tokio-tungstenite",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-warpgate"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "url",
  "uuid",
 ]
 
@@ -10744,6 +11204,15 @@ dependencies = [
  "proc-macro2 1.0.104",
  "quote 1.0.42",
  "syn 2.0.112",
+]
+
+[[package]]
+name = "sys-locale"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

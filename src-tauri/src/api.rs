@@ -325,6 +325,11 @@ async fn connect_ssh(
         proxy_command: None,
         pty_type: None,
         environment: std::collections::HashMap::new(),
+        compression_config: Default::default(),
+        sk_auth: false,
+        sk_device_path: None,
+        sk_pin: None,
+        sk_application: None,
     };
 
     let mut ssh = services.ssh_service.lock().await;
