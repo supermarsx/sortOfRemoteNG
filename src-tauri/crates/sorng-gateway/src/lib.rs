@@ -50,3 +50,7 @@ pub mod auth;
 pub mod tls;
 pub mod recording_bridge;
 pub mod cli;
+pub mod letsencrypt_bridge;
+
+/// Re-export the Let's Encrypt crate for direct access.
+pub use sorng_letsencrypt as letsencrypt;

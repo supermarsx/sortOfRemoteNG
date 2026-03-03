@@ -4,6 +4,7 @@
 //! config files for headless mode operation.
 
 use crate::types::TlsConfig;
+use crate::letsencrypt_bridge::GatewayLetsEncryptConfig;
 use serde::{Deserialize, Serialize};
 
 /// Complete gateway configuration.
@@ -51,6 +52,8 @@ pub struct GatewayConfig {
     pub metrics_path: String,
     /// CORS allowed origins (for management API)
     pub cors_origins: Vec<String>,
+    /// Let's Encrypt auto-TLS configuration
+    pub letsencrypt: GatewayLetsEncryptConfig,
 }
 
 impl GatewayConfig {
@@ -78,6 +81,7 @@ impl GatewayConfig {
             metrics_enabled: true,
             metrics_path: "/metrics".to_string(),
             cors_origins: vec!["http://localhost:3001".to_string()],
+            letsencrypt: GatewayLetsEncryptConfig::default(),
         }
     }
 

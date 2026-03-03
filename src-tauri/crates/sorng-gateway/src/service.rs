@@ -6,6 +6,7 @@
 use crate::auth::GatewayAuthService;
 use crate::config::GatewayConfig;
 use crate::health::HealthMonitor;
+use crate::letsencrypt_bridge::LetsEncryptBridge;
 use crate::metrics::MetricsCollector;
 use crate::policy::PolicyEngine;
 use crate::proxy::ProxyEngine;
@@ -40,6 +41,8 @@ pub struct GatewayService {
     pub auth: GatewayAuthService,
     /// TLS manager
     pub tls: TlsManager,
+    /// Let's Encrypt bridge
+    pub letsencrypt: LetsEncryptBridge,
     /// Recording bridge
     pub recording: RecordingBridge,
     /// Whether the gateway server is running
@@ -71,6 +74,7 @@ impl GatewayService {
             metrics: MetricsCollector::new(),
             auth: GatewayAuthService::new(&data_dir),
             tls: TlsManager::new(config.tls),
+            letsencrypt: LetsEncryptBridge::new(config.letsencrypt),
             recording: RecordingBridge::new(config.recording_enabled),
             server_running: false,
         };
@@ -282,6 +286,11 @@ impl GatewayService {
         self.server_running = true;
         self.info.started_at = Utc::now();
 
+        // Initialise the Let's Encrypt bridge (starts renewal loop, OCSP stapling, etc.)
+        if let Err(e) = self.letsencrypt.init().await {
+            log::warn!("[GATEWAY] Let's Encrypt bridge init failed: {e}");
+        }
+
         // In a real implementation, this would spawn the proxy listeners
         // and the management API server (see server.rs)
 
@@ -295,6 +304,11 @@ impl GatewayService {
         }
 
         log::info!("[GATEWAY] Stopping gateway '{}'", self.info.name);
+
+        // Shut down Let's Encrypt bridge first
+        if let Err(e) = self.letsencrypt.shutdown().await {
+            log::warn!("[GATEWAY] Let's Encrypt bridge shutdown error: {e}");
+        }
 
         // Terminate all active sessions
         let active_ids: Vec<String> = self
@@ -318,6 +332,8 @@ impl GatewayService {
         self.config = new_config;
         // Re-apply TLS settings
         self.tls = TlsManager::new(self.config.tls.clone());
+        // Re-apply Let's Encrypt settings
+        self.letsencrypt = LetsEncryptBridge::new(self.config.letsencrypt.clone());
         Ok(())
     }
 }
