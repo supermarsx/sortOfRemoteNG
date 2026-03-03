@@ -37,7 +37,7 @@ impl NetworkManager {
 
     /// Connect a container to a network.
     pub async fn connect(client: &DockerClient, network_id: &str, config: &ConnectNetworkConfig) -> DockerResult<()> {
-        let body = serde_json::json!({
+        let _body = serde_json::json!({
             "Container": config.container,
             "EndpointConfig": config.endpoint_config
         });

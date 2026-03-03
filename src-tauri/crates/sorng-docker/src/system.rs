@@ -4,7 +4,6 @@
 use crate::client::DockerClient;
 use crate::error::DockerResult;
 use crate::types::*;
-use std::collections::HashMap;
 
 pub struct SystemManager;
 

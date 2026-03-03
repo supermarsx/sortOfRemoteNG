@@ -2,7 +2,7 @@
 //! Container lifecycle operations.
 
 use crate::client::DockerClient;
-use crate::error::{DockerError, DockerResult};
+use crate::error::DockerResult;
 use crate::types::*;
 use std::collections::HashMap;
 
@@ -166,7 +166,7 @@ impl ContainerManager {
 
     /// Start an exec instance and get output.
     pub async fn exec_start(client: &DockerClient, exec_id: &str) -> DockerResult<String> {
-        let body = serde_json::json!({ "Detach": false, "Tty": false });
+        let _body = serde_json::json!({ "Detach": false, "Tty": false });
         client.post_text(&format!("/exec/{}/start", exec_id)).await
     }
 

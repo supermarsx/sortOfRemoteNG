@@ -3,7 +3,7 @@
 
 use crate::error::{DockerError, DockerErrorKind, DockerResult};
 use crate::types::*;
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
+use reqwest::header::CONTENT_TYPE;
 use std::time::Duration;
 
 /// Docker API client wrapping an HTTP client + base URL.
