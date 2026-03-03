@@ -23,6 +23,7 @@ import {
   Cpu,
   ListVideo,
   Disc,
+  Server,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -49,6 +50,8 @@ interface AppToolbarProps {
   setShowShortcutManager: (v: boolean) => void;
   setShowWol: (v: boolean) => void;
   setShowBulkSSH: (v: boolean) => void;
+  setShowServerStats: (v: boolean) => void;
+  setShowOpkssh: (v: boolean) => void;
   setShowScriptManager: (v: boolean) => void;
   setShowMacroManager: (v: boolean) => void;
   setShowRecordingManager: (v: boolean) => void;
@@ -82,6 +85,8 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowShortcutManager,
   setShowWol,
   setShowBulkSSH,
+  setShowServerStats,
+  setShowOpkssh,
   setShowScriptManager,
   setShowMacroManager,
   setShowRecordingManager,
@@ -269,6 +274,24 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               title={t('bulkSsh.title', 'Bulk SSH Commander')}
             >
               <Terminal size={14} />
+            </button>
+          )}
+          {appSettings.showServerStatsIcon && (
+            <button
+              onClick={() => setShowServerStats(true)}
+              className="app-bar-button p-2"
+              title={t('serverStats.title', 'Server Stats')}
+            >
+              <Server size={14} />
+            </button>
+          )}
+          {appSettings.showOpksshIcon && (
+            <button
+              onClick={() => setShowOpkssh(true)}
+              className="app-bar-button p-2"
+              title={t('opkssh.title', 'opkssh')}
+            >
+              <Shield size={14} />
             </button>
           )}
           {appSettings.showScriptManagerIcon && (

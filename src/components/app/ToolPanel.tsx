@@ -8,6 +8,8 @@ import { ProxyChainMenu } from '../network/ProxyChainMenu';
 import { InternalProxyManager } from '../network/InternalProxyManager';
 import { WOLQuickTool } from '../network/WOLQuickTool';
 import { BulkSSHCommander } from '../ssh/BulkSSHCommander';
+import { ServerStatsPanel } from '../ssh/ServerStatsPanel';
+import { OpksshPanel } from '../ssh/OpksshPanel';
 import { ScriptManager } from '../recording/ScriptManager';
 import { MacroManager } from '../recording/MacroManager';
 import { RecordingManager } from '../recording/RecordingManager';
@@ -27,6 +29,8 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   internalProxy: 'Internal Proxy',
   wol: 'Wake-on-LAN',
   bulkSsh: 'Bulk SSH',
+  serverStats: 'Server Stats',
+  opkssh: 'opkssh',
   scriptManager: 'Script Manager',
   macroManager: 'Macros',
   recordingManager: 'Recording Manager',
@@ -82,6 +86,8 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
       {toolKey === 'internalProxy' && <InternalProxyManager isOpen onClose={onClose} />}
       {toolKey === 'wol' && <WOLQuickTool isOpen onClose={onClose} />}
       {toolKey === 'bulkSsh' && <BulkSSHCommander isOpen onClose={onClose} />}
+      {toolKey === 'serverStats' && <ServerStatsPanel isOpen onClose={onClose} />}
+      {toolKey === 'opkssh' && <OpksshPanel isOpen onClose={onClose} />}
       {toolKey === 'scriptManager' && <ScriptManager isOpen onClose={onClose} />}
       {toolKey === 'macroManager' && <MacroManager isOpen onClose={onClose} />}
       {toolKey === 'recordingManager' && <RecordingManager isOpen onClose={onClose} />}

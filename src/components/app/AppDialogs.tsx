@@ -18,6 +18,8 @@ import { InternalProxyManager } from "../network/InternalProxyManager";
 import { RDPSessionPanel } from "../rdp/RDPSessionPanel";
 import { WOLQuickTool } from "../network/WOLQuickTool";
 import { BulkSSHCommander } from "../ssh/BulkSSHCommander";
+import { ServerStatsPanel } from "../ssh/ServerStatsPanel";
+import { OpksshPanel } from "../ssh/OpksshPanel";
 import { ScriptManager } from "../recording/ScriptManager";
 import { MacroManager } from "../recording/MacroManager";
 import { RecordingManager } from "../recording/RecordingManager";
@@ -41,6 +43,8 @@ interface AppDialogsProps {
   showInternalProxyManager: boolean;
   showWol: boolean;
   showBulkSSH: boolean;
+  showServerStats: boolean;
+  showOpkssh: boolean;
   showScriptManager: boolean;
   showMacroManager: boolean;
   showRecordingManager: boolean;
@@ -59,6 +63,8 @@ interface AppDialogsProps {
   setShowInternalProxyManager: (v: boolean) => void;
   setShowWol: (v: boolean) => void;
   setShowBulkSSH: (v: boolean) => void;
+  setShowServerStats: (v: boolean) => void;
+  setShowOpkssh: (v: boolean) => void;
   setShowScriptManager: (v: boolean) => void;
   setShowMacroManager: (v: boolean) => void;
   setShowRecordingManager: (v: boolean) => void;
@@ -123,6 +129,8 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     showInternalProxyManager,
     showWol,
     showBulkSSH,
+    showServerStats,
+    showOpkssh,
     showScriptManager,
     showMacroManager,
     showRecordingManager,
@@ -141,6 +149,8 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     setShowInternalProxyManager,
     setShowWol,
     setShowBulkSSH,
+    setShowServerStats,
+    setShowOpkssh,
     setShowScriptManager,
     setShowMacroManager,
     setShowRecordingManager,
@@ -328,6 +338,20 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         <BulkSSHCommander
           isOpen={showBulkSSH}
           onClose={() => setShowBulkSSH(false)}
+        />
+      )}
+
+      {getToolMode(appSettings, "serverStats") === "popup" && (
+        <ServerStatsPanel
+          isOpen={showServerStats}
+          onClose={() => setShowServerStats(false)}
+        />
+      )}
+
+      {getToolMode(appSettings, "opkssh") === "popup" && (
+        <OpksshPanel
+          isOpen={showOpkssh}
+          onClose={() => setShowOpkssh(false)}
         />
       )}
 

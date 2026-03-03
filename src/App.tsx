@@ -70,6 +70,8 @@ const AppContent: React.FC = () => {
   const [showErrorLog, setShowErrorLog] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showBulkSSH, setShowBulkSSH] = useState(false);
+  const [showServerStats, setShowServerStats] = useState(false);
+  const [showOpkssh, setShowOpkssh] = useState(false);
   const [showScriptManager, setShowScriptManager] = useState(false);
   const [showMacroManager, setShowMacroManager] = useState(false);
   const [showRecordingManager, setShowRecordingManager] = useState(false);
@@ -180,6 +182,8 @@ const AppContent: React.FC = () => {
     internalProxy: setShowInternalProxyManager,
     wol: setShowWol,
     bulkSsh: setShowBulkSSH,
+    serverStats: setShowServerStats,
+    opkssh: setShowOpkssh,
     scriptManager: setShowScriptManager,
     macroManager: setShowMacroManager,
     recordingManager: setShowRecordingManager,
@@ -228,7 +232,7 @@ const AppContent: React.FC = () => {
   if (toolShowSetters.current === null) {
     const keys: ToolKey[] = [
       'performanceMonitor', 'actionLog', 'shortcutManager', 'proxyChain',
-      'internalProxy', 'wol', 'bulkSsh', 'scriptManager', 'macroManager', 'recordingManager',
+      'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'scriptManager', 'macroManager', 'recordingManager',
     ];
     const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
     for (const key of keys) result[key] = makeToolSetter(key);
@@ -1090,6 +1094,7 @@ const AppContent: React.FC = () => {
         setShowShortcutManager={toolShowSetters.current.shortcutManager}
         setShowWol={toolShowSetters.current.wol}
         setShowBulkSSH={toolShowSetters.current.bulkSsh}
+        setShowServerStats={toolShowSetters.current.serverStats}
         setShowScriptManager={toolShowSetters.current.scriptManager}
         setShowMacroManager={toolShowSetters.current.macroManager}
         setShowRecordingManager={toolShowSetters.current.recordingManager}
@@ -1222,6 +1227,8 @@ const AppContent: React.FC = () => {
         showInternalProxyManager={showInternalProxyManager}
         showWol={showWol}
         showBulkSSH={showBulkSSH}
+        showServerStats={showServerStats}
+        showOpkssh={showOpkssh}
         showScriptManager={showScriptManager}
         showMacroManager={showMacroManager}
         showRecordingManager={showRecordingManager}
@@ -1240,6 +1247,8 @@ const AppContent: React.FC = () => {
         setShowInternalProxyManager={toolShowSetters.current.internalProxy}
         setShowWol={toolShowSetters.current.wol}
         setShowBulkSSH={toolShowSetters.current.bulkSsh}
+        setShowServerStats={toolShowSetters.current.serverStats}
+        setShowOpkssh={toolShowSetters.current.opkssh}
         setShowScriptManager={toolShowSetters.current.scriptManager}
         setShowMacroManager={toolShowSetters.current.macroManager}
         setShowRecordingManager={toolShowSetters.current.recordingManager}
