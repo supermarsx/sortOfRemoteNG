@@ -394,6 +394,18 @@ fn run_ssh_diagnostics(
     let mut auth_detail = String::new();
 
     if let Some(key_path) = private_key_path {
+        // Check if this is an SK (security-key) type
+        let is_sk = std::fs::read_to_string(key_path)
+            .map(|c| super::fido2::is_sk_private_key(&c))
+            .unwrap_or(false);
+
+        if is_sk {
+            auth_detail = format!(
+                "Security key (FIDO2) authentication key detected: {key_path}. \
+                 User touch on the authenticator may be required."
+            );
+        }
+
         match sess.userauth_pubkey_file(
             username,
             None,
@@ -402,10 +414,16 @@ fn run_ssh_diagnostics(
         ) {
             Ok(()) => {
                 auth_ok = true;
-                auth_detail = format!("Public key authentication succeeded (key: {key_path})");
+                let sk_note = if is_sk { " (security key)" } else { "" };
+                auth_detail = format!("Public key{sk_note} authentication succeeded (key: {key_path})");
             }
             Err(e) => {
-                auth_detail = format!("Public key auth failed: {e}");
+                let sk_hint = if is_sk {
+                    " Ensure your FIDO2 authenticator is connected and touch was provided."
+                } else {
+                    ""
+                };
+                auth_detail = format!("Public key auth failed: {e}.{sk_hint}");
             }
         }
     }

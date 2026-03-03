@@ -321,3 +321,169 @@ pub async fn test_mixed_chain_connection(
     let ssh = state.lock().await;
     ssh.test_ssh_connection(config).await
 }
+
+// ===============================
+// FIDO2 / Security Key Tauri Commands
+// ===============================
+
+/// Check whether the system supports security-key (FIDO2/U2F) SSH key types.
+#[tauri::command]
+pub async fn check_fido2_support() -> Result<super::fido2::SkSupportStatus, String> {
+    Ok(super::fido2::check_sk_support().await)
+}
+
+/// Enumerate connected FIDO2 authenticator devices.
+#[tauri::command]
+pub async fn list_fido2_devices() -> Result<Vec<super::fido2::Fido2DeviceInfo>, String> {
+    let provider = super::fido2::OpenSshSkProvider::new();
+    super::fido2::Fido2Provider::enumerate_devices(&provider).await
+}
+
+/// Generate a FIDO2 security-key SSH key pair (ed25519-sk or ecdsa-sk).
+///
+/// The user will be prompted to touch their security key during generation.
+#[tauri::command]
+pub async fn generate_sk_ssh_key(
+    state: tauri::State<'_, SshServiceState>,
+    request: super::types::SkKeyGenerationRequest,
+) -> Result<super::types::SkKeyGenerationResponse, String> {
+    let ssh = state.lock().await;
+    ssh.generate_sk_key_full(request).await
+}
+
+/// List resident (discoverable) credentials stored on a FIDO2 authenticator.
+#[tauri::command]
+pub async fn list_fido2_resident_credentials(
+    device_path: Option<String>,
+    pin: Option<String>,
+) -> Result<Vec<super::types::Fido2ResidentCredentialInfo>, String> {
+    let provider = super::fido2::OpenSshSkProvider::new();
+    let creds = super::fido2::Fido2Provider::list_resident_credentials(
+        &provider,
+        device_path.as_deref(),
+        pin.as_deref(),
+    ).await?;
+
+    Ok(creds.into_iter().map(|c| super::types::Fido2ResidentCredentialInfo {
+        rp_id: c.rp_id,
+        user: c.user,
+        algorithm: c.algorithm.map(|a| a.as_openssh_str().to_string()).unwrap_or_default(),
+        public_key: c.public_key.map(|pk| pk.to_openssh_pubkey()),
+    }).collect())
+}
+
+/// Detect whether a given key file is an SK (security-key) type and return its algorithm.
+#[tauri::command]
+pub async fn detect_sk_key_type(
+    key_path: String,
+) -> Result<Option<String>, String> {
+    let content = tokio::fs::read_to_string(&key_path)
+        .await
+        .map_err(|e| format!("Failed to read key file: {}", e))?;
+
+    Ok(super::fido2::detect_sk_algorithm(&content)
+        .map(|a| a.as_openssh_str().to_string()))
+}
+
+/// Validate an SSH key file, including SK (security-key) types.
+#[tauri::command]
+pub async fn validate_ssh_key_file_extended(
+    key_path: String,
+    _passphrase: Option<String>,
+) -> Result<SshKeyFileInfo, String> {
+    let content = tokio::fs::read_to_string(&key_path)
+        .await
+        .map_err(|e| format!("Failed to read key file: {}", e))?;
+
+    let is_sk = super::fido2::is_sk_private_key(&content);
+    let sk_algorithm = super::fido2::detect_sk_algorithm(&content);
+    let is_encrypted = content.contains("ENCRYPTED");
+    let is_valid = content.contains("-----BEGIN") && content.contains("PRIVATE KEY-----");
+
+    Ok(SshKeyFileInfo {
+        path: key_path,
+        is_valid: is_valid || is_sk,
+        is_sk,
+        sk_algorithm: sk_algorithm.map(|a| a.as_openssh_str().to_string()),
+        is_encrypted,
+        needs_touch: is_sk,
+    })
+}
+
+/// Information about an SSH key file.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SshKeyFileInfo {
+    /// File path.
+    pub path: String,
+    /// Whether the file is a valid private key.
+    pub is_valid: bool,
+    /// Whether the key is an SK (security-key) type.
+    pub is_sk: bool,
+    /// SK algorithm if applicable (e.g. "sk-ssh-ed25519@openssh.com").
+    pub sk_algorithm: Option<String>,
+    /// Whether the key is encrypted with a passphrase.
+    pub is_encrypted: bool,
+    /// Whether the key requires FIDO2 user interaction (touch/PIN).
+    pub needs_touch: bool,
+}
+
+// ===============================
+// SSH Compression Tauri Commands
+// ===============================
+
+/// Get full compression information (config + stats + negotiated algorithms)
+/// for a live SSH session.
+#[tauri::command]
+pub async fn get_ssh_compression_info(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+) -> Result<super::types::SshCompressionInfo, String> {
+    let ssh = state.lock().await;
+    ssh.get_compression_info(&session_id)
+}
+
+/// Update compression configuration on a live session.
+/// Only adaptive / tracking / SFTP settings can be changed at runtime — the
+/// negotiated transport-level algorithm is immutable after handshake.
+#[tauri::command]
+pub async fn update_ssh_compression_config(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    config: super::types::SshCompressionConfig,
+) -> Result<super::types::SshCompressionInfo, String> {
+    let mut ssh = state.lock().await;
+    ssh.update_compression_config(&session_id, config)
+}
+
+/// Reset compression statistics counters for a session.
+#[tauri::command]
+pub async fn reset_ssh_compression_stats(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+) -> Result<(), String> {
+    let mut ssh = state.lock().await;
+    ssh.reset_compression_stats(&session_id)
+}
+
+/// Return the list of compression algorithms supported by the linked SSH library.
+#[tauri::command]
+pub fn list_ssh_compression_algorithms() -> Vec<String> {
+    super::service::SshService::list_supported_compression_algorithms()
+}
+
+/// Check whether SFTP transfer data should be compressed for a given session
+/// and (optional) file name.
+#[tauri::command]
+pub async fn should_compress_sftp(
+    state: tauri::State<'_, SshServiceState>,
+    session_id: String,
+    file_name: Option<String>,
+) -> Result<bool, String> {
+    let ssh = state.lock().await;
+    let session = ssh.sessions.get(&session_id)
+        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    Ok(super::service::SshService::should_compress_sftp_transfer(
+        &session.config.compression_config,
+        file_name.as_deref(),
+    ))
+}

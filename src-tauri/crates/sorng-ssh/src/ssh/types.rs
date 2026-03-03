@@ -14,6 +14,7 @@ pub fn default_true() -> bool { true }
 pub fn default_keepalive_probes() -> u32 { 2 }
 pub(crate) fn default_ip_protocol() -> String { "auto".to_string() }
 pub(crate) fn default_compression_level() -> u32 { 6 }
+pub(crate) fn default_compression_config() -> SshCompressionConfig { SshCompressionConfig::default() }
 pub(crate) fn default_ssh_version() -> String { "auto".to_string() }
 pub(crate) fn default_proxy_timeout() -> u64 { 10000 }
 pub(crate) fn default_automation_timeout() -> u64 { 30000 }
@@ -21,6 +22,209 @@ pub fn default_ftp_port() -> u16 { 21 }
 pub(crate) fn default_passive_port_count() -> u16 { 10 }
 pub fn default_rdp_port() -> u16 { 3389 }
 pub fn default_vnc_port() -> u16 { 5900 }
+
+// ===============================
+// SSH Compression Types
+// ===============================
+
+/// Compression algorithms supported by the SSH transport layer.
+/// These map directly to the algorithm names in the SSH specification (RFC 4253).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshCompressionAlgorithm {
+    /// No compression — raw data transfer
+    None,
+    /// Standard zlib compression (RFC 1950) — compresses from the start of the session
+    Zlib,
+    /// Delayed zlib — compression only activates after user authentication completes.
+    /// This is `zlib@openssh.com` and is more secure than plain `zlib`
+    /// because unauthenticated data is not decompressed (mitigates pre-auth exploits).
+    ZlibOpenssh,
+    /// Automatically negotiate the best available algorithm.
+    /// Preference order: zlib@openssh.com > zlib > none
+    Auto,
+}
+
+impl Default for SshCompressionAlgorithm {
+    fn default() -> Self { Self::Auto }
+}
+
+impl SshCompressionAlgorithm {
+    /// Return the SSH algorithm name strings for `MethodType::CompCs` / `CompSc`.
+    /// When `Auto`, returns the full preference list.
+    pub fn to_method_pref(&self) -> &str {
+        match self {
+            Self::None => "none",
+            Self::Zlib => "zlib,none",
+            Self::ZlibOpenssh => "zlib@openssh.com,none",
+            Self::Auto => "zlib@openssh.com,zlib,none",
+        }
+    }
+}
+
+/// Per-direction configuration lets users choose different algorithms/levels for
+/// upload (client → server) vs download (server → client) traffic.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SshDirectionalCompression {
+    /// Compression algorithm for this direction
+    #[serde(default)]
+    pub algorithm: SshCompressionAlgorithm,
+    /// Compression level 1-9 (1 = fastest, 9 = best compression, 0 = library default).
+    /// Only meaningful for zlib-based algorithms.
+    #[serde(default = "default_compression_level")]
+    pub level: u32,
+}
+
+impl Default for SshDirectionalCompression {
+    fn default() -> Self {
+        Self {
+            algorithm: SshCompressionAlgorithm::Auto,
+            level: 6,
+        }
+    }
+}
+
+/// Adaptive compression adjusts behaviour dynamically based on data characteristics.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SshAdaptiveCompression {
+    /// When true, compression is automatically disabled for payloads that are
+    /// already compressed (binary transfers, media, archives, etc.)
+    #[serde(default)]
+    pub enabled: bool,
+    /// Minimum payload size in bytes before compression is applied.
+    /// Packets smaller than this are sent uncompressed to avoid overhead.
+    #[serde(default = "default_adaptive_min_size")]
+    pub min_payload_bytes: u64,
+    /// If the compression ratio (compressed / original) is worse than this
+    /// threshold, compression is automatically disabled for subsequent data.
+    /// Value 0.0–1.0 (e.g. 0.95 means disable if < 5 % savings).
+    #[serde(default = "default_adaptive_ratio_threshold")]
+    pub ratio_threshold: f64,
+    /// List of file extensions that should never be compressed (already compressed).
+    #[serde(default = "default_incompressible_extensions")]
+    pub incompressible_extensions: Vec<String>,
+}
+
+fn default_adaptive_min_size() -> u64 { 256 }
+fn default_adaptive_ratio_threshold() -> f64 { 0.90 }
+fn default_incompressible_extensions() -> Vec<String> {
+    vec![
+        "gz", "bz2", "xz", "zst", "lz4", "lzma", "zip", "7z", "rar",
+        "tar.gz", "tar.bz2", "tar.xz", "tgz",
+        "jpg", "jpeg", "png", "gif", "webp", "avif",
+        "mp3", "mp4", "mkv", "avi", "flac", "ogg", "webm",
+        "pdf", "docx", "xlsx",
+    ].into_iter().map(String::from).collect()
+}
+
+impl Default for SshAdaptiveCompression {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_payload_bytes: default_adaptive_min_size(),
+            ratio_threshold: default_adaptive_ratio_threshold(),
+            incompressible_extensions: default_incompressible_extensions(),
+        }
+    }
+}
+
+/// Comprehensive SSH compression configuration.
+///
+/// Controls algorithm negotiation, per-direction settings, compression level,
+/// adaptive behaviour, and statistics tracking.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SshCompressionConfig {
+    /// Master switch — when false, compression is completely disabled regardless
+    /// of other settings.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Global compression algorithm preference (used when per-direction is not set).
+    #[serde(default)]
+    pub algorithm: SshCompressionAlgorithm,
+
+    /// Global compression level 1-9 (1 = fastest/least, 9 = best/slowest, 0 = default).
+    #[serde(default = "default_compression_level")]
+    pub level: u32,
+
+    /// Per-direction overrides.  When `Some`, these take precedence over the
+    /// global `algorithm` and `level` above.
+    #[serde(default)]
+    pub client_to_server: Option<SshDirectionalCompression>,
+    #[serde(default)]
+    pub server_to_client: Option<SshDirectionalCompression>,
+
+    /// Adaptive compression settings.
+    #[serde(default)]
+    pub adaptive: SshAdaptiveCompression,
+
+    /// When true, runtime compression statistics are tracked and queryable.
+    #[serde(default)]
+    pub track_statistics: bool,
+
+    /// Enable SFTP-specific compression.
+    /// When false, SFTP transfers bypass compression even if the session has
+    /// compression enabled (useful because many transferred files are already
+    /// compressed).  When true, SFTP traffic is compressed per the session settings.
+    #[serde(default)]
+    pub compress_sftp: bool,
+
+    /// When true, existing sessions can have their compression settings
+    /// re-negotiated at runtime via the `update_compression_config` command.
+    #[serde(default)]
+    pub allow_runtime_update: bool,
+}
+
+impl Default for SshCompressionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            algorithm: SshCompressionAlgorithm::Auto,
+            level: 6,
+            client_to_server: None,
+            server_to_client: None,
+            adaptive: SshAdaptiveCompression::default(),
+            track_statistics: false,
+            compress_sftp: false,
+            allow_runtime_update: false,
+        }
+    }
+}
+
+/// Runtime compression statistics tracked per-session.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SshCompressionStats {
+    /// Total uncompressed bytes sent
+    pub bytes_sent_uncompressed: u64,
+    /// Total compressed bytes sent (after compression)
+    pub bytes_sent_compressed: u64,
+    /// Total uncompressed bytes received
+    pub bytes_recv_uncompressed: u64,
+    /// Total compressed bytes received (after decompression)
+    pub bytes_recv_compressed: u64,
+    /// Current send compression ratio (0.0-1.0, lower = better)
+    pub send_ratio: f64,
+    /// Current receive compression ratio
+    pub recv_ratio: f64,
+    /// Negotiated client-to-server algorithm
+    pub negotiated_cs_algorithm: String,
+    /// Negotiated server-to-client algorithm
+    pub negotiated_sc_algorithm: String,
+    /// Whether compression is currently active
+    pub compression_active: bool,
+    /// Adaptive compression was in effect (skipped some payloads)
+    pub adaptive_skips: u64,
+}
+
+/// Serialisable snapshot returned by `get_compression_info`
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SshCompressionInfo {
+    pub session_id: String,
+    pub config: SshCompressionConfig,
+    pub stats: SshCompressionStats,
+    pub negotiated_cs_algorithm: String,
+    pub negotiated_sc_algorithm: String,
+}
 
 // ===============================
 // SSH Connection Types
@@ -70,6 +274,10 @@ pub struct SshConnectionConfig {
     pub compression: bool,
     #[serde(default = "default_compression_level")]
     pub compression_level: u32,
+    /// Full compression configuration — takes precedence over the legacy
+    /// `compression` / `compression_level` fields when present.
+    #[serde(default = "default_compression_config")]
+    pub compression_config: SshCompressionConfig,
     #[serde(default = "default_ssh_version")]
     pub ssh_version: String,
     // Cipher preferences (optional)
@@ -93,6 +301,20 @@ pub struct SshConnectionConfig {
     // Environment variables to send to the remote shell
     #[serde(default)]
     pub environment: HashMap<String, String>,
+    // FIDO2 / Security Key auth options
+    /// When true, the private key is an SK (security-key) type that requires
+    /// FIDO2 user interaction (touch / PIN).
+    #[serde(default)]
+    pub sk_auth: bool,
+    /// Optional FIDO2 device path — when `None`, the first available is used.
+    #[serde(default)]
+    pub sk_device_path: Option<String>,
+    /// Optional PIN to unlock the FIDO2 authenticator.
+    #[serde(default)]
+    pub sk_pin: Option<String>,
+    /// SK application / relying-party ID override (default: "ssh:").
+    #[serde(default)]
+    pub sk_application: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -280,6 +502,9 @@ pub struct SshSession {
     pub intermediate_sessions: Vec<Session>,
     /// Bridge threads that relay data between SSH channels and local TCP sockets.
     pub bridge_handles: Vec<std::thread::JoinHandle<()>>,
+    /// Compression statistics tracked at runtime (populated when
+    /// `compression_config.track_statistics` is enabled).
+    pub compression_stats: SshCompressionStats,
 }
 
 // ===============================
@@ -812,4 +1037,160 @@ pub struct ProxyCommandStatus {
     pub alive: bool,
     /// OS process id of the child.
     pub pid: Option<u32>,
+}
+
+// ===============================
+// Syntax Highlighting Types
+// ===============================
+
+/// A single regex-based highlight rule.
+///
+/// When terminal output matches `pattern`, the matched text is wrapped
+/// in ANSI SGR escape sequences using the configured colours and styles.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HighlightRule {
+    /// Unique identifier for this rule.
+    pub id: String,
+    /// Human-readable label (e.g. "Errors", "IP addresses").
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Regex pattern to match against visible (non-ANSI) terminal text.
+    pub pattern: String,
+    /// Whether this rule is active.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Foreground colour — CSS-style hex (`#ff0000`), named ANSI colour
+    /// (`red`, `bright_green`, …), or an 8-bit index (`38` → `\x1b[38;5;38m`).
+    #[serde(default)]
+    pub fg_color: Option<String>,
+    /// Background colour (same format as `fg_color`).
+    #[serde(default)]
+    pub bg_color: Option<String>,
+    /// Bold text.
+    #[serde(default)]
+    pub bold: bool,
+    /// Italic text.
+    #[serde(default)]
+    pub italic: bool,
+    /// Underline text.
+    #[serde(default)]
+    pub underline: bool,
+    /// Priority — lower numbers are applied first.  When two rules overlap
+    /// the higher-priority (lower number) rule wins.
+    #[serde(default)]
+    pub priority: i32,
+}
+
+/// Compiled state for highlight rules on a session.
+#[derive(Debug)]
+pub(crate) struct HighlightState {
+    /// The original rules (kept for serialisation back to the frontend).
+    pub rules: Vec<HighlightRule>,
+    /// Pre-compiled regexes (same order as `rules`, only for enabled rules).
+    pub compiled: Vec<CompiledHighlight>,
+}
+
+/// A compiled highlight rule ready for use in the reader thread.
+#[derive(Debug)]
+pub(crate) struct CompiledHighlight {
+    pub rule_id: String,
+    pub regex: regex::Regex,
+    /// Full ANSI SGR "open" sequence (e.g. `\x1b[1;31m`).
+    pub ansi_open: String,
+    /// ANSI SGR reset sequence (`\x1b[0m`).
+    pub ansi_close: String,
+    pub priority: i32,
+}
+
+/// Status returned to the frontend for active highlights on a session.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HighlightStatus {
+    pub session_id: String,
+    pub rules: Vec<HighlightRule>,
+    pub active_count: usize,
+}
+
+/// Result of `test_highlight_rules` — shows what a rule set would produce.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HighlightTestResult {
+    /// The input text (plain).
+    pub input: String,
+    /// The output text with ANSI highlight sequences injected.
+    pub output: String,
+    /// Number of matches found per rule id.
+    pub match_counts: HashMap<String, usize>,
+}
+
+// ===============================
+// FIDO2 / Security Key Types
+// ===============================
+
+/// Options for generating an SK key pair (passed from the frontend).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SkKeyGenerationRequest {
+    /// Key type: "ed25519-sk" or "ecdsa-sk".
+    pub key_type: String,
+    /// Output file path for the generated key pair.
+    pub output_path: String,
+    /// RP / application string (default "ssh:").
+    #[serde(default = "default_sk_application")]
+    pub application: String,
+    /// Passphrase to protect the private key file.
+    #[serde(default)]
+    pub passphrase: Option<String>,
+    /// Whether to create a resident (discoverable) credential.
+    #[serde(default)]
+    pub resident: bool,
+    /// Whether to require user verification (PIN / biometric).
+    #[serde(default)]
+    pub verify_required: bool,
+    /// Disable touch requirement.
+    #[serde(default)]
+    pub no_touch_required: bool,
+    /// Optional FIDO2 device path.
+    #[serde(default)]
+    pub device_path: Option<String>,
+    /// Optional PIN.
+    #[serde(default)]
+    pub pin: Option<String>,
+    /// Key comment.
+    #[serde(default)]
+    pub comment: Option<String>,
+    /// User string for resident credentials.
+    #[serde(default)]
+    pub user: Option<String>,
+}
+
+fn default_sk_application() -> String {
+    "ssh:".to_string()
+}
+
+/// Response from SK key generation.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SkKeyGenerationResponse {
+    /// Private key file path.
+    pub private_key_path: String,
+    /// Public key file path.
+    pub public_key_path: String,
+    /// Public key content (for display / copy).
+    pub public_key_content: String,
+    /// Key fingerprint.
+    pub fingerprint: String,
+    /// Whether the key is a resident credential.
+    pub resident: bool,
+    /// Algorithm used.
+    pub algorithm: String,
+}
+
+/// A FIDO2 resident credential summary (for listing).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Fido2ResidentCredentialInfo {
+    /// Relying party ID.
+    pub rp_id: String,
+    /// User name.
+    pub user: Option<String>,
+    /// Algorithm.
+    pub algorithm: String,
+    /// Public key line (OpenSSH format).
+    pub public_key: Option<String>,
 }

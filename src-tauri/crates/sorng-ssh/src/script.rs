@@ -3,7 +3,7 @@ use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use rquickjs::{AsyncRuntime, AsyncContext, Function, Object, async_with};
 use rquickjs::prelude::Async;
-use crate::ssh::{SshServiceState, SshConnectionConfig};
+use crate::ssh::{SshServiceState, SshConnectionConfig, SshCompressionConfig};
 
 pub type ScriptServiceState = Arc<Mutex<ScriptService>>;
 
@@ -116,6 +116,7 @@ impl ScriptService {
                                                                     ip_protocol: "auto".to_string(),
                                                                     compression: false,
                                                                     compression_level: 6,
+                                                                    compression_config: SshCompressionConfig::default(),
                                                                     ssh_version: "auto".to_string(),
                                                                     preferred_ciphers: vec![],
                                                                     preferred_macs: vec![],
@@ -125,6 +126,10 @@ impl ScriptService {
                                                                     proxy_command: None,
                                                                     pty_type: None,
                                                                     environment: std::collections::HashMap::new(),
+                                                                    sk_auth: false,
+                                                                    sk_device_path: None,
+                                                                    sk_pin: None,
+                                                                    sk_application: None,
                                                                 };
                                                                 
                                                                 let mut service = ssh_service.lock().await;

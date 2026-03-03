@@ -14,6 +14,7 @@ use tauri::Emitter;
 use super::types::*;
 use super::recording::{record_output, record_input, record_resize};
 use super::automation::process_automation_output;
+use super::highlighting::process_highlight_output;
 use super::{TERMINAL_BUFFERS, MAX_BUFFER_SIZE};
 
 /// Generate a TOTP code from a secret
@@ -121,6 +122,9 @@ impl SshService {
             sess.set_compress(true);
         }
 
+        // ── Apply full compression configuration ───────────────────────
+        self.apply_compression_config(&mut sess, &config)?;
+
         // ── Apply cipher / KEX / MAC / host-key preferences ────────────
         if !config.preferred_ciphers.is_empty() {
             let ciphers = config.preferred_ciphers.join(",");
@@ -165,7 +169,11 @@ impl SshService {
             keep_alive_handle: None,
             intermediate_sessions,
             bridge_handles,
+            compression_stats: SshCompressionStats::default(),
         };
+
+        // Populate negotiated compression info from the handshake result
+        Self::populate_compression_stats(&mut session);
 
         if let Some(interval) = config.keep_alive_interval {
             session.keep_alive_handle = Some(self.start_keep_alive(session_id.clone(), interval));
@@ -909,7 +917,20 @@ impl SshService {
     fn authenticate_session(&self, session: &mut Session, config: &SshConnectionConfig) -> Result<(), String> {
         // Try public key authentication first if key is provided
         if let Some(private_key_path) = &config.private_key_path {
-            if let Ok(_private_key_content) = std::fs::read_to_string(private_key_path) {
+            if let Ok(private_key_content) = std::fs::read_to_string(private_key_path) {
+                // Check if this is an SK (security-key) type — these require FIDO2 touch
+                if super::fido2::is_sk_private_key(&private_key_content) {
+                    log::info!("SK key detected at {}. User touch on FIDO2 authenticator may be required.", private_key_path);
+
+                    // If SK PIN is configured, set it in the environment for ssh-sk-helper
+                    if let Some(ref pin) = config.sk_pin {
+                        std::env::set_var("SSH_SK_PIN", pin);
+                    }
+                    if let Some(ref app) = config.sk_application {
+                        std::env::set_var("SSH_SK_APPLICATION", app);
+                    }
+                }
+
                 let passphrase = config.private_key_passphrase.as_deref();
 
                 if session.userauth_pubkey_file(
@@ -918,6 +939,9 @@ impl SshService {
                     Path::new(private_key_path),
                     passphrase,
                 ).is_ok() {
+                    // Clean up SK env vars
+                    std::env::remove_var("SSH_SK_PIN");
+                    std::env::remove_var("SSH_SK_APPLICATION");
                     return Ok(());
                 }
             }
@@ -1145,7 +1169,11 @@ impl SshService {
         let key_content = std::fs::read_to_string(key_path)
             .map_err(|e| format!("Failed to read key file: {}", e))?;
 
-        if !key_content.contains("-----BEGIN") || !key_content.contains("PRIVATE KEY-----") {
+        // Accept standard PEM private keys and OpenSSH-format SK keys
+        let is_standard = key_content.contains("-----BEGIN") && key_content.contains("PRIVATE KEY-----");
+        let is_sk = super::fido2::is_sk_private_key(&key_content);
+
+        if !is_standard && !is_sk {
             return Err("File does not appear to be a valid private key".to_string());
         }
 
@@ -1157,10 +1185,16 @@ impl SshService {
         use ssh_key::rand_core::OsRng;
         use ssh_key::LineEnding;
 
-        let private_key = match key_type.to_lowercase().as_str() {
+        let lower = key_type.to_lowercase();
+
+        // Security-key types are generated via ssh-keygen (requires FIDO2 hardware)
+        if lower == "ed25519-sk" || lower == "ecdsa-sk" {
+            return self.generate_sk_key(key_type, passphrase).await;
+        }
+
+        let private_key = match lower.as_str() {
             "rsa" => {
                 let bit_size = bits.unwrap_or(3072);
-                // ssh_key 0.6 with the "rsa" feature supports direct RSA generation
                 PrivateKey::random(&mut OsRng, Algorithm::Rsa { hash: None })
                     .map_err(|e| format!("Failed to generate RSA-{} key: {}. Using ssh_key default size. {}", bit_size, e, ""))?
             }
@@ -1172,11 +1206,10 @@ impl SshService {
                 PrivateKey::random(&mut OsRng, Algorithm::Ecdsa { curve: ssh_key::EcdsaCurve::NistP256 })
                     .map_err(|e| format!("Failed to generate ECDSA key: {}", e))?
             }
-            _ => return Err(format!("Unsupported key type: {}. Supported: rsa, ed25519, ecdsa", key_type)),
+            _ => return Err(format!("Unsupported key type: {}. Supported: rsa, ed25519, ecdsa, ed25519-sk, ecdsa-sk", key_type)),
         };
 
         let final_priv_key = if let Some(pass) = passphrase.filter(|p| !p.is_empty()) {
-            // Encrypt the private key with the passphrase
             private_key
                 .encrypt(&mut OsRng, pass.as_bytes())
                 .map_err(|e| format!("Failed to encrypt key with passphrase: {}", e))?
@@ -1194,6 +1227,95 @@ impl SshService {
         let public_key_str = public_key.to_openssh().map_err(|e| format!("Failed to encode public key: {}", e))?;
 
         Ok((final_priv_key, public_key_str))
+    }
+
+    /// Generate an SK (security-key) SSH key pair using the system's ssh-keygen.
+    ///
+    /// This requires OpenSSH 8.2+ and a connected FIDO2 authenticator.
+    /// The user will be prompted to touch their security key during generation.
+    async fn generate_sk_key(&self, key_type: &str, passphrase: Option<String>) -> Result<(String, String), String> {
+        use super::fido2::{OpenSshSkProvider, Fido2Provider, SkKeyGenOptions};
+        use super::sk_keys::SkAlgorithm;
+
+        let algorithm = match key_type.to_lowercase().as_str() {
+            "ed25519-sk" => SkAlgorithm::Ed25519Sk,
+            "ecdsa-sk" => SkAlgorithm::EcdsaSk,
+            _ => return Err(format!("Unsupported SK key type: {}", key_type)),
+        };
+
+        let provider = OpenSshSkProvider::new();
+        let opts = SkKeyGenOptions {
+            algorithm,
+            passphrase,
+            ..Default::default()
+        };
+
+        let result = provider.generate_key(&opts).await?;
+        Ok((result.private_key_openssh, result.public_key_openssh))
+    }
+
+    /// Generate an SK key with full options (used by the Tauri command).
+    pub async fn generate_sk_key_full(
+        &self,
+        request: super::types::SkKeyGenerationRequest,
+    ) -> Result<super::types::SkKeyGenerationResponse, String> {
+        use super::fido2::{OpenSshSkProvider, Fido2Provider, SkKeyGenOptions};
+        use super::sk_keys::SkAlgorithm;
+
+        let algorithm = match request.key_type.to_lowercase().as_str() {
+            "ed25519-sk" => SkAlgorithm::Ed25519Sk,
+            "ecdsa-sk" => SkAlgorithm::EcdsaSk,
+            _ => return Err(format!("Unsupported SK key type: {}. Use ed25519-sk or ecdsa-sk.", request.key_type)),
+        };
+
+        let provider = OpenSshSkProvider::new();
+        let opts = SkKeyGenOptions {
+            algorithm,
+            application: request.application.clone(),
+            user: request.user.clone(),
+            user_presence_required: !request.no_touch_required,
+            user_verification_required: request.verify_required,
+            resident: request.resident,
+            device_path: request.device_path.clone(),
+            pin: request.pin.clone(),
+            comment: request.comment.clone(),
+            passphrase: request.passphrase.clone(),
+            ..Default::default()
+        };
+
+        let result = provider.generate_key(&opts).await?;
+
+        // Write the generated keys to the requested output path
+        let priv_path = std::path::PathBuf::from(&request.output_path);
+        let pub_path = priv_path.with_extension("pub");
+
+        tokio::fs::write(&priv_path, &result.private_key_openssh)
+            .await
+            .map_err(|e| format!("Failed to write private key: {}", e))?;
+
+        // Set permissions on private key (Unix only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(&priv_path, perms)
+                .map_err(|e| format!("Failed to set key file permissions: {}", e))?;
+        }
+
+        tokio::fs::write(&pub_path, &result.public_key_openssh)
+            .await
+            .map_err(|e| format!("Failed to write public key: {}", e))?;
+
+        let fingerprint = result.public_key.fingerprint_sha256();
+
+        Ok(super::types::SkKeyGenerationResponse {
+            private_key_path: priv_path.to_string_lossy().to_string(),
+            public_key_path: pub_path.to_string_lossy().to_string(),
+            public_key_content: result.public_key_openssh,
+            fingerprint,
+            resident: request.resident,
+            algorithm: request.key_type,
+        })
     }
 
     pub async fn test_ssh_connection(&self, config: SshConnectionConfig) -> Result<String, String> {
@@ -1395,12 +1517,15 @@ impl SshService {
 
                 match channel.read(&mut buffer) {
                     Ok(bytes) if bytes > 0 => {
-                        let output = String::from_utf8_lossy(&buffer[..bytes]).to_string();
+                        let raw_output = String::from_utf8_lossy(&buffer[..bytes]).to_string();
                         idle_count = 0;
 
-                        record_output(&session_id_owned, &output);
+                        // Record and automate against the raw (unhighlighted) output
+                        record_output(&session_id_owned, &raw_output);
+                        process_automation_output(&session_id_owned, &raw_output);
 
-                        process_automation_output(&session_id_owned, &output);
+                        // Apply regex-based syntax highlighting (injects ANSI SGR codes)
+                        let output = process_highlight_output(&session_id_owned, &raw_output);
 
                         if let Ok(mut buffers) = TERMINAL_BUFFERS.lock() {
                             let session_buffer = buffers.entry(session_id_owned.clone()).or_insert_with(String::new);
@@ -2334,5 +2459,214 @@ impl SshService {
             memory_info: mem_info.trim().to_string(),
             disk_info: disk_info.trim().to_string(),
         })
+    }
+
+    // ===============================
+    // Compression Support
+    // ===============================
+
+    /// Apply the full compression configuration to an `ssh2::Session` before
+    /// handshake.  This sets `set_compress`, negotiates algorithms via
+    /// `MethodType::CompCs` / `CompSc`, and validates the compression level.
+    fn apply_compression_config(
+        &self,
+        sess: &mut Session,
+        config: &SshConnectionConfig,
+    ) -> Result<(), String> {
+        let comp = &config.compression_config;
+
+        // If the new config is explicitly disabled and the legacy flag is also off, bail out.
+        if !comp.enabled && !config.compression {
+            // Make sure no compression algorithm is offered except "none".
+            sess.method_pref(MethodType::CompCs, "none")
+                .map_err(|e| format!("Failed to disable C→S compression: {e}"))?;
+            sess.method_pref(MethodType::CompSc, "none")
+                .map_err(|e| format!("Failed to disable S→C compression: {e}"))?;
+            return Ok(());
+        }
+
+        // Enable the underlying libssh2 compression flag.
+        sess.set_compress(true);
+
+        // Determine per-direction algorithm preference strings.
+        let cs_pref = comp.client_to_server
+            .as_ref()
+            .map(|d| d.algorithm.to_method_pref().to_string())
+            .unwrap_or_else(|| comp.algorithm.to_method_pref().to_string());
+
+        let sc_pref = comp.server_to_client
+            .as_ref()
+            .map(|d| d.algorithm.to_method_pref().to_string())
+            .unwrap_or_else(|| comp.algorithm.to_method_pref().to_string());
+
+        sess.method_pref(MethodType::CompCs, &cs_pref)
+            .map_err(|e| format!("Failed to set C→S compression algorithm preference: {e}"))?;
+        sess.method_pref(MethodType::CompSc, &sc_pref)
+            .map_err(|e| format!("Failed to set S→C compression algorithm preference: {e}"))?;
+
+        Ok(())
+    }
+
+    /// After handshake, inspect negotiated compression methods and populate the
+    /// initial compression stats on the session.
+    fn populate_compression_stats(session: &mut SshSession) {
+        let comp = &session.config.compression_config;
+        if !comp.enabled && !session.config.compression {
+            return;
+        }
+
+        let cs_algo = session.session.methods(MethodType::CompCs)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "none".to_string());
+        let sc_algo = session.session.methods(MethodType::CompSc)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "none".to_string());
+
+        let active = cs_algo != "none" || sc_algo != "none";
+
+        session.compression_stats = SshCompressionStats {
+            negotiated_cs_algorithm: cs_algo,
+            negotiated_sc_algorithm: sc_algo,
+            compression_active: active,
+            ..Default::default()
+        };
+    }
+
+    /// Retrieve compression information for a live session.
+    pub fn get_compression_info(&self, session_id: &str) -> Result<SshCompressionInfo, String> {
+        let session = self.sessions.get(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+
+        Ok(SshCompressionInfo {
+            session_id: session_id.to_string(),
+            config: session.config.compression_config.clone(),
+            stats: session.compression_stats.clone(),
+            negotiated_cs_algorithm: session.compression_stats.negotiated_cs_algorithm.clone(),
+            negotiated_sc_algorithm: session.compression_stats.negotiated_sc_algorithm.clone(),
+        })
+    }
+
+    /// Update the compression config stored on a live session.
+    ///
+    /// Note: SSH compression algorithms are negotiated at handshake time and
+    /// cannot be changed mid-session at the transport level.  This method
+    /// updates the stored config for informational / UI purposes and adjusts
+    /// adaptive-compression parameters that do not require re-negotiation.
+    pub fn update_compression_config(
+        &mut self,
+        session_id: &str,
+        new_config: SshCompressionConfig,
+    ) -> Result<SshCompressionInfo, String> {
+        let session = self.sessions.get_mut(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+
+        if !session.config.compression_config.allow_runtime_update {
+            return Err("Runtime compression updates are not allowed for this session".to_string());
+        }
+
+        // Update only the mutable parts (adaptive settings, tracking, etc.)
+        session.config.compression_config.adaptive = new_config.adaptive;
+        session.config.compression_config.track_statistics = new_config.track_statistics;
+        session.config.compression_config.compress_sftp = new_config.compress_sftp;
+
+        Ok(SshCompressionInfo {
+            session_id: session_id.to_string(),
+            config: session.config.compression_config.clone(),
+            stats: session.compression_stats.clone(),
+            negotiated_cs_algorithm: session.compression_stats.negotiated_cs_algorithm.clone(),
+            negotiated_sc_algorithm: session.compression_stats.negotiated_sc_algorithm.clone(),
+        })
+    }
+
+    /// Reset the compression statistics counters for a session.
+    pub fn reset_compression_stats(&mut self, session_id: &str) -> Result<(), String> {
+        let session = self.sessions.get_mut(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+
+        let old = &session.compression_stats;
+        session.compression_stats = SshCompressionStats {
+            negotiated_cs_algorithm: old.negotiated_cs_algorithm.clone(),
+            negotiated_sc_algorithm: old.negotiated_sc_algorithm.clone(),
+            compression_active: old.compression_active,
+            ..Default::default()
+        };
+        Ok(())
+    }
+
+    /// Return a list of compression algorithms supported by the linked libssh2.
+    pub fn list_supported_compression_algorithms() -> Vec<String> {
+        vec![
+            "none".to_string(),
+            "zlib".to_string(),
+            "zlib@openssh.com".to_string(),
+        ]
+    }
+
+    /// Determine whether SFTP transfer data should be compressed based on the
+    /// session's `SshCompressionConfig` and the file being transferred.
+    pub fn should_compress_sftp_transfer(
+        config: &SshCompressionConfig,
+        file_name: Option<&str>,
+    ) -> bool {
+        if !config.enabled || !config.compress_sftp {
+            return false;
+        }
+
+        // If adaptive compression is enabled, check against incompressible extensions.
+        if config.adaptive.enabled {
+            if let Some(name) = file_name {
+                let lower = name.to_lowercase();
+                for ext in &config.adaptive.incompressible_extensions {
+                    if lower.ends_with(&format!(".{ext}")) {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Check whether a payload of the given size should be compressed based on
+    /// the adaptive compression settings.
+    pub fn should_compress_payload(
+        config: &SshCompressionConfig,
+        payload_size: u64,
+    ) -> bool {
+        if !config.enabled {
+            return false;
+        }
+        if !config.adaptive.enabled {
+            return true; // always compress when adaptive is off
+        }
+        payload_size >= config.adaptive.min_payload_bytes
+    }
+
+    /// Update running compression statistics after data transfer.
+    pub fn update_compression_stats(
+        stats: &mut SshCompressionStats,
+        direction: &str,       // "send" or "recv"
+        original_bytes: u64,
+        compressed_bytes: u64,
+    ) {
+        match direction {
+            "send" => {
+                stats.bytes_sent_uncompressed += original_bytes;
+                stats.bytes_sent_compressed += compressed_bytes;
+                if stats.bytes_sent_uncompressed > 0 {
+                    stats.send_ratio = stats.bytes_sent_compressed as f64
+                        / stats.bytes_sent_uncompressed as f64;
+                }
+            }
+            "recv" => {
+                stats.bytes_recv_uncompressed += original_bytes;
+                stats.bytes_recv_compressed += compressed_bytes;
+                if stats.bytes_recv_uncompressed > 0 {
+                    stats.recv_ratio = stats.bytes_recv_compressed as f64
+                        / stats.bytes_recv_uncompressed as f64;
+                }
+            }
+            _ => {}
+        }
     }
 }

@@ -6,10 +6,13 @@ pub mod service;
 pub mod commands;
 pub mod recording;
 pub mod automation;
+pub mod highlighting;
 pub mod tunnels;
 pub mod diagnostics;
 pub mod x11;
 pub mod proxy_command;
+pub mod sk_keys;
+pub mod fido2;
 
 // Maximum buffer size in bytes (1MB)
 pub(crate) const MAX_BUFFER_SIZE: usize = 1024 * 1024;
@@ -27,6 +30,11 @@ lazy_static::lazy_static! {
 // Global storage for active automations
 lazy_static::lazy_static! {
     pub(crate) static ref ACTIVE_AUTOMATIONS: StdMutex<HashMap<String, types::AutomationState>> = StdMutex::new(HashMap::new());
+}
+
+// Global storage for active highlight rule-sets (per session)
+lazy_static::lazy_static! {
+    pub(crate) static ref ACTIVE_HIGHLIGHTS: StdMutex<HashMap<String, types::HighlightState>> = StdMutex::new(HashMap::new());
 }
 
 // Global storage for active FTP tunnels
@@ -59,7 +67,10 @@ pub use service::generate_totp_code;
 pub use commands::*;
 pub use recording::*;
 pub use automation::*;
+pub use highlighting::*;
 pub use tunnels::*;
 pub use diagnostics::*;
 pub use x11::*;
 pub use proxy_command::*;
+pub use sk_keys::*;
+pub use fido2::*;
