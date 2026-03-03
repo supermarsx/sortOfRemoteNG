@@ -18,6 +18,7 @@ hex = "0.4"
 regex = "1.10"
 base64 = "0.21"
 async-trait = "0.1"
+serialport = "4"
 
 [dev-dependencies]
 serde_json = "1.0"

@@ -185,6 +185,97 @@ pub fn enumerate_unix_ports() -> Vec<String> {
     ports
 }
 
+/// Enumerate serial ports using the `serialport` crate for real hardware
+/// discovery.  Returns fully-populated `SerialPortInfo` entries with
+/// VID/PID, manufacturer, and serial number metadata from the OS.
+///
+/// Falls back to the platform-specific stub functions if the `serialport`
+/// crate reports an error.
+pub fn enumerate_native_ports() -> Vec<SerialPortInfo> {
+    match serialport::available_ports() {
+        Ok(sp_ports) => {
+            sp_ports
+                .into_iter()
+                .map(|sp| {
+                    let (vid, pid, manufacturer, product, serial_number) = match &sp.port_type {
+                        serialport::SerialPortType::UsbPort(usb) => (
+                            Some(usb.vid),
+                            Some(usb.pid),
+                            usb.manufacturer.clone(),
+                            usb.product.clone(),
+                            usb.serial_number.clone(),
+                        ),
+                        _ => (None, None, None, None, None),
+                    };
+                    let port_type = match &sp.port_type {
+                        serialport::SerialPortType::UsbPort(_) => PortType::UsbSerial,
+                        serialport::SerialPortType::PciPort => PortType::Pci,
+                        serialport::SerialPortType::BluetoothPort => PortType::Bluetooth,
+                        serialport::SerialPortType::Unknown => classify_port(&sp.port_name),
+                    };
+                    let description = product;
+                    let mut info = SerialPortInfo {
+                        port_name: sp.port_name.clone(),
+                        port_type,
+                        description: description.clone(),
+                        manufacturer,
+                        vid,
+                        pid,
+                        serial_number,
+                        display_name: String::new(),
+                        in_use: false,
+                    };
+                    info.display_name = generate_display_name(&info);
+                    info
+                })
+                .collect()
+        }
+        Err(e) => {
+            log::warn!("serialport::available_ports() failed: {}; using fallback", e);
+            // Fallback to stub-based enumeration
+            #[cfg(target_os = "windows")]
+            let names = enumerate_windows_ports();
+            #[cfg(not(target_os = "windows"))]
+            let names = enumerate_unix_ports();
+            names
+                .into_iter()
+                .map(|name| build_port_info(&name, None, None, None, None, None))
+                .collect()
+        }
+    }
+}
+
+/// Probe whether a port can be opened (is available, not in use).
+pub fn probe_port_available(port_name: &str) -> bool {
+    serialport::new(port_name, 9600)
+        .timeout(std::time::Duration::from_millis(50))
+        .open()
+        .is_ok()
+}
+
+/// Full native scan: enumerate + optional probe + filters.
+pub fn scan_native_ports(options: &ScanOptions) -> ScanResult {
+    let start = std::time::Instant::now();
+    let mut ports = enumerate_native_ports();
+
+    // Probe ports if requested
+    if options.probe_ports {
+        for port in &mut ports {
+            port.in_use = !probe_port_available(&port.port_name);
+        }
+    }
+
+    let ports = apply_filters(ports, options);
+    let total_found = ports.len();
+    let elapsed = start.elapsed().as_millis() as u64;
+
+    ScanResult {
+        ports,
+        scan_time_ms: elapsed,
+        total_found,
+    }
+}
+
 /// Classify a port name into a PortType.
 pub fn classify_port(port_name: &str) -> PortType {
     let lower = port_name.to_lowercase();

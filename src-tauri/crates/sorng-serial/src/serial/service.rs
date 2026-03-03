@@ -5,13 +5,12 @@
 
 use crate::serial::logging::{DataDirection, LogEntry, LogWriter};
 use crate::serial::modem::{ModemController, ModemInfo, SignalQuality};
+use crate::serial::native_transport::NativeTransport;
 use crate::serial::port_scanner::{self, ScanOptions, ScanResult};
 use crate::serial::session::{self, SerialSessionHandle, SessionCommand, SessionEvent};
-use crate::serial::transport::SimulatedTransport;
 use crate::serial::types::*;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 use tauri::Emitter;
 use tokio::sync::RwLock;
 
@@ -37,41 +36,32 @@ impl SerialService {
 
     /// Scan for available serial ports.
     pub async fn scan_ports(&self, options: ScanOptions) -> Result<ScanResult, String> {
-        let start = Instant::now();
-
-        // Build port list from platform enumeration
-        let mut ports: Vec<SerialPortInfo> = Vec::new();
-
-        // For now we provide simulated port info since we don't link
-        // a real system serial library.  In production, this would
-        // call platform APIs (SetupDiGetClassDevs on Windows, libudev
-        // on Linux, IOKit on macOS).
-        #[cfg(target_os = "windows")]
-        {
-            let names = port_scanner::enumerate_windows_ports();
-            for name in &names {
-                let info = port_scanner::build_port_info(name, None, None, None, None, None);
-                ports.push(info);
-            }
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let names = port_scanner::enumerate_unix_ports();
-            for name in &names {
-                let info = port_scanner::build_port_info(name, None, None, None, None, None);
-                ports.push(info);
-            }
-        }
-
-        // Apply filters
-        let filtered = port_scanner::apply_filters(ports, &options);
-        let total = filtered.len();
-
-        Ok(ScanResult {
-            ports: filtered,
-            scan_time_ms: start.elapsed().as_millis() as u64,
-            total_found: total,
+        // Use native enumeration via the serialport crate.
+        // This runs blocking I/O, so offload to a blocking thread.
+        let opts = options.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            port_scanner::scan_native_ports(&opts)
         })
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {}", e))?;
+
+        // Mark ports that are currently in use by our sessions
+        let sessions = self.sessions.read().await;
+        let in_use_ports: Vec<String> = sessions
+            .values()
+            .filter(|h| h.is_connected())
+            .map(|h| h.port_name.clone())
+            .collect();
+        drop(sessions);
+
+        let mut result = result;
+        for port in &mut result.ports {
+            if in_use_ports.contains(&port.port_name) {
+                port.in_use = true;
+            }
+        }
+
+        Ok(result)
     }
 
     // ── Session management ────────────────────────────────────────
@@ -93,8 +83,8 @@ impl SerialService {
             }
         }
 
-        // Create a simulated transport (in production, would create a real one)
-        let transport = SimulatedTransport::new(&config.port_name);
+        // Create a real native transport for hardware COM / tty ports
+        let transport = NativeTransport::new(&config.port_name);
 
         let handle = session::create_session(session_id.clone(), transport, config.clone())
             .await?;
@@ -107,6 +97,37 @@ impl SerialService {
             sessions.insert(session_id.clone(), handle);
         }
 
+        Ok(info)
+    }
+
+    /// Open a new serial session using a simulated transport (for testing).
+    #[cfg(test)]
+    pub async fn connect_simulated(
+        &self,
+        config: SerialConfig,
+    ) -> Result<SerialSession, String> {
+        use crate::serial::transport::SimulatedTransport;
+        let session_id = uuid::Uuid::new_v4().to_string();
+
+        // Check for duplicate port
+        {
+            let sessions = self.sessions.read().await;
+            for (_, handle) in sessions.iter() {
+                if handle.port_name == config.port_name && handle.is_connected() {
+                    return Err(format!("Port {} is already in use by session {}", config.port_name, handle.id));
+                }
+            }
+        }
+
+        let transport = SimulatedTransport::new(&config.port_name);
+        let handle = session::create_session(session_id.clone(), transport, config.clone())
+            .await?;
+
+        let info = handle.info().await;
+        {
+            let mut sessions = self.sessions.write().await;
+            sessions.insert(session_id.clone(), handle);
+        }
         Ok(info)
     }
 
@@ -482,7 +503,7 @@ mod tests {
             port_name: "COM1".to_string(),
             ..Default::default()
         };
-        let info = service.connect(config).await.unwrap();
+        let info = service.connect_simulated(config).await.unwrap();
         assert_eq!(info.port_name, "COM1");
         assert_eq!(info.state, SessionState::Connected);
 
@@ -501,8 +522,8 @@ mod tests {
             port_name: "COM2".to_string(),
             ..Default::default()
         };
-        service.connect(config.clone()).await.unwrap();
-        let result = service.connect(config).await;
+        service.connect_simulated(config.clone()).await.unwrap();
+        let result = service.connect_simulated(config).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("already in use"));
     }
@@ -514,7 +535,7 @@ mod tests {
             port_name: "COM3".to_string(),
             ..Default::default()
         };
-        let info = service.connect(config).await.unwrap();
+        let info = service.connect_simulated(config).await.unwrap();
         service.send_raw(&info.id, b"test".to_vec()).await.unwrap();
         service.disconnect(&info.id).await.unwrap();
     }
@@ -526,7 +547,7 @@ mod tests {
             port_name: "COM4".to_string(),
             ..Default::default()
         };
-        let info = service.connect(config).await.unwrap();
+        let info = service.connect_simulated(config).await.unwrap();
         service
             .send_line(&info.id, "AT".to_string())
             .await
@@ -543,7 +564,7 @@ mod tests {
             rts_on_open: true,
             ..Default::default()
         };
-        let info = service.connect(config).await.unwrap();
+        let info = service.connect_simulated(config).await.unwrap();
 
         let cl = service.read_control_lines(&info.id).await.unwrap();
         assert!(cl.dtr);
@@ -566,7 +587,7 @@ mod tests {
             baud_rate: BaudRate::Baud115200,
             ..Default::default()
         };
-        let info = service.connect(config).await.unwrap();
+        let info = service.connect_simulated(config).await.unwrap();
         let fetched = service.get_session_info(&info.id).await.unwrap();
         assert_eq!(fetched.port_name, "COM6");
         assert!(fetched.config_shorthand.contains("115200"));
@@ -589,7 +610,7 @@ mod tests {
                 port_name: format!("COM{}", i + 10),
                 ..Default::default()
             };
-            service.connect(config).await.unwrap();
+            service.connect_simulated(config).await.unwrap();
         }
         assert_eq!(service.list_sessions().await.len(), 3);
 
@@ -605,7 +626,7 @@ mod tests {
             port_name: "COM7".to_string(),
             ..Default::default()
         };
-        let info = service.connect(config).await.unwrap();
+        let info = service.connect_simulated(config).await.unwrap();
         let stats = service.get_stats(&info.id).await.unwrap();
         assert_eq!(stats.bytes_rx, 0);
         service.disconnect(&info.id).await.unwrap();
@@ -625,7 +646,7 @@ mod tests {
             port_name: "COM8".to_string(),
             ..Default::default()
         };
-        let info = service.connect(config).await.unwrap();
+        let info = service.connect_simulated(config).await.unwrap();
         service
             .set_line_ending(&info.id, LineEnding::Lf)
             .await
@@ -640,7 +661,7 @@ mod tests {
             port_name: "COM9".to_string(),
             ..Default::default()
         };
-        let info = service.connect(config).await.unwrap();
+        let info = service.connect_simulated(config).await.unwrap();
         service.set_local_echo(&info.id, true).await.unwrap();
         service.disconnect(&info.id).await.unwrap();
     }
@@ -652,7 +673,7 @@ mod tests {
             port_name: "COM10".to_string(),
             ..Default::default()
         };
-        let info = service.connect(config).await.unwrap();
+        let info = service.connect_simulated(config).await.unwrap();
         service.send_break(&info.id, 250).await.unwrap();
         service.disconnect(&info.id).await.unwrap();
     }

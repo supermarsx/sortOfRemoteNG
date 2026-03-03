@@ -2,6 +2,7 @@
 
 pub mod types;
 pub mod transport;
+pub mod native_transport;
 pub mod port_scanner;
 pub mod session;
 pub mod modem;
@@ -14,3 +15,4 @@ pub mod commands;
 pub use types::*;
 pub use service::{SerialService, SerialServiceState};
 pub use commands::*;
+pub use native_transport::NativeTransport;
