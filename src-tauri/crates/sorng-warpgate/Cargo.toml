@@ -1,0 +1,18 @@
+[package]
+name = "sorng-warpgate"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Warpgate bastion host integration crate for SortOfRemoteNG"
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tauri = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+log = { workspace = true }
+reqwest = { version = "0.11", features = ["json", "cookies", "blocking", "native-tls"] }
+url = "2.5"
