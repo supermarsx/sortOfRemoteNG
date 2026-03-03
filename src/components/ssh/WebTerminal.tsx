@@ -1,13 +1,19 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { useWebTerminal } from "../../hooks/ssh/useWebTerminal";
+import { useTerminalBackground } from "../../hooks/ssh/useTerminalBackground";
 import { WebTerminalProps } from "./webTerminal/types";
 import TerminalToolbar from "./webTerminal/TerminalToolbar";
 import TerminalStatusBar from "./webTerminal/TerminalStatusBar";
+import TerminalBackgroundLayer from "./webTerminal/TerminalBackgroundLayer";
 import ScriptSelectorModal from "./webTerminal/ScriptSelectorModal";
 import SshTrustDialog from "./webTerminal/SshTrustDialog";
+import SSHCommandHistoryPanel from "./commandHistory/SSHCommandHistoryPanel";
 
 const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
   const mgr = useWebTerminal(session, onResize);
+  const { t } = useTranslation();
+  const bgMgr = useTerminalBackground(mgr.sshTerminalConfig?.background);
 
   return (
     <div
@@ -32,15 +38,31 @@ const WebTerminal: React.FC<WebTerminalProps> = ({ session, onResize }) => {
         <TerminalStatusBar mgr={mgr} />
       </div>
 
-      <div className="flex-1 min-h-0 p-3">
-        <div
-          ref={mgr.containerRef}
-          className="h-full w-full rounded-lg border relative overflow-hidden"
-          style={{
-            backgroundColor: "var(--color-background)",
-            borderColor: "var(--color-border)",
-          }}
-        />
+      <div className={`flex-1 min-h-0 flex ${mgr.commandHistory.isOpen ? "flex-row" : ""}`}>
+        <div className={`${mgr.commandHistory.isOpen ? "flex-1" : "w-full h-full"} p-3`}>
+          <div
+            ref={mgr.containerRef}
+            className="h-full w-full rounded-lg border relative overflow-hidden"
+            style={{
+              backgroundColor: "var(--color-background)",
+              borderColor: "var(--color-border)",
+              ...bgMgr.fadingStyle,
+            }}
+          >
+            <TerminalBackgroundLayer mgr={bgMgr} containerRef={mgr.containerRef} />
+          </div>
+        </div>
+
+        {/* Command history side panel */}
+        {mgr.commandHistory.isOpen && (
+          <div className="w-80 border-l border-[var(--color-border)] overflow-hidden">
+            <SSHCommandHistoryPanel
+              mgr={mgr.commandHistory}
+              t={t}
+              compact
+            />
+          </div>
+        )}
       </div>
 
       <ScriptSelectorModal mgr={mgr} />

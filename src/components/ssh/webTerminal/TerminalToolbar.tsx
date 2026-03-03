@@ -4,7 +4,7 @@ import MacroRecordButton from "./MacroRecordButton";
 import MacroReplayPopover from "./MacroReplayPopover";
 import HostKeyPopover from "./HostKeyPopover";
 import TotpPopover from "./TotpPopover";
-import { Clipboard, Copy, FileCode, Maximize2, Minimize2, RotateCcw, Send, StopCircle, Trash2, Unplug } from "lucide-react";
+import { Clipboard, Copy, FileCode, History, Maximize2, Minimize2, RotateCcw, Send, StopCircle, Trash2, Unplug } from "lucide-react";
 
 function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
   return (
@@ -34,6 +34,14 @@ function TerminalToolbar({ mgr }: { mgr: WebTerminalMgr }) {
             aria-label="Run Script"
           >
             <FileCode size={14} />
+          </button>
+          <button
+            onClick={mgr.commandHistory.togglePanel}
+            className={`app-bar-button p-2 ${mgr.commandHistory.isOpen ? "text-green-500" : ""}`}
+            data-tooltip="Command History"
+            aria-label="Command History"
+          >
+            <History size={14} />
           </button>
           <button
             onClick={mgr.sendCancel}

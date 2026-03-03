@@ -11,6 +11,7 @@ import ScriptLibraryPanel from "./bulkCommander/ScriptLibraryPanel";
 import SessionPanel from "./bulkCommander/SessionPanel";
 import CommandInput from "./bulkCommander/CommandInput";
 import OutputArea from "./bulkCommander/OutputArea";
+import SSHCommandHistoryPanel from "./commandHistory/SSHCommandHistoryPanel";
 
 export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
   isOpen,
@@ -56,7 +57,22 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
         {mgr.showScriptLibrary && <ScriptLibraryPanel mgr={mgr} t={t} />}
 
         {/* Command history dropdown */}
-        {mgr.showHistory && mgr.commandHistory.length > 0 && (
+        {mgr.showHistory && mgr.historyMgr.allEntries.length > 0 && (
+          <div className="border-b border-[var(--color-border)] bg-[var(--color-surface)] max-h-80">
+            <SSHCommandHistoryPanel
+              mgr={mgr.historyMgr}
+              t={t}
+              onSelectCommand={(cmd) => mgr.setCommand(cmd)}
+              onReExecute={(cmd) => {
+                mgr.setCommand(cmd);
+                mgr.toggleHistory();
+              }}
+              compact
+            />
+          </div>
+        )}
+        {/* Fallback: legacy in-memory history when persistent history is empty */}
+        {mgr.showHistory && mgr.historyMgr.allEntries.length === 0 && mgr.commandHistory.length > 0 && (
           <div className="border-b border-[var(--color-border)] bg-[var(--color-surface)] max-h-48 overflow-y-auto">
             {mgr.commandHistory.map((item) => (
               <button
@@ -78,7 +94,7 @@ export const BulkSSHCommander: React.FC<BulkSSHCommanderProps> = ({
             ))}
           </div>
         )}
-        {mgr.showHistory && mgr.commandHistory.length === 0 && (
+        {mgr.showHistory && mgr.historyMgr.allEntries.length === 0 && mgr.commandHistory.length === 0 && (
           <EmptyState
             icon={History}
             iconSize={24}

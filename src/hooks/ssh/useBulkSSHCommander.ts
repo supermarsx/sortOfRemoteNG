@@ -11,6 +11,8 @@ import {
   SavedBulkScript,
   defaultBulkScripts,
 } from "../../data/defaultBulkScripts";
+import { useSSHCommandHistory } from "./useSSHCommandHistory";
+import type { CommandExecution } from "../../types/sshCommandHistory";
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -41,6 +43,7 @@ const SCRIPTS_STORAGE_KEY = "bulkSshScripts";
 
 export function useBulkSSHCommander(isOpen: boolean) {
   const { state } = useConnections();
+  const historyMgr = useSSHCommandHistory();
 
   const sshSessions = useMemo(() => {
     return state.sessions.filter(
@@ -273,19 +276,52 @@ export function useBulkSSHCommander(isOpen: boolean) {
 
     await Promise.all(commandPromises);
     setCommandHistory((prev) => [historyItem, ...prev].slice(0, 50));
+
+    // Persist to the dedicated SSH command history
+    const persistentExecutions: CommandExecution[] = selectedSessions.map(
+      (session) => {
+        const result = historyItem.results[session.id];
+        return {
+          sessionId: session.id,
+          sessionName: session.name,
+          hostname: session.hostname ?? "",
+          status: result?.status === "success" ? "success" : result?.status === "error" ? "error" : "pending",
+          output: result?.output,
+          errorMessage: result?.error,
+        };
+      },
+    );
+    historyMgr.addEntry(command.trim(), persistentExecutions);
+
     setIsExecuting(false);
     setCommand("");
     commandInputRef.current?.focus();
-  }, [command, selectedSessionIds, sshSessions, isExecuting]);
+  }, [command, selectedSessionIds, sshSessions, isExecuting, historyMgr]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         executeCommand();
+        return;
+      }
+      // Arrow-key history navigation (only for single-line input)
+      if (e.key === "ArrowUp" && !e.shiftKey) {
+        const cmd = historyMgr.navigateUp(command);
+        if (cmd !== null) {
+          e.preventDefault();
+          setCommand(cmd);
+        }
+      }
+      if (e.key === "ArrowDown" && !e.shiftKey) {
+        const cmd = historyMgr.navigateDown();
+        if (cmd !== null) {
+          e.preventDefault();
+          setCommand(cmd);
+        }
       }
     },
-    [executeCommand],
+    [executeCommand, command, historyMgr],
   );
 
   const sendCancel = useCallback(async () => {
@@ -460,5 +496,8 @@ export function useBulkSSHCommander(isOpen: boolean) {
     loadScript,
     saveCurrentAsScript,
     deleteScript,
+
+    // Persistent command history manager
+    historyMgr,
   };
 }

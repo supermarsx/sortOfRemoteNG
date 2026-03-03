@@ -29,6 +29,7 @@ import {
   type SshHostKeyIdentity,
   type TrustVerifyResult,
 } from "../../utils/trustStore";
+import { useSSHCommandHistory } from "./useSSHCommandHistory";
 
 /* ── Internal types ────────────────────────────────────────────── */
 
@@ -113,6 +114,9 @@ export function useWebTerminal(
   const [replayingMacro, setReplayingMacro] = useState(false);
   const replayAbortRef = useRef<AbortController | null>(null);
   const macroListRef = useRef<HTMLDivElement>(null);
+
+  /* ── SSH command history ── */
+  const commandHistory = useSSHCommandHistory(session.id);
 
   /* ── Stable refs for callbacks ── */
   const sessionRef = useRef(session);
@@ -1055,6 +1059,7 @@ export function useWebTerminal(
     connection,
     settings,
     isSsh,
+    sshTerminalConfig,
     /* refs */
     containerRef,
     keyPopupRef,
@@ -1118,6 +1123,8 @@ export function useWebTerminal(
     toggleFullscreen,
     /* helpers */
     formatDuration,
+    /* command history */
+    commandHistory,
   };
 }
 
