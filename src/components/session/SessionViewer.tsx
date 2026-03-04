@@ -57,6 +57,72 @@ export const SessionViewer: React.FC<SessionViewerProps> = ({ session, onCloseSe
           
           case 'anydesk':
             return <AnyDeskClient session={session} />;
+
+          case 'ilo':
+            return (
+              <div className="flex flex-col items-center justify-center h-full text-blue-400">
+                <Shield size={48} className="mb-4" />
+                <h3 className="text-lg font-medium mb-2">HP iLO Connected</h3>
+                <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
+                  iLO connection to {session.hostname} is active
+                </p>
+                <div className="p-4 bg-[var(--color-surface)] rounded-lg max-w-md">
+                  <p className="text-xs text-[var(--color-textMuted)] mb-2">Connection Details:</p>
+                  <div className="space-y-1 text-sm">
+                    <div>Host: <span className="text-[var(--color-text)]">{session.hostname}</span></div>
+                    <div>Protocol: <span className="text-[var(--color-text)]">HP iLO</span></div>
+                    <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
+                  </div>
+                  <div className="mt-3 p-2 bg-blue-900/20 border border-blue-700 rounded text-xs text-blue-300">
+                    <p>Use the iLO panel to manage server power, health, virtual media, and more.</p>
+                  </div>
+                </div>
+              </div>
+            );
+
+          case 'lenovo':
+            return (
+              <div className="flex flex-col items-center justify-center h-full text-orange-400">
+                <Shield size={48} className="mb-4" />
+                <h3 className="text-lg font-medium mb-2">Lenovo XCC Connected</h3>
+                <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
+                  XCC/IMM connection to {session.hostname} is active
+                </p>
+                <div className="p-4 bg-[var(--color-surface)] rounded-lg max-w-md">
+                  <p className="text-xs text-[var(--color-textMuted)] mb-2">Connection Details:</p>
+                  <div className="space-y-1 text-sm">
+                    <div>Host: <span className="text-[var(--color-text)]">{session.hostname}</span></div>
+                    <div>Protocol: <span className="text-[var(--color-text)]">Lenovo XCC</span></div>
+                    <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
+                  </div>
+                  <div className="mt-3 p-2 bg-orange-900/20 border border-orange-700 rounded text-xs text-orange-300">
+                    <p>Use the Lenovo panel to manage server power, health, virtual media, and more.</p>
+                  </div>
+                </div>
+              </div>
+            );
+
+          case 'supermicro':
+            return (
+              <div className="flex flex-col items-center justify-center h-full text-green-400">
+                <Shield size={48} className="mb-4" />
+                <h3 className="text-lg font-medium mb-2">Supermicro BMC Connected</h3>
+                <p className="text-sm text-center text-[var(--color-textSecondary)] mb-4">
+                  BMC connection to {session.hostname} is active
+                </p>
+                <div className="p-4 bg-[var(--color-surface)] rounded-lg max-w-md">
+                  <p className="text-xs text-[var(--color-textMuted)] mb-2">Connection Details:</p>
+                  <div className="space-y-1 text-sm">
+                    <div>Host: <span className="text-[var(--color-text)]">{session.hostname}</span></div>
+                    <div>Protocol: <span className="text-[var(--color-text)]">Supermicro IPMI/Redfish</span></div>
+                    <div>Started: <span className="text-[var(--color-text)]">{session.startTime.toLocaleTimeString()}</span></div>
+                  </div>
+                  <div className="mt-3 p-2 bg-green-900/20 border border-green-700 rounded text-xs text-green-300">
+                    <p>Use the Supermicro panel to manage server power, health, virtual media, and more.</p>
+                  </div>
+                </div>
+              </div>
+            );
           
           case 'vnc':
             return (

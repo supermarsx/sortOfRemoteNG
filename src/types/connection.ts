@@ -9,7 +9,7 @@ export type HttpBookmarkItem =
 export interface Connection {
   id: string;
   name: string;
-  protocol: 'rdp' | 'ssh' | 'vnc' | 'anydesk' | 'http' | 'https' | 'telnet' | 'rlogin' | 'mysql' | 'ftp' | 'sftp' | 'scp' | 'winrm' | 'rustdesk' | 'smb' | 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean' | 'heroku' | 'scaleway' | 'linode' | 'ovhcloud';
+  protocol: 'rdp' | 'ssh' | 'vnc' | 'anydesk' | 'http' | 'https' | 'telnet' | 'rlogin' | 'mysql' | 'ftp' | 'sftp' | 'scp' | 'winrm' | 'rustdesk' | 'smb' | 'gcp' | 'azure' | 'ibm-csp' | 'digital-ocean' | 'heroku' | 'scaleway' | 'linode' | 'ovhcloud' | 'ilo' | 'lenovo' | 'supermicro';
   hostname: string;
   port: number;
   username?: string;
