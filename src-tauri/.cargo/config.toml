@@ -15,3 +15,56 @@ low-speed-limit = 5
 
 # Sparse protocol is already the default in modern Rust
 # No source replacement needed - crates.io works directly
+
+# ═══════════════════════════════════════════════════════════════════════
+# x86-64 performance target features
+# ═══════════════════════════════════════════════════════════════════════
+#
+# These flags tell rustc to emit instructions for the listed extensions
+# *unconditionally* — no runtime CPUID dispatch overhead.  This enables
+# the RustCrypto crates (aes, sha2, aes-gcm, pbkdf2, argon2, etc.) and
+# other SIMD-aware code to inline hardware-accelerated paths.
+#
+# Baseline: x86-64-v3 (Haswell / Zen 1, ~2013–2017+).  This is safe for
+# virtually all desktop/server CPUs manufactured in the last decade.
+# We add crypto extensions (AES-NI, PCLMULQDQ, SHA-NI) on top.
+#
+# If you need to support older CPUs, remove flags or lower to x86-64-v2:
+#   rustflags = ["-C", "target-cpu=x86-64-v2"]
+#
+# For development on your own machine, use target-cpu=native:
+#   rustflags = ["-C", "target-cpu=native"]
+#
+# Affected crates and the extensions they benefit from:
+#
+#   +aes, +pclmulqdq   -> aes-gcm, aes/cbc      (sorng-auth, sorng-vault,
+#                          sorng-storage, sorng-bitwarden, sorng-lastpass,
+#                          sorng-mremoteng, sorng-vnc, sorng-totp)
+#                       -> ring/rustls            (TLS everywhere)
+#   +sha               -> sha2, sha1, pbkdf2,    (25+ crates — 2-5x KDF
+#                          hmac, hkdf              speedup)
+#   +avx, +avx2        -> ed25519-dalek, argon2,  (sorng-auth, sorng-vault,
+#                          zstd, image, base64     sorng-recording)
+#                       -> YUV conversion          (sorng-rdp)
+#   +bmi1, +bmi2       -> RSA/ECC bignum, zstd    (sorng-auth, sorng-ssh,
+#                          match-finding            sorng-recording)
+#   +fma               -> float ops               (LLM inference, graphics)
+#   +sse4.1, +sse4.2   -> openh264 IDCT,          (sorng-rdp)
+#                          CRC32 intrinsics
+#   +adx               -> big-integer multiply    (RSA key gen/signing)
+#   +popcnt, +lzcnt    -> general bit ops         (compression, search)
+#
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+sha,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
+]
+
+[target.x86_64-unknown-linux-gnu]
+rustflags = [
+  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+sha,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
+]
+
+[target.x86_64-apple-darwin]
+rustflags = [
+  "-C", "target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2,+fma,+f16c,+aes,+pclmulqdq,+sha,+bmi1,+bmi2,+adx,+popcnt,+lzcnt",
+]
