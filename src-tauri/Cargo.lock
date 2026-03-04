@@ -198,6 +198,7 @@ dependencies = [
  "sorng-azure",
  "sorng-biometrics",
  "sorng-bitwarden",
+ "sorng-bmc-common",
  "sorng-budibase",
  "sorng-cloud",
  "sorng-collaboration",
@@ -218,10 +219,12 @@ dependencies = [
  "sorng-hyperv",
  "sorng-i18n",
  "sorng-idrac",
+ "sorng-ilo",
  "sorng-jira",
  "sorng-k8s",
  "sorng-keepass",
  "sorng-lastpass",
+ "sorng-lenovo",
  "sorng-letsencrypt",
  "sorng-llm",
  "sorng-mcp",
@@ -258,6 +261,7 @@ dependencies = [
  "sorng-ssh-agent",
  "sorng-ssh-scripts",
  "sorng-storage",
+ "sorng-supermicro",
  "sorng-tailscale",
  "sorng-telegram",
  "sorng-telnet",
@@ -9209,6 +9213,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-bmc-common"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+]
+
+[[package]]
 name = "sorng-budibase"
 version = "0.1.0"
 dependencies = [
@@ -9554,6 +9572,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-ilo"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "futures 0.3.31",
+ "log 0.4.29",
+ "native-tls",
+ "quick-xml 0.31.0",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sorng-bmc-common",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-native-tls",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-jira"
 version = "0.1.0"
 dependencies = [
@@ -9635,6 +9675,27 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio 1.48.0",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-lenovo"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "futures 0.3.31",
+ "log 0.4.29",
+ "native-tls",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sorng-bmc-common",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-native-tls",
  "url",
  "uuid",
 ]
@@ -10371,6 +10432,27 @@ dependencies = [
  "sha2 0.10.9",
  "tauri",
  "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-supermicro"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "futures 0.3.31",
+ "log 0.4.29",
+ "native-tls",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sorng-bmc-common",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-native-tls",
+ "url",
  "uuid",
 ]
 

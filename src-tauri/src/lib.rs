@@ -169,6 +169,15 @@ pub use sorng_proxmox as proxmox;
 // Dell iDRAC management (dedicated crate)
 pub use sorng_idrac as idrac;
 
+// HP iLO management (dedicated crate)
+pub use sorng_ilo as ilo;
+
+// Lenovo XCC/IMM management (dedicated crate)
+pub use sorng_lenovo as lenovo;
+
+// Supermicro BMC management (dedicated crate)
+pub use sorng_supermicro as supermicro;
+
 // MeshCentral (dedicated crate)
 pub use sorng_meshcentral::meshcentral as meshcentral_dedicated;
 
@@ -363,6 +372,9 @@ use hyperv::service::HyperVServiceState;
 use vmware::service::VmwareServiceState;
 use proxmox::service::ProxmoxServiceState;
 use idrac::service::IdracServiceState;
+use ilo::service::IloServiceState;
+use lenovo::service::LenovoServiceState;
+use supermicro::service::SmcServiceState;
 use meshcentral_dedicated::MeshCentralService;
 use mremoteng_dedicated::MremotengService;
 use termserv::service::TermServServiceState;
@@ -479,6 +491,14 @@ pub fn run() {
             .build(),
         )?;
       }
+
+      // ── CPU feature detection & performance logging ────────────────
+      // Run once at startup to log all hardware capabilities.
+      // This helps diagnose performance issues and confirms that
+      // compile-time target features (from .cargo/config.toml) are
+      // actually active.
+      sorng_core::cpu_features::log_all_features();
+
       // Initialize auth service
       let app_dir = app.path().app_data_dir().unwrap();
       let user_store_path = app_dir.join("users.json");
@@ -795,6 +815,18 @@ pub fn run() {
       // Initialize Dell iDRAC service
       let idrac_service: IdracServiceState = Arc::new(Mutex::new(idrac::service::IdracService::new()));
       app.manage(idrac_service);
+
+      // Initialize HP iLO service
+      let ilo_service: IloServiceState = Arc::new(Mutex::new(ilo::service::IloService::new()));
+      app.manage(ilo_service);
+
+      // Initialize Lenovo XCC/IMM service
+      let lenovo_service: LenovoServiceState = Arc::new(Mutex::new(lenovo::service::LenovoService::new()));
+      app.manage(lenovo_service);
+
+      // Initialize Supermicro BMC service
+      let smc_service: SmcServiceState = Arc::new(Mutex::new(supermicro::service::SmcService::new()));
+      app.manage(smc_service);
 
       // Initialize MeshCentral service
       let meshcentral_dedicated_service = MeshCentralService::new();
@@ -3159,6 +3191,214 @@ pub fn run() {
         idrac::commands::idrac_set_attribute,
         // Dell iDRAC commands — Dashboard
         idrac::commands::idrac_get_dashboard,
+        // HP iLO commands — Connection
+        ilo::commands::ilo_connect,
+        ilo::commands::ilo_disconnect,
+        ilo::commands::ilo_check_session,
+        ilo::commands::ilo_is_connected,
+        ilo::commands::ilo_get_config,
+        // HP iLO commands — System
+        ilo::commands::ilo_get_system_info,
+        ilo::commands::ilo_get_ilo_info,
+        ilo::commands::ilo_set_asset_tag,
+        ilo::commands::ilo_set_indicator_led,
+        // HP iLO commands — Power
+        ilo::commands::ilo_power_action,
+        ilo::commands::ilo_get_power_state,
+        ilo::commands::ilo_get_power_metrics,
+        // HP iLO commands — Thermal
+        ilo::commands::ilo_get_thermal_data,
+        ilo::commands::ilo_get_thermal_summary,
+        // HP iLO commands — Hardware
+        ilo::commands::ilo_get_processors,
+        ilo::commands::ilo_get_memory,
+        // HP iLO commands — Storage
+        ilo::commands::ilo_get_storage_controllers,
+        ilo::commands::ilo_get_virtual_disks,
+        ilo::commands::ilo_get_physical_disks,
+        // HP iLO commands — Network
+        ilo::commands::ilo_get_network_adapters,
+        ilo::commands::ilo_get_ilo_network,
+        // HP iLO commands — Firmware
+        ilo::commands::ilo_get_firmware_inventory,
+        // HP iLO commands — Virtual Media
+        ilo::commands::ilo_get_virtual_media_status,
+        ilo::commands::ilo_insert_virtual_media,
+        ilo::commands::ilo_eject_virtual_media,
+        ilo::commands::ilo_set_vm_boot_once,
+        // HP iLO commands — Virtual Console
+        ilo::commands::ilo_get_console_info,
+        ilo::commands::ilo_get_html5_launch_url,
+        // HP iLO commands — Event Log
+        ilo::commands::ilo_get_iml,
+        ilo::commands::ilo_get_ilo_event_log,
+        ilo::commands::ilo_clear_iml,
+        ilo::commands::ilo_clear_ilo_event_log,
+        // HP iLO commands — Users
+        ilo::commands::ilo_get_users,
+        ilo::commands::ilo_create_user,
+        ilo::commands::ilo_update_password,
+        ilo::commands::ilo_delete_user,
+        ilo::commands::ilo_set_user_enabled,
+        // HP iLO commands — BIOS
+        ilo::commands::ilo_get_bios_attributes,
+        ilo::commands::ilo_set_bios_attributes,
+        ilo::commands::ilo_get_boot_config,
+        ilo::commands::ilo_set_boot_override,
+        // HP iLO commands — Certificates
+        ilo::commands::ilo_get_certificate,
+        ilo::commands::ilo_generate_csr,
+        ilo::commands::ilo_import_certificate,
+        // HP iLO commands — Health
+        ilo::commands::ilo_get_health_rollup,
+        ilo::commands::ilo_get_dashboard,
+        // HP iLO commands — License
+        ilo::commands::ilo_get_license,
+        ilo::commands::ilo_activate_license,
+        ilo::commands::ilo_deactivate_license,
+        // HP iLO commands — Security
+        ilo::commands::ilo_get_security_status,
+        ilo::commands::ilo_set_min_tls_version,
+        ilo::commands::ilo_set_ipmi_over_lan,
+        // HP iLO commands — Federation
+        ilo::commands::ilo_get_federation_groups,
+        ilo::commands::ilo_get_federation_peers,
+        ilo::commands::ilo_add_federation_group,
+        ilo::commands::ilo_remove_federation_group,
+        // HP iLO commands — Reset
+        ilo::commands::ilo_reset,
+        // Lenovo XCC commands — Connection
+        lenovo::commands::lenovo_connect,
+        lenovo::commands::lenovo_disconnect,
+        lenovo::commands::lenovo_check_session,
+        lenovo::commands::lenovo_is_connected,
+        lenovo::commands::lenovo_get_config,
+        // Lenovo XCC commands — System
+        lenovo::commands::lenovo_get_system_info,
+        lenovo::commands::lenovo_get_xcc_info,
+        lenovo::commands::lenovo_set_asset_tag,
+        lenovo::commands::lenovo_set_indicator_led,
+        // Lenovo XCC commands — Power
+        lenovo::commands::lenovo_power_action,
+        lenovo::commands::lenovo_get_power_state,
+        lenovo::commands::lenovo_get_power_metrics,
+        // Lenovo XCC commands — Thermal
+        lenovo::commands::lenovo_get_thermal_data,
+        lenovo::commands::lenovo_get_thermal_summary,
+        // Lenovo XCC commands — Hardware
+        lenovo::commands::lenovo_get_processors,
+        lenovo::commands::lenovo_get_memory,
+        // Lenovo XCC commands — Storage
+        lenovo::commands::lenovo_get_storage_controllers,
+        lenovo::commands::lenovo_get_virtual_disks,
+        lenovo::commands::lenovo_get_physical_disks,
+        // Lenovo XCC commands — Network
+        lenovo::commands::lenovo_get_network_adapters,
+        lenovo::commands::lenovo_get_xcc_network,
+        // Lenovo XCC commands — Firmware
+        lenovo::commands::lenovo_get_firmware_inventory,
+        // Lenovo XCC commands — Virtual Media
+        lenovo::commands::lenovo_get_virtual_media_status,
+        lenovo::commands::lenovo_insert_virtual_media,
+        lenovo::commands::lenovo_eject_virtual_media,
+        // Lenovo XCC commands — Console
+        lenovo::commands::lenovo_get_console_info,
+        lenovo::commands::lenovo_get_html5_launch_url,
+        // Lenovo XCC commands — Event Log
+        lenovo::commands::lenovo_get_event_log,
+        lenovo::commands::lenovo_get_audit_log,
+        lenovo::commands::lenovo_clear_event_log,
+        // Lenovo XCC commands — Users
+        lenovo::commands::lenovo_get_users,
+        lenovo::commands::lenovo_create_user,
+        lenovo::commands::lenovo_update_password,
+        lenovo::commands::lenovo_delete_user,
+        // Lenovo XCC commands — BIOS
+        lenovo::commands::lenovo_get_bios_attributes,
+        lenovo::commands::lenovo_set_bios_attributes,
+        lenovo::commands::lenovo_get_boot_config,
+        lenovo::commands::lenovo_set_boot_override,
+        // Lenovo XCC commands — Certificates
+        lenovo::commands::lenovo_get_certificate,
+        lenovo::commands::lenovo_generate_csr,
+        lenovo::commands::lenovo_import_certificate,
+        // Lenovo XCC commands — Health
+        lenovo::commands::lenovo_get_health_rollup,
+        lenovo::commands::lenovo_get_dashboard,
+        // Lenovo XCC commands — License
+        lenovo::commands::lenovo_get_license,
+        // Lenovo XCC commands — OneCLI
+        lenovo::commands::lenovo_onecli_execute,
+        // Lenovo XCC commands — Reset
+        lenovo::commands::lenovo_reset_controller,
+        // Supermicro BMC commands — Connection
+        supermicro::commands::smc_connect,
+        supermicro::commands::smc_disconnect,
+        supermicro::commands::smc_check_session,
+        supermicro::commands::smc_is_connected,
+        supermicro::commands::smc_get_config,
+        // Supermicro BMC commands — System
+        supermicro::commands::smc_get_system_info,
+        supermicro::commands::smc_get_bmc_info,
+        supermicro::commands::smc_set_asset_tag,
+        supermicro::commands::smc_set_indicator_led,
+        // Supermicro BMC commands — Power
+        supermicro::commands::smc_power_action,
+        supermicro::commands::smc_get_power_state,
+        supermicro::commands::smc_get_power_metrics,
+        // Supermicro BMC commands — Thermal
+        supermicro::commands::smc_get_thermal_data,
+        supermicro::commands::smc_get_thermal_summary,
+        // Supermicro BMC commands — Hardware
+        supermicro::commands::smc_get_processors,
+        supermicro::commands::smc_get_memory,
+        // Supermicro BMC commands — Storage
+        supermicro::commands::smc_get_storage_controllers,
+        supermicro::commands::smc_get_virtual_disks,
+        supermicro::commands::smc_get_physical_disks,
+        // Supermicro BMC commands — Network
+        supermicro::commands::smc_get_network_adapters,
+        supermicro::commands::smc_get_bmc_network,
+        // Supermicro BMC commands — Firmware
+        supermicro::commands::smc_get_firmware_inventory,
+        // Supermicro BMC commands — Virtual Media
+        supermicro::commands::smc_get_virtual_media_status,
+        supermicro::commands::smc_insert_virtual_media,
+        supermicro::commands::smc_eject_virtual_media,
+        // Supermicro BMC commands — Console / iKVM
+        supermicro::commands::smc_get_console_info,
+        supermicro::commands::smc_get_html5_ikvm_url,
+        // Supermicro BMC commands — Event Log
+        supermicro::commands::smc_get_event_log,
+        supermicro::commands::smc_get_audit_log,
+        supermicro::commands::smc_clear_event_log,
+        // Supermicro BMC commands — Users
+        supermicro::commands::smc_get_users,
+        supermicro::commands::smc_create_user,
+        supermicro::commands::smc_update_password,
+        supermicro::commands::smc_delete_user,
+        // Supermicro BMC commands — BIOS
+        supermicro::commands::smc_get_bios_attributes,
+        supermicro::commands::smc_set_bios_attributes,
+        supermicro::commands::smc_get_boot_config,
+        supermicro::commands::smc_set_boot_override,
+        // Supermicro BMC commands — Certificates
+        supermicro::commands::smc_get_certificate,
+        supermicro::commands::smc_generate_csr,
+        supermicro::commands::smc_import_certificate,
+        // Supermicro BMC commands — Health
+        supermicro::commands::smc_get_health_rollup,
+        supermicro::commands::smc_get_dashboard,
+        // Supermicro BMC commands — Security
+        supermicro::commands::smc_get_security_status,
+        // Supermicro BMC commands — License
+        supermicro::commands::smc_get_licenses,
+        supermicro::commands::smc_activate_license,
+        // Supermicro BMC commands — Node Manager
+        supermicro::commands::smc_get_node_manager_policies,
+        supermicro::commands::smc_get_node_manager_stats,
+        // Supermicro BMC commands — Reset
+        supermicro::commands::smc_reset_bmc,
         // mRemoteNG commands — Format Detection
         mremoteng_dedicated::mrng_detect_format,
         mremoteng_dedicated::mrng_get_import_formats,

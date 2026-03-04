@@ -85,6 +85,10 @@ members = [
   "crates/sorng-ssh-scripts",
   "crates/sorng-mcp",
   "crates/sorng-snmp",
+  "crates/sorng-bmc-common",
+  "crates/sorng-ilo",
+  "crates/sorng-lenovo",
+  "crates/sorng-supermicro",
 ]
 
 [workspace.dependencies]
@@ -207,6 +211,10 @@ sorng-warpgate = { path = "crates/sorng-warpgate" }
 sorng-ssh-scripts = { path = "crates/sorng-ssh-scripts" }
 sorng-mcp = { path = "crates/sorng-mcp" }
 sorng-snmp = { path = "crates/sorng-snmp" }
+sorng-bmc-common = { path = "crates/sorng-bmc-common" }
+sorng-ilo = { path = "crates/sorng-ilo" }
+sorng-lenovo = { path = "crates/sorng-lenovo" }
+sorng-supermicro = { path = "crates/sorng-supermicro" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
