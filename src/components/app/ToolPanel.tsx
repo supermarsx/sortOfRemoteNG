@@ -10,6 +10,7 @@ import { WOLQuickTool } from '../network/WOLQuickTool';
 import { BulkSSHCommander } from '../ssh/BulkSSHCommander';
 import { ServerStatsPanel } from '../ssh/ServerStatsPanel';
 import { OpksshPanel } from '../ssh/OpksshPanel';
+import { McpServerPanel } from '../ssh/McpServerPanel';
 import { ScriptManager } from '../recording/ScriptManager';
 import { MacroManager } from '../recording/MacroManager';
 import { RecordingManager } from '../recording/RecordingManager';
@@ -31,6 +32,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   bulkSsh: 'Bulk SSH',
   serverStats: 'Server Stats',
   opkssh: 'opkssh',
+  mcpServer: 'MCP Server',
   scriptManager: 'Script Manager',
   macroManager: 'Macros',
   recordingManager: 'Recording Manager',
@@ -88,6 +90,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
       {toolKey === 'bulkSsh' && <BulkSSHCommander isOpen onClose={onClose} />}
       {toolKey === 'serverStats' && <ServerStatsPanel isOpen onClose={onClose} />}
       {toolKey === 'opkssh' && <OpksshPanel isOpen onClose={onClose} />}
+      {toolKey === 'mcpServer' && <McpServerPanel isOpen onClose={onClose} />}
       {toolKey === 'scriptManager' && <ScriptManager isOpen onClose={onClose} />}
       {toolKey === 'macroManager' && <MacroManager isOpen onClose={onClose} />}
       {toolKey === 'recordingManager' && <RecordingManager isOpen onClose={onClose} />}

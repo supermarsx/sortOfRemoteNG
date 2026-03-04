@@ -148,6 +148,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
   showBulkSSHIcon: true,
   showServerStatsIcon: true,
   showOpksshIcon: true,
+  showMcpServerIcon: false,
   showScriptManagerIcon: true,
   showMacroManagerIcon: true,
   showSyncBackupStatusIcon: false,    // Legacy combined - disabled by default
@@ -426,6 +427,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     bulkSsh: 'inherit' as const,
     serverStats: 'inherit' as const,
     opkssh: 'inherit' as const,
+    mcpServer: 'inherit' as const,
     internalProxy: 'inherit' as const,
     proxyChain: 'inherit' as const,
     wol: 'inherit' as const,

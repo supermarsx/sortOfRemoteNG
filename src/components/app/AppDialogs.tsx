@@ -20,6 +20,7 @@ import { WOLQuickTool } from "../network/WOLQuickTool";
 import { BulkSSHCommander } from "../ssh/BulkSSHCommander";
 import { ServerStatsPanel } from "../ssh/ServerStatsPanel";
 import { OpksshPanel } from "../ssh/OpksshPanel";
+import { McpServerPanel } from "../ssh/McpServerPanel";
 import { ScriptManager } from "../recording/ScriptManager";
 import { MacroManager } from "../recording/MacroManager";
 import { RecordingManager } from "../recording/RecordingManager";
@@ -45,6 +46,7 @@ interface AppDialogsProps {
   showBulkSSH: boolean;
   showServerStats: boolean;
   showOpkssh: boolean;
+  showMcpServer: boolean;
   showScriptManager: boolean;
   showMacroManager: boolean;
   showRecordingManager: boolean;
@@ -65,6 +67,7 @@ interface AppDialogsProps {
   setShowBulkSSH: (v: boolean) => void;
   setShowServerStats: (v: boolean) => void;
   setShowOpkssh: (v: boolean) => void;
+  setShowMcpServer: (v: boolean) => void;
   setShowScriptManager: (v: boolean) => void;
   setShowMacroManager: (v: boolean) => void;
   setShowRecordingManager: (v: boolean) => void;
@@ -131,6 +134,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     showBulkSSH,
     showServerStats,
     showOpkssh,
+    showMcpServer,
     showScriptManager,
     showMacroManager,
     showRecordingManager,
@@ -151,6 +155,7 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
     setShowBulkSSH,
     setShowServerStats,
     setShowOpkssh,
+    setShowMcpServer,
     setShowScriptManager,
     setShowMacroManager,
     setShowRecordingManager,
@@ -352,6 +357,13 @@ export const AppDialogs: React.FC<AppDialogsProps> = (props) => {
         <OpksshPanel
           isOpen={showOpkssh}
           onClose={() => setShowOpkssh(false)}
+        />
+      )}
+
+      {getToolMode(appSettings, "mcpServer") === "popup" && (
+        <McpServerPanel
+          isOpen={showMcpServer}
+          onClose={() => setShowMcpServer(false)}
         />
       )}
 

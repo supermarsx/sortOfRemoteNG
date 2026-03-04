@@ -52,6 +52,7 @@ interface AppToolbarProps {
   setShowBulkSSH: (v: boolean) => void;
   setShowServerStats: (v: boolean) => void;
   setShowOpkssh: (v: boolean) => void;
+  setShowMcpServer: (v: boolean) => void;
   setShowScriptManager: (v: boolean) => void;
   setShowMacroManager: (v: boolean) => void;
   setShowRecordingManager: (v: boolean) => void;
@@ -87,6 +88,7 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
   setShowBulkSSH,
   setShowServerStats,
   setShowOpkssh,
+  setShowMcpServer,
   setShowScriptManager,
   setShowMacroManager,
   setShowRecordingManager,
@@ -292,6 +294,15 @@ export const AppToolbar: React.FC<AppToolbarProps> = ({
               title={t('opkssh.title', 'opkssh')}
             >
               <Shield size={14} />
+            </button>
+          )}
+          {appSettings.showMcpServerIcon && (
+            <button
+              onClick={() => setShowMcpServer(true)}
+              className="app-bar-button p-2"
+              title={t('mcpServer.title', 'MCP Server')}
+            >
+              <Server size={14} />
             </button>
           )}
           {appSettings.showScriptManagerIcon && (

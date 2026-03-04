@@ -72,6 +72,7 @@ const AppContent: React.FC = () => {
   const [showBulkSSH, setShowBulkSSH] = useState(false);
   const [showServerStats, setShowServerStats] = useState(false);
   const [showOpkssh, setShowOpkssh] = useState(false);
+  const [showMcpServer, setShowMcpServer] = useState(false);
   const [showScriptManager, setShowScriptManager] = useState(false);
   const [showMacroManager, setShowMacroManager] = useState(false);
   const [showRecordingManager, setShowRecordingManager] = useState(false);
@@ -184,6 +185,7 @@ const AppContent: React.FC = () => {
     bulkSsh: setShowBulkSSH,
     serverStats: setShowServerStats,
     opkssh: setShowOpkssh,
+    mcpServer: setShowMcpServer,
     scriptManager: setShowScriptManager,
     macroManager: setShowMacroManager,
     recordingManager: setShowRecordingManager,
@@ -232,7 +234,7 @@ const AppContent: React.FC = () => {
   if (toolShowSetters.current === null) {
     const keys: ToolKey[] = [
       'performanceMonitor', 'actionLog', 'shortcutManager', 'proxyChain',
-      'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'scriptManager', 'macroManager', 'recordingManager',
+      'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer', 'scriptManager', 'macroManager', 'recordingManager',
     ];
     const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
     for (const key of keys) result[key] = makeToolSetter(key);
@@ -1095,6 +1097,8 @@ const AppContent: React.FC = () => {
         setShowWol={toolShowSetters.current.wol}
         setShowBulkSSH={toolShowSetters.current.bulkSsh}
         setShowServerStats={toolShowSetters.current.serverStats}
+        setShowOpkssh={toolShowSetters.current.opkssh}
+        setShowMcpServer={toolShowSetters.current.mcpServer}
         setShowScriptManager={toolShowSetters.current.scriptManager}
         setShowMacroManager={toolShowSetters.current.macroManager}
         setShowRecordingManager={toolShowSetters.current.recordingManager}
@@ -1229,6 +1233,7 @@ const AppContent: React.FC = () => {
         showBulkSSH={showBulkSSH}
         showServerStats={showServerStats}
         showOpkssh={showOpkssh}
+        showMcpServer={showMcpServer}
         showScriptManager={showScriptManager}
         showMacroManager={showMacroManager}
         showRecordingManager={showRecordingManager}
@@ -1249,6 +1254,7 @@ const AppContent: React.FC = () => {
         setShowBulkSSH={toolShowSetters.current.bulkSsh}
         setShowServerStats={toolShowSetters.current.serverStats}
         setShowOpkssh={toolShowSetters.current.opkssh}
+        setShowMcpServer={toolShowSetters.current.mcpServer}
         setShowScriptManager={toolShowSetters.current.scriptManager}
         setShowMacroManager={toolShowSetters.current.macroManager}
         setShowRecordingManager={toolShowSetters.current.recordingManager}
