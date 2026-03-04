@@ -41,6 +41,7 @@ members = [
   "crates/sorng-openvpn",
   "crates/sorng-vmware",
   "crates/sorng-proxmox",
+  "crates/sorng-idrac",
   "crates/sorng-totp",
   "crates/sorng-mremoteng",
   "crates/sorng-termserv",
@@ -82,6 +83,8 @@ members = [
   "crates/sorng-ssh-agent",
   "crates/sorng-warpgate",
   "crates/sorng-ssh-scripts",
+  "crates/sorng-mcp",
+  "crates/sorng-snmp",
 ]
 
 [workspace.dependencies]
@@ -159,6 +162,7 @@ sorng-meshcentral = { path = "crates/sorng-meshcentral" }
 sorng-openvpn = { path = "crates/sorng-openvpn" }
 sorng-vmware = { path = "crates/sorng-vmware" }
 sorng-proxmox = { path = "crates/sorng-proxmox" }
+sorng-idrac = { path = "crates/sorng-idrac" }
 sorng-totp = { path = "crates/sorng-totp" }
 sorng-mremoteng = { path = "crates/sorng-mremoteng" }
 sorng-termserv = { path = "crates/sorng-termserv" }
@@ -201,6 +205,8 @@ sorng-ssh-agent = { path = "crates/sorng-ssh-agent" }
 sorng-opkssh = { path = "crates/sorng-opkssh" }
 sorng-warpgate = { path = "crates/sorng-warpgate" }
 sorng-ssh-scripts = { path = "crates/sorng-ssh-scripts" }
+sorng-mcp = { path = "crates/sorng-mcp" }
+sorng-snmp = { path = "crates/sorng-snmp" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"

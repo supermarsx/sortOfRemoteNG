@@ -166,6 +166,9 @@ pub use sorng_vmware as vmware;
 // Proxmox VE (dedicated crate)
 pub use sorng_proxmox as proxmox;
 
+// Dell iDRAC management (dedicated crate)
+pub use sorng_idrac as idrac;
+
 // MeshCentral (dedicated crate)
 pub use sorng_meshcentral::meshcentral as meshcentral_dedicated;
 
@@ -274,6 +277,12 @@ pub use sorng_warpgate as warpgate;
 // SSH Scripts — action-based & event-based script execution: login/logout scripts, timed/cron/interval scripts, output-match scripts, idle scripts, file-watch scripts, script chains, conditions, variables, history (dedicated crate)
 pub use sorng_ssh_scripts as ssh_scripts;
 
+// MCP Server — native Model Context Protocol server for AI assistant integration (dedicated crate, disabled by default)
+pub use sorng_mcp as mcp_server;
+
+// SNMP — SNMPv1/v2c/v3 client, walk, table, trap receiver, MIB database, discovery, monitoring (dedicated crate)
+pub use sorng_snmp as snmp;
+
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
 
@@ -353,6 +362,7 @@ use dashlane::service::DashlaneServiceState;
 use hyperv::service::HyperVServiceState;
 use vmware::service::VmwareServiceState;
 use proxmox::service::ProxmoxServiceState;
+use idrac::service::IdracServiceState;
 use meshcentral_dedicated::MeshCentralService;
 use mremoteng_dedicated::MremotengService;
 use termserv::service::TermServServiceState;
@@ -380,6 +390,8 @@ use letsencrypt::service::LetsEncryptServiceState;
 use ssh_agent::types::SshAgentServiceState;
 use opkssh::service::OpksshServiceState;
 use ssh_scripts::engine::SshScriptEngineState;
+use mcp_server::McpServiceState as McpServerServiceState;
+use snmp::service::SnmpServiceState;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -780,6 +792,10 @@ pub fn run() {
       let proxmox_service: ProxmoxServiceState = Arc::new(Mutex::new(proxmox::service::ProxmoxService::new()));
       app.manage(proxmox_service);
 
+      // Initialize Dell iDRAC service
+      let idrac_service: IdracServiceState = Arc::new(Mutex::new(idrac::service::IdracService::new()));
+      app.manage(idrac_service);
+
       // Initialize MeshCentral service
       let meshcentral_dedicated_service = MeshCentralService::new();
       app.manage(meshcentral_dedicated_service);
@@ -898,9 +914,17 @@ pub fn run() {
       let ssh_scripts_state: SshScriptEngineState = ssh_scripts::engine::SshScriptEngine::new_state();
       app.manage(ssh_scripts_state);
 
+      // Initialize MCP server (disabled by default)
+      let mcp_state: McpServerServiceState = mcp_server::service::create_service_state();
+      app.manage(mcp_state);
+
       // Initialize SSH Agent service
       let ssh_agent_state: SshAgentServiceState = Arc::new(Mutex::new(ssh_agent::service::SshAgentService::new()));
       app.manage(ssh_agent_state);
+
+      // Initialize SNMP service
+      let snmp_state: SnmpServiceState = Arc::new(Mutex::new(snmp::service::SnmpService::new()));
+      app.manage(snmp_state);
 
       // Initialize i18n engine with hot-reload
       let locales_dir = app.path().resource_dir()
@@ -3027,6 +3051,114 @@ pub fn run() {
         proxmox::commands::proxmox_download_appliance,
         proxmox::commands::proxmox_list_isos,
         proxmox::commands::proxmox_list_container_templates,
+        // Dell iDRAC commands — Connection
+        idrac::commands::idrac_connect,
+        idrac::commands::idrac_disconnect,
+        idrac::commands::idrac_check_session,
+        idrac::commands::idrac_is_connected,
+        idrac::commands::idrac_get_config,
+        // Dell iDRAC commands — System
+        idrac::commands::idrac_get_system_info,
+        idrac::commands::idrac_get_idrac_info,
+        idrac::commands::idrac_set_asset_tag,
+        idrac::commands::idrac_set_indicator_led,
+        // Dell iDRAC commands — Power
+        idrac::commands::idrac_power_action,
+        idrac::commands::idrac_get_power_state,
+        idrac::commands::idrac_get_power_metrics,
+        idrac::commands::idrac_list_power_supplies,
+        idrac::commands::idrac_set_power_cap,
+        // Dell iDRAC commands — Thermal
+        idrac::commands::idrac_get_thermal_data,
+        idrac::commands::idrac_get_thermal_summary,
+        idrac::commands::idrac_set_fan_offset,
+        // Dell iDRAC commands — Hardware
+        idrac::commands::idrac_list_processors,
+        idrac::commands::idrac_list_memory,
+        idrac::commands::idrac_list_pcie_devices,
+        idrac::commands::idrac_get_total_memory,
+        idrac::commands::idrac_get_processor_count,
+        // Dell iDRAC commands — Storage
+        idrac::commands::idrac_list_storage_controllers,
+        idrac::commands::idrac_list_virtual_disks,
+        idrac::commands::idrac_list_physical_disks,
+        idrac::commands::idrac_list_enclosures,
+        idrac::commands::idrac_create_virtual_disk,
+        idrac::commands::idrac_delete_virtual_disk,
+        idrac::commands::idrac_assign_hotspare,
+        idrac::commands::idrac_initialize_virtual_disk,
+        // Dell iDRAC commands — Network
+        idrac::commands::idrac_list_network_adapters,
+        idrac::commands::idrac_list_network_ports,
+        idrac::commands::idrac_get_network_config,
+        idrac::commands::idrac_update_network_config,
+        // Dell iDRAC commands — Firmware
+        idrac::commands::idrac_list_firmware,
+        idrac::commands::idrac_update_firmware,
+        idrac::commands::idrac_get_component_version,
+        // Dell iDRAC commands — Lifecycle
+        idrac::commands::idrac_list_jobs,
+        idrac::commands::idrac_get_job,
+        idrac::commands::idrac_delete_job,
+        idrac::commands::idrac_purge_job_queue,
+        idrac::commands::idrac_export_scp,
+        idrac::commands::idrac_import_scp,
+        idrac::commands::idrac_get_lc_status,
+        idrac::commands::idrac_wait_for_job,
+        // Dell iDRAC commands — Virtual Media
+        idrac::commands::idrac_list_virtual_media,
+        idrac::commands::idrac_mount_virtual_media,
+        idrac::commands::idrac_unmount_virtual_media,
+        idrac::commands::idrac_boot_from_virtual_cd,
+        // Dell iDRAC commands — Virtual Console
+        idrac::commands::idrac_get_console_info,
+        idrac::commands::idrac_set_console_enabled,
+        idrac::commands::idrac_set_console_type,
+        idrac::commands::idrac_set_vnc_enabled,
+        idrac::commands::idrac_set_vnc_password,
+        // Dell iDRAC commands — Event Log
+        idrac::commands::idrac_get_sel_entries,
+        idrac::commands::idrac_get_lc_log_entries,
+        idrac::commands::idrac_clear_sel,
+        idrac::commands::idrac_clear_lc_log,
+        // Dell iDRAC commands — Users
+        idrac::commands::idrac_list_users,
+        idrac::commands::idrac_create_or_update_user,
+        idrac::commands::idrac_delete_user,
+        idrac::commands::idrac_unlock_user,
+        idrac::commands::idrac_change_user_password,
+        idrac::commands::idrac_get_ldap_config,
+        idrac::commands::idrac_get_ad_config,
+        // Dell iDRAC commands — BIOS
+        idrac::commands::idrac_get_bios_attributes,
+        idrac::commands::idrac_get_bios_attribute,
+        idrac::commands::idrac_set_bios_attributes,
+        idrac::commands::idrac_get_boot_order,
+        idrac::commands::idrac_set_boot_order,
+        idrac::commands::idrac_set_boot_once,
+        idrac::commands::idrac_set_boot_mode,
+        // Dell iDRAC commands — Certificates
+        idrac::commands::idrac_list_certificates,
+        idrac::commands::idrac_generate_csr,
+        idrac::commands::idrac_import_certificate,
+        idrac::commands::idrac_delete_certificate,
+        idrac::commands::idrac_replace_ssl_certificate,
+        // Dell iDRAC commands — Health
+        idrac::commands::idrac_get_health_rollup,
+        idrac::commands::idrac_get_component_health,
+        idrac::commands::idrac_is_healthy,
+        // Dell iDRAC commands — Telemetry
+        idrac::commands::idrac_get_power_telemetry,
+        idrac::commands::idrac_get_thermal_telemetry,
+        idrac::commands::idrac_list_telemetry_reports,
+        idrac::commands::idrac_get_telemetry_report,
+        // Dell iDRAC commands — RACADM
+        idrac::commands::idrac_racadm_execute,
+        idrac::commands::idrac_reset,
+        idrac::commands::idrac_get_attribute,
+        idrac::commands::idrac_set_attribute,
+        // Dell iDRAC commands — Dashboard
+        idrac::commands::idrac_get_dashboard,
         // mRemoteNG commands — Format Detection
         mremoteng_dedicated::mrng_detect_format,
         mremoteng_dedicated::mrng_get_import_formats,
@@ -4565,6 +4697,65 @@ pub fn run() {
         ssh_scripts::commands::ssh_scripts_bulk_enable,
         ssh_scripts::commands::ssh_scripts_bulk_delete,
         ssh_scripts::commands::ssh_scripts_get_summary,
+        // MCP Server commands
+        mcp_server::commands::mcp_get_status,
+        mcp_server::commands::mcp_start_server,
+        mcp_server::commands::mcp_stop_server,
+        mcp_server::commands::mcp_get_config,
+        mcp_server::commands::mcp_update_config,
+        mcp_server::commands::mcp_generate_api_key,
+        mcp_server::commands::mcp_list_sessions,
+        mcp_server::commands::mcp_disconnect_session,
+        mcp_server::commands::mcp_get_metrics,
+        mcp_server::commands::mcp_get_tools,
+        mcp_server::commands::mcp_get_resources,
+        mcp_server::commands::mcp_get_prompts,
+        mcp_server::commands::mcp_get_logs,
+        mcp_server::commands::mcp_get_events,
+        mcp_server::commands::mcp_get_tool_call_logs,
+        mcp_server::commands::mcp_clear_logs,
+        mcp_server::commands::mcp_reset_metrics,
+        mcp_server::commands::mcp_handle_request,
+        // SNMP commands
+        snmp::commands::snmp_get,
+        snmp::commands::snmp_get_next,
+        snmp::commands::snmp_get_bulk,
+        snmp::commands::snmp_set_value,
+        snmp::commands::snmp_walk,
+        snmp::commands::snmp_get_table,
+        snmp::commands::snmp_get_if_table,
+        snmp::commands::snmp_get_system_info,
+        snmp::commands::snmp_get_interfaces,
+        snmp::commands::snmp_discover,
+        snmp::commands::snmp_start_trap_receiver,
+        snmp::commands::snmp_stop_trap_receiver,
+        snmp::commands::snmp_get_trap_receiver_status,
+        snmp::commands::snmp_get_traps,
+        snmp::commands::snmp_clear_traps,
+        snmp::commands::snmp_mib_resolve_oid,
+        snmp::commands::snmp_mib_resolve_name,
+        snmp::commands::snmp_mib_search,
+        snmp::commands::snmp_mib_load_text,
+        snmp::commands::snmp_mib_get_subtree,
+        snmp::commands::snmp_add_monitor,
+        snmp::commands::snmp_remove_monitor,
+        snmp::commands::snmp_start_monitor,
+        snmp::commands::snmp_stop_monitor,
+        snmp::commands::snmp_get_monitor_alerts,
+        snmp::commands::snmp_acknowledge_alert,
+        snmp::commands::snmp_clear_alerts,
+        snmp::commands::snmp_add_target,
+        snmp::commands::snmp_remove_target,
+        snmp::commands::snmp_list_targets,
+        snmp::commands::snmp_add_usm_user,
+        snmp::commands::snmp_remove_usm_user,
+        snmp::commands::snmp_list_usm_users,
+        snmp::commands::snmp_add_device,
+        snmp::commands::snmp_remove_device,
+        snmp::commands::snmp_list_devices,
+        snmp::commands::snmp_get_service_status,
+        snmp::commands::snmp_bulk_get,
+        snmp::commands::snmp_bulk_walk,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

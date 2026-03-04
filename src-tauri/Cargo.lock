@@ -217,12 +217,14 @@ dependencies = [
  "sorng-gpo",
  "sorng-hyperv",
  "sorng-i18n",
+ "sorng-idrac",
  "sorng-jira",
  "sorng-k8s",
  "sorng-keepass",
  "sorng-lastpass",
  "sorng-letsencrypt",
  "sorng-llm",
+ "sorng-mcp",
  "sorng-meshcentral",
  "sorng-mongodb",
  "sorng-mremoteng",
@@ -250,6 +252,7 @@ dependencies = [
  "sorng-serial",
  "sorng-sftp",
  "sorng-smtp",
+ "sorng-snmp",
  "sorng-sqlite",
  "sorng-ssh",
  "sorng-ssh-agent",
@@ -9530,6 +9533,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-idrac"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.21.7",
+ "chrono",
+ "futures 0.3.31",
+ "log 0.4.29",
+ "native-tls",
+ "quick-xml 0.31.0",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-native-tls",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-jira"
 version = "0.1.0"
 dependencies = [
@@ -9653,6 +9677,19 @@ dependencies = [
  "tauri",
  "tokio 1.48.0",
  "tokio-stream",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-mcp"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
  "uuid",
 ]
 
@@ -10216,6 +10253,23 @@ dependencies = [
  "trust-dns-resolver",
  "uuid",
  "webpki-roots 0.26.11",
+]
+
+[[package]]
+name = "sorng-snmp"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
 ]
 
 [[package]]
