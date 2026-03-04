@@ -703,5 +703,646 @@
       "empty": "No Audit Entries",
       "emptyDesc": "Audit entries will appear here as agent operations occur."
     }
+  },
+  "ilo": {
+    "title": "HP iLO Manager",
+    "tabs": {
+      "dashboard": "Dashboard",
+      "power": "Power",
+      "thermal": "Thermal",
+      "hardware": "Hardware",
+      "storage": "Storage",
+      "network": "Network",
+      "firmware": "Firmware",
+      "virtualMedia": "Virtual Media",
+      "console": "Remote Console",
+      "eventLogs": "Event Logs",
+      "users": "Users",
+      "bios": "BIOS/UEFI",
+      "certificates": "Certificates",
+      "license": "License",
+      "security": "Security",
+      "federation": "Federation"
+    },
+    "connection": {
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "host": "iLO Host / IP",
+      "port": "Port",
+      "username": "Username",
+      "password": "Password",
+      "generation": "iLO Generation",
+      "autoDetect": "Auto-detect",
+      "protocol": "Protocol",
+      "insecure": "Skip TLS verification",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "connecting": "Connecting..."
+    },
+    "system": {
+      "title": "System Information",
+      "model": "Server Model",
+      "serial": "Serial Number",
+      "bios": "BIOS Version",
+      "hostname": "Hostname",
+      "powerState": "Power State",
+      "assetTag": "Asset Tag",
+      "memory": "Total Memory",
+      "processors": "Processors"
+    },
+    "iloInfo": {
+      "title": "iLO Information",
+      "generation": "Generation",
+      "firmware": "Firmware Version",
+      "firmwareDate": "Firmware Date",
+      "license": "License Type",
+      "fqdn": "FQDN",
+      "uuid": "UUID"
+    },
+    "power": {
+      "title": "Power Management",
+      "state": "Power State",
+      "on": "Power On",
+      "off": "Power Off",
+      "gracefulShutdown": "Graceful Shutdown",
+      "forceOff": "Force Off",
+      "restart": "Restart",
+      "forceRestart": "Force Restart",
+      "cycle": "Power Cycle",
+      "nmi": "NMI (Non-Maskable Interrupt)",
+      "consumption": "Power Consumption",
+      "supplies": "Power Supplies",
+      "current": "Current",
+      "average": "Average",
+      "minimum": "Minimum",
+      "maximum": "Maximum"
+    },
+    "thermal": {
+      "title": "Thermal Status",
+      "temperatures": "Temperatures",
+      "fans": "Fans",
+      "ambient": "Ambient",
+      "cpuMax": "CPU Max",
+      "alerts": "Thermal Alerts",
+      "summary": "Thermal Summary"
+    },
+    "hardware": {
+      "title": "Hardware Inventory",
+      "processors": "Processors",
+      "memory": "Memory DIMMs",
+      "cores": "Cores",
+      "threads": "Threads",
+      "speed": "Speed",
+      "capacity": "Capacity",
+      "type": "Type"
+    },
+    "storage": {
+      "title": "Storage",
+      "controllers": "Storage Controllers",
+      "virtualDisks": "Logical Drives",
+      "physicalDisks": "Physical Drives",
+      "raidLevel": "RAID Level",
+      "mediaType": "Media Type",
+      "protocol": "Interface"
+    },
+    "network": {
+      "title": "Network",
+      "adapters": "Network Adapters",
+      "iloNetwork": "iLO Network Interface",
+      "macAddress": "MAC Address"
+    },
+    "firmware": {
+      "title": "Firmware Inventory",
+      "version": "Version",
+      "updateable": "Updateable"
+    },
+    "virtualMedia": {
+      "title": "Virtual Media",
+      "status": "Status",
+      "mount": "Mount Image",
+      "eject": "Eject",
+      "bootOnce": "Boot from Virtual CD Once",
+      "imageUrl": "Image URL",
+      "inserted": "Inserted",
+      "notInserted": "Not Inserted"
+    },
+    "console": {
+      "title": "Remote Console",
+      "html5": "HTML5 Console",
+      "java": "Java IRC",
+      "dotnet": ".NET IRC",
+      "launch": "Launch Console",
+      "availableTypes": "Available Console Types",
+      "notSupported": "Console not supported on this iLO generation"
+    },
+    "eventLogs": {
+      "title": "Event Logs",
+      "iml": "Integrated Management Log",
+      "iloLog": "iLO Event Log",
+      "clear": "Clear Log",
+      "severity": "Severity",
+      "timestamp": "Timestamp",
+      "message": "Message",
+      "empty": "No log entries"
+    },
+    "users": {
+      "title": "User Accounts",
+      "username": "Username",
+      "role": "Role",
+      "enabled": "Enabled",
+      "locked": "Locked",
+      "create": "Create User",
+      "delete": "Delete User",
+      "changePassword": "Change Password"
+    },
+    "bios": {
+      "title": "BIOS/UEFI Configuration",
+      "attributes": "BIOS Attributes",
+      "bootOrder": "Boot Order",
+      "bootOverride": "One-Time Boot Override",
+      "apply": "Apply Changes",
+      "pending": "Changes pending — reboot required"
+    },
+    "certificates": {
+      "title": "Certificate Management",
+      "current": "Current Certificate",
+      "issuer": "Issuer",
+      "subject": "Subject",
+      "validFrom": "Valid From",
+      "validTo": "Valid To",
+      "generateCsr": "Generate CSR",
+      "importCert": "Import Certificate"
+    },
+    "license": {
+      "title": "License Management",
+      "tier": "License Tier",
+      "key": "License Key",
+      "expiration": "Expiration",
+      "activate": "Activate License",
+      "deactivate": "Deactivate",
+      "standard": "Standard (built-in)",
+      "advanced": "iLO Advanced"
+    },
+    "security": {
+      "title": "Security Status",
+      "overall": "Overall Status",
+      "risks": "Security Risks",
+      "riskCount": "Risk Count",
+      "tlsVersion": "TLS Version",
+      "ipmiOverLan": "IPMI over LAN",
+      "sshEnabled": "SSH Enabled",
+      "defaultPassword": "Default Password In Use",
+      "setTls": "Set Minimum TLS Version"
+    },
+    "federation": {
+      "title": "iLO Federation",
+      "groups": "Federation Groups",
+      "peers": "Discovered Peers",
+      "addGroup": "Add Group",
+      "removeGroup": "Remove Group",
+      "groupName": "Group Name",
+      "groupKey": "Group Key",
+      "noPeers": "No peers discovered"
+    },
+    "health": {
+      "title": "Health Status",
+      "overall": "Overall Health",
+      "healthy": "Healthy",
+      "warning": "Warning",
+      "critical": "Critical",
+      "components": "Component Status"
+    },
+    "actions": {
+      "resetIlo": "Reset iLO",
+      "resetIloConfirm": "Are you sure you want to reset the iLO processor? This will temporarily disconnect the management interface.",
+      "refresh": "Refresh"
+    },
+    "generation": {
+      "ilo1": "iLO 1 (ProLiant G1–G4)",
+      "ilo2": "iLO 2 (ProLiant G5–G6)",
+      "ilo3": "iLO 3 (ProLiant G7)",
+      "ilo4": "iLO 4 (Gen8–Gen9)",
+      "ilo5": "iLO 5 (Gen10/Gen10+)",
+      "ilo6": "iLO 6 (Gen11)",
+      "ilo7": "iLO 7 (Gen12)"
+    }
+  },
+  "lenovo": {
+    "title": "Lenovo XCC Manager",
+    "tabs": {
+      "dashboard": "Dashboard",
+      "power": "Power",
+      "thermal": "Thermal",
+      "hardware": "Hardware",
+      "storage": "Storage",
+      "network": "Network",
+      "firmware": "Firmware",
+      "virtualMedia": "Virtual Media",
+      "console": "Remote Console",
+      "eventLogs": "Event Logs",
+      "users": "Users",
+      "bios": "BIOS/UEFI",
+      "certificates": "Certificates",
+      "license": "License",
+      "security": "Security",
+      "onecli": "OneCLI"
+    },
+    "connection": {
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "host": "XCC Host / IP",
+      "port": "Port",
+      "username": "Username",
+      "password": "Password",
+      "generation": "XCC Generation",
+      "autoDetect": "Auto-detect",
+      "protocol": "Protocol",
+      "insecure": "Skip TLS verification",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "connecting": "Connecting..."
+    },
+    "system": {
+      "title": "System Information",
+      "model": "Server Model",
+      "serial": "Serial Number",
+      "bios": "BIOS Version",
+      "hostname": "Hostname",
+      "powerState": "Power State",
+      "assetTag": "Asset Tag",
+      "memory": "Total Memory",
+      "processors": "Processors"
+    },
+    "xccInfo": {
+      "title": "XCC Information",
+      "generation": "Generation",
+      "firmware": "Firmware Version",
+      "firmwareDate": "Firmware Date",
+      "license": "License Type",
+      "fqdn": "FQDN",
+      "uuid": "UUID"
+    },
+    "power": {
+      "title": "Power Management",
+      "state": "Power State",
+      "on": "Power On",
+      "off": "Power Off",
+      "gracefulShutdown": "Graceful Shutdown",
+      "forceOff": "Force Off",
+      "restart": "Restart",
+      "forceRestart": "Force Restart",
+      "cycle": "Power Cycle",
+      "nmi": "NMI (Non-Maskable Interrupt)",
+      "consumption": "Power Consumption",
+      "supplies": "Power Supplies",
+      "current": "Current",
+      "average": "Average",
+      "minimum": "Minimum",
+      "maximum": "Maximum"
+    },
+    "thermal": {
+      "title": "Thermal Status",
+      "temperatures": "Temperatures",
+      "fans": "Fans",
+      "ambient": "Ambient",
+      "cpuMax": "CPU Max",
+      "alerts": "Thermal Alerts",
+      "summary": "Thermal Summary"
+    },
+    "hardware": {
+      "title": "Hardware Inventory",
+      "processors": "Processors",
+      "memory": "Memory DIMMs",
+      "cores": "Cores",
+      "threads": "Threads",
+      "speed": "Speed",
+      "capacity": "Capacity",
+      "type": "Type"
+    },
+    "storage": {
+      "title": "Storage",
+      "controllers": "Storage Controllers",
+      "virtualDisks": "Logical Drives",
+      "physicalDisks": "Physical Drives",
+      "raidLevel": "RAID Level",
+      "mediaType": "Media Type",
+      "protocol": "Interface"
+    },
+    "network": {
+      "title": "Network",
+      "adapters": "Network Adapters",
+      "xccNetwork": "XCC Network Interface",
+      "macAddress": "MAC Address"
+    },
+    "firmware": {
+      "title": "Firmware Inventory",
+      "version": "Version",
+      "updateable": "Updateable"
+    },
+    "virtualMedia": {
+      "title": "Virtual Media",
+      "status": "Status",
+      "mount": "Mount Image",
+      "eject": "Eject",
+      "imageUrl": "Image URL",
+      "inserted": "Inserted",
+      "notInserted": "Not Inserted"
+    },
+    "console": {
+      "title": "Remote Console",
+      "html5": "HTML5 Console",
+      "java": "Java Console",
+      "launch": "Launch Console",
+      "availableTypes": "Available Console Types",
+      "notSupported": "Console not supported on this XCC generation"
+    },
+    "eventLogs": {
+      "title": "Event Logs",
+      "systemLog": "System Event Log",
+      "auditLog": "Audit Log",
+      "clear": "Clear Log",
+      "severity": "Severity",
+      "timestamp": "Timestamp",
+      "message": "Message",
+      "empty": "No log entries"
+    },
+    "users": {
+      "title": "User Accounts",
+      "username": "Username",
+      "role": "Role",
+      "enabled": "Enabled",
+      "create": "Create User",
+      "delete": "Delete User",
+      "changePassword": "Change Password"
+    },
+    "bios": {
+      "title": "BIOS/UEFI Configuration",
+      "attributes": "BIOS Attributes",
+      "bootOrder": "Boot Order",
+      "bootOverride": "One-Time Boot Override",
+      "apply": "Apply Changes",
+      "pending": "Changes pending — reboot required"
+    },
+    "certificates": {
+      "title": "Certificate Management",
+      "current": "Current Certificate",
+      "issuer": "Issuer",
+      "subject": "Subject",
+      "validFrom": "Valid From",
+      "validTo": "Valid To",
+      "generateCsr": "Generate CSR",
+      "importCert": "Import Certificate"
+    },
+    "license": {
+      "title": "License Management",
+      "tier": "License Tier",
+      "key": "License Key",
+      "expiration": "Expiration",
+      "activate": "Activate License",
+      "standard": "Standard",
+      "advanced": "XCC Advanced",
+      "enterprise": "XCC Enterprise"
+    },
+    "security": {
+      "title": "Security Status",
+      "overall": "Overall Status",
+      "risks": "Security Risks",
+      "riskCount": "Risk Count"
+    },
+    "health": {
+      "title": "Health Status",
+      "overall": "Overall Health",
+      "healthy": "Healthy",
+      "warning": "Warning",
+      "critical": "Critical",
+      "components": "Component Status"
+    },
+    "actions": {
+      "resetXcc": "Reset XCC",
+      "resetXccConfirm": "Are you sure you want to reset the XCC controller? This will temporarily disconnect the management interface.",
+      "refresh": "Refresh"
+    },
+    "generation": {
+      "xcc2": "XCC2 (ThinkSystem V3)",
+      "xcc": "XCC (ThinkSystem V1/V2)",
+      "imm2": "IMM2 (System x M5/M6)",
+      "imm": "IMM (System x M4)"
+    }
+  },
+  "supermicro": {
+    "title": "Supermicro BMC Manager",
+    "tabs": {
+      "dashboard": "Dashboard",
+      "power": "Power",
+      "thermal": "Thermal",
+      "hardware": "Hardware",
+      "storage": "Storage",
+      "network": "Network",
+      "firmware": "Firmware",
+      "virtualMedia": "Virtual Media",
+      "console": "Remote Console",
+      "eventLogs": "Event Logs",
+      "users": "Users",
+      "bios": "BIOS/UEFI",
+      "certificates": "Certificates",
+      "license": "License",
+      "security": "Security",
+      "nodeManager": "Node Manager"
+    },
+    "connection": {
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "host": "BMC Host / IP",
+      "port": "Port",
+      "username": "Username",
+      "password": "Password",
+      "platform": "Platform Generation",
+      "autoDetect": "Auto-detect",
+      "protocol": "Protocol",
+      "insecure": "Skip TLS verification",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "connecting": "Connecting..."
+    },
+    "system": {
+      "title": "System Information",
+      "model": "Server Model",
+      "serial": "Serial Number",
+      "bios": "BIOS Version",
+      "hostname": "Hostname",
+      "powerState": "Power State",
+      "assetTag": "Asset Tag",
+      "memory": "Total Memory",
+      "processors": "Processors"
+    },
+    "bmcInfo": {
+      "title": "BMC Information",
+      "platform": "Platform Generation",
+      "firmware": "Firmware Version",
+      "firmwareDate": "Firmware Date",
+      "license": "License Type",
+      "fqdn": "FQDN",
+      "uuid": "UUID",
+      "boardId": "Board ID"
+    },
+    "power": {
+      "title": "Power Management",
+      "state": "Power State",
+      "on": "Power On",
+      "off": "Power Off",
+      "gracefulShutdown": "Graceful Shutdown",
+      "forceOff": "Force Off",
+      "restart": "Restart",
+      "forceRestart": "Force Restart",
+      "cycle": "Power Cycle",
+      "nmi": "NMI (Non-Maskable Interrupt)",
+      "consumption": "Power Consumption",
+      "supplies": "Power Supplies",
+      "current": "Current",
+      "average": "Average",
+      "minimum": "Minimum",
+      "maximum": "Maximum"
+    },
+    "thermal": {
+      "title": "Thermal Status",
+      "temperatures": "Temperatures",
+      "fans": "Fans",
+      "ambient": "Ambient",
+      "cpuMax": "CPU Max",
+      "alerts": "Thermal Alerts",
+      "summary": "Thermal Summary"
+    },
+    "hardware": {
+      "title": "Hardware Inventory",
+      "processors": "Processors",
+      "memory": "Memory DIMMs",
+      "cores": "Cores",
+      "threads": "Threads",
+      "speed": "Speed",
+      "capacity": "Capacity",
+      "type": "Type"
+    },
+    "storage": {
+      "title": "Storage",
+      "controllers": "Storage Controllers",
+      "virtualDisks": "Logical Drives",
+      "physicalDisks": "Physical Drives",
+      "raidLevel": "RAID Level",
+      "mediaType": "Media Type",
+      "protocol": "Interface"
+    },
+    "network": {
+      "title": "Network",
+      "adapters": "Network Adapters",
+      "bmcNetwork": "BMC Network Interface",
+      "macAddress": "MAC Address"
+    },
+    "firmware": {
+      "title": "Firmware Inventory",
+      "version": "Version",
+      "updateable": "Updateable"
+    },
+    "virtualMedia": {
+      "title": "Virtual Media",
+      "status": "Status",
+      "mount": "Mount Image",
+      "eject": "Eject",
+      "imageUrl": "Image URL",
+      "inserted": "Inserted",
+      "notInserted": "Not Inserted"
+    },
+    "console": {
+      "title": "Remote Console",
+      "html5Ikvm": "HTML5 iKVM",
+      "javaKvm": "Java KVM",
+      "launch": "Launch Console",
+      "availableTypes": "Available Console Types",
+      "notSupported": "Console not supported on this platform"
+    },
+    "eventLogs": {
+      "title": "Event Logs",
+      "systemLog": "System Event Log",
+      "auditLog": "Audit Log",
+      "clear": "Clear Log",
+      "severity": "Severity",
+      "timestamp": "Timestamp",
+      "message": "Message",
+      "empty": "No log entries"
+    },
+    "users": {
+      "title": "User Accounts",
+      "username": "Username",
+      "role": "Role",
+      "enabled": "Enabled",
+      "create": "Create User",
+      "delete": "Delete User",
+      "changePassword": "Change Password"
+    },
+    "bios": {
+      "title": "BIOS/UEFI Configuration",
+      "attributes": "BIOS Attributes",
+      "bootOrder": "Boot Order",
+      "bootOverride": "One-Time Boot Override",
+      "apply": "Apply Changes",
+      "pending": "Changes pending — reboot required"
+    },
+    "certificates": {
+      "title": "Certificate Management",
+      "current": "Current Certificate",
+      "issuer": "Issuer",
+      "subject": "Subject",
+      "validFrom": "Valid From",
+      "validTo": "Valid To",
+      "generateCsr": "Generate CSR",
+      "importCert": "Import Certificate"
+    },
+    "license": {
+      "title": "License Management",
+      "tier": "License Tier",
+      "key": "License Key",
+      "expiration": "Expiration",
+      "activate": "Activate License",
+      "standard": "Standard",
+      "oob": "Out-of-Band (SFT-OOB-LIC)",
+      "dcms": "DCMS (SFT-DCMS-SINGLE)",
+      "spm": "Server Power Management"
+    },
+    "security": {
+      "title": "Security Status",
+      "overall": "Overall Status",
+      "risks": "Security Risks",
+      "riskCount": "Risk Count"
+    },
+    "nodeManager": {
+      "title": "Intel Node Manager",
+      "policies": "Power Policies",
+      "stats": "Statistics",
+      "domain": "Domain",
+      "platform": "Platform",
+      "cpu": "CPU",
+      "memoryDomain": "Memory",
+      "io": "I/O",
+      "notSupported": "Node Manager is not supported on this platform"
+    },
+    "health": {
+      "title": "Health Status",
+      "overall": "Overall Health",
+      "healthy": "Healthy",
+      "warning": "Warning",
+      "critical": "Critical",
+      "components": "Component Status"
+    },
+    "actions": {
+      "resetBmc": "Reset BMC",
+      "resetBmcConfirm": "Are you sure you want to reset the BMC? This will temporarily disconnect the management interface.",
+      "refresh": "Refresh"
+    },
+    "platform": {
+      "x13h13": "X13/H13 (Latest)",
+      "x12h12": "X12/H12",
+      "x11": "X11 (Redfish)",
+      "x10": "X10 (CGI + IPMI)",
+      "x9": "X9 (IPMI Only)"
+    }
   }
 }

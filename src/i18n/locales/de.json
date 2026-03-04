@@ -312,5 +312,306 @@
       "empty": "Keine Prüfeinträge",
       "emptyDesc": "Prüfeinträge erscheinen hier, wenn Agent-Operationen stattfinden."
     }
+  },
+  "ilo": {
+    "title": "HP iLO-Verwaltung",
+    "tabs": {
+      "dashboard": "Dashboard",
+      "power": "Strom",
+      "thermal": "Thermisch",
+      "hardware": "Hardware",
+      "storage": "Speicher",
+      "network": "Netzwerk",
+      "firmware": "Firmware",
+      "virtualMedia": "Virtuelle Medien",
+      "console": "Fernkonsole",
+      "eventLogs": "Ereignisprotokolle",
+      "users": "Benutzer",
+      "bios": "BIOS/UEFI",
+      "certificates": "Zertifikate",
+      "license": "Lizenz",
+      "security": "Sicherheit",
+      "federation": "Föderation"
+    },
+    "connection": {
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "host": "iLO-Host / IP",
+      "port": "Port",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "generation": "iLO-Generation",
+      "autoDetect": "Automatisch erkennen",
+      "protocol": "Protokoll",
+      "insecure": "TLS-Überprüfung überspringen",
+      "connected": "Verbunden",
+      "disconnected": "Getrennt",
+      "connecting": "Verbindung wird hergestellt..."
+    },
+    "system": {
+      "title": "Systeminformationen",
+      "model": "Servermodell",
+      "serial": "Seriennummer",
+      "bios": "BIOS-Version",
+      "hostname": "Hostname",
+      "powerState": "Stromstatus",
+      "assetTag": "Inventarkennung",
+      "memory": "Gesamtspeicher",
+      "processors": "Prozessoren"
+    },
+    "power": {
+      "title": "Stromverwaltung",
+      "state": "Stromstatus",
+      "on": "Einschalten",
+      "off": "Ausschalten",
+      "gracefulShutdown": "Ordnungsgemäßes Herunterfahren",
+      "forceOff": "Erzwungenes Ausschalten",
+      "restart": "Neustart",
+      "forceRestart": "Erzwungener Neustart",
+      "cycle": "Stromzyklus",
+      "nmi": "NMI (Nicht-maskierbarer Interrupt)",
+      "consumption": "Stromverbrauch",
+      "supplies": "Netzteile"
+    },
+    "thermal": {
+      "title": "Thermischer Status",
+      "temperatures": "Temperaturen",
+      "fans": "Lüfter",
+      "ambient": "Umgebung",
+      "cpuMax": "CPU Max",
+      "alerts": "Thermische Warnungen",
+      "summary": "Thermische Zusammenfassung"
+    },
+    "health": {
+      "title": "Gesundheitsstatus",
+      "overall": "Gesamtzustand",
+      "healthy": "Gesund",
+      "warning": "Warnung",
+      "critical": "Kritisch",
+      "components": "Komponentenstatus"
+    },
+    "actions": {
+      "resetIlo": "iLO zurücksetzen",
+      "refresh": "Aktualisieren"
+    },
+    "generation": {
+      "ilo1": "iLO 1 (ProLiant G1–G4)",
+      "ilo2": "iLO 2 (ProLiant G5–G6)",
+      "ilo3": "iLO 3 (ProLiant G7)",
+      "ilo4": "iLO 4 (Gen8–Gen9)",
+      "ilo5": "iLO 5 (Gen10/Gen10+)",
+      "ilo6": "iLO 6 (Gen11)",
+      "ilo7": "iLO 7 (Gen12)"
+    }
+  },
+  "lenovo": {
+    "title": "Lenovo XCC-Verwaltung",
+    "tabs": {
+      "dashboard": "Übersicht",
+      "power": "Stromversorgung",
+      "thermal": "Thermisch",
+      "hardware": "Hardware",
+      "storage": "Speicher",
+      "network": "Netzwerk",
+      "firmware": "Firmware",
+      "virtualMedia": "Virtuelle Medien",
+      "console": "Fernkonsole",
+      "eventLogs": "Ereignisprotokolle",
+      "users": "Benutzer",
+      "bios": "BIOS/UEFI",
+      "certificates": "Zertifikate",
+      "license": "Lizenz",
+      "security": "Sicherheit",
+      "onecli": "OneCLI"
+    },
+    "connection": {
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "host": "XCC-Host / IP",
+      "port": "Port",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "generation": "XCC-Generation",
+      "autoDetect": "Automatisch erkennen",
+      "connected": "Verbunden",
+      "disconnected": "Getrennt",
+      "connecting": "Verbinde..."
+    },
+    "system": {
+      "title": "Systeminformationen",
+      "model": "Servermodell",
+      "serial": "Seriennummer",
+      "powerState": "Stromzustand",
+      "assetTag": "Asset-Tag"
+    },
+    "xccInfo": {
+      "title": "XCC-Informationen",
+      "generation": "Generation",
+      "firmware": "Firmwareversion"
+    },
+    "power": {
+      "title": "Stromverwaltung",
+      "on": "Einschalten",
+      "off": "Ausschalten",
+      "gracefulShutdown": "Sanftes Herunterfahren",
+      "forceOff": "Sofort ausschalten",
+      "restart": "Neustart",
+      "cycle": "Stromzyklus"
+    },
+    "thermal": {
+      "title": "Thermischer Status",
+      "temperatures": "Temperaturen",
+      "fans": "Lüfter",
+      "summary": "Zusammenfassung"
+    },
+    "hardware": {
+      "title": "Hardware-Inventar",
+      "processors": "Prozessoren",
+      "memory": "Speichermodule"
+    },
+    "storage": {
+      "title": "Speicher",
+      "controllers": "Speichercontroller",
+      "virtualDisks": "Logische Laufwerke",
+      "physicalDisks": "Physische Laufwerke"
+    },
+    "eventLogs": {
+      "title": "Ereignisprotokolle",
+      "systemLog": "Systemereignisprotokoll",
+      "auditLog": "Überwachungsprotokoll",
+      "clear": "Protokoll löschen",
+      "empty": "Keine Einträge"
+    },
+    "users": {
+      "title": "Benutzerkonten",
+      "create": "Benutzer erstellen",
+      "delete": "Benutzer löschen",
+      "changePassword": "Passwort ändern"
+    },
+    "health": {
+      "overall": "Gesamtzustand",
+      "healthy": "Gesund",
+      "warning": "Warnung",
+      "critical": "Kritisch"
+    },
+    "actions": {
+      "resetXcc": "XCC zurücksetzen",
+      "refresh": "Aktualisieren"
+    },
+    "generation": {
+      "xcc2": "XCC2 (ThinkSystem V3)",
+      "xcc": "XCC (ThinkSystem V1/V2)",
+      "imm2": "IMM2 (System x M5/M6)",
+      "imm": "IMM (System x M4)"
+    }
+  },
+  "supermicro": {
+    "title": "Supermicro BMC-Verwaltung",
+    "tabs": {
+      "dashboard": "Übersicht",
+      "power": "Stromversorgung",
+      "thermal": "Thermisch",
+      "hardware": "Hardware",
+      "storage": "Speicher",
+      "network": "Netzwerk",
+      "firmware": "Firmware",
+      "virtualMedia": "Virtuelle Medien",
+      "console": "Fernkonsole",
+      "eventLogs": "Ereignisprotokolle",
+      "users": "Benutzer",
+      "bios": "BIOS/UEFI",
+      "certificates": "Zertifikate",
+      "license": "Lizenz",
+      "security": "Sicherheit",
+      "nodeManager": "Node Manager"
+    },
+    "connection": {
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "host": "BMC-Host / IP",
+      "port": "Port",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "platform": "Plattformgeneration",
+      "autoDetect": "Automatisch erkennen",
+      "connected": "Verbunden",
+      "disconnected": "Getrennt",
+      "connecting": "Verbinde..."
+    },
+    "system": {
+      "title": "Systeminformationen",
+      "model": "Servermodell",
+      "serial": "Seriennummer",
+      "powerState": "Stromzustand",
+      "assetTag": "Asset-Tag"
+    },
+    "bmcInfo": {
+      "title": "BMC-Informationen",
+      "platform": "Plattformgeneration",
+      "firmware": "Firmwareversion",
+      "boardId": "Board-ID"
+    },
+    "power": {
+      "title": "Stromverwaltung",
+      "on": "Einschalten",
+      "off": "Ausschalten",
+      "gracefulShutdown": "Sanftes Herunterfahren",
+      "forceOff": "Sofort ausschalten",
+      "restart": "Neustart",
+      "cycle": "Stromzyklus"
+    },
+    "thermal": {
+      "title": "Thermischer Status",
+      "temperatures": "Temperaturen",
+      "fans": "Lüfter",
+      "summary": "Zusammenfassung"
+    },
+    "hardware": {
+      "title": "Hardware-Inventar",
+      "processors": "Prozessoren",
+      "memory": "Speichermodule"
+    },
+    "storage": {
+      "title": "Speicher",
+      "controllers": "Speichercontroller",
+      "virtualDisks": "Logische Laufwerke",
+      "physicalDisks": "Physische Laufwerke"
+    },
+    "eventLogs": {
+      "title": "Ereignisprotokolle",
+      "systemLog": "Systemereignisprotokoll",
+      "auditLog": "Überwachungsprotokoll",
+      "clear": "Protokoll löschen",
+      "empty": "Keine Einträge"
+    },
+    "users": {
+      "title": "Benutzerkonten",
+      "create": "Benutzer erstellen",
+      "delete": "Benutzer löschen",
+      "changePassword": "Passwort ändern"
+    },
+    "nodeManager": {
+      "title": "Intel Node Manager",
+      "policies": "Energierichtlinien",
+      "stats": "Statistiken",
+      "notSupported": "Node Manager wird auf dieser Plattform nicht unterstützt"
+    },
+    "health": {
+      "overall": "Gesamtzustand",
+      "healthy": "Gesund",
+      "warning": "Warnung",
+      "critical": "Kritisch"
+    },
+    "actions": {
+      "resetBmc": "BMC zurücksetzen",
+      "refresh": "Aktualisieren"
+    },
+    "platform": {
+      "x13h13": "X13/H13 (Neueste)",
+      "x12h12": "X12/H12",
+      "x11": "X11 (Redfish)",
+      "x10": "X10 (CGI + IPMI)",
+      "x9": "X9 (Nur IPMI)"
+    }
   }
 }

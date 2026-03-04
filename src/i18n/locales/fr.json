@@ -312,5 +312,306 @@
       "empty": "Aucune entrée d'audit",
       "emptyDesc": "Les entrées d'audit apparaîtront ici lors des opérations de l'agent."
     }
+  },
+  "ilo": {
+    "title": "Gestion HP iLO",
+    "tabs": {
+      "dashboard": "Tableau de bord",
+      "power": "Alimentation",
+      "thermal": "Thermique",
+      "hardware": "Matériel",
+      "storage": "Stockage",
+      "network": "Réseau",
+      "firmware": "Micrologiciel",
+      "virtualMedia": "Média Virtuel",
+      "console": "Console Distante",
+      "eventLogs": "Journaux d'Événements",
+      "users": "Utilisateurs",
+      "bios": "BIOS/UEFI",
+      "certificates": "Certificats",
+      "license": "Licence",
+      "security": "Sécurité",
+      "federation": "Fédération"
+    },
+    "connection": {
+      "connect": "Connecter",
+      "disconnect": "Déconnecter",
+      "host": "Hôte / IP iLO",
+      "port": "Port",
+      "username": "Identifiant",
+      "password": "Mot de passe",
+      "generation": "Génération iLO",
+      "autoDetect": "Détection automatique",
+      "protocol": "Protocole",
+      "insecure": "Ignorer la vérification TLS",
+      "connected": "Connecté",
+      "disconnected": "Déconnecté",
+      "connecting": "Connexion en cours..."
+    },
+    "system": {
+      "title": "Informations Système",
+      "model": "Modèle du Serveur",
+      "serial": "Numéro de Série",
+      "bios": "Version du BIOS",
+      "hostname": "Nom d'Hôte",
+      "powerState": "État d'Alimentation",
+      "assetTag": "Étiquette d'Inventaire",
+      "memory": "Mémoire Totale",
+      "processors": "Processeurs"
+    },
+    "power": {
+      "title": "Gestion de l'Alimentation",
+      "state": "État d'Alimentation",
+      "on": "Allumer",
+      "off": "Éteindre",
+      "gracefulShutdown": "Arrêt Propre",
+      "forceOff": "Arrêt Forcé",
+      "restart": "Redémarrer",
+      "forceRestart": "Redémarrage Forcé",
+      "cycle": "Cycle d'Alimentation",
+      "nmi": "NMI (Interruption Non Masquable)",
+      "consumption": "Consommation Électrique",
+      "supplies": "Alimentations"
+    },
+    "thermal": {
+      "title": "État Thermique",
+      "temperatures": "Températures",
+      "fans": "Ventilateurs",
+      "ambient": "Ambiant",
+      "cpuMax": "CPU Max",
+      "alerts": "Alertes Thermiques",
+      "summary": "Résumé Thermique"
+    },
+    "health": {
+      "title": "État de Santé",
+      "overall": "État Global",
+      "healthy": "Sain",
+      "warning": "Avertissement",
+      "critical": "Critique",
+      "components": "État des Composants"
+    },
+    "actions": {
+      "resetIlo": "Réinitialiser iLO",
+      "refresh": "Actualiser"
+    },
+    "generation": {
+      "ilo1": "iLO 1 (ProLiant G1–G4)",
+      "ilo2": "iLO 2 (ProLiant G5–G6)",
+      "ilo3": "iLO 3 (ProLiant G7)",
+      "ilo4": "iLO 4 (Gen8–Gen9)",
+      "ilo5": "iLO 5 (Gen10/Gen10+)",
+      "ilo6": "iLO 6 (Gen11)",
+      "ilo7": "iLO 7 (Gen12)"
+    }
+  },
+  "lenovo": {
+    "title": "Gestionnaire Lenovo XCC",
+    "tabs": {
+      "dashboard": "Tableau de bord",
+      "power": "Alimentation",
+      "thermal": "Thermique",
+      "hardware": "Matériel",
+      "storage": "Stockage",
+      "network": "Réseau",
+      "firmware": "Micrologiciel",
+      "virtualMedia": "Médias Virtuels",
+      "console": "Console Distante",
+      "eventLogs": "Journaux d'événements",
+      "users": "Utilisateurs",
+      "bios": "BIOS/UEFI",
+      "certificates": "Certificats",
+      "license": "Licence",
+      "security": "Sécurité",
+      "onecli": "OneCLI"
+    },
+    "connection": {
+      "connect": "Connecter",
+      "disconnect": "Déconnecter",
+      "host": "Hôte / IP XCC",
+      "port": "Port",
+      "username": "Nom d'utilisateur",
+      "password": "Mot de passe",
+      "generation": "Génération XCC",
+      "autoDetect": "Détection automatique",
+      "connected": "Connecté",
+      "disconnected": "Déconnecté",
+      "connecting": "Connexion..."
+    },
+    "system": {
+      "title": "Informations Système",
+      "model": "Modèle de Serveur",
+      "serial": "Numéro de Série",
+      "powerState": "État d'Alimentation",
+      "assetTag": "Étiquette d'Actif"
+    },
+    "xccInfo": {
+      "title": "Informations XCC",
+      "generation": "Génération",
+      "firmware": "Version du Micrologiciel"
+    },
+    "power": {
+      "title": "Gestion de l'Alimentation",
+      "on": "Allumer",
+      "off": "Éteindre",
+      "gracefulShutdown": "Arrêt Progressif",
+      "forceOff": "Arrêt Forcé",
+      "restart": "Redémarrer",
+      "cycle": "Cycle d'Alimentation"
+    },
+    "thermal": {
+      "title": "État Thermique",
+      "temperatures": "Températures",
+      "fans": "Ventilateurs",
+      "summary": "Résumé"
+    },
+    "hardware": {
+      "title": "Inventaire Matériel",
+      "processors": "Processeurs",
+      "memory": "Modules Mémoire"
+    },
+    "storage": {
+      "title": "Stockage",
+      "controllers": "Contrôleurs",
+      "virtualDisks": "Disques Logiques",
+      "physicalDisks": "Disques Physiques"
+    },
+    "eventLogs": {
+      "title": "Journaux d'Événements",
+      "systemLog": "Journal d'Événements Système",
+      "auditLog": "Journal d'Audit",
+      "clear": "Effacer le Journal",
+      "empty": "Aucune entrée"
+    },
+    "users": {
+      "title": "Comptes Utilisateurs",
+      "create": "Créer un Utilisateur",
+      "delete": "Supprimer l'Utilisateur",
+      "changePassword": "Changer le Mot de Passe"
+    },
+    "health": {
+      "overall": "Santé Générale",
+      "healthy": "Sain",
+      "warning": "Avertissement",
+      "critical": "Critique"
+    },
+    "actions": {
+      "resetXcc": "Réinitialiser XCC",
+      "refresh": "Actualiser"
+    },
+    "generation": {
+      "xcc2": "XCC2 (ThinkSystem V3)",
+      "xcc": "XCC (ThinkSystem V1/V2)",
+      "imm2": "IMM2 (System x M5/M6)",
+      "imm": "IMM (System x M4)"
+    }
+  },
+  "supermicro": {
+    "title": "Gestionnaire BMC Supermicro",
+    "tabs": {
+      "dashboard": "Tableau de bord",
+      "power": "Alimentation",
+      "thermal": "Thermique",
+      "hardware": "Matériel",
+      "storage": "Stockage",
+      "network": "Réseau",
+      "firmware": "Micrologiciel",
+      "virtualMedia": "Médias Virtuels",
+      "console": "Console Distante",
+      "eventLogs": "Journaux d'événements",
+      "users": "Utilisateurs",
+      "bios": "BIOS/UEFI",
+      "certificates": "Certificats",
+      "license": "Licence",
+      "security": "Sécurité",
+      "nodeManager": "Node Manager"
+    },
+    "connection": {
+      "connect": "Connecter",
+      "disconnect": "Déconnecter",
+      "host": "Hôte / IP BMC",
+      "port": "Port",
+      "username": "Nom d'utilisateur",
+      "password": "Mot de passe",
+      "platform": "Génération de Plateforme",
+      "autoDetect": "Détection automatique",
+      "connected": "Connecté",
+      "disconnected": "Déconnecté",
+      "connecting": "Connexion..."
+    },
+    "system": {
+      "title": "Informations Système",
+      "model": "Modèle de Serveur",
+      "serial": "Numéro de Série",
+      "powerState": "État d'Alimentation",
+      "assetTag": "Étiquette d'Actif"
+    },
+    "bmcInfo": {
+      "title": "Informations BMC",
+      "platform": "Génération de Plateforme",
+      "firmware": "Version du Micrologiciel",
+      "boardId": "ID de Carte"
+    },
+    "power": {
+      "title": "Gestion de l'Alimentation",
+      "on": "Allumer",
+      "off": "Éteindre",
+      "gracefulShutdown": "Arrêt Progressif",
+      "forceOff": "Arrêt Forcé",
+      "restart": "Redémarrer",
+      "cycle": "Cycle d'Alimentation"
+    },
+    "thermal": {
+      "title": "État Thermique",
+      "temperatures": "Températures",
+      "fans": "Ventilateurs",
+      "summary": "Résumé"
+    },
+    "hardware": {
+      "title": "Inventaire Matériel",
+      "processors": "Processeurs",
+      "memory": "Modules Mémoire"
+    },
+    "storage": {
+      "title": "Stockage",
+      "controllers": "Contrôleurs",
+      "virtualDisks": "Disques Logiques",
+      "physicalDisks": "Disques Physiques"
+    },
+    "eventLogs": {
+      "title": "Journaux d'Événements",
+      "systemLog": "Journal d'Événements Système",
+      "auditLog": "Journal d'Audit",
+      "clear": "Effacer le Journal",
+      "empty": "Aucune entrée"
+    },
+    "users": {
+      "title": "Comptes Utilisateurs",
+      "create": "Créer un Utilisateur",
+      "delete": "Supprimer l'Utilisateur",
+      "changePassword": "Changer le Mot de Passe"
+    },
+    "nodeManager": {
+      "title": "Intel Node Manager",
+      "policies": "Politiques Énergétiques",
+      "stats": "Statistiques",
+      "notSupported": "Node Manager n'est pas pris en charge sur cette plateforme"
+    },
+    "health": {
+      "overall": "Santé Générale",
+      "healthy": "Sain",
+      "warning": "Avertissement",
+      "critical": "Critique"
+    },
+    "actions": {
+      "resetBmc": "Réinitialiser BMC",
+      "refresh": "Actualiser"
+    },
+    "platform": {
+      "x13h13": "X13/H13 (Plus Récent)",
+      "x12h12": "X12/H12",
+      "x11": "X11 (Redfish)",
+      "x10": "X10 (CGI + IPMI)",
+      "x9": "X9 (IPMI Uniquement)"
+    }
   }
 }

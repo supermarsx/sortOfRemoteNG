@@ -312,5 +312,306 @@
       "empty": "Sem entradas de auditoria",
       "emptyDesc": "As entradas de auditoria aparecerão aqui quando ocorrerem operações do agente."
     }
+  },
+  "ilo": {
+    "title": "Gestão HP iLO",
+    "tabs": {
+      "dashboard": "Painel",
+      "power": "Energia",
+      "thermal": "Térmico",
+      "hardware": "Hardware",
+      "storage": "Armazenamento",
+      "network": "Rede",
+      "firmware": "Firmware",
+      "virtualMedia": "Média Virtual",
+      "console": "Consola Remota",
+      "eventLogs": "Registos de Eventos",
+      "users": "Utilizadores",
+      "bios": "BIOS/UEFI",
+      "certificates": "Certificados",
+      "license": "Licença",
+      "security": "Segurança",
+      "federation": "Federação"
+    },
+    "connection": {
+      "connect": "Ligar",
+      "disconnect": "Desligar",
+      "host": "Anfitrião / IP do iLO",
+      "port": "Porta",
+      "username": "Utilizador",
+      "password": "Palavra-passe",
+      "generation": "Geração do iLO",
+      "autoDetect": "Deteção automática",
+      "protocol": "Protocolo",
+      "insecure": "Ignorar verificação TLS",
+      "connected": "Ligado",
+      "disconnected": "Desligado",
+      "connecting": "A ligar..."
+    },
+    "system": {
+      "title": "Informações do Sistema",
+      "model": "Modelo do Servidor",
+      "serial": "Número de Série",
+      "bios": "Versão do BIOS",
+      "hostname": "Nome do Anfitrião",
+      "powerState": "Estado de Energia",
+      "assetTag": "Etiqueta de Ativo",
+      "memory": "Memória Total",
+      "processors": "Processadores"
+    },
+    "power": {
+      "title": "Gestão de Energia",
+      "state": "Estado de Energia",
+      "on": "Ligar",
+      "off": "Desligar",
+      "gracefulShutdown": "Encerramento Ordenado",
+      "forceOff": "Desligar Forçado",
+      "restart": "Reiniciar",
+      "forceRestart": "Reinício Forçado",
+      "cycle": "Ciclo de Energia",
+      "nmi": "NMI (Interrupção Não Mascarável)",
+      "consumption": "Consumo de Energia",
+      "supplies": "Fontes de Alimentação"
+    },
+    "thermal": {
+      "title": "Estado Térmico",
+      "temperatures": "Temperaturas",
+      "fans": "Ventoinhas",
+      "ambient": "Ambiente",
+      "cpuMax": "CPU Máx",
+      "alerts": "Alertas Térmicos",
+      "summary": "Resumo Térmico"
+    },
+    "health": {
+      "title": "Estado de Saúde",
+      "overall": "Estado Geral",
+      "healthy": "Saudável",
+      "warning": "Aviso",
+      "critical": "Crítico",
+      "components": "Estado dos Componentes"
+    },
+    "actions": {
+      "resetIlo": "Reiniciar iLO",
+      "refresh": "Atualizar"
+    },
+    "generation": {
+      "ilo1": "iLO 1 (ProLiant G1–G4)",
+      "ilo2": "iLO 2 (ProLiant G5–G6)",
+      "ilo3": "iLO 3 (ProLiant G7)",
+      "ilo4": "iLO 4 (Gen8–Gen9)",
+      "ilo5": "iLO 5 (Gen10/Gen10+)",
+      "ilo6": "iLO 6 (Gen11)",
+      "ilo7": "iLO 7 (Gen12)"
+    }
+  },
+  "lenovo": {
+    "title": "Gestor Lenovo XCC",
+    "tabs": {
+      "dashboard": "Painel",
+      "power": "Energia",
+      "thermal": "Térmico",
+      "hardware": "Hardware",
+      "storage": "Armazenamento",
+      "network": "Rede",
+      "firmware": "Firmware",
+      "virtualMedia": "Mídias Virtuais",
+      "console": "Consola Remota",
+      "eventLogs": "Registos de Eventos",
+      "users": "Utilizadores",
+      "bios": "BIOS/UEFI",
+      "certificates": "Certificados",
+      "license": "Licença",
+      "security": "Segurança",
+      "onecli": "OneCLI"
+    },
+    "connection": {
+      "connect": "Ligar",
+      "disconnect": "Desligar",
+      "host": "Anfitrião / IP XCC",
+      "port": "Porta",
+      "username": "Nome de Utilizador",
+      "password": "Palavra-passe",
+      "generation": "Geração XCC",
+      "autoDetect": "Deteção automática",
+      "connected": "Ligado",
+      "disconnected": "Desligado",
+      "connecting": "A ligar..."
+    },
+    "system": {
+      "title": "Informações do Sistema",
+      "model": "Modelo do Servidor",
+      "serial": "Número de Série",
+      "powerState": "Estado de Energia",
+      "assetTag": "Etiqueta de Ativo"
+    },
+    "xccInfo": {
+      "title": "Informações XCC",
+      "generation": "Geração",
+      "firmware": "Versão do Firmware"
+    },
+    "power": {
+      "title": "Gestão de Energia",
+      "on": "Ligar",
+      "off": "Desligar",
+      "gracefulShutdown": "Encerramento Gradual",
+      "forceOff": "Desligar Forçado",
+      "restart": "Reiniciar",
+      "cycle": "Ciclo de Energia"
+    },
+    "thermal": {
+      "title": "Estado Térmico",
+      "temperatures": "Temperaturas",
+      "fans": "Ventoinhas",
+      "summary": "Resumo"
+    },
+    "hardware": {
+      "title": "Inventário de Hardware",
+      "processors": "Processadores",
+      "memory": "Módulos de Memória"
+    },
+    "storage": {
+      "title": "Armazenamento",
+      "controllers": "Controladores",
+      "virtualDisks": "Discos Lógicos",
+      "physicalDisks": "Discos Físicos"
+    },
+    "eventLogs": {
+      "title": "Registos de Eventos",
+      "systemLog": "Registo de Eventos do Sistema",
+      "auditLog": "Registo de Auditoria",
+      "clear": "Limpar Registo",
+      "empty": "Sem entradas"
+    },
+    "users": {
+      "title": "Contas de Utilizador",
+      "create": "Criar Utilizador",
+      "delete": "Eliminar Utilizador",
+      "changePassword": "Alterar Palavra-passe"
+    },
+    "health": {
+      "overall": "Saúde Geral",
+      "healthy": "Saudável",
+      "warning": "Aviso",
+      "critical": "Crítico"
+    },
+    "actions": {
+      "resetXcc": "Reiniciar XCC",
+      "refresh": "Atualizar"
+    },
+    "generation": {
+      "xcc2": "XCC2 (ThinkSystem V3)",
+      "xcc": "XCC (ThinkSystem V1/V2)",
+      "imm2": "IMM2 (System x M5/M6)",
+      "imm": "IMM (System x M4)"
+    }
+  },
+  "supermicro": {
+    "title": "Gestor BMC Supermicro",
+    "tabs": {
+      "dashboard": "Painel",
+      "power": "Energia",
+      "thermal": "Térmico",
+      "hardware": "Hardware",
+      "storage": "Armazenamento",
+      "network": "Rede",
+      "firmware": "Firmware",
+      "virtualMedia": "Mídias Virtuais",
+      "console": "Consola Remota",
+      "eventLogs": "Registos de Eventos",
+      "users": "Utilizadores",
+      "bios": "BIOS/UEFI",
+      "certificates": "Certificados",
+      "license": "Licença",
+      "security": "Segurança",
+      "nodeManager": "Node Manager"
+    },
+    "connection": {
+      "connect": "Ligar",
+      "disconnect": "Desligar",
+      "host": "Anfitrião / IP BMC",
+      "port": "Porta",
+      "username": "Nome de Utilizador",
+      "password": "Palavra-passe",
+      "platform": "Geração da Plataforma",
+      "autoDetect": "Deteção automática",
+      "connected": "Ligado",
+      "disconnected": "Desligado",
+      "connecting": "A ligar..."
+    },
+    "system": {
+      "title": "Informações do Sistema",
+      "model": "Modelo do Servidor",
+      "serial": "Número de Série",
+      "powerState": "Estado de Energia",
+      "assetTag": "Etiqueta de Ativo"
+    },
+    "bmcInfo": {
+      "title": "Informações do BMC",
+      "platform": "Geração da Plataforma",
+      "firmware": "Versão do Firmware",
+      "boardId": "ID da Placa"
+    },
+    "power": {
+      "title": "Gestão de Energia",
+      "on": "Ligar",
+      "off": "Desligar",
+      "gracefulShutdown": "Encerramento Gradual",
+      "forceOff": "Desligar Forçado",
+      "restart": "Reiniciar",
+      "cycle": "Ciclo de Energia"
+    },
+    "thermal": {
+      "title": "Estado Térmico",
+      "temperatures": "Temperaturas",
+      "fans": "Ventoinhas",
+      "summary": "Resumo"
+    },
+    "hardware": {
+      "title": "Inventário de Hardware",
+      "processors": "Processadores",
+      "memory": "Módulos de Memória"
+    },
+    "storage": {
+      "title": "Armazenamento",
+      "controllers": "Controladores",
+      "virtualDisks": "Discos Lógicos",
+      "physicalDisks": "Discos Físicos"
+    },
+    "eventLogs": {
+      "title": "Registos de Eventos",
+      "systemLog": "Registo de Eventos do Sistema",
+      "auditLog": "Registo de Auditoria",
+      "clear": "Limpar Registo",
+      "empty": "Sem entradas"
+    },
+    "users": {
+      "title": "Contas de Utilizador",
+      "create": "Criar Utilizador",
+      "delete": "Eliminar Utilizador",
+      "changePassword": "Alterar Palavra-passe"
+    },
+    "nodeManager": {
+      "title": "Intel Node Manager",
+      "policies": "Políticas de Energia",
+      "stats": "Estatísticas",
+      "notSupported": "Node Manager não é suportado nesta plataforma"
+    },
+    "health": {
+      "overall": "Saúde Geral",
+      "healthy": "Saudável",
+      "warning": "Aviso",
+      "critical": "Crítico"
+    },
+    "actions": {
+      "resetBmc": "Reiniciar BMC",
+      "refresh": "Atualizar"
+    },
+    "platform": {
+      "x13h13": "X13/H13 (Mais Recente)",
+      "x12h12": "X12/H12",
+      "x11": "X11 (Redfish)",
+      "x10": "X10 (CGI + IPMI)",
+      "x9": "X9 (Apenas IPMI)"
+    }
   }
 }
