@@ -1,0 +1,139 @@
+import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { AlertCircle, X } from "lucide-react";
+import { useIdracManager } from "../../../hooks/idrac/useIdracManager";
+import ConnectionForm from "./ConnectionForm";
+import IdracHeader from "./IdracHeader";
+import Sidebar from "./Sidebar";
+import DashboardView from "./DashboardView";
+import SystemView from "./SystemView";
+import PowerView from "./PowerView";
+import ThermalView from "./ThermalView";
+import HardwareView from "./HardwareView";
+import StorageView from "./StorageView";
+import {
+  NetworkView,
+  FirmwareView,
+  LifecycleView,
+  VirtualMediaView,
+  ConsoleView,
+  EventLogView,
+  UsersView,
+  BiosView,
+  CertificatesView,
+  HealthView,
+  TelemetryView,
+  RacadmView,
+} from "./SecondaryViews";
+
+export interface IdracPanelProps {
+  connectionId?: string;
+}
+
+const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId }) => {
+  const { t } = useTranslation();
+  const mgr = useIdracManager();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Not connected – show connection form
+  if (!mgr.connected) {
+    return (
+      <div className="flex items-center justify-center h-full w-full bg-[var(--color-bg)]">
+        <ConnectionForm mgr={mgr} />
+      </div>
+    );
+  }
+
+  const renderContent = () => {
+    switch (mgr.activeTab) {
+      case "dashboard":
+        return <DashboardView mgr={mgr} />;
+      case "system":
+        return <SystemView mgr={mgr} />;
+      case "power":
+        return <PowerView mgr={mgr} />;
+      case "thermal":
+        return <ThermalView mgr={mgr} />;
+      case "hardware":
+        return <HardwareView mgr={mgr} />;
+      case "storage":
+        return <StorageView mgr={mgr} />;
+      case "network":
+        return <NetworkView mgr={mgr} />;
+      case "firmware":
+        return <FirmwareView mgr={mgr} />;
+      case "lifecycle":
+        return <LifecycleView mgr={mgr} />;
+      case "virtual-media":
+        return <VirtualMediaView mgr={mgr} />;
+      case "console":
+        return <ConsoleView mgr={mgr} />;
+      case "event-log":
+        return <EventLogView mgr={mgr} />;
+      case "users":
+        return <UsersView mgr={mgr} />;
+      case "bios":
+        return <BiosView mgr={mgr} />;
+      case "certificates":
+        return <CertificatesView mgr={mgr} />;
+      case "health":
+        return <HealthView mgr={mgr} />;
+      case "telemetry":
+        return <TelemetryView mgr={mgr} />;
+      case "racadm":
+        return <RacadmView mgr={mgr} />;
+      default:
+        return <DashboardView mgr={mgr} />;
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-[var(--color-bg)]">
+      <IdracHeader mgr={mgr} />
+
+      {/* Error Bar */}
+      {mgr.dataError && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-red-500/10 border-b border-red-500/20">
+          <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+          <p className="text-[10px] text-red-400 flex-1 truncate">{mgr.dataError}</p>
+          <button onClick={() => mgr.clearError?.()} className="text-red-400 hover:text-red-300">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar mgr={mgr} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {renderContent()}
+        </div>
+      </div>
+
+      {/* Confirm Dialog */}
+      {mgr.confirmDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-sm font-semibold text-[var(--color-text)] mb-2">{mgr.confirmDialog.title}</h3>
+            <p className="text-xs text-[var(--color-text-secondary)] mb-4">{mgr.confirmDialog.message}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => mgr.dismissConfirm()}
+                className="px-4 py-2 rounded-lg border border-[var(--color-border)] text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
+              >
+                {t("common.cancel", "Cancel")}
+              </button>
+              <button
+                onClick={() => { mgr.confirmDialog?.onConfirm(); mgr.dismissConfirm(); }}
+                className="px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium transition-colors"
+              >
+                {t("common.confirm", "Confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default IdracPanel;
