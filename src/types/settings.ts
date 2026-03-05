@@ -789,6 +789,7 @@ export interface ToolDisplayModes {
   internalProxy: ToolDisplayModeOverride;
   proxyChain: ToolDisplayModeOverride;
   wol: ToolDisplayModeOverride;
+  windowsBackup: ToolDisplayModeOverride;
 }
 
 export interface SettingsDialogConfig {

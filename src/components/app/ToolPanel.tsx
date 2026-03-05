@@ -14,6 +14,7 @@ import { McpServerPanel } from '../ssh/McpServerPanel';
 import { ScriptManager } from '../recording/ScriptManager';
 import { MacroManager } from '../recording/MacroManager';
 import { RecordingManager } from '../recording/RecordingManager';
+import { WindowsBackupPanel } from '../monitoring/WindowsBackupPanel';
 import { generateId } from '../../utils/id';
 
 export type ToolKey = Exclude<keyof ToolDisplayModes, 'globalDefault'>;
@@ -36,6 +37,7 @@ export const TOOL_LABELS: Record<ToolKey, string> = {
   scriptManager: 'Script Manager',
   macroManager: 'Macros',
   recordingManager: 'Recording Manager',
+  windowsBackup: 'Windows Backup',
 };
 
 /** Check if a protocol string is a tool tab */
@@ -94,6 +96,7 @@ export const ToolTabViewer: React.FC<ToolTabViewerProps> = ({ session, onClose }
       {toolKey === 'scriptManager' && <ScriptManager isOpen onClose={onClose} />}
       {toolKey === 'macroManager' && <MacroManager isOpen onClose={onClose} />}
       {toolKey === 'recordingManager' && <RecordingManager isOpen onClose={onClose} />}
+      {toolKey === 'windowsBackup' && <WindowsBackupPanel isOpen onClose={onClose} />}
     </div>
   );
 };

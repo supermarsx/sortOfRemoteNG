@@ -1,4 +1,4 @@
-import { ScrollText, Gauge, Keyboard, Network, Server, Radio, TerminalSquare, FileCode, ListVideo, Circle } from "lucide-react";
+import { ScrollText, Gauge, Keyboard, Network, Server, Radio, TerminalSquare, FileCode, ListVideo, Circle, HardDrive } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ToolDisplayModes } from "../../../../types/settings";
 type ToolEntryKey = Exclude<keyof ToolDisplayModes, "globalDefault">;
@@ -14,6 +14,7 @@ const TOOL_ENTRIES: { key: ToolEntryKey; label: string; icon: LucideIcon }[] = [
   { key: "internalProxy", label: "Internal Proxy Manager", icon: Server },
   { key: "proxyChain", label: "Proxy Chain Menu", icon: Network },
   { key: "wol", label: "Wake-on-LAN", icon: Radio },
+  { key: "windowsBackup", label: "Windows Backup", icon: HardDrive },
 ];
 
 const defaultToolDisplayModes: ToolDisplayModes = {
@@ -28,6 +29,7 @@ const defaultToolDisplayModes: ToolDisplayModes = {
   internalProxy: "inherit",
   proxyChain: "inherit",
   wol: "inherit",
+  windowsBackup: "inherit",
 };
 
 export default TOOL_ENTRIES;

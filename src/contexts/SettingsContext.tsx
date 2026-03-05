@@ -366,6 +366,7 @@ const defaultSettings: GlobalSettings = {
     internalProxy: 'inherit' as const,
     proxyChain: 'inherit' as const,
     wol: 'inherit' as const,
+    windowsBackup: 'inherit' as const,
   },
   backendConfig: {
     logLevel: 'info' as const,
