@@ -21,5 +21,6 @@ pub mod perfmon;
 pub mod registry;
 pub mod scheduled_tasks;
 pub mod system_info;
+pub mod backup;
 pub mod service;
 pub mod commands;

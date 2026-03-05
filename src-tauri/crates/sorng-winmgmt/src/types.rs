@@ -1293,6 +1293,242 @@ pub struct PhysicalMemoryInfo {
     pub configured_clock_speed: Option<u32>,
 }
 
+// ─── Windows Backup ──────────────────────────────────────────────────
+
+/// A Win32_ShadowCopy volume shadow copy snapshot.
+/// Ref: <https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-shadowcopy>
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShadowCopy {
+    /// WMI instance ID.
+    pub id: String,
+    /// Device object path (e.g. `\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1`).
+    pub shadow_id: String,
+    /// Source volume name.
+    pub volume_name: String,
+    /// Date the shadow copy was created (WMI date string).
+    pub install_date: Option<String>,
+    /// Current state.
+    pub state: ShadowCopyState,
+    /// VSS provider ID.
+    pub provider_id: Option<String>,
+    /// Shadow copy set count.
+    pub count: u32,
+    /// Whether the copy is client-accessible.
+    pub client_accessible: bool,
+    /// Whether the copy is persistent across reboots.
+    pub persistent: bool,
+    /// Whether auto-release is disabled.
+    pub no_auto_release: bool,
+    /// Whether writers were excluded.
+    pub no_writers: bool,
+    /// Originating machine.
+    pub originating_machine: Option<String>,
+    /// Service machine.
+    pub service_machine: Option<String>,
+    /// Exposed share/mount name.
+    pub exposed_name: Option<String>,
+    /// Exposed path.
+    pub exposed_path: Option<String>,
+}
+
+/// State of a volume shadow copy.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum ShadowCopyState {
+    Stable,
+    Creating,
+    Deleting,
+    Unknown,
+}
+
+impl ShadowCopyState {
+    pub fn from_wmi(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "12" | "stable" => Self::Stable,
+            "1" | "creating" => Self::Creating,
+            "deleting" => Self::Deleting,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+/// Shadow storage association (Win32_ShadowStorage).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShadowStorage {
+    /// Source volume.
+    pub volume: String,
+    /// Diff-area volume.
+    pub diff_volume: String,
+    /// Used space in bytes.
+    pub used_space: u64,
+    /// Allocated space in bytes.
+    pub allocated_space: u64,
+    /// Maximum space in bytes.
+    pub max_space: u64,
+}
+
+/// Backup status from `wbadmin get status`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupStatus {
+    /// Whether a backup operation is currently running.
+    pub is_running: bool,
+    /// Description of the current operation.
+    pub current_operation: Option<String>,
+    /// Progress percentage (0–100) if running.
+    pub progress_percent: Option<f64>,
+    /// Timestamp of the last successful backup.
+    pub last_successful_backup: Option<String>,
+    /// Timestamp of the last failed backup.
+    pub last_failed_backup: Option<String>,
+    /// Next scheduled backup timestamp.
+    pub next_scheduled_backup: Option<String>,
+    /// Raw wbadmin output.
+    pub raw_output: String,
+}
+
+/// A backup version/snapshot from `wbadmin get versions`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupVersion {
+    /// Version identifier (date-based).
+    pub version_id: String,
+    /// Human-readable backup time.
+    pub backup_time: Option<String>,
+    /// Backup storage location.
+    pub backup_location: Option<String>,
+    /// Additional version metadata.
+    pub version_info: Option<String>,
+    /// Whether recovery is possible from this version.
+    pub can_recover: bool,
+}
+
+/// Backup policy configuration from `wbadmin get policy`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupPolicy {
+    /// Whether a backup policy is configured.
+    pub configured: bool,
+    /// Schedule description.
+    pub schedule: Option<String>,
+    /// Backup target location.
+    pub backup_target: Option<String>,
+    /// Volumes included in the policy.
+    pub included_volumes: Vec<String>,
+    /// Whether system state is included.
+    pub system_state_backup: bool,
+    /// Whether bare-metal recovery is enabled.
+    pub bare_metal_recovery: bool,
+    /// Raw wbadmin output.
+    pub raw_output: String,
+}
+
+/// An item (volume, file, system state) included in backup configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupItem {
+    /// Name or path.
+    pub name: String,
+    /// Type of item.
+    pub item_type: BackupItemType,
+    /// Size in bytes (if known).
+    pub size: Option<u64>,
+}
+
+/// Type of backup item.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum BackupItemType {
+    Volume,
+    File,
+    SystemState,
+}
+
+/// Parameters for triggering an ad-hoc backup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartBackupParams {
+    /// Volumes to include (e.g. `["C:", "D:"]`).
+    #[serde(default)]
+    pub include_volumes: Vec<String>,
+    /// Backup target path.
+    pub backup_target: Option<String>,
+    /// Include all critical volumes.
+    #[serde(default)]
+    pub all_critical: bool,
+    /// Include system state.
+    #[serde(default)]
+    pub system_state: bool,
+    /// Use VSS full copy.
+    #[serde(default)]
+    pub vss_full: bool,
+    /// Use VSS copy (non-destructive).
+    #[serde(default)]
+    pub vss_copy: bool,
+}
+
+/// Parameters for triggering a restore.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartRestoreParams {
+    /// Version identifier to restore from.
+    pub version_id: String,
+    /// What to recover.
+    pub recovery_type: RecoveryType,
+}
+
+/// Type of recovery operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RecoveryType {
+    /// Restore a volume.
+    Volume { source: String, target: String },
+    /// Restore files/folders.
+    File {
+        source_path: String,
+        target_path: String,
+        recursive: bool,
+    },
+    /// Restore system state.
+    SystemState,
+}
+
+/// Result info from a backup/restore job.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupJobInfo {
+    /// Whether the operation completed successfully.
+    pub success: bool,
+    /// Error message if the operation failed.
+    pub error: Option<String>,
+    /// Raw command output.
+    pub raw_output: String,
+}
+
+/// A volume available for backup operations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupVolume {
+    /// Volume path name.
+    pub name: String,
+    /// Drive letter (e.g. `C:`).
+    pub drive_letter: Option<String>,
+    /// Volume label.
+    pub label: Option<String>,
+    /// Total capacity in bytes.
+    pub capacity: u64,
+    /// Free space in bytes.
+    pub free_space: u64,
+    /// File system type.
+    pub file_system: Option<String>,
+    /// Drive type (Win32_Volume.DriveType).
+    pub drive_type: u32,
+    /// WMI device ID.
+    pub device_id: String,
+}
+
 // ─── Events (Tauri frontend) ─────────────────────────────────────────
 
 /// Events emitted to the Tauri frontend.

@@ -3,6 +3,7 @@
 //! Each command acquires the `WinMgmtServiceState` lock, retrieves the
 //! appropriate transport, and delegates to the domain-specific manager.
 
+use crate::backup::BackupManager;
 use crate::eventlog::EventLogManager;
 use crate::perfmon::PerfMonManager;
 use crate::processes::ProcessManager;
@@ -1037,4 +1038,144 @@ pub async fn winmgmt_network_adapters(
     let mut svc = state.lock().await;
     let transport = svc.get_transport(&session_id)?;
     SystemInfoManager::get_network_adapters(transport).await
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Windows Backup
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[tauri::command]
+pub async fn winmgmt_list_shadow_copies(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+) -> Result<Vec<ShadowCopy>, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::list_shadow_copies(transport).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_get_shadow_copy(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    shadow_id: String,
+) -> Result<ShadowCopy, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::get_shadow_copy(transport, &shadow_id).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_shadow_copies_by_volume(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    volume_name: String,
+) -> Result<Vec<ShadowCopy>, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::shadow_copies_by_volume(transport, &volume_name).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_create_shadow_copy(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    volume: String,
+) -> Result<String, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::create_shadow_copy(transport, &volume).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_delete_shadow_copy(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    shadow_id: String,
+) -> Result<(), String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::delete_shadow_copy(transport, &shadow_id).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_list_shadow_storage(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+) -> Result<Vec<ShadowStorage>, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::list_shadow_storage(transport).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_backup_get_status(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+) -> Result<BackupStatus, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::get_backup_status(transport).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_backup_list_versions(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+) -> Result<Vec<BackupVersion>, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::list_backup_versions(transport).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_backup_get_policy(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+) -> Result<BackupPolicy, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::get_backup_policy(transport).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_backup_get_items(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+) -> Result<Vec<BackupItem>, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::get_backup_items(transport).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_backup_start(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    params: StartBackupParams,
+) -> Result<BackupJobInfo, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::start_backup(transport, &params).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_backup_start_restore(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+    params: StartRestoreParams,
+) -> Result<BackupJobInfo, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::start_restore(transport, &params).await
+}
+
+#[tauri::command]
+pub async fn winmgmt_backup_list_volumes(
+    state: State<'_, WinMgmtServiceState>,
+    session_id: String,
+) -> Result<Vec<BackupVolume>, String> {
+    let mut svc = state.lock().await;
+    let transport = svc.get_transport(&session_id)?;
+    BackupManager::list_volumes(transport).await
 }
