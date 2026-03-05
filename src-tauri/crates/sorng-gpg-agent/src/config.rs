@@ -4,7 +4,7 @@
 //! manage socket paths, and control GPG components via `gpgconf`.
 
 use crate::types::*;
-use log::{debug, info, warn};
+use log::info;
 use std::collections::HashMap;
 use tokio::process::Command;
 

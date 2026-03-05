@@ -5,7 +5,7 @@
 
 use crate::protocol::{run_gpg_command, run_gpg_command_with_input, AssuanClient};
 use crate::types::*;
-use log::{debug, info, warn};
+use log::{info, warn};
 
 /// Smart card / hardware token manager.
 pub struct CardManager {
@@ -97,7 +97,8 @@ impl CardManager {
     ///
     /// `pin_type` can be "pin" (CHV1/CHV2), "admin" (CHV3), or "reset" (reset code).
     pub async fn change_pin(&self, pin_type: &str) -> Result<bool, String> {
-        let chv = match pin_type.to_lowercase().as_str() {
+        let lowered = pin_type.to_lowercase();
+        let chv = match lowered.as_str() {
             "pin" | "user" => "1",
             "admin" => "3",
             "reset" => "reset",

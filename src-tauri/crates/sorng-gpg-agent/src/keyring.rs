@@ -6,7 +6,7 @@
 
 use crate::protocol::{run_gpg_command, run_gpg_command_bytes, run_gpg_command_with_input};
 use crate::types::*;
-use log::{debug, error, info, warn};
+use log::{debug, info};
 
 // ── Keyring Manager ─────────────────────────────────────────────────
 

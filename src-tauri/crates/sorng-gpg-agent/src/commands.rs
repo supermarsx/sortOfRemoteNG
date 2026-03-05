@@ -1,11 +1,17 @@
 //! # Tauri Commands for GPG Agent
 //!
 //! Each function is a `#[tauri::command]` that locks the shared state
-//! (`GpgServiceState = Arc<Mutex<GpgAgentService>>`) via `std::sync::Mutex`
-//! and delegates to `GpgAgentService`.
+//! (`GpgServiceState = Arc<tokio::sync::Mutex<GpgAgentService>>`) and
+//! delegates to `GpgAgentService`.
 
 use crate::types::*;
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use tauri::State;
+
+/// Decode a base64-encoded string to bytes.
+fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
+    B64.decode(s).map_err(|e| format!("base64 decode error: {}", e))
+}
 
 /// Convenience alias for command return types.
 type CmdResult<T> = Result<T, String>;
@@ -17,28 +23,28 @@ type CmdResult<T> = Result<T, String>;
 pub async fn gpg_detect_environment(
     state: State<'_, GpgServiceState>,
 ) -> CmdResult<GpgAgentConfig> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.detect_environment().await
 }
 
 /// Start the gpg-agent daemon.
 #[tauri::command]
 pub async fn gpg_start_agent(state: State<'_, GpgServiceState>) -> CmdResult<()> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.start_agent().await
 }
 
 /// Stop the gpg-agent daemon.
 #[tauri::command]
 pub async fn gpg_stop_agent(state: State<'_, GpgServiceState>) -> CmdResult<()> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.stop_agent().await
 }
 
 /// Get the current gpg-agent status.
 #[tauri::command]
 pub async fn gpg_get_status(state: State<'_, GpgServiceState>) -> CmdResult<GpgAgentStatus> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     Ok(service.get_status().await)
 }
 
@@ -47,7 +53,7 @@ pub async fn gpg_get_status(state: State<'_, GpgServiceState>) -> CmdResult<GpgA
 /// Read the gpg-agent configuration.
 #[tauri::command]
 pub async fn gpg_get_config(state: State<'_, GpgServiceState>) -> CmdResult<GpgAgentConfig> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.get_config().await
 }
 
@@ -57,14 +63,14 @@ pub async fn gpg_update_config(
     state: State<'_, GpgServiceState>,
     config: GpgAgentConfig,
 ) -> CmdResult<()> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.update_config(config).await
 }
 
 /// Reload the gpg-agent to pick up config changes.
 #[tauri::command]
 pub async fn gpg_reload_agent(state: State<'_, GpgServiceState>) -> CmdResult<()> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.restart_agent().await
 }
 
@@ -76,7 +82,7 @@ pub async fn gpg_list_keys(
     state: State<'_, GpgServiceState>,
     secret_only: bool,
 ) -> CmdResult<Vec<GpgKey>> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.list_keys(secret_only).await
 }
 
@@ -86,7 +92,7 @@ pub async fn gpg_get_key(
     state: State<'_, GpgServiceState>,
     key_id: String,
 ) -> CmdResult<Option<GpgKey>> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.get_key(&key_id).await
 }
 
@@ -96,18 +102,19 @@ pub async fn gpg_generate_key(
     state: State<'_, GpgServiceState>,
     params: KeyGenParams,
 ) -> CmdResult<GpgKey> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.generate_key(&params).await
 }
 
-/// Import GPG key data (ASCII-armored or binary).
+/// Import GPG key data (base64-encoded).
 #[tauri::command]
 pub async fn gpg_import_key(
     state: State<'_, GpgServiceState>,
-    #[serde(with = "serde_bytes_base64")] data: Vec<u8>,
+    data_b64: String,
     armor: bool,
 ) -> CmdResult<KeyImportResult> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let data = b64_decode(&data_b64)?;
+    let mut service = state.lock().await;
     service.import_key(&data, armor).await
 }
 
@@ -117,7 +124,7 @@ pub async fn gpg_import_key_file(
     state: State<'_, GpgServiceState>,
     path: String,
 ) -> CmdResult<KeyImportResult> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.import_key_file(&path).await
 }
 
@@ -128,7 +135,7 @@ pub async fn gpg_export_key(
     key_id: String,
     options: KeyExportOptions,
 ) -> CmdResult<Vec<u8>> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.export_key(&key_id, &options).await
 }
 
@@ -138,7 +145,7 @@ pub async fn gpg_export_secret_key(
     state: State<'_, GpgServiceState>,
     key_id: String,
 ) -> CmdResult<Vec<u8>> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.export_secret_key(&key_id).await
 }
 
@@ -149,7 +156,7 @@ pub async fn gpg_delete_key(
     key_id: String,
     secret_too: bool,
 ) -> CmdResult<bool> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.delete_key(&key_id, secret_too).await
 }
 
@@ -164,7 +171,7 @@ pub async fn gpg_add_uid(
     email: String,
     comment: String,
 ) -> CmdResult<bool> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.add_uid(&key_id, &name, &email, &comment).await
 }
 
@@ -177,7 +184,7 @@ pub async fn gpg_revoke_uid(
     reason: u8,
     description: String,
 ) -> CmdResult<bool> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service
         .revoke_uid(&key_id, uid_index, reason, &description)
         .await
@@ -192,7 +199,7 @@ pub async fn gpg_add_subkey(
     capabilities: Vec<KeyCapability>,
     expiration: Option<String>,
 ) -> CmdResult<bool> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service
         .add_subkey(
             &key_id,
@@ -212,7 +219,7 @@ pub async fn gpg_revoke_subkey(
     reason: u8,
     description: String,
 ) -> CmdResult<bool> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service
         .revoke_subkey(&key_id, subkey_index, reason, &description)
         .await
@@ -225,7 +232,7 @@ pub async fn gpg_set_expiration(
     key_id: String,
     expiration: Option<String>,
 ) -> CmdResult<bool> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.set_expiration(&key_id, expiration.as_deref()).await
 }
 
@@ -237,7 +244,7 @@ pub async fn gpg_generate_revocation(
     reason: u8,
     description: String,
 ) -> CmdResult<String> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service
         .generate_revocation_cert(&key_id, reason, &description)
         .await
@@ -250,12 +257,13 @@ pub async fn gpg_generate_revocation(
 pub async fn gpg_sign_data(
     state: State<'_, GpgServiceState>,
     key_id: String,
-    #[serde(with = "serde_bytes_base64")] data: Vec<u8>,
+    data_b64: String,
     detached: bool,
     armor: bool,
     hash_algo: Option<String>,
 ) -> CmdResult<SignatureResult> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let data = b64_decode(&data_b64)?;
+    let mut service = state.lock().await;
     service
         .sign_data(&key_id, &data, detached, armor, hash_algo.as_deref())
         .await
@@ -265,12 +273,17 @@ pub async fn gpg_sign_data(
 #[tauri::command]
 pub async fn gpg_verify_signature(
     state: State<'_, GpgServiceState>,
-    #[serde(with = "serde_bytes_base64")] data: Vec<u8>,
-    #[serde(with = "serde_bytes_base64")] signature: Option<Vec<u8>>,
+    data_b64: String,
+    signature_b64: Option<String>,
 ) -> CmdResult<VerificationResult> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let data = b64_decode(&data_b64)?;
+    let sig = match &signature_b64 {
+        Some(s) => Some(b64_decode(s)?),
+        None => None,
+    };
+    let mut service = state.lock().await;
     service
-        .verify_signature(&data, signature.as_deref())
+        .verify_signature(&data, sig.as_deref())
         .await
 }
 
@@ -285,7 +298,7 @@ pub async fn gpg_sign_key(
     trust_level: u8,
     exportable: bool,
 ) -> CmdResult<bool> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service
         .sign_key(&signer_id, &target_id, &uid_names, local_only, trust_level, exportable)
         .await
@@ -298,12 +311,13 @@ pub async fn gpg_sign_key(
 pub async fn gpg_encrypt_data(
     state: State<'_, GpgServiceState>,
     recipients: Vec<String>,
-    #[serde(with = "serde_bytes_base64")] data: Vec<u8>,
+    data_b64: String,
     armor: bool,
     sign: bool,
     signer: Option<String>,
 ) -> CmdResult<EncryptionResult> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let data = b64_decode(&data_b64)?;
+    let mut service = state.lock().await;
     service
         .encrypt_data(&recipients, &data, armor, sign, signer.as_deref())
         .await
@@ -313,9 +327,10 @@ pub async fn gpg_encrypt_data(
 #[tauri::command]
 pub async fn gpg_decrypt_data(
     state: State<'_, GpgServiceState>,
-    #[serde(with = "serde_bytes_base64")] data: Vec<u8>,
+    data_b64: String,
 ) -> CmdResult<DecryptionResult> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let data = b64_decode(&data_b64)?;
+    let mut service = state.lock().await;
     service.decrypt_data(&data).await
 }
 
@@ -328,7 +343,7 @@ pub async fn gpg_set_owner_trust(
     key_id: String,
     trust: KeyOwnerTrust,
 ) -> CmdResult<bool> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.set_owner_trust(&key_id, trust).await
 }
 
@@ -337,14 +352,14 @@ pub async fn gpg_set_owner_trust(
 pub async fn gpg_trust_db_stats(
     state: State<'_, GpgServiceState>,
 ) -> CmdResult<TrustDbStats> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.get_trust_db_stats().await
 }
 
 /// Update (recalculate) the trust database.
 #[tauri::command]
 pub async fn gpg_update_trust_db(state: State<'_, GpgServiceState>) -> CmdResult<bool> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.update_trust_db().await
 }
 
@@ -356,7 +371,7 @@ pub async fn gpg_search_keyserver(
     state: State<'_, GpgServiceState>,
     query: String,
 ) -> CmdResult<Vec<KeyServerResult>> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.search_keyserver(&query).await
 }
 
@@ -366,7 +381,7 @@ pub async fn gpg_fetch_from_keyserver(
     state: State<'_, GpgServiceState>,
     key_id: String,
 ) -> CmdResult<KeyImportResult> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.fetch_from_keyserver(&key_id).await
 }
 
@@ -376,7 +391,7 @@ pub async fn gpg_send_to_keyserver(
     state: State<'_, GpgServiceState>,
     key_id: String,
 ) -> CmdResult<bool> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.send_to_keyserver(&key_id).await
 }
 
@@ -385,7 +400,7 @@ pub async fn gpg_send_to_keyserver(
 pub async fn gpg_refresh_keys(
     state: State<'_, GpgServiceState>,
 ) -> CmdResult<KeyImportResult> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.refresh_keys().await
 }
 
@@ -396,7 +411,7 @@ pub async fn gpg_refresh_keys(
 pub async fn gpg_card_status(
     state: State<'_, GpgServiceState>,
 ) -> CmdResult<Option<SmartCardInfo>> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.get_card_status().await
 }
 
@@ -405,7 +420,7 @@ pub async fn gpg_card_status(
 pub async fn gpg_list_cards(
     state: State<'_, GpgServiceState>,
 ) -> CmdResult<Vec<SmartCardInfo>> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.list_cards().await
 }
 
@@ -415,14 +430,14 @@ pub async fn gpg_card_change_pin(
     state: State<'_, GpgServiceState>,
     pin_type: String,
 ) -> CmdResult<bool> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.card_change_pin(&pin_type).await
 }
 
 /// Factory-reset the smart card.
 #[tauri::command]
 pub async fn gpg_card_factory_reset(state: State<'_, GpgServiceState>) -> CmdResult<bool> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.card_factory_reset().await
 }
 
@@ -433,7 +448,7 @@ pub async fn gpg_card_set_attribute(
     attribute: String,
     value: String,
 ) -> CmdResult<bool> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.card_set_attr(&attribute, &value).await
 }
 
@@ -444,7 +459,7 @@ pub async fn gpg_card_generate_key(
     slot: CardSlot,
     algorithm: GpgKeyAlgorithm,
 ) -> CmdResult<bool> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.card_gen_key(slot, &algorithm).await
 }
 
@@ -456,7 +471,7 @@ pub async fn gpg_card_move_key(
     subkey_index: usize,
     slot: CardSlot,
 ) -> CmdResult<bool> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.card_move_key(&key_id, subkey_index, slot).await
 }
 
@@ -465,7 +480,7 @@ pub async fn gpg_card_move_key(
 pub async fn gpg_card_fetch_key(
     state: State<'_, GpgServiceState>,
 ) -> CmdResult<KeyImportResult> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.card_fetch_key().await
 }
 
@@ -477,21 +492,21 @@ pub async fn gpg_audit_log(
     state: State<'_, GpgServiceState>,
     limit: usize,
 ) -> CmdResult<Vec<GpgAuditEntry>> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     Ok(service.audit_log(limit))
 }
 
 /// Export the audit log as JSON.
 #[tauri::command]
 pub async fn gpg_audit_export(state: State<'_, GpgServiceState>) -> CmdResult<String> {
-    let service = state.lock().map_err(|e| e.to_string())?;
+    let service = state.lock().await;
     service.audit_export()
 }
 
 /// Clear the audit log.
 #[tauri::command]
 pub async fn gpg_audit_clear(state: State<'_, GpgServiceState>) -> CmdResult<()> {
-    let mut service = state.lock().map_err(|e| e.to_string())?;
+    let mut service = state.lock().await;
     service.audit_clear();
     Ok(())
 }

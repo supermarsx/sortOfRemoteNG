@@ -5,7 +5,7 @@
 //! with optional file persistence.
 
 use crate::types::*;
-use log::{debug, info};
+use log::info;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 

@@ -4,7 +4,6 @@
 //! direct socket communication and command-line fallback via
 //! `tokio::process::Command`.
 
-use crate::types::*;
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use tokio::process::Command;

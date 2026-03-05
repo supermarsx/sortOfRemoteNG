@@ -5,8 +5,7 @@
 //! and service state.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // ── Key Algorithm ───────────────────────────────────────────────────
 
@@ -1014,7 +1013,7 @@ pub struct GpgAuditEntry {
 // ── State Alias ─────────────────────────────────────────────────────
 
 /// Tauri managed-state type for the GPG agent service.
-pub type GpgServiceState = Arc<Mutex<crate::service::GpgAgentService>>;
+pub type GpgServiceState = Arc<tokio::sync::Mutex<crate::service::GpgAgentService>>;
 
 // ── Serde helpers ───────────────────────────────────────────────────
 

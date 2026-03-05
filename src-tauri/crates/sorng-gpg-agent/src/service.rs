@@ -13,7 +13,7 @@ use crate::protocol::AssuanClient;
 use crate::signing::SigningEngine;
 use crate::trust::TrustManager;
 use crate::types::*;
-use log::{error, info, warn};
+use log::{info, warn};
 
 /// The main GPG agent service — orchestrates all modules.
 pub struct GpgAgentService {

@@ -4,9 +4,9 @@
 //! execution. Supports multi-recipient, armor output, and combined
 //! sign+encrypt operations.
 
-use crate::protocol::{run_gpg_command, run_gpg_command_bytes, run_gpg_command_with_input};
+use crate::protocol::{run_gpg_command, run_gpg_command_with_input};
 use crate::types::*;
-use log::{debug, info};
+use log::info;
 
 /// GPG encryption engine.
 pub struct EncryptionEngine {

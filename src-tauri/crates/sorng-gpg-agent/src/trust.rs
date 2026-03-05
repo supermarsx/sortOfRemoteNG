@@ -6,7 +6,7 @@
 use crate::keyring;
 use crate::protocol::run_gpg_command;
 use crate::types::*;
-use log::{debug, info};
+use log::info;
 
 /// Trust model manager.
 pub struct TrustManager {

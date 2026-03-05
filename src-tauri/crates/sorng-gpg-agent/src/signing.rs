@@ -5,7 +5,7 @@
 
 use crate::protocol::{run_gpg_command, run_gpg_command_bytes, run_gpg_command_with_input};
 use crate::types::*;
-use log::{debug, info, warn};
+use log::info;
 
 /// GPG signing engine.
 pub struct SigningEngine {
