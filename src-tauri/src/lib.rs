@@ -101,6 +101,7 @@ pub use sorng_vpn::chaining;
 pub use sorng_aws as aws;
 pub use sorng_gcp as gcp;
 pub use sorng_azure as azure;
+pub use sorng_exchange as exchange;
 pub use sorng_smtp as smtp;
 pub use sorng_cloud::ibm;
 pub use sorng_cloud::digital_ocean;
@@ -163,6 +164,9 @@ pub use sorng_hyperv as hyperv;
 // VMware / vSphere (dedicated crate)
 pub use sorng_vmware as vmware;
 
+// VMware Desktop — Player, Workstation, Fusion (dedicated crate)
+pub use sorng_vmware_desktop as vmware_desktop;
+
 // Proxmox VE (dedicated crate)
 pub use sorng_proxmox as proxmox;
 
@@ -177,6 +181,9 @@ pub use sorng_lenovo as lenovo;
 
 // Supermicro BMC management (dedicated crate)
 pub use sorng_supermicro as supermicro;
+
+// Synology NAS management (dedicated crate)
+pub use sorng_synology as synology;
 
 // MeshCentral (dedicated crate)
 pub use sorng_meshcentral::meshcentral as meshcentral_dedicated;
@@ -262,6 +269,9 @@ pub use sorng_k8s as k8s;
 // Docker — container lifecycle, images, volumes, networks, compose, registry (dedicated crate)
 pub use sorng_docker as docker;
 
+// LXD / Incus — instances, snapshots, backups, images, profiles, networks, storage, projects, cluster, certificates, operations, warnings, migration (dedicated crate)
+pub use sorng_lxd as lxd;
+
 // Ansible — playbooks, inventory, ad-hoc commands, vault, galaxy, facts (dedicated crate)
 pub use sorng_ansible as ansible;
 
@@ -291,6 +301,42 @@ pub use sorng_mcp as mcp_server;
 
 // SNMP — SNMPv1/v2c/v3 client, walk, table, trap receiver, MIB database, discovery, monitoring (dedicated crate)
 pub use sorng_snmp as snmp;
+
+// Dashboard — connection health dashboard with widgets, heatmaps, sparklines, alerts (dedicated crate)
+pub use sorng_dashboard;
+
+// Hooks — event hook engine with pipelines, filters, subscribers (dedicated crate)
+pub use sorng_hooks;
+
+// Notifications — notification rules engine with channels, templates, throttling, escalation (dedicated crate)
+pub use sorng_notifications;
+
+// Topology — connection map and network topology visualizer with graph analysis (dedicated crate)
+pub use sorng_topology;
+
+// Filters — smart groups, dynamic filters, presets, evaluation cache (dedicated crate)
+pub use sorng_filters;
+
+// Credentials — credential rotation tracking, expiry monitoring, policies, audit (dedicated crate)
+pub use sorng_credentials;
+
+// Replay — session replay viewer with timeline scrubbing, annotations, search (dedicated crate)
+pub use sorng_replay;
+
+// RDP File — .rdp file import/export, batch operations, full spec support (dedicated crate)
+pub use sorng_rdpfile;
+
+// Updater — app auto-updater with channels, rollback, scheduled installs (dedicated crate)
+pub use sorng_updater;
+
+// Marketplace — plugin marketplace with git repositories, ratings, dependency resolution (dedicated crate)
+pub use sorng_marketplace;
+
+// Portable — portable mode detection, path management, migration (dedicated crate)
+pub use sorng_portable;
+
+// Scheduler — cron-like task scheduler with execution engine, history (dedicated crate)
+pub use sorng_scheduler;
 
 // App-level module: REST API gateway (stays in the main crate)
 pub mod api;
@@ -343,6 +389,7 @@ use rlogin::RloginService;
 use raw_socket::RawSocketService;
 use gcp::GcpService;
 use azure::service::AzureService;
+use exchange::service::ExchangeService;
 use smtp::service::SmtpService;
 use ibm::IbmService;
 use digital_ocean::DigitalOceanService;
@@ -370,11 +417,13 @@ use google_passwords::service::GooglePasswordsServiceState;
 use dashlane::service::DashlaneServiceState;
 use hyperv::service::HyperVServiceState;
 use vmware::service::VmwareServiceState;
+use vmware_desktop::service::VmwDesktopServiceState;
 use proxmox::service::ProxmoxServiceState;
 use idrac::service::IdracServiceState;
 use ilo::service::IloServiceState;
 use lenovo::service::LenovoServiceState;
 use supermicro::service::SmcServiceState;
+use synology::service::SynologyServiceState;
 use meshcentral_dedicated::MeshCentralService;
 use mremoteng_dedicated::MremotengService;
 use termserv::service::TermServServiceState;
@@ -388,6 +437,7 @@ use terminal_themes::ThemeEngineState;
 use extensions::service::ExtensionsServiceState;
 use k8s::service::K8sServiceState;
 use docker::service::DockerServiceState;
+use lxd::service::LxdService;
 use ansible::service::AnsibleServiceState;
 use terraform::service::TerraformServiceState;
 use i18n::I18nServiceState;
@@ -696,6 +746,10 @@ pub fn run() {
       let azure_service = AzureService::new();
       app.manage(azure_service.clone());
 
+      // Initialize Exchange service
+      let exchange_service = ExchangeService::new();
+      app.manage(exchange_service.clone());
+
       // Initialize SMTP service
       let smtp_service = SmtpService::new();
       app.manage(smtp_service.clone());
@@ -808,6 +862,10 @@ pub fn run() {
       let vmware_service: VmwareServiceState = Arc::new(Mutex::new(vmware::service::VmwareService::new()));
       app.manage(vmware_service);
 
+      // Initialize VMware Desktop (Player / Workstation / Fusion) service
+      let vmware_desktop_service: VmwDesktopServiceState = Arc::new(Mutex::new(vmware_desktop::service::VmwDesktopService::new()));
+      app.manage(vmware_desktop_service);
+
       // Initialize Proxmox VE service
       let proxmox_service: ProxmoxServiceState = Arc::new(Mutex::new(proxmox::service::ProxmoxService::new()));
       app.manage(proxmox_service);
@@ -827,6 +885,10 @@ pub fn run() {
       // Initialize Supermicro BMC service
       let smc_service: SmcServiceState = Arc::new(Mutex::new(supermicro::service::SmcService::new()));
       app.manage(smc_service);
+
+      // Initialize Synology NAS service
+      let synology_service: SynologyServiceState = Arc::new(Mutex::new(synology::service::SynologyService::new()));
+      app.manage(synology_service);
 
       // Initialize MeshCentral service
       let meshcentral_dedicated_service = MeshCentralService::new();
@@ -908,6 +970,10 @@ pub fn run() {
       // Initialize Docker service
       let docker_state: DockerServiceState = Arc::new(Mutex::new(docker::service::DockerService::new()));
       app.manage(docker_state);
+
+      // Initialize LXD / Incus service
+      let lxd_service = LxdService::new();
+      app.manage(lxd_service);
 
       // Initialize Ansible service
       let ansible_state: AnsibleServiceState = Arc::new(Mutex::new(ansible::service::AnsibleService::new()));
@@ -1745,6 +1811,228 @@ pub fn run() {
         azure::commands::azure_list_budgets,
         azure::commands::azure_get_budget,
         azure::commands::azure_search_resources,
+        // Exchange commands (sorng-exchange)
+        exchange::commands::exchange_set_config,
+        exchange::commands::exchange_connect,
+        exchange::commands::exchange_disconnect,
+        exchange::commands::exchange_is_connected,
+        exchange::commands::exchange_connection_summary,
+        exchange::commands::exchange_list_mailboxes,
+        exchange::commands::exchange_get_mailbox,
+        exchange::commands::exchange_create_mailbox,
+        exchange::commands::exchange_remove_mailbox,
+        exchange::commands::exchange_enable_mailbox,
+        exchange::commands::exchange_disable_mailbox,
+        exchange::commands::exchange_update_mailbox,
+        exchange::commands::exchange_get_mailbox_statistics,
+        exchange::commands::exchange_get_mailbox_permissions,
+        exchange::commands::exchange_add_mailbox_permission,
+        exchange::commands::exchange_remove_mailbox_permission,
+        exchange::commands::exchange_get_forwarding,
+        exchange::commands::exchange_get_ooo,
+        exchange::commands::exchange_set_ooo,
+        exchange::commands::exchange_list_groups,
+        exchange::commands::exchange_get_group,
+        exchange::commands::exchange_create_group,
+        exchange::commands::exchange_update_group,
+        exchange::commands::exchange_remove_group,
+        exchange::commands::exchange_list_group_members,
+        exchange::commands::exchange_add_group_member,
+        exchange::commands::exchange_remove_group_member,
+        exchange::commands::exchange_list_dynamic_groups,
+        exchange::commands::exchange_list_transport_rules,
+        exchange::commands::exchange_get_transport_rule,
+        exchange::commands::exchange_create_transport_rule,
+        exchange::commands::exchange_update_transport_rule,
+        exchange::commands::exchange_remove_transport_rule,
+        exchange::commands::exchange_enable_transport_rule,
+        exchange::commands::exchange_disable_transport_rule,
+        exchange::commands::exchange_list_send_connectors,
+        exchange::commands::exchange_get_send_connector,
+        exchange::commands::exchange_list_receive_connectors,
+        exchange::commands::exchange_get_receive_connector,
+        exchange::commands::exchange_list_inbound_connectors,
+        exchange::commands::exchange_list_outbound_connectors,
+        exchange::commands::exchange_message_trace,
+        exchange::commands::exchange_message_tracking_log,
+        exchange::commands::exchange_list_queues,
+        exchange::commands::exchange_get_queue,
+        exchange::commands::exchange_retry_queue,
+        exchange::commands::exchange_suspend_queue,
+        exchange::commands::exchange_resume_queue,
+        exchange::commands::exchange_queue_summary,
+        exchange::commands::exchange_list_calendar_permissions,
+        exchange::commands::exchange_set_calendar_permission,
+        exchange::commands::exchange_remove_calendar_permission,
+        exchange::commands::exchange_get_booking_config,
+        exchange::commands::exchange_set_booking_config,
+        exchange::commands::exchange_list_public_folders,
+        exchange::commands::exchange_get_public_folder,
+        exchange::commands::exchange_create_public_folder,
+        exchange::commands::exchange_remove_public_folder,
+        exchange::commands::exchange_mail_enable_public_folder,
+        exchange::commands::exchange_mail_disable_public_folder,
+        exchange::commands::exchange_get_public_folder_statistics,
+        exchange::commands::exchange_list_address_policies,
+        exchange::commands::exchange_get_address_policy,
+        exchange::commands::exchange_apply_address_policy,
+        exchange::commands::exchange_list_accepted_domains,
+        exchange::commands::exchange_list_address_lists,
+        exchange::commands::exchange_list_migration_batches,
+        exchange::commands::exchange_get_migration_batch,
+        exchange::commands::exchange_start_migration_batch,
+        exchange::commands::exchange_stop_migration_batch,
+        exchange::commands::exchange_complete_migration_batch,
+        exchange::commands::exchange_remove_migration_batch,
+        exchange::commands::exchange_list_migration_users,
+        exchange::commands::exchange_list_move_requests,
+        exchange::commands::exchange_get_move_request_statistics,
+        exchange::commands::exchange_new_move_request,
+        exchange::commands::exchange_remove_move_request,
+        exchange::commands::exchange_list_retention_policies,
+        exchange::commands::exchange_get_retention_policy,
+        exchange::commands::exchange_list_retention_tags,
+        exchange::commands::exchange_get_retention_tag,
+        exchange::commands::exchange_get_mailbox_hold,
+        exchange::commands::exchange_enable_litigation_hold,
+        exchange::commands::exchange_disable_litigation_hold,
+        exchange::commands::exchange_list_dlp_policies,
+        exchange::commands::exchange_get_dlp_policy,
+        exchange::commands::exchange_list_servers,
+        exchange::commands::exchange_get_server,
+        exchange::commands::exchange_list_databases,
+        exchange::commands::exchange_get_database,
+        exchange::commands::exchange_mount_database,
+        exchange::commands::exchange_dismount_database,
+        exchange::commands::exchange_list_dags,
+        exchange::commands::exchange_get_dag,
+        exchange::commands::exchange_get_dag_copy_status,
+        exchange::commands::exchange_test_replication_health,
+        exchange::commands::exchange_service_health,
+        exchange::commands::exchange_service_issues,
+        exchange::commands::exchange_test_mailflow,
+        exchange::commands::exchange_test_service_health,
+        exchange::commands::exchange_get_server_component_state,
+        // Exchange – Mail Contacts & Mail Users
+        exchange::commands::exchange_list_mail_contacts,
+        exchange::commands::exchange_get_mail_contact,
+        exchange::commands::exchange_create_mail_contact,
+        exchange::commands::exchange_update_mail_contact,
+        exchange::commands::exchange_remove_mail_contact,
+        exchange::commands::exchange_list_mail_users,
+        exchange::commands::exchange_get_mail_user,
+        exchange::commands::exchange_create_mail_user,
+        exchange::commands::exchange_remove_mail_user,
+        // Exchange – Shared / Resource Mailboxes
+        exchange::commands::exchange_convert_mailbox,
+        exchange::commands::exchange_list_shared_mailboxes,
+        exchange::commands::exchange_list_room_mailboxes,
+        exchange::commands::exchange_list_equipment_mailboxes,
+        exchange::commands::exchange_add_automapping,
+        exchange::commands::exchange_remove_automapping,
+        exchange::commands::exchange_add_send_as,
+        exchange::commands::exchange_remove_send_as,
+        exchange::commands::exchange_add_send_on_behalf,
+        exchange::commands::exchange_remove_send_on_behalf,
+        exchange::commands::exchange_list_room_lists,
+        // Exchange – Archive Mailboxes
+        exchange::commands::exchange_get_archive_info,
+        exchange::commands::exchange_enable_archive,
+        exchange::commands::exchange_disable_archive,
+        exchange::commands::exchange_enable_auto_expanding_archive,
+        exchange::commands::exchange_set_archive_quota,
+        exchange::commands::exchange_get_archive_statistics,
+        // Exchange – Mobile Devices
+        exchange::commands::exchange_list_mobile_devices,
+        exchange::commands::exchange_get_mobile_device_statistics,
+        exchange::commands::exchange_wipe_mobile_device,
+        exchange::commands::exchange_block_mobile_device,
+        exchange::commands::exchange_allow_mobile_device,
+        exchange::commands::exchange_remove_mobile_device,
+        exchange::commands::exchange_list_all_mobile_devices,
+        // Exchange – Inbox Rules
+        exchange::commands::exchange_list_inbox_rules,
+        exchange::commands::exchange_get_inbox_rule,
+        exchange::commands::exchange_create_inbox_rule,
+        exchange::commands::exchange_update_inbox_rule,
+        exchange::commands::exchange_remove_inbox_rule,
+        exchange::commands::exchange_enable_inbox_rule,
+        exchange::commands::exchange_disable_inbox_rule,
+        // Exchange – Policies
+        exchange::commands::exchange_list_owa_policies,
+        exchange::commands::exchange_get_owa_policy,
+        exchange::commands::exchange_set_owa_policy,
+        exchange::commands::exchange_list_mobile_device_policies,
+        exchange::commands::exchange_get_mobile_device_policy,
+        exchange::commands::exchange_set_mobile_device_policy,
+        exchange::commands::exchange_list_throttling_policies,
+        exchange::commands::exchange_get_throttling_policy,
+        // Exchange – Journal Rules
+        exchange::commands::exchange_list_journal_rules,
+        exchange::commands::exchange_get_journal_rule,
+        exchange::commands::exchange_create_journal_rule,
+        exchange::commands::exchange_remove_journal_rule,
+        exchange::commands::exchange_enable_journal_rule,
+        exchange::commands::exchange_disable_journal_rule,
+        // Exchange – RBAC & Audit
+        exchange::commands::exchange_list_role_groups,
+        exchange::commands::exchange_get_role_group,
+        exchange::commands::exchange_add_role_group_member,
+        exchange::commands::exchange_remove_role_group_member,
+        exchange::commands::exchange_list_management_roles,
+        exchange::commands::exchange_get_management_role,
+        exchange::commands::exchange_list_role_assignments,
+        exchange::commands::exchange_search_admin_audit_log,
+        exchange::commands::exchange_get_admin_audit_log_config,
+        exchange::commands::exchange_search_mailbox_audit_log,
+        exchange::commands::exchange_enable_mailbox_audit,
+        exchange::commands::exchange_disable_mailbox_audit,
+        // Exchange – Remote Domains
+        exchange::commands::exchange_list_remote_domains,
+        exchange::commands::exchange_get_remote_domain,
+        exchange::commands::exchange_create_remote_domain,
+        exchange::commands::exchange_update_remote_domain,
+        exchange::commands::exchange_remove_remote_domain,
+        // Exchange – Certificates
+        exchange::commands::exchange_list_certificates,
+        exchange::commands::exchange_get_certificate,
+        exchange::commands::exchange_enable_certificate,
+        exchange::commands::exchange_import_certificate,
+        exchange::commands::exchange_remove_certificate,
+        exchange::commands::exchange_new_certificate_request,
+        // Exchange – Virtual Directories & Org Config
+        exchange::commands::exchange_list_owa_virtual_directories,
+        exchange::commands::exchange_list_ecp_virtual_directories,
+        exchange::commands::exchange_list_activesync_virtual_directories,
+        exchange::commands::exchange_list_ews_virtual_directories,
+        exchange::commands::exchange_list_mapi_virtual_directories,
+        exchange::commands::exchange_list_autodiscover_virtual_directories,
+        exchange::commands::exchange_list_powershell_virtual_directories,
+        exchange::commands::exchange_list_oab_virtual_directories,
+        exchange::commands::exchange_set_virtual_directory_urls,
+        exchange::commands::exchange_list_outlook_anywhere,
+        exchange::commands::exchange_get_organization_config,
+        exchange::commands::exchange_set_organization_config,
+        exchange::commands::exchange_get_transport_config,
+        exchange::commands::exchange_set_transport_config,
+        // Exchange – Anti-Spam & Hygiene
+        exchange::commands::exchange_get_content_filter_config,
+        exchange::commands::exchange_set_content_filter_config,
+        exchange::commands::exchange_get_connection_filter_config,
+        exchange::commands::exchange_set_connection_filter_config,
+        exchange::commands::exchange_get_sender_filter_config,
+        exchange::commands::exchange_set_sender_filter_config,
+        exchange::commands::exchange_list_quarantine_messages,
+        exchange::commands::exchange_get_quarantine_message,
+        exchange::commands::exchange_release_quarantine_message,
+        exchange::commands::exchange_delete_quarantine_message,
+        // Exchange – Mailbox Import/Export (PST)
+        exchange::commands::exchange_new_mailbox_import_request,
+        exchange::commands::exchange_new_mailbox_export_request,
+        exchange::commands::exchange_list_mailbox_import_requests,
+        exchange::commands::exchange_list_mailbox_export_requests,
+        exchange::commands::exchange_remove_mailbox_import_request,
+        exchange::commands::exchange_remove_mailbox_export_request,
         // SMTP commands
         smtp::commands::smtp_add_profile,
         smtp::commands::smtp_update_profile,
@@ -3399,6 +3687,123 @@ pub fn run() {
         supermicro::commands::smc_get_node_manager_stats,
         // Supermicro BMC commands — Reset
         supermicro::commands::smc_reset_bmc,
+        // Synology NAS commands — Connection
+        synology::commands::syn_connect,
+        synology::commands::syn_disconnect,
+        synology::commands::syn_is_connected,
+        synology::commands::syn_check_session,
+        synology::commands::syn_get_config,
+        // Synology NAS commands — System
+        synology::commands::syn_get_system_info,
+        synology::commands::syn_get_utilization,
+        synology::commands::syn_list_processes,
+        synology::commands::syn_reboot,
+        synology::commands::syn_shutdown,
+        synology::commands::syn_check_update,
+        // Synology NAS commands — Storage
+        synology::commands::syn_get_storage_overview,
+        synology::commands::syn_list_disks,
+        synology::commands::syn_list_volumes,
+        synology::commands::syn_get_smart_info,
+        synology::commands::syn_list_iscsi_luns,
+        synology::commands::syn_list_iscsi_targets,
+        // Synology NAS commands — File Station
+        synology::commands::syn_get_file_station_info,
+        synology::commands::syn_list_files,
+        synology::commands::syn_list_file_shared_folders,
+        synology::commands::syn_search_files,
+        synology::commands::syn_upload_file,
+        synology::commands::syn_download_file,
+        synology::commands::syn_create_folder,
+        synology::commands::syn_delete_files,
+        synology::commands::syn_rename_file,
+        synology::commands::syn_create_share_link,
+        // Synology NAS commands — Shared Folders
+        synology::commands::syn_list_shared_folders,
+        synology::commands::syn_get_share_permissions,
+        synology::commands::syn_create_shared_folder,
+        synology::commands::syn_delete_shared_folder,
+        synology::commands::syn_mount_encrypted_share,
+        synology::commands::syn_unmount_encrypted_share,
+        // Synology NAS commands — Network
+        synology::commands::syn_get_network_overview,
+        synology::commands::syn_list_network_interfaces,
+        synology::commands::syn_list_firewall_rules,
+        synology::commands::syn_list_dhcp_leases,
+        // Synology NAS commands — Users & Groups
+        synology::commands::syn_list_users,
+        synology::commands::syn_create_user,
+        synology::commands::syn_delete_user,
+        synology::commands::syn_list_groups,
+        // Synology NAS commands — Packages
+        synology::commands::syn_list_packages,
+        synology::commands::syn_start_package,
+        synology::commands::syn_stop_package,
+        synology::commands::syn_install_package,
+        synology::commands::syn_uninstall_package,
+        // Synology NAS commands — Services
+        synology::commands::syn_list_services,
+        synology::commands::syn_get_smb_config,
+        synology::commands::syn_get_nfs_config,
+        synology::commands::syn_get_ssh_config,
+        synology::commands::syn_set_ssh_enabled,
+        // Synology NAS commands — Docker
+        synology::commands::syn_list_docker_containers,
+        synology::commands::syn_start_docker_container,
+        synology::commands::syn_stop_docker_container,
+        synology::commands::syn_restart_docker_container,
+        synology::commands::syn_delete_docker_container,
+        synology::commands::syn_list_docker_images,
+        synology::commands::syn_pull_docker_image,
+        synology::commands::syn_list_docker_networks,
+        synology::commands::syn_list_docker_projects,
+        synology::commands::syn_start_docker_project,
+        synology::commands::syn_stop_docker_project,
+        // Synology NAS commands — VMs
+        synology::commands::syn_list_vms,
+        synology::commands::syn_vm_power_on,
+        synology::commands::syn_vm_shutdown,
+        synology::commands::syn_vm_force_shutdown,
+        synology::commands::syn_list_vm_snapshots,
+        synology::commands::syn_take_vm_snapshot,
+        // Synology NAS commands — Download Station
+        synology::commands::syn_get_download_station_info,
+        synology::commands::syn_list_download_tasks,
+        synology::commands::syn_create_download_task,
+        synology::commands::syn_pause_download,
+        synology::commands::syn_resume_download,
+        synology::commands::syn_delete_download,
+        synology::commands::syn_get_download_stats,
+        // Synology NAS commands — Surveillance
+        synology::commands::syn_get_surveillance_info,
+        synology::commands::syn_list_cameras,
+        synology::commands::syn_get_camera_snapshot,
+        synology::commands::syn_list_recordings,
+        // Synology NAS commands — Backup
+        synology::commands::syn_list_backup_tasks,
+        synology::commands::syn_start_backup_task,
+        synology::commands::syn_cancel_backup_task,
+        synology::commands::syn_list_backup_versions,
+        synology::commands::syn_list_active_backup_devices,
+        // Synology NAS commands — Security
+        synology::commands::syn_get_security_overview,
+        synology::commands::syn_list_blocked_ips,
+        synology::commands::syn_unblock_ip,
+        synology::commands::syn_list_certificates,
+        synology::commands::syn_get_auto_block_config,
+        // Synology NAS commands — Hardware
+        synology::commands::syn_get_hardware_info,
+        synology::commands::syn_get_ups_info,
+        synology::commands::syn_get_power_schedule,
+        // Synology NAS commands — Logs
+        synology::commands::syn_get_system_logs,
+        synology::commands::syn_get_connection_logs,
+        synology::commands::syn_get_active_connections,
+        // Synology NAS commands — Notifications
+        synology::commands::syn_get_notification_config,
+        synology::commands::syn_test_email_notification,
+        // Synology NAS commands — Dashboard
+        synology::commands::syn_get_dashboard,
         // mRemoteNG commands — Format Detection
         mremoteng_dedicated::mrng_detect_format,
         mremoteng_dedicated::mrng_get_import_formats,
@@ -4996,6 +5401,479 @@ pub fn run() {
         snmp::commands::snmp_get_service_status,
         snmp::commands::snmp_bulk_get,
         snmp::commands::snmp_bulk_walk,
+        // ── Dashboard ──────────────────────────────────────────────────
+        sorng_dashboard::commands::dash_get_state,
+        sorng_dashboard::commands::dash_get_health_summary,
+        sorng_dashboard::commands::dash_get_quick_stats,
+        sorng_dashboard::commands::dash_get_alerts,
+        sorng_dashboard::commands::dash_acknowledge_alert,
+        sorng_dashboard::commands::dash_get_connection_health,
+        sorng_dashboard::commands::dash_get_all_health,
+        sorng_dashboard::commands::dash_get_unhealthy,
+        sorng_dashboard::commands::dash_get_sparkline,
+        sorng_dashboard::commands::dash_get_widget_data,
+        sorng_dashboard::commands::dash_start_monitoring,
+        sorng_dashboard::commands::dash_stop_monitoring,
+        sorng_dashboard::commands::dash_force_refresh,
+        sorng_dashboard::commands::dash_get_config,
+        sorng_dashboard::commands::dash_update_config,
+        sorng_dashboard::commands::dash_get_layout,
+        sorng_dashboard::commands::dash_update_layout,
+        sorng_dashboard::commands::dash_get_heatmap,
+        sorng_dashboard::commands::dash_get_recent,
+        sorng_dashboard::commands::dash_get_top_latency,
+        sorng_dashboard::commands::dash_check_connection,
+        // ── Hooks ──────────────────────────────────────────────────────
+        sorng_hooks::commands::hook_subscribe,
+        sorng_hooks::commands::hook_unsubscribe,
+        sorng_hooks::commands::hook_list_subscriptions,
+        sorng_hooks::commands::hook_get_subscription,
+        sorng_hooks::commands::hook_enable_subscription,
+        sorng_hooks::commands::hook_disable_subscription,
+        sorng_hooks::commands::hook_dispatch_event,
+        sorng_hooks::commands::hook_get_recent_events,
+        sorng_hooks::commands::hook_get_events_by_type,
+        sorng_hooks::commands::hook_get_stats,
+        sorng_hooks::commands::hook_clear_events,
+        sorng_hooks::commands::hook_create_pipeline,
+        sorng_hooks::commands::hook_delete_pipeline,
+        sorng_hooks::commands::hook_list_pipelines,
+        sorng_hooks::commands::hook_execute_pipeline,
+        sorng_hooks::commands::hook_get_config,
+        sorng_hooks::commands::hook_update_config,
+        // ── Notifications ──────────────────────────────────────────────
+        sorng_notifications::commands::notif_add_rule,
+        sorng_notifications::commands::notif_remove_rule,
+        sorng_notifications::commands::notif_list_rules,
+        sorng_notifications::commands::notif_get_rule,
+        sorng_notifications::commands::notif_enable_rule,
+        sorng_notifications::commands::notif_disable_rule,
+        sorng_notifications::commands::notif_update_rule,
+        sorng_notifications::commands::notif_add_template,
+        sorng_notifications::commands::notif_remove_template,
+        sorng_notifications::commands::notif_list_templates,
+        sorng_notifications::commands::notif_process_event,
+        sorng_notifications::commands::notif_get_history,
+        sorng_notifications::commands::notif_get_recent_history,
+        sorng_notifications::commands::notif_clear_history,
+        sorng_notifications::commands::notif_get_stats,
+        sorng_notifications::commands::notif_get_config,
+        sorng_notifications::commands::notif_update_config,
+        sorng_notifications::commands::notif_test_channel,
+        sorng_notifications::commands::notif_acknowledge_escalation,
+        // ── Topology ───────────────────────────────────────────────────
+        sorng_topology::commands::topo_build_from_connections,
+        sorng_topology::commands::topo_get_graph,
+        sorng_topology::commands::topo_add_node,
+        sorng_topology::commands::topo_remove_node,
+        sorng_topology::commands::topo_update_node,
+        sorng_topology::commands::topo_add_edge,
+        sorng_topology::commands::topo_remove_edge,
+        sorng_topology::commands::topo_apply_layout,
+        sorng_topology::commands::topo_get_blast_radius,
+        sorng_topology::commands::topo_find_bottlenecks,
+        sorng_topology::commands::topo_find_critical_edges,
+        sorng_topology::commands::topo_get_path,
+        sorng_topology::commands::topo_get_neighbors,
+        sorng_topology::commands::topo_get_connected_components,
+        sorng_topology::commands::topo_get_stats,
+        sorng_topology::commands::topo_create_snapshot,
+        sorng_topology::commands::topo_list_snapshots,
+        sorng_topology::commands::topo_add_group,
+        sorng_topology::commands::topo_remove_group,
+        // ── Filters ────────────────────────────────────────────────────
+        sorng_filters::commands::filter_create,
+        sorng_filters::commands::filter_delete,
+        sorng_filters::commands::filter_update,
+        sorng_filters::commands::filter_get,
+        sorng_filters::commands::filter_list,
+        sorng_filters::commands::filter_evaluate,
+        sorng_filters::commands::filter_get_presets,
+        sorng_filters::commands::filter_create_smart_group,
+        sorng_filters::commands::filter_delete_smart_group,
+        sorng_filters::commands::filter_list_smart_groups,
+        sorng_filters::commands::filter_update_smart_group,
+        sorng_filters::commands::filter_evaluate_smart_group,
+        sorng_filters::commands::filter_invalidate_cache,
+        sorng_filters::commands::filter_get_stats,
+        sorng_filters::commands::filter_get_config,
+        sorng_filters::commands::filter_update_config,
+        // ── Credentials ────────────────────────────────────────────────
+        sorng_credentials::commands::cred_add,
+        sorng_credentials::commands::cred_remove,
+        sorng_credentials::commands::cred_update,
+        sorng_credentials::commands::cred_get,
+        sorng_credentials::commands::cred_list,
+        sorng_credentials::commands::cred_record_rotation,
+        sorng_credentials::commands::cred_check_expiry,
+        sorng_credentials::commands::cred_check_all_expiries,
+        sorng_credentials::commands::cred_get_stale,
+        sorng_credentials::commands::cred_get_expiring_soon,
+        sorng_credentials::commands::cred_get_expired,
+        sorng_credentials::commands::cred_add_policy,
+        sorng_credentials::commands::cred_remove_policy,
+        sorng_credentials::commands::cred_list_policies,
+        sorng_credentials::commands::cred_check_compliance,
+        sorng_credentials::commands::cred_check_strength,
+        sorng_credentials::commands::cred_detect_duplicates,
+        sorng_credentials::commands::cred_create_group,
+        sorng_credentials::commands::cred_delete_group,
+        sorng_credentials::commands::cred_list_groups,
+        sorng_credentials::commands::cred_add_to_group,
+        sorng_credentials::commands::cred_remove_from_group,
+        sorng_credentials::commands::cred_get_alerts,
+        sorng_credentials::commands::cred_acknowledge_alert,
+        sorng_credentials::commands::cred_generate_alerts,
+        sorng_credentials::commands::cred_get_audit_log,
+        sorng_credentials::commands::cred_get_stats,
+        sorng_credentials::commands::cred_get_config,
+        sorng_credentials::commands::cred_update_config,
+        // ── Replay ─────────────────────────────────────────────────────
+        sorng_replay::commands::replay_load_terminal,
+        sorng_replay::commands::replay_load_video,
+        sorng_replay::commands::replay_load_har,
+        sorng_replay::commands::replay_play,
+        sorng_replay::commands::replay_pause,
+        sorng_replay::commands::replay_stop,
+        sorng_replay::commands::replay_seek,
+        sorng_replay::commands::replay_set_speed,
+        sorng_replay::commands::replay_get_state,
+        sorng_replay::commands::replay_get_position,
+        sorng_replay::commands::replay_get_frame_at,
+        sorng_replay::commands::replay_get_terminal_state_at,
+        sorng_replay::commands::replay_advance_frame,
+        sorng_replay::commands::replay_get_timeline,
+        sorng_replay::commands::replay_get_markers,
+        sorng_replay::commands::replay_get_heatmap,
+        sorng_replay::commands::replay_search,
+        sorng_replay::commands::replay_add_annotation,
+        sorng_replay::commands::replay_remove_annotation,
+        sorng_replay::commands::replay_list_annotations,
+        sorng_replay::commands::replay_add_bookmark,
+        sorng_replay::commands::replay_remove_bookmark,
+        sorng_replay::commands::replay_list_bookmarks,
+        sorng_replay::commands::replay_export,
+        sorng_replay::commands::replay_get_stats,
+        sorng_replay::commands::replay_get_config,
+        sorng_replay::commands::replay_update_config,
+        sorng_replay::commands::replay_get_har_waterfall,
+        sorng_replay::commands::replay_get_har_stats,
+        // ── RDP File ───────────────────────────────────────────────────
+        sorng_rdpfile::commands::rdpfile_parse,
+        sorng_rdpfile::commands::rdpfile_generate,
+        sorng_rdpfile::commands::rdpfile_import,
+        sorng_rdpfile::commands::rdpfile_export,
+        sorng_rdpfile::commands::rdpfile_batch_export,
+        sorng_rdpfile::commands::rdpfile_batch_import,
+        sorng_rdpfile::commands::rdpfile_validate,
+        // ── Updater ────────────────────────────────────────────────────
+        sorng_updater::commands::updater_check,
+        sorng_updater::commands::updater_download,
+        sorng_updater::commands::updater_cancel_download,
+        sorng_updater::commands::updater_install,
+        sorng_updater::commands::updater_schedule_install,
+        sorng_updater::commands::updater_get_status,
+        sorng_updater::commands::updater_get_config,
+        sorng_updater::commands::updater_update_config,
+        sorng_updater::commands::updater_set_channel,
+        sorng_updater::commands::updater_get_version_info,
+        sorng_updater::commands::updater_get_history,
+        sorng_updater::commands::updater_rollback,
+        sorng_updater::commands::updater_get_rollbacks,
+        sorng_updater::commands::updater_get_release_notes,
+        // ── Marketplace ────────────────────────────────────────────────
+        sorng_marketplace::commands::mkt_search,
+        sorng_marketplace::commands::mkt_get_listing,
+        sorng_marketplace::commands::mkt_get_categories,
+        sorng_marketplace::commands::mkt_get_featured,
+        sorng_marketplace::commands::mkt_get_popular,
+        sorng_marketplace::commands::mkt_install,
+        sorng_marketplace::commands::mkt_uninstall,
+        sorng_marketplace::commands::mkt_update,
+        sorng_marketplace::commands::mkt_get_installed,
+        sorng_marketplace::commands::mkt_check_updates,
+        sorng_marketplace::commands::mkt_refresh_repositories,
+        sorng_marketplace::commands::mkt_add_repository,
+        sorng_marketplace::commands::mkt_remove_repository,
+        sorng_marketplace::commands::mkt_list_repositories,
+        sorng_marketplace::commands::mkt_get_reviews,
+        sorng_marketplace::commands::mkt_add_review,
+        sorng_marketplace::commands::mkt_get_stats,
+        sorng_marketplace::commands::mkt_get_config,
+        sorng_marketplace::commands::mkt_update_config,
+        sorng_marketplace::commands::mkt_validate_manifest,
+        // ── Portable ───────────────────────────────────────────────────
+        sorng_portable::commands::portable_detect_mode,
+        sorng_portable::commands::portable_get_status,
+        sorng_portable::commands::portable_get_paths,
+        sorng_portable::commands::portable_get_config,
+        sorng_portable::commands::portable_update_config,
+        sorng_portable::commands::portable_migrate_to_portable,
+        sorng_portable::commands::portable_migrate_to_installed,
+        sorng_portable::commands::portable_create_marker,
+        sorng_portable::commands::portable_remove_marker,
+        sorng_portable::commands::portable_validate,
+        sorng_portable::commands::portable_get_drive_info,
+        // ── Scheduler ──────────────────────────────────────────────────
+        sorng_scheduler::commands::sched_add_task,
+        sorng_scheduler::commands::sched_remove_task,
+        sorng_scheduler::commands::sched_update_task,
+        sorng_scheduler::commands::sched_get_task,
+        sorng_scheduler::commands::sched_list_tasks,
+        sorng_scheduler::commands::sched_enable_task,
+        sorng_scheduler::commands::sched_disable_task,
+        sorng_scheduler::commands::sched_execute_now,
+        sorng_scheduler::commands::sched_cancel_task,
+        sorng_scheduler::commands::sched_get_history,
+        sorng_scheduler::commands::sched_get_upcoming,
+        sorng_scheduler::commands::sched_get_stats,
+        sorng_scheduler::commands::sched_get_config,
+        sorng_scheduler::commands::sched_update_config,
+        sorng_scheduler::commands::sched_cleanup_history,
+        sorng_scheduler::commands::sched_validate_cron,
+        sorng_scheduler::commands::sched_get_next_occurrences,
+        sorng_scheduler::commands::sched_pause_all,
+        sorng_scheduler::commands::sched_resume_all,
+        // ── LXD / Incus commands ─────────────────────────────────────
+        lxd::commands::lxd_connect,
+        lxd::commands::lxd_disconnect,
+        lxd::commands::lxd_is_connected,
+        // Server & Cluster
+        lxd::commands::lxd_get_server,
+        lxd::commands::lxd_get_server_resources,
+        lxd::commands::lxd_update_server_config,
+        lxd::commands::lxd_get_cluster,
+        lxd::commands::lxd_list_cluster_members,
+        lxd::commands::lxd_get_cluster_member,
+        lxd::commands::lxd_evacuate_cluster_member,
+        lxd::commands::lxd_restore_cluster_member,
+        lxd::commands::lxd_remove_cluster_member,
+        // Instances
+        lxd::commands::lxd_list_instances,
+        lxd::commands::lxd_list_containers,
+        lxd::commands::lxd_list_virtual_machines,
+        lxd::commands::lxd_get_instance,
+        lxd::commands::lxd_get_instance_state,
+        lxd::commands::lxd_create_instance,
+        lxd::commands::lxd_update_instance,
+        lxd::commands::lxd_patch_instance,
+        lxd::commands::lxd_delete_instance,
+        lxd::commands::lxd_rename_instance,
+        lxd::commands::lxd_start_instance,
+        lxd::commands::lxd_stop_instance,
+        lxd::commands::lxd_restart_instance,
+        lxd::commands::lxd_freeze_instance,
+        lxd::commands::lxd_unfreeze_instance,
+        lxd::commands::lxd_exec_instance,
+        lxd::commands::lxd_console_instance,
+        lxd::commands::lxd_clear_console_log,
+        lxd::commands::lxd_list_instance_logs,
+        lxd::commands::lxd_get_instance_log,
+        lxd::commands::lxd_get_instance_file,
+        lxd::commands::lxd_push_instance_file,
+        lxd::commands::lxd_delete_instance_file,
+        // Snapshots
+        lxd::commands::lxd_list_snapshots,
+        lxd::commands::lxd_get_snapshot,
+        lxd::commands::lxd_create_snapshot,
+        lxd::commands::lxd_delete_snapshot,
+        lxd::commands::lxd_rename_snapshot,
+        lxd::commands::lxd_restore_snapshot,
+        // Backups
+        lxd::commands::lxd_list_backups,
+        lxd::commands::lxd_get_backup,
+        lxd::commands::lxd_create_backup,
+        lxd::commands::lxd_delete_backup,
+        lxd::commands::lxd_rename_backup,
+        // Images
+        lxd::commands::lxd_list_images,
+        lxd::commands::lxd_get_image,
+        lxd::commands::lxd_get_image_alias,
+        lxd::commands::lxd_create_image_alias,
+        lxd::commands::lxd_delete_image_alias,
+        lxd::commands::lxd_delete_image,
+        lxd::commands::lxd_update_image,
+        lxd::commands::lxd_copy_image_from_remote,
+        lxd::commands::lxd_refresh_image,
+        // Profiles
+        lxd::commands::lxd_list_profiles,
+        lxd::commands::lxd_get_profile,
+        lxd::commands::lxd_create_profile,
+        lxd::commands::lxd_update_profile,
+        lxd::commands::lxd_patch_profile,
+        lxd::commands::lxd_delete_profile,
+        lxd::commands::lxd_rename_profile,
+        // Networks
+        lxd::commands::lxd_list_networks,
+        lxd::commands::lxd_get_network,
+        lxd::commands::lxd_create_network,
+        lxd::commands::lxd_update_network,
+        lxd::commands::lxd_patch_network,
+        lxd::commands::lxd_delete_network,
+        lxd::commands::lxd_rename_network,
+        lxd::commands::lxd_get_network_state,
+        lxd::commands::lxd_list_network_leases,
+        lxd::commands::lxd_list_network_acls,
+        lxd::commands::lxd_get_network_acl,
+        lxd::commands::lxd_create_network_acl,
+        lxd::commands::lxd_update_network_acl,
+        lxd::commands::lxd_delete_network_acl,
+        lxd::commands::lxd_list_network_forwards,
+        lxd::commands::lxd_get_network_forward,
+        lxd::commands::lxd_create_network_forward,
+        lxd::commands::lxd_delete_network_forward,
+        lxd::commands::lxd_list_network_zones,
+        lxd::commands::lxd_get_network_zone,
+        lxd::commands::lxd_delete_network_zone,
+        lxd::commands::lxd_list_network_load_balancers,
+        lxd::commands::lxd_get_network_load_balancer,
+        lxd::commands::lxd_delete_network_load_balancer,
+        lxd::commands::lxd_list_network_peers,
+        // Storage
+        lxd::commands::lxd_list_storage_pools,
+        lxd::commands::lxd_get_storage_pool,
+        lxd::commands::lxd_create_storage_pool,
+        lxd::commands::lxd_update_storage_pool,
+        lxd::commands::lxd_delete_storage_pool,
+        lxd::commands::lxd_get_storage_pool_resources,
+        lxd::commands::lxd_list_storage_volumes,
+        lxd::commands::lxd_list_custom_volumes,
+        lxd::commands::lxd_get_storage_volume,
+        lxd::commands::lxd_create_storage_volume,
+        lxd::commands::lxd_update_storage_volume,
+        lxd::commands::lxd_delete_storage_volume,
+        lxd::commands::lxd_rename_storage_volume,
+        lxd::commands::lxd_list_volume_snapshots,
+        lxd::commands::lxd_create_volume_snapshot,
+        lxd::commands::lxd_delete_volume_snapshot,
+        lxd::commands::lxd_list_storage_buckets,
+        lxd::commands::lxd_get_storage_bucket,
+        lxd::commands::lxd_create_storage_bucket,
+        lxd::commands::lxd_delete_storage_bucket,
+        lxd::commands::lxd_list_bucket_keys,
+        // Projects
+        lxd::commands::lxd_list_projects,
+        lxd::commands::lxd_get_project,
+        lxd::commands::lxd_create_project,
+        lxd::commands::lxd_update_project,
+        lxd::commands::lxd_patch_project,
+        lxd::commands::lxd_delete_project,
+        lxd::commands::lxd_rename_project,
+        // Certificates
+        lxd::commands::lxd_list_certificates,
+        lxd::commands::lxd_get_certificate,
+        lxd::commands::lxd_add_certificate,
+        lxd::commands::lxd_delete_certificate,
+        lxd::commands::lxd_update_certificate,
+        // Operations
+        lxd::commands::lxd_list_operations,
+        lxd::commands::lxd_get_operation,
+        lxd::commands::lxd_cancel_operation,
+        lxd::commands::lxd_wait_operation,
+        // Warnings
+        lxd::commands::lxd_list_warnings,
+        lxd::commands::lxd_get_warning,
+        lxd::commands::lxd_acknowledge_warning,
+        lxd::commands::lxd_delete_warning,
+        // Migration / Copy / Publish
+        lxd::commands::lxd_migrate_instance,
+        lxd::commands::lxd_copy_instance,
+        lxd::commands::lxd_publish_instance,
+        // VMware Desktop (Player / Workstation / Fusion)
+        vmware_desktop::commands::vmwd_connect,
+        vmware_desktop::commands::vmwd_disconnect,
+        vmware_desktop::commands::vmwd_is_connected,
+        vmware_desktop::commands::vmwd_connection_summary,
+        vmware_desktop::commands::vmwd_host_info,
+        // VMs
+        vmware_desktop::commands::vmwd_list_vms,
+        vmware_desktop::commands::vmwd_get_vm,
+        vmware_desktop::commands::vmwd_create_vm,
+        vmware_desktop::commands::vmwd_update_vm,
+        vmware_desktop::commands::vmwd_delete_vm,
+        vmware_desktop::commands::vmwd_clone_vm,
+        vmware_desktop::commands::vmwd_register_vm,
+        vmware_desktop::commands::vmwd_unregister_vm,
+        vmware_desktop::commands::vmwd_configure_nic,
+        vmware_desktop::commands::vmwd_remove_nic,
+        vmware_desktop::commands::vmwd_configure_cdrom,
+        // Power
+        vmware_desktop::commands::vmwd_start_vm,
+        vmware_desktop::commands::vmwd_stop_vm,
+        vmware_desktop::commands::vmwd_reset_vm,
+        vmware_desktop::commands::vmwd_suspend_vm,
+        vmware_desktop::commands::vmwd_pause_vm,
+        vmware_desktop::commands::vmwd_unpause_vm,
+        vmware_desktop::commands::vmwd_get_power_state,
+        vmware_desktop::commands::vmwd_batch_power,
+        // Snapshots
+        vmware_desktop::commands::vmwd_list_snapshots,
+        vmware_desktop::commands::vmwd_get_snapshot_tree,
+        vmware_desktop::commands::vmwd_create_snapshot,
+        vmware_desktop::commands::vmwd_delete_snapshot,
+        vmware_desktop::commands::vmwd_revert_to_snapshot,
+        vmware_desktop::commands::vmwd_get_snapshot,
+        // Guest operations
+        vmware_desktop::commands::vmwd_exec_in_guest,
+        vmware_desktop::commands::vmwd_run_script_in_guest,
+        vmware_desktop::commands::vmwd_copy_to_guest,
+        vmware_desktop::commands::vmwd_copy_from_guest,
+        vmware_desktop::commands::vmwd_create_directory_in_guest,
+        vmware_desktop::commands::vmwd_delete_directory_in_guest,
+        vmware_desktop::commands::vmwd_delete_file_in_guest,
+        vmware_desktop::commands::vmwd_file_exists_in_guest,
+        vmware_desktop::commands::vmwd_directory_exists_in_guest,
+        vmware_desktop::commands::vmwd_rename_file_in_guest,
+        vmware_desktop::commands::vmwd_list_directory_in_guest,
+        vmware_desktop::commands::vmwd_list_processes_in_guest,
+        vmware_desktop::commands::vmwd_kill_process_in_guest,
+        vmware_desktop::commands::vmwd_read_variable,
+        vmware_desktop::commands::vmwd_write_variable,
+        vmware_desktop::commands::vmwd_list_env_vars,
+        vmware_desktop::commands::vmwd_get_tools_status,
+        vmware_desktop::commands::vmwd_install_tools,
+        vmware_desktop::commands::vmwd_get_ip_address,
+        // Shared folders
+        vmware_desktop::commands::vmwd_enable_shared_folders,
+        vmware_desktop::commands::vmwd_disable_shared_folders,
+        vmware_desktop::commands::vmwd_list_shared_folders,
+        vmware_desktop::commands::vmwd_add_shared_folder,
+        vmware_desktop::commands::vmwd_remove_shared_folder,
+        vmware_desktop::commands::vmwd_set_shared_folder_state,
+        // Networking
+        vmware_desktop::commands::vmwd_list_networks,
+        vmware_desktop::commands::vmwd_get_network,
+        vmware_desktop::commands::vmwd_create_network,
+        vmware_desktop::commands::vmwd_update_network,
+        vmware_desktop::commands::vmwd_delete_network,
+        vmware_desktop::commands::vmwd_list_port_forwards,
+        vmware_desktop::commands::vmwd_set_port_forward,
+        vmware_desktop::commands::vmwd_delete_port_forward,
+        vmware_desktop::commands::vmwd_get_dhcp_leases,
+        vmware_desktop::commands::vmwd_read_networking_config,
+        // VMDK
+        vmware_desktop::commands::vmwd_create_vmdk,
+        vmware_desktop::commands::vmwd_get_vmdk_info,
+        vmware_desktop::commands::vmwd_defragment_vmdk,
+        vmware_desktop::commands::vmwd_shrink_vmdk,
+        vmware_desktop::commands::vmwd_expand_vmdk,
+        vmware_desktop::commands::vmwd_convert_vmdk,
+        vmware_desktop::commands::vmwd_rename_vmdk,
+        vmware_desktop::commands::vmwd_add_disk_to_vm,
+        vmware_desktop::commands::vmwd_remove_disk_from_vm,
+        vmware_desktop::commands::vmwd_list_vm_disks,
+        // OVF
+        vmware_desktop::commands::vmwd_import_ovf,
+        vmware_desktop::commands::vmwd_export_ovf,
+        // VMX
+        vmware_desktop::commands::vmwd_parse_vmx,
+        vmware_desktop::commands::vmwd_update_vmx_keys,
+        vmware_desktop::commands::vmwd_remove_vmx_keys,
+        vmware_desktop::commands::vmwd_discover_vmx_files,
+        // Preferences
+        vmware_desktop::commands::vmwd_read_preferences,
+        vmware_desktop::commands::vmwd_get_default_vm_dir,
+        vmware_desktop::commands::vmwd_set_preference,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

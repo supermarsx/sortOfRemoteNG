@@ -54,6 +54,7 @@ members = [
   "crates/sorng-recording",
   "crates/sorng-gcp",
   "crates/sorng-azure",
+  "crates/sorng-exchange",
   "crates/sorng-smtp",
   "crates/sorng-llm",
   "crates/sorng-ai-assist",
@@ -89,6 +90,35 @@ members = [
   "crates/sorng-ilo",
   "crates/sorng-lenovo",
   "crates/sorng-supermicro",
+  "crates/sorng-synology",
+  "crates/sorng-notifications",
+  "crates/sorng-filters",
+  "crates/sorng-hooks",
+  "crates/sorng-scheduler",
+  "crates/sorng-credentials",
+  "crates/sorng-topology",
+  "crates/sorng-replay",
+  "crates/sorng-marketplace",
+  "crates/sorng-dashboard",
+  "crates/sorng-updater",
+  "crates/sorng-rdpfile",
+  "crates/sorng-portable",
+  "crates/sorng-docker-compose",
+  "crates/sorng-lxd",
+  "crates/sorng-netbird",
+  "crates/sorng-teleport",
+  "crates/sorng-vmware-desktop",
+  "crates/sorng-spice",
+  "crates/sorng-nx",
+  "crates/sorng-xdmcp",
+  "crates/sorng-x2go",
+  "crates/sorng-nginx",
+  "crates/sorng-traefik",
+  "crates/sorng-haproxy",
+  "crates/sorng-apache",
+  "crates/sorng-caddy",
+  "crates/sorng-nginx-proxy-mgr",
+  "crates/sorng-gpg-agent",
 ]
 
 [workspace.dependencies]
@@ -179,6 +209,7 @@ sorng-gdrive = { path = "crates/sorng-gdrive" }
 sorng-recording = { path = "crates/sorng-recording" }
 sorng-gcp = { path = "crates/sorng-gcp" }
 sorng-azure = { path = "crates/sorng-azure" }
+sorng-exchange = { path = "crates/sorng-exchange" }
 sorng-smtp = { path = "crates/sorng-smtp" }
 sorng-llm = { path = "crates/sorng-llm" }
 sorng-ai-assist = { path = "crates/sorng-ai-assist" }
@@ -195,6 +226,7 @@ sorng-wireguard = { path = "crates/sorng-wireguard" }
 sorng-dns = { path = "crates/sorng-dns" }
 sorng-k8s = { path = "crates/sorng-k8s" }
 sorng-docker = { path = "crates/sorng-docker" }
+sorng-docker-compose = { path = "crates/sorng-docker-compose" }
 sorng-ansible = { path = "crates/sorng-ansible" }
 sorng-terraform = { path = "crates/sorng-terraform" }
 sorng-i18n = { path = "crates/sorng-i18n" }
@@ -215,6 +247,34 @@ sorng-bmc-common = { path = "crates/sorng-bmc-common" }
 sorng-ilo = { path = "crates/sorng-ilo" }
 sorng-lenovo = { path = "crates/sorng-lenovo" }
 sorng-supermicro = { path = "crates/sorng-supermicro" }
+sorng-synology = { path = "crates/sorng-synology" }
+sorng-notifications = { path = "crates/sorng-notifications" }
+sorng-filters = { path = "crates/sorng-filters" }
+sorng-hooks = { path = "crates/sorng-hooks" }
+sorng-scheduler = { path = "crates/sorng-scheduler" }
+sorng-credentials = { path = "crates/sorng-credentials" }
+sorng-topology = { path = "crates/sorng-topology" }
+sorng-replay = { path = "crates/sorng-replay" }
+sorng-marketplace = { path = "crates/sorng-marketplace" }
+sorng-updater = { path = "crates/sorng-updater" }
+sorng-rdpfile = { path = "crates/sorng-rdpfile" }
+sorng-portable = { path = "crates/sorng-portable" }
+sorng-dashboard = { path = "crates/sorng-dashboard" }
+sorng-lxd = { path = "crates/sorng-lxd" }
+sorng-netbird = { path = "crates/sorng-netbird" }
+sorng-teleport = { path = "crates/sorng-teleport" }
+sorng-vmware-desktop = { path = "crates/sorng-vmware-desktop" }
+sorng-spice = { path = "crates/sorng-spice" }
+sorng-nx = { path = "crates/sorng-nx" }
+sorng-xdmcp = { path = "crates/sorng-xdmcp" }
+sorng-x2go = { path = "crates/sorng-x2go" }
+sorng-nginx = { path = "crates/sorng-nginx" }
+sorng-traefik = { path = "crates/sorng-traefik" }
+sorng-haproxy = { path = "crates/sorng-haproxy" }
+sorng-apache = { path = "crates/sorng-apache" }
+sorng-caddy = { path = "crates/sorng-caddy" }
+sorng-nginx-proxy-mgr = { path = "crates/sorng-nginx-proxy-mgr" }
+sorng-gpg-agent = { path = "crates/sorng-gpg-agent" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
