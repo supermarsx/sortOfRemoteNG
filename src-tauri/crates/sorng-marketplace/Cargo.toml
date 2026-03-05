@@ -1,0 +1,16 @@
+[package]
+name = "sorng-marketplace"
+version = "0.1.0"
+edition = "2021"
+description = "Plugin marketplace for SortOfRemote NG — Git/GitHub-backed extension discovery, browsing, installation, ratings, reviews, verified badges, repository indexing, manifest validation, dependency resolution, and one-click install"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.9.5", features = ["devtools"] }
+uuid = { version = "1.0", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+log = "0.4"
+reqwest = { version = "0.11", features = ["json"] }
+sha2 = "0.10"
