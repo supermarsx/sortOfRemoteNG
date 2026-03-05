@@ -1,0 +1,67 @@
+{
+  "app": {
+    "title": "sortOfRemoteNG",
+    "subtitle": "Менеджер удалённых подключений"
+  },
+  "connections": {
+    "title": "Подключения",
+    "new": "Новое",
+    "newFolder": "Новая папка",
+    "quickConnect": "Быстрое подключение",
+    "search": "Поиск подключений...",
+    "noConnections": "Подключения не найдены"
+  },
+  "dashboard": {
+    "title": "Панель состояния подключений",
+    "monitoring": "Мониторинг",
+    "startMonitoring": "Начать мониторинг",
+    "stopMonitoring": "Остановить мониторинг",
+    "refresh": "Обновить",
+    "healthy": "В норме",
+    "degraded": "Деградация",
+    "down": "Недоступен",
+    "noAlerts": "Нет активных предупреждений"
+  },
+  "credentials": {
+    "title": "Менеджер учётных данных",
+    "expiringSoon": "Скоро истекает",
+    "expired": "Истёк",
+    "rotateNow": "Сменить сейчас",
+    "strength": "Надёжность"
+  },
+  "scheduler": {
+    "title": "Планировщик задач",
+    "tasks": "Задачи",
+    "addTask": "Добавить задачу",
+    "executeNow": "Выполнить сейчас",
+    "success": "Успех",
+    "failure": "Ошибка"
+  },
+  "marketplace": {
+    "title": "Магазин плагинов",
+    "install": "Установить",
+    "uninstall": "Удалить",
+    "search": "Поиск плагинов..."
+  },
+  "updater": {
+    "title": "Обновление ПО",
+    "checkForUpdates": "Проверить обновления",
+    "upToDate": "У вас последняя версия!",
+    "download": "Скачать",
+    "installNow": "Установить сейчас"
+  },
+  "notes": {
+    "title": "Заметки подключения",
+    "notes": "Заметки",
+    "runbooks": "Руководства"
+  },
+  "templates": {
+    "title": "Шаблоны подключений",
+    "useTemplate": "Использовать шаблон"
+  },
+  "accessibility": {
+    "skipToContent": "Перейти к содержимому",
+    "highContrast": "Режим высокой контрастности",
+    "keyboardShortcuts": "Горячие клавиши"
+  }
+}

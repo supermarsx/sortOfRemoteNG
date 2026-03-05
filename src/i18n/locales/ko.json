@@ -1,0 +1,45 @@
+{
+  "app": {
+    "title": "sortOfRemoteNG",
+    "subtitle": "원격 연결 관리자"
+  },
+  "connections": {
+    "title": "연결",
+    "new": "새로 만들기",
+    "search": "연결 검색..."
+  },
+  "dashboard": {
+    "title": "연결 상태 대시보드",
+    "healthy": "정상",
+    "degraded": "저하",
+    "down": "다운"
+  },
+  "scheduler": {
+    "title": "작업 스케줄러",
+    "tasks": "작업",
+    "addTask": "작업 추가",
+    "executeNow": "지금 실행"
+  },
+  "marketplace": {
+    "title": "플러그인 마켓플레이스�",
+    "install": "설치",
+    "search": "플러그인 검색..."
+  },
+  "updater": {
+    "title": "소프트웨어 업데이트",
+    "checkForUpdates": "업데이트 확인",
+    "upToDate": "최신 버전입니다!"
+  },
+  "notes": {
+    "title": "연결 메모",
+    "notes": "메모"
+  },
+  "templates": {
+    "title": "연결 템플릿",
+    "useTemplate": "템플릿 사용"
+  },
+  "accessibility": {
+    "skipToContent": "콘텐츠로 건너뛰기",
+    "keyboardShortcuts": "키보드 단축키"
+  }
+}

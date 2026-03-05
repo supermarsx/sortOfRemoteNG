@@ -1,0 +1,79 @@
+{
+  "app": {
+    "title": "sortOfRemoteNG",
+    "subtitle": "リモート接続マネージャー"
+  },
+  "connections": {
+    "title": "接続",
+    "new": "新規",
+    "newFolder": "新規フォルダ",
+    "quickConnect": "クイック接続",
+    "search": "接続を検索...",
+    "noConnections": "接続が見つかりません"
+  },
+  "dashboard": {
+    "title": "接続ヘルスダッシュボード",
+    "monitoring": "モニタリング",
+    "startMonitoring": "モニタリング開始",
+    "stopMonitoring": "モニタリング停止",
+    "refresh": "更新",
+    "healthy": "正常",
+    "degraded": "劣化",
+    "down": "ダウン",
+    "noAlerts": "アクティブなアラートはありません"
+  },
+  "topology": {
+    "title": "ネットワークトポロジー",
+    "nodes": "ノード",
+    "edges": "エッジ",
+    "zoomIn": "拡大",
+    "zoomOut": "縮小"
+  },
+  "credentials": {
+    "title": "資格情報マネージャー",
+    "expiringSoon": "まもなく期限切れ",
+    "expired": "期限切れ",
+    "rotateNow": "今すぐローテーション",
+    "strength": "強度"
+  },
+  "scheduler": {
+    "title": "タスクスケジューラ",
+    "tasks": "タスク",
+    "upcoming": "予定",
+    "history": "履歴",
+    "addTask": "タスク追加",
+    "executeNow": "今すぐ実行",
+    "success": "成功",
+    "failure": "失敗"
+  },
+  "marketplace": {
+    "title": "プラグインマーケットプレイス",
+    "install": "インストール",
+    "uninstall": "アンインストール",
+    "search": "プラグインを検索..."
+  },
+  "updater": {
+    "title": "ソフトウェアアップデート",
+    "checkForUpdates": "アップデートを確認",
+    "upToDate": "最新版です！",
+    "download": "ダウンロード",
+    "installNow": "今すぐインストール"
+  },
+  "notes": {
+    "title": "接続メモ",
+    "notes": "メモ",
+    "runbooks": "ランブック",
+    "edit": "編集",
+    "preview": "プレビュー"
+  },
+  "templates": {
+    "title": "接続テンプレート",
+    "useTemplate": "テンプレートを使用",
+    "search": "テンプレートを検索..."
+  },
+  "accessibility": {
+    "skipToContent": "コンテンツへスキップ",
+    "highContrast": "ハイコントラストモード",
+    "keyboardShortcuts": "キーボードショートカット"
+  }
+}

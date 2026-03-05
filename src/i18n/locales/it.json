@@ -1,0 +1,63 @@
+{
+  "app": {
+    "title": "sortOfRemoteNG",
+    "subtitle": "Gestore Connessioni Remote"
+  },
+  "connections": {
+    "title": "Connessioni",
+    "new": "Nuovo",
+    "newFolder": "Nuova Cartella",
+    "quickConnect": "Connessione Rapida",
+    "search": "Cerca connessioni...",
+    "noConnections": "Nessuna connessione trovata"
+  },
+  "dashboard": {
+    "title": "Dashboard Stato Connessioni",
+    "monitoring": "Monitoraggio",
+    "startMonitoring": "Avvia Monitoraggio",
+    "stopMonitoring": "Ferma Monitoraggio",
+    "refresh": "Aggiorna",
+    "healthy": "Sano",
+    "degraded": "Degradato",
+    "down": "Non Raggiungibile",
+    "noAlerts": "Nessun avviso attivo"
+  },
+  "credentials": {
+    "title": "Gestore Credenziali",
+    "expiringSoon": "In Scadenza",
+    "expired": "Scadute",
+    "rotateNow": "Ruota Ora"
+  },
+  "scheduler": {
+    "title": "Pianificatore Attività",
+    "tasks": "Attività",
+    "addTask": "Aggiungi Attività",
+    "executeNow": "Esegui Ora"
+  },
+  "marketplace": {
+    "title": "Marketplace Plugin",
+    "install": "Installa",
+    "search": "Cerca plugin..."
+  },
+  "updater": {
+    "title": "Aggiornamento Software",
+    "checkForUpdates": "Controlla Aggiornamenti",
+    "upToDate": "Sei aggiornato!",
+    "download": "Scarica",
+    "installNow": "Installa Ora"
+  },
+  "notes": {
+    "title": "Note Connessione",
+    "notes": "Note",
+    "runbooks": "Runbook"
+  },
+  "templates": {
+    "title": "Modelli Connessione",
+    "useTemplate": "Usa Modello"
+  },
+  "accessibility": {
+    "skipToContent": "Vai al contenuto",
+    "highContrast": "Modalità Alto Contrasto",
+    "keyboardShortcuts": "Scorciatoie da Tastiera"
+  }
+}

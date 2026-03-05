@@ -13,6 +13,11 @@ const languageLoaders: Record<string, () => Promise<any>> = {
   fr: () => import("./locales/fr.json"),
   de: () => import("./locales/de.json"),
   "pt-PT": () => import("./locales/pt-PT.json"),
+  "zh-CN": () => import("./locales/zh-CN.json"),
+  ja: () => import("./locales/ja.json"),
+  ko: () => import("./locales/ko.json"),
+  it: () => import("./locales/it.json"),
+  ru: () => import("./locales/ru.json"),
 };
 
 const getBaseLanguage = (lng: string) => lng.split("-")[0];
