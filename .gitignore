@@ -28,3 +28,10 @@ dist-ssr
 tsconfig.tsbuildinfo
 .claude/worktrees/agent-af395cf7/
 /.claude
+
+# Temporary build/test output files
+*-output.txt
+*-err.txt
+*-test.txt
+*-test*.txt
+*-check.txt
