@@ -35,6 +35,7 @@ export default tseslint.config(
       "no-useless-escape": "off",
       "no-case-declarations": "off",
       "@next/next/no-html-link-for-pages": "off", // Allow custom routing
+      "@next/next/no-img-element": "off", // Tauri/Vite app, not Next.js — no Image component available
     },
   },
 );
