@@ -6,9 +6,9 @@ import {
   StatsCollectionOptions,
   defaultStatsCollectionOptions,
   REFRESH_INTERVALS,
-} from "../../types/serverStats";
-import { buildStatsCollectionScript } from "../../utils/serverStatsCommands";
-import { parseServerStatsOutput } from "../../utils/serverStatsParser";
+} from "../../types/monitoring/serverStats";
+import { buildStatsCollectionScript } from "../../utils/ssh/serverStatsCommands";
+import { parseServerStatsOutput } from "../../utils/ssh/serverStatsParser";
 
 // ─── Hook ──────────────────────────────────────────────────────────
 

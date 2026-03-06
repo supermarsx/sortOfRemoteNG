@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalPosition, LogicalSize } from "@tauri-apps/api/dpi";
-import { GlobalSettings } from "../../types/settings";
-import { SettingsManager } from "../../utils/settingsManager";
-import { validateSavedPosition } from "../../utils/windowRepatriation";
+import { GlobalSettings } from "../../types/settings/settings";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { validateSavedPosition } from "../../utils/window/windowRepatriation";
 
 /**
  * Persists and restores window size, position, and sidebar layout settings.

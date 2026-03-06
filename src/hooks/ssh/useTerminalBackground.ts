@@ -6,7 +6,7 @@ import type {
   AnimatedBackgroundEffect,
   GradientDirection,
   GradientStop,
-} from "../../types/sshSettings";
+} from "../../types/ssh/sshSettings";
 
 /* ── Animated effect helpers ─────────────────────────────────── */
 

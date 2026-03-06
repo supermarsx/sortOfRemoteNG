@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Connection } from "../../types/connection";
-import { TOTPConfig } from "../../types/settings";
-import { TOTPService } from "../../utils/totpService";
+import { Connection } from "../../types/connection/connection";
+import { TOTPConfig } from "../../types/settings/settings";
+import { TOTPService } from "../../utils/auth/totpService";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useConnections } from "../../contexts/useConnections";
 

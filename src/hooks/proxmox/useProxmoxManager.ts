@@ -41,7 +41,7 @@ import type {
   LxcCloneParams,
   VncTicket,
   TermProxyTicket,
-} from "../../types/proxmox";
+} from "../../types/hardware/proxmox";
 
 // ── Tab & View Types ─────────────────────────────────────────────
 

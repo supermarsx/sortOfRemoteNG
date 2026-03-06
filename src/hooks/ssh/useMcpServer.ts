@@ -12,8 +12,8 @@ import type {
   McpMetrics,
   McpToolCallLog,
   McpPanelTab,
-} from "../../types/mcpServer";
-import { DEFAULT_MCP_CONFIG } from "../../types/mcpServer";
+} from "../../types/mcp/mcpServer";
+import { DEFAULT_MCP_CONFIG } from "../../types/mcp/mcpServer";
 
 // ─── Tauri runtime check ───────────────────────────────────────────
 

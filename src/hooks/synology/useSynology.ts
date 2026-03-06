@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   SynologyConfigSafe,
@@ -53,7 +53,7 @@ import type {
   ConnectionEntry,
   NotificationConfig,
   SynologyDashboard,
-} from "../../types/synology";
+} from "../../types/hardware/synology";
 
 export function useSynology() {
   const [connected, setConnected] = useState(false);
@@ -137,57 +137,57 @@ export function useSynology() {
     }
   }, []);
 
-  const checkSession = useCallback(
-    wrap(() => invoke<boolean>("syn_check_session")),
+  const checkSession = useMemo(
+    () => wrap(() => invoke<boolean>("syn_check_session")),
     [wrap],
   );
 
   // ─── System ──────────────────────────────────────────────────
 
-  const getSystemInfo = useCallback(
-    wrap(() => invoke<DsmInfo>("syn_get_system_info")),
+  const getSystemInfo = useMemo(
+    () => wrap(() => invoke<DsmInfo>("syn_get_system_info")),
     [wrap],
   );
 
-  const getUtilization = useCallback(
-    wrap(() => invoke<SystemUtilization>("syn_get_utilization")),
+  const getUtilization = useMemo(
+    () => wrap(() => invoke<SystemUtilization>("syn_get_utilization")),
     [wrap],
   );
 
-  const listProcesses = useCallback(
-    wrap(() => invoke<ProcessInfo[]>("syn_list_processes")),
+  const listProcesses = useMemo(
+    () => wrap(() => invoke<ProcessInfo[]>("syn_list_processes")),
     [wrap],
   );
 
-  const reboot = useCallback(
-    wrap(() => invoke<void>("syn_reboot")),
+  const reboot = useMemo(
+    () => wrap(() => invoke<void>("syn_reboot")),
     [wrap],
   );
 
-  const shutdown = useCallback(
-    wrap(() => invoke<void>("syn_shutdown")),
+  const shutdown = useMemo(
+    () => wrap(() => invoke<void>("syn_shutdown")),
     [wrap],
   );
 
-  const checkUpdate = useCallback(
-    wrap(() => invoke<unknown>("syn_check_update")),
+  const checkUpdate = useMemo(
+    () => wrap(() => invoke<unknown>("syn_check_update")),
     [wrap],
   );
 
   // ─── Storage ─────────────────────────────────────────────────
 
-  const getStorageOverview = useCallback(
-    wrap(() => invoke<StorageOverview>("syn_get_storage_overview")),
+  const getStorageOverview = useMemo(
+    () => wrap(() => invoke<StorageOverview>("syn_get_storage_overview")),
     [wrap],
   );
 
-  const listDisks = useCallback(
-    wrap(() => invoke<DiskInfo[]>("syn_list_disks")),
+  const listDisks = useMemo(
+    () => wrap(() => invoke<DiskInfo[]>("syn_list_disks")),
     [wrap],
   );
 
-  const listVolumes = useCallback(
-    wrap(() => invoke<VolumeInfo[]>("syn_list_volumes")),
+  const listVolumes = useMemo(
+    () => wrap(() => invoke<VolumeInfo[]>("syn_list_volumes")),
     [wrap],
   );
 
@@ -197,20 +197,20 @@ export function useSynology() {
     [wrap],
   );
 
-  const listIscsiLuns = useCallback(
-    wrap(() => invoke<IscsiLun[]>("syn_list_iscsi_luns")),
+  const listIscsiLuns = useMemo(
+    () => wrap(() => invoke<IscsiLun[]>("syn_list_iscsi_luns")),
     [wrap],
   );
 
-  const listIscsiTargets = useCallback(
-    wrap(() => invoke<IscsiTarget[]>("syn_list_iscsi_targets")),
+  const listIscsiTargets = useMemo(
+    () => wrap(() => invoke<IscsiTarget[]>("syn_list_iscsi_targets")),
     [wrap],
   );
 
   // ─── File Station ────────────────────────────────────────────
 
-  const getFileStationInfo = useCallback(
-    wrap(() => invoke<FileStationInfo>("syn_get_file_station_info")),
+  const getFileStationInfo = useMemo(
+    () => wrap(() => invoke<FileStationInfo>("syn_get_file_station_info")),
     [wrap],
   );
 
@@ -234,8 +234,8 @@ export function useSynology() {
     [wrap],
   );
 
-  const listFileSharedFolders = useCallback(
-    wrap(() => invoke<FileListResult>("syn_list_file_shared_folders")),
+  const listFileSharedFolders = useMemo(
+    () => wrap(() => invoke<FileListResult>("syn_list_file_shared_folders")),
     [wrap],
   );
 
@@ -309,8 +309,8 @@ export function useSynology() {
 
   // ─── Shared Folders ──────────────────────────────────────────
 
-  const listSharedFolders = useCallback(
-    wrap(() => invoke<SharedFolder[]>("syn_list_shared_folders")),
+  const listSharedFolders = useMemo(
+    () => wrap(() => invoke<SharedFolder[]>("syn_list_shared_folders")),
     [wrap],
   );
 
@@ -352,30 +352,30 @@ export function useSynology() {
 
   // ─── Network ─────────────────────────────────────────────────
 
-  const getNetworkOverview = useCallback(
-    wrap(() => invoke<NetworkOverview>("syn_get_network_overview")),
+  const getNetworkOverview = useMemo(
+    () => wrap(() => invoke<NetworkOverview>("syn_get_network_overview")),
     [wrap],
   );
 
-  const listNetworkInterfaces = useCallback(
-    wrap(() => invoke<NetworkInterface[]>("syn_list_network_interfaces")),
+  const listNetworkInterfaces = useMemo(
+    () => wrap(() => invoke<NetworkInterface[]>("syn_list_network_interfaces")),
     [wrap],
   );
 
-  const listFirewallRules = useCallback(
-    wrap(() => invoke<FirewallRule[]>("syn_list_firewall_rules")),
+  const listFirewallRules = useMemo(
+    () => wrap(() => invoke<FirewallRule[]>("syn_list_firewall_rules")),
     [wrap],
   );
 
-  const listDhcpLeases = useCallback(
-    wrap(() => invoke<DhcpLease[]>("syn_list_dhcp_leases")),
+  const listDhcpLeases = useMemo(
+    () => wrap(() => invoke<DhcpLease[]>("syn_list_dhcp_leases")),
     [wrap],
   );
 
   // ─── Users ───────────────────────────────────────────────────
 
-  const listUsers = useCallback(
-    wrap(() => invoke<SynoUser[]>("syn_list_users")),
+  const listUsers = useMemo(
+    () => wrap(() => invoke<SynoUser[]>("syn_list_users")),
     [wrap],
   );
 
@@ -403,15 +403,15 @@ export function useSynology() {
     [wrap],
   );
 
-  const listGroups = useCallback(
-    wrap(() => invoke<SynoGroup[]>("syn_list_groups")),
+  const listGroups = useMemo(
+    () => wrap(() => invoke<SynoGroup[]>("syn_list_groups")),
     [wrap],
   );
 
   // ─── Packages ────────────────────────────────────────────────
 
-  const listPackages = useCallback(
-    wrap(() => invoke<PackageInfo[]>("syn_list_packages")),
+  const listPackages = useMemo(
+    () => wrap(() => invoke<PackageInfo[]>("syn_list_packages")),
     [wrap],
   );
 
@@ -441,23 +441,23 @@ export function useSynology() {
 
   // ─── Services ────────────────────────────────────────────────
 
-  const listServices = useCallback(
-    wrap(() => invoke<ServiceStatus[]>("syn_list_services")),
+  const listServices = useMemo(
+    () => wrap(() => invoke<ServiceStatus[]>("syn_list_services")),
     [wrap],
   );
 
-  const getSmbConfig = useCallback(
-    wrap(() => invoke<SmbConfig>("syn_get_smb_config")),
+  const getSmbConfig = useMemo(
+    () => wrap(() => invoke<SmbConfig>("syn_get_smb_config")),
     [wrap],
   );
 
-  const getNfsConfig = useCallback(
-    wrap(() => invoke<NfsConfig>("syn_get_nfs_config")),
+  const getNfsConfig = useMemo(
+    () => wrap(() => invoke<NfsConfig>("syn_get_nfs_config")),
     [wrap],
   );
 
-  const getSshConfig = useCallback(
-    wrap(() => invoke<SshConfig>("syn_get_ssh_config")),
+  const getSshConfig = useMemo(
+    () => wrap(() => invoke<SshConfig>("syn_get_ssh_config")),
     [wrap],
   );
 
@@ -469,8 +469,8 @@ export function useSynology() {
 
   // ─── Docker ──────────────────────────────────────────────────
 
-  const listDockerContainers = useCallback(
-    wrap(() => invoke<DockerContainer[]>("syn_list_docker_containers")),
+  const listDockerContainers = useMemo(
+    () => wrap(() => invoke<DockerContainer[]>("syn_list_docker_containers")),
     [wrap],
   );
 
@@ -500,8 +500,8 @@ export function useSynology() {
     [wrap],
   );
 
-  const listDockerImages = useCallback(
-    wrap(() => invoke<DockerImage[]>("syn_list_docker_images")),
+  const listDockerImages = useMemo(
+    () => wrap(() => invoke<DockerImage[]>("syn_list_docker_images")),
     [wrap],
   );
 
@@ -513,13 +513,13 @@ export function useSynology() {
     [wrap],
   );
 
-  const listDockerNetworks = useCallback(
-    wrap(() => invoke<DockerNetwork[]>("syn_list_docker_networks")),
+  const listDockerNetworks = useMemo(
+    () => wrap(() => invoke<DockerNetwork[]>("syn_list_docker_networks")),
     [wrap],
   );
 
-  const listDockerProjects = useCallback(
-    wrap(() => invoke<DockerProject[]>("syn_list_docker_projects")),
+  const listDockerProjects = useMemo(
+    () => wrap(() => invoke<DockerProject[]>("syn_list_docker_projects")),
     [wrap],
   );
 
@@ -537,8 +537,8 @@ export function useSynology() {
 
   // ─── VMs ─────────────────────────────────────────────────────
 
-  const listVms = useCallback(
-    wrap(() => invoke<VmGuest[]>("syn_list_vms")),
+  const listVms = useMemo(
+    () => wrap(() => invoke<VmGuest[]>("syn_list_vms")),
     [wrap],
   );
 
@@ -578,15 +578,15 @@ export function useSynology() {
 
   // ─── Download Station ────────────────────────────────────────
 
-  const getDownloadStationInfo = useCallback(
-    wrap(() =>
+  const getDownloadStationInfo = useMemo(
+    () => wrap(() =>
       invoke<DownloadStationInfo>("syn_get_download_station_info"),
     ),
     [wrap],
   );
 
-  const listDownloadTasks = useCallback(
-    wrap(() => invoke<DownloadTask[]>("syn_list_download_tasks")),
+  const listDownloadTasks = useMemo(
+    () => wrap(() => invoke<DownloadTask[]>("syn_list_download_tasks")),
     [wrap],
   );
 
@@ -621,20 +621,20 @@ export function useSynology() {
     [wrap],
   );
 
-  const getDownloadStats = useCallback(
-    wrap(() => invoke<DownloadStationStats>("syn_get_download_stats")),
+  const getDownloadStats = useMemo(
+    () => wrap(() => invoke<DownloadStationStats>("syn_get_download_stats")),
     [wrap],
   );
 
   // ─── Surveillance ────────────────────────────────────────────
 
-  const getSurveillanceInfo = useCallback(
-    wrap(() => invoke<SurveillanceInfo>("syn_get_surveillance_info")),
+  const getSurveillanceInfo = useMemo(
+    () => wrap(() => invoke<SurveillanceInfo>("syn_get_surveillance_info")),
     [wrap],
   );
 
-  const listCameras = useCallback(
-    wrap(() => invoke<Camera[]>("syn_list_cameras")),
+  const listCameras = useMemo(
+    () => wrap(() => invoke<Camera[]>("syn_list_cameras")),
     [wrap],
   );
 
@@ -658,8 +658,8 @@ export function useSynology() {
 
   // ─── Backup ──────────────────────────────────────────────────
 
-  const listBackupTasks = useCallback(
-    wrap(() => invoke<BackupTaskInfo[]>("syn_list_backup_tasks")),
+  const listBackupTasks = useMemo(
+    () => wrap(() => invoke<BackupTaskInfo[]>("syn_list_backup_tasks")),
     [wrap],
   );
 
@@ -683,8 +683,8 @@ export function useSynology() {
     [wrap],
   );
 
-  const listActiveBackupDevices = useCallback(
-    wrap(() =>
+  const listActiveBackupDevices = useMemo(
+    () => wrap(() =>
       invoke<ActiveBackupDevice[]>("syn_list_active_backup_devices"),
     ),
     [wrap],
@@ -692,13 +692,13 @@ export function useSynology() {
 
   // ─── Security ────────────────────────────────────────────────
 
-  const getSecurityOverview = useCallback(
-    wrap(() => invoke<SecurityOverview>("syn_get_security_overview")),
+  const getSecurityOverview = useMemo(
+    () => wrap(() => invoke<SecurityOverview>("syn_get_security_overview")),
     [wrap],
   );
 
-  const listBlockedIps = useCallback(
-    wrap(() => invoke<BlockedIp[]>("syn_list_blocked_ips")),
+  const listBlockedIps = useMemo(
+    () => wrap(() => invoke<BlockedIp[]>("syn_list_blocked_ips")),
     [wrap],
   );
 
@@ -708,30 +708,30 @@ export function useSynology() {
     [wrap],
   );
 
-  const listCertificates = useCallback(
-    wrap(() => invoke<CertificateInfo[]>("syn_list_certificates")),
+  const listCertificates = useMemo(
+    () => wrap(() => invoke<CertificateInfo[]>("syn_list_certificates")),
     [wrap],
   );
 
-  const getAutoBlockConfig = useCallback(
-    wrap(() => invoke<AutoBlockConfig>("syn_get_auto_block_config")),
+  const getAutoBlockConfig = useMemo(
+    () => wrap(() => invoke<AutoBlockConfig>("syn_get_auto_block_config")),
     [wrap],
   );
 
   // ─── Hardware ────────────────────────────────────────────────
 
-  const getHardwareInfo = useCallback(
-    wrap(() => invoke<HardwareInfo>("syn_get_hardware_info")),
+  const getHardwareInfo = useMemo(
+    () => wrap(() => invoke<HardwareInfo>("syn_get_hardware_info")),
     [wrap],
   );
 
-  const getUpsInfo = useCallback(
-    wrap(() => invoke<UpsInfo>("syn_get_ups_info")),
+  const getUpsInfo = useMemo(
+    () => wrap(() => invoke<UpsInfo>("syn_get_ups_info")),
     [wrap],
   );
 
-  const getPowerSchedule = useCallback(
-    wrap(() => invoke<PowerSchedule>("syn_get_power_schedule")),
+  const getPowerSchedule = useMemo(
+    () => wrap(() => invoke<PowerSchedule>("syn_get_power_schedule")),
     [wrap],
   );
 
@@ -756,27 +756,27 @@ export function useSynology() {
     [wrap],
   );
 
-  const getActiveConnections = useCallback(
-    wrap(() => invoke<ConnectionEntry[]>("syn_get_active_connections")),
+  const getActiveConnections = useMemo(
+    () => wrap(() => invoke<ConnectionEntry[]>("syn_get_active_connections")),
     [wrap],
   );
 
   // ─── Notifications ───────────────────────────────────────────
 
-  const getNotificationConfig = useCallback(
-    wrap(() => invoke<NotificationConfig>("syn_get_notification_config")),
+  const getNotificationConfig = useMemo(
+    () => wrap(() => invoke<NotificationConfig>("syn_get_notification_config")),
     [wrap],
   );
 
-  const testEmailNotification = useCallback(
-    wrap(() => invoke<void>("syn_test_email_notification")),
+  const testEmailNotification = useMemo(
+    () => wrap(() => invoke<void>("syn_test_email_notification")),
     [wrap],
   );
 
   // ─── Dashboard ───────────────────────────────────────────────
 
-  const getDashboard = useCallback(
-    wrap(() => invoke<SynologyDashboard>("syn_get_dashboard")),
+  const getDashboard = useMemo(
+    () => wrap(() => invoke<SynologyDashboard>("syn_get_dashboard")),
     [wrap],
   );
 

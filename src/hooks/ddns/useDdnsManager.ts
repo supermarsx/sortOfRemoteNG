@@ -18,7 +18,7 @@ import type {
   DdnsAuditEntry,
   DdnsExportData,
   DdnsImportResult,
-} from '../types/ddns';
+} from '../../types/ddns/ddns';
 
 export function useDdnsManager() {
   const [profiles, setProfiles] = useState<DdnsProfile[]>([]);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ConnectionSession } from '../../types/connection';
-import { MySQLService, QueryResult, MySQLValue } from '../../utils/mysqlService';
+import { ConnectionSession } from '../../types/connection/connection';
+import { MySQLService, QueryResult, MySQLValue } from '../../utils/services/mysqlService';
 
 export function useMySQLClient(session: ConnectionSession) {
   const [query, setQuery] = useState('SELECT * FROM information_schema.tables LIMIT 10;');

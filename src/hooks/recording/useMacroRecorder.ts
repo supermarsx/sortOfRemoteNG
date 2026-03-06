@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { MacroStep } from '../../types/macroTypes';
+import { MacroStep } from '../../types/recording/macroTypes';
 
 export interface UseMacroRecorderResult {
   isRecording: boolean;

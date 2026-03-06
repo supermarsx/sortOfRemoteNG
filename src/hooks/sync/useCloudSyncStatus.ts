@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CloudSyncProvider } from '../../types/settings';
+import { CloudSyncProvider } from '../../types/settings/settings';
 
 interface ProviderStatus {
   enabled: boolean;

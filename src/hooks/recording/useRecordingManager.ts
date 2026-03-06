@@ -4,8 +4,8 @@ import {
   SavedRDPRecording,
   SavedWebRecording,
   SavedWebVideoRecording,
-} from "../../types/macroTypes";
-import * as macroService from "../../utils/macroService";
+} from "../../types/recording/macroTypes";
+import * as macroService from "../../utils/recording/macroService";
 
 export type RecordingTab = "ssh" | "rdp" | "web" | "webVideo";
 

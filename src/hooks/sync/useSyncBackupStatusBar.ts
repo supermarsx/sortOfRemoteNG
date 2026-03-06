@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
-import { CloudSyncProvider } from '../../types/settings';
+import { CloudSyncProvider } from '../../types/settings/settings';
 
 export interface BackupStatus {
   isRunning: boolean;

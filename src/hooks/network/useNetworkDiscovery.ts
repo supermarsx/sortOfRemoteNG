@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DiscoveredHost } from '../../types/connection';
-import { NetworkDiscoveryConfig } from '../../types/settings';
+import { DiscoveredHost } from '../../types/connection/connection';
+import { NetworkDiscoveryConfig } from '../../types/settings/settings';
 import { useConnections } from '../../contexts/useConnections';
-import { generateId } from '../../utils/id';
-import { discoveredHostsToCsv } from '../../utils/discoveredHostsCsv';
+import { generateId } from '../../utils/core/id';
+import { discoveredHostsToCsv } from '../../utils/discovery/discoveredHostsCsv';
 import { invoke } from '@tauri-apps/api/core';
 
 interface UseNetworkDiscoveryParams {

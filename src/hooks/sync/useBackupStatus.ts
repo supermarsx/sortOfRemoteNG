@@ -2,9 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api/core';
 import { useConnections } from '../../contexts/useConnections';
-import { SettingsManager } from '../../utils/settingsManager';
-import { Connection } from '../../types/connection';
-import { GlobalSettings } from '../../types/settings';
+import { SettingsManager } from '../../utils/settings/settingsManager';
+import { Connection } from '../../types/connection/connection';
+import { GlobalSettings } from '../../types/settings/settings';
 
 export interface BackupStatus {
   isRunning: boolean;

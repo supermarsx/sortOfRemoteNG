@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { debugLog } from "../../utils/debugLogger";
-import { ConnectionSession } from "../../types/connection";
+import { debugLog } from "../../utils/core/debugLogger";
+import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 
 export interface VNCSettings {

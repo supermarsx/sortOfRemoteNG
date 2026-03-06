@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { debugLog } from '../../utils/debugLogger';
-import { ConnectionSession, Connection } from '../../types/connection';
-import { RDPConnectionSettings, DEFAULT_RDP_SETTINGS } from '../../types/connection';
-import { mergeRdpSettings } from '../../utils/rdpSettingsMerge';
+import { debugLog } from '../../utils/core/debugLogger';
+import { ConnectionSession, Connection } from '../../types/connection/connection';
+import { RDPConnectionSettings, DEFAULT_RDP_SETTINGS } from '../../types/connection/connection';
+import { mergeRdpSettings } from '../../utils/rdp/rdpSettingsMerge';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { save as saveDialog } from '@tauri-apps/plugin-dialog';
@@ -16,12 +16,12 @@ import {
   getEffectiveTrustPolicy,
   type CertIdentity,
   type TrustVerifyResult,
-} from '../../utils/trustStore';
+} from '../../utils/auth/trustStore';
 import { FrameBuffer } from '../../components/rdp/rdpCanvas';
 import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from '../../components/rdp/rdpRenderers';
 import { useSessionRecorder } from '../recording/useSessionRecorder';
-import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent } from '../../types/rdpEvents';
-import { mouseButtonCode, keyToScancode } from '../../utils/rdpKeyboard';
+import type { RDPStatusEvent, RDPPointerEvent, RDPStatsEvent, RdpCertFingerprintEvent, RDPTimingEvent } from '../../types/rdp/rdpEvents';
+import { mouseButtonCode, keyToScancode } from '../../utils/rdp/rdpKeyboard';
 
 // ─── Hook ────────────────────────────────────────────────────────────
 

@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
-import { ConnectionCollection } from "../../types/connection";
-import { SavedProxyProfile, SavedProxyChain } from "../../types/settings";
-import { CollectionManager } from "../../utils/collectionManager";
-import { proxyCollectionManager } from "../../utils/proxyCollectionManager";
+import { ConnectionCollection } from "../../types/connection/connection";
+import { SavedProxyProfile, SavedProxyChain } from "../../types/settings/settings";
+import { CollectionManager } from "../../utils/connection/collectionManager";
+import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 
 // ─── Types ─────────────────────────────────────────────────────────
 

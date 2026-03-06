@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { createGifFrameCollector, type GifFrameCollector } from '../../utils/gifEncoder';
+import { createGifFrameCollector, type GifFrameCollector } from '../../utils/recording/gifEncoder';
 
 export interface RecordingState {
   isRecording: boolean;

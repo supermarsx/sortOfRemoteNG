@@ -7,3 +7,4 @@ export * from "./useConnectionTree";
 export * from "./useHTTPOptions";
 export * from "./useQuickConnect";
 export * from "./useSidebar";
+export * from "./useFilters";

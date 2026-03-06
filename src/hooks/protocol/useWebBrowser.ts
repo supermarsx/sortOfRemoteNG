@@ -1,23 +1,23 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { debugLog } from "../../utils/debugLogger";
+import { debugLog } from "../../utils/core/debugLogger";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { ConnectionSession, HttpBookmarkItem } from "../../types/connection";
-import { TOTPConfig } from "../../types/settings";
+import { ConnectionSession, HttpBookmarkItem } from "../../types/connection/connection";
+import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";
-import { generateId } from "../../utils/id";
+import { generateId } from "../../utils/core/id";
 import { useWebRecorder } from "../recording/useWebRecorder";
 import { useDisplayRecorder } from "../recording/useDisplayRecorder";
-import * as macroService from "../../utils/macroService";
+import * as macroService from "../../utils/recording/macroService";
 import {
   verifyIdentity,
   trustIdentity,
   getEffectiveTrustPolicy,
   type CertIdentity,
   type TrustVerifyResult,
-} from "../../utils/trustStore";
+} from "../../utils/auth/trustStore";
 
 /* ═══════════════════════════════════════════════════════════════
    Types
@@ -915,7 +915,7 @@ export function useWebBrowser(session: ConnectionSession) {
   const handleSaveHarRecording = useCallback(
     async (name: string) => {
       const recording = pendingRecordingRef.current as
-        | import("../../types/macroTypes").WebRecording
+        | import("../../types/recording/macroTypes").WebRecording
         | null;
       if (!recording) return;
       await macroService.saveWebRecording({

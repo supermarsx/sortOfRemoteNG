@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GlobalSettings } from '../../types/settings';
+import { GlobalSettings } from '../../types/settings/settings';
 
 export function useApiSettings(
   settings: GlobalSettings,

@@ -1,13 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { RDPConnectionSettings } from '../../types/connection';
+import type { RDPConnectionSettings } from '../../types/connection/connection';
 import {
   classifyRdpError,
   buildRdpDiagnostics,
   RDP_ERROR_CATEGORY_LABELS,
   type RDPErrorCategory,
   type DiagnosticReportResult,
-} from '../../utils/rdpErrorClassifier';
+} from '../../utils/rdp/rdpErrorClassifier';
 
 interface UseRDPErrorScreenParams {
   sessionId: string;

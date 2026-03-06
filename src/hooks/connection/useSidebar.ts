@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConnections } from '../../contexts/useConnections';
-import { Connection } from '../../types/connection';
-import { SecureStorage } from '../../utils/storage';
-import { generateId } from '../../utils/id';
+import { Connection } from '../../types/connection/connection';
+import { SecureStorage } from '../../utils/storage/storage';
+import { generateId } from '../../utils/core/id';
 
 export function useSidebar() {
   const { t } = useTranslation();

@@ -18,7 +18,7 @@ import type {
   VerificationResult,
   EncryptionResult,
   DecryptionResult,
-} from "../../types/gpgAgent";
+} from "../../types/security/gpgAgent";
 
 // ─── Tauri runtime check ──────────────────────────────────────────
 

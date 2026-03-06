@@ -11,7 +11,7 @@ import type {
   CredentialAuditEntry,
   CredentialStats,
   CredentialConfig,
-} from "../../types/credentials";
+} from "../../types/connection/credentials";
 
 export function useCredentials() {
   const [credentials, setCredentials] = useState<TrackedCredential[]>([]);

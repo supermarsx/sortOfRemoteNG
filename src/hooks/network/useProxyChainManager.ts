@@ -1,14 +1,14 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
-import { ProxyOpenVPNManager } from "../../utils/proxyOpenVPNManager";
-import { proxyCollectionManager } from "../../utils/proxyCollectionManager";
+import { ProxyOpenVPNManager } from "../../utils/network/proxyOpenVPNManager";
+import { proxyCollectionManager } from "../../utils/connection/proxyCollectionManager";
 import {
   sshTunnelService,
   SSHTunnelConfig,
   SSHTunnelCreateParams,
-} from "../../utils/sshTunnelService";
-import { SavedProxyProfile, SavedProxyChain } from "../../types/settings";
+} from "../../utils/ssh/sshTunnelService";
+import { SavedProxyProfile, SavedProxyChain } from "../../types/settings/settings";
 
 // ─── Types ─────────────────────────────────────────────────────────
 

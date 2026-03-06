@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { lookupVendor, lookupVendorLocal } from '../../utils/macVendorLookup';
+import { lookupVendor, lookupVendorLocal } from '../../utils/network/macVendorLookup';
 
 interface WolDevice {
   ip: string;

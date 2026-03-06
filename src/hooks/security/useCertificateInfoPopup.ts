@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import type { CertIdentity, SshHostKeyIdentity, TrustRecord } from '../../utils/trustStore';
-import { updateTrustRecordNickname } from '../../utils/trustStore';
+import type { CertIdentity, SshHostKeyIdentity, TrustRecord } from '../../utils/auth/trustStore';
+import { updateTrustRecordNickname } from '../../utils/auth/trustStore';
 
 export function useCertificateInfoPopup(
   type: 'tls' | 'ssh',

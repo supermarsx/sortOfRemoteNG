@@ -11,7 +11,7 @@ import type {
   BottleneckResult,
   TopologySnapshot,
   LayoutAlgorithm,
-} from "../../types/topology";
+} from "../../types/network/topology";
 
 export function useTopology() {
   const [graph, setGraph] = useState<TopologyGraph | null>(null);
@@ -133,14 +133,6 @@ export function useTopology() {
     } catch (e) { setError(String(e)); return null; }
   }, []);
 
-  const createSnapshot = useCallback(async (name: string) => {
-    try {
-      const id = await invoke<string>("topo_create_snapshot", { name });
-      await listSnapshots();
-      return id;
-    } catch (e) { setError(String(e)); return null; }
-  }, []);
-
   const listSnapshots = useCallback(async () => {
     try {
       const s = await invoke<TopologySnapshot[]>("topo_list_snapshots");
@@ -148,6 +140,14 @@ export function useTopology() {
       return s;
     } catch (e) { setError(String(e)); return []; }
   }, []);
+
+  const createSnapshot = useCallback(async (name: string) => {
+    try {
+      const id = await invoke<string>("topo_create_snapshot", { name });
+      await listSnapshots();
+      return id;
+    } catch (e) { setError(String(e)); return null; }
+  }, [listSnapshots]);
 
   const addGroup = useCallback(async (group: Omit<TopologyGroup, 'id'>) => {
     try {

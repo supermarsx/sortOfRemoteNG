@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 
 /* ------------------------------------------------------------------ */
 /*  Hook                                                               */

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { TerminalMacro, SavedRecording } from '../../types/macroTypes';
-import * as macroService from '../../utils/macroService';
+import { TerminalMacro, SavedRecording } from '../../types/recording/macroTypes';
+import * as macroService from '../../utils/recording/macroService';
 
 export type MacroTab = 'macros' | 'recordings';
 

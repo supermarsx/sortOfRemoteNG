@@ -18,7 +18,7 @@ import {
   ConflictResolutionStrategy,
   defaultCloudSyncConfig,
   ProviderSyncStatus,
-} from "../../types/settings";
+} from "../../types/settings/settings";
 
 // ─── Static data ───────────────────────────────────────────────────
 

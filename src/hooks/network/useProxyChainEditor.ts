@@ -3,8 +3,8 @@ import {
   SavedProxyChain,
   SavedProxyProfile,
   SavedChainLayer,
-} from '../../types/settings';
-import { proxyCollectionManager } from '../../utils/proxyCollectionManager';
+} from '../../types/settings/settings';
+import { proxyCollectionManager } from '../../utils/connection/proxyCollectionManager';
 
 interface UseProxyChainEditorParams {
   isOpen: boolean;

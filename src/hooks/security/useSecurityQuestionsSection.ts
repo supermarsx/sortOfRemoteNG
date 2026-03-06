@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { Connection, SecurityQuestion } from '../../types/connection';
+import { Connection, SecurityQuestion } from '../../types/connection/connection';
 
 export function useSecurityQuestionsSection(
   formData: Partial<Connection>,

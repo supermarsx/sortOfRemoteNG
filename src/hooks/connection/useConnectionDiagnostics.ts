@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 import { useToastContext } from "../../contexts/ToastContext";
 import {
   PingResult,
@@ -22,7 +22,7 @@ import {
   ProtocolDiagnosticReport,
   initialDiagnosticResults,
   DEFAULT_PROTOCOL_PORTS,
-} from "../../types/diagnostics";
+} from "../../types/monitoring/diagnostics";
 
 /* ── Hook ──────────────────────────────────────────────────────── */
 

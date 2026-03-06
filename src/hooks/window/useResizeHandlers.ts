@@ -26,7 +26,7 @@ export function useResizeHandlers(
           : Math.max(200, Math.min(600, layoutLeft + layoutWidth - e.clientX));
       setSidebarWidth(newWidth);
     },
-    [isResizing, sidebarPosition],
+    [isResizing, sidebarPosition, layoutRef, setSidebarWidth],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -67,7 +67,7 @@ export function useResizeHandlers(
       const newWidth = Math.max(280, Math.min(600, layoutRight - e.clientX));
       setRdpPanelWidth(newWidth);
     },
-    [isRdpPanelResizing],
+    [isRdpPanelResizing, layoutRef, setRdpPanelWidth],
   );
 
   const handleRdpPanelMouseUp = useCallback(() => {

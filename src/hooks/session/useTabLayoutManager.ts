@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback } from 'react';
-import { ConnectionSession, TabLayout } from '../../types/connection';
+import { ConnectionSession, TabLayout } from '../../types/connection/connection';
 
 const orderSessions = (sessions: ConnectionSession[], activeSessionId?: string) => {
   if (!activeSessionId) return sessions;

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { QuickConnectHistoryEntry } from "../../types/settings";
+import { QuickConnectHistoryEntry } from "../../types/settings/settings";
 
 export interface UseQuickConnectOptions {
   isOpen: boolean;

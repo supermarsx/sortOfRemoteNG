@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
-import { GlobalSettings } from "../../types/settings";
-import { SecureStorage } from "../../utils/storage";
+import { GlobalSettings } from "../../types/settings/settings";
+import { SecureStorage } from "../../utils/storage/storage";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";

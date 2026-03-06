@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { readTextFile } from '@tauri-apps/plugin-fs';
-import { Connection } from '../../types/connection';
+import { Connection } from '../../types/connection/connection';
 
 export function useSSHOptions(
   formData: Partial<Connection>,

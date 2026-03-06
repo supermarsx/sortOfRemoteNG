@@ -19,7 +19,7 @@ import type {
   ScriptBundle,
   ImportResult,
   SshLifecycleEvent,
-} from "../../types/sshScripts";
+} from "../../types/ssh/sshScripts";
 
 export interface UseSshScriptsReturn {
   // Data

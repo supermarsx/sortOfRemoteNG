@@ -7,7 +7,7 @@ import {
   DayOfWeek,
   BackupEncryptionAlgorithm,
   BackupLocationPreset,
-} from "../../types/settings";
+} from "../../types/settings/settings";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { appDataDir, documentDir, join, homeDir } from "@tauri-apps/api/path";

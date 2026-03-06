@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { LogicalSize } from "@tauri-apps/api/dpi";
-import { GlobalSettings } from "../../types/settings";
-import { SettingsManager } from "../../utils/settingsManager";
+import { GlobalSettings } from "../../types/settings/settings";
+import { SettingsManager } from "../../utils/settings/settingsManager";
 import {
   repatriateWindow,
-} from "../../utils/windowRepatriation";
+} from "../../utils/window/windowRepatriation";
 
 export interface WindowControlsReturn {
   isAlwaysOnTop: boolean;

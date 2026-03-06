@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { ActionLogEntry } from "../../types/settings";
-import { SettingsManager } from "../../utils/settingsManager";
+import { ActionLogEntry } from "../../types/settings/settings";
+import { SettingsManager } from "../../utils/settings/settingsManager";
 import { useToastContext } from "../../contexts/ToastContext";
 import { useTranslation } from "react-i18next";
 

@@ -12,16 +12,16 @@ import {
   HardDrive,
   LucideIcon,
 } from "lucide-react";
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
-import { getDefaultPort } from "../../utils/defaultPorts";
-import { generateId } from "../../utils/id";
+import { getDefaultPort } from "../../utils/discovery/defaultPorts";
+import { generateId } from "../../utils/core/id";
 import {
   getConnectionDepth,
   getMaxDescendantDepth,
   MAX_NESTING_DEPTH,
-} from "../../utils/dragDropManager";
+} from "../../utils/window/dragDropManager";
 
 /* ═══════════════════════════════════════════════════════════════
    Static data

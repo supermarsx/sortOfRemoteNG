@@ -34,7 +34,7 @@ import type {
   OnecliResult,
   XccDashboard,
   XccGeneration,
-} from "../../types/lenovo";
+} from "../../types/hardware/lenovo";
 
 // ── Types ────────────────────────────────────────────────────────
 

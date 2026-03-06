@@ -6,3 +6,4 @@ export * from "./useScriptManager";
 export * from "./useSessionRecorder";
 export * from "./useTerminalRecorder";
 export * from "./useWebRecorder";
+export * from "./useReplay";

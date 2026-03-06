@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { GlobalSettings } from "../../types/settings";
+import { GlobalSettings } from "../../types/settings/settings";
 import {
   getAllTrustRecords,
   getAllPerConnectionTrustRecords,
@@ -7,7 +7,7 @@ import {
   clearAllTrustRecords,
   type TrustRecord,
   type ConnectionTrustGroup,
-} from "../../utils/trustStore";
+} from "../../utils/auth/trustStore";
 import { useConnections } from "../../contexts/useConnections";
 
 /* ------------------------------------------------------------------ */

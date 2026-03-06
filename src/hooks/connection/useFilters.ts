@@ -9,7 +9,7 @@ import type {
   FilterStats,
   FilterCondition,
   FilterLogic,
-} from "../../types/filters";
+} from "../../types/connection/filters";
 
 export function useFilters() {
   const [filters, setFilters] = useState<FilterRule[]>([]);

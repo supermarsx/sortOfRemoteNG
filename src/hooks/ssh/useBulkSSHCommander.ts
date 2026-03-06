@@ -12,7 +12,7 @@ import {
   defaultBulkScripts,
 } from "../../data/defaultBulkScripts";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
-import type { CommandExecution } from "../../types/sshCommandHistory";
+import type { CommandExecution } from "../../types/ssh/sshCommandHistory";
 
 // ─── Types ─────────────────────────────────────────────────────────
 

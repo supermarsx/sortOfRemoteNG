@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ConnectionSession } from "../../types/connection";
+import { ConnectionSession } from "../../types/connection/connection";
 
 export function useDetachedSessionEvents(
   handleSessionClose: (sessionId: string) => Promise<void>,

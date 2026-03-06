@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { generateId } from '../../utils/id';
+import { generateId } from '../../utils/core/id';
 
 interface ColorTag {
   id: string;

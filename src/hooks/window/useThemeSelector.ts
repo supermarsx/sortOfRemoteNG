@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Theme, ColorScheme, ThemeConfig } from '../../types/settings';
-import { ThemeManager } from '../../utils/themeManager';
+import { Theme, ColorScheme, ThemeConfig } from '../../types/settings/settings';
+import { ThemeManager } from '../../utils/settings/themeManager';
 
 const themeManager = ThemeManager.getInstance();
 

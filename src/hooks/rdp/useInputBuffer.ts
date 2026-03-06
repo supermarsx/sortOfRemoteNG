@@ -1,5 +1,5 @@
 import { useRef, useCallback } from 'react';
-import { debugLog } from '../../utils/debugLogger';
+import { debugLog } from '../../utils/core/debugLogger';
 import { invoke } from '@tauri-apps/api/core';
 
 export function useInputBuffer(
@@ -25,7 +25,7 @@ export function useInputBuffer(
     invoke('rdp_send_input', { sessionId: sid, events: buf }).catch(e => {
       debugLog(`Input send error: ${e}`);
     });
-  }, []);
+  }, [sessionIdRef]);
 
   const sendInput = useCallback((events: Record<string, unknown>[], immediate = false) => {
     if (!isConnected || !sessionIdRef.current) return;
@@ -66,7 +66,7 @@ export function useInputBuffer(
       flushScheduledRef.current = true;
       queueMicrotask(flushInputBuffer);
     }
-  }, [isConnected, flushInputBuffer]);
+  }, [isConnected, flushInputBuffer, sessionIdRef]);
 
   const scaleCoords = useCallback((clientX: number, clientY: number): { x: number; y: number } => {
     const canvas = canvasRef.current;
@@ -82,7 +82,7 @@ export function useInputBuffer(
       x: Math.round((clientX - rect.left) * scaleX),
       y: Math.round((clientY - rect.top) * scaleY),
     };
-  }, []);
+  }, [canvasRef]);
 
   return { sendInput, scaleCoords, cachedRectRef };
 }

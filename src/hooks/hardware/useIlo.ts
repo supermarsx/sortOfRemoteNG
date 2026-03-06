@@ -36,7 +36,7 @@ import type {
   IloFederationPeer,
   IloDashboard,
   IloGeneration,
-} from "../../types/ilo";
+} from "../../types/hardware/ilo";
 
 // ── Types ────────────────────────────────────────────────────────
 

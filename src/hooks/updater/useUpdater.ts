@@ -9,7 +9,7 @@ import type {
   VersionInfo,
   UpdaterConfig,
   UpdateChannel,
-} from "../../types/updater";
+} from "../../types/updater/updater";
 
 export function useUpdater() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -137,7 +137,7 @@ export function useUpdater() {
     loadConfig().then(async () => {
       fetchVersionInfo();
     });
-  }, []);
+  }, [loadConfig, fetchVersionInfo]);
 
   return {
     updateInfo, progress, versionInfo, history, rollbacks, releaseNotes, config,

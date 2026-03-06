@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { PerformanceMetrics } from "../../types/settings";
-import { SettingsManager } from "../../utils/settingsManager";
+import { PerformanceMetrics } from "../../types/settings/settings";
+import { SettingsManager } from "../../utils/settings/settingsManager";
 import { invoke } from "@tauri-apps/api/core";
 
 /* ------------------------------------------------------------------ */

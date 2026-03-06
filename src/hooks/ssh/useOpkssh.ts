@@ -16,7 +16,7 @@ import type {
   ProviderEntry,
   ExpirationPolicy,
   ServerInstallOptions,
-} from "../../types/opkssh";
+} from "../../types/security/opkssh";
 
 // ─── Tauri runtime check ───────────────────────────────────────────
 
@@ -159,6 +159,7 @@ export function useOpkssh(isOpen: boolean) {
         setIsLoggingIn(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [loginOptions],
   );
 

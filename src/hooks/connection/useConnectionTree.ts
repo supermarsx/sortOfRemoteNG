@@ -1,10 +1,10 @@
 import { useState, useMemo, useCallback } from "react";
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
-import { generateId } from "../../utils/id";
-import { ScriptEngine } from "../../utils/scriptEngine";
-import { canMoveToParent } from "../../utils/dragDropManager";
+import { generateId } from "../../utils/core/id";
+import { ScriptEngine } from "../../utils/recording/scriptEngine";
+import { canMoveToParent } from "../../utils/window/dragDropManager";
 
 /* ── Types ─────────────────────────────────────────────────────── */
 

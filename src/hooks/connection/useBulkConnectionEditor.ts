@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Connection } from '../../types/connection';
+import { Connection } from '../../types/connection/connection';
 import { useConnections } from '../../contexts/useConnections';
-import { generateId } from '../../utils/id';
+import { generateId } from '../../utils/core/id';
 
 type EditableField = 'name' | 'hostname' | 'port' | 'username';
 

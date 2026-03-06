@@ -2,15 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { useConnections } from "../../contexts/useConnections";
-import { Connection, ConnectionSession } from "../../types/connection";
+import { Connection, ConnectionSession } from "../../types/connection/connection";
 import { isToolProtocol } from "../../components/app/ToolPanel";
-import { SettingsManager } from "../../utils/settingsManager";
-import { StatusChecker } from "../../utils/statusChecker";
-// import { ScriptEngine } from "../../utils/scriptEngine"; // Disabled for Tauri migration
-import { getDefaultPort } from "../../utils/defaultPorts";
-import { raceWithTimeout } from "../../utils/raceWithTimeout";
-import { generateId } from "../../utils/id";
-import { ConfirmDialog } from "../../components/shared/ConfirmDialog";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { StatusChecker } from "../../utils/connection/statusChecker";
+// import { ScriptEngine } from "../../utils/recording/scriptEngine"; // Disabled for Tauri migration
+import { getDefaultPort } from "../../utils/discovery/defaultPorts";
+import { raceWithTimeout } from "../../utils/core/raceWithTimeout";
+import { generateId } from "../../utils/core/id";
+import { ConfirmDialog } from "../../components/ui/dialogs/ConfirmDialog";
 
 /**
  * Manages connection sessions and exposes helpers for session workflows.

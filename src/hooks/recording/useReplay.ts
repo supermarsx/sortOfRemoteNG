@@ -15,7 +15,7 @@ import type {
   ReplayConfig,
   ReplayStats,
   ExportFormat,
-} from "../../types/replay";
+} from "../../types/recording/replay";
 
 export function useReplay() {
   const [session, setSession] = useState<ReplaySession | null>(null);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { debugLog } from '../../utils/debugLogger';
-import { ConnectionSession, Connection, DEFAULT_RDP_SETTINGS, RDPConnectionSettings } from '../../types/connection';
+import { debugLog } from '../../utils/core/debugLogger';
+import { ConnectionSession, Connection, DEFAULT_RDP_SETTINGS, RDPConnectionSettings } from '../../types/connection/connection';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { FrameBuffer } from '../../components/rdp/rdpCanvas';
 import { createFrameRenderer, type FrameRenderer, type FrontendRendererType } from '../../components/rdp/rdpRenderers';
@@ -225,7 +225,7 @@ export function useRDPConnection({
         rafPendingRef.current = false;
       }
     };
-  }, []);
+  }, [rafIdRef, rafPendingRef]);
 
   return {
     rdpSessionId,

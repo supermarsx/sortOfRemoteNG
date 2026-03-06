@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Connection } from '../../types/connection';
+import { Connection } from '../../types/connection/connection';
 import { useSessionThumbnails } from './useSessionThumbnails';
 
 export interface RDPSessionInfo {

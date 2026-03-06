@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GlobalSettings, Theme, ColorScheme } from '../../types/settings';
-import { ThemeManager } from '../../utils/themeManager';
+import { GlobalSettings, Theme, ColorScheme } from '../../types/settings/settings';
+import { ThemeManager } from '../../utils/settings/themeManager';
 
 const formatLabel = (value: string): string =>
   value

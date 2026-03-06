@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AutoLockConfig } from '../../types/settings';
-import { SecureStorage } from '../../utils/storage';
+import { AutoLockConfig } from '../../types/settings/settings';
+import { SecureStorage } from '../../utils/storage/storage';
 
 export function useAutoLockManager(
   config: AutoLockConfig,

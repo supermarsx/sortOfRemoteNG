@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { GlobalSettings } from "../../types/settings";
+import { GlobalSettings } from "../../types/settings/settings";
 
 /**
  * Applies transparency/theme CSS variables and window background effects.

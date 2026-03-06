@@ -7,3 +7,4 @@ export * from "./useSecurityQuestionsSection";
 export * from "./useTotpImport";
 export * from "./useTOTPManager";
 export * from "./useTOTPOptions";
+export * from "./useCredentials";

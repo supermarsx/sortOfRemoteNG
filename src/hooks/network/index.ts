@@ -5,3 +5,4 @@ export * from "./useProxyChainManager";
 export * from "./useProxyProfileEditor";
 export * from "./useWakeScheduleManager";
 export * from "./useWOLQuickTool";
+export * from "./useTopology";

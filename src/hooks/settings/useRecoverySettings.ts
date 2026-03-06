@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IndexedDbService } from '../../utils/indexedDbService';
-import { SettingsManager } from '../../utils/settingsManager';
+import { IndexedDbService } from '../../utils/storage/indexedDbService';
+import { SettingsManager } from '../../utils/settings/settingsManager';
 import { invoke } from '@tauri-apps/api/core';
 
 export function useRecoverySettings() {

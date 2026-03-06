@@ -83,7 +83,7 @@ import type {
   PveUser,
   PveRole,
   PveGroup,
-} from "../../types/proxmox";
+} from "../../types/hardware/proxmox";
 
 // ── Types ────────────────────────────────────────────────────────
 

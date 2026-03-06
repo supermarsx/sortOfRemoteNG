@@ -8,7 +8,7 @@ import type {
   MarketplaceStats,
   MarketplaceConfig,
   PluginCategory,
-} from "../../types/marketplace";
+} from "../../types/marketplace/marketplace";
 
 export function useMarketplace() {
   const [listings, setListings] = useState<MarketplaceListing[]>([]);

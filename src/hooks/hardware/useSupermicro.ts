@@ -36,7 +36,7 @@ import type {
   NodeManagerPolicy,
   NodeManagerStats,
   SmcDashboard,
-} from "../../types/supermicro";
+} from "../../types/hardware/supermicro";
 
 // ── Types ────────────────────────────────────────────────────────
 

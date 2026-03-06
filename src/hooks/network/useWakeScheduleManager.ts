@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { WakeOnLanService, type WakeSchedule, type WakeRecurrence } from '../../utils/wakeOnLan';
+import { WakeOnLanService, type WakeSchedule, type WakeRecurrence } from '../../utils/network/wakeOnLan';
 import { useTranslation } from 'react-i18next';
 
 const wolService = new WakeOnLanService();

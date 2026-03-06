@@ -7,7 +7,7 @@ import type {
   CronValidation,
   SchedulerStats,
   SchedulerConfig,
-} from "../../types/scheduler";
+} from "../../types/scheduler/scheduler";
 
 export function useScheduler() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);

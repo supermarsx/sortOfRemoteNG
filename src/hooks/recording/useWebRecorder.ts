@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { WebRecording, WebRecordingMetadata } from '../../types/macroTypes';
+import { WebRecording, WebRecordingMetadata } from '../../types/recording/macroTypes';
 
 export interface UseWebRecorderResult {
   isRecording: boolean;

@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import jsQR from "jsqr";
-import { TOTPConfig } from "../../types/settings";
+import { TOTPConfig } from "../../types/settings/settings";
 import {
   ImportSource,
   ImportResult,
   importTotpEntries,
-} from "../../utils/totpImport";
+} from "../../utils/auth/totpImport";
 
 export interface UseTotpImportOptions {
   onImport: (entries: TOTPConfig[]) => void;

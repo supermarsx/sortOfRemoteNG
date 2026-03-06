@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { GlobalSettings, ProxyConfig } from "../../types/settings";
-import { SettingsManager } from "../../utils/settingsManager";
-import { ThemeManager } from "../../utils/themeManager";
+import { GlobalSettings, ProxyConfig } from "../../types/settings/settings";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { ThemeManager } from "../../utils/settings/themeManager";
 import { loadLanguage } from "../../i18n";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useToastContext } from "../../contexts/ToastContext";

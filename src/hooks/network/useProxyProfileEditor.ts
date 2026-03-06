@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { SavedProxyProfile, ProxyConfig } from '../../types/settings';
+import { SavedProxyProfile, ProxyConfig } from '../../types/settings/settings';
 
 export function useProxyProfileEditor(
   isOpen: boolean,

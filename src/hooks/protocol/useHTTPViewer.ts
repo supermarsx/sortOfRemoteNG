@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ConnectionSession } from "../../types/connection";
-import { TOTPConfig } from "../../types/settings";
+import { ConnectionSession } from "../../types/connection/connection";
+import { TOTPConfig } from "../../types/settings/settings";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
 

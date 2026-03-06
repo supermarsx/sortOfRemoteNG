@@ -40,7 +40,7 @@ import type {
   NotificationConfig,
   SynologyDashboard,
   FileListResult,
-} from "../../types/synology";
+} from "../../types/hardware/synology";
 
 export type SynologyTab =
   | "dashboard"

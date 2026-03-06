@@ -19,8 +19,8 @@ import type {
   QrCodeData,
   PairingState,
   UnofficialConnectionState,
-} from "../../types/whatsapp";
-import * as wa from "../../utils/whatsappService";
+} from "../../types/protocols/whatsapp";
+import * as wa from "../../utils/services/whatsappService";
 
 // ─── Internal Helpers ────────────────────────────────────────────────
 

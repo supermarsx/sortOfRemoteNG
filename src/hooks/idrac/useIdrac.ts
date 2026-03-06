@@ -53,7 +53,7 @@ import type {
   TelemetryReport,
   RacadmResult,
   IdracDashboard,
-} from "../../types/idrac";
+} from "../../types/hardware/idrac";
 
 // ── Types ────────────────────────────────────────────────────────
 

@@ -24,7 +24,7 @@ import type {
   YubiKeyConfig,
   YubiKeyAuditEntry,
   YubiKeyInterface,
-} from "../../types/yubikey";
+} from "../../types/security/yubikey";
 
 export function useYubiKey() {
   // ── State ────────────────────────────────────────────────────────────

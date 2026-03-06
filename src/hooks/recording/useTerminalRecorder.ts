@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { SessionRecording, SessionRecordingMetadata } from '../../types/macroTypes';
+import { SessionRecording, SessionRecordingMetadata } from '../../types/recording/macroTypes';
 
 export interface UseTerminalRecorderResult {
   isRecording: boolean;

@@ -2,8 +2,8 @@ import { useCallback } from 'react';
 import { listen, emit } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { availableMonitors, currentMonitor } from '@tauri-apps/api/window';
-import { Connection, ConnectionSession } from '../../types/connection';
-import { generateId } from '../../utils/id';
+import { Connection, ConnectionSession } from '../../types/connection/connection';
+import { generateId } from '../../utils/core/id';
 
 export function useSessionDetach(
   sessions: ConnectionSession[],

@@ -4,7 +4,7 @@ import {
   Connection,
   DEFAULT_RDP_SETTINGS,
   RDPConnectionSettings,
-} from "../../types/connection";
+} from "../../types/connection/connection";
 import {
   getAllTrustRecords,
   removeIdentity,
@@ -12,7 +12,7 @@ import {
   formatFingerprint,
   updateTrustRecordNickname,
   type TrustRecord,
-} from "../../utils/trustStore";
+} from "../../utils/auth/trustStore";
 
 /* ═══════════════════════════════════════════════════════════════
    Constants

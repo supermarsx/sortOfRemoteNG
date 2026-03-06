@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { detectLanguage } from '../../utils/scriptSyntax';
+import { detectLanguage } from '../../utils/recording/scriptSyntax';
 import { defaultScripts } from '../../data/defaultScripts';
 import type { ManagedScript, ScriptLanguage, OSTag } from '../../components/recording/ScriptManager';
 import { SCRIPTS_STORAGE_KEY } from '../../components/recording/ScriptManager';

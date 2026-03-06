@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
-import { Connection } from "../../types/connection";
-import { SSHConnectionConfig, defaultSSHConnectionConfig } from "../../types/settings";
+import { Connection } from "../../types/connection/connection";
+import { SSHConnectionConfig, defaultSSHConnectionConfig } from "../../types/settings/settings";
 import { useSettings } from "../../contexts/SettingsContext";
 
 /* ═══════════════════════════════════════════════════════════════

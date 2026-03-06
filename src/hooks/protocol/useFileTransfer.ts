@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { FileTransferSession } from '../../types/connection';
-import { FileTransferService } from '../../utils/fileTransferService';
+import { FileTransferSession } from '../../types/connection/connection';
+import { FileTransferService } from '../../utils/file-transfer/fileTransferService';
 
 export interface FileItem {
   name: string;

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { GlobalSettings, RecordingConfig } from '../../types/settings';
-import { RDPRecordingConfig, WebRecordingConfig } from '../../types/macroTypes';
-import * as macroService from '../../utils/macroService';
+import { GlobalSettings, RecordingConfig } from '../../types/settings/settings';
+import { RDPRecordingConfig, WebRecordingConfig } from '../../types/recording/macroTypes';
+import * as macroService from '../../utils/recording/macroService';
 
 export function useRecordingSettings(
   settings: GlobalSettings,

@@ -10,7 +10,7 @@ import type {
   SparklineData,
   HeatmapCell,
   QuickStats,
-} from "../../types/dashboard";
+} from "../../types/monitoring/dashboard";
 
 const DEFAULT_CONFIG: DashboardConfig = {
   enabled: true,

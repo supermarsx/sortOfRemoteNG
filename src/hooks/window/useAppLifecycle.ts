@@ -1,14 +1,14 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useConnections } from "../../contexts/useConnections";
-import { SettingsManager } from "../../utils/settingsManager";
-import { StatusChecker } from "../../utils/statusChecker";
-import { CollectionManager } from "../../utils/collectionManager";
-import { ThemeManager } from "../../utils/themeManager";
-import { SecureStorage } from "../../utils/storage";
-import { Connection, ConnectionSession } from "../../types/connection";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { StatusChecker } from "../../utils/connection/statusChecker";
+import { CollectionManager } from "../../utils/connection/collectionManager";
+import { ThemeManager } from "../../utils/settings/themeManager";
+import { SecureStorage } from "../../utils/storage/storage";
+import { Connection, ConnectionSession } from "../../types/connection/connection";
 import i18n, { loadLanguage } from "../../i18n";
-import { IndexedDbService } from "../../utils/indexedDbService";
+import { IndexedDbService } from "../../utils/storage/indexedDbService";
 
 const CLEAN_EXIT_KEY = "mremote-clean-exit";
 const LAST_SESSION_KEY = "mremote-last-session-time";

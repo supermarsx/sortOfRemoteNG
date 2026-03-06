@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { TOTPConfig } from '../../types/settings';
-import { TOTPService } from '../../utils/totpService';
+import { TOTPConfig } from '../../types/settings/settings';
+import { TOTPService } from '../../utils/auth/totpService';
 
 // ─── Hook ────────────────────────────────────────────────────────────
 

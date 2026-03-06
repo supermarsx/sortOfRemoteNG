@@ -8,17 +8,17 @@ import {
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { TOTPConfig } from "../../types/settings";
+import { TOTPConfig } from "../../types/settings/settings";
 import { useTerminalRecorder } from "../recording/useTerminalRecorder";
 import { useMacroRecorder } from "../recording/useMacroRecorder";
-import { TerminalMacro, SavedRecording } from "../../types/macroTypes";
-import * as macroService from "../../utils/macroService";
+import { TerminalMacro, SavedRecording } from "../../types/recording/macroTypes";
+import * as macroService from "../../utils/recording/macroService";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, emit } from "@tauri-apps/api/event";
-import { ConnectionSession } from "../../types/connection";
+import { ConnectionSession } from "../../types/connection/connection";
 import { useConnections } from "../../contexts/useConnections";
 import { useSettings } from "../../contexts/SettingsContext";
-import { mergeSSHTerminalConfig, mergeSSHConnectionConfig, defaultSSHConnectionConfig } from "../../types/settings";
+import { mergeSSHTerminalConfig, mergeSSHConnectionConfig, defaultSSHConnectionConfig } from "../../types/settings/settings";
 import { ManagedScript, getDefaultScripts, OSTag } from "../../components/recording/ScriptManager";
 import {
   verifyIdentity,
@@ -28,7 +28,7 @@ import {
   formatFingerprint,
   type SshHostKeyIdentity,
   type TrustVerifyResult,
-} from "../../utils/trustStore";
+} from "../../utils/auth/trustStore";
 import { useSSHCommandHistory } from "./useSSHCommandHistory";
 
 /* ── Internal types ────────────────────────────────────────────── */

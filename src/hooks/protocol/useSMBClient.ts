@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { ConnectionSession } from '../../types/connection';
+import { ConnectionSession } from '../../types/connection/connection';
 
 export interface SMBFile {
   name: string;

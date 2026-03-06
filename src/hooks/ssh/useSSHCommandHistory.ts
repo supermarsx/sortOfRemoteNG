@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { generateId } from "../../utils/id";
+import { generateId } from "../../utils/core/id";
 import {
   SSHCommandHistoryEntry,
   SSHCommandHistoryFilter,
@@ -12,7 +12,7 @@ import {
   HistoryImportResult,
   defaultHistoryFilter,
   defaultHistoryConfig,
-} from "../../types/sshCommandHistory";
+} from "../../types/ssh/sshCommandHistory";
 
 // ─── Constants ─────────────────────────────────────────────────
 

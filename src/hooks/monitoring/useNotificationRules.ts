@@ -6,7 +6,7 @@ import type {
   NotificationHistoryEntry,
   NotificationStats,
   NotificationConfig,
-} from "../../types/notifications";
+} from "../../types/monitoring/notifications";
 
 export function useNotificationRules() {
   const [rules, setRules] = useState<NotificationRule[]>([]);

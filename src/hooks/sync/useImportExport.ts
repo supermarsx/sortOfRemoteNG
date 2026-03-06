@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Connection } from '../../types/connection';
+import { Connection } from '../../types/connection/connection';
 import { useConnections } from '../../contexts/useConnections';
 import { useToastContext } from '../../contexts/ToastContext';
-import { CollectionManager } from '../../utils/collectionManager';
-import { SettingsManager } from '../../utils/settingsManager';
+import { CollectionManager } from '../../utils/connection/collectionManager';
+import { SettingsManager } from '../../utils/settings/settingsManager';
 import { ImportResult } from '../../components/importExport/types';
 import CryptoJS from 'crypto-js';
 import {
