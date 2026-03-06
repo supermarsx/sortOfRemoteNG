@@ -1,0 +1,18 @@
+[package]
+name = "sorng-filesharing"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "File sharing management for SortOfRemoteNG — NFS exports, Samba/CIFS shares, WebDAV."
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
