@@ -3,7 +3,7 @@ import {
   Connection,
   ConnectionSession,
   ConnectionFilter,
-} from "../types/connection";
+} from "../types/connection/connection";
 
 /**
  * Describes the shape of the connection related state used by the application.

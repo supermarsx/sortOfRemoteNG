@@ -1,7 +1,7 @@
 import React, { useReducer, useEffect, useCallback, useMemo, useRef } from "react";
-import { CollectionManager } from "../utils/collectionManager";
-import { StorageData } from "../utils/storage";
-import { SettingsManager } from "../utils/settingsManager";
+import { CollectionManager } from "../utils/connection/collectionManager";
+import { StorageData } from "../utils/storage/storage";
+import { SettingsManager } from "../utils/settings/settingsManager";
 import {
   ConnectionState,
   ConnectionAction,

@@ -9,13 +9,13 @@ import { Monitor, Zap, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { Connection, ConnectionSession, TabLayout } from "./types/connection";
-import { CloudSyncProvider, GlobalSettings, defaultCloudSyncConfig } from "./types/settings";
-import { SettingsManager } from "./utils/settingsManager";
-import { StatusChecker } from "./utils/statusChecker";
-import { CollectionManager } from "./utils/collectionManager";
-import { CollectionNotFoundError, InvalidPasswordError } from "./utils/errors";
-import { SecureStorage } from "./utils/storage";
+import { Connection, ConnectionSession, TabLayout } from "./types/connection/connection";
+import { CloudSyncProvider, GlobalSettings, defaultCloudSyncConfig } from "./types/settings/settings";
+import { SettingsManager } from "./utils/settings/settingsManager";
+import { StatusChecker } from "./utils/connection/statusChecker";
+import { CollectionManager } from "./utils/connection/collectionManager";
+import { CollectionNotFoundError, InvalidPasswordError } from "./utils/core/errors";
+import { SecureStorage } from "./utils/storage/storage";
 import { useSessionManager } from "./hooks/session/useSessionManager";
 import { useAppLifecycle } from "./hooks/window/useAppLifecycle";
 import { ConnectionProvider } from "./contexts/ConnectionProvider";
@@ -29,7 +29,7 @@ import { ErrorBoundary } from "./components/app/ErrorBoundary";
 import { SplashScreen } from "./components/app/SplashScreen";
 import { RDPSessionPanel } from "./components/rdp/RDPSessionPanel";
 import { ToolKey, createToolSession, getToolProtocol, isToolProtocol } from "./components/app/ToolPanel";
-import { generateId } from "./utils/id";
+import { generateId } from "./utils/core/id";
 import { useTooltipSystem } from "./hooks/window/useTooltipSystem";
 import { useWindowControls } from "./hooks/window/useWindowControls";
 import { useWindowTheme } from "./hooks/window/useWindowTheme";
@@ -76,6 +76,7 @@ const AppContent: React.FC = () => {
   const [showScriptManager, setShowScriptManager] = useState(false);
   const [showMacroManager, setShowMacroManager] = useState(false);
   const [showRecordingManager, setShowRecordingManager] = useState(false);
+  const [showWindowsBackup, setShowWindowsBackup] = useState(false);
   const [diagnosticsConnection, setDiagnosticsConnection] = useState<Connection | null>(null);
   const [pendingLaunchConnectionId, setPendingLaunchConnectionId] = useState<
     string | null
@@ -189,6 +190,7 @@ const AppContent: React.FC = () => {
     scriptManager: setShowScriptManager,
     macroManager: setShowMacroManager,
     recordingManager: setShowRecordingManager,
+    windowsBackup: setShowWindowsBackup,
   }).current;
 
   /**
@@ -226,7 +228,8 @@ const AppContent: React.FC = () => {
       toolPopupSetters[toolKey](false);
     }) as React.Dispatch<React.SetStateAction<boolean>>;
   // dispatch and setActiveSessionId are stable (from useReducer / useState)
-  }, [dispatch, setActiveSessionId, resolveToolMode]);
+  // toolPopupSetters is a stable ref-derived object (never re-created)
+  }, [dispatch, setActiveSessionId, resolveToolMode, toolPopupSetters]);
 
   // Build wrapped setters once — they're stable because makeToolSetter
   // only depends on stable refs and dispatch.
@@ -234,7 +237,7 @@ const AppContent: React.FC = () => {
   if (toolShowSetters.current === null) {
     const keys: ToolKey[] = [
       'performanceMonitor', 'actionLog', 'shortcutManager', 'proxyChain',
-      'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer', 'scriptManager', 'macroManager', 'recordingManager',
+      'internalProxy', 'wol', 'bulkSsh', 'serverStats', 'opkssh', 'mcpServer', 'scriptManager', 'macroManager', 'recordingManager', 'windowsBackup',
     ];
     const result = {} as Record<ToolKey, React.Dispatch<React.SetStateAction<boolean>>>;
     for (const key of keys) result[key] = makeToolSetter(key);

@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultBackupConfig, defaultCloudSyncConfig } from '../types/settings';
-import { SettingsManager } from '../utils/settingsManager';
+import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig, defaultBackupConfig, defaultCloudSyncConfig } from '../types/settings/settings';
+import { SettingsManager } from '../utils/settings/settingsManager';
 
 interface SettingsContextType {
   settings: GlobalSettings;
