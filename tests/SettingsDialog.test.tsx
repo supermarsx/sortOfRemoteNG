@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { SettingsDialog } from "../src/components/settingsDialog";
-import { GlobalSettings } from "../src/types/settings";
+import { GlobalSettings } from "../src/types/settings/settings";
 import { ToastProvider } from "../src/contexts/ToastContext";
 
 // mock i18n
@@ -105,7 +105,7 @@ const mockSettings: GlobalSettings = {
   exportPassword: undefined,
 };
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       loadSettings: vi.fn().mockResolvedValue(mockSettings),
@@ -114,7 +114,7 @@ vi.mock("../src/utils/settingsManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/themeManager", () => ({
+vi.mock("../src/utils/settings/themeManager", () => ({
   ThemeManager: {
     getInstance: () => ({
       applyTheme: vi.fn(),

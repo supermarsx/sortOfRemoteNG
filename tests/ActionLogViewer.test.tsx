@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       getActionLog: mocks.getActionLog,

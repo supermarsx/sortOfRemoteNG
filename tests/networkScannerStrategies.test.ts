@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { NetworkScanner } from '../src/utils/networkScanner';
-import type { NetworkDiscoveryConfig } from '../src/types/settings';
+import { NetworkScanner } from '../src/utils/network/networkScanner';
+import type { NetworkDiscoveryConfig } from '../src/types/settings/settings';
 
 const scanner = new NetworkScanner() as any;
 const originalFetch = global.fetch;

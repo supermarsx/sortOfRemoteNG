@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WebTerminal } from "../src/components/ssh/WebTerminal";
-import { ConnectionSession } from "../src/types/connection";
+import { ConnectionSession } from "../src/types/connection/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 const mockConnection = {

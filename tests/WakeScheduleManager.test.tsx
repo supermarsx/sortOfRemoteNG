@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   cancelSchedule: vi.fn(),
 }));
 
-vi.mock("../src/utils/wakeOnLan", () => ({
+vi.mock("../src/utils/network/wakeOnLan", () => ({
   WakeOnLanService: class {
     listSchedules = mocks.listSchedules;
     scheduleWakeUp = mocks.scheduleWakeUp;

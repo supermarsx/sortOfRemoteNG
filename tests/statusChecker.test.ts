@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import net from 'net';
-import { StatusChecker } from '../src/utils/statusChecker';
+import { StatusChecker } from '../src/utils/connection/statusChecker';
 
 let checker: any;
 

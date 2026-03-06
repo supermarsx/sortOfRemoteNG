@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authenticator } from 'otplib';
-import { TOTPService } from '../src/utils/totpService';
+import { TOTPService } from '../src/utils/auth/totpService';
 
 vi.mock('qrcode', () => ({
   toDataURL: vi.fn(async () => 'data:url')

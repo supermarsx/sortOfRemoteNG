@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   resumeTransfer: vi.fn(),
 }));
 
-vi.mock("../src/utils/fileTransferService", () => ({
+vi.mock("../src/utils/file-transfer/fileTransferService", () => ({
   FileTransferService: class {
     listDirectory = mocks.listDirectory;
     getActiveTransfers = mocks.getActiveTransfers;

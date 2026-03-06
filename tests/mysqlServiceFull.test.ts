@@ -6,7 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }));
 
-import { mysqlService } from '../src/utils/mysqlService';
+import { mysqlService } from '../src/utils/services/mysqlService';
 
 describe('mysqlService', () => {
   beforeEach(() => {

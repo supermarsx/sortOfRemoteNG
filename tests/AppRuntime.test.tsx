@@ -164,8 +164,8 @@ import { ConnectionProvider } from "../src/contexts/ConnectionProvider";
 import { ToastProvider, useToastContext } from "../src/contexts/ToastContext";
 import { ErrorBoundary } from "../src/components/app/ErrorBoundary";
 import { useConnections } from "../src/contexts/useConnections";
-import { Connection, ConnectionSession } from "../src/types/connection";
-import { generateId } from "../src/utils/id";
+import { Connection, ConnectionSession } from "../src/types/connection/connection";
+import { generateId } from "../src/utils/core/id";
 import { SplashScreen } from "../src/components/app/SplashScreen";
 import {
   isToolProtocol,
@@ -174,17 +174,17 @@ import {
   createToolSession,
   TOOL_LABELS,
 } from "../src/components/app/ToolPanel";
-import { SettingsManager } from "../src/utils/settingsManager";
-import { StatusChecker } from "../src/utils/statusChecker";
-import { CollectionManager } from "../src/utils/collectionManager";
-import { ThemeManager } from "../src/utils/themeManager";
-import { IndexedDbService } from "../src/utils/indexedDbService";
+import { SettingsManager } from "../src/utils/settings/settingsManager";
+import { StatusChecker } from "../src/utils/connection/statusChecker";
+import { CollectionManager } from "../src/utils/connection/collectionManager";
+import { ThemeManager } from "../src/utils/settings/themeManager";
+import { IndexedDbService } from "../src/utils/storage/indexedDbService";
 import { PBKDF2_ITERATIONS, DEFAULT_PBKDF2_ITERATIONS } from "../src/config";
 import {
   CollectionNotFoundError,
   InvalidPasswordError,
   CorruptedDataError,
-} from "../src/utils/errors";
+} from "../src/utils/core/errors";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
-import { Connection } from "../src/types/connection";
+import { Connection } from "../src/types/connection/connection";
 import { SSHTerminalOverrides } from "../src/components/connectionEditor/SSHTerminalOverrides";
 import { SSHConnectionOverrides } from "../src/components/connectionEditor/SSHConnectionOverrides";
 

@@ -39,7 +39,7 @@ vi.mock("../src/contexts/ToastContext", () => ({
   }),
 }));
 
-vi.mock("../src/utils/collectionManager", () => ({
+vi.mock("../src/utils/connection/collectionManager", () => ({
   CollectionManager: {
     getInstance: () => ({
       getCurrentCollection: () => ({ id: "collection-1" }),
@@ -48,7 +48,7 @@ vi.mock("../src/utils/collectionManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: mocks.logAction,

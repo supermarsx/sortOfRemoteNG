@@ -13,8 +13,8 @@ import type {
   McpLogEntry,
   McpEvent,
   McpToolCallLog,
-} from "../src/types/mcpServer";
-import { DEFAULT_MCP_CONFIG } from "../src/types/mcpServer";
+} from "../src/types/mcp/mcpServer";
+import { DEFAULT_MCP_CONFIG } from "../src/types/mcp/mcpServer";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -32,7 +32,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: any[]) => mockInvoke(...args),
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: vi.fn(),
@@ -43,7 +43,7 @@ vi.mock("../src/utils/settingsManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/themeManager", () => ({
+vi.mock("../src/utils/settings/themeManager", () => ({
   ThemeManager: {
     getInstance: () => ({
       applyTheme: vi.fn(),

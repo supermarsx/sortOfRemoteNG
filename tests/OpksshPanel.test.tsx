@@ -15,8 +15,8 @@ import type {
   AuditResult,
   CustomProvider,
   ExpirationPolicy,
-} from "../src/types/opkssh";
-import { WELL_KNOWN_PROVIDERS, EXPIRATION_POLICIES } from "../src/types/opkssh";
+} from "../src/types/security/opkssh";
+import { WELL_KNOWN_PROVIDERS, EXPIRATION_POLICIES } from "../src/types/security/opkssh";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: any[]) => mockInvoke(...args),
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock("../src/utils/settingsManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/collectionManager", () => ({
+vi.mock("../src/utils/connection/collectionManager", () => ({
   CollectionManager: {
     getInstance: () => ({
       getAllCollections: vi.fn().mockResolvedValue([]),
@@ -52,7 +52,7 @@ vi.mock("../src/utils/collectionManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/themeManager", () => ({
+vi.mock("../src/utils/settings/themeManager", () => ({
   ThemeManager: {
     getInstance: () => ({
       applyTheme: vi.fn(),

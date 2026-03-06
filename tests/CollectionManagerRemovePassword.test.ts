@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { CollectionManager } from '../src/utils/collectionManager';
-import { IndexedDbService } from '../src/utils/indexedDbService';
+import { CollectionManager } from '../src/utils/connection/collectionManager';
+import { IndexedDbService } from '../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
-import { StorageData } from '../src/utils/storage';
-import { ConnectionCollection } from '../src/types/connection';
+import { StorageData } from '../src/utils/storage/storage';
+import { ConnectionCollection } from '../src/types/connection/connection';
 
 const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';

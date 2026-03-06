@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { WakeOnLanService } from "../src/utils/wakeOnLan";
+import { WakeOnLanService } from "../src/utils/network/wakeOnLan";
 
 const MAC = "00:11:22:33:44:55";
 

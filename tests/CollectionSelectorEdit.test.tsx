@@ -2,10 +2,10 @@ import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { CollectionSelector } from '../src/components/connection/CollectionSelector';
-import { CollectionManager } from '../src/utils/collectionManager';
-import { IndexedDbService } from '../src/utils/indexedDbService';
+import { CollectionManager } from '../src/utils/connection/collectionManager';
+import { IndexedDbService } from '../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
-import { ConnectionCollection } from '../src/types/connection';
+import { ConnectionCollection } from '../src/types/connection/connection';
 
 const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';
@@ -16,7 +16,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('../src/utils/settingsManager', () => ({
+vi.mock('../src/utils/settings/settingsManager', () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: vi.fn(),
@@ -41,7 +41,7 @@ vi.mock('../src/contexts/ToastContext', () => ({
   ToastProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock('../src/utils/themeManager', () => ({
+vi.mock('../src/utils/settings/themeManager', () => ({
   ThemeManager: {
     getInstance: () => ({
       applyTheme: vi.fn(),

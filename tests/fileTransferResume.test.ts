@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FileTransferService, FileTransferAdapter, FileItem } from '../src/utils/fileTransferService';
-import { IndexedDbService } from '../src/utils/indexedDbService';
+import { FileTransferService, FileTransferAdapter, FileItem } from '../src/utils/file-transfer/fileTransferService';
+import { IndexedDbService } from '../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
 
 const DB_NAME = 'mremote-keyval';

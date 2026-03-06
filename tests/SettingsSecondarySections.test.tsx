@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { GlobalSettings } from "../src/types/settings";
+import type { GlobalSettings } from "../src/types/settings/settings";
 import PerformanceSettings from "../src/components/settingsDialog/sections/PerformanceSettings";
 import ThemeSettings from "../src/components/settingsDialog/sections/ThemeSettings";
 import ProxySettings from "../src/components/settingsDialog/sections/ProxySettings";
@@ -14,7 +14,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: vi.fn(),
@@ -25,7 +25,7 @@ vi.mock("../src/utils/settingsManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/themeManager", () => {
+vi.mock("../src/utils/settings/themeManager", () => {
   const inst = {
     applyTheme: vi.fn(),
     getCurrentTheme: vi.fn().mockReturnValue("dark"),

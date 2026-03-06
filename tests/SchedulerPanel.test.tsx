@@ -16,7 +16,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import { SchedulerPanel } from "../src/components/monitoring/SchedulerPanel";
+import { SchedulerPanel } from "../src/components/scheduler/SchedulerPanel";
 
 describe("SchedulerPanel", () => {
   beforeEach(() => {

@@ -13,7 +13,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import { SessionReplayViewer } from "../src/components/monitoring/SessionReplayViewer";
+import { SessionReplayViewer } from "../src/components/recording/SessionReplayViewer";
 
 const mockSession = {
   id: "sess-1",

@@ -13,7 +13,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import MarketplacePanel from "../src/components/monitoring/MarketplacePanel";
+import MarketplacePanel from "../src/components/marketplace/MarketplacePanel";
 
 describe("MarketplacePanel", () => {
   beforeEach(() => {

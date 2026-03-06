@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ConnectionEditor } from "../src/components/connection/ConnectionEditor";
-import { Connection } from "../src/types/connection";
+import { Connection } from "../src/types/connection/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 // Mock child components
@@ -26,7 +26,7 @@ vi.mock('../src/components/connectionEditor/CloudProviderOptions', () => ({
   default: () => <div data-testid="cloud-options">Cloud Options</div>
 }));
 
-vi.mock('../src/utils/defaultPorts', () => ({
+vi.mock('../src/utils/discovery/defaultPorts', () => ({
   getDefaultPort: vi.fn((protocol) => {
     const ports: Record<string, number> = {
       rdp: 3389,
@@ -39,7 +39,7 @@ vi.mock('../src/utils/defaultPorts', () => ({
   })
 }));
 
-vi.mock('../src/utils/id', () => ({
+vi.mock('../src/utils/core/id', () => ({
   generateId: vi.fn(() => 'test-generated-id')
 }));
 

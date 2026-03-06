@@ -143,7 +143,7 @@ describe("ProxmoxPanel - useProxmoxManager hook", () => {
 describe("ProxmoxPanel - useProxmox hook", () => {
   it("exports useProxmox function", async () => {
     const mod = await import(
-      "../src/hooks/monitoring/useProxmox"
+      "../src/hooks/proxmox/useProxmox"
     );
     expect(mod.useProxmox).toBeDefined();
     expect(typeof mod.useProxmox).toBe("function");
@@ -152,7 +152,7 @@ describe("ProxmoxPanel - useProxmox hook", () => {
 
 describe("Proxmox TypeScript types", () => {
   it("exports all required interfaces", async () => {
-    const types = await import("../src/types/proxmox");
+    const types = await import("../src/types/hardware/proxmox");
     // Verify key type exports exist (TypeScript interfaces are erased,
     // but we can verify the module loads without errors)
     expect(types).toBeDefined();

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RDPClient from "../src/components/rdp/RDPClient";
-import { ConnectionSession } from "../src/types/connection";
+import { ConnectionSession } from "../src/types/connection/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 import { ToastProvider } from "../src/contexts/ToastContext";
 

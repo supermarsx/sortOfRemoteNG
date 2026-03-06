@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SecureStorage, StorageData } from '../src/utils/storage';
-import { IndexedDbService } from '../src/utils/indexedDbService';
+import { SecureStorage, StorageData } from '../src/utils/storage/storage';
+import { IndexedDbService } from '../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
 
 const DB_NAME = 'mremote-keyval';

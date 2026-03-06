@@ -2,8 +2,8 @@ import { describe, it, expect, vi, afterEach, beforeEach, Mock } from "vitest";
 import {
   ScriptEngine,
   ScriptExecutionContext,
-} from "../src/utils/scriptEngine";
-import { CustomScript } from "../src/types/settings";
+} from "../src/utils/recording/scriptEngine";
+import { CustomScript } from "../src/types/settings/settings";
 
 describe("ScriptEngine abort handling", () => {
   const originalFetch = global.fetch;

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { GlobalSettings } from "../src/types/settings";
+import type { GlobalSettings } from "../src/types/settings/settings";
 import AdvancedSettings from "../src/components/settingsDialog/sections/AdvancedSettings";
 import LayoutSettings from "../src/components/settingsDialog/sections/LayoutSettings";
 import ApiSettings from "../src/components/settingsDialog/sections/ApiSettings";
@@ -16,7 +16,7 @@ vi.mock("../src/contexts/useConnections", () => ({
   }),
 }));
 
-vi.mock("../src/utils/trustStore", () => ({
+vi.mock("../src/utils/auth/trustStore", () => ({
   getAllTrustRecords: vi.fn(() => [
     {
       host: "example.local:443",

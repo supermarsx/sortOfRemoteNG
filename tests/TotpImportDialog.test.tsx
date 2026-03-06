@@ -16,7 +16,7 @@ vi.mock("jsqr", () => ({
   default: vi.fn(),
 }));
 
-vi.mock("../src/utils/totpImport", () => ({
+vi.mock("../src/utils/auth/totpImport", () => ({
   IMPORT_SOURCES: [
     {
       id: "auto",

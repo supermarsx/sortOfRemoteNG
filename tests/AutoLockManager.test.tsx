@@ -2,8 +2,8 @@ import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AutoLockManager } from "../src/components/security/AutoLockManager";
-import { SecureStorage } from "../src/utils/storage";
-import { AutoLockConfig } from "../src/types/settings";
+import { SecureStorage } from "../src/utils/storage/storage";
+import { AutoLockConfig } from "../src/types/settings/settings";
 
 const renderAutoLock = (overrides?: Partial<AutoLockConfig>) => {
   const config: AutoLockConfig = {

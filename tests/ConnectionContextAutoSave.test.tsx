@@ -3,11 +3,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { ConnectionProvider } from '../src/contexts/ConnectionContext';
 import { useConnections } from '../src/contexts/useConnections';
-import { CollectionManager } from '../src/utils/collectionManager';
-import { IndexedDbService } from '../src/utils/indexedDbService';
+import { CollectionManager } from '../src/utils/connection/collectionManager';
+import { IndexedDbService } from '../src/utils/storage/indexedDbService';
 import { openDB } from 'idb';
-import { Connection } from '../src/types/connection';
-import { StorageData } from '../src/utils/storage';
+import { Connection } from '../src/types/connection/connection';
+import { StorageData } from '../src/utils/storage/storage';
 
 const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';

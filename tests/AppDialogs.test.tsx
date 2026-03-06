@@ -15,7 +15,7 @@ vi.mock("../src/components/connection/QuickConnect", () => ({
 vi.mock("../src/components/security/PasswordDialog", () => ({
   PasswordDialog: () => <div data-testid="password-dialog" />,
 }));
-vi.mock("../src/components/shared/ConfirmDialog", () => ({
+vi.mock("../src/components/ui/dialogs/ConfirmDialog", () => ({
   ConfirmDialog: () => <div data-testid="confirm-dialog" />,
 }));
 vi.mock("../src/components/settingsDialog", () => ({
@@ -57,7 +57,7 @@ vi.mock("../src/components/recording/RecordingManager", () => ({
 vi.mock("../src/components/connection/ConnectionDiagnostics", () => ({
   ConnectionDiagnostics: () => <div data-testid="connection-diagnostics" />,
 }));
-vi.mock("../src/components/monitoring/ErrorLogBar", () => ({
+vi.mock("../src/components/app/ErrorLogBar", () => ({
   ErrorLogBar: () => <div data-testid="error-log" />,
 }));
 vi.mock("../src/components/security/AutoLockManager", () => ({

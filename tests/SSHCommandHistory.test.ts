@@ -49,7 +49,7 @@ import { useSSHCommandHistory } from "../src/hooks/ssh/useSSHCommandHistory";
 import type {
   SSHCommandHistoryEntry,
   CommandExecution,
-} from "../src/types/sshCommandHistory";
+} from "../src/types/ssh/sshCommandHistory";
 
 // ── Test Suite ─────────────────────────────────────────────────
 

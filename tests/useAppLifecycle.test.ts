@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAppLifecycle } from "../src/hooks/window/useAppLifecycle";
-import { SettingsManager } from "../src/utils/settingsManager";
-import { ThemeManager } from "../src/utils/themeManager";
+import { SettingsManager } from "../src/utils/settings/settingsManager";
+import { ThemeManager } from "../src/utils/settings/themeManager";
 import i18n, { loadLanguage } from "../src/i18n";
 
 // Mock i18next and related modules

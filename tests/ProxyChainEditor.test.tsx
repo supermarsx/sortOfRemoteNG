@@ -14,13 +14,13 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-vi.mock("../src/utils/proxyCollectionManager", () => ({
+vi.mock("../src/utils/connection/proxyCollectionManager", () => ({
   proxyCollectionManager: {
     getProfiles: mocks.getProfiles,
   },
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: vi.fn(),
@@ -31,7 +31,7 @@ vi.mock("../src/utils/settingsManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/themeManager", () => ({
+vi.mock("../src/utils/settings/themeManager", () => ({
   ThemeManager: {
     getInstance: () => ({
       applyTheme: vi.fn(),

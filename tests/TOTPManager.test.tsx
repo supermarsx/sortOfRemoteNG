@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   toDataURL: vi.fn(),
 }));
 
-vi.mock("../src/utils/totpService", () => ({
+vi.mock("../src/utils/auth/totpService", () => ({
   TOTPService: class {
     getAllConfigs = mocks.getAllConfigs;
     generateToken = mocks.generateToken;

@@ -8,7 +8,7 @@ import {
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { TabLayoutManager } from "../src/components/session/TabLayoutManager";
-import type { ConnectionSession, TabLayout } from "../src/types/connection";
+import type { ConnectionSession, TabLayout } from "../src/types/connection/connection";
 
 vi.mock("react-resizable", () => ({
   Resizable: ({ children }: { children: ReactNode }) => <>{children}</>,

@@ -16,7 +16,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import { CredentialManager } from "../src/components/monitoring/CredentialManager";
+import { CredentialManager } from "../src/components/security/CredentialManager";
 
 describe("CredentialManager", () => {
   beforeEach(() => {

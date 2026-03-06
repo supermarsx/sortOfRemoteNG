@@ -2,9 +2,9 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ServerStatsPanel } from "../src/components/ssh/ServerStatsPanel";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
-import { parseServerStatsOutput } from "../src/utils/serverStatsParser";
-import { buildStatsCollectionScript } from "../src/utils/serverStatsCommands";
-import type { StatsCollectionOptions } from "../src/types/serverStats";
+import { parseServerStatsOutput } from "../src/utils/ssh/serverStatsParser";
+import { buildStatsCollectionScript } from "../src/utils/ssh/serverStatsCommands";
+import type { StatsCollectionOptions } from "../src/types/monitoring/serverStats";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("../src/utils/settingsManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/collectionManager", () => ({
+vi.mock("../src/utils/connection/collectionManager", () => ({
   CollectionManager: {
     getInstance: () => ({
       getAllCollections: vi.fn().mockResolvedValue([]),
@@ -39,7 +39,7 @@ vi.mock("../src/utils/collectionManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/themeManager", () => ({
+vi.mock("../src/utils/settings/themeManager", () => ({
   ThemeManager: {
     getInstance: () => ({
       applyTheme: vi.fn(),

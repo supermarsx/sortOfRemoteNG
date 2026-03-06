@@ -4,7 +4,7 @@ import { render, screen, within, fireEvent } from "@testing-library/react";
 import { ConnectionTree } from "../src/components/connection/ConnectionTree";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 import { useConnections } from "../src/contexts/useConnections";
-import { Connection } from "../src/types/connection";
+import { Connection } from "../src/types/connection/connection";
 
 const mockConnections: Connection[] = [
   {

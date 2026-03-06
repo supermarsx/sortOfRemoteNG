@@ -173,7 +173,7 @@ describe("IdracPanel - useIdracManager hook", () => {
 describe("IdracPanel - useIdrac hook", () => {
   it("exports useIdrac function", async () => {
     const mod = await import(
-      "../src/hooks/monitoring/useIdrac"
+      "../src/hooks/idrac/useIdrac"
     );
     expect(mod.useIdrac).toBeDefined();
     expect(typeof mod.useIdrac).toBe("function");
@@ -182,12 +182,12 @@ describe("IdracPanel - useIdrac hook", () => {
 
 describe("iDRAC TypeScript types", () => {
   it("exports all required interfaces", async () => {
-    const types = await import("../src/types/idrac");
+    const types = await import("../src/types/hardware/idrac");
     expect(types).toBeDefined();
   });
 
   it("module loads without TypeScript errors", async () => {
-    const types = await import("../src/types/idrac");
+    const types = await import("../src/types/hardware/idrac");
     // Verify the module exports are accessible
     expect(typeof types).toBe("object");
   });

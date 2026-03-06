@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { WindowsBackupPanel } from "../src/components/monitoring/WindowsBackupPanel";
+import { WindowsBackupPanel } from "../src/components/sync/WindowsBackupPanel";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 // ── Mocks ──────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock("../src/utils/settingsManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/collectionManager", () => ({
+vi.mock("../src/utils/connection/collectionManager", () => ({
   CollectionManager: {
     getInstance: () => ({
       getAllCollections: vi.fn().mockResolvedValue([]),
@@ -36,7 +36,7 @@ vi.mock("../src/utils/collectionManager", () => ({
   },
 }));
 
-vi.mock("../src/utils/themeManager", () => ({
+vi.mock("../src/utils/settings/themeManager", () => ({
   ThemeManager: {
     getInstance: () => ({
       applyTheme: vi.fn(),

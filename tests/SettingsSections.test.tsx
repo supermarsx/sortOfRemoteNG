@@ -1,11 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { GlobalSettings } from "../src/types/settings";
+import type { GlobalSettings } from "../src/types/settings/settings";
 import MacroSettings from "../src/components/settingsDialog/sections/MacroSettings";
 import RecordingSettings from "../src/components/settingsDialog/sections/RecordingSettings";
 import WebBrowserSettings from "../src/components/settingsDialog/sections/WebBrowserSettings";
 
-vi.mock("../src/utils/macroService", () => ({
+vi.mock("../src/utils/recording/macroService", () => ({
   loadMacros: vi.fn().mockResolvedValue([{ id: "m1" }]),
   loadRecordings: vi.fn().mockResolvedValue([]),
   loadRdpRecordings: vi.fn().mockResolvedValue([{ id: "r1", sizeBytes: 1024 }]),

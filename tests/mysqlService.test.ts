@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { MySQLService, MySQLConfig } from '../src/utils/mysqlService';
+import { MySQLService, MySQLConfig } from '../src/utils/services/mysqlService';
 
 const config: MySQLConfig = {
   host: 'localhost',

@@ -216,7 +216,7 @@ describe("SynologyPanel - useSynologyManager hook", () => {
 describe("SynologyPanel - useSynology hook", () => {
   it("exports useSynology function", async () => {
     const mod = await import(
-      "../src/hooks/monitoring/useSynology"
+      "../src/hooks/synology/useSynology"
     );
     expect(mod.useSynology).toBeDefined();
     expect(typeof mod.useSynology).toBe("function");
@@ -225,7 +225,7 @@ describe("SynologyPanel - useSynology hook", () => {
 
 describe("Synology TypeScript types", () => {
   it("exports all required interfaces", async () => {
-    const types = await import("../src/types/synology");
+    const types = await import("../src/types/hardware/synology");
     expect(types).toBeDefined();
   });
 });

@@ -13,7 +13,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import TopologyVisualizer from "../src/components/monitoring/TopologyVisualizer";
+import TopologyVisualizer from "../src/components/network/TopologyVisualizer";
 
 // Mock canvas context
 const mockContext = {

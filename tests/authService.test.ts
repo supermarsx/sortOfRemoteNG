@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
-let AuthService: typeof import('../src/utils/authService').AuthService;
+let AuthService: typeof import('../src/utils/auth/authService').AuthService;
 
 // Utility to create temp directory for user store
 async function createStore(): Promise<string> {
@@ -19,7 +19,7 @@ describe('AuthService', () => {
   beforeAll(async () => {
     process.env.USER_STORE_SECRET = 'test-secret';
     process.env.PBKDF2_ITERATIONS = '1000';
-    ({ AuthService } = await import('../src/utils/authService'));
+    ({ AuthService } = await import('../src/utils/auth/authService'));
   });
 
   afterAll(() => {

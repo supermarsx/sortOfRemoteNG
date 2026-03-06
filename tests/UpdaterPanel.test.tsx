@@ -22,7 +22,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import { UpdaterPanel } from "../src/components/monitoring/UpdaterPanel";
+import { UpdaterPanel } from "../src/components/updater/UpdaterPanel";
 
 describe("UpdaterPanel", () => {
   beforeEach(() => {

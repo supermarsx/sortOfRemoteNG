@@ -20,7 +20,7 @@ vi.mock("../src/contexts/useConnections", () => ({
   }),
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       saveSettings: mocks.saveSettings,

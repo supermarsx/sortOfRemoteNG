@@ -2,7 +2,7 @@ import React from "react";
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { HTTPOptions } from "../src/components/connectionEditor/HTTPOptions";
-import type { Connection } from "../src/types/connection";
+import type { Connection } from "../src/types/connection/connection";
 
 const makeFormData = (): Partial<Connection> => ({
   id: "http-1",

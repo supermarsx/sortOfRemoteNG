@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { JSDOM } from 'jsdom';
-import { ThemeManager } from '../src/utils/themeManager';
-import { IndexedDbService } from '../src/utils/indexedDbService';
+import { ThemeManager } from '../src/utils/settings/themeManager';
+import { IndexedDbService } from '../src/utils/storage/indexedDbService';
 
-vi.mock('../src/utils/indexedDbService', () => ({
+vi.mock('../src/utils/storage/indexedDbService', () => ({
   IndexedDbService: {
     setItem: vi.fn().mockResolvedValue(undefined),
     getItem: vi.fn().mockResolvedValue(undefined),

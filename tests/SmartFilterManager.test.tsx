@@ -17,7 +17,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-import { SmartFilterManager } from "../src/components/monitoring/SmartFilterManager";
+import { SmartFilterManager } from "../src/components/connection/SmartFilterManager";
 
 /* Render with isOpen=true and flush all async effects so loading settles */
 async function renderOpen(onClose = vi.fn()) {

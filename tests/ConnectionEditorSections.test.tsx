@@ -5,7 +5,7 @@ import GeneralSection from "../src/components/connectionEditor/GeneralSection";
 import SSHOptions from "../src/components/connectionEditor/SSHOptions";
 import HTTPOptions from "../src/components/connectionEditor/HTTPOptions";
 import CloudProviderOptions from "../src/components/connectionEditor/CloudProviderOptions";
-import { Connection } from "../src/types/connection";
+import { Connection } from "../src/types/connection/connection";
 
 // ── Mocks to prevent OOM from transitive dependency graph ──
 
@@ -15,7 +15,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-vi.mock("../src/utils/settingsManager", () => ({
+vi.mock("../src/utils/settings/settingsManager", () => ({
   SettingsManager: {
     getInstance: () => ({
       logAction: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock("../src/contexts/SettingsContext", () => ({
   }),
 }));
 
-vi.mock("../src/utils/themeManager", () => ({
+vi.mock("../src/utils/settings/themeManager", () => ({
   ThemeManager: {
     getInstance: () => ({
       applyTheme: vi.fn(),

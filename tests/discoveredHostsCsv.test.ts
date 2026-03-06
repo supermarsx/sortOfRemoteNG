@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { discoveredHostsToCsv } from "../src/utils/discoveredHostsCsv";
-import { DiscoveredHost } from "../src/types/connection";
+import { discoveredHostsToCsv } from "../src/utils/discovery/discoveredHostsCsv";
+import { DiscoveredHost } from "../src/types/connection/connection";
 
 describe("discoveredHostsToCsv", () => {
   it("converts hosts to CSV", () => {

@@ -1,6 +1,6 @@
 import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { GlobalSettings } from "../src/types/settings";
+import type { GlobalSettings } from "../src/types/settings/settings";
 import GeneralSettings from "../src/components/settingsDialog/sections/GeneralSettings";
 import BackendSettings from "../src/components/settingsDialog/sections/BackendSettings";
 import RDPDefaultSettings from "../src/components/settingsDialog/sections/RDPDefaultSettings";

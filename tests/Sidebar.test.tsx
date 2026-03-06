@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Sidebar } from "../src/components/connection/Sidebar";
-import { Connection } from "../src/types/connection";
+import { Connection } from "../src/types/connection/connection";
 import { ConnectionProvider } from "../src/contexts/ConnectionContext";
 
 // Mock child components

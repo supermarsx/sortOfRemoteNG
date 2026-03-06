@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { generateId } from '../src/utils/id';
+import { generateId } from '../src/utils/core/id';
 
 describe('generateId', () => {
   const originalRandomUUID = globalThis.crypto?.randomUUID;
