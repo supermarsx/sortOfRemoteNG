@@ -70,6 +70,7 @@ pub fn parse_nmap_xml(_xml: &str) -> Option<NmapScanResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn basic_scan() {
