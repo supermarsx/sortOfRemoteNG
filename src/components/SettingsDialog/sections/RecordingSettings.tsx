@@ -1,9 +1,9 @@
 import React from "react";
-import { GlobalSettings, RecordingConfig } from "../../../types/settings";
+import { GlobalSettings, RecordingConfig } from "../../../types/settings/settings";
 import {
   RDPRecordingConfig,
   WebRecordingConfig,
-} from "../../../types/macroTypes";
+} from "../../../types/recording/macroTypes";
 import {
   Circle,
   HardDrive,

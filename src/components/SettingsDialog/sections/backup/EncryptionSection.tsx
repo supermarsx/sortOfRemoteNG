@@ -1,7 +1,7 @@
 import React from "react";
 import { PasswordInput } from '../../../ui/forms';
 import { Lock, Key, Shield } from "lucide-react";
-import { BackupEncryptionAlgorithms, BackupEncryptionAlgorithm } from "../../../../types/settings";
+import { BackupEncryptionAlgorithms, BackupEncryptionAlgorithm } from "../../../../types/settings/settings";
 import { encryptionAlgorithmLabels, encryptionAlgorithmDescriptions } from "../../../../hooks/settings/useBackupSettings";
 import { Checkbox, Select } from "../../../ui/forms";
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { Clock } from "lucide-react";
-import { BackupFrequencies, DaysOfWeek, BackupFrequency, DayOfWeek } from "../../../../types/settings";
+import { BackupFrequencies, DaysOfWeek, BackupFrequency, DayOfWeek } from "../../../../types/settings/settings";
 import { frequencyLabels, dayLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Select } from "../../../ui/forms";
 

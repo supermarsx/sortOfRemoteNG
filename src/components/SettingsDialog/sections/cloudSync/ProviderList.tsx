@@ -1,6 +1,6 @@
 import ProviderConfig from "./ProviderConfig";
 import { Cloud, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
-import { CloudSyncProviders } from "../../../../types/settings";
+import { CloudSyncProviders } from "../../../../types/settings/settings";
 import { providerLabels, providerDescriptions, providerIcons } from "../../../../hooks/settings/useCloudSyncSettings";
 import { Checkbox } from "../../../ui/forms";
 import type { Mgr } from "./types";

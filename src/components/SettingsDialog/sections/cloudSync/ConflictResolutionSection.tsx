@@ -1,5 +1,5 @@
 import { AlertTriangle } from "lucide-react";
-import { ConflictResolutionStrategies, ConflictResolutionStrategy } from "../../../../types/settings";
+import { ConflictResolutionStrategies, ConflictResolutionStrategy } from "../../../../types/settings/settings";
 import { conflictLabels, conflictDescriptions } from "../../../../hooks/settings/useCloudSyncSettings";
 import { Select } from "../../../ui/forms";
 import type { Mgr } from "./types";

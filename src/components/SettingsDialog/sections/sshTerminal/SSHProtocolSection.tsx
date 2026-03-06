@@ -1,6 +1,6 @@
 import Toggle from "./Toggle";
 import React from "react";
-import { SSHVersions } from "../../../../types/settings";
+import { SSHVersions } from "../../../../types/settings/settings";
 import { Shield } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select } from "../../../ui/forms";

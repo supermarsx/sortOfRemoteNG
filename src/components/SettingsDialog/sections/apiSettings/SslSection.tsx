@@ -2,7 +2,7 @@ import React from "react";
 import { FileKey, Shield, Key, Globe, Zap } from "lucide-react";
 import { Checkbox, Select } from "../../../ui/forms";
 import { TextInput } from "../../../ui/forms";
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
 
 export const SslSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (

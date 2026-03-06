@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { GlobalSettings, MacroConfig } from "../../../types/settings";
+import { GlobalSettings, MacroConfig } from "../../../types/settings/settings";
 import { ListVideo, Clock, AlertCircle, Hash } from "lucide-react";
-import * as macroService from "../../../utils/macroService";
+import * as macroService from "../../../utils/recording/macroService";
 import { Checkbox, NumberInput, Slider } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
 

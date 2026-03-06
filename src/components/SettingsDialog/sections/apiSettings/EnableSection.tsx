@@ -1,7 +1,7 @@
 import React from "react";
 import { Power, Clock } from "lucide-react";
 import { Checkbox } from "../../../ui/forms";
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
 
 export const EnableSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (

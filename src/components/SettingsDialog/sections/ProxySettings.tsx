@@ -1,7 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { PasswordInput } from '../../ui/forms';
-import { GlobalSettings, ProxyConfig } from "../../../types/settings";
+import { GlobalSettings, ProxyConfig } from "../../../types/settings/settings";
 import { Shield, Globe, Server, Hash, User, Lock, Wifi } from "lucide-react";
 import { Checkbox, NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';

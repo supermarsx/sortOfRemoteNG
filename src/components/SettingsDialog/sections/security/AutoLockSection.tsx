@@ -1,4 +1,4 @@
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import { Lock, Timer, Clock } from "lucide-react";
 import { Checkbox, NumberInput } from "../../../ui/forms";
 import type { Mgr } from "./types";

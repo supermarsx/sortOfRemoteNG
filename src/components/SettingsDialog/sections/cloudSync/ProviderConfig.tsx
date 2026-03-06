@@ -1,6 +1,6 @@
 import { PasswordInput, Textarea} from '../../../ui/forms';
 import { Check, Globe, Folder, Key } from "lucide-react";
-import { CloudSyncProvider } from "../../../../types/settings";
+import { CloudSyncProvider } from "../../../../types/settings/settings";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
 import type { Mgr } from "./types";
 function ProviderConfig({

@@ -1,5 +1,5 @@
 import React from "react";
-import { GlobalSettings, BackendConfig } from "../../../types/settings";
+import { GlobalSettings, BackendConfig } from "../../../types/settings/settings";
 import {
   Server,
   Cpu,

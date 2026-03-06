@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { GlobalSettings } from "../../../types/settings";
+import { GlobalSettings } from "../../../types/settings/settings";
 import {
   ShieldCheck,
   ShieldAlert,
@@ -18,7 +18,7 @@ import {
   formatFingerprint,
   updateTrustRecordNickname,
   type TrustRecord,
-} from "../../../utils/trustStore";
+} from "../../../utils/auth/trustStore";
 import { useTrustVerificationSettings } from "../../../hooks/settings/useTrustVerificationSettings";
 import { Checkbox, NumberInput, Select } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';

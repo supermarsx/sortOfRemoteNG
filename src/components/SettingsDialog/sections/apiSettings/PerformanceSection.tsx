@@ -1,7 +1,7 @@
 import React from "react";
 import { Cpu, Clock } from "lucide-react";
 import { NumberInput } from "../../../ui/forms";
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
 
 export const PerformanceSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (

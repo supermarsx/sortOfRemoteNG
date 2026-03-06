@@ -27,7 +27,7 @@ import RDPDefaultSettings from "./sections/RDPDefaultSettings";
 import BackendSettings from "./sections/BackendSettings";
 import RecordingSettings from "./sections/RecordingSettings";
 import MacroSettings from "./sections/MacroSettings";
-import { ConfirmDialog } from "../shared/ConfirmDialog";
+import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { SETTINGS_TABS, TAB_DEFAULTS } from "./settingsConstants";

@@ -1,5 +1,5 @@
 import { Clock } from "lucide-react";
-import { CloudSyncFrequencies, CloudSyncFrequency } from "../../../../types/settings";
+import { CloudSyncFrequencies, CloudSyncFrequency } from "../../../../types/settings/settings";
 import { frequencyLabels } from "../../../../hooks/settings/useCloudSyncSettings";
 import { Select } from "../../../ui/forms";
 import type { Mgr } from "./types";

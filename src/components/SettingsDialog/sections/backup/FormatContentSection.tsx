@@ -1,6 +1,6 @@
 import React from "react";
 import { Settings, FileArchive } from "lucide-react";
-import { BackupFormats, BackupFormat } from "../../../../types/settings";
+import { BackupFormats, BackupFormat } from "../../../../types/settings/settings";
 import { formatLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
 

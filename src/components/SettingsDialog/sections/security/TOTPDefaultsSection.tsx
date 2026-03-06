@@ -1,4 +1,4 @@
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import { Shield } from "lucide-react";
 import { Checkbox, Select } from "../../../ui/forms";
 function TOTPDefaultsSection({

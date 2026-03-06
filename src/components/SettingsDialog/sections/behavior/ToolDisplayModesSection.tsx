@@ -1,7 +1,7 @@
 import TOOL_ENTRIES from "./TOOL_ENTRIES";
 import React from "react";
 import { PanelRight, Globe } from "lucide-react";
-import type { ToolDisplayMode, ToolDisplayModeOverride } from "../../../../types/settings";
+import type { ToolDisplayMode, ToolDisplayModeOverride } from "../../../../types/settings/settings";
 import { Card, SectionHeader } from "../../../ui/settings/SettingsPrimitives";
 import { Select } from "../../../ui/forms";
 const ToolDisplayModesSection: React.FC<SectionProps> = ({ s, u }) => (

@@ -1,5 +1,5 @@
 import React from "react";
-import { CharacterSets } from "../../../../types/settings";
+import { CharacterSets } from "../../../../types/settings/settings";
 import { Type } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { Select } from "../../../ui/forms";

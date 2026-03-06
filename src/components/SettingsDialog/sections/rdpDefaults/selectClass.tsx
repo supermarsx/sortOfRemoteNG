@@ -1,4 +1,4 @@
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 
 export interface RDPDefaultSettingsProps {
   settings: GlobalSettings;

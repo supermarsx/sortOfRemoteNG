@@ -37,7 +37,7 @@ import {
   ConflictResolutionStrategies,
   ConflictResolutionStrategy,
   GlobalSettings,
-} from "../../../types/settings";
+} from "../../../types/settings/settings";
 import { Modal } from "../../ui/overlays/Modal";
 import {
   useCloudSyncSettings,
@@ -52,27 +52,16 @@ import { Checkbox, NumberInput, Select } from '../../ui/forms';
 import AdvancedSection from "./cloudSync/AdvancedSection";
 import SectionHeading from '../../ui/SectionHeading';
 import AuthTokenModal from "./cloudSync/AuthTokenModal";
-import SectionHeading from '../../ui/SectionHeading';
 import ConflictResolutionSection from "./cloudSync/ConflictResolutionSection";
-import SectionHeading from '../../ui/SectionHeading';
 import EnableSyncToggle from "./cloudSync/EnableSyncToggle";
-import SectionHeading from '../../ui/SectionHeading';
 import EncryptionSection from "./cloudSync/EncryptionSection";
-import SectionHeading from '../../ui/SectionHeading';
 import NotificationsGrid from "./cloudSync/NotificationsGrid";
-import SectionHeading from '../../ui/SectionHeading';
 import ProviderList from "./cloudSync/ProviderList";
-import SectionHeading from '../../ui/SectionHeading';
 import StartupShutdownGrid from "./cloudSync/StartupShutdownGrid";
-import SectionHeading from '../../ui/SectionHeading';
 import SyncFrequencySelect from "./cloudSync/SyncFrequencySelect";
-import SectionHeading from '../../ui/SectionHeading';
 import SyncItemsGrid from "./cloudSync/SyncItemsGrid";
-import SectionHeading from '../../ui/SectionHeading';
 import SyncStatusOverview from "./cloudSync/SyncStatusOverview";
-import SectionHeading from '../../ui/SectionHeading';
 import type { CloudSyncSettingsProps, Mgr } from "./cloudSync/types";
-import SectionHeading from '../../ui/SectionHeading';
 
 interface CloudSyncSettingsProps {
   settings: GlobalSettings;

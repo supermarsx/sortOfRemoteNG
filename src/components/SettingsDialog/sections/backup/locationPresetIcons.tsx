@@ -1,6 +1,6 @@
 import React from "react";
 import { FolderOpen, Cloud, Folder, FileText } from "lucide-react";
-import { BackupLocationPreset } from "../../../../types/settings";
+import { BackupLocationPreset } from "../../../../types/settings/settings";
 
 const locationPresetIcons: Record<BackupLocationPreset, React.ReactNode> = {
   custom: <FolderOpen className="w-4 h-4" />,

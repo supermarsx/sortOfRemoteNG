@@ -1,27 +1,16 @@
 import React from "react";
 import SectionHeading from '../../ui/SectionHeading';
 import { Archive, Play } from "lucide-react";
-import SectionHeading from '../../ui/SectionHeading';
 import { useBackupSettings } from "../../../hooks/settings/useBackupSettings";
-import SectionHeading from '../../ui/SectionHeading';
 import locationPresetIcons from "./backup/locationPresetIcons";
-import SectionHeading from '../../ui/SectionHeading';
 import EnableBackup from "./backup/EnableBackup";
-import SectionHeading from '../../ui/SectionHeading';
 import DestinationSection from "./backup/DestinationSection";
-import SectionHeading from '../../ui/SectionHeading';
 import ScheduleSection from "./backup/ScheduleSection";
-import SectionHeading from '../../ui/SectionHeading';
 import DifferentialSection from "./backup/DifferentialSection";
-import SectionHeading from '../../ui/SectionHeading';
 import FormatContentSection from "./backup/FormatContentSection";
-import SectionHeading from '../../ui/SectionHeading';
 import EncryptionSection from "./backup/EncryptionSection";
-import SectionHeading from '../../ui/SectionHeading';
 import AdvancedSection from "./backup/AdvancedSection";
-import SectionHeading from '../../ui/SectionHeading';
 import LastBackupInfo from "./backup/LastBackupInfo";
-import SectionHeading from '../../ui/SectionHeading';
 
 const BackupSettings: React.FC<BackupSettingsProps> = ({
   settings,

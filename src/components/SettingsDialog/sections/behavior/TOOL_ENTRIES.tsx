@@ -1,6 +1,6 @@
 import { ScrollText, Gauge, Keyboard, Network, Server, Radio, TerminalSquare, FileCode, ListVideo, Circle, HardDrive } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { ToolDisplayModes } from "../../../../types/settings";
+import type { ToolDisplayModes } from "../../../../types/settings/settings";
 type ToolEntryKey = Exclude<keyof ToolDisplayModes, "globalDefault">;
 
 const TOOL_ENTRIES: { key: ToolEntryKey; label: string; icon: LucideIcon }[] = [

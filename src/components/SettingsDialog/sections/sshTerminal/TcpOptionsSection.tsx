@@ -1,6 +1,6 @@
 import Toggle from "./Toggle";
 import React from "react";
-import { IPProtocols } from "../../../../types/settings";
+import { IPProtocols } from "../../../../types/settings/settings";
 import { Network } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select } from "../../../ui/forms";

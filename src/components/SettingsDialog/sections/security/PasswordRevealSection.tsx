@@ -1,4 +1,4 @@
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import { Eye, EyeOff } from "lucide-react";
 import { Checkbox, Select, Slider } from "../../../ui/forms";
 function PasswordRevealSection({

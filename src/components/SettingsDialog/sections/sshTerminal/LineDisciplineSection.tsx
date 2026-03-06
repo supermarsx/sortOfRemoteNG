@@ -1,5 +1,5 @@
 import React from "react";
-import { LocalEchoModes, LineEditingModes } from "../../../../types/settings";
+import { LocalEchoModes, LineEditingModes } from "../../../../types/settings/settings";
 import { Keyboard } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { Select } from "../../../ui/forms";

@@ -1,6 +1,7 @@
+/* eslint-disable react-refresh/only-export-components */
 import Toggle from "./Toggle";
 import React from "react";
-import { BellStyles, TaskbarFlashModes } from "../../../../types/settings";
+import { BellStyles, TaskbarFlashModes } from "../../../../types/settings/settings";
 import { Bell, Volume2, VolumeX } from "lucide-react";
 import { SettingsCollapsibleSection } from "../../../ui/settings/SettingsPrimitives";
 import { NumberInput, Select } from "../../../ui/forms";

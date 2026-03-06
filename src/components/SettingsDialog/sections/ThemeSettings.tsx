@@ -1,6 +1,6 @@
 import SectionHeading from '../../ui/SectionHeading';
 import React from "react";
-import { GlobalSettings, Theme, ColorScheme } from "../../../types/settings";
+import { GlobalSettings, Theme, ColorScheme } from "../../../types/settings/settings";
 import { Palette, Droplets, Sparkles, Eye, Code, Zap } from "lucide-react";
 import { useThemeSettings, formatLabel } from "../../../hooks/settings/useThemeSettings";
 import { Checkbox, NumberInput, Slider, Select, Textarea} from '../../ui/forms';

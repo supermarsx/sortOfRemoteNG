@@ -21,7 +21,7 @@ import {
   RotateCcw,
   LucideIcon,
 } from "lucide-react";
-import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig } from "../../types/settings";
+import { GlobalSettings, defaultSSHTerminalConfig, defaultSSHConnectionConfig } from "../../types/settings/settings";
 
 /* ═══════════════════════════════════════════════════════════════
    Tab definition

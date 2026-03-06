@@ -14,7 +14,7 @@ import {
   type TerminalOverlay,
   type GradientStop,
   type SSHTerminalConfig,
-} from "../../../../types/sshSettings";
+} from "../../../../types/ssh/sshSettings";
 
 /* ── tiny helpers ────────────────────────────────────────────── */
 

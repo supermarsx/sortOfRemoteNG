@@ -1,4 +1,4 @@
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import { Lock, ShieldCheck } from "lucide-react";
 import { ENCRYPTION_ALGORITHMS } from "../../../../hooks/settings/useSecuritySettings";
 import { Select } from "../../../ui/forms";

@@ -1,6 +1,6 @@
 import React from "react";
 import { Globe, Wifi, Bookmark, RefreshCw, Trash2 } from "lucide-react";
-import { GlobalSettings } from "../../../types/settings";
+import { GlobalSettings } from "../../../types/settings/settings";
 import { Checkbox, NumberInput } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
 

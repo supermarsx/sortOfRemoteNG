@@ -1,7 +1,7 @@
 import React from "react";
 import { Server, Globe, AlertTriangle, Shuffle } from "lucide-react";
 import { Checkbox, NumberInput } from "../../../ui/forms";
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import type { Mgr } from "./types";
 
 export const NetworkSection: React.FC<{ settings: GlobalSettings; mgr: Mgr }> = ({ settings, mgr }) => (

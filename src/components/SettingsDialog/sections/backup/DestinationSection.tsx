@@ -1,7 +1,7 @@
 import locationPresetIcons from "./locationPresetIcons";
 import React from "react";
 import { FolderOpen, Info, Cloud } from "lucide-react";
-import { BackupLocationPresets } from "../../../../types/settings";
+import { BackupLocationPresets } from "../../../../types/settings/settings";
 import { locationPresetLabels } from "../../../../hooks/settings/useBackupSettings";
 import { Select } from "../../../ui/forms";
 

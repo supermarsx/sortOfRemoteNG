@@ -1,5 +1,5 @@
 import { useApiSettings } from "../../../../hooks/settings/useApiSettings";
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 
 export interface ApiSettingsProps {
   settings: GlobalSettings;

@@ -1,29 +1,17 @@
 import React from "react";
 import SectionHeading from '../../ui/SectionHeading';
 import { MonitorDot } from "lucide-react";
-import SectionHeading from '../../ui/SectionHeading';
 import selectClass from "./rdpDefaults/selectClass";
-import SectionHeading from '../../ui/SectionHeading';
 import SessionManagement from "./rdpDefaults/SessionManagement";
-import SectionHeading from '../../ui/SectionHeading';
 import SecurityDefaults from "./rdpDefaults/SecurityDefaults";
-import SectionHeading from '../../ui/SectionHeading';
 import DisplayDefaults from "./rdpDefaults/DisplayDefaults";
-import SectionHeading from '../../ui/SectionHeading';
 import GatewayDefaults from "./rdpDefaults/GatewayDefaults";
-import SectionHeading from '../../ui/SectionHeading';
 import HyperVDefaults from "./rdpDefaults/HyperVDefaults";
-import SectionHeading from '../../ui/SectionHeading';
 import NegotiationDefaults from "./rdpDefaults/NegotiationDefaults";
-import SectionHeading from '../../ui/SectionHeading';
 import TcpSocketDefaults from "./rdpDefaults/TcpSocketDefaults";
-import SectionHeading from '../../ui/SectionHeading';
 import RenderBackendDefaults from "./rdpDefaults/RenderBackendDefaults";
-import SectionHeading from '../../ui/SectionHeading';
 import PerformanceDefaults from "./rdpDefaults/PerformanceDefaults";
-import SectionHeading from '../../ui/SectionHeading';
 import BitmapCodecDefaults from "./rdpDefaults/BitmapCodecDefaults";
-import SectionHeading from '../../ui/SectionHeading';
 
 export const RDPDefaultSettings: React.FC<RDPDefaultSettingsProps> = ({
   settings,

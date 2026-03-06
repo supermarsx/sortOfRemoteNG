@@ -2,7 +2,7 @@ import { inputClass } from "./selectClass";
 import type { SectionProps } from "./selectClass";
 import { selectClass } from "./selectClass";
 import React from "react";
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import { Network } from "lucide-react";
 import { Checkbox, NumberInput, Select } from "../../../ui/forms";
 

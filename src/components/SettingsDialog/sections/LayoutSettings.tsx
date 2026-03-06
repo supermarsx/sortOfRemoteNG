@@ -1,5 +1,5 @@
 import React from "react";
-import { GlobalSettings } from "../../../types/settings";
+import { GlobalSettings } from "../../../types/settings/settings";
 import {
   LayoutGrid,
   Maximize2,

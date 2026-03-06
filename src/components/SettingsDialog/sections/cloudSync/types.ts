@@ -1,5 +1,5 @@
 import { useCloudSyncSettings } from "../../../../hooks/settings/useCloudSyncSettings";
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 
 export interface CloudSyncSettingsProps {
   settings: GlobalSettings;

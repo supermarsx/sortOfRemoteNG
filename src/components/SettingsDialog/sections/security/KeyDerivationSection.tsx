@@ -1,4 +1,4 @@
-import { GlobalSettings } from "../../../../types/settings";
+import { GlobalSettings } from "../../../../types/settings/settings";
 import { Key, Timer, Gauge, Loader2 } from "lucide-react";
 import { Checkbox, NumberInput } from "../../../ui/forms";
 import type { TFunc } from "./types";

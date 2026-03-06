@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { GlobalSettings } from "../../../types/settings";
+import { GlobalSettings } from "../../../types/settings/settings";
 import {
   Shield,
   Lock,
@@ -25,23 +25,14 @@ import {
 import { Checkbox, NumberInput, Select, Slider } from '../../ui/forms';
 import SectionHeading from '../../ui/SectionHeading';
 import AutoLockSection from "./security/AutoLockSection";
-import SectionHeading from '../../ui/SectionHeading';
 import CollectionKeyGenSection from "./security/CollectionKeyGenSection";
-import SectionHeading from '../../ui/SectionHeading';
 import CredSSPSection from "./security/CredSSPSection";
-import SectionHeading from '../../ui/SectionHeading';
 import EncryptionAlgorithmSection from "./security/EncryptionAlgorithmSection";
-import SectionHeading from '../../ui/SectionHeading';
 import KeyDerivationSection from "./security/KeyDerivationSection";
-import SectionHeading from '../../ui/SectionHeading';
 import PasswordRevealSection from "./security/PasswordRevealSection";
-import SectionHeading from '../../ui/SectionHeading';
 import SSHKeyGenSection from "./security/SSHKeyGenSection";
-import SectionHeading from '../../ui/SectionHeading';
 import TOTPDefaultsSection from "./security/TOTPDefaultsSection";
-import SectionHeading from '../../ui/SectionHeading';
 import type { SecuritySettingsProps, Mgr } from "./security/types";
-import SectionHeading from '../../ui/SectionHeading';
 
 interface SecuritySettingsProps {
   settings: GlobalSettings;
