@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { WakeOnLanService } from "../wakeOnLan";
+import { WakeOnLanService } from "../network/wakeOnLan";
 
 beforeEach(async () => {
   const { JSDOM } = await import("jsdom");

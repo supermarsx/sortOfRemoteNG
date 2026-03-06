@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
 import { openDB } from 'idb';
-import { IndexedDbService } from '../indexedDbService';
+import { IndexedDbService } from '../storage/indexedDbService';
 
 const DB_NAME = 'mremote-keyval';
 const STORE_NAME = 'keyval';

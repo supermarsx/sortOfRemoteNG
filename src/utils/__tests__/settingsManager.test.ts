@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { JSDOM } from 'jsdom';
-import { SettingsManager } from '../settingsManager';
-import { IndexedDbService } from '../indexedDbService';
+import { SettingsManager } from '../settings/settingsManager';
+import { IndexedDbService } from '../storage/indexedDbService';
 import { openDB } from 'idb';
 
 let dom: JSDOM;

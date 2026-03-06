@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-import { NetworkScanner } from '../networkScanner';
-import type { NetworkDiscoveryConfig } from '../../types/settings';
+import { NetworkScanner } from '../network/networkScanner';
+import type { NetworkDiscoveryConfig } from '../../types/settings/settings';
 
 // Access private methods via casting to any
 const scanner = new NetworkScanner() as any;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { FileTransferService, FileTransferAdapter } from '../fileTransferService';
+import { FileTransferService, FileTransferAdapter } from '../file-transfer/fileTransferService';
 
 function createMockAdapter(): FileTransferAdapter {
   return {

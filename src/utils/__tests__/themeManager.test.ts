@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { JSDOM } from 'jsdom';
-import { ThemeManager } from '../themeManager';
+import { ThemeManager } from '../settings/themeManager';
 
 // ensure a clean JSDOM document for each test
 let dom: JSDOM;

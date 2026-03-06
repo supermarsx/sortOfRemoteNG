@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import CryptoJS from "crypto-js";
-import { CollectionManager } from "../collectionManager";
-import { IndexedDbService } from "../indexedDbService";
+import { CollectionManager } from "../connection/collectionManager";
+import { IndexedDbService } from "../storage/indexedDbService";
 import {
   CollectionNotFoundError,
   CorruptedDataError,
   InvalidPasswordError,
-} from "../errors";
+} from "../core/errors";
 import { openDB } from "idb";
 
 const DB_NAME = "mremote-keyval";

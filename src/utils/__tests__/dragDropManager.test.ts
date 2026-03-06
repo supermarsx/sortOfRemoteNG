@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { DragDropManager, DragDropResult } from '../dragDropManager';
-import { Connection } from '../../types/connection';
+import { DragDropManager, DragDropResult } from '../window/dragDropManager';
+import { Connection } from '../../types/connection/connection';
 
 const baseDate = new Date();
 

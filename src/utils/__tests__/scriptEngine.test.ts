@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
 import { JSDOM } from "jsdom";
-import { ScriptEngine, ScriptExecutionContext } from "../scriptEngine";
-import { SettingsManager } from "../settingsManager";
-import { CustomScript } from "../../types/settings";
+import { ScriptEngine, ScriptExecutionContext } from "../recording/scriptEngine";
+import { SettingsManager } from "../settings/settingsManager";
+import { CustomScript } from "../../types/settings/settings";
 
 let dom: JSDOM;
 

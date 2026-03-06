@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TOTPService } from '../totpService';
+import { TOTPService } from '../auth/totpService';
 
 describe('TOTPService', () => {
   const service = new TOTPService();
