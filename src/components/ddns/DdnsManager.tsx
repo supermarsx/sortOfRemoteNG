@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import type { TFunction } from "i18next";
 import {
   Globe,
   RefreshCw,
@@ -35,10 +36,10 @@ import {
   ModalHeader,
   ModalBody,
   ModalFooter,
-} from "./ui/overlays/Modal";
-import { EmptyState } from "./ui/display";
-import { PasswordInput } from "./ui/forms";
-import { useDdnsManager } from "../hooks/useDdnsManager";
+} from "../ui/overlays/Modal";
+import { EmptyState } from "../ui/display";
+import { PasswordInput } from "../ui/forms";
+import { useDdnsManager } from "../../hooks/ddns/useDdnsManager";
 import type {
   DdnsProfile,
   DdnsProvider,
@@ -49,7 +50,7 @@ import type {
   CloudflareZone,
   CloudflareDnsRecord,
   UpdateStatus,
-} from "../types/ddns";
+} from "../../types/ddns/ddns";
 
 type Mgr = ReturnType<typeof useDdnsManager>;
 
@@ -178,7 +179,7 @@ const UpdateStatusBadge: React.FC<{ status: UpdateStatus }> = ({ status }) => {
 /*  Tab: Profiles                                                      */
 /* ------------------------------------------------------------------ */
 
-const ProfilesTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = ({
+const ProfilesTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   mgr,
   t,
 }) => {
@@ -264,7 +265,7 @@ const ProfilesTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> 
 /*  Tab: Health                                                        */
 /* ------------------------------------------------------------------ */
 
-const HealthTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = ({
+const HealthTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   mgr,
   t,
 }) => {
@@ -361,7 +362,7 @@ const HealthTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = 
 /*  Tab: Cloudflare                                                    */
 /* ------------------------------------------------------------------ */
 
-const CloudflareTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = ({
+const CloudflareTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   mgr,
   t,
 }) => {
@@ -508,7 +509,7 @@ const CloudflareTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }
 /*  Tab: IP Detection                                                  */
 /* ------------------------------------------------------------------ */
 
-const IpTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = ({
+const IpTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   mgr,
   t,
 }) => (
@@ -588,7 +589,7 @@ const IpTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = ({
 /*  Tab: Scheduler                                                     */
 /* ------------------------------------------------------------------ */
 
-const SchedulerTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = ({
+const SchedulerTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   mgr,
   t,
 }) => {
@@ -684,7 +685,7 @@ const SchedulerTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }>
 /*  Tab: Config                                                        */
 /* ------------------------------------------------------------------ */
 
-const ConfigTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = ({
+const ConfigTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   mgr,
   t,
 }) => {
@@ -797,7 +798,7 @@ const ConfigTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = 
 /*  Tab: Audit                                                         */
 /* ------------------------------------------------------------------ */
 
-const AuditTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = ({
+const AuditTab: React.FC<{ mgr: Mgr; t: TFunction }> = ({
   mgr,
   t,
 }) => {
@@ -892,7 +893,7 @@ const AuditTab: React.FC<{ mgr: Mgr; t: (k: string, f?: string) => string }> = (
 /*  Main Component                                                     */
 /* ------------------------------------------------------------------ */
 
-const tabDefs: { id: DdnsTab; icon: React.FC<{ size?: number }>; label: string }[] = [
+const tabDefs: { id: DdnsTab; icon: React.ElementType; label: string }[] = [
   { id: "profiles", icon: Globe, label: "ddns.tabs.profiles" },
   { id: "health", icon: Activity, label: "ddns.tabs.health" },
   { id: "cloudflare", icon: Cloud, label: "ddns.tabs.cloudflare" },
@@ -905,7 +906,7 @@ const tabDefs: { id: DdnsTab; icon: React.FC<{ size?: number }>; label: string }
 const TabBar: React.FC<{
   active: DdnsTab;
   onSelect: (t: DdnsTab) => void;
-  t: (k: string, f?: string) => string;
+  t: TFunction;
 }> = ({ active, onSelect, t }) => (
   <div className="flex gap-1 px-1 py-1 bg-neutral-900/50 rounded-lg mb-4 overflow-x-auto">
     {tabDefs.map((tab) => (
@@ -955,7 +956,7 @@ export const DdnsManager: React.FC<DdnsManagerProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="xl">
+    <Modal isOpen={isOpen} onClose={onClose}>
       <ModalHeader title={t("ddns.title", "DDNS Manager")} />
       <ModalBody>
         <ErrorBanner error={mgr.error} />
