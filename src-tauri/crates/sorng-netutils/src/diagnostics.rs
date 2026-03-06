@@ -5,6 +5,7 @@
 
 use crate::types::*;
 use chrono::Utc;
+use std::collections::HashMap;
 
 /// List of common network utility binaries to check availability for.
 pub const KNOWN_TOOLS: &[&str] = &[
@@ -15,22 +16,31 @@ pub const KNOWN_TOOLS: &[&str] = &[
 
 /// Evaluate overall health of the network utilities subsystem.
 pub fn evaluate_health(
-    available_tools: usize,
-    total_tools: usize,
-    recent_errors: usize,
+    tools_available: HashMap<String, bool>,
+    ping_ok: bool,
+    dns_ok: bool,
+    gateway_reachable: bool,
+    internet_reachable: bool,
 ) -> NetUtilsHealthCheck {
-    let healthy = available_tools > 0 && recent_errors == 0;
+    let mut warnings = Vec::new();
+    let available_count = tools_available.values().filter(|v| **v).count();
+    let total = tools_available.len();
+    if available_count < total / 2 {
+        warnings.push(format!("Only {}/{} tools available", available_count, total));
+    }
+    if !ping_ok {
+        warnings.push("ping is not functioning".to_string());
+    }
+    if !dns_ok {
+        warnings.push("DNS resolution is not working".to_string());
+    }
     NetUtilsHealthCheck {
-        healthy,
-        tools_available: available_tools,
-        tools_total: total_tools,
-        message: if healthy {
-            format!("{}/{} tools available", available_tools, total_tools)
-        } else if available_tools == 0 {
-            "No network utilities found on system".to_string()
-        } else {
-            format!("{} recent errors detected", recent_errors)
-        },
+        tools_available,
+        ping_ok,
+        dns_ok,
+        default_gateway_reachable: gateway_reachable,
+        internet_reachable,
+        warnings,
         checked_at: Utc::now(),
     }
 }
@@ -41,15 +51,20 @@ mod tests {
 
     #[test]
     fn health_nominal() {
-        let h = evaluate_health(15, 20, 0);
-        assert!(h.healthy);
-        assert!(h.message.contains("15/20"));
+        let mut tools = HashMap::new();
+        tools.insert("ping".to_string(), true);
+        tools.insert("traceroute".to_string(), true);
+        let h = evaluate_health(tools, true, true, true, true);
+        assert!(h.ping_ok);
+        assert!(h.dns_ok);
+        assert!(h.warnings.is_empty());
     }
 
     #[test]
     fn health_no_tools() {
-        let h = evaluate_health(0, 20, 0);
-        assert!(!h.healthy);
+        let tools = HashMap::new();
+        let h = evaluate_health(tools, false, false, false, false);
+        assert!(!h.ping_ok);
     }
 
     #[test]

@@ -6,13 +6,15 @@
 use crate::types::*;
 
 /// Build `dig` command arguments.
-pub fn build_dig_args(opts: &DigOptions) -> Vec<String> {
+pub fn build_dig_args(domain: &str, opts: &DigOptions) -> Vec<String> {
     let mut args = Vec::new();
     if let Some(ref server) = opts.server {
         args.push(format!("@{}", server));
     }
-    args.push(opts.domain.clone());
-    args.push(opts.record_type.clone());
+    args.push(domain.to_string());
+    if let Some(ref rt) = opts.record_type {
+        args.push(rt.clone());
+    }
     if opts.short {
         args.push("+short".to_string());
     }
@@ -21,9 +23,6 @@ pub fn build_dig_args(opts: &DigOptions) -> Vec<String> {
     }
     if opts.dnssec {
         args.push("+dnssec".to_string());
-    }
-    if !opts.recurse {
-        args.push("+norecurse".to_string());
     }
     if opts.tcp {
         args.push("+tcp".to_string());
@@ -44,17 +43,17 @@ mod tests {
     #[test]
     fn basic_dig() {
         let opts = DigOptions {
-            domain: "example.com".to_string(),
-            record_type: "A".to_string(),
+            record_type: Some("A".to_string()),
             server: Some("8.8.8.8".to_string()),
+            port: None,
             short: false,
             trace: false,
-            recurse: true,
             tcp: false,
             dnssec: false,
-            timeout_secs: None,
+            timeout_ms: None,
+            retries: None,
         };
-        let args = build_dig_args(&opts);
+        let args = build_dig_args("example.com", &opts);
         assert!(args.contains(&"@8.8.8.8".to_string()));
         assert!(args.contains(&"example.com".to_string()));
         assert!(args.contains(&"A".to_string()));
@@ -63,17 +62,17 @@ mod tests {
     #[test]
     fn dig_with_trace() {
         let opts = DigOptions {
-            domain: "example.com".to_string(),
-            record_type: "NS".to_string(),
+            record_type: Some("NS".to_string()),
             server: None,
+            port: None,
             short: false,
             trace: true,
-            recurse: true,
             tcp: false,
             dnssec: true,
-            timeout_secs: None,
+            timeout_ms: None,
+            retries: None,
         };
-        let args = build_dig_args(&opts);
+        let args = build_dig_args("example.com", &opts);
         assert!(args.contains(&"+trace".to_string()));
         assert!(args.contains(&"+dnssec".to_string()));
     }

@@ -32,8 +32,12 @@ pub fn build_tcpdump_args(config: &CaptureConfig) -> Vec<String> {
         args.push(output.clone());
     }
 
-    if !config.resolve_names {
+    if !config.resolve_hostnames {
         args.push("-nn".to_string());
+    }
+
+    for _ in 0..config.verbose_level {
+        args.push("-v".to_string());
     }
 
     if let Some(ref filter) = config.filter {
@@ -67,8 +71,8 @@ mod tests {
             packet_count: Some(100),
             duration_secs: None,
             output_file: Some("/tmp/cap.pcap".to_string()),
-            resolve_names: false,
-            buffer_size: None,
+            resolve_hostnames: false,
+            verbose_level: 0,
         };
         let args = build_tcpdump_args(&cfg);
         assert!(args.contains(&"eth0".to_string()));
