@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Network, RotateCcw } from "lucide-react";
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 import { useSSHOverrides } from "../../hooks/ssh/useSSHOverrides";
 import OverrideToggle from "./sshOverrides/OverrideToggle";
 import AuthMethodSelector from "./sshOverrides/AuthMethodSelector";

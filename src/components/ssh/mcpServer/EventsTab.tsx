@@ -16,7 +16,7 @@ import {
   Filter,
 } from "lucide-react";
 import type { McpTabProps } from "./types";
-import type { McpEventType } from "../../../types/mcpServer";
+import type { McpEventType } from "../../../types/mcp/mcpServer";
 
 const eventIcons: Record<McpEventType, React.ElementType> = {
   ServerStarted: Play,

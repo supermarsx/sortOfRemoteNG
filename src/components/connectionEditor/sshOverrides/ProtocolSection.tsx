@@ -1,5 +1,5 @@
 import OverrideToggle from "./OverrideToggle";
-import { SSHVersion } from "../../../types/settings";
+import { SSHVersion } from "../../../types/settings/settings";
 import { Checkbox, NumberInput, Select } from "../../ui/forms";
 
 const ProtocolSection: React.FC<SectionProps> = ({ mgr }) => {

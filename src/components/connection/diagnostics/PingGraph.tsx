@@ -1,4 +1,4 @@
-import { DiagnosticResults } from "../../../types/diagnostics";
+import { DiagnosticResults } from "../../../types/monitoring/diagnostics";
 
 const PingGraph = ({
   results,

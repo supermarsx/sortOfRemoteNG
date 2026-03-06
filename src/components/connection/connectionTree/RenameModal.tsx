@@ -1,6 +1,6 @@
 import ConnectOptionsModal from "./ConnectOptionsModal";
 import type { ConnectionTreeMgr } from "../../../hooks/connection/useConnectionTree";
-import type { Connection } from "../../../types/connection";
+import type { Connection } from "../../../types/connection/connection";
 import { Save } from "lucide-react";
 import Modal, { ModalHeader } from "../../ui/overlays/Modal";
 

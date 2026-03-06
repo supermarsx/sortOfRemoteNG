@@ -12,7 +12,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import type { McpTabProps } from "./types";
-import type { McpTool } from "../../../types/mcpServer";
+import type { McpTool } from "../../../types/mcp/mcpServer";
 
 export const ToolsTab: React.FC<McpTabProps> = ({ mgr }) => {
   const { t } = useTranslation();

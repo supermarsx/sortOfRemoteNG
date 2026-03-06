@@ -10,7 +10,7 @@ import {
   List,
 } from "lucide-react";
 import type { HistoryPanelProps } from "./types";
-import type { HistoryExportFormat } from "../../../types/sshCommandHistory";
+import type { HistoryExportFormat } from "../../../types/ssh/sshCommandHistory";
 import HistorySearchBar from "./HistorySearchBar";
 import HistoryEntry from "./HistoryEntry";
 import HistoryStats from "./HistoryStats";

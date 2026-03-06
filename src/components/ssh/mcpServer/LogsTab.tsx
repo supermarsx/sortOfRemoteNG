@@ -11,7 +11,7 @@ import {
   Filter,
 } from "lucide-react";
 import type { McpTabProps } from "./types";
-import type { McpLogLevel } from "../../../types/mcpServer";
+import type { McpLogLevel } from "../../../types/mcp/mcpServer";
 
 const levelIcons: Record<string, React.ElementType> = {
   debug: Bug,

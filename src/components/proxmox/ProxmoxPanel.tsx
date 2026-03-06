@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { useProxmoxManager } from "../../hooks/proxmox/useProxmoxManager";
 import Modal from "../ui/overlays/Modal";
-import ConfirmDialog from "../shared/ConfirmDialog";
+import ConfirmDialog from "../ui/dialogs/ConfirmDialog";
 import type { ProxmoxPanelProps } from "./proxmoxPanel/types";
 import ProxmoxHeader from "./proxmoxPanel/ProxmoxHeader";
 import ConnectionForm from "./proxmoxPanel/ConnectionForm";

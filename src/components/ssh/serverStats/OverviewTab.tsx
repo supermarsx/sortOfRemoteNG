@@ -1,7 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Cpu, MemoryStick, HardDrive, Clock, Server, Users } from "lucide-react";
-import type { ServerStatsSnapshot } from "../../../types/serverStats";
+import type { ServerStatsSnapshot } from "../../../types/monitoring/serverStats";
 
 interface OverviewTabProps {
   snapshot: ServerStatsSnapshot;

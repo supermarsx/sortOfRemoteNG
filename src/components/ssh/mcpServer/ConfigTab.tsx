@@ -14,8 +14,8 @@ import {
   Check,
 } from "lucide-react";
 import type { McpTabProps } from "./types";
-import type { McpServerConfig, McpLogLevel } from "../../../types/mcpServer";
-import { MCP_LOG_LEVELS } from "../../../types/mcpServer";
+import type { McpServerConfig, McpLogLevel } from "../../../types/mcp/mcpServer";
+import { MCP_LOG_LEVELS } from "../../../types/mcp/mcpServer";
 
 export const ConfigTab: React.FC<McpTabProps> = ({ mgr }) => {
   const { t } = useTranslation();

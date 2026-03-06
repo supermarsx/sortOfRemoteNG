@@ -15,7 +15,7 @@ import {
   FileText,
   Tag,
 } from "lucide-react";
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 import { TagManager } from "./TagManager";
 import SSHOptions from "../connectionEditor/SSHOptions";
 import HTTPOptions from "../connectionEditor/HTTPOptions";

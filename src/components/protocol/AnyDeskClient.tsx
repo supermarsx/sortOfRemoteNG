@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ConnectionSession } from '../../types/connection';
+import { ConnectionSession } from '../../types/connection/connection';
 import { useConnections } from '../../contexts/useConnections';
 import { Monitor, ExternalLink, AlertCircle } from 'lucide-react';
 

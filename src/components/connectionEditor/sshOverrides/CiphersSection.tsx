@@ -1,6 +1,6 @@
 import CipherSelector from "./CipherSelector";
 import OverrideToggle from "./OverrideToggle";
-import { SSHConnectionConfig } from "../../../types/settings";
+import { SSHConnectionConfig } from "../../../types/settings/settings";
 import { CIPHER_OPTIONS, MAC_OPTIONS, KEX_OPTIONS, HOST_KEY_OPTIONS } from "../../../hooks/ssh/useSSHOverrides";
 
 const CiphersSection: React.FC<SectionProps> = ({ mgr }) => {

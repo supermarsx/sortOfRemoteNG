@@ -12,7 +12,7 @@ import {
   FileCheck,
   AlertTriangle,
 } from "lucide-react";
-import { CloudSyncProvider } from "../../types/settings";
+import { CloudSyncProvider } from "../../types/settings/settings";
 import { ToolbarPopover, ToolbarPopoverHeader } from "../ui/overlays/ToolbarPopover";
 import {
   useCloudSyncStatus,

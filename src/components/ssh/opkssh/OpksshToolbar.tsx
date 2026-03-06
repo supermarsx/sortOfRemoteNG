@@ -9,7 +9,7 @@ import {
   ClipboardList,
 } from "lucide-react";
 import type { OpksshMgr } from "./types";
-import type { OpksshTab } from "../../../types/opkssh";
+import type { OpksshTab } from "../../../types/security/opkssh";
 
 interface OpksshToolbarProps {
   mgr: OpksshMgr;

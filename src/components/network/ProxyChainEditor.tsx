@@ -11,7 +11,7 @@ import {
 import {
   SavedProxyChain,
   SavedChainLayer,
-} from "../../types/settings";
+} from "../../types/settings/settings";
 import { useProxyChainEditor, LAYER_TYPES } from "../../hooks/network/useProxyChainEditor";
 import { Modal, ModalHeader } from "../ui/overlays/Modal";
 import { Select, Textarea, TextInput} from '../ui/forms';

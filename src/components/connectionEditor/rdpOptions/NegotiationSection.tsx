@@ -1,8 +1,8 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
 import { Zap, ToggleLeft } from "lucide-react";
-import { Connection } from "../../../types/connection";
-import { NegotiationStrategies } from "../../../types/connection";
+import { Connection } from "../../../types/connection/connection";
+import { NegotiationStrategies } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Checkbox, Select, Slider } from "../../ui/forms";
 const NegotiationSection: React.FC<SectionBaseProps> = ({

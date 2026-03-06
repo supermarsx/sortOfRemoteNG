@@ -1,6 +1,6 @@
 import React from 'react';
 import { ShieldQuestion, ChevronDown, ChevronUp, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
-import { Connection } from '../../types/connection';
+import { Connection } from '../../types/connection/connection';
 import { useSecurityQuestionsSection } from '../../hooks/security/useSecurityQuestionsSection';
 
 type Mgr = ReturnType<typeof useSecurityQuestionsSection>;

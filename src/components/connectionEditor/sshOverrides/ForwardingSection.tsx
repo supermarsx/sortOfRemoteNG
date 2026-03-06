@@ -1,6 +1,6 @@
 import OverrideToggle from "./OverrideToggle";
 import { Checkbox, NumberInput, TextInput, Select } from "../../ui/forms";
-import { ProxyCommandTemplates } from "../../../types/sshSettings";
+import { ProxyCommandTemplates } from "../../../types/ssh/sshSettings";
 
 const proxyTemplateOptions = [
   { value: "", label: "None (custom command)" },

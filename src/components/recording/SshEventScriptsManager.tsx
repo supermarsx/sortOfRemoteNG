@@ -4,7 +4,7 @@ import {
   TRIGGER_TYPES,
   SCRIPT_LANGUAGES,
   EXECUTION_MODES,
-} from "../../types/sshScripts";
+} from "../../types/ssh/sshScripts";
 import type {
   SshEventScript,
   ScriptChain,
@@ -15,7 +15,7 @@ import type {
   ExecutionRecord,
   PendingExecution,
   SchedulerEntry,
-} from "../../types/sshScripts";
+} from "../../types/ssh/sshScripts";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  SshEventScriptsManager — comprehensive SSH script management UI          */
@@ -224,16 +224,16 @@ interface ScriptsTabProps {
   setTagFilter: (v: string) => void;
   categories: string[];
   tags: string[];
-  stats: Record<string, import("../../types/sshScripts").ScriptStats>;
+  stats: Record<string, import("../../types/ssh/sshScripts").ScriptStats>;
   bulkSelected: Set<string>;
   setBulkSelected: React.Dispatch<React.SetStateAction<Set<string>>>;
   selectScript: (s: SshEventScript | null) => void;
   toggleScript: (id: string, enabled: boolean) => Promise<void>;
   deleteScript: (id: string) => Promise<void>;
   duplicateScript: (id: string) => Promise<SshEventScript>;
-  runScript: (req: import("../../types/sshScripts").RunScriptRequest) => Promise<PendingExecution>;
+  runScript: (req: import("../../types/ssh/sshScripts").RunScriptRequest) => Promise<PendingExecution>;
   createScript: (req: CreateScriptRequest) => Promise<SshEventScript>;
-  updateScript: (id: string, req: import("../../types/sshScripts").UpdateScriptRequest) => Promise<SshEventScript>;
+  updateScript: (id: string, req: import("../../types/ssh/sshScripts").UpdateScriptRequest) => Promise<SshEventScript>;
   bulkEnable: (ids: string[], enabled: boolean) => Promise<number>;
   bulkDelete: (ids: string[]) => Promise<number>;
   showCreate: boolean;
@@ -560,7 +560,7 @@ const ScriptsTab: React.FC<ScriptsTabProps> = ({
 
 const ScriptDetail: React.FC<{
   script: SshEventScript;
-  stats?: import("../../types/sshScripts").ScriptStats;
+  stats?: import("../../types/ssh/sshScripts").ScriptStats;
   onRun: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -1084,8 +1084,8 @@ const HistoryTab: React.FC<{
   history: ExecutionRecord[];
   historyTotal: number;
   queryHistory: (
-    q: import("../../types/sshScripts").HistoryQuery,
-  ) => Promise<import("../../types/sshScripts").HistoryResponse>;
+    q: import("../../types/ssh/sshScripts").HistoryQuery,
+  ) => Promise<import("../../types/ssh/sshScripts").HistoryResponse>;
   clearHistory: () => Promise<void>;
 }> = ({ history, historyTotal, queryHistory, clearHistory }) => {
   const [page, setPage] = useState(0);

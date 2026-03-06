@@ -1,5 +1,5 @@
 import React from 'react';
-import { ConnectionSession } from '../../types/connection';
+import { ConnectionSession } from '../../types/connection/connection';
 import {
   Monitor,
   Wifi,

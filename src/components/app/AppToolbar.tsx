@@ -27,12 +27,12 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { GlobalSettings, CloudSyncProvider } from "../../types/settings";
-import { Connection } from "../../types/connection";
+import { GlobalSettings, CloudSyncProvider } from "../../types/settings/settings";
+import { Connection } from "../../types/connection/connection";
 import { BackupStatusPopup } from "../sync/BackupStatusPopup";
 import { CloudSyncStatusPopup } from "../sync/CloudSyncStatusPopup";
 import { SyncBackupStatusBar } from "../sync/SyncBackupStatusBar";
-import { CollectionManager } from "../../utils/collectionManager";
+import { CollectionManager } from "../../utils/connection/collectionManager";
 
 interface AppToolbarProps {
   appSettings: GlobalSettings;

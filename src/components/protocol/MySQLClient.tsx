@@ -1,6 +1,6 @@
 import React from 'react';
 import { Database, Play, RefreshCw, Table, Code, BarChart3 } from 'lucide-react';
-import { ConnectionSession } from '../../types/connection';
+import { ConnectionSession } from '../../types/connection/connection';
 import { useMySQLClient } from '../../hooks/protocol/useMySQLClient';
 import { Select, Textarea} from '../ui/forms';
 

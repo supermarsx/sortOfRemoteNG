@@ -9,9 +9,9 @@ import {
   Monitor,
   Play,
 } from "lucide-react";
-import type { SavedRDPRecording } from "../../types/macroTypes";
+import type { SavedRDPRecording } from "../../types/recording/macroTypes";
 import { useInlineRename } from "../../hooks/window/useInlineRename";
-import { formatDuration, formatBytes } from "../../utils/formatters";
+import { formatDuration, formatBytes } from "../../utils/core/formatters";
 
 interface RDPRecordingRowProps {
   recording: SavedRDPRecording;

@@ -1,5 +1,5 @@
 import { Activity, CheckCircle, XCircle, Clock, Loader2, AlertCircle, ChevronDown, ChevronUp, Info, Microscope } from "lucide-react";
-import { Connection } from "../../../types/connection";
+import { Connection } from "../../../types/connection/connection";
 import { DiagnosticsMgr } from "../../../hooks/connection/useConnectionDiagnostics";
 
 const ProtocolDeepDiagSection = ({

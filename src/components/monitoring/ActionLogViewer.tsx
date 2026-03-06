@@ -14,7 +14,7 @@ import {
   Calendar,
   Server,
 } from "lucide-react";
-import { ConfirmDialog } from "../shared/ConfirmDialog";
+import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
 import { useActionLogViewer } from "../../hooks/monitoring/useActionLogViewer";
 import { Modal } from "../ui/overlays/Modal";import { DialogHeader } from '../ui/overlays/DialogHeader';import { EmptyState } from '../ui/display';import { Select } from '../ui/forms';
 

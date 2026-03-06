@@ -1,5 +1,5 @@
 import React from "react";
-import { type WakeSchedule, type WakeRecurrence } from "../../utils/wakeOnLan";
+import { type WakeSchedule, type WakeRecurrence } from "../../utils/network/wakeOnLan";
 import {
   Trash2,
   Pencil,

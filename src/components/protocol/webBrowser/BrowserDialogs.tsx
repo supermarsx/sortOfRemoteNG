@@ -1,7 +1,7 @@
 import React from "react";
 import { TrustWarningDialog } from "../../security/TrustWarningDialog";
-import { InputDialog } from "../../shared/InputDialog";
-import { ConfirmDialog } from "../../shared/ConfirmDialog";
+import { InputDialog } from "../../ui/dialogs/InputDialog";
+import { ConfirmDialog } from "../../ui/dialogs/ConfirmDialog";
 
 const BrowserDialogs: React.FC<SectionProps> = ({ mgr }) => (
   <>

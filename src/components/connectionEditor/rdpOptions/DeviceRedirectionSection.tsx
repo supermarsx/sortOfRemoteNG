@@ -1,7 +1,7 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
 import { HardDrive } from "lucide-react";
-import { RDPConnectionSettings } from "../../../types/connection";
+import { RDPConnectionSettings } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Checkbox } from "../../ui/forms";
 const DeviceRedirectionSection: React.FC<SectionBaseProps> = ({

@@ -1,13 +1,13 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronUp, Settings2, RotateCcw } from "lucide-react";
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 import {
   SSHTerminalConfig,
   defaultSSHTerminalConfig,
   BellStyle,
   TaskbarFlashMode,
   SSHVersion,
-} from "../../types/settings";
+} from "../../types/settings/settings";
 import { useSettings } from "../../contexts/SettingsContext";
 import { Checkbox, NumberInput, Select, Slider } from '../ui/forms';
 import OverrideToggle from '../ui/OverrideToggle';

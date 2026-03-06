@@ -1,5 +1,5 @@
 import { Mgr } from "./types";
-import type { Connection } from "../../../types/connection";
+import type { Connection } from "../../../types/connection/connection";
 import { Copy, Edit, Edit2, Plus, Search, Trash2 } from "lucide-react";
 
 function ChainsTab({ mgr }: { mgr: Mgr }) {

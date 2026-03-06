@@ -1,8 +1,8 @@
 
 import { useState } from "react";
 import { Pencil } from "lucide-react";
-import { updateTrustRecordNickname } from "../../../utils/trustStore";
-import type { TrustRecord } from "../../../utils/trustStore";
+import { updateTrustRecordNickname } from "../../../utils/auth/trustStore";
+import type { TrustRecord } from "../../../utils/auth/trustStore";
 function NicknameEditButton({
   record,
   connectionId,

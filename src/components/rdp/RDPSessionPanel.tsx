@@ -17,8 +17,8 @@ import {
   PanelRightClose,
 } from 'lucide-react';
 import { ErrorBanner, EmptyState } from '../ui/display';
-import { Connection } from '../../types/connection';
-import { ConfirmDialog } from '../shared/ConfirmDialog';
+import { Connection } from '../../types/connection/connection';
+import { ConfirmDialog } from '../ui/dialogs/ConfirmDialog';
 import { RDPLogViewer } from './RDPLogViewer';
 import {
   useRDPSessionPanel,

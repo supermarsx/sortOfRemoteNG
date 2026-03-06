@@ -1,6 +1,6 @@
 import React from "react";
 import { Trash2, Copy, Check, Eye, EyeOff, Pencil, KeyRound } from "lucide-react";
-import { TOTPConfig } from "../../../types/settings";
+import { TOTPConfig } from "../../../types/settings/settings";
 
 const ConfigRow: React.FC<{ cfg: TOTPConfig; mgr: TOTPOptionsMgr }> = ({
   cfg,

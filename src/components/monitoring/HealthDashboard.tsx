@@ -7,7 +7,7 @@ import type {
   HeatmapCell,
   QuickStats,
   SparklineData,
-} from "../../types/dashboard";
+} from "../../types/monitoring/dashboard";
 
 /* ------------------------------------------------------------------ */
 /*  Inline SVG micro-icons                                            */

@@ -18,7 +18,7 @@ import {
   SkipForward,
   Loader2,
 } from 'lucide-react';
-import type { RDPConnectionSettings } from '../../types/connection';
+import type { RDPConnectionSettings } from '../../types/connection/connection';
 import {
   useRDPErrorScreen,
   RDP_ERROR_CATEGORY_LABELS,

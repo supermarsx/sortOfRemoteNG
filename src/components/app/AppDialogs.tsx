@@ -1,15 +1,15 @@
 import React from "react";
-import { Connection, ConnectionSession } from "../../types/connection";
-import { GlobalSettings } from "../../types/settings";
-import { SettingsManager } from "../../utils/settingsManager";
-import { CollectionManager } from "../../utils/collectionManager";
+import { Connection, ConnectionSession } from "../../types/connection/connection";
+import { GlobalSettings } from "../../types/settings/settings";
+import { SettingsManager } from "../../utils/settings/settingsManager";
+import { CollectionManager } from "../../utils/connection/collectionManager";
 import { CollectionSelector } from "../connection/CollectionSelector";
 import { ConnectionEditor } from "../connection/ConnectionEditor";
 import { QuickConnect } from "../connection/QuickConnect";
 import { PasswordDialog } from "../security/PasswordDialog";
-import { ConfirmDialog } from "../shared/ConfirmDialog";
-import { SettingsDialog } from "../SettingsDialog";
-import { ImportExport } from "../ImportExport";
+import { ConfirmDialog } from "../ui/dialogs/ConfirmDialog";
+import { SettingsDialog } from "../settingsDialog";
+import { ImportExport } from "../importExport";
 import { PerformanceMonitor } from "../monitoring/PerformanceMonitor";
 import { ActionLogViewer } from "../monitoring/ActionLogViewer";
 import { ShortcutManagerDialog } from "./ShortcutManagerDialog";
@@ -25,7 +25,7 @@ import { ScriptManager } from "../recording/ScriptManager";
 import { MacroManager } from "../recording/MacroManager";
 import { RecordingManager } from "../recording/RecordingManager";
 import { ConnectionDiagnostics } from "../connection/ConnectionDiagnostics";
-import { ErrorLogBar } from "../monitoring/ErrorLogBar";
+import { ErrorLogBar } from "./ErrorLogBar";
 import { AutoLockManager } from "../security/AutoLockManager";
 import { Modal } from "../ui/overlays/Modal";
 
@@ -106,7 +106,7 @@ interface AppDialogsProps {
 const getToolMode = (
   settings: GlobalSettings,
   key: Exclude<
-    keyof import("../../types/settings").ToolDisplayModes,
+    keyof import("../../types/settings/settings").ToolDisplayModes,
     "globalDefault"
   >,
 ): "popup" | "tab" => {

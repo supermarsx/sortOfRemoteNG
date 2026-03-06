@@ -11,7 +11,7 @@ import {
   Info,
   Wifi,
 } from "lucide-react";
-import { SavedProxyProfile, ProxyConfig } from "../../types/settings";
+import { SavedProxyProfile, ProxyConfig } from "../../types/settings/settings";
 import { Modal, ModalHeader } from "../ui/overlays/Modal";
 import { useProxyProfileEditor } from "../../hooks/network/useProxyProfileEditor";
 import { Checkbox, NumberInput, Select } from '../ui/forms';

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Monitor, Settings, Maximize2, Minimize2, Wifi, WifiOff } from 'lucide-react';
-import { ConnectionSession } from '../../types/connection';
+import { ConnectionSession } from '../../types/connection/connection';
 import { useRustDeskClient } from '../../hooks/protocol/useRustDeskClient';
 import { StatusBar, ConnectingSpinner } from '../ui/display';
 import { Checkbox, Select } from '../ui/forms';

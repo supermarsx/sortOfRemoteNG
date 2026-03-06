@@ -4,7 +4,7 @@ import React from "react";
 import { ArrowLeft, ArrowRight, RotateCcw, ExternalLink, Shield, ShieldOff, Globe, Star, Copy, Download, ClipboardCopy } from "lucide-react";
 import RDPTotpPanel from "../../rdp/RDPTotpPanel";
 import { CertificateInfoPopup } from "../../security/CertificateInfoPopup";
-import { getStoredIdentity } from "../../../utils/trustStore";
+import { getStoredIdentity } from "../../../utils/auth/trustStore";
 
 const NavigationBar: React.FC<SectionProps> = ({ mgr }) => (
   <div className="flex items-center space-x-3 mb-3">

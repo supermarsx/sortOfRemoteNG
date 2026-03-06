@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Route } from "lucide-react";
-import { SSHTunnelCreateParams } from "../../utils/sshTunnelService";
-import { Connection } from "../../types/connection";
+import { SSHTunnelCreateParams } from "../../utils/ssh/sshTunnelService";
+import { Connection } from "../../types/connection/connection";
 import { Modal, ModalHeader } from "../ui/overlays/Modal";
 import { Checkbox, NumberInput, Select } from '../ui/forms';
 

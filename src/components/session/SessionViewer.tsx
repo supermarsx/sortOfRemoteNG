@@ -1,6 +1,6 @@
 import React from 'react';
 import { Monitor, Terminal, AlertCircle, Loader2, ExternalLink, Shield } from 'lucide-react';
-import { ConnectionSession } from '../../types/connection';
+import { ConnectionSession } from '../../types/connection/connection';
 import { WebTerminal } from '../ssh/WebTerminal';
 import { WebBrowser } from '../protocol/WebBrowser';
 import RDPClient from '../rdp/RDPClient';

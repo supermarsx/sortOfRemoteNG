@@ -1,6 +1,6 @@
 import React from "react";
 import { Star } from "lucide-react";
-import { HttpBookmarkItem } from "../../../types/connection";
+import { HttpBookmarkItem } from "../../../types/connection/connection";
 
 const BookmarkChip: React.FC<{
   mgr: WebBrowserMgr;

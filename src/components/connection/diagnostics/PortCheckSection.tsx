@@ -1,7 +1,7 @@
 import StatusIcon from "./StatusIcon";
 import { Network, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Connection } from "../../../types/connection";
+import { Connection } from "../../../types/connection/connection";
 import { DiagnosticsMgr } from "../../../hooks/connection/useConnectionDiagnostics";
 
 const PortCheckSection = ({

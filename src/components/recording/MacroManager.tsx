@@ -5,12 +5,12 @@ import {
   Download, Upload,
   ListVideo, Disc,
 } from 'lucide-react';
-import { SavedRecording } from '../../types/macroTypes';
+import { SavedRecording } from '../../types/recording/macroTypes';
 import { Modal } from '../ui/overlays/Modal';
 import { DialogHeader } from '../ui/overlays/DialogHeader';
 import { TabBar } from '../ui/display';
 import { MacroEditor } from './MacroEditor';
-import { formatDuration } from '../../utils/formatters';
+import { formatDuration } from '../../utils/core/formatters';
 import { useInlineRename } from '../../hooks/window/useInlineRename';
 import { useMacroManager } from '../../hooks/recording/useMacroManager';
 

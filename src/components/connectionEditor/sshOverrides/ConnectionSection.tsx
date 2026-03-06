@@ -1,5 +1,5 @@
 import OverrideToggle from "./OverrideToggle";
-import { Connection } from "../../../types/connection";
+import { Connection } from "../../../types/connection/connection";
 import { Checkbox, NumberInput } from "../../ui/forms";
 
 const ConnectionSection: React.FC<SectionProps> = ({ mgr }) => {

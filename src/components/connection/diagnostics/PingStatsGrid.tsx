@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { DiagnosticResults } from "../../../types/diagnostics";
+import { DiagnosticResults } from "../../../types/monitoring/diagnostics";
 
 const PingStatsGrid = ({
   pingSuccessRate,

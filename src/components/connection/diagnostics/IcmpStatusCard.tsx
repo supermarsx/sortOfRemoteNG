@@ -1,6 +1,6 @@
 import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { DiagnosticResults } from "../../../types/diagnostics";
+import { DiagnosticResults } from "../../../types/monitoring/diagnostics";
 
 const IcmpStatusCard = ({
   results,

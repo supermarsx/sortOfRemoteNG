@@ -11,13 +11,13 @@ import {
   Star,
   Terminal,
 } from "lucide-react";
-import { Connection } from "../../types/connection";
-import { getDefaultPort } from "../../utils/defaultPorts";
+import { Connection } from "../../types/connection/connection";
+import { getDefaultPort } from "../../utils/discovery/defaultPorts";
 import {
   getConnectionDepth,
   getMaxDescendantDepth,
   MAX_NESTING_DEPTH,
-} from "../../utils/dragDropManager";
+} from "../../utils/window/dragDropManager";
 import { Checkbox, NumberInput, Select } from '../ui/forms';
 
 interface GeneralSectionProps {

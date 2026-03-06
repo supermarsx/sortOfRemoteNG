@@ -1,6 +1,6 @@
 import React from "react";
 import { Lock, Clock, Eye, EyeOff } from "lucide-react";
-import { AutoLockConfig } from "../../types/settings";
+import { AutoLockConfig } from "../../types/settings/settings";
 import { Modal } from "../ui/overlays/Modal";
 import { useAutoLockManager } from "../../hooks/security/useAutoLockManager";
 

@@ -10,7 +10,7 @@ import {
   Keyboard,
   Copy,
 } from 'lucide-react';
-import { ConnectionSession } from '../../types/connection';
+import { ConnectionSession } from '../../types/connection/connection';
 import { useVNCClient, VNCSettings } from '../../hooks/protocol/useVNCClient';
 import { StatusBar, ConnectingSpinner } from '../ui/display';
 import { Checkbox } from '../ui/forms';

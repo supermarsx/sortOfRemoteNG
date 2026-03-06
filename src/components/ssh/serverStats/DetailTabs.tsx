@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import type { ServerStatsSnapshot } from "../../../types/serverStats";
+import type { ServerStatsSnapshot } from "../../../types/monitoring/serverStats";
 
 interface DetailTabsProps {
   snapshot: ServerStatsSnapshot;

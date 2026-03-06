@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Settings, Plus, Trash2, Save, RefreshCw, Copy } from "lucide-react";
 import type { OpksshMgr } from "./types";
-import type { CustomProvider } from "../../../types/opkssh";
+import type { CustomProvider } from "../../../types/security/opkssh";
 
 interface ProvidersTabProps {
   mgr: OpksshMgr;

@@ -1,6 +1,6 @@
 import React from "react";
 import { PasswordInput, Textarea} from '../ui/forms';
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 
 interface CloudProviderOptionsProps {
   formData: Partial<Connection>;

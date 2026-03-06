@@ -18,10 +18,10 @@ import type {
   CertIdentity,
   SshHostKeyIdentity,
   TrustRecord,
-} from "../../utils/trustStore";
+} from "../../utils/auth/trustStore";
 import {
   formatFingerprint,
-} from "../../utils/trustStore";
+} from "../../utils/auth/trustStore";
 import { PopoverSurface } from "../ui/overlays/PopoverSurface";
 import { useCertificateInfoPopup } from "../../hooks/security/useCertificateInfoPopup";
 

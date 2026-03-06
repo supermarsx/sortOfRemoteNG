@@ -11,7 +11,7 @@ import {
   Globe,
 } from "lucide-react";
 import type { OpksshMgr } from "./types";
-import { EXPIRATION_POLICIES, type ExpirationPolicy } from "../../../types/opkssh";
+import { EXPIRATION_POLICIES, type ExpirationPolicy } from "../../../types/security/opkssh";
 
 interface ServerConfigTabProps {
   mgr: OpksshMgr;

@@ -1,8 +1,8 @@
 import React from 'react';
 import { Activity, X } from 'lucide-react';
-import { formatBytes, formatUptime } from '../../utils/rdpFormatters';
-import type { RDPStatsEvent, RDPTimingEvent } from '../../types/rdpEvents';
-import type { RDPConnectionSettings } from '../../types/connection';
+import { formatBytes, formatUptime } from '../../utils/rdp/rdpFormatters';
+import type { RDPStatsEvent, RDPTimingEvent } from '../../types/rdp/rdpEvents';
+import type { RDPConnectionSettings } from '../../types/connection/connection';
 
 interface RDPInternalsPanelProps {
   stats: RDPStatsEvent | null;

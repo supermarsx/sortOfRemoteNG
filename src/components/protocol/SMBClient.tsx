@@ -1,6 +1,6 @@
 import React from 'react';
 import { Folder, File, Download, Trash2, RefreshCw, Home, ArrowLeft, HardDrive, Table } from 'lucide-react';
-import { ConnectionSession } from '../../types/connection';
+import { ConnectionSession } from '../../types/connection/connection';
 import { useSMBClient, SMBFile } from '../../hooks/protocol/useSMBClient';
 import { Checkbox, Select } from '../ui/forms';
 

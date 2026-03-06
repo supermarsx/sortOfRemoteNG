@@ -2,7 +2,7 @@
 import React from "react";
 import MenuSurface from "../../ui/overlays/MenuSurface";
 import { useConnections } from "../../../contexts/useConnections";
-import type { Connection } from "../../../types/connection";
+import type { Connection } from "../../../types/connection/connection";
 import { Activity, Copy, Edit, ExternalLink, FileDown, Play, Power, SlidersHorizontal, Star, Trash2, UserX } from "lucide-react";
 function TreeItemMenu({
   connection, activeSession, showMenu, menuPosition, triggerRef, onClose,

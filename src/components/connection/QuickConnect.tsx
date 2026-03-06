@@ -1,7 +1,7 @@
 import React from "react";
 import { PasswordInput } from '../ui/forms';
 import { Clock, Play, Trash2, Zap } from "lucide-react";
-import { QuickConnectHistoryEntry } from "../../types/settings";
+import { QuickConnectHistoryEntry } from "../../types/settings/settings";
 import { Modal } from "../ui/overlays/Modal";
 import { DialogHeader } from "../ui/overlays/DialogHeader";
 import { useQuickConnect } from "../../hooks/connection/useQuickConnect";

@@ -1,7 +1,7 @@
 import { ScriptLanguage, OS_TAG_LABELS, OSTag, OS_TAG_ICONS, languageLabels } from "./shared";
 import HighlightedCode from "../../ui/display/HighlightedCode";
 import { useTranslation } from "react-i18next";
-import { detectLanguage } from "../../../utils/scriptSyntax";
+import { detectLanguage } from "../../../utils/recording/scriptSyntax";
 import type { ScriptManagerMgr } from "../../../hooks/recording/useScriptManager";
 import { Select, Textarea} from '../../ui/forms';
 

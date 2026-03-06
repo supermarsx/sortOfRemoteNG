@@ -3,8 +3,8 @@ import {
   KeyRound, ChevronDown, ChevronUp, Copy, Check, RefreshCw, Trash2,
   ClipboardPaste, Plus, X,
 } from 'lucide-react';
-import { Connection } from '../../types/connection';
-import { TOTPConfig } from '../../types/settings';
+import { Connection } from '../../types/connection/connection';
+import { TOTPConfig } from '../../types/settings/settings';
 import { useBackupCodesSection } from '../../hooks/security/useBackupCodesSection';
 import { Textarea } from '../ui/forms';
 

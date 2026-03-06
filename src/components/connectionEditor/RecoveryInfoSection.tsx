@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { LifeBuoy, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
-import { Connection, RecoveryInfo } from '../../types/connection';
+import { Connection, RecoveryInfo } from '../../types/connection/connection';
 import { Textarea } from '../ui/forms';
 
 interface RecoveryInfoSectionProps {

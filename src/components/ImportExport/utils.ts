@@ -1,5 +1,5 @@
-import { Connection } from '../../types/connection';
-import { generateId } from '../../utils/id';
+import { Connection } from '../../types/connection/connection';
+import { generateId } from '../../utils/core/id';
 
 export const parseCSVLine = (line: string): string[] => {
   const values: string[] = [];

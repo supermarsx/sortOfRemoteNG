@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useTOTPManager } from "../../hooks/security/useTOTPManager";
 import { Modal, ModalHeader, ModalBody } from "../ui/overlays/Modal";
 import { EmptyState } from '../ui/display';
-import { TOTPConfig } from "../../types/settings";
+import { TOTPConfig } from "../../types/settings/settings";
 import { Select } from '../ui/forms';
 
 type Mgr = ReturnType<typeof useTOTPManager>;

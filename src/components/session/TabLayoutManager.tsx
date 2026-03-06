@@ -7,7 +7,7 @@ import {
   Rows,
   Settings2,
 } from "lucide-react";
-import { ConnectionSession, TabLayout } from "../../types/connection";
+import { ConnectionSession, TabLayout } from "../../types/connection/connection";
 import { Resizable } from "react-resizable";
 import { PopoverSurface } from "../ui/overlays/PopoverSurface";
 import { useTabLayoutManager } from "../../hooks/session/useTabLayoutManager";

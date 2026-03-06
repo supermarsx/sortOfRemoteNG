@@ -8,9 +8,9 @@ import {
   ChevronUp,
   Globe,
 } from "lucide-react";
-import type { SavedWebRecording } from "../../types/macroTypes";
+import type { SavedWebRecording } from "../../types/recording/macroTypes";
 import { useInlineRename } from "../../hooks/window/useInlineRename";
-import { formatDuration, formatBytes } from "../../utils/formatters";
+import { formatDuration, formatBytes } from "../../utils/core/formatters";
 
 interface WebHarRecordingRowProps {
   recording: SavedWebRecording;

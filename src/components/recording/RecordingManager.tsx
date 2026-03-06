@@ -18,7 +18,7 @@ import { EmptyState, TabBar } from "../ui/display";
 import { SSHRecordingRow } from "./SSHRecordingRow";
 import { RDPRecordingRow } from "./RDPRecordingRow";
 import { WebHarRecordingRow } from "./WebHarRecordingRow";
-import { formatDuration, formatBytes } from "../../utils/formatters";
+import { formatDuration, formatBytes } from "../../utils/core/formatters";
 import { useRecordingManager } from "../../hooks/recording/useRecordingManager";
 
 type Mgr = ReturnType<typeof useRecordingManager>;

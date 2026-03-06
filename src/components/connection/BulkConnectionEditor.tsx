@@ -4,7 +4,7 @@ import {
   FolderOpen, Server, Globe, Database, Terminal, Monitor,
   CheckSquare, Square, Minus, Star, RefreshCw, Edit3,
 } from 'lucide-react';
-import { Connection } from '../../types/connection';
+import { Connection } from '../../types/connection/connection';
 import { Modal } from '../ui/overlays/Modal';
 import { DialogHeader } from '../ui/overlays/DialogHeader';
 import {

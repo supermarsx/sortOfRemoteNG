@@ -9,9 +9,9 @@ import {
   Terminal,
   Film,
 } from "lucide-react";
-import type { SavedRecording } from "../../types/macroTypes";
+import type { SavedRecording } from "../../types/recording/macroTypes";
 import { useInlineRename } from "../../hooks/window/useInlineRename";
-import { formatDuration } from "../../utils/formatters";
+import { formatDuration } from "../../utils/core/formatters";
 
 interface SSHRecordingRowProps {
   recording: SavedRecording;

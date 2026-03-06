@@ -1,7 +1,7 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
 import { Network } from "lucide-react";
-import { GatewayAuthMethods, GatewayCredentialSources, GatewayTransportModes } from "../../../types/connection";
+import { GatewayAuthMethods, GatewayCredentialSources, GatewayTransportModes } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Checkbox, NumberInput, Select } from "../../ui/forms";
 const GatewaySection: React.FC<SectionBaseProps> = ({ rdp, updateRdp }) => (

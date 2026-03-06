@@ -1,8 +1,8 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
 import { Shield, ShieldAlert, Fingerprint, Trash2, Pencil, Network, Server } from "lucide-react";
-import { Connection, RDPConnectionSettings } from "../../../types/connection";
-import { CredsspOracleRemediationPolicies, NlaModes, TlsVersions, CredsspVersions } from "../../../types/connection";
+import { Connection, RDPConnectionSettings } from "../../../types/connection/connection";
+import { CredsspOracleRemediationPolicies, NlaModes, TlsVersions, CredsspVersions } from "../../../types/connection/connection";
 import { CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Checkbox, Select } from "../../ui/forms";
 const SecuritySection: React.FC<

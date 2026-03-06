@@ -12,8 +12,8 @@ import {
   QrCode,
   Loader2,
 } from "lucide-react";
-import { TOTPConfig } from "../../types/settings";
-import { IMPORT_SOURCES } from "../../utils/totpImport";
+import { TOTPConfig } from "../../types/settings/settings";
+import { IMPORT_SOURCES } from "../../utils/auth/totpImport";
 import { useTotpImport } from "../../hooks/security/useTotpImport";
 import { Modal } from "../ui/overlays/Modal";import { DialogHeader } from '../ui/overlays/DialogHeader';import { Select } from '../ui/forms';
 

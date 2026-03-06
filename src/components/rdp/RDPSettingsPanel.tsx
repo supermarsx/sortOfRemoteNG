@@ -1,6 +1,6 @@
 import React from 'react';
 import { Volume2, VolumeX } from 'lucide-react';
-import type { RDPConnectionSettings } from '../../types/connection';
+import type { RDPConnectionSettings } from '../../types/connection/connection';
 
 interface RDPSettingsPanelProps {
   rdpSettings: RDPConnectionSettings;

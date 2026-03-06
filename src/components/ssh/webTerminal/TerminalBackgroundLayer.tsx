@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import type { TerminalBackgroundMgr } from "../../hooks/ssh/useTerminalBackground";
+import type { TerminalBackgroundMgr } from "../../../hooks/ssh/useTerminalBackground";
 
 interface TerminalBackgroundLayerProps {
   mgr: TerminalBackgroundMgr;

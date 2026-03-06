@@ -9,7 +9,7 @@ import {
   GripVertical,
   Clock,
 } from "lucide-react";
-import { TerminalMacro, MacroStep } from "../../types/macroTypes";
+import { TerminalMacro, MacroStep } from "../../types/recording/macroTypes";
 import { Checkbox, NumberInput } from '../ui/forms';
 
 interface MacroEditorProps {

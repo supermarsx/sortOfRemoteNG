@@ -2,7 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { useSynologyManager } from "../../hooks/synology/useSynologyManager";
 import Modal from "../ui/overlays/Modal";
-import ConfirmDialog from "../shared/ConfirmDialog";
+import ConfirmDialog from "../ui/dialogs/ConfirmDialog";
 import type { SynologyPanelProps } from "./synologyPanel/types";
 import SynologyHeader from "./synologyPanel/SynologyHeader";
 import ConnectionForm from "./synologyPanel/ConnectionForm";

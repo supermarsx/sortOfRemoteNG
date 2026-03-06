@@ -1,5 +1,5 @@
 import React from "react";
-import { TOTPConfig } from "../../../types/settings";
+import { TOTPConfig } from "../../../types/settings/settings";
 import { Select } from "../../ui/forms";
 
 const ConfigEditRow: React.FC<{ mgr: TOTPOptionsMgr }> = ({ mgr }) => (

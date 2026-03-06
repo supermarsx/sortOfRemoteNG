@@ -1,6 +1,6 @@
 import React from "react";
 import { Search, Filter, X, ArrowUpDown, Star } from "lucide-react";
-import { SSHCommandCategories } from "../../../types/sshCommandHistory";
+import { SSHCommandCategories } from "../../../types/ssh/sshCommandHistory";
 import type { HistoryMgr, TFunc } from "./types";
 
 function HistorySearchBar({

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React from 'react';
 import { useScriptManager } from "../../hooks/recording/useScriptManager";
 import Modal from "../ui/overlays/Modal";

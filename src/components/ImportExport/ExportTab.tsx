@@ -2,7 +2,7 @@ import React from 'react';
 import { Download, FileText, Database, Settings, Lock } from 'lucide-react';
 import { PasswordInput } from '../ui/forms';
 import { Checkbox } from '../ui/forms';
-import { Connection } from '../../types/connection';
+import { Connection } from '../../types/connection/connection';
 
 interface ExportTabProps {
   connections: Connection[];

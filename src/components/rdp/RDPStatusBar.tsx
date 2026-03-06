@@ -1,8 +1,8 @@
 import React from 'react';
 import { MousePointer, Keyboard, Volume2, Copy, Search } from 'lucide-react';
-import { formatBytes } from '../../utils/rdpFormatters';
+import { formatBytes } from '../../utils/rdp/rdpFormatters';
 import { StatusBar } from '../ui/display';
-import type { RDPStatsEvent } from '../../types/rdpEvents';
+import type { RDPStatsEvent } from '../../types/rdp/rdpEvents';
 
 interface RDPStatusBarProps {
   rdpSessionId: string | null;

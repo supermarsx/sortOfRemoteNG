@@ -1,6 +1,7 @@
+/* eslint-disable react-refresh/only-export-components */
 import React from 'react';
-import { ConnectionSession } from '../../types/connection';
-import { ToolDisplayModes } from '../../types/settings';
+import { ConnectionSession } from '../../types/connection/connection';
+import { ToolDisplayModes } from '../../types/settings/settings';
 import { PerformanceMonitor } from '../monitoring/PerformanceMonitor';
 import { ActionLogViewer } from '../monitoring/ActionLogViewer';
 import { ShortcutManagerDialog } from './ShortcutManagerDialog';
@@ -14,8 +15,8 @@ import { McpServerPanel } from '../ssh/McpServerPanel';
 import { ScriptManager } from '../recording/ScriptManager';
 import { MacroManager } from '../recording/MacroManager';
 import { RecordingManager } from '../recording/RecordingManager';
-import { WindowsBackupPanel } from '../monitoring/WindowsBackupPanel';
-import { generateId } from '../../utils/id';
+import { WindowsBackupPanel } from '../sync/WindowsBackupPanel';
+import { generateId } from '../../utils/core/id';
 
 export type ToolKey = Exclude<keyof ToolDisplayModes, 'globalDefault'>;
 

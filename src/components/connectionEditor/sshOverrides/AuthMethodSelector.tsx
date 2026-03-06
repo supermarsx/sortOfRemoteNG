@@ -1,4 +1,4 @@
-import { SSHAuthMethod, SSHAuthMethods } from "../../../types/settings";
+import { SSHAuthMethod, SSHAuthMethods } from "../../../types/settings/settings";
 import { Checkbox } from "../../ui/forms";
 
 const AuthMethodSelector: React.FC<{

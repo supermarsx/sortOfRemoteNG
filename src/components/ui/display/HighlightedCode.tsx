@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import type { ScriptLanguage } from '../../recording/ScriptManager';
-import { tokenize, SYNTAX_COLORS } from '../../../utils/scriptSyntax';
+import { tokenize, SYNTAX_COLORS } from '../../../utils/recording/scriptSyntax';
 
 /**
  * Renders a code block with simple syntax highlighting

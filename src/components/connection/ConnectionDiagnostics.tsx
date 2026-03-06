@@ -1,7 +1,7 @@
 import React from "react";
 import { X, RefreshCw, Loader2, Stethoscope, Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 import { Modal } from "../ui/overlays/Modal";
 import { useConnectionDiagnostics } from "../../hooks/connection/useConnectionDiagnostics";
 import Props from "./diagnostics/Props";

@@ -13,7 +13,7 @@ import {
   Hash,
   MessageSquare,
 } from "lucide-react";
-import type { SSHCommandHistoryEntry, SSHCommandCategory } from "../../../types/sshCommandHistory";
+import type { SSHCommandHistoryEntry, SSHCommandCategory } from "../../../types/ssh/sshCommandHistory";
 import type { TFunc } from "./types";
 
 const CATEGORY_COLORS: Record<SSHCommandCategory, string> = {

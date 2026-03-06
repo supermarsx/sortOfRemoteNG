@@ -1,6 +1,6 @@
 import React from "react";
 import { Palette, Sun, Moon, Monitor, Download, Upload, FileJson } from "lucide-react";
-import { Theme, ColorScheme } from "../../types/settings";
+import { Theme, ColorScheme } from "../../types/settings/settings";
 import { useThemeSelector, BUILTIN_THEMES, BUILTIN_SCHEMES } from "../../hooks/window/useThemeSelector";
 
 type Mgr = ReturnType<typeof useThemeSelector>;

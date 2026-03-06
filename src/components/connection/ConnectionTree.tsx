@@ -1,7 +1,7 @@
 import React from "react";
 import { Monitor } from "lucide-react";
 import { useConnectionTree } from "../../hooks/connection/useConnectionTree";
-import type { Connection } from "../../types/connection";
+import type { Connection } from "../../types/connection/connection";
 import ConnectionTreeItem from "./connectionTree/ConnectionTreeItem";
 import RenameModal from "./connectionTree/RenameModal";
 import ConnectOptionsModal from "./connectionTree/ConnectOptionsModal";

@@ -1,4 +1,4 @@
-import { Connection } from '../../types/connection';
+import { Connection } from '../../types/connection/connection';
 
 export interface ImportResult {
   success: boolean;

@@ -11,7 +11,7 @@ import {
   Activity,
 } from "lucide-react";
 import type { McpTabProps } from "./types";
-import type { McpPanelTab } from "../../../types/mcpServer";
+import type { McpPanelTab } from "../../../types/mcp/mcpServer";
 
 const tabs: { key: McpPanelTab; icon: React.ElementType; labelKey: string; fallback: string }[] = [
   { key: "overview", icon: LayoutDashboard, labelKey: "mcpServer.tabs.overview", fallback: "Overview" },

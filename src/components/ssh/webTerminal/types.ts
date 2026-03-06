@@ -1,4 +1,4 @@
-import type { ConnectionSession } from "../../../types/connection";
+import type { ConnectionSession } from "../../../types/connection/connection";
 import type { useWebTerminal } from "../../../hooks/ssh/useWebTerminal";
 
 export interface WebTerminalProps {

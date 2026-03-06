@@ -10,7 +10,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import type { SubProps } from "./types";
-import type { PowerAction } from "../../../types/idrac";
+import type { PowerAction } from "../../../types/hardware/idrac";
 
 const POWER_ACTIONS: { action: PowerAction; label: string; icon: React.FC<{ className?: string }>; variant: string }[] = [
   { action: "on", label: "Power On", icon: Power, variant: "text-green-400 hover:bg-green-500/10" },

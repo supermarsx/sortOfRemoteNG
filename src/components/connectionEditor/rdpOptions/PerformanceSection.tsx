@@ -1,7 +1,7 @@
 import type { SectionBaseProps } from "./types";
 import Section from "./Section";
 import { Gauge } from "lucide-react";
-import { Connection, RDPConnectionSettings } from "../../../types/connection";
+import { Connection, RDPConnectionSettings } from "../../../types/connection/connection";
 import { PERFORMANCE_PRESETS, CSS } from "../../../hooks/rdp/useRDPOptions";
 import { Checkbox, Select, Slider } from "../../ui/forms";
 const PerformanceSection: React.FC<SectionBaseProps> = ({

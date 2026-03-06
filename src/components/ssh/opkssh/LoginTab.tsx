@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LogIn, RefreshCw, ChevronDown } from "lucide-react";
 import type { OpksshMgr } from "./types";
-import { WELL_KNOWN_PROVIDERS, type OpksshProviderAlias } from "../../../types/opkssh";
+import { WELL_KNOWN_PROVIDERS, type OpksshProviderAlias } from "../../../types/security/opkssh";
 
 interface LoginTabProps {
   mgr: OpksshMgr;

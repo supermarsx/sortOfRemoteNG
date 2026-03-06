@@ -8,7 +8,7 @@ import {
   Server,
   TrendingUp,
 } from "lucide-react";
-import type { SSHCommandHistoryStats } from "../../../types/sshCommandHistory";
+import type { SSHCommandHistoryStats } from "../../../types/ssh/sshCommandHistory";
 import type { TFunc } from "./types";
 
 const CATEGORY_ICONS: Record<string, string> = {

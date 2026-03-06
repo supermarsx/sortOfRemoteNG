@@ -2,7 +2,7 @@ import React from 'react';
 import { Search, Plus, FolderPlus, ChevronLeft, ChevronRight, Filter, Tag, Lock, Unlock, Expand as ExpandAll, ListCollapse as CollapseAll, ArrowLeftRight, Star, TableProperties, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ConnectionTree } from './ConnectionTree';
 import { BulkConnectionEditor } from './BulkConnectionEditor';
-import { Connection } from '../../types/connection';
+import { Connection } from '../../types/connection/connection';
 import { useSidebar } from '../../hooks/connection/useSidebar';
 import { Checkbox, Select } from '../ui/forms';
 

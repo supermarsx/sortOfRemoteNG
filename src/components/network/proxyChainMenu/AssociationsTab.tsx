@@ -1,5 +1,5 @@
 import { Mgr } from "./types";
-import type { Connection } from "../../../types/connection";
+import type { Connection } from "../../../types/connection/connection";
 import { Select } from "../../ui/forms";
 
 function AssociationsTab({ mgr }: { mgr: Mgr }) {

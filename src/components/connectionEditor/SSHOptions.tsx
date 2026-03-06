@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Key, Fingerprint, Trash2, Pencil } from "lucide-react";
 import { PasswordInput, Textarea} from '../ui/forms';
-import { Connection } from "../../types/connection";
+import { Connection } from "../../types/connection/connection";
 import { SSHKeyManager } from "../ssh/SSHKeyManager";
 import { SSHTerminalOverrides } from "./SSHTerminalOverrides";
 import { SSHConnectionOverrides } from "./SSHConnectionOverrides";
@@ -12,7 +12,7 @@ import {
   formatFingerprint,
   updateTrustRecordNickname,
   type TrustRecord,
-} from "../../utils/trustStore";
+} from "../../utils/auth/trustStore";
 import { useSSHOptions } from "../../hooks/ssh/useSSHOptions";
 import { Checkbox, NumberInput, Select } from '../ui/forms';
 

@@ -12,7 +12,7 @@ import {
   Download,
   Radar,
 } from "lucide-react";
-import { DiscoveredHost, DiscoveredService } from "../../types/connection";
+import { DiscoveredHost, DiscoveredService } from "../../types/connection/connection";
 import { useNetworkDiscovery } from "../../hooks/network/useNetworkDiscovery";
 import { Modal } from "../ui/overlays/Modal";import { DialogHeader } from '../ui/overlays/DialogHeader';import { Checkbox, NumberInput, TextInput } from '../ui/forms';
 
