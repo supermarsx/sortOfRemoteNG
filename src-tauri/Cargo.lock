@@ -191,6 +191,7 @@ dependencies = [
  "sorng-1password",
  "sorng-ai-agent",
  "sorng-ai-assist",
+ "sorng-amavis",
  "sorng-ansible",
  "sorng-apache",
  "sorng-ard",
@@ -202,19 +203,24 @@ dependencies = [
  "sorng-bmc-common",
  "sorng-budibase",
  "sorng-caddy",
+ "sorng-clamav",
  "sorng-cloud",
  "sorng-collaboration",
  "sorng-command-palette",
  "sorng-core",
  "sorng-credentials",
+ "sorng-cyrus-sasl",
  "sorng-dashboard",
  "sorng-dashlane",
+ "sorng-ddns",
  "sorng-dns",
  "sorng-docker",
  "sorng-docker-compose",
+ "sorng-dovecot",
  "sorng-dropbox",
  "sorng-exchange",
  "sorng-extensions",
+ "sorng-fail2ban",
  "sorng-filters",
  "sorng-fonts",
  "sorng-ftp",
@@ -238,6 +244,7 @@ dependencies = [
  "sorng-letsencrypt",
  "sorng-llm",
  "sorng-lxd",
+ "sorng-mailcow",
  "sorng-marketplace",
  "sorng-mcp",
  "sorng-meshcentral",
@@ -246,6 +253,8 @@ dependencies = [
  "sorng-mssql",
  "sorng-mysql",
  "sorng-netbird",
+ "sorng-netmgr",
+ "sorng-netutils",
  "sorng-network",
  "sorng-nextcloud",
  "sorng-nginx",
@@ -253,22 +262,28 @@ dependencies = [
  "sorng-notifications",
  "sorng-nx",
  "sorng-onedrive",
+ "sorng-opendkim",
  "sorng-openvpn",
  "sorng-opkssh",
  "sorng-osticket",
  "sorng-p2p",
  "sorng-passbolt",
  "sorng-portable",
+ "sorng-postfix",
  "sorng-postgres",
  "sorng-powershell",
+ "sorng-procmail",
  "sorng-protocols",
  "sorng-proxmox",
  "sorng-rdp",
  "sorng-rdpfile",
  "sorng-recording",
  "sorng-redis",
+ "sorng-remote-backup",
  "sorng-remote-mgmt",
  "sorng-replay",
+ "sorng-roundcube",
+ "sorng-rspamd",
  "sorng-rustdesk",
  "sorng-scheduler",
  "sorng-scp",
@@ -277,6 +292,7 @@ dependencies = [
  "sorng-sftp",
  "sorng-smtp",
  "sorng-snmp",
+ "sorng-spamassassin",
  "sorng-spice",
  "sorng-sqlite",
  "sorng-ssh",
@@ -307,6 +323,7 @@ dependencies = [
  "sorng-wireguard",
  "sorng-x2go",
  "sorng-xdmcp",
+ "sorng-yubikey",
  "sorng-zerotier",
  "tauri",
  "tauri-build",
@@ -2722,6 +2739,12 @@ dependencies = [
  "log 0.4.29",
  "regex",
 ]
+
+[[package]]
+name = "env_home"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
 
 [[package]]
 name = "equivalent"
@@ -9113,6 +9136,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-amavis"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-ansible"
 version = "0.1.0"
 dependencies = [
@@ -9341,6 +9378,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-clamav"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-cloud"
 version = "0.1.0"
 dependencies = [
@@ -9415,6 +9466,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-cyrus-sasl"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-dashboard"
 version = "0.1.0"
 dependencies = [
@@ -9446,6 +9511,22 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio 1.48.0",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-ddns"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio 1.48.0",
  "uuid",
 ]
 
@@ -9514,7 +9595,21 @@ dependencies = [
  "tokio 1.48.0",
  "tokio-test",
  "uuid",
- "which",
+ "which 6.0.3",
+]
+
+[[package]]
+name = "sorng-dovecot"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
 ]
 
 [[package]]
@@ -9564,6 +9659,20 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-fail2ban"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "regex",
+ "serde",
+ "serde_json",
  "tauri",
  "tokio 1.48.0",
  "uuid",
@@ -9985,6 +10094,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-mailcow"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-marketplace"
 version = "0.1.0"
 dependencies = [
@@ -10122,6 +10245,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-netmgr"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-netutils"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-network"
 version = "0.1.0"
 dependencies = [
@@ -10225,7 +10374,7 @@ dependencies = [
  "tokio 1.48.0",
  "tokio-test",
  "uuid",
- "which",
+ "which 6.0.3",
 ]
 
 [[package]]
@@ -10247,6 +10396,20 @@ dependencies = [
  "tokio 1.48.0",
  "tokio-util",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-opendkim"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
  "uuid",
 ]
 
@@ -10348,6 +10511,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-postfix"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-postgres"
 version = "0.1.0"
 dependencies = [
@@ -10388,6 +10565,20 @@ dependencies = [
  "tauri",
  "tokio 1.48.0",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-procmail"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
  "uuid",
 ]
 
@@ -10530,6 +10721,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-remote-backup"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+ "which 7.0.3",
+]
+
+[[package]]
 name = "sorng-remote-mgmt"
 version = "0.1.0"
 dependencies = [
@@ -10552,6 +10759,34 @@ dependencies = [
  "chrono",
  "log 0.4.29",
  "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-roundcube"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-rspamd"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
  "serde",
  "serde_json",
  "tauri",
@@ -10724,6 +10959,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-spamassassin"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-spice"
 version = "0.1.0"
 dependencies = [
@@ -10740,7 +10989,7 @@ dependencies = [
  "tokio 1.48.0",
  "tokio-test",
  "uuid",
- "which",
+ "which 6.0.3",
 ]
 
 [[package]]
@@ -11262,7 +11511,7 @@ dependencies = [
  "tauri",
  "tokio 1.48.0",
  "uuid",
- "which",
+ "which 6.0.3",
 ]
 
 [[package]]
@@ -11281,7 +11530,23 @@ dependencies = [
  "tokio 1.48.0",
  "tokio-test",
  "uuid",
- "which",
+ "which 6.0.3",
+]
+
+[[package]]
+name = "sorng-yubikey"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
 ]
 
 [[package]]
@@ -14011,6 +14276,18 @@ dependencies = [
  "either",
  "home",
  "rustix 0.38.44",
+ "winsafe",
+]
+
+[[package]]
+name = "which"
+version = "7.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24d643ce3fd3e5b54854602a080f34fb10ab75e0b813ee32d00ca2b44fa74762"
+dependencies = [
+ "either",
+ "env_home",
+ "rustix 1.1.3",
  "winsafe",
 ]
 

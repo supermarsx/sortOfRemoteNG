@@ -118,7 +118,24 @@ members = [
   "crates/sorng-apache",
   "crates/sorng-caddy",
   "crates/sorng-nginx-proxy-mgr",
+  "crates/sorng-postfix",
   "crates/sorng-gpg-agent",
+  "crates/sorng-yubikey",
+  "crates/sorng-opendkim",
+  "crates/sorng-cyrus-sasl",
+  "crates/sorng-dovecot",
+  "crates/sorng-ddns",
+  "crates/sorng-netmgr",
+  "crates/sorng-netutils",
+  "crates/sorng-clamav",
+  "crates/sorng-rspamd",
+  "crates/sorng-roundcube",
+  "crates/sorng-spamassassin",
+  "crates/sorng-procmail",
+  "crates/sorng-mailcow",
+  "crates/sorng-amavis",
+  "crates/sorng-remote-backup",
+  "crates/sorng-fail2ban",
 ]
 
 [workspace.dependencies]
@@ -274,7 +291,24 @@ sorng-haproxy = { path = "crates/sorng-haproxy" }
 sorng-apache = { path = "crates/sorng-apache" }
 sorng-caddy = { path = "crates/sorng-caddy" }
 sorng-nginx-proxy-mgr = { path = "crates/sorng-nginx-proxy-mgr" }
+sorng-postfix = { path = "crates/sorng-postfix" }
 sorng-gpg-agent = { path = "crates/sorng-gpg-agent" }
+sorng-yubikey = { path = "crates/sorng-yubikey" }
+sorng-opendkim = { path = "crates/sorng-opendkim" }
+sorng-dovecot = { path = "crates/sorng-dovecot" }
+sorng-ddns = { path = "crates/sorng-ddns" }
+sorng-netmgr = { path = "crates/sorng-netmgr" }
+sorng-netutils = { path = "crates/sorng-netutils" }
+sorng-spamassassin = { path = "crates/sorng-spamassassin" }
+sorng-clamav = { path = "crates/sorng-clamav" }
+sorng-rspamd = { path = "crates/sorng-rspamd" }
+sorng-roundcube = { path = "crates/sorng-roundcube" }
+sorng-cyrus-sasl = { path = "crates/sorng-cyrus-sasl" }
+sorng-procmail = { path = "crates/sorng-procmail" }
+sorng-mailcow = { path = "crates/sorng-mailcow" }
+sorng-amavis = { path = "crates/sorng-amavis" }
+sorng-remote-backup = { path = "crates/sorng-remote-backup" }
+sorng-fail2ban = { path = "crates/sorng-fail2ban" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"

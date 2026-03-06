@@ -245,6 +245,12 @@ pub use sorng_letsencrypt as letsencrypt;
 // OpenSSH Agent — built-in agent, system agent bridge, key management, forwarding, constraints (dedicated crate)
 pub use sorng_ssh_agent as ssh_agent;
 
+// GPG Agent — Assuan protocol, keyring management, signing, encryption, trust, smart card (dedicated crate)
+pub use sorng_gpg_agent as gpg_agent;
+
+// YubiKey — PIV, FIDO2, OATH, OTP, device management (dedicated crate)
+pub use sorng_yubikey as yubikey;
+
 // OpenPubkey SSH (opkssh) — OIDC-based SSH authentication (dedicated crate)
 pub use sorng_opkssh as opkssh;
 
@@ -301,6 +307,27 @@ pub use sorng_mcp as mcp_server;
 
 // SNMP — SNMPv1/v2c/v3 client, walk, table, trap receiver, MIB database, discovery, monitoring (dedicated crate)
 pub use sorng_snmp as snmp;
+
+// Nginx — site management, upstreams, SSL, status, logs, config, process control (dedicated crate)
+pub use sorng_nginx as nginx;
+
+// Traefik — routers, services, middleware, entrypoints, TLS, overview (dedicated crate)
+pub use sorng_traefik as traefik;
+
+// HAProxy — stats, frontends, backends, servers, ACLs, maps, stick tables, runtime, config (dedicated crate)
+pub use sorng_haproxy as haproxy;
+
+// Apache — vhosts, modules, SSL, status, logs, config, process control (dedicated crate)
+pub use sorng_apache as apache;
+
+// Caddy — config API, servers, routes, TLS, reverse proxy, file server, redirects (dedicated crate)
+pub use sorng_caddy as caddy;
+
+// Nginx Proxy Manager — proxy hosts, redirections, dead hosts, streams, certificates, users, access lists, settings (dedicated crate)
+pub use sorng_nginx_proxy_mgr as nginx_proxy_mgr;
+
+// DDNS — dynamic DNS management: Cloudflare, No-IP, DuckDNS, Afraid, Dynu, Namecheap, GoDaddy, Google Domains, Hurricane Electric, ChangeIP, YDNS, DNSPod, OVH, Porkbun, Gandi, Custom (dedicated crate)
+pub use sorng_ddns as ddns;
 
 // Dashboard — connection health dashboard with widgets, heatmaps, sparklines, alerts (dedicated crate)
 pub use sorng_dashboard;
@@ -454,6 +481,12 @@ use opkssh::service::OpksshServiceState;
 use ssh_scripts::engine::SshScriptEngineState;
 use mcp_server::McpServiceState as McpServerServiceState;
 use snmp::service::SnmpServiceState;
+use nginx::service::NginxServiceState;
+use traefik::service::TraefikServiceState;
+use haproxy::service::HaproxyServiceState;
+use apache::service::ApacheServiceState;
+use caddy::service::CaddyServiceState;
+use nginx_proxy_mgr::service::NpmServiceState;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -1020,9 +1053,45 @@ pub fn run() {
       let ssh_agent_state: SshAgentServiceState = Arc::new(Mutex::new(ssh_agent::service::SshAgentService::new()));
       app.manage(ssh_agent_state);
 
+      // Initialize GPG Agent service
+      let gpg_agent_state: gpg_agent::types::GpgServiceState = Arc::new(Mutex::new(gpg_agent::service::GpgAgentService::new()));
+      app.manage(gpg_agent_state);
+
+      // Initialize YubiKey service
+      let yubikey_state: yubikey::types::YubiKeyServiceState = Arc::new(Mutex::new(yubikey::service::YubiKeyService::new()));
+      app.manage(yubikey_state);
+
+      // Initialize DDNS service
+      let ddns_state: ddns::types::DdnsServiceState = Arc::new(Mutex::new(ddns::service::DdnsService::new()));
+      app.manage(ddns_state);
+
       // Initialize SNMP service
       let snmp_state: SnmpServiceState = Arc::new(Mutex::new(snmp::service::SnmpService::new()));
       app.manage(snmp_state);
+
+      // Initialize Nginx service
+      let nginx_state: NginxServiceState = Arc::new(Mutex::new(nginx::service::NginxService::new()));
+      app.manage(nginx_state);
+
+      // Initialize Traefik service
+      let traefik_state: TraefikServiceState = Arc::new(Mutex::new(traefik::service::TraefikService::new()));
+      app.manage(traefik_state);
+
+      // Initialize HAProxy service
+      let haproxy_state: HaproxyServiceState = Arc::new(Mutex::new(haproxy::service::HaproxyService::new()));
+      app.manage(haproxy_state);
+
+      // Initialize Apache service
+      let apache_state: ApacheServiceState = Arc::new(Mutex::new(apache::service::ApacheService::new()));
+      app.manage(apache_state);
+
+      // Initialize Caddy service
+      let caddy_state: CaddyServiceState = Arc::new(Mutex::new(caddy::service::CaddyService::new()));
+      app.manage(caddy_state);
+
+      // Initialize Nginx Proxy Manager service
+      let npm_state: NpmServiceState = Arc::new(Mutex::new(nginx_proxy_mgr::service::NpmService::new()));
+      app.manage(npm_state);
 
       // Initialize i18n engine with hot-reload
       let locales_dir = app.path().resource_dir()
@@ -5195,6 +5264,123 @@ pub fn run() {
         ssh_agent::commands::ssh_agent_export_audit,
         ssh_agent::commands::ssh_agent_clear_audit,
         ssh_agent::commands::ssh_agent_run_maintenance,
+        // SSH Agent PKCS#11 / Hardware key commands
+        ssh_agent::commands::ssh_agent_load_pkcs11,
+        ssh_agent::commands::ssh_agent_unload_pkcs11,
+        ssh_agent::commands::ssh_agent_list_pkcs11_providers,
+        ssh_agent::commands::ssh_agent_get_pkcs11_slots,
+        ssh_agent::commands::ssh_agent_add_smartcard_key,
+        ssh_agent::commands::ssh_agent_remove_smartcard_key,
+        ssh_agent::commands::ssh_agent_list_security_keys,
+        ssh_agent::commands::ssh_agent_add_security_key,
+        ssh_agent::commands::ssh_agent_get_pending_confirm,
+        ssh_agent::commands::ssh_agent_confirm_sign,
+        ssh_agent::commands::ssh_agent_get_key_details,
+        ssh_agent::commands::ssh_agent_update_key_comment,
+        ssh_agent::commands::ssh_agent_update_key_constraints,
+        ssh_agent::commands::ssh_agent_export_public_key,
+        // GPG Agent commands
+        gpg_agent::commands::gpg_get_status,
+        gpg_agent::commands::gpg_start_agent,
+        gpg_agent::commands::gpg_stop_agent,
+        gpg_agent::commands::gpg_restart_agent,
+        gpg_agent::commands::gpg_get_config,
+        gpg_agent::commands::gpg_update_config,
+        gpg_agent::commands::gpg_detect_environment,
+        gpg_agent::commands::gpg_list_keys,
+        gpg_agent::commands::gpg_get_key,
+        gpg_agent::commands::gpg_generate_key,
+        gpg_agent::commands::gpg_import_key,
+        gpg_agent::commands::gpg_import_key_file,
+        gpg_agent::commands::gpg_export_key,
+        gpg_agent::commands::gpg_export_secret_key,
+        gpg_agent::commands::gpg_delete_key,
+        gpg_agent::commands::gpg_add_uid,
+        gpg_agent::commands::gpg_revoke_uid,
+        gpg_agent::commands::gpg_add_subkey,
+        gpg_agent::commands::gpg_revoke_subkey,
+        gpg_agent::commands::gpg_set_expiration,
+        gpg_agent::commands::gpg_gen_revocation,
+        gpg_agent::commands::gpg_sign_data,
+        gpg_agent::commands::gpg_verify_signature,
+        gpg_agent::commands::gpg_sign_key,
+        gpg_agent::commands::gpg_encrypt,
+        gpg_agent::commands::gpg_decrypt,
+        gpg_agent::commands::gpg_set_trust,
+        gpg_agent::commands::gpg_get_trust_db_stats,
+        gpg_agent::commands::gpg_update_trust_db,
+        gpg_agent::commands::gpg_search_keyserver,
+        gpg_agent::commands::gpg_fetch_from_keyserver,
+        gpg_agent::commands::gpg_send_to_keyserver,
+        gpg_agent::commands::gpg_refresh_keys,
+        gpg_agent::commands::gpg_card_status,
+        gpg_agent::commands::gpg_card_list,
+        gpg_agent::commands::gpg_card_change_pin,
+        gpg_agent::commands::gpg_card_factory_reset,
+        gpg_agent::commands::gpg_card_set_attr,
+        gpg_agent::commands::gpg_card_gen_key,
+        gpg_agent::commands::gpg_card_move_key,
+        gpg_agent::commands::gpg_card_fetch_key,
+        gpg_agent::commands::gpg_audit_log,
+        gpg_agent::commands::gpg_audit_export,
+        gpg_agent::commands::gpg_audit_clear,
+        // YubiKey commands
+        yubikey::commands::yk_list_devices,
+        yubikey::commands::yk_get_device_info,
+        yubikey::commands::yk_wait_for_device,
+        yubikey::commands::yk_get_diagnostics,
+        yubikey::commands::yk_piv_list_certs,
+        yubikey::commands::yk_piv_get_slot,
+        yubikey::commands::yk_piv_generate_key,
+        yubikey::commands::yk_piv_self_sign_cert,
+        yubikey::commands::yk_piv_generate_csr,
+        yubikey::commands::yk_piv_import_cert,
+        yubikey::commands::yk_piv_import_key,
+        yubikey::commands::yk_piv_export_cert,
+        yubikey::commands::yk_piv_delete_cert,
+        yubikey::commands::yk_piv_delete_key,
+        yubikey::commands::yk_piv_attest,
+        yubikey::commands::yk_piv_change_pin,
+        yubikey::commands::yk_piv_change_puk,
+        yubikey::commands::yk_piv_change_mgmt_key,
+        yubikey::commands::yk_piv_unblock_pin,
+        yubikey::commands::yk_piv_get_pin_status,
+        yubikey::commands::yk_piv_reset,
+        yubikey::commands::yk_piv_sign,
+        yubikey::commands::yk_fido2_info,
+        yubikey::commands::yk_fido2_list_credentials,
+        yubikey::commands::yk_fido2_delete_credential,
+        yubikey::commands::yk_fido2_set_pin,
+        yubikey::commands::yk_fido2_change_pin,
+        yubikey::commands::yk_fido2_pin_status,
+        yubikey::commands::yk_fido2_reset,
+        yubikey::commands::yk_fido2_toggle_always_uv,
+        yubikey::commands::yk_fido2_list_rps,
+        yubikey::commands::yk_oath_list,
+        yubikey::commands::yk_oath_add,
+        yubikey::commands::yk_oath_delete,
+        yubikey::commands::yk_oath_rename,
+        yubikey::commands::yk_oath_calculate,
+        yubikey::commands::yk_oath_calculate_all,
+        yubikey::commands::yk_oath_set_password,
+        yubikey::commands::yk_oath_reset,
+        yubikey::commands::yk_otp_info,
+        yubikey::commands::yk_otp_configure_yubico,
+        yubikey::commands::yk_otp_configure_chalresp,
+        yubikey::commands::yk_otp_configure_static,
+        yubikey::commands::yk_otp_configure_hotp,
+        yubikey::commands::yk_otp_delete,
+        yubikey::commands::yk_otp_swap,
+        yubikey::commands::yk_config_set_interfaces,
+        yubikey::commands::yk_config_lock,
+        yubikey::commands::yk_config_unlock,
+        yubikey::commands::yk_get_config,
+        yubikey::commands::yk_update_config,
+        yubikey::commands::yk_audit_log,
+        yubikey::commands::yk_audit_export,
+        yubikey::commands::yk_audit_clear,
+        yubikey::commands::yk_factory_reset_all,
+        yubikey::commands::yk_export_report,
         // Warpgate bastion host admin commands
         warpgate::commands::warpgate_connect,
         warpgate::commands::warpgate_disconnect,
@@ -5874,6 +6060,271 @@ pub fn run() {
         vmware_desktop::commands::vmwd_read_preferences,
         vmware_desktop::commands::vmwd_get_default_vm_dir,
         vmware_desktop::commands::vmwd_set_preference,
+        // Nginx
+        nginx::commands::ngx_connect,
+        nginx::commands::ngx_disconnect,
+        nginx::commands::ngx_list_connections,
+        nginx::commands::ngx_list_sites,
+        nginx::commands::ngx_get_site,
+        nginx::commands::ngx_create_site,
+        nginx::commands::ngx_update_site,
+        nginx::commands::ngx_delete_site,
+        nginx::commands::ngx_enable_site,
+        nginx::commands::ngx_disable_site,
+        nginx::commands::ngx_list_upstreams,
+        nginx::commands::ngx_get_upstream,
+        nginx::commands::ngx_create_upstream,
+        nginx::commands::ngx_update_upstream,
+        nginx::commands::ngx_delete_upstream,
+        nginx::commands::ngx_get_ssl_config,
+        nginx::commands::ngx_update_ssl_config,
+        nginx::commands::ngx_list_ssl_certificates,
+        nginx::commands::ngx_stub_status,
+        nginx::commands::ngx_process_status,
+        nginx::commands::ngx_health_check,
+        nginx::commands::ngx_query_access_log,
+        nginx::commands::ngx_query_error_log,
+        nginx::commands::ngx_list_log_files,
+        nginx::commands::ngx_get_main_config,
+        nginx::commands::ngx_update_main_config,
+        nginx::commands::ngx_test_config,
+        nginx::commands::ngx_list_snippets,
+        nginx::commands::ngx_get_snippet,
+        nginx::commands::ngx_create_snippet,
+        nginx::commands::ngx_update_snippet,
+        nginx::commands::ngx_delete_snippet,
+        nginx::commands::ngx_start,
+        nginx::commands::ngx_stop,
+        nginx::commands::ngx_restart,
+        nginx::commands::ngx_reload,
+        nginx::commands::ngx_version,
+        nginx::commands::ngx_info,
+        // Traefik
+        traefik::commands::traefik_connect,
+        traefik::commands::traefik_disconnect,
+        traefik::commands::traefik_list_connections,
+        traefik::commands::traefik_ping,
+        traefik::commands::traefik_list_http_routers,
+        traefik::commands::traefik_get_http_router,
+        traefik::commands::traefik_list_tcp_routers,
+        traefik::commands::traefik_get_tcp_router,
+        traefik::commands::traefik_list_udp_routers,
+        traefik::commands::traefik_get_udp_router,
+        traefik::commands::traefik_list_http_services,
+        traefik::commands::traefik_get_http_service,
+        traefik::commands::traefik_list_tcp_services,
+        traefik::commands::traefik_get_tcp_service,
+        traefik::commands::traefik_list_udp_services,
+        traefik::commands::traefik_get_udp_service,
+        traefik::commands::traefik_list_http_middlewares,
+        traefik::commands::traefik_get_http_middleware,
+        traefik::commands::traefik_list_tcp_middlewares,
+        traefik::commands::traefik_get_tcp_middleware,
+        traefik::commands::traefik_list_entrypoints,
+        traefik::commands::traefik_get_entrypoint,
+        traefik::commands::traefik_list_tls_certificates,
+        traefik::commands::traefik_get_tls_certificate,
+        traefik::commands::traefik_get_overview,
+        traefik::commands::traefik_get_version,
+        traefik::commands::traefik_get_raw_config,
+        // HAProxy
+        haproxy::commands::haproxy_connect,
+        haproxy::commands::haproxy_disconnect,
+        haproxy::commands::haproxy_list_connections,
+        haproxy::commands::haproxy_ping,
+        haproxy::commands::haproxy_get_info,
+        haproxy::commands::haproxy_get_csv,
+        haproxy::commands::haproxy_list_frontends,
+        haproxy::commands::haproxy_get_frontend,
+        haproxy::commands::haproxy_list_backends,
+        haproxy::commands::haproxy_get_backend,
+        haproxy::commands::haproxy_list_servers,
+        haproxy::commands::haproxy_get_server,
+        haproxy::commands::haproxy_set_server_state,
+        haproxy::commands::haproxy_list_acls,
+        haproxy::commands::haproxy_get_acl,
+        haproxy::commands::haproxy_add_acl_entry,
+        haproxy::commands::haproxy_del_acl_entry,
+        haproxy::commands::haproxy_clear_acl,
+        haproxy::commands::haproxy_list_maps,
+        haproxy::commands::haproxy_get_map,
+        haproxy::commands::haproxy_add_map_entry,
+        haproxy::commands::haproxy_del_map_entry,
+        haproxy::commands::haproxy_set_map_entry,
+        haproxy::commands::haproxy_clear_map,
+        haproxy::commands::haproxy_list_stick_tables,
+        haproxy::commands::haproxy_get_stick_table,
+        haproxy::commands::haproxy_clear_stick_table,
+        haproxy::commands::haproxy_set_stick_table_entry,
+        haproxy::commands::haproxy_runtime_execute,
+        haproxy::commands::haproxy_show_servers_state,
+        haproxy::commands::haproxy_show_sessions,
+        haproxy::commands::haproxy_show_backend_list,
+        haproxy::commands::haproxy_get_raw_config,
+        haproxy::commands::haproxy_update_raw_config,
+        haproxy::commands::haproxy_validate_config,
+        haproxy::commands::haproxy_reload,
+        haproxy::commands::haproxy_start,
+        haproxy::commands::haproxy_stop,
+        haproxy::commands::haproxy_restart,
+        haproxy::commands::haproxy_version,
+        // Apache
+        apache::commands::apache_connect,
+        apache::commands::apache_disconnect,
+        apache::commands::apache_list_connections,
+        apache::commands::apache_ping,
+        apache::commands::apache_list_vhosts,
+        apache::commands::apache_get_vhost,
+        apache::commands::apache_create_vhost,
+        apache::commands::apache_update_vhost,
+        apache::commands::apache_delete_vhost,
+        apache::commands::apache_enable_vhost,
+        apache::commands::apache_disable_vhost,
+        apache::commands::apache_list_modules,
+        apache::commands::apache_list_available_modules,
+        apache::commands::apache_list_enabled_modules,
+        apache::commands::apache_enable_module,
+        apache::commands::apache_disable_module,
+        apache::commands::apache_get_ssl_config,
+        apache::commands::apache_list_ssl_certificates,
+        apache::commands::apache_get_status,
+        apache::commands::apache_process_status,
+        apache::commands::apache_query_access_log,
+        apache::commands::apache_query_error_log,
+        apache::commands::apache_list_log_files,
+        apache::commands::apache_get_main_config,
+        apache::commands::apache_update_main_config,
+        apache::commands::apache_test_config,
+        apache::commands::apache_list_conf_available,
+        apache::commands::apache_list_conf_enabled,
+        apache::commands::apache_enable_conf,
+        apache::commands::apache_disable_conf,
+        apache::commands::apache_start,
+        apache::commands::apache_stop,
+        apache::commands::apache_restart,
+        apache::commands::apache_reload,
+        apache::commands::apache_version,
+        apache::commands::apache_info,
+        // Caddy
+        caddy::commands::caddy_connect,
+        caddy::commands::caddy_disconnect,
+        caddy::commands::caddy_list_connections,
+        caddy::commands::caddy_ping,
+        caddy::commands::caddy_get_full_config,
+        caddy::commands::caddy_get_raw_config,
+        caddy::commands::caddy_get_config_path,
+        caddy::commands::caddy_set_config_path,
+        caddy::commands::caddy_patch_config_path,
+        caddy::commands::caddy_delete_config_path,
+        caddy::commands::caddy_load_config,
+        caddy::commands::caddy_adapt_caddyfile,
+        caddy::commands::caddy_stop_server,
+        caddy::commands::caddy_list_servers,
+        caddy::commands::caddy_get_server,
+        caddy::commands::caddy_set_server,
+        caddy::commands::caddy_delete_server,
+        caddy::commands::caddy_list_routes,
+        caddy::commands::caddy_get_route,
+        caddy::commands::caddy_add_route,
+        caddy::commands::caddy_set_route,
+        caddy::commands::caddy_delete_route,
+        caddy::commands::caddy_set_all_routes,
+        caddy::commands::caddy_get_tls_app,
+        caddy::commands::caddy_set_tls_app,
+        caddy::commands::caddy_list_automate_domains,
+        caddy::commands::caddy_set_automate_domains,
+        caddy::commands::caddy_get_tls_automation,
+        caddy::commands::caddy_set_tls_automation,
+        caddy::commands::caddy_list_tls_certificates,
+        caddy::commands::caddy_create_reverse_proxy,
+        caddy::commands::caddy_get_upstreams,
+        caddy::commands::caddy_create_file_server,
+        caddy::commands::caddy_create_redirect,
+        // Nginx Proxy Manager
+        nginx_proxy_mgr::commands::npm_connect,
+        nginx_proxy_mgr::commands::npm_disconnect,
+        nginx_proxy_mgr::commands::npm_list_connections,
+        nginx_proxy_mgr::commands::npm_ping,
+        nginx_proxy_mgr::commands::npm_list_proxy_hosts,
+        nginx_proxy_mgr::commands::npm_get_proxy_host,
+        nginx_proxy_mgr::commands::npm_create_proxy_host,
+        nginx_proxy_mgr::commands::npm_update_proxy_host,
+        nginx_proxy_mgr::commands::npm_delete_proxy_host,
+        nginx_proxy_mgr::commands::npm_enable_proxy_host,
+        nginx_proxy_mgr::commands::npm_disable_proxy_host,
+        nginx_proxy_mgr::commands::npm_list_redirection_hosts,
+        nginx_proxy_mgr::commands::npm_get_redirection_host,
+        nginx_proxy_mgr::commands::npm_create_redirection_host,
+        nginx_proxy_mgr::commands::npm_update_redirection_host,
+        nginx_proxy_mgr::commands::npm_delete_redirection_host,
+        nginx_proxy_mgr::commands::npm_list_dead_hosts,
+        nginx_proxy_mgr::commands::npm_get_dead_host,
+        nginx_proxy_mgr::commands::npm_create_dead_host,
+        nginx_proxy_mgr::commands::npm_update_dead_host,
+        nginx_proxy_mgr::commands::npm_delete_dead_host,
+        nginx_proxy_mgr::commands::npm_list_streams,
+        nginx_proxy_mgr::commands::npm_get_stream,
+        nginx_proxy_mgr::commands::npm_create_stream,
+        nginx_proxy_mgr::commands::npm_update_stream,
+        nginx_proxy_mgr::commands::npm_delete_stream,
+        nginx_proxy_mgr::commands::npm_list_certificates,
+        nginx_proxy_mgr::commands::npm_get_certificate,
+        nginx_proxy_mgr::commands::npm_create_letsencrypt_certificate,
+        nginx_proxy_mgr::commands::npm_upload_custom_certificate,
+        nginx_proxy_mgr::commands::npm_delete_certificate,
+        nginx_proxy_mgr::commands::npm_renew_certificate,
+        nginx_proxy_mgr::commands::npm_validate_certificate,
+        nginx_proxy_mgr::commands::npm_list_users,
+        nginx_proxy_mgr::commands::npm_get_user,
+        nginx_proxy_mgr::commands::npm_create_user,
+        nginx_proxy_mgr::commands::npm_update_user,
+        nginx_proxy_mgr::commands::npm_delete_user,
+        nginx_proxy_mgr::commands::npm_change_user_password,
+        nginx_proxy_mgr::commands::npm_get_me,
+        nginx_proxy_mgr::commands::npm_list_access_lists,
+        nginx_proxy_mgr::commands::npm_get_access_list,
+        nginx_proxy_mgr::commands::npm_create_access_list,
+        nginx_proxy_mgr::commands::npm_update_access_list,
+        nginx_proxy_mgr::commands::npm_delete_access_list,
+        nginx_proxy_mgr::commands::npm_list_settings,
+        nginx_proxy_mgr::commands::npm_get_setting,
+        nginx_proxy_mgr::commands::npm_update_setting,
+        nginx_proxy_mgr::commands::npm_get_reports,
+        nginx_proxy_mgr::commands::npm_get_audit_log,
+        nginx_proxy_mgr::commands::npm_get_health,
+        // DDNS commands
+        ddns::commands::ddns_list_profiles,
+        ddns::commands::ddns_get_profile,
+        ddns::commands::ddns_create_profile,
+        ddns::commands::ddns_update_profile,
+        ddns::commands::ddns_delete_profile,
+        ddns::commands::ddns_enable_profile,
+        ddns::commands::ddns_disable_profile,
+        ddns::commands::ddns_trigger_update,
+        ddns::commands::ddns_trigger_update_all,
+        ddns::commands::ddns_detect_ip,
+        ddns::commands::ddns_get_current_ips,
+        ddns::commands::ddns_start_scheduler,
+        ddns::commands::ddns_stop_scheduler,
+        ddns::commands::ddns_get_scheduler_status,
+        ddns::commands::ddns_get_profile_health,
+        ddns::commands::ddns_get_all_health,
+        ddns::commands::ddns_get_system_status,
+        ddns::commands::ddns_list_providers,
+        ddns::commands::ddns_get_provider_capabilities,
+        ddns::commands::ddns_cf_list_zones,
+        ddns::commands::ddns_cf_list_records,
+        ddns::commands::ddns_cf_create_record,
+        ddns::commands::ddns_cf_delete_record,
+        ddns::commands::ddns_get_config,
+        ddns::commands::ddns_update_config,
+        ddns::commands::ddns_get_audit_log,
+        ddns::commands::ddns_get_audit_for_profile,
+        ddns::commands::ddns_export_audit,
+        ddns::commands::ddns_clear_audit,
+        ddns::commands::ddns_export_profiles,
+        ddns::commands::ddns_import_profiles,
+        ddns::commands::ddns_process_scheduled,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
