@@ -685,7 +685,7 @@ mod tests {
         let resp = parse_assuan_line("D Hello%20World");
         match resp {
             Some(AssuanResponse::Data(d)) => {
-                assert_eq!(String::from_utf8_lossy(&d), "Hello%20World");
+                assert_eq!(String::from_utf8_lossy(&d), "Hello World");
             }
             _ => panic!("Expected Data response"),
         }
