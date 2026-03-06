@@ -1,5 +1,5 @@
-import { ProxyConfig, SSHTerminalConfig, SSHConnectionConfig, TOTPConfig } from "./settings";
-import type { TrustPolicy } from "../utils/trustStore";
+import { ProxyConfig, SSHTerminalConfig, SSHConnectionConfig, TOTPConfig } from "../settings/settings";
+import type { TrustPolicy } from "../../utils/auth/trustStore";
 
 /** A single bookmark or a folder containing bookmarks. */
 export type HttpBookmarkItem =
@@ -162,7 +162,7 @@ export interface Connection {
   sshTerminalConfigOverride?: Partial<SSHTerminalConfig>;
 
   // Recording Config Override (per-connection)
-  recordingConfigOverride?: Partial<import('../types/settings').RecordingConfig>;
+  recordingConfigOverride?: Partial<import('../settings/settings').RecordingConfig>;
 
   /** Disable SSH terminal recording for this connection */
   disableSshRecording?: boolean;

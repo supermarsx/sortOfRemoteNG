@@ -1,4 +1,4 @@
-import type { ProxyConfig } from './settings';
+import type { ProxyConfig } from './index';
 
 // Saved Proxy Profile
 export interface SavedProxyProfile {

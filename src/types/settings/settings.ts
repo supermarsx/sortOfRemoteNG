@@ -2,14 +2,14 @@
 export * from './backupSettings';
 export * from './cloudSyncSettings';
 export * from './vpnSettings';
-export * from './sshSettings';
+export * from '../ssh/sshSettings';
 
 // Imports needed for GlobalSettings interface
 import type { BackupConfig } from './backupSettings';
 import type { CloudSyncConfig } from './cloudSyncSettings';
 import type { OpenVPNConfig } from './vpnSettings';
-import type { SSHTerminalConfig, SSHConnectionConfig } from './sshSettings';
-import type { RDPRecordingConfig, WebRecordingConfig } from './macroTypes';
+import type { SSHTerminalConfig, SSHConnectionConfig } from '../ssh/sshSettings';
+import type { RDPRecordingConfig, WebRecordingConfig } from '../recording/macroTypes';
 
 export const Themes = [
   "dark",
