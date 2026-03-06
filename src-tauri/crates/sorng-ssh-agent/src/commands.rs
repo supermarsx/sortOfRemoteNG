@@ -237,3 +237,161 @@ pub async fn ssh_agent_run_maintenance(
     state.lock().await.run_maintenance();
     Ok(())
 }
+
+// ── PKCS#11 / Hardware Key Commands ─────────────────────────────────
+
+/// Load a PKCS#11 provider library (smart card / HSM).
+#[tauri::command]
+pub async fn ssh_agent_load_pkcs11(
+    state: State<'_, SshAgentServiceState>,
+    provider_path: String,
+) -> CmdResult<Vec<crate::types::Pkcs11SlotInfo>> {
+    let mut svc = state.lock().await;
+    svc.load_pkcs11_provider(&provider_path)
+}
+
+/// Unload a PKCS#11 provider library.
+#[tauri::command]
+pub async fn ssh_agent_unload_pkcs11(
+    state: State<'_, SshAgentServiceState>,
+    provider_path: String,
+) -> CmdResult<()> {
+    let mut svc = state.lock().await;
+    svc.unload_pkcs11_provider(&provider_path)
+}
+
+/// List all loaded PKCS#11 providers.
+#[tauri::command]
+pub async fn ssh_agent_list_pkcs11_providers(
+    state: State<'_, SshAgentServiceState>,
+) -> CmdResult<Vec<crate::types::Pkcs11ProviderStatus>> {
+    let svc = state.lock().await;
+    Ok(svc.list_pkcs11_providers())
+}
+
+/// Get slots for a specific PKCS#11 provider.
+#[tauri::command]
+pub async fn ssh_agent_get_pkcs11_slots(
+    state: State<'_, SshAgentServiceState>,
+    provider_path: String,
+) -> CmdResult<Vec<crate::types::Pkcs11SlotInfo>> {
+    let svc = state.lock().await;
+    svc.get_pkcs11_slots(&provider_path)
+}
+
+/// Add keys from a smart card provider.
+#[tauri::command]
+pub async fn ssh_agent_add_smartcard_key(
+    state: State<'_, SshAgentServiceState>,
+    provider: String,
+    pin: Option<String>,
+) -> CmdResult<usize> {
+    let mut svc = state.lock().await;
+    svc.add_smartcard_key(&provider, pin.as_deref())
+}
+
+/// Remove keys from a smart card provider.
+#[tauri::command]
+pub async fn ssh_agent_remove_smartcard_key(
+    state: State<'_, SshAgentServiceState>,
+    provider: String,
+) -> CmdResult<usize> {
+    let mut svc = state.lock().await;
+    svc.remove_smartcard_key(&provider)
+}
+
+/// List all FIDO2 / security-key-backed keys.
+#[tauri::command]
+pub async fn ssh_agent_list_security_keys(
+    state: State<'_, SshAgentServiceState>,
+) -> CmdResult<Vec<crate::types::AgentKey>> {
+    let svc = state.lock().await;
+    Ok(svc.list_security_keys())
+}
+
+/// Enroll a new FIDO2 security key.
+#[tauri::command]
+pub async fn ssh_agent_add_security_key(
+    state: State<'_, SshAgentServiceState>,
+    sk_provider: Option<String>,
+    application: Option<String>,
+    user: Option<String>,
+    pin_required: bool,
+    touch_required: bool,
+    verify_required: bool,
+    resident: bool,
+) -> CmdResult<String> {
+    let mut svc = state.lock().await;
+    svc.add_security_key(
+        sk_provider.as_deref(),
+        application.as_deref(),
+        user.as_deref(),
+        pin_required,
+        touch_required,
+        verify_required,
+        resident,
+    )
+}
+
+/// Get pending sign-request confirmations.
+#[tauri::command]
+pub async fn ssh_agent_get_pending_confirm(
+    state: State<'_, SshAgentServiceState>,
+) -> CmdResult<Vec<crate::types::PendingSignRequest>> {
+    let svc = state.lock().await;
+    Ok(svc.get_pending_confirmations())
+}
+
+/// Approve or deny a pending sign request.
+#[tauri::command]
+pub async fn ssh_agent_confirm_sign(
+    state: State<'_, SshAgentServiceState>,
+    request_id: String,
+    approved: bool,
+) -> CmdResult<()> {
+    let mut svc = state.lock().await;
+    svc.confirm_sign_request(&request_id, approved)
+}
+
+/// Get detailed info about a specific key.
+#[tauri::command]
+pub async fn ssh_agent_get_key_details(
+    state: State<'_, SshAgentServiceState>,
+    key_id: String,
+) -> CmdResult<crate::types::AgentKey> {
+    let svc = state.lock().await;
+    svc.get_key_details(&key_id)
+}
+
+/// Update the comment on a loaded key.
+#[tauri::command]
+pub async fn ssh_agent_update_key_comment(
+    state: State<'_, SshAgentServiceState>,
+    key_id: String,
+    comment: String,
+) -> CmdResult<()> {
+    let mut svc = state.lock().await;
+    svc.update_key_comment(&key_id, &comment)
+}
+
+/// Update the constraints on a loaded key.
+#[tauri::command]
+pub async fn ssh_agent_update_key_constraints(
+    state: State<'_, SshAgentServiceState>,
+    key_id: String,
+    constraints: Vec<crate::types::KeyConstraint>,
+) -> CmdResult<()> {
+    let mut svc = state.lock().await;
+    svc.update_key_constraints(&key_id, constraints)
+}
+
+/// Export a public key in the requested format ("openssh" or "pem").
+#[tauri::command]
+pub async fn ssh_agent_export_public_key(
+    state: State<'_, SshAgentServiceState>,
+    key_id: String,
+    format: String,
+) -> CmdResult<String> {
+    let svc = state.lock().await;
+    svc.export_public_key(&key_id, &format)
+}

@@ -436,6 +436,78 @@ impl BuiltinAgent {
     pub fn update_config(&mut self, config: AgentConfig) {
         self.config = config;
     }
+
+    // ── PKCS#11 / Hardware Key Helpers ──────────────────────────────
+
+    /// Remove keys whose serialised source contains `source_prefix`.
+    pub fn remove_keys_by_source(&mut self, source_prefix: &str) -> usize {
+        let ids_to_remove: Vec<String> = self
+            .store
+            .all_keys()
+            .into_iter()
+            .filter(|k| {
+                let source_str = serde_json::to_string(&k.source).unwrap_or_default();
+                source_str.contains(source_prefix)
+            })
+            .map(|k| k.id.clone())
+            .collect();
+        let count = ids_to_remove.len();
+        for id in ids_to_remove {
+            let _ = self.store.remove_key(&id);
+        }
+        count
+    }
+
+    /// Count keys whose serialised source contains `source_prefix`.
+    pub fn count_keys_by_source(&self, source_prefix: &str) -> usize {
+        self.store
+            .all_keys()
+            .into_iter()
+            .filter(|k| {
+                let source_str = serde_json::to_string(&k.source).unwrap_or_default();
+                source_str.contains(source_prefix)
+            })
+            .count()
+    }
+
+    /// Get all pending confirmations as owned values.
+    pub fn get_pending_confirmations(&self) -> Vec<PendingSignRequest> {
+        self.pending_confirmations.values().cloned().collect()
+    }
+
+    /// Get a specific key by its unique ID.
+    pub fn get_key(&self, key_id: &str) -> Option<AgentKey> {
+        self.store.find_by_id(key_id).cloned()
+    }
+
+    /// Update the comment on a key.
+    pub fn update_comment(&mut self, key_id: &str, comment: &str) -> Result<(), String> {
+        let key = self
+            .store
+            .find_by_id_mut(key_id)
+            .ok_or_else(|| format!("Key not found: {}", key_id))?;
+        key.comment = comment.to_string();
+        Ok(())
+    }
+
+    /// Update all constraints on a key.
+    pub fn update_constraints(
+        &mut self,
+        key_id: &str,
+        constraints: Vec<KeyConstraint>,
+    ) -> Result<(), String> {
+        let key = self
+            .store
+            .find_by_id_mut(key_id)
+            .ok_or_else(|| format!("Key not found: {}", key_id))?;
+        key.constraints = constraints;
+        Ok(())
+    }
+
+    /// List all loaded keys (convenience wrapper over the key store).
+    pub fn list_keys(&self) -> Vec<AgentKey> {
+        self.store.all_keys().into_iter().cloned().collect()
+    }
 }
 
 /// Parse wire-format constraints into typed KeyConstraint values.

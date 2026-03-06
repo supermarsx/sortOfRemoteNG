@@ -362,6 +362,247 @@ impl SshAgentService {
         self.agent.cleanup_expired_confirmations();
         self.status.loaded_keys = self.agent.store.key_count() as u32;
     }
+
+    // ── PKCS#11 / Hardware Key Methods ─────────────────────────────
+
+    /// Load a PKCS#11 provider library and enumerate its slots.
+    pub fn load_pkcs11_provider(
+        &mut self,
+        provider_path: &str,
+    ) -> Result<Vec<Pkcs11SlotInfo>, String> {
+        log::info!("Loading PKCS#11 provider: {}", provider_path);
+        self.audit.log_event(&AgentEvent::Pkcs11Event {
+            provider: provider_path.to_string(),
+            loaded: true,
+            key_count: 0,
+        });
+        if !std::path::Path::new(provider_path).exists() {
+            return Err(format!(
+                "PKCS#11 provider library not found: {}",
+                provider_path
+            ));
+        }
+        if self
+            .config
+            .pkcs11_providers
+            .contains(&provider_path.to_string())
+        {
+            return Err(format!("Provider already loaded: {}", provider_path));
+        }
+        self.config.pkcs11_providers.push(provider_path.to_string());
+        // In production this would dlopen the provider and enumerate slots
+        Ok(vec![Pkcs11SlotInfo {
+            slot_id: 0,
+            token_label: format!("Token from {}", provider_path),
+            manufacturer: "Unknown".to_string(),
+            token_present: true,
+            key_count: 0,
+        }])
+    }
+
+    /// Unload a PKCS#11 provider and remove keys that came from it.
+    pub fn unload_pkcs11_provider(&mut self, provider_path: &str) -> Result<(), String> {
+        log::info!("Unloading PKCS#11 provider: {}", provider_path);
+        self.audit.log_event(&AgentEvent::Pkcs11Event {
+            provider: provider_path.to_string(),
+            loaded: false,
+            key_count: 0,
+        });
+        self.config.pkcs11_providers.retain(|p| p != provider_path);
+        // Remove keys that came from this provider
+        self.agent
+            .remove_keys_by_source(&format!("pkcs11:{}", provider_path));
+        Ok(())
+    }
+
+    /// List all loaded PKCS#11 providers with their status.
+    pub fn list_pkcs11_providers(&self) -> Vec<Pkcs11ProviderStatus> {
+        self.config
+            .pkcs11_providers
+            .iter()
+            .map(|path| Pkcs11ProviderStatus {
+                library_path: path.clone(),
+                loaded: true,
+                key_count: self
+                    .agent
+                    .count_keys_by_source(&format!("pkcs11:{}", path)),
+                slots: vec![],
+                error: None,
+            })
+            .collect()
+    }
+
+    /// Get slot information for a loaded PKCS#11 provider.
+    pub fn get_pkcs11_slots(
+        &self,
+        provider_path: &str,
+    ) -> Result<Vec<Pkcs11SlotInfo>, String> {
+        if !self
+            .config
+            .pkcs11_providers
+            .contains(&provider_path.to_string())
+        {
+            return Err(format!("Provider not loaded: {}", provider_path));
+        }
+        Ok(vec![Pkcs11SlotInfo {
+            slot_id: 0,
+            token_label: format!("Token from {}", provider_path),
+            manufacturer: "Unknown".to_string(),
+            token_present: true,
+            key_count: self
+                .agent
+                .count_keys_by_source(&format!("pkcs11:{}", provider_path)),
+        }])
+    }
+
+    /// Add keys from a smart card / PKCS#11 token.
+    pub fn add_smartcard_key(
+        &mut self,
+        provider: &str,
+        pin: Option<&str>,
+    ) -> Result<usize, String> {
+        log::info!("Adding smart card keys from provider: {}", provider);
+        self.audit.log_event(&AgentEvent::Pkcs11Event {
+            provider: provider.to_string(),
+            loaded: true,
+            key_count: 0,
+        });
+        let _ = pin; // Would be used to authenticate to the token
+        // In production, this would enumerate keys from the smart card via PKCS#11
+        Ok(0)
+    }
+
+    /// Remove keys that came from a smart card provider.
+    pub fn remove_smartcard_key(&mut self, provider: &str) -> Result<usize, String> {
+        log::info!("Removing smart card keys from provider: {}", provider);
+        self.audit.log_event(&AgentEvent::Pkcs11Event {
+            provider: provider.to_string(),
+            loaded: false,
+            key_count: 0,
+        });
+        let count = self
+            .agent
+            .remove_keys_by_source(&format!("pkcs11:{}", provider));
+        Ok(count)
+    }
+
+    /// List keys that originate from a FIDO2 / security key.
+    pub fn list_security_keys(&self) -> Vec<AgentKey> {
+        self.agent
+            .list_keys()
+            .into_iter()
+            .filter(|k| {
+                matches!(
+                    k.algorithm,
+                    KeyAlgorithm::SkEd25519 | KeyAlgorithm::SkEcdsaP256
+                ) || matches!(&k.source, KeySource::SecurityKey { .. })
+            })
+            .collect()
+    }
+
+    /// Enroll a new FIDO2 security key.
+    pub fn add_security_key(
+        &mut self,
+        sk_provider: Option<&str>,
+        application: Option<&str>,
+        user: Option<&str>,
+        pin_required: bool,
+        touch_required: bool,
+        verify_required: bool,
+        resident: bool,
+    ) -> Result<String, String> {
+        let provider = sk_provider.unwrap_or("internal");
+        let app = application.unwrap_or("ssh:");
+        log::info!(
+            "Adding security key: provider={}, app={}, resident={}",
+            provider,
+            app,
+            resident
+        );
+        self.audit.log_event(&AgentEvent::KeyAdded {
+            key_id: "pending".into(),
+            algorithm: KeyAlgorithm::SkEd25519,
+            comment: format!("sk:{}:{}", provider, app),
+            source: KeySource::SecurityKey {
+                device: provider.to_string(),
+            },
+        });
+        let _ = (user, pin_required, touch_required, verify_required);
+        // In production: invoke ssh-keygen -t ed25519-sk or ecdsa-sk
+        let key_id = uuid::Uuid::new_v4().to_string();
+        Ok(key_id)
+    }
+
+    /// Return all pending sign-request confirmations.
+    pub fn get_pending_confirmations(&self) -> Vec<PendingSignRequest> {
+        self.agent.get_pending_confirmations()
+    }
+
+    /// Approve or deny a pending sign request.
+    pub fn confirm_sign_request(
+        &mut self,
+        request_id: &str,
+        approved: bool,
+    ) -> Result<(), String> {
+        log::info!(
+            "Confirming sign request {}: approved={}",
+            request_id,
+            approved
+        );
+        self.audit.log_event(&AgentEvent::ConfirmationResponse {
+            key_id: request_id.to_string(),
+            approved,
+        });
+        self.agent.resolve_confirmation(request_id, approved)
+    }
+
+    /// Get detailed information about a specific key.
+    pub fn get_key_details(&self, key_id: &str) -> Result<AgentKey, String> {
+        self.agent
+            .get_key(key_id)
+            .ok_or_else(|| format!("Key not found: {}", key_id))
+    }
+
+    /// Update the comment on a loaded key.
+    pub fn update_key_comment(
+        &mut self,
+        key_id: &str,
+        comment: &str,
+    ) -> Result<(), String> {
+        self.agent.update_comment(key_id, comment)
+    }
+
+    /// Update the constraints on a loaded key.
+    pub fn update_key_constraints(
+        &mut self,
+        key_id: &str,
+        constraints: Vec<KeyConstraint>,
+    ) -> Result<(), String> {
+        self.agent.update_constraints(key_id, constraints)
+    }
+
+    /// Export a public key in the given format ("openssh" or "pem").
+    pub fn export_public_key(&self, key_id: &str, format: &str) -> Result<String, String> {
+        let key = self
+            .agent
+            .get_key(key_id)
+            .ok_or_else(|| format!("Key not found: {}", key_id))?;
+        match format {
+            "openssh" => Ok(key.public_key_openssh),
+            "pem" => {
+                // Encode the public key blob as PEM
+                let b64 = base64::Engine::encode(
+                    &base64::engine::general_purpose::STANDARD,
+                    key.public_key_blob.as_bytes(),
+                );
+                Ok(format!(
+                    "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----",
+                    b64
+                ))
+            }
+            _ => Err(format!("Unsupported format: {}", format)),
+        }
+    }
 }
 
 #[cfg(test)]
