@@ -1,0 +1,19 @@
+[package]
+name = "sorng-os-detect"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Extensive OS and capabilities detection for SortOfRemoteNG — distro identification, version detection, init system detection, package manager detection, available service discovery, hardware profiling, architecture detection, kernel info, and capability matrix building for all major Linux distros, macOS, FreeBSD, and Windows."
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
