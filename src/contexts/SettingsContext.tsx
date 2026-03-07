@@ -267,6 +267,9 @@ const defaultSettings: GlobalSettings = {
   showBulkSSHIcon: true,
   showScriptManagerIcon: true,
   showMacroManagerIcon: true,
+  showServerStatsIcon: true,
+  showOpksshIcon: true,
+  showMcpServerIcon: true,
   showSyncBackupStatusIcon: false,     // Legacy combined - disabled by default
   showBackupStatusIcon: true,          // Separate backup icon
   showCloudSyncStatusIcon: true,       // Separate cloud sync icon

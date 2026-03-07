@@ -26,8 +26,8 @@ function TreeItemMenu({
   onConnectWithOptions: (c: Connection) => void;
   onConnectWithoutCredentials: (c: Connection) => void;
   onExecuteScripts: (c: Connection, sessionId?: string) => void;
-  onDiagnostics: (c: Connection) => void;
-  onDetachSession: (sessionId: string) => void;
+  onDiagnostics?: (c: Connection) => void;
+  onDetachSession?: (sessionId: string) => void;
   onDuplicate: (c: Connection) => void;
 }) {
   const { dispatch } = useConnections();
@@ -59,10 +59,10 @@ function TreeItemMenu({
           <button onClick={act(() => onExecuteScripts(connection, activeSession?.id))} className="sor-menu-item">
             <Play size={14} className="mr-2" />Execute scripts
           </button>
-          <button onClick={act(() => onDiagnostics(connection))} className="sor-menu-item">
+          {onDiagnostics && <button onClick={act(() => onDiagnostics(connection))} className="sor-menu-item">
             <Activity size={14} className="mr-2" />Diagnostics
-          </button>
-          {activeSession && (
+          </button>}
+          {activeSession && onDetachSession && (
             <button onClick={act(() => onDetachSession(activeSession.id))} className="sor-menu-item">
               <ExternalLink size={14} className="mr-2" />Detach window
             </button>

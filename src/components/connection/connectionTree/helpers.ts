@@ -49,8 +49,8 @@ export interface ConnectionTreeItemProps {
   onConnectWithOptions: (connection: Connection) => void;
   onConnectWithoutCredentials: (connection: Connection) => void;
   onExecuteScripts: (connection: Connection, sessionId?: string) => void;
-  onDiagnostics: (connection: Connection) => void;
-  onDetachSession: (sessionId: string) => void;
+  onDiagnostics?: (connection: Connection) => void;
+  onDetachSession?: (sessionId: string) => void;
   onDuplicate: (connection: Connection) => void;
   enableReorder: boolean;
   isDragging: boolean;

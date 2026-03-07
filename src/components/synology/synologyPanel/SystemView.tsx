@@ -151,7 +151,7 @@ const SystemView: React.FC<SubProps> = ({ mgr }) => {
               </div>
               <div>
                 <div className="text-lg font-semibold text-warning">
-                  {util.memory.physical_memory?.buffer ?? "—"}
+                  {util.memory.buffer ?? "—"}
                 </div>
                 <div className="text-[10px] text-[var(--color-text-secondary)]">
                   Buffer (KB)

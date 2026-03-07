@@ -126,7 +126,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
             <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
               Tunnel Type
             </label>
-            <Select value={form.type} onChange={(v: string) => setForm({
+            <Select value={form.type ?? "local"} onChange={(v: string) => setForm({
                   ...form,
                   type: v as "local" | "remote" | "dynamic",
                 })} options={[{ value: "local", label: "Local (forward local port to remote)" }, { value: "remote", label: "Remote (forward remote port to local)" }, { value: "dynamic", label: "Dynamic (SOCKS proxy)" }]} className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" />
@@ -145,7 +145,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
               <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
                 Local Port
               </label>
-              <NumberInput value={form.localPort} onChange={(v: number) => setForm({ ...form, localPort: v })} placeholder="0 = auto" className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" min={0} max={65535} />
+              <NumberInput value={form.localPort ?? 0} onChange={(v: number) => setForm({ ...form, localPort: v })} placeholder="0 = auto" className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" min={0} max={65535} />
               <p className="text-xs text-[var(--color-textSecondary)] mt-1">
                 0 = automatically assign
               </p>
@@ -156,7 +156,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
                 <label className="block text-sm font-medium text-[var(--color-text)] mb-1.5">
                   Remote Port <span className="text-error">*</span>
                 </label>
-                <NumberInput value={form.remotePort} onChange={(v: number) => setForm({
+                <NumberInput value={form.remotePort ?? 0} onChange={(v: number) => setForm({
                       ...form,
                       remotePort: v,
                     })} className="w-full px-3 py-2 bg-[var(--color-bgSecondary)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)]  focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary" min={1} max={65535} />
@@ -186,7 +186,7 @@ export const SSHTunnelDialog: React.FC<SSHTunnelDialogProps> = ({
           )}
 
           <div className="flex items-center gap-2 py-2">
-            <Checkbox checked={form.autoConnect} onChange={(v: boolean) => setForm({ ...form, autoConnect: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-bgSecondary)] text-primary focus:ring-primary/50" />
+            <Checkbox checked={form.autoConnect ?? false} onChange={(v: boolean) => setForm({ ...form, autoConnect: v })} className="w-4 h-4 rounded border-[var(--color-border)] bg-[var(--color-bgSecondary)] text-primary focus:ring-primary/50" />
             <label
               htmlFor="autoConnect"
               className="text-sm text-[var(--color-text)]"

@@ -66,7 +66,7 @@ export function useSSHOverrides(
 
   const globalConfig: SSHConnectionConfig = useMemo(
     () =>
-      (settings as Record<string, unknown>).sshConnection as SSHConnectionConfig ??
+      (settings as unknown as Record<string, unknown>).sshConnection as SSHConnectionConfig ??
       defaultSSHConnectionConfig,
     [settings],
   );

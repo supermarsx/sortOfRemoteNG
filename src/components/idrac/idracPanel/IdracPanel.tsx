@@ -28,9 +28,10 @@ import {
 
 export interface IdracPanelProps {
   connectionId?: string;
+  onClose?: () => void;
 }
 
-const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId }) => {
+const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId, onClose }) => {
   const { t } = useTranslation();
   const mgr = useIdracManager(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -89,7 +90,7 @@ const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId }) => {
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg)]">
-      <IdracHeader mgr={mgr} />
+      <IdracHeader mgr={mgr} onClose={onClose ?? (() => {})} />
 
       {/* Error Bar */}
       {mgr.dataError && (
@@ -103,7 +104,7 @@ const IdracPanel: React.FC<IdracPanelProps> = ({ connectionId }) => {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar mgr={mgr} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
+        <Sidebar mgr={mgr} />
         <div className="flex-1 flex flex-col overflow-hidden">
           {renderContent()}
         </div>

@@ -296,7 +296,7 @@ export const RecordingManager: React.FC<RecordingManagerProps> = ({
           { id: "webVideo", label: "Web (Video)", icon: Film, count: mgr.webVideoRecordings.length, activeColor: "border-accent text-accent" },
         ]}
         activeTab={mgr.activeTab}
-        onTabChange={mgr.switchTab}
+        onTabChange={mgr.switchTab as (id: string) => void}
       />
       <Toolbar mgr={mgr} />
       <StatsBar mgr={mgr} />

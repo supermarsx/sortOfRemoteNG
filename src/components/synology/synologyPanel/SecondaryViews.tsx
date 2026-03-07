@@ -527,7 +527,7 @@ export const DownloadsView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.downloadTasks.length > 0 ? (
         <div className="space-y-2">
           {mgr.downloadTasks.map((task) => {
-            const dl = task.additional?.transfer?.size_downloaded ?? 0;
+            const dl = task.size_downloaded ?? 0;
             const total = task.size ?? 0;
             const pct = total > 0 ? Math.round((dl / total) * 100) : 0;
             return (
@@ -757,13 +757,16 @@ export const SecurityView: React.FC<SubProps> = ({ mgr }) => {
         </h4>
         {mgr.certificates.length > 0 ? (
           <div className="space-y-2">
-            {mgr.certificates.map((cert) => (
-              <div key={cert.id ?? cert.subject?.common_name} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+            {mgr.certificates.map((cert) => {
+              const subjectName = typeof cert.subject === "object" ? cert.subject?.common_name : cert.subject;
+              const issuerName = typeof cert.issuer === "object" ? cert.issuer?.common_name : cert.issuer;
+              return (
+              <div key={cert.id ?? subjectName} className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-medium text-[var(--color-text)]">{cert.subject?.common_name ?? cert.desc ?? "Certificate"}</div>
+                    <div className="text-sm font-medium text-[var(--color-text)]">{subjectName ?? cert.desc ?? "Certificate"}</div>
                     <div className="text-[10px] text-[var(--color-text-secondary)]">
-                      Issuer: {cert.issuer?.common_name ?? "—"} | Expires: {cert.valid_till ?? "—"}
+                      Issuer: {issuerName ?? "—"} | Expires: {cert.valid_till ?? "—"}
                     </div>
                   </div>
                   {cert.is_default && (
@@ -771,7 +774,8 @@ export const SecurityView: React.FC<SubProps> = ({ mgr }) => {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-xs text-[var(--color-text-secondary)] py-4 text-center">No certificates</div>

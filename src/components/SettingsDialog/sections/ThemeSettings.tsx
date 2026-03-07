@@ -117,7 +117,7 @@ const TransparencySection: React.FC<{
         <label data-setting-key="windowTransparencyOpacity" className="text-xs text-[var(--color-textSecondary)]">Opacity Level</label>
         <div className="flex items-center gap-3">
           <Slider value={mgr.opacityValue} onChange={(v: number) => updateSettings({ windowTransparencyOpacity: v })} min={0} max={1} variant="full" className="flex-1" step={0.01} />
-          <NumberInput value={mgr.opacityValue.toFixed(2)} onChange={(v: number) => updateSettings({ windowTransparencyOpacity: v })} className="w-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-xs" min={0} max={1} step={0.01} />
+          <NumberInput value={mgr.opacityValue} onChange={(v: number) => updateSettings({ windowTransparencyOpacity: v })} className="w-20 px-2 py-1 bg-[var(--color-border)] border border-[var(--color-border)] rounded-md text-[var(--color-text)] text-xs" min={0} max={1} step={0.01} />
         </div>
       </div>
       <label data-setting-key="showTransparencyToggle" className="flex items-center space-x-3 cursor-pointer group">

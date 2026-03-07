@@ -1,6 +1,6 @@
 // Scheduled Tasks / Cron-like Automation types
 
-export type TaskKind = 'connect' | 'disconnect' | 'script' | 'health_check' | 'backup' | 'wake_on_lan' | 'notification' | 'custom';
+export type TaskKind = 'connect' | 'disconnect' | 'script' | 'health_check' | 'backup' | 'wake_on_lan' | 'notification' | 'custom' | 'connection_test';
 export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped';
 export type ScheduleType = 'cron' | 'interval' | 'once' | 'daily' | 'weekly' | 'monthly';
 

@@ -1,7 +1,7 @@
 import type { SectionProps } from "./types";
 import OverrideToggle from "./OverrideToggle";
 import { Checkbox, NumberInput, TextInput, Select } from "../../ui/forms";
-import { ProxyCommandTemplates } from "../../../types/ssh/sshSettings";
+import { ProxyCommandTemplates, type ProxyCommandTemplate } from "../../../types/ssh/sshSettings";
 
 const proxyTemplateOptions = [
   { value: "", label: "None (custom command)" },
@@ -110,7 +110,7 @@ const ForwardingSection: React.FC<SectionProps> = ({ mgr }) => {
             <span className="text-sm text-[var(--color-textSecondary)] w-28">Template</span>
             <Select
               value={v("proxyCommandTemplate") ?? ""}
-              onChange={(val: string) => u("proxyCommandTemplate", val || undefined)}
+              onChange={(val: string) => u("proxyCommandTemplate", val ? val as ProxyCommandTemplate : undefined)}
               options={proxyTemplateOptions}
               variant="form-sm"
             />

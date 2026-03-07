@@ -102,7 +102,7 @@ export const FirewallView: React.FC<SubProps> = ({ mgr }) => {
                   <td className="py-1.5 pr-3">{rule.source ?? "any"}</td>
                   <td className="py-1.5 pr-3">{rule.dest ?? "any"}</td>
                   <td className="py-1.5 pr-3">{rule.proto ?? "—"}</td>
-                  <td className="py-1.5">{rule.enable ? "✓" : "✗"}</td>
+                  <td className="py-1.5">{rule.enabled ? "✓" : "✗"}</td>
                 </tr>
               ))}
             </tbody>
@@ -214,7 +214,7 @@ export const CephView: React.FC<SubProps> = ({ mgr }) => {
       {mgr.cephStatus && (
         <div className="mb-4 p-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
           <div className="text-xs text-[var(--color-text-secondary)]">
-            Health: <span className="font-medium text-[var(--color-text)]">{mgr.cephStatus.health?.status ?? "—"}</span>
+            Health: <span className="font-medium text-[var(--color-text)]">{String(mgr.cephStatus.health?.status ?? "—")}</span>
           </div>
         </div>
       )}

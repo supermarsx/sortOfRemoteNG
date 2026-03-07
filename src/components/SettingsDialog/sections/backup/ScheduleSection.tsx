@@ -56,7 +56,7 @@ const ScheduleSection: React.FC<{ mgr: Mgr }> = ({ mgr }) => (
             Day of Month
           </label>
           <Select value={mgr.backup.monthlyDay} onChange={(v: string) =>
-              mgr.updateBackup({ monthlyDay: parseInt(v) })} options={[...Array.from({ length: 28 }, (_, i) => i + 1).map((day) => ({ value: day, label: day }))]} className="sor-settings-input" />
+              mgr.updateBackup({ monthlyDay: parseInt(v) })} options={[...Array.from({ length: 28 }, (_, i) => i + 1).map((day) => ({ value: day, label: String(day) }))]} className="sor-settings-input" />
         </div>
       )}
     </div>

@@ -86,9 +86,9 @@ function AuthTokenModal({ mgr }: { mgr: Mgr }) {
             <label className="block text-xs text-[var(--color-textSecondary)] mb-1">
               Token Expiry (epoch seconds, optional)
             </label>
-            <NumberInput value={mgr.authForm.tokenExpiry} onChange={(v: number) => mgr.setAuthForm({
+            <NumberInput value={Number(mgr.authForm.tokenExpiry) || 0} onChange={(v: number) => mgr.setAuthForm({
                   ...mgr.authForm,
-                  tokenExpiry: v,
+                  tokenExpiry: String(v),
                 })} className="sor-settings-input" min={0} />
           </div>
         </div>

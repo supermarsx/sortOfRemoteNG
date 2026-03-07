@@ -773,7 +773,7 @@ const Fido2Tab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
         {mgr.fido2PinStatus ? (
           <div className="flex flex-wrap gap-3 text-xs">
             <StatusBadge
-              ok={mgr.fido2PinStatus.is_set}
+              ok={mgr.fido2PinStatus.is_set ?? false}
               label={
                 mgr.fido2PinStatus.is_set
                   ? t("yubikey.fido2.pinSet", "PIN Set")

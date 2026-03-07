@@ -9,9 +9,9 @@ import PanelContextMenu from "./connectionTree/PanelContextMenu";
 
 interface ConnectionTreeProps {
   onConnect: (connection: Connection) => void;
-  onDisconnect: (id: string) => void;
+  onDisconnect: (connection: Connection) => void;
   onEdit: (connection: Connection) => void;
-  onDelete: (id: string) => void;
+  onDelete: (connection: Connection) => void;
   onDiagnostics?: (connection: Connection) => void;
   onSessionDetach?: (id: string) => void;
   onOpenImport?: () => void;

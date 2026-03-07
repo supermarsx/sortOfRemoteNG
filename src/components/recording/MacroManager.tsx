@@ -115,7 +115,7 @@ export const MacroManager: React.FC<MacroManagerProps> = ({ isOpen, onClose }) =
           { id: 'recordings', label: 'Recordings', icon: Disc, count: mgr.recordings.length },
         ]}
         activeTab={mgr.activeTab}
-        onTabChange={mgr.setActiveTab}
+        onTabChange={mgr.setActiveTab as (id: string) => void}
       />
       <Toolbar mgr={mgr} />
       <div className="flex-1 overflow-hidden flex">
