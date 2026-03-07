@@ -189,6 +189,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sorng-1password",
+ "sorng-about",
  "sorng-ai-agent",
  "sorng-ai-assist",
  "sorng-amavis",
@@ -209,6 +210,7 @@ dependencies = [
  "sorng-collaboration",
  "sorng-command-palette",
  "sorng-core",
+ "sorng-cpanel",
  "sorng-credentials",
  "sorng-cron",
  "sorng-cyrus-sasl",
@@ -247,6 +249,7 @@ dependencies = [
  "sorng-letsencrypt",
  "sorng-llm",
  "sorng-lxd",
+ "sorng-mac",
  "sorng-mailcow",
  "sorng-marketplace",
  "sorng-mcp",
@@ -273,6 +276,8 @@ dependencies = [
  "sorng-p2p",
  "sorng-pam",
  "sorng-passbolt",
+ "sorng-php",
+ "sorng-port-knock",
  "sorng-portable",
  "sorng-postfix",
  "sorng-postgres",
@@ -9101,6 +9106,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-about"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio-test",
+]
+
+[[package]]
 name = "sorng-ai-agent"
 version = "0.1.0"
 dependencies = [
@@ -9470,6 +9487,21 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio 1.48.0",
+]
+
+[[package]]
+name = "sorng-cpanel"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
 ]
 
 [[package]]
@@ -10143,6 +10175,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-mac"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-mailcow"
 version = "0.1.0"
 dependencies = [
@@ -10486,6 +10532,7 @@ name = "sorng-opkssh"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "dirs 5.0.1",
  "log 0.4.29",
  "serde",
  "serde_json",
@@ -10571,6 +10618,34 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio 1.48.0",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-php"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-port-knock"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "tokio-test",
  "uuid",
 ]
 

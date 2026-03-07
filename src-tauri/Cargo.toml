@@ -143,6 +143,11 @@ members = [
   "crates/sorng-os-detect",
   "crates/sorng-kernel",
   "crates/sorng-pam",
+  "crates/sorng-cpanel",
+  "crates/sorng-php",
+  "crates/sorng-port-knock",
+  "crates/sorng-about",
+  "crates/sorng-mac",
 ]
 
 [workspace.dependencies]
@@ -157,6 +162,7 @@ base64 = "0.21"
 rand = "0.8"
 reqwest = { version = "0.11", features = ["json", "cookies", "blocking"] }
 sha2 = "0.10"
+dirs = "5.0"
 
 [package]
 name = "app"
@@ -323,6 +329,11 @@ sorng-time-ntp = { path = "crates/sorng-time-ntp" }
 sorng-os-detect = { path = "crates/sorng-os-detect" }
 sorng-kernel = { path = "crates/sorng-kernel" }
 sorng-pam = { path = "crates/sorng-pam" }
+sorng-cpanel = { path = "crates/sorng-cpanel" }
+sorng-php = { path = "crates/sorng-php" }
+sorng-port-knock = { path = "crates/sorng-port-knock" }
+sorng-about = { path = "crates/sorng-about" }
+sorng-mac = { path = "crates/sorng-mac" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
@@ -334,7 +345,7 @@ tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tokio = { version = "1", features = ["full"] }
-dirs = "5.0"
+dirs = { workspace = true }
 tauri-plugin-window-state = "2"
 axum = "0.7"
 tower = "0.4"
