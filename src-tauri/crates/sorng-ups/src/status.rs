@@ -1,175 +1,111 @@
-//! UPS status monitoring – power quality, alarms, input/output stats.
+// ── sorng-ups – Status monitoring ─────────────────────────────────────────────
+//! Query UPS status variables via `upsc`.
 
 use crate::client::UpsClient;
+use crate::devices::{parse_upsc_output, DeviceManager};
 use crate::error::UpsResult;
 use crate::types::*;
 
 pub struct StatusManager;
 
 impl StatusManager {
-    /// Get comprehensive UPS status.
-    pub async fn get_status(client: &UpsClient, name: &str) -> UpsResult<UpsStatus> {
-        let raw = client.upsc(name, None).await?;
-        let vars = parse_vars(&raw);
-
-        let flags = vars
-            .get("ups.status")
-            .map(|s| parse_status_flags(s))
-            .unwrap_or_default();
-
-        Ok(UpsStatus {
-            status_flags: flags,
-            line_voltage: vars.get("input.voltage").and_then(|v| v.parse().ok()),
-            line_frequency: vars.get("input.frequency").and_then(|v| v.parse().ok()),
-            output_voltage: vars.get("output.voltage").and_then(|v| v.parse().ok()),
-            output_frequency: vars.get("output.frequency").and_then(|v| v.parse().ok()),
-            output_current: vars.get("output.current").and_then(|v| v.parse().ok()),
-            output_power: vars.get("output.power").and_then(|v| v.parse().ok()),
-            ups_load: vars.get("ups.load").and_then(|v| v.parse().ok()),
-            ups_temperature: vars.get("ups.temperature").and_then(|v| v.parse().ok()),
-            ups_efficiency: vars.get("ups.efficiency").and_then(|v| v.parse().ok()),
-            input_sensitivity: vars.get("input.sensitivity").cloned(),
-            alarm_status: vars
-                .get("ups.alarm")
-                .map(|a| a.split(',').map(|s| s.trim().to_string()).collect())
-                .unwrap_or_default(),
-            last_transfer_reason: vars.get("input.transfer.reason").cloned(),
-            self_test_result: vars.get("ups.test.result").cloned(),
-            self_test_date: vars.get("ups.test.date").cloned(),
-        })
+    /// Get full status for a device by parsing all `upsc` variables.
+    pub async fn get(client: &UpsClient, name: &str) -> UpsResult<UpsStatus> {
+        let raw = client.exec_upsc(name, None).await?;
+        let v = parse_upsc_output(&raw);
+        Ok(Self::build_status(name, &v))
     }
 
-    /// Get power quality metrics.
-    pub async fn get_power_quality(client: &UpsClient, name: &str) -> UpsResult<PowerQuality> {
-        let raw = client.upsc(name, None).await?;
-        let vars = parse_vars(&raw);
-
-        Ok(PowerQuality {
-            input_voltage_min: vars.get("input.voltage.minimum").and_then(|v| v.parse().ok()),
-            input_voltage_max: vars.get("input.voltage.maximum").and_then(|v| v.parse().ok()),
-            input_voltage_avg: vars.get("input.voltage").and_then(|v| v.parse().ok()),
-            input_frequency: vars.get("input.frequency").and_then(|v| v.parse().ok()),
-            input_sensitivity: vars.get("input.sensitivity").cloned(),
-            output_voltage: vars.get("output.voltage").and_then(|v| v.parse().ok()),
-            output_frequency: vars.get("output.frequency").and_then(|v| v.parse().ok()),
-            power_factor: vars.get("output.powerfactor").and_then(|v| v.parse().ok()),
-            apparent_power: vars.get("ups.power").and_then(|v| v.parse().ok()),
-            active_power: vars.get("ups.realpower").and_then(|v| v.parse().ok()),
-            reactive_power: None,
-            thd_voltage: None,
-            thd_current: None,
-        })
+    /// Quick one-line summary: status + load + battery charge.
+    pub async fn get_summary(client: &UpsClient, name: &str) -> UpsResult<String> {
+        let s = Self::get(client, name).await?;
+        Ok(format!(
+            "{}: status={} load={}% battery={}%",
+            s.device_name,
+            s.status.as_deref().unwrap_or("unknown"),
+            s.load_percent.map(|v| format!("{v:.1}")).unwrap_or_else(|| "?".into()),
+            s.battery_charge.map(|v| format!("{v:.1}")).unwrap_or_else(|| "?".into()),
+        ))
     }
 
-    /// Get current alarm messages.
-    pub async fn get_alarms(client: &UpsClient, name: &str) -> UpsResult<Vec<String>> {
-        let val = client.upsc(name, Some("ups.alarm")).await.unwrap_or_default();
-        if val.trim().is_empty() {
-            return Ok(Vec::new());
-        }
-        Ok(val.trim().split(',').map(|s| s.trim().to_string()).collect())
-    }
-
-    /// Get input power statistics.
-    pub async fn get_input_stats(client: &UpsClient, name: &str) -> UpsResult<serde_json::Value> {
-        let raw = client.upsc(name, None).await?;
-        let vars = parse_vars(&raw);
-        let mut stats = serde_json::Map::new();
-        for (k, v) in &vars {
-            if k.starts_with("input.") {
-                stats.insert(k.clone(), serde_json::Value::String(v.clone()));
-            }
-        }
-        Ok(serde_json::Value::Object(stats))
-    }
-
-    /// Get output power statistics.
-    pub async fn get_output_stats(client: &UpsClient, name: &str) -> UpsResult<serde_json::Value> {
-        let raw = client.upsc(name, None).await?;
-        let vars = parse_vars(&raw);
-        let mut stats = serde_json::Map::new();
-        for (k, v) in &vars {
-            if k.starts_with("output.") {
-                stats.insert(k.clone(), serde_json::Value::String(v.clone()));
-            }
-        }
-        Ok(serde_json::Value::Object(stats))
-    }
-
-    /// Get bypass information.
-    pub async fn get_bypass_info(client: &UpsClient, name: &str) -> UpsResult<serde_json::Value> {
-        let raw = client.upsc(name, None).await?;
-        let vars = parse_vars(&raw);
-        let mut info = serde_json::Map::new();
-        for (k, v) in &vars {
-            if k.starts_with("ups.bypass.") || k.contains("bypass") {
-                info.insert(k.clone(), serde_json::Value::String(v.clone()));
-            }
-        }
-        Ok(serde_json::Value::Object(info))
-    }
-
-    /// Check if UPS is running on battery.
+    /// True when `ups.status` contains `OB` (On Battery).
     pub async fn is_on_battery(client: &UpsClient, name: &str) -> UpsResult<bool> {
-        let val = client.upsc(name, Some("ups.status")).await?;
-        Ok(val.contains("OB"))
+        let val = client.exec_upsc(name, Some("ups.status")).await?;
+        Ok(val.trim().contains("OB"))
     }
 
-    /// Check if UPS is online (mains power).
+    /// True when `ups.status` contains `OL` (On Line).
     pub async fn is_online(client: &UpsClient, name: &str) -> UpsResult<bool> {
-        let val = client.upsc(name, Some("ups.status")).await?;
-        Ok(val.contains("OL"))
+        let val = client.exec_upsc(name, Some("ups.status")).await?;
+        Ok(val.trim().contains("OL"))
     }
 
-    /// Get UPS efficiency percentage.
-    pub async fn get_efficiency(client: &UpsClient, name: &str) -> UpsResult<Option<f64>> {
-        let val = client.upsc(name, Some("ups.efficiency")).await.unwrap_or_default();
-        Ok(val.trim().parse().ok())
+    /// Current load percentage.
+    pub async fn get_load(client: &UpsClient, name: &str) -> UpsResult<f64> {
+        let val = client.exec_upsc(name, Some("ups.load")).await?;
+        val.trim().parse::<f64>().map_err(|e| crate::error::UpsError::parse(e.to_string()))
     }
 
-    /// Get self-test result.
-    pub async fn get_self_test_result(client: &UpsClient, name: &str) -> UpsResult<Option<String>> {
-        let val = client.upsc(name, Some("ups.test.result")).await.unwrap_or_default();
-        let trimmed = val.trim().to_string();
-        if trimmed.is_empty() { Ok(None) } else { Ok(Some(trimmed)) }
+    /// Current input voltage.
+    pub async fn get_input_voltage(client: &UpsClient, name: &str) -> UpsResult<f64> {
+        let val = client.exec_upsc(name, Some("input.voltage")).await?;
+        val.trim().parse::<f64>().map_err(|e| crate::error::UpsError::parse(e.to_string()))
     }
-}
 
-// ── Helpers ──────────────────────────────────────────────────────────
+    /// Current output voltage.
+    pub async fn get_output_voltage(client: &UpsClient, name: &str) -> UpsResult<f64> {
+        let val = client.exec_upsc(name, Some("output.voltage")).await?;
+        val.trim().parse::<f64>().map_err(|e| crate::error::UpsError::parse(e.to_string()))
+    }
 
-fn parse_vars(raw: &str) -> std::collections::HashMap<String, String> {
-    let mut map = std::collections::HashMap::new();
-    for line in raw.lines() {
-        if let Some((k, v)) = line.split_once(": ") {
-            map.insert(k.to_string(), v.to_string());
+    /// UPS temperature (°C).
+    pub async fn get_temperature(client: &UpsClient, name: &str) -> UpsResult<f64> {
+        let val = client.exec_upsc(name, Some("ups.temperature")).await?;
+        val.trim().parse::<f64>().map_err(|e| crate::error::UpsError::parse(e.to_string()))
+    }
+
+    /// Get status for every device on the server.
+    pub async fn list_all_status(client: &UpsClient) -> UpsResult<Vec<UpsStatus>> {
+        let devices = DeviceManager::list(client).await?;
+        let mut statuses = Vec::new();
+        for dev in &devices {
+            if let Ok(s) = Self::get(client, &dev.name).await {
+                statuses.push(s);
+            }
+        }
+        Ok(statuses)
+    }
+
+    // ── Internal ────────────────────────────────────────────────
+
+    fn build_status(name: &str, v: &std::collections::HashMap<String, String>) -> UpsStatus {
+        UpsStatus {
+            device_name: name.to_string(),
+            status: v.get("ups.status").cloned(),
+            load_percent: v.get("ups.load").and_then(|s| s.parse().ok()),
+            input_voltage: v.get("input.voltage").and_then(|s| s.parse().ok()),
+            input_frequency: v.get("input.frequency").and_then(|s| s.parse().ok()),
+            output_voltage: v.get("output.voltage").and_then(|s| s.parse().ok()),
+            output_frequency: v.get("output.frequency").and_then(|s| s.parse().ok()),
+            output_current: v.get("output.current").and_then(|s| s.parse().ok()),
+            temperature: v.get("ups.temperature").and_then(|s| s.parse().ok()),
+            humidity: v.get("ambient.humidity").and_then(|s| s.parse().ok()),
+            battery_charge: v.get("battery.charge").and_then(|s| s.parse().ok()),
+            battery_voltage: v.get("battery.voltage").and_then(|s| s.parse().ok()),
+            battery_runtime: v.get("battery.runtime").and_then(|s| s.parse().ok()),
+            battery_type: v.get("battery.type").cloned(),
+            battery_date: v.get("battery.date").cloned(),
+            battery_mfr_date: v.get("battery.mfr.date").cloned(),
+            ups_power_nominal: v.get("ups.power.nominal").and_then(|s| s.parse().ok()),
+            ups_realpower: v.get("ups.realpower").and_then(|s| s.parse().ok()),
+            ups_realpower_nominal: v.get("ups.realpower.nominal").and_then(|s| s.parse().ok()),
+            beeper_status: v.get("ups.beeper.status").cloned(),
+            ups_delay_start: v.get("ups.delay.start").and_then(|s| s.parse().ok()),
+            ups_delay_shutdown: v.get("ups.delay.shutdown").and_then(|s| s.parse().ok()),
+            ups_timer_start: v.get("ups.timer.start").and_then(|s| s.parse().ok()),
+            ups_timer_shutdown: v.get("ups.timer.shutdown").and_then(|s| s.parse().ok()),
+            ups_test_result: v.get("ups.test.result").cloned(),
+            ups_test_date: v.get("ups.test.date").cloned(),
         }
     }
-    map
-}
-
-fn parse_status_flags(status: &str) -> Vec<UpsStatusFlag> {
-    let mut flags = Vec::new();
-    for token in status.split_whitespace() {
-        match token {
-            "OL" => flags.push(UpsStatusFlag::Online),
-            "OB" => flags.push(UpsStatusFlag::OnBattery),
-            "LB" => flags.push(UpsStatusFlag::LowBattery),
-            "HB" => flags.push(UpsStatusFlag::HighBattery),
-            "RB" => flags.push(UpsStatusFlag::Replacing),
-            "CHRG" => flags.push(UpsStatusFlag::Charging),
-            "DISCHRG" => flags.push(UpsStatusFlag::Discharging),
-            "BYPASS" => flags.push(UpsStatusFlag::Bypass),
-            "OFF" => flags.push(UpsStatusFlag::Off),
-            "OVER" => flags.push(UpsStatusFlag::Overload),
-            "TRIM" => flags.push(UpsStatusFlag::Trim),
-            "BOOST" => flags.push(UpsStatusFlag::Boost),
-            "FSD" => flags.push(UpsStatusFlag::ForcedShutdown),
-            "ALARM" => flags.push(UpsStatusFlag::Alarm),
-            "TEST" => flags.push(UpsStatusFlag::Test),
-            "CAL" => flags.push(UpsStatusFlag::Calibrating),
-            "COMM" => flags.push(UpsStatusFlag::Communication),
-            _ => {}
-        }
-    }
-    flags
 }

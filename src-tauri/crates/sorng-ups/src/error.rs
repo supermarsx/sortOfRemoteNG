@@ -10,15 +10,17 @@ pub enum UpsErrorKind {
     ConnectionFailed,
     AuthenticationFailed,
     DeviceNotFound,
-    DeviceOffline,
-    CommandFailed,
-    BatteryError,
+    DriverNotFound,
     OutletNotFound,
-    NutError,
+    ScheduleNotFound,
+    VariableNotFound,
+    CommandNotSupported,
+    TestFailed,
     ConfigError,
-    ScheduleError,
-    PermissionDenied,
+    NutError,
+    SshError,
     ParseError,
+    CommandFailed,
     Timeout,
     InternalError,
 }
@@ -56,32 +58,38 @@ impl UpsError {
     pub fn device_not_found(name: &str) -> Self {
         Self::new(UpsErrorKind::DeviceNotFound, format!("UPS device not found: {name}"))
     }
-    pub fn device_offline(name: &str) -> Self {
-        Self::new(UpsErrorKind::DeviceOffline, format!("UPS device offline: {name}"))
+    pub fn driver_not_found(name: &str) -> Self {
+        Self::new(UpsErrorKind::DriverNotFound, format!("Driver not found: {name}"))
     }
-    pub fn command(msg: impl Into<String>) -> Self {
-        Self::new(UpsErrorKind::CommandFailed, msg)
-    }
-    pub fn battery(msg: impl Into<String>) -> Self {
-        Self::new(UpsErrorKind::BatteryError, msg)
-    }
-    pub fn outlet_not_found(id: u32) -> Self {
+    pub fn outlet_not_found(id: &str) -> Self {
         Self::new(UpsErrorKind::OutletNotFound, format!("Outlet not found: {id}"))
     }
-    pub fn nut(msg: impl Into<String>) -> Self {
-        Self::new(UpsErrorKind::NutError, msg)
+    pub fn schedule_not_found(id: &str) -> Self {
+        Self::new(UpsErrorKind::ScheduleNotFound, format!("Schedule not found: {id}"))
+    }
+    pub fn variable_not_found(name: &str) -> Self {
+        Self::new(UpsErrorKind::VariableNotFound, format!("Variable not found: {name}"))
+    }
+    pub fn command_not_supported(cmd: &str) -> Self {
+        Self::new(UpsErrorKind::CommandNotSupported, format!("Command not supported: {cmd}"))
+    }
+    pub fn test_failed(msg: impl Into<String>) -> Self {
+        Self::new(UpsErrorKind::TestFailed, msg)
     }
     pub fn config(msg: impl Into<String>) -> Self {
         Self::new(UpsErrorKind::ConfigError, msg)
     }
-    pub fn schedule(msg: impl Into<String>) -> Self {
-        Self::new(UpsErrorKind::ScheduleError, msg)
+    pub fn nut(msg: impl Into<String>) -> Self {
+        Self::new(UpsErrorKind::NutError, msg)
     }
-    pub fn permission(msg: impl Into<String>) -> Self {
-        Self::new(UpsErrorKind::PermissionDenied, msg)
+    pub fn ssh(e: impl fmt::Display) -> Self {
+        Self::new(UpsErrorKind::SshError, e.to_string())
     }
     pub fn parse(msg: impl Into<String>) -> Self {
         Self::new(UpsErrorKind::ParseError, msg)
+    }
+    pub fn command_failed(msg: impl Into<String>) -> Self {
+        Self::new(UpsErrorKind::CommandFailed, msg)
     }
     pub fn timeout(msg: impl Into<String>) -> Self {
         Self::new(UpsErrorKind::Timeout, msg)

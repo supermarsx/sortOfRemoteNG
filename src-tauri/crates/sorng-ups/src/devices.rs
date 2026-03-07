@@ -1,4 +1,5 @@
-//! UPS device management – list, add, remove, inspect UPS devices.
+// ── sorng-ups – Device management ─────────────────────────────────────────────
+//! Discover and interact with UPS devices via NUT.
 
 use crate::client::UpsClient;
 use crate::error::{UpsError, UpsResult};
@@ -7,209 +8,180 @@ use crate::types::*;
 pub struct DeviceManager;
 
 impl DeviceManager {
-    /// List all UPS devices known to the NUT server.
+    /// List all UPS devices known to the NUT server (`upsc -l`).
     pub async fn list(client: &UpsClient) -> UpsResult<Vec<UpsDevice>> {
-        let out = client.exec_ssh("upsc -l 2>/dev/null").await?;
+        let addr = format!(
+            "{}:{}",
+            client.config.nut_host.as_deref().unwrap_or("localhost"),
+            client.config.nut_port.unwrap_or(3493),
+        );
+        let out = client
+            .exec_ssh(&format!("{} -l {}", client.upsc_bin(), addr))
+            .await?;
         let mut devices = Vec::new();
-        for name in out.stdout.lines() {
-            let name = name.trim();
+        for line in out.stdout.lines() {
+            let name = line.trim();
             if name.is_empty() {
                 continue;
             }
-            match Self::get(client, name).await {
-                Ok(d) => devices.push(d),
-                Err(_) => {
-                    devices.push(UpsDevice {
-                        name: name.to_string(),
-                        description: None,
-                        driver: String::new(),
-                        port: String::new(),
-                        manufacturer: None,
-                        model: None,
-                        serial: None,
-                        firmware_version: None,
-                        ups_status: None,
-                        battery_charge: None,
-                        battery_runtime: None,
-                        input_voltage: None,
-                        output_voltage: None,
-                        output_power: None,
-                        ups_load: None,
-                        ups_temperature: None,
-                        beeper_status: None,
-                    });
-                }
-            }
+            // Fetch basic info for each device
+            let dev = Self::get(client, name).await.unwrap_or(UpsDevice {
+                name: name.to_string(),
+                driver: None,
+                port: None,
+                description: None,
+                manufacturer: None,
+                model: None,
+                serial: None,
+                firmware: None,
+                status: None,
+            });
+            devices.push(dev);
         }
         Ok(devices)
     }
 
-    /// Get details for a single UPS device.
+    /// Get detailed info for a single UPS device.
     pub async fn get(client: &UpsClient, name: &str) -> UpsResult<UpsDevice> {
-        let raw = client.upsc(name, None).await?;
+        let raw = client.exec_upsc(name, None).await?;
         let vars = parse_upsc_output(&raw);
         Ok(UpsDevice {
             name: name.to_string(),
-            description: vars.get("ups.description").cloned().or_else(|| vars.get("ups.id").cloned()),
-            driver: vars.get("driver.name").cloned().unwrap_or_default(),
-            port: vars.get("driver.port").cloned().unwrap_or_default(),
-            manufacturer: vars.get("ups.mfr").cloned().or_else(|| vars.get("device.mfr").cloned()),
-            model: vars.get("ups.model").cloned().or_else(|| vars.get("device.model").cloned()),
-            serial: vars.get("ups.serial").cloned().or_else(|| vars.get("device.serial").cloned()),
-            firmware_version: vars.get("ups.firmware").cloned(),
-            ups_status: vars.get("ups.status").cloned(),
-            battery_charge: vars.get("battery.charge").and_then(|v| v.parse().ok()),
-            battery_runtime: vars.get("battery.runtime").and_then(|v| v.parse().ok()),
-            input_voltage: vars.get("input.voltage").and_then(|v| v.parse().ok()),
-            output_voltage: vars.get("output.voltage").and_then(|v| v.parse().ok()),
-            output_power: vars.get("ups.power").and_then(|v| v.parse().ok()),
-            ups_load: vars.get("ups.load").and_then(|v| v.parse().ok()),
-            ups_temperature: vars.get("ups.temperature").and_then(|v| v.parse().ok()),
-            beeper_status: vars.get("ups.beeper.status").cloned(),
+            driver: vars.get("driver.name").cloned(),
+            port: vars.get("driver.parameter.port").cloned(),
+            description: vars.get("ups.description").or(vars.get("device.description")).cloned(),
+            manufacturer: vars.get("device.mfr").or(vars.get("ups.mfr")).cloned(),
+            model: vars.get("device.model").or(vars.get("ups.model")).cloned(),
+            serial: vars.get("device.serial").or(vars.get("ups.serial")).cloned(),
+            firmware: vars.get("ups.firmware").cloned(),
+            status: vars.get("ups.status").cloned(),
         })
     }
 
-    /// Add a new UPS device to the NUT configuration.
-    pub async fn add(client: &UpsClient, req: &CreateDeviceRequest) -> UpsResult<CommandResult> {
-        let mut block = format!("[{}]\n  driver = {}\n  port = {}\n", req.name, req.driver, req.port);
-        if let Some(desc) = &req.description {
-            block.push_str(&format!("  desc = \"{}\"\n", desc));
-        }
-        if let Some(extra) = &req.extra_config {
-            for (k, v) in extra {
-                block.push_str(&format!("  {} = {}\n", k, v));
-            }
-        }
-        let existing = client.read_remote_file("/etc/nut/ups.conf").await.unwrap_or_default();
-        let new_content = format!("{}\n{}", existing.trim_end(), block);
-        client.write_remote_file("/etc/nut/ups.conf", &new_content).await?;
-        Ok(CommandResult { success: true, message: format!("Device '{}' added", req.name) })
-    }
-
-    /// Remove a UPS device from the NUT configuration.
-    pub async fn remove(client: &UpsClient, name: &str) -> UpsResult<CommandResult> {
-        let content = client.read_remote_file("/etc/nut/ups.conf").await?;
-        let mut result = String::new();
-        let mut skip = false;
-        for line in content.lines() {
-            if line.starts_with('[') {
-                let section = line.trim_start_matches('[').split(']').next().unwrap_or("");
-                skip = section == name;
-            }
-            if !skip {
-                result.push_str(line);
-                result.push('\n');
-            }
-        }
-        client.write_remote_file("/etc/nut/ups.conf", &result).await?;
-        Ok(CommandResult { success: true, message: format!("Device '{}' removed", name) })
-    }
-
-    /// List all variables for a UPS device.
+    /// List all variables for a device (`upsc <name>@host`).
     pub async fn list_variables(client: &UpsClient, name: &str) -> UpsResult<Vec<UpsVariable>> {
-        let raw = client.upsc(name, None).await?;
-        let rw_raw = client.exec_ssh(&format!(
-            "upsrw {}@{}:{} 2>/dev/null",
-            name,
-            client.nut_host(),
-            client.nut_port()
-        )).await.ok();
-        let rw_vars: Vec<String> = rw_raw
+        let raw = client.exec_upsc(name, None).await?;
+        let vars = parse_upsc_output(&raw);
+
+        // Get writable variables via `upsrw <name>@host`
+        let rw_out = client
+            .exec_ssh(&format!("{} {}", client.upsrw_bin(), client.upsc_cmd(name).split_whitespace().last().unwrap_or(name)))
+            .await
+            .ok();
+        let writable_set: std::collections::HashSet<String> = rw_out
             .map(|o| {
                 o.stdout
                     .lines()
-                    .filter(|l| l.starts_with('['))
-                    .map(|l| l.trim_start_matches('[').split(']').next().unwrap_or("").to_string())
+                    .filter_map(|l| {
+                        let l = l.trim();
+                        if l.starts_with('[') && l.ends_with(']') {
+                            Some(l.trim_start_matches('[').trim_end_matches(']').to_string())
+                        } else {
+                            None
+                        }
+                    })
                     .collect()
             })
             .unwrap_or_default();
 
-        let mut vars = Vec::new();
-        for line in raw.lines() {
-            if let Some((k, v)) = line.split_once(": ") {
-                vars.push(UpsVariable {
-                    name: k.to_string(),
-                    value: v.to_string(),
-                    type_: None,
-                    description: None,
-                    writable: rw_vars.contains(&k.to_string()),
-                });
-            }
-        }
-        Ok(vars)
+        let result: Vec<UpsVariable> = vars
+            .into_iter()
+            .map(|(k, v)| UpsVariable {
+                writable: writable_set.contains(&k),
+                name: k,
+                value: Some(v),
+                description: None,
+                data_type: None,
+                minimum: None,
+                maximum: None,
+                enum_values: Vec::new(),
+            })
+            .collect();
+        Ok(result)
     }
 
     /// Get a single variable value.
-    pub async fn get_variable(client: &UpsClient, name: &str, var: &str) -> UpsResult<String> {
-        let val = client.upsc(name, Some(var)).await?;
-        Ok(val.trim().to_string())
+    pub async fn get_variable(
+        client: &UpsClient,
+        name: &str,
+        var: &str,
+    ) -> UpsResult<UpsVariable> {
+        let raw = client.exec_upsc(name, Some(var)).await?;
+        let value = raw.trim().to_string();
+        Ok(UpsVariable {
+            name: var.to_string(),
+            value: Some(value),
+            writable: false,
+            description: None,
+            data_type: None,
+            minimum: None,
+            maximum: None,
+            enum_values: Vec::new(),
+        })
     }
 
-    /// Set a writable variable.
-    pub async fn set_variable(client: &UpsClient, name: &str, var: &str, val: &str) -> UpsResult<CommandResult> {
-        client.upsrw(name, var, val).await?;
-        Ok(CommandResult { success: true, message: format!("Variable {var} set to {val}") })
+    /// Set a writable variable via `upsrw`.
+    pub async fn set_variable(
+        client: &UpsClient,
+        name: &str,
+        var: &str,
+        value: &str,
+    ) -> UpsResult<()> {
+        client.exec_upsrw(name, var, value).await?;
+        Ok(())
     }
 
-    /// List instant commands supported by a UPS device.
-    pub async fn list_commands(client: &UpsClient, name: &str) -> UpsResult<Vec<String>> {
-        let target = format!("{}@{}:{}", name, client.nut_host(), client.nut_port());
-        let out = client.exec_ssh(&format!("upscmd -l {}", target)).await?;
-        let cmds: Vec<String> = out
-            .stdout
-            .lines()
-            .filter(|l| !l.is_empty() && !l.starts_with("Instant"))
-            .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        Ok(cmds)
-    }
-
-    /// List clients connected to a UPS device.
-    pub async fn list_clients(client: &UpsClient, name: &str) -> UpsResult<Vec<String>> {
+    /// List available instant commands for a device (`upscmd -l`).
+    pub async fn list_commands(client: &UpsClient, name: &str) -> UpsResult<Vec<UpsCommand>> {
+        let addr = format!(
+            "{}@{}:{}",
+            name,
+            client.config.nut_host.as_deref().unwrap_or("localhost"),
+            client.config.nut_port.unwrap_or(3493),
+        );
         let out = client
-            .exec_ssh(&format!(
-                "upsc -c {}@{}:{}",
-                name,
-                client.nut_host(),
-                client.nut_port()
-            ))
+            .exec_ssh(&format!("{} -l {}", client.upscmd_bin(), addr))
             .await?;
-        let clients: Vec<String> = out.stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
-        Ok(clients)
+        let mut commands = Vec::new();
+        for line in out.stdout.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("Instant commands") {
+                continue;
+            }
+            // Format: "command - description"
+            if let Some((cmd, desc)) = line.split_once(" - ") {
+                commands.push(UpsCommand {
+                    name: cmd.trim().to_string(),
+                    description: Some(desc.trim().to_string()),
+                });
+            } else {
+                commands.push(UpsCommand {
+                    name: line.to_string(),
+                    description: None,
+                });
+            }
+        }
+        Ok(commands)
     }
 
-    /// List available NUT drivers.
-    pub async fn list_drivers(client: &UpsClient) -> UpsResult<Vec<UpsDriver>> {
-        let out = client.exec_ssh("ls /lib/nut/ 2>/dev/null || ls /usr/lib/nut/ 2>/dev/null || echo ''").await?;
-        let drivers: Vec<UpsDriver> = out
-            .stdout
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| UpsDriver {
-                name: l.trim().to_string(),
-                version: None,
-                description: None,
-                supported_models: Vec::new(),
-            })
-            .collect();
-        Ok(drivers)
-    }
-
-    /// Get the device type (online, offline, line-interactive, etc.).
-    pub async fn get_device_type(client: &UpsClient, name: &str) -> UpsResult<String> {
-        let val = client.upsc(name, Some("ups.type")).await.unwrap_or_default();
-        Ok(val.trim().to_string())
+    /// Run an instant command via `upscmd`.
+    pub async fn run_command(
+        client: &UpsClient,
+        name: &str,
+        cmd: &str,
+    ) -> UpsResult<String> {
+        client.exec_upscmd(name, cmd).await
     }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn parse_upsc_output(raw: &str) -> std::collections::HashMap<String, String> {
+/// Parse `upsc` output lines of the form `key: value` into a map.
+pub fn parse_upsc_output(raw: &str) -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
     for line in raw.lines() {
-        if let Some((k, v)) = line.split_once(": ") {
-            map.insert(k.to_string(), v.to_string());
+        if let Some((key, value)) = line.split_once(':') {
+            map.insert(key.trim().to_string(), value.trim().to_string());
         }
     }
     map

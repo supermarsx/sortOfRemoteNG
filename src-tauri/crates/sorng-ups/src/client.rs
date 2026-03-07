@@ -1,110 +1,129 @@
-//! SSH/CLI client for UPS management via NUT commands.
+// ── sorng-ups – SSH/CLI client ────────────────────────────────────────────────
+//! Executes NUT commands (upsc, upscmd, upsrw, etc.) on a remote host via SSH.
 
 use crate::error::{UpsError, UpsResult};
 use crate::types::*;
 use log::debug;
-use reqwest::Client as HttpClient;
-use std::time::Duration;
 
 /// UPS management client – connects via SSH to manage NUT remotely.
 pub struct UpsClient {
     pub config: UpsConnectionConfig,
-    _http: HttpClient,
 }
 
 impl UpsClient {
     pub fn new(config: UpsConnectionConfig) -> UpsResult<Self> {
-        let http = HttpClient::builder()
-            .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
-            .build()
-            .map_err(|e| UpsError::connection(format!("http client build: {e}")))?;
-        Ok(Self { config, _http: http })
+        Ok(Self { config })
     }
 
-    // ── Path helpers ─────────────────────────────────────────────────
+    // ── Binary paths ─────────────────────────────────────────────
 
-    pub fn nut_host(&self) -> &str {
+    pub fn upsc_bin(&self) -> &str {
+        "upsc"
+    }
+
+    pub fn upscmd_bin(&self) -> &str {
+        "upscmd"
+    }
+
+    pub fn upsrw_bin(&self) -> &str {
+        "upsrw"
+    }
+
+    pub fn upsmon_bin(&self) -> &str {
+        "upsmon"
+    }
+
+    pub fn upsd_bin(&self) -> &str {
+        "upsd"
+    }
+
+    // ── NUT address helpers ──────────────────────────────────────
+
+    fn nut_host(&self) -> &str {
         self.config.nut_host.as_deref().unwrap_or("localhost")
     }
 
-    pub fn nut_port(&self) -> u16 {
+    fn nut_port(&self) -> u16 {
         self.config.nut_port.unwrap_or(3493)
     }
 
-    // ── SSH command execution stub ───────────────────────────────────
+    /// Build a NUT device address: `ups_name@host:port`
+    fn ups_addr(&self, ups_name: &str) -> String {
+        format!("{}@{}:{}", ups_name, self.nut_host(), self.nut_port())
+    }
+
+    /// Build the full `upsc` command string for a device.
+    pub fn upsc_cmd(&self, ups_name: &str) -> String {
+        format!("{} {}", self.upsc_bin(), self.ups_addr(ups_name))
+    }
+
+    // ── SSH command execution stub ───────────────────────────────
 
     pub async fn exec_ssh(&self, command: &str) -> UpsResult<SshOutput> {
         debug!("UPS SSH [{}]: {}", self.config.host, command);
-        Err(UpsError::not_connected(format!(
+        Err(UpsError::ssh(format!(
             "SSH execution not connected to {}. Command: {}",
             self.config.host, command
         )))
     }
 
-    // ── NUT command helpers ──────────────────────────────────────────
+    // ── NUT command wrappers ─────────────────────────────────────
 
-    /// Run a NUT command via the SSH connection (`upsc`, `upscmd`, `upsrw`, etc.).
-    pub async fn exec_nut_cmd(&self, cmd: &str, args: &[&str]) -> UpsResult<String> {
-        let escaped_args: Vec<String> = args.iter().map(|a| shell_escape(a)).collect();
-        let full = format!("{} {}", cmd, escaped_args.join(" "));
-        let out = self.exec_ssh(&full).await?;
-        if out.exit_code != 0 {
-            return Err(UpsError::command(format!("{cmd} failed: {}", out.stderr)));
-        }
-        Ok(out.stdout)
-    }
-
-    /// Run `upsc <ups_name>[@host[:port]] [var]`
-    pub async fn upsc(&self, ups_name: &str, var: Option<&str>) -> UpsResult<String> {
-        let target = format!("{}@{}:{}", ups_name, self.nut_host(), self.nut_port());
+    /// Run `upsc <ups>@<host>:<port> [var]` and return stdout.
+    pub async fn exec_upsc(&self, ups_name: &str, var: Option<&str>) -> UpsResult<String> {
         let cmd = match var {
-            Some(v) => format!("upsc {} {}", shell_escape(&target), shell_escape(v)),
-            None => format!("upsc {}", shell_escape(&target)),
+            Some(v) => format!("{} {} {}", self.upsc_bin(), self.ups_addr(ups_name), v),
+            None => self.upsc_cmd(ups_name),
         };
         let out = self.exec_ssh(&cmd).await?;
-        if out.exit_code != 0 {
-            return Err(UpsError::command(format!("upsc failed: {}", out.stderr)));
-        }
         Ok(out.stdout)
     }
 
-    /// Run `upscmd [-u user -p pass] <ups_name>[@host[:port]] <command>`
-    pub async fn upscmd(&self, ups_name: &str, cmd: &str) -> UpsResult<String> {
-        let target = format!("{}@{}:{}", ups_name, self.nut_host(), self.nut_port());
-        let auth = self.nut_auth_args();
-        let full = format!("upscmd {} {} {}", auth, shell_escape(&target), shell_escape(cmd));
-        let out = self.exec_ssh(&full).await?;
-        if out.exit_code != 0 {
-            return Err(UpsError::command(format!("upscmd failed: {}", out.stderr)));
-        }
-        Ok(out.stdout)
-    }
-
-    /// Run `upsrw [-s var=val] [-u user -p pass] <ups_name>[@host[:port]]`
-    pub async fn upsrw(&self, ups_name: &str, var: &str, val: &str) -> UpsResult<String> {
-        let target = format!("{}@{}:{}", ups_name, self.nut_host(), self.nut_port());
-        let auth = self.nut_auth_args();
+    /// Run `upscmd -u <user> -p <pass> <ups>@<host>:<port> <command>`.
+    pub async fn exec_upscmd(&self, ups_name: &str, cmd: &str) -> UpsResult<String> {
+        let nut_user = self.config.nut_user.as_deref().unwrap_or("admin");
+        let nut_pass = self.config.nut_password.as_deref().unwrap_or("");
         let full = format!(
-            "upsrw {} -s {}={} {}",
-            auth,
-            shell_escape(var),
-            shell_escape(val),
-            shell_escape(&target)
+            "{} -u {} -p {} {} {}",
+            self.upscmd_bin(),
+            shell_escape(nut_user),
+            shell_escape(nut_pass),
+            self.ups_addr(ups_name),
+            cmd
         );
         let out = self.exec_ssh(&full).await?;
-        if out.exit_code != 0 {
-            return Err(UpsError::command(format!("upsrw failed: {}", out.stderr)));
-        }
         Ok(out.stdout)
     }
 
-    /// Read a remote file via SSH.
+    /// Run `upsrw -s <var>=<value> -u <user> -p <pass> <ups>@<host>:<port>`.
+    pub async fn exec_upsrw(
+        &self,
+        ups_name: &str,
+        var: &str,
+        value: &str,
+    ) -> UpsResult<String> {
+        let nut_user = self.config.nut_user.as_deref().unwrap_or("admin");
+        let nut_pass = self.config.nut_password.as_deref().unwrap_or("");
+        let full = format!(
+            "{} -s {}={} -u {} -p {} {}",
+            self.upsrw_bin(),
+            var,
+            shell_escape(value),
+            shell_escape(nut_user),
+            shell_escape(nut_pass),
+            self.ups_addr(ups_name),
+        );
+        let out = self.exec_ssh(&full).await?;
+        Ok(out.stdout)
+    }
+
+    // ── File helpers ─────────────────────────────────────────────
+
     pub async fn read_remote_file(&self, path: &str) -> UpsResult<String> {
         let out = self.exec_ssh(&format!("cat {}", shell_escape(path))).await?;
         Ok(out.stdout)
     }
 
-    /// Write content to a remote file via SSH.
     pub async fn write_remote_file(&self, path: &str, content: &str) -> UpsResult<()> {
         let escaped = content.replace('\'', "'\\''");
         let cmd = format!(
@@ -116,21 +135,18 @@ impl UpsClient {
         Ok(())
     }
 
-    // ── Internal helpers ─────────────────────────────────────────────
-
-    fn nut_auth_args(&self) -> String {
-        match (&self.config.nut_user, &self.config.nut_password) {
-            (Some(u), Some(p)) => format!("-u {} -p {}", shell_escape(u), shell_escape(p)),
-            _ => String::new(),
-        }
+    pub async fn file_exists(&self, path: &str) -> UpsResult<bool> {
+        let out = self
+            .exec_ssh(&format!(
+                "test -f {} && echo yes || echo no",
+                shell_escape(path)
+            ))
+            .await?;
+        Ok(out.stdout.trim() == "yes")
     }
 }
 
-/// Minimal shell-escaping for argument interpolation.
+/// Minimal shell escaping to prevent injection via file paths or arguments.
 pub fn shell_escape(s: &str) -> String {
-    if s.chars().all(|c| c.is_alphanumeric() || c == '/' || c == '.' || c == '-' || c == '_' || c == ':' || c == '@') {
-        s.to_string()
-    } else {
-        format!("'{}'", s.replace('\'', "'\\''"))
-    }
+    format!("'{}'", s.replace('\'', "'\\''"))
 }

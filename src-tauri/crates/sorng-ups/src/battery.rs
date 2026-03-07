@@ -1,137 +1,107 @@
-//! Battery management – status, health, testing, calibration, history.
+// ── sorng-ups – Battery management ────────────────────────────────────────────
+//! Battery health, charge, runtime, and replacement queries via NUT variables.
 
 use crate::client::UpsClient;
-use crate::error::UpsResult;
+use crate::devices::parse_upsc_output;
+use crate::error::{UpsError, UpsResult};
 use crate::types::*;
 
 pub struct BatteryManager;
 
 impl BatteryManager {
-    /// Get comprehensive battery status.
-    pub async fn get_status(client: &UpsClient, name: &str) -> UpsResult<BatteryStatus> {
-        let raw = client.upsc(name, None).await?;
-        let vars = parse_vars(&raw);
+    /// Get comprehensive battery info by parsing `upsc` variables.
+    pub async fn get_info(client: &UpsClient, name: &str) -> UpsResult<BatteryInfo> {
+        let raw = client.exec_upsc(name, None).await?;
+        let v = parse_upsc_output(&raw);
+        Ok(BatteryInfo {
+            charge_percent: v.get("battery.charge").and_then(|s| s.parse().ok()),
+            voltage: v.get("battery.voltage").and_then(|s| s.parse().ok()),
+            voltage_nominal: v.get("battery.voltage.nominal").and_then(|s| s.parse().ok()),
+            voltage_low: v.get("battery.voltage.low").and_then(|s| s.parse().ok()),
+            voltage_high: v.get("battery.voltage.high").and_then(|s| s.parse().ok()),
+            runtime_seconds: v.get("battery.runtime").and_then(|s| s.parse().ok()),
+            runtime_low: v.get("battery.runtime.low").and_then(|s| s.parse().ok()),
+            temperature: v.get("battery.temperature").and_then(|s| s.parse().ok()),
+            type_name: v.get("battery.type").cloned(),
+            date: v.get("battery.date").cloned(),
+            mfr_date: v.get("battery.mfr.date").cloned(),
+            packs: v.get("battery.packs").and_then(|s| s.parse().ok()),
+            packs_bad: v.get("battery.packs.bad").and_then(|s| s.parse().ok()),
+            alarm_threshold: v.get("battery.alarm.threshold").cloned(),
+            charge_low: v.get("battery.charge.low").and_then(|s| s.parse().ok()),
+            charge_warning: v.get("battery.charge.warning").and_then(|s| s.parse().ok()),
+            charge_restart: v.get("battery.charge.restart").and_then(|s| s.parse().ok()),
+        })
+    }
 
-        let charge = vars.get("battery.charge").and_then(|v| v.parse::<f64>().ok());
-        let health = match charge {
-            Some(c) if c >= 80.0 => BatteryHealth::Good,
-            Some(c) if c >= 50.0 => BatteryHealth::Weak,
-            Some(_) => BatteryHealth::Replace,
-            None => BatteryHealth::Unknown,
+    /// Current battery charge percentage.
+    pub async fn get_charge(client: &UpsClient, name: &str) -> UpsResult<f64> {
+        let val = client.exec_upsc(name, Some("battery.charge")).await?;
+        val.trim()
+            .parse::<f64>()
+            .map_err(|e| UpsError::parse(e.to_string()))
+    }
+
+    /// Estimated remaining runtime in seconds.
+    pub async fn get_runtime(client: &UpsClient, name: &str) -> UpsResult<u64> {
+        let val = client.exec_upsc(name, Some("battery.runtime")).await?;
+        val.trim()
+            .parse::<u64>()
+            .map_err(|e| UpsError::parse(e.to_string()))
+    }
+
+    /// Current battery voltage.
+    pub async fn get_voltage(client: &UpsClient, name: &str) -> UpsResult<f64> {
+        let val = client.exec_upsc(name, Some("battery.voltage")).await?;
+        val.trim()
+            .parse::<f64>()
+            .map_err(|e| UpsError::parse(e.to_string()))
+    }
+
+    /// True if `ups.status` contains `LB` (Low Battery).
+    pub async fn is_low(client: &UpsClient, name: &str) -> UpsResult<bool> {
+        let val = client.exec_upsc(name, Some("ups.status")).await?;
+        Ok(val.trim().contains("LB"))
+    }
+
+    /// True if `ups.status` contains `RB` (Replace Battery).
+    pub async fn needs_replacement(client: &UpsClient, name: &str) -> UpsResult<bool> {
+        let val = client.exec_upsc(name, Some("ups.status")).await?;
+        Ok(val.trim().contains("RB"))
+    }
+
+    /// Simple health assessment string based on charge & status flags.
+    pub async fn get_health(client: &UpsClient, name: &str) -> UpsResult<String> {
+        let raw = client.exec_upsc(name, None).await?;
+        let v = parse_upsc_output(&raw);
+        let status = v.get("ups.status").cloned().unwrap_or_default();
+        let charge: f64 = v
+            .get("battery.charge")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.0);
+
+        let health = if status.contains("RB") {
+            "Replace battery"
+        } else if status.contains("LB") {
+            "Low battery"
+        } else if charge >= 80.0 {
+            "Good"
+        } else if charge >= 50.0 {
+            "Fair"
+        } else {
+            "Poor"
         };
-
-        Ok(BatteryStatus {
-            charge_percent: charge,
-            runtime_seconds: vars.get("battery.runtime").and_then(|v| v.parse().ok()),
-            voltage: vars.get("battery.voltage").and_then(|v| v.parse().ok()),
-            voltage_nominal: vars.get("battery.voltage.nominal").and_then(|v| v.parse().ok()),
-            current: vars.get("battery.current").and_then(|v| v.parse().ok()),
-            temperature: vars.get("battery.temperature").and_then(|v| v.parse().ok()),
-            date_installed: vars.get("battery.date").cloned(),
-            date_last_replaced: vars.get("battery.date.replacement").cloned(),
-            chemistry: vars.get("battery.type").cloned(),
-            packs: vars.get("battery.packs").and_then(|v| v.parse().ok()),
-            packs_bad: vars.get("battery.packs.bad").and_then(|v| v.parse().ok()),
-            health,
-            capacity_ah: vars.get("battery.capacity").and_then(|v| v.parse().ok()),
-            remaining_ah: None,
-            charge_cycles: None,
-        })
+        Ok(health.to_string())
     }
 
-    /// Get battery health assessment.
-    pub async fn get_health(client: &UpsClient, name: &str) -> UpsResult<BatteryHealth> {
-        let status = Self::get_status(client, name).await?;
-        Ok(status.health)
-    }
-
-    /// Start a battery test (quick, deep, or custom).
-    pub async fn start_test(client: &UpsClient, name: &str, test_type: &str) -> UpsResult<CommandResult> {
-        let cmd = match test_type {
-            "quick" => "test.battery.start.quick",
-            "deep" => "test.battery.start.deep",
-            _ => "test.battery.start",
-        };
-        client.upscmd(name, cmd).await?;
-        Ok(CommandResult {
-            success: true,
-            message: format!("Battery {} test started on {}", test_type, name),
-        })
-    }
-
-    /// Get the result of the last battery test.
-    pub async fn get_test_result(client: &UpsClient, name: &str) -> UpsResult<BatteryTest> {
-        let raw = client.upsc(name, None).await?;
-        let vars = parse_vars(&raw);
-        Ok(BatteryTest {
-            result: vars.get("ups.test.result").cloned(),
-            date: vars.get("ups.test.date").cloned(),
-            duration_secs: vars.get("ups.test.interval").and_then(|v| v.parse().ok()),
-            details: None,
-        })
-    }
-
-    /// Get estimated remaining runtime in seconds.
-    pub async fn get_runtime_estimate(client: &UpsClient, name: &str) -> UpsResult<Option<u64>> {
-        let val = client.upsc(name, Some("battery.runtime")).await.unwrap_or_default();
-        Ok(val.trim().parse().ok())
-    }
-
-    /// Get battery charge rate.
-    pub async fn get_charge_rate(client: &UpsClient, name: &str) -> UpsResult<Option<f64>> {
-        let val = client.upsc(name, Some("battery.charge.rate")).await.unwrap_or_default();
-        Ok(val.trim().parse().ok())
-    }
-
-    /// Get battery history from syslog / NUT logs.
-    pub async fn get_history(client: &UpsClient, _name: &str, limit: Option<u32>) -> UpsResult<Vec<serde_json::Value>> {
-        let lines = limit.unwrap_or(50);
-        let out = client
-            .exec_ssh(&format!("tail -n {} /var/log/nut/ups.log 2>/dev/null || echo ''", lines))
-            .await?;
-        let entries: Vec<serde_json::Value> = out
-            .stdout
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| serde_json::json!({ "raw": l }))
-            .collect();
-        Ok(entries)
-    }
-
-    /// Start battery runtime calibration.
-    pub async fn calibrate(client: &UpsClient, name: &str) -> UpsResult<CommandResult> {
-        client.upscmd(name, "calibrate.start").await?;
-        Ok(CommandResult {
-            success: true,
-            message: format!("Battery calibration started on {}", name),
-        })
-    }
-
-    /// Get battery replacement information.
-    pub async fn get_replacement_info(client: &UpsClient, name: &str) -> UpsResult<serde_json::Value> {
-        let raw = client.upsc(name, None).await?;
-        let vars = parse_vars(&raw);
-        let needs_replacement = vars
-            .get("ups.status")
-            .map(|s| s.contains("RB"))
-            .unwrap_or(false);
-        Ok(serde_json::json!({
-            "needs_replacement": needs_replacement,
-            "date_installed": vars.get("battery.date"),
-            "date_last_replaced": vars.get("battery.date.replacement"),
-            "chemistry": vars.get("battery.type"),
-            "packs": vars.get("battery.packs"),
-            "packs_bad": vars.get("battery.packs.bad"),
-        }))
-    }
-}
-
-fn parse_vars(raw: &str) -> std::collections::HashMap<String, String> {
-    let mut map = std::collections::HashMap::new();
-    for line in raw.lines() {
-        if let Some((k, v)) = line.split_once(": ") {
-            map.insert(k.to_string(), v.to_string());
+    /// Battery install date (`battery.date`).
+    pub async fn get_date(client: &UpsClient, name: &str) -> UpsResult<Option<String>> {
+        let val = client.exec_upsc(name, Some("battery.date")).await?;
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(trimmed.to_string()))
         }
     }
-    map
 }
