@@ -9739,6 +9739,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-dhcp"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-diskmgmt"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-dns"
 version = "0.1.0"
 dependencies = [
@@ -9842,6 +9868,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-etcd"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-exchange"
 version = "0.1.0"
 dependencies = [
@@ -9887,6 +9928,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-filesharing"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-filters"
 version = "0.1.0"
 dependencies = [
@@ -9910,6 +9964,20 @@ dependencies = [
  "serde_json",
  "tauri",
  "tokio 1.48.0",
+]
+
+[[package]]
+name = "sorng-freeipa"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
 ]
 
 [[package]]
@@ -10047,6 +10115,35 @@ dependencies = [
 
 [[package]]
 name = "sorng-haproxy"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-hashicorp-vault"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.7",
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-hetzner"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -10289,6 +10386,19 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio 1.48.0",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-ldap"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
  "uuid",
 ]
 
@@ -10820,6 +10930,19 @@ dependencies = [
  "sha2 0.10.9",
  "sorng-dns",
  "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-packages"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
  "uuid",
 ]
 
@@ -11600,6 +11723,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-syslog"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-systemd"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-tailscale"
 version = "0.1.0"
 dependencies = [
@@ -11799,6 +11948,19 @@ dependencies = [
  "serde_json",
  "tauri",
  "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-usermgmt"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tokio 1.48.0",
+ "tokio-test",
  "uuid",
 ]
 
@@ -12036,6 +12198,20 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-zabbix"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
  "tauri",
  "tokio 1.48.0",
  "uuid",

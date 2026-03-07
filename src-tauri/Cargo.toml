@@ -164,6 +164,19 @@ members = [
   "crates/sorng-grafana",
   "crates/sorng-ups",
   "crates/sorng-netbox",
+  "crates/sorng-hashicorp-vault",
+  "crates/sorng-zabbix",
+  "crates/sorng-freeipa",
+  "crates/sorng-dhcp",
+  "crates/sorng-diskmgmt",
+  "crates/sorng-etcd",
+  "crates/sorng-filesharing",
+  "crates/sorng-hetzner",
+  "crates/sorng-ldap",
+  "crates/sorng-packages",
+  "crates/sorng-syslog",
+  "crates/sorng-systemd",
+  "crates/sorng-usermgmt",
 ]
 
 [workspace.dependencies]
