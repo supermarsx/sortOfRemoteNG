@@ -66,7 +66,7 @@ impl HaproxyClient {
 
     pub async fn stats_http_csv(&self) -> HaproxyResult<String> {
         let url = self.config.stats_url.as_deref()
-            .ok_or_else(|| HaproxyError::not_connected("No stats_url configured".into()))?;
+            .ok_or_else(|| HaproxyError::not_connected("No stats_url configured"))?;
         let csv_url = format!("{};csv", url.trim_end_matches(';'));
         debug!("HAPROXY stats CSV GET {csv_url}");
         let mut req = self.http.get(&csv_url);
@@ -85,7 +85,7 @@ impl HaproxyClient {
 
     fn dp_url(&self, path: &str) -> HaproxyResult<String> {
         let base = self.config.dataplane_url.as_deref()
-            .ok_or_else(|| HaproxyError::not_connected("No dataplane_url configured".into()))?;
+            .ok_or_else(|| HaproxyError::not_connected("No dataplane_url configured"))?;
         Ok(format!("{}/v2{}", base.trim_end_matches('/'), path))
     }
 
@@ -260,8 +260,11 @@ impl HaproxyClient {
         Ok(HaproxyConnectionSummary {
             host: self.config.host.clone(),
             version,
-            dataplane_api: self.config.dataplane_url.is_some(),
-            stats_socket: self.config.stats_socket.is_some(),
+            node_name: None,
+            release_date: None,
+            uptime_secs: None,
+            process_num: None,
+            pid: None,
         })
     }
 

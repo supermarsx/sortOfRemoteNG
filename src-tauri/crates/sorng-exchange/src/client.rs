@@ -118,7 +118,7 @@ impl ExchangeClient {
     }
 
     /// GET a paged list from Graph API.
-    pub async fn graph_list<T: DeserializeOwned>(&self, path: &str) -> ExchangeResult<Vec<T>> {
+    pub async fn graph_list<T: DeserializeOwned + Default>(&self, path: &str) -> ExchangeResult<Vec<T>> {
         let mut results = Vec::new();
         let mut url = format!("{}{}", api::GRAPH_BASE, path);
         let auth = self.bearer_graph()?;

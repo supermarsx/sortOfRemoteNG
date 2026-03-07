@@ -1,6 +1,6 @@
 // ── amavis process management ────────────────────────────────────────────────
 
-use crate::client::{shell_escape, AmavisClient};
+use crate::client::AmavisClient;
 use crate::error::{AmavisError, AmavisResult};
 use crate::types::*;
 

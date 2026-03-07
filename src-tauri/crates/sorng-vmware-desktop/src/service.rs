@@ -59,7 +59,7 @@ impl VmwDesktopService {
 
         // Detect / configure vmrun
         let vmrun = if let Some(ref path) = config.vmrun_path {
-            VmRun::new(path, config.timeout_secs.unwrap_or(120))
+            VmRun::new(path, if cfg!(target_os = "macos") { "fusion" } else { "ws" }, config.timeout_secs)
         } else {
             VmRun::detect().map_err(|_| VmwError::vmrun_not_found())?
         };
@@ -72,7 +72,7 @@ impl VmwDesktopService {
             let url = format!("http://{}:{}", host, port);
             let user = config.vmrest_username.clone().unwrap_or_default();
             let pass = config.vmrest_password.clone().unwrap_or_default();
-            let client = VmRestClient::new(&url, &user, &pass)?;
+            let client = VmRestClient::new(host, port, &user, &pass)?;
             // Verify connectivity
             match client.ping().await {
                 Ok(_) => Some(client),
@@ -88,9 +88,9 @@ impl VmwDesktopService {
         let vmrest_available = rest.is_some();
         let product = host_info
             .as_ref()
-            .map(|h| h.product.clone())
+            .map(|h| h.product)
             .unwrap_or(VmwProduct::Unknown);
-        let version = host_info.as_ref().and_then(|h| h.version.clone());
+        let product_version = host_info.as_ref().and_then(|h| h.product_version.clone());
 
         self.vmrun = Some(vmrun);
         self.rest = rest;
@@ -99,12 +99,11 @@ impl VmwDesktopService {
         self.connected = true;
 
         Ok(VmwConnectionSummary {
-            connected: true,
             product,
-            version,
+            product_version,
             vmrun_available: true,
             vmrest_available,
-            host_info: self.host_info.clone(),
+            vm_count: 0,
         })
     }
 
@@ -121,16 +120,15 @@ impl VmwDesktopService {
     /// Get current connection summary.
     pub fn connection_summary(&self) -> VmwConnectionSummary {
         VmwConnectionSummary {
-            connected: self.connected,
             product: self
                 .host_info
                 .as_ref()
-                .map(|h| h.product.clone())
+                .map(|h| h.product)
                 .unwrap_or(VmwProduct::Unknown),
-            version: self.host_info.as_ref().and_then(|h| h.version.clone()),
+            product_version: self.host_info.as_ref().and_then(|h| h.product_version.clone()),
             vmrun_available: self.vmrun.is_some(),
             vmrest_available: self.rest.is_some(),
-            host_info: self.host_info.clone(),
+            vm_count: 0,
         }
     }
 

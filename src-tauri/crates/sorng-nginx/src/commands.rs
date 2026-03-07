@@ -133,7 +133,7 @@ pub async fn ngx_update_upstream(
     state: State<'_, NginxServiceState>,
     id: String,
     name: String,
-    request: CreateUpstreamRequest,
+    request: UpdateUpstreamRequest,
 ) -> CmdResult<NginxUpstream> {
     state.lock().await.update_upstream(&id, &name, request).await.map_err(map_err)
 }

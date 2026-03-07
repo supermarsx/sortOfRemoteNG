@@ -10,8 +10,7 @@ use crate::types::*;
 use log::{debug, error, info, warn};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::broadcast;
 
 /// Built-in SSH agent that manages keys and handles protocol requests.
 pub struct BuiltinAgent {
@@ -118,7 +117,7 @@ impl BuiltinAgent {
         };
 
         let fingerprint = key.fingerprint_sha256.clone();
-        let key_id = key.id.clone();
+        let _key_id = key.id.clone();
         let algorithm = key.algorithm.clone();
         let data_hash = hex::encode(Sha256::digest(data));
 
@@ -311,12 +310,12 @@ impl BuiltinAgent {
         AgentMessage::Failure
     }
 
-    fn handle_extension(&mut self, name: &str, data: &[u8]) -> AgentMessage {
+    fn handle_extension(&mut self, name: &str, _data: &[u8]) -> AgentMessage {
         debug!("Extension request: {}", name);
         match name {
             protocol::extensions::QUERY => {
                 // Return the list of supported extensions
-                let supported = format!(
+                let _supported = format!(
                     "{}\n{}\n",
                     protocol::extensions::SESSION_BIND,
                     protocol::extensions::RESTRICT_DESTINATION,

@@ -36,7 +36,7 @@ impl<'a> BiosManager<'a> {
             .or_else(|| bios.pointer("/@Redfish.Settings/SettingsObject/@odata.id"))
             .and_then(|v| v.as_str())
         {
-            if let Ok(pending) = rf.inner.get(pending_link).await {
+            if let Ok(pending) = rf.inner.get::<serde_json::Value>(pending_link).await {
                 if let Some(pending_attrs) = pending.get("Attributes").and_then(|v| v.as_object()) {
                     for attr in &mut attrs {
                         if let Some(pending_val) = pending_attrs.get(&attr.name) {

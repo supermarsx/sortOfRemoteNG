@@ -42,6 +42,7 @@ impl<'a> FirmwareManager<'a> {
                     sub_device_id: f.pointer("/Oem/Dell/DellSoftwareInventory/SubDeviceID").and_then(|v| v.as_str()).map(|s| s.to_string()),
                     sub_vendor_id: f.pointer("/Oem/Dell/DellSoftwareInventory/SubVendorID").and_then(|v| v.as_str()).map(|s| s.to_string()),
                     install_date: f.pointer("/Oem/Dell/DellSoftwareInventory/InstallationDate").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    release_date: f.get("ReleaseDate").and_then(|v| v.as_str()).map(|s| s.to_string()),
                     size_bytes: f.get("SizeBytes").and_then(|v| v.as_u64()),
                 })
                 .collect());
@@ -69,6 +70,7 @@ impl<'a> FirmwareManager<'a> {
                         sub_device_id: get("SubDeviceID"),
                         sub_vendor_id: get("SubVendorID"),
                         install_date: get("InstallationDate"),
+                        release_date: None,
                         size_bytes: None,
                     }
                 })

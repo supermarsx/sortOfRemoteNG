@@ -53,7 +53,6 @@ pub async fn ilo_connect(
         insecure: insecure.unwrap_or(true),
         timeout_secs: timeout_secs.unwrap_or(30),
         ipmi_port: ipmi_port.unwrap_or(623),
-        generation: gen,
     };
     let mut svc = state.lock().await;
     svc.connect(config).await.map_err(|e| e.to_string())
@@ -381,8 +380,8 @@ pub async fn ilo_generate_csr(
     let params = CsrParams {
         common_name,
         country,
-        state: state_name,
-        city,
+        state: Some(state_name),
+        city: Some(city),
         organization,
         organizational_unit,
     };

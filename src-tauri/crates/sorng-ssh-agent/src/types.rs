@@ -73,6 +73,21 @@ impl KeyAlgorithm {
             Self::Dsa => 1024,
         }
     }
+
+    /// Parse from an SSH algorithm name string.
+    pub fn from_ssh_name(name: &str) -> Self {
+        match name {
+            "ssh-rsa" | "rsa-sha2-256" | "rsa-sha2-512" => Self::Rsa,
+            "ssh-ed25519" => Self::Ed25519,
+            "ecdsa-sha2-nistp256" => Self::EcdsaP256,
+            "ecdsa-sha2-nistp384" => Self::EcdsaP384,
+            "ecdsa-sha2-nistp521" => Self::EcdsaP521,
+            "sk-ssh-ed25519@openssh.com" => Self::SkEd25519,
+            "sk-ecdsa-sha2-nistp256@openssh.com" => Self::SkEcdsaP256,
+            "ssh-dss" => Self::Dsa,
+            _ => Self::Ed25519,
+        }
+    }
 }
 
 impl Default for KeyAlgorithm {
@@ -118,17 +133,15 @@ pub struct AgentKey {
     pub fingerprint_sha256: String,
     /// MD5 fingerprint (hex, legacy compat).
     pub fingerprint_md5: String,
-    /// The public key blob (OpenSSH wire format, base64).
-    pub public_key_blob: String,
+    /// The public key blob (OpenSSH wire format).
+    pub public_key_blob: Vec<u8>,
     /// The public key in OpenSSH authorized_keys format.
     pub public_key_openssh: String,
     /// Where the key came from.
     pub source: KeySource,
     /// Active constraints on this key.
     pub constraints: Vec<KeyConstraint>,
-    /// Whether this is an SSH certificate (not just a plain key).
-    pub is_certificate: bool,
-    /// Certificate details (if `is_certificate`).
+    /// Certificate details (if this is an SSH certificate).
     pub certificate: Option<CertificateInfo>,
     /// When the key was added to the agent.
     pub added_at: DateTime<Utc>,
@@ -155,7 +168,7 @@ pub enum KeySource {
     /// FIDO2 / Security Key hardware token.
     SecurityKey { device: String },
     /// Imported from another application.
-    Imported { source: String },
+    Imported,
     /// Received through agent forwarding.
     Forwarded { session_id: String },
 }
@@ -203,25 +216,25 @@ pub enum CertificateType {
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum KeyConstraint {
     /// Key expires after a number of seconds.
-    Lifetime { seconds: u32 },
+    Lifetime(u64),
     /// User must confirm each use (touch / dialog).
     ConfirmBeforeUse,
     /// Maximum number of signing operations.
-    MaxSignatures { max: u64 },
+    MaxSignatures(u64),
     /// Restrict to specific destination hosts.
-    HostRestriction { allowed_hosts: Vec<String> },
+    HostRestriction(Vec<String>),
     /// Restrict to specific usernames.
-    UserRestriction { allowed_users: Vec<String> },
+    UserRestriction(Vec<String>),
     /// Restrict forwarding depth (0 = no forwarding).
-    ForwardingDepth { max_depth: u32 },
+    ForwardingDepth(u32),
     /// Extension constraint (implementation-defined).
-    Extension { name: String, value: String },
+    Extension { name: String, data: Vec<u8> },
 }
 
 impl KeyConstraint {
     /// Check if a lifetime constraint has expired.
     pub fn is_lifetime_expired(&self, added_at: DateTime<Utc>) -> bool {
-        if let Self::Lifetime { seconds } = self {
+        if let Self::Lifetime(seconds) = self {
             let expiry = added_at + chrono::Duration::seconds(*seconds as i64);
             Utc::now() > expiry
         } else {
@@ -231,7 +244,7 @@ impl KeyConstraint {
 
     /// Check if max-signature constraint is reached.
     pub fn is_max_signatures_reached(&self, current_count: u64) -> bool {
-        if let Self::MaxSignatures { max } = self {
+        if let Self::MaxSignatures(max) = self {
             current_count >= *max
         } else {
             false
@@ -330,6 +343,23 @@ pub struct AgentConfig {
     /// PKCS#11 provider library paths to load.
     #[serde(default)]
     pub pkcs11_providers: Vec<String>,
+
+    // ── Built-in agent ──
+    /// Maximum concurrent keys in the built-in agent (0 = unlimited).
+    #[serde(default = "default_max_keys")]
+    pub max_loaded_keys: usize,
+    /// Automatically connect to system SSH agent on start.
+    #[serde(default = "default_true")]
+    pub auto_connect_system_agent: bool,
+    /// System agent identity cache TTL in seconds.
+    #[serde(default = "default_cache_ttl")]
+    pub system_agent_cache_ttl: u64,
+    /// Maximum audit entries to keep in memory.
+    #[serde(default = "default_max_audit_events")]
+    pub audit_max_entries: usize,
+    /// Path to the persistent audit log file (empty = none).
+    #[serde(default)]
+    pub audit_file: String,
 }
 
 fn default_true() -> bool { true }
@@ -339,6 +369,7 @@ fn default_max_keys() -> usize { 256 }
 fn default_min_rsa_bits() -> u32 { 2048 }
 fn default_max_forward_depth() -> u32 { 5 }
 fn default_max_audit_events() -> usize { 1000 }
+fn default_cache_ttl() -> u64 { 300 }
 
 impl Default for AgentConfig {
     fn default() -> Self {
@@ -367,6 +398,11 @@ impl Default for AgentConfig {
             audit_enabled: true,
             max_audit_events: 1000,
             pkcs11_providers: Vec::new(),
+            max_loaded_keys: 256,
+            auto_connect_system_agent: true,
+            system_agent_cache_ttl: 300,
+            audit_max_entries: 1000,
+            audit_file: String::new(),
         }
     }
 }
@@ -376,34 +412,34 @@ impl Default for AgentConfig {
 /// Current state of the SSH agent service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentStatus {
-    /// Agent instance name.
-    pub name: String,
     /// Whether the agent is running.
     pub running: bool,
     /// Whether the agent is locked.
     pub locked: bool,
     /// Socket path being listened on.
     pub socket_path: Option<String>,
-    /// TCP listen address (if enabled).
-    pub tcp_address: Option<String>,
-    /// Number of keys held.
-    pub key_count: usize,
-    /// Number of certificate keys.
-    pub certificate_count: usize,
-    /// Number of forwarded sessions.
-    pub forwarding_sessions: usize,
     /// System agent connection status.
     pub system_agent_connected: bool,
-    /// Number of PKCS#11 providers loaded.
-    pub pkcs11_providers_loaded: usize,
-    /// Total signing operations since start.
-    pub total_sign_operations: u64,
-    /// Agent uptime in seconds.
-    pub uptime_secs: u64,
-    /// Last activity timestamp.
-    pub last_activity: Option<DateTime<Utc>>,
-    /// Recent events (last N).
-    pub recent_events: Vec<AgentEvent>,
+    /// Number of keys currently loaded.
+    pub loaded_keys: u32,
+    /// Number of active forwarding sessions.
+    pub forwarding_sessions: u32,
+    /// When the agent was started.
+    pub started_at: Option<DateTime<Utc>>,
+}
+
+impl Default for AgentStatus {
+    fn default() -> Self {
+        Self {
+            running: false,
+            locked: false,
+            socket_path: None,
+            system_agent_connected: false,
+            loaded_keys: 0,
+            forwarding_sessions: 0,
+            started_at: None,
+        }
+    }
 }
 
 // ── Agent Events ────────────────────────────────────────────────────
@@ -413,7 +449,7 @@ pub struct AgentStatus {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentEvent {
     /// Agent started.
-    Started { socket_path: Option<String> },
+    Started,
     /// Agent stopped.
     Stopped,
     /// Agent locked by passphrase.
@@ -423,27 +459,23 @@ pub enum AgentEvent {
     /// Key added to agent.
     KeyAdded {
         key_id: String,
-        algorithm: KeyAlgorithm,
-        comment: String,
-        source: KeySource,
+        fingerprint: String,
     },
     /// Key removed from agent.
     KeyRemoved {
         key_id: String,
-        comment: String,
+        fingerprint: String,
     },
     /// All keys removed.
     AllKeysRemoved,
     /// Signing request.
     SignRequest {
-        key_id: String,
-        fingerprint: String,
-        session_info: Option<String>,
+        key_fingerprint: String,
+        data_hash: String,
     },
     /// Signing completed.
     SignCompleted {
-        key_id: String,
-        fingerprint: String,
+        key_fingerprint: String,
         success: bool,
     },
     /// Forwarding session started.
@@ -461,26 +493,20 @@ pub enum AgentEvent {
         constraint: String,
     },
     /// Confirmation requested for key use.
-    ConfirmationRequested {
-        key_id: String,
-        fingerprint: String,
-        operation: String,
-    },
+    ConfirmationRequested(PendingSignRequest),
     /// Confirmation response.
     ConfirmationResponse {
-        key_id: String,
+        request_id: String,
         approved: bool,
     },
     /// System agent bridge event.
     SystemAgentEvent {
-        connected: bool,
-        message: String,
+        event: String,
     },
     /// PKCS#11 provider event.
     Pkcs11Event {
         provider: String,
-        loaded: bool,
-        key_count: usize,
+        event: String,
     },
     /// Error event.
     Error {
@@ -502,10 +528,16 @@ pub struct AuditEntry {
     pub id: String,
     /// When the event occurred.
     pub timestamp: DateTime<Utc>,
-    /// The event.
-    pub event: AgentEvent,
+    /// The action performed.
+    pub action: String,
+    /// Key fingerprint (if applicable).
+    pub key_fingerprint: Option<String>,
     /// Client info (source address, process, etc.).
     pub client_info: Option<ClientInfo>,
+    /// Whether the operation succeeded.
+    pub success: bool,
+    /// Additional details.
+    pub details: String,
 }
 
 /// Information about the client making a request.
@@ -526,22 +558,16 @@ pub struct ClientInfo {
 pub struct PendingSignRequest {
     /// Request ID.
     pub id: String,
-    /// Key being asked to sign.
-    pub key_id: String,
     /// Key fingerprint.
-    pub fingerprint: String,
-    /// Key comment.
-    pub comment: String,
-    /// What is being signed (session ID hash, etc.).
-    pub data_description: String,
-    /// Flags from the sign request.
-    pub flags: u32,
+    pub key_fingerprint: String,
+    /// Hash of the data to be signed.
+    pub data_hash: String,
     /// Client info.
     pub client_info: Option<ClientInfo>,
     /// When the request was received.
     pub requested_at: DateTime<Utc>,
-    /// Timeout in seconds.
-    pub timeout_secs: u32,
+    /// When the request expires.
+    pub expires_at: DateTime<Utc>,
 }
 
 // ── Forwarding Session ──────────────────────────────────────────────
@@ -551,22 +577,20 @@ pub struct PendingSignRequest {
 pub struct ForwardingSession {
     /// Session ID.
     pub id: String,
-    /// SSH session this forwarding is attached to.
-    pub ssh_session_id: String,
     /// Remote host being forwarded through.
     pub remote_host: String,
     /// Remote user.
     pub remote_user: String,
-    /// Which keys are allowed for this forwarding session.
-    pub allowed_keys: Vec<String>,
-    /// Current forwarding depth.
-    pub depth: u32,
     /// When the session started.
     pub started_at: DateTime<Utc>,
+    /// Current forwarding depth.
+    pub depth: u32,
+    /// Whether the session is currently active.
+    pub active: bool,
+    /// JSON-serialised key filter (empty = allow all).
+    pub key_filter: String,
     /// Number of sign requests served.
     pub sign_count: u64,
-    /// Whether confirmations are required.
-    pub require_confirm: bool,
 }
 
 // ── PKCS#11 ─────────────────────────────────────────────────────────
@@ -620,14 +644,14 @@ mod tests {
 
     #[test]
     fn test_key_constraint_lifetime() {
-        let c = KeyConstraint::Lifetime { seconds: 0 };
+        let c = KeyConstraint::Lifetime(0);
         let past = Utc::now() - chrono::Duration::seconds(10);
         assert!(c.is_lifetime_expired(past));
     }
 
     #[test]
     fn test_key_constraint_max_signatures() {
-        let c = KeyConstraint::MaxSignatures { max: 5 };
+        let c = KeyConstraint::MaxSignatures(5);
         assert!(!c.is_max_signatures_reached(4));
         assert!(c.is_max_signatures_reached(5));
         assert!(c.is_max_signatures_reached(6));

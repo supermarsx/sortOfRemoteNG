@@ -14,7 +14,7 @@ use crate::server;
 use crate::transport::{McpHttpRequest, HttpMethod};
 use crate::types::*;
 
-use log::{info, warn};
+use log::info;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -41,7 +41,7 @@ pub struct McpService {
     /// Whether the HTTP server is currently running.
     pub running: bool,
     /// Timestamp when the server was last started.
-    pub started_at: Option<String>,
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Last error message.
     pub last_error: Option<String>,
 }
@@ -50,14 +50,14 @@ impl McpService {
     /// Create a new MCP service with default config (disabled).
     pub fn new() -> Self {
         let config = McpServerConfig::default();
-        let sessions = SessionManager::new(&config);
-        let auth = AuthManager::new(&config);
+        let sessions = SessionManager::new(config.max_sessions, config.session_timeout_secs);
+        let auth = AuthManager::new(config.api_key.clone(), config.require_auth);
 
         Self {
             config,
             sessions,
             auth,
-            log_buffer: McpLogBuffer::new(),
+            log_buffer: McpLogBuffer::new(McpLogLevel::Info),
             metrics: McpMetrics::default(),
             events: Vec::new(),
             tool_call_logs: Vec::new(),
@@ -69,14 +69,14 @@ impl McpService {
 
     /// Create a new MCP service with the given config.
     pub fn with_config(config: McpServerConfig) -> Self {
-        let sessions = SessionManager::new(&config);
-        let auth = AuthManager::new(&config);
+        let sessions = SessionManager::new(config.max_sessions, config.session_timeout_secs);
+        let auth = AuthManager::new(config.api_key.clone(), config.require_auth);
 
         Self {
             config,
             sessions,
             auth,
-            log_buffer: McpLogBuffer::new(),
+            log_buffer: McpLogBuffer::new(McpLogLevel::Info),
             metrics: McpMetrics::default(),
             events: Vec::new(),
             tool_call_logs: Vec::new(),
@@ -101,7 +101,7 @@ impl McpService {
         info!("Starting MCP server on {}", addr);
 
         self.running = true;
-        self.started_at = Some(chrono::Utc::now().to_rfc3339());
+        self.started_at = Some(chrono::Utc::now());
         self.last_error = None;
 
         self.log_buffer.log(
@@ -130,7 +130,7 @@ impl McpService {
 
         // Cleanup sessions
         let session_count = self.sessions.active_count();
-        self.sessions = SessionManager::new(&self.config);
+        self.sessions = SessionManager::new(self.config.max_sessions, self.config.session_timeout_secs);
 
         self.log_buffer.log(
             McpLogLevel::Info,
@@ -146,11 +146,9 @@ impl McpService {
 
     /// Get current server status.
     pub fn get_status(&self) -> McpServerStatus {
-        let uptime_secs = if let Some(ref started) = self.started_at {
+        let uptime_secs = if let Some(started) = self.started_at {
             if self.running {
-                chrono::DateTime::parse_from_rfc3339(started)
-                    .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_seconds() as u64)
-                    .unwrap_or(0)
+                (chrono::Utc::now() - started).num_seconds() as u64
             } else {
                 0
             }
@@ -161,13 +159,13 @@ impl McpService {
         McpServerStatus {
             running: self.running,
             listen_address: if self.running { Some(server::listen_address(&self.config)) } else { None },
-            port: self.config.port,
+            port: Some(self.config.port),
             active_sessions: self.sessions.active_count(),
             total_requests: self.metrics.total_requests,
             total_tool_calls: self.metrics.total_tool_calls,
             total_resource_reads: self.metrics.total_resource_reads,
-            started_at: self.started_at.clone(),
-            uptime_secs,
+            started_at: self.started_at,
+            uptime_secs: Some(uptime_secs),
             last_error: self.last_error.clone(),
             version: MCP_SERVER_VERSION.to_string(),
             protocol_version: MCP_PROTOCOL_VERSION.to_string(),
@@ -185,8 +183,8 @@ impl McpService {
         }
 
         self.config = config.clone();
-        self.sessions.update_config(&config);
-        self.auth = AuthManager::new(&config);
+        self.sessions.update_config(config.max_sessions, config.session_timeout_secs);
+        self.auth = AuthManager::new(config.api_key.clone(), config.require_auth);
 
         self.log_buffer.log(
             McpLogLevel::Info,
@@ -210,9 +208,9 @@ impl McpService {
 
     /// Generate a new API key.
     pub fn generate_api_key(&mut self) -> String {
-        let key = crate::auth::generate_api_key();
+        let key = AuthManager::generate_api_key();
         self.config.api_key = key.clone();
-        self.auth = AuthManager::new(&self.config);
+        self.auth = AuthManager::new(self.config.api_key.clone(), self.config.require_auth);
 
         self.log_buffer.log(
             McpLogLevel::Info,
@@ -230,12 +228,13 @@ impl McpService {
     pub fn handle_request(&mut self, method: &str, body: Option<&str>, headers: HashMap<String, String>, path: Option<&str>) -> (String, u16, HashMap<String, String>) {
         if !self.running {
             let resp = crate::transport::McpHttpResponse::json(
-                &crate::protocol::build_error(
+                503,
+                &serde_json::to_value(crate::protocol::build_error(
                     Value::Null,
                     error_codes::INTERNAL_ERROR,
                     "MCP server is not running",
                     None,
-                ),
+                )).unwrap_or_default(),
             );
             return (resp.body.unwrap_or_default(), resp.status, resp.headers);
         }
@@ -252,16 +251,16 @@ impl McpService {
 
         let req = McpHttpRequest {
             method: http_method,
+            path: path.map(|p| p.to_string()),
             body: body.map(|b| b.to_string()),
             headers,
-            path: path.map(|p| p.to_string()),
         };
 
         let outcome = server::handle_request(
             &req,
             &self.config,
             &mut self.sessions,
-            &self.auth,
+            &mut self.auth,
             &mut self.log_buffer,
         );
 
@@ -310,7 +309,7 @@ impl McpService {
     /// Get current metrics.
     pub fn get_metrics(&self) -> McpMetrics {
         McpMetrics {
-            active_sessions: self.sessions.active_count() as u64,
+            active_sessions: self.sessions.active_count(),
             ..self.metrics.clone()
         }
     }
@@ -345,12 +344,13 @@ impl McpService {
         self.tool_call_logs.push(ToolCallLog {
             id: uuid::Uuid::new_v4().to_string(),
             tool_name: tool_name.to_string(),
-            params,
+            arguments: params,
             result: Some(result),
             success,
             duration_ms,
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: chrono::Utc::now(),
             session_id: None,
+            error: None,
         });
 
         // Trim to 500
@@ -380,7 +380,7 @@ impl McpService {
             all
         } else {
             all.into_iter()
-                .filter(|t| crate::capabilities::is_tool_enabled(&t.name, &self.config))
+                .filter(|t| crate::capabilities::is_tool_enabled(&self.config, &t.name))
                 .collect()
         }
     }
@@ -392,7 +392,7 @@ impl McpService {
             all
         } else {
             all.into_iter()
-                .filter(|r| crate::capabilities::is_resource_enabled(&r.uri, &self.config))
+                .filter(|r| crate::capabilities::is_resource_enabled(&self.config, &r.uri))
                 .collect()
         }
     }
@@ -404,7 +404,7 @@ impl McpService {
             all
         } else {
             all.into_iter()
-                .filter(|p| crate::capabilities::is_prompt_enabled(&p.name, &self.config))
+                .filter(|p| crate::capabilities::is_prompt_enabled(&self.config, &p.name))
                 .collect()
         }
     }
@@ -415,7 +415,8 @@ impl McpService {
         self.events.push(McpEvent {
             id: uuid::Uuid::new_v4().to_string(),
             event_type,
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: chrono::Utc::now(),
+            session_id: None,
             details,
         });
         self.trim_events();

@@ -17,11 +17,10 @@ impl<'a> UserManager<'a> {
     /// Get all user accounts.
     pub async fn get_users(&self) -> IloResult<Vec<BmcUser>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let accounts: serde_json::Value = rf.get_accounts().await?;
+            let accounts: Vec<serde_json::Value> = rf.get_accounts().await?;
             let mut users = Vec::new();
 
-            if let Some(members) = accounts.get("Members").and_then(|v| v.as_array()) {
-                for acct in members {
+            for acct in &accounts {
                     let username = acct.get("UserName").and_then(|v| v.as_str()).unwrap_or("");
                     if username.is_empty() {
                         continue;
@@ -29,6 +28,7 @@ impl<'a> UserManager<'a> {
 
                     let oem = acct.get("Oem")
                         .and_then(|o| o.get("Hpe").or_else(|| o.get("Hp")));
+                    let _ = oem; // OEM data available for HP-specific privileges
 
                     users.push(BmcUser {
                         id: acct.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
@@ -37,11 +37,7 @@ impl<'a> UserManager<'a> {
                             .and_then(|v| v.as_str()).unwrap_or("ReadOnly").to_string(),
                         enabled: acct.get("Enabled").and_then(|v| v.as_bool()).unwrap_or(true),
                         locked: acct.get("Locked").and_then(|v| v.as_bool()).unwrap_or(false),
-                        privilege_map: oem
-                            .and_then(|o| o.get("Privileges"))
-                            .cloned(),
                     });
-                }
             }
             return Ok(users);
         }
@@ -64,7 +60,6 @@ impl<'a> UserManager<'a> {
                         role: "Unknown".to_string(),
                         enabled: true,
                         locked: false,
-                        privilege_map: None,
                     });
                 }
             }
@@ -87,7 +82,7 @@ impl<'a> UserManager<'a> {
             "Password": password,
             "RoleId": role,
         });
-        rf.inner.post_json("/redfish/v1/AccountService/Accounts", &body).await?;
+        rf.inner.post_json::<_, ()>("/redfish/v1/AccountService/Accounts", &body).await?;
         Ok(())
     }
 

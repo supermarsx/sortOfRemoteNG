@@ -238,7 +238,8 @@ pub async fn traefik_get_version(
     state: State<'_, TraefikServiceState>,
     id: String,
 ) -> CmdResult<TraefikVersion> {
-    state.lock().await.get_version(&id).await.map_err(map_err)
+    let ver: TraefikVersion = state.lock().await.get_version(&id).await.map_err(map_err)?;
+    Ok(ver)
 }
 
 #[tauri::command]

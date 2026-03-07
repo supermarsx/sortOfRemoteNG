@@ -107,11 +107,13 @@ impl ApacheClient {
                 success: o.exit_code == 0,
                 output: o.stdout,
                 errors: if o.exit_code != 0 { vec![o.stderr] } else { vec![] },
+                warnings: vec![],
             }),
             Err(_) => Ok(ConfigTestResult {
                 success: false,
                 output: String::new(),
                 errors: vec!["Failed to execute configtest".into()],
+                warnings: vec![],
             }),
         }
     }
@@ -163,9 +165,12 @@ impl ApacheClient {
         Ok(ApacheInfo {
             version,
             mpm,
-            config_path: self.config_path().to_string(),
-            server_root: None,
-            modules_loaded: vec![],
+            built: None,
+            server_root: self.config_path().to_string(),
+            config_file: self.config_path().to_string(),
+            compiled_modules: vec![],
+            loaded_modules: vec![],
+            architecture: None,
         })
     }
 
@@ -175,10 +180,12 @@ impl ApacheClient {
         let pid_out = self.exec_ssh("cat /run/apache2/apache2.pid 2>/dev/null || echo 0").await;
         let pid = pid_out.ok().and_then(|o| o.stdout.trim().parse().ok()).unwrap_or(0);
         Ok(ApacheProcess {
-            running: active,
             pid,
-            uptime: None,
-            worker_count: None,
+            ppid: None,
+            process_type: if active { "active".into() } else { "inactive".into() },
+            cpu_percent: None,
+            memory_rss: None,
+            uptime_secs: None,
         })
     }
 
@@ -236,7 +243,7 @@ impl ApacheClient {
 
     pub async fn server_status(&self) -> ApacheResult<String> {
         let url = self.config.status_url.as_deref()
-            .ok_or_else(|| ApacheError::not_connected("No status_url configured".into()))?;
+            .ok_or_else(|| ApacheError::not_connected("No status_url configured"))?;
         let auto_url = format!("{}?auto", url.trim_end_matches('?'));
         debug!("APACHE server-status GET {auto_url}");
         let resp = self.http.get(&auto_url).send().await
@@ -251,6 +258,9 @@ impl ApacheClient {
         Ok(ApacheConnectionSummary {
             host: self.config.host.clone(),
             version,
+            mpm: None,
+            config_path: self.config_path().to_string(),
+            server_root: None,
         })
     }
 }

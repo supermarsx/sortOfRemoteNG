@@ -3,18 +3,15 @@
 //! Manage Exchange journal rules for compliance archiving.
 
 use crate::client::ExchangeClient;
-use crate::auth::{wrap_ps_json, ps_param_opt};
+use crate::auth::ps_param_opt;
 use crate::types::*;
 
 /// List all journal rules.
 pub async fn ps_list_journal_rules(
     client: &ExchangeClient,
 ) -> ExchangeResult<Vec<JournalRule>> {
-    let script = wrap_ps_json(
-        "Get-JournalRule | Select-Object Name,JournalEmailAddress,Scope,Enabled,Recipient"
-    );
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    let cmd = "Get-JournalRule | Select-Object Name,JournalEmailAddress,Scope,Enabled,Recipient";
+    client.run_ps_json(cmd).await
 }
 
 /// Get a specific journal rule.
@@ -22,12 +19,10 @@ pub async fn ps_get_journal_rule(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<JournalRule> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-JournalRule -Identity '{identity}'"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    );
+    client.run_ps_json(&cmd).await
 }
 
 /// Create a new journal rule.
@@ -44,14 +39,11 @@ pub async fn ps_create_journal_rule(
         "New-JournalRule -Name '{}' -JournalEmailAddress '{}' -Scope {scope}",
         req.name, req.journal_email_address
     );
-    cmd += &ps_param_opt("-Recipient", req.recipient.as_deref());
+    cmd += &ps_param_opt("Recipient", req.recipient.as_deref());
     if !req.enabled {
         cmd += " -Enabled $false";
     }
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    client.run_ps_json(&cmd).await
 }
 
 /// Remove a journal rule.

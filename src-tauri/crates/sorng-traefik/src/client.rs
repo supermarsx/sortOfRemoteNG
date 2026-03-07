@@ -107,7 +107,7 @@ impl TraefikClient {
         Ok(TraefikConnectionSummary {
             api_url: self.config.api_url.clone(),
             version: Some(version.version),
-            codename: version.codename,
+            dashboard_url: None,
         })
     }
 

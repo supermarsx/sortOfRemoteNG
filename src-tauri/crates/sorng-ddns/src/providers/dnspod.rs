@@ -21,7 +21,7 @@ pub async fn update(profile: &DdnsProfile, ip: &str) -> Result<DdnsUpdateResult,
         _ => return Err("DNSPod requires token_id + token auth".to_string()),
     };
 
-    let (domain_id, record_id, record_line) = match &profile.provider_settings {
+    let (_domain_id, record_id, record_line) = match &profile.provider_settings {
         ProviderSettings::DnsPod(s) => (
             s.domain_id.clone(),
             s.record_id.clone(),

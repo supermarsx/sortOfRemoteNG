@@ -753,7 +753,7 @@ impl DdnsService {
     // ── Import / Export ─────────────────────────────────────────────
 
     /// Export all profiles and config.
-    pub fn export_data(&self) -> DdnsExportData {
+    pub fn export_data(&mut self) -> DdnsExportData {
         self.audit.log_event(
             DdnsAuditAction::BulkExport,
             None,

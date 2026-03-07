@@ -84,9 +84,9 @@ impl<'a> BackupManager<'a> {
         storage: &str,
         vmid: Option<u64>,
     ) -> ProxmoxResult<Vec<StorageContent>> {
-        let mut params: Vec<(&str, String)> = vec![("content".to_string(), "backup".to_string())];
-        if let Some(id) = vmid { params.push(("vmid".to_string(), id.to_string())); }
-        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let mut params: Vec<(&str, String)> = vec![("content", "backup".to_string())];
+        if let Some(id) = vmid { params.push(("vmid", id.to_string())); }
+        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let path = format!("/api2/json/nodes/{node}/storage/{storage}/content");
         self.client.get_with_params(&path, &borrowed).await
     }

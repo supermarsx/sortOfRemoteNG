@@ -54,6 +54,30 @@ impl<'a> QemuManager<'a> {
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
+    // ── Aliases for service layer ───────────────────────────────────
+
+    pub async fn start_vm(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
+        self.start(node, vmid).await
+    }
+    pub async fn stop_vm(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
+        self.stop(node, vmid).await
+    }
+    pub async fn shutdown_vm(&self, node: &str, vmid: u64, force_stop: bool, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+        self.shutdown(node, vmid, force_stop, timeout).await
+    }
+    pub async fn reboot_vm(&self, node: &str, vmid: u64, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+        self.reboot(node, vmid, timeout).await
+    }
+    pub async fn suspend_vm(&self, node: &str, vmid: u64, to_disk: bool) -> ProxmoxResult<Option<String>> {
+        self.suspend(node, vmid, to_disk).await
+    }
+    pub async fn resume_vm(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
+        self.resume(node, vmid).await
+    }
+    pub async fn reset_vm(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
+        self.reset(node, vmid).await
+    }
+
     /// Delete a QEMU VM.
     pub async fn delete_vm(&self, node: &str, vmid: u64, purge: bool, destroy_unreferenced: bool) -> ProxmoxResult<Option<String>> {
         let mut path = format!("/api2/json/nodes/{node}/qemu/{vmid}");
@@ -87,7 +111,7 @@ impl<'a> QemuManager<'a> {
         let mut params: Vec<(&str, String)> = Vec::new();
         if force_stop { params.push(("forceStop", "1".to_string())); }
         if let Some(t) = timeout { params.push(("timeout", t.to_string())); }
-        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         if borrowed.is_empty() {
             self.client.post_empty(&path).await
         } else {
@@ -203,6 +227,16 @@ impl<'a> QemuManager<'a> {
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
+    /// Resize a VM disk (params-based overload).
+    pub async fn resize_disk_params(
+        &self,
+        node: &str,
+        vmid: u64,
+        params: &DiskResizeParams,
+    ) -> ProxmoxResult<()> {
+        self.resize_disk(node, vmid, &params.disk, &params.size).await
+    }
+
     /// Convert VM to template.
     pub async fn convert_to_template(&self, node: &str, vmid: u64) -> ProxmoxResult<()> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/template");
@@ -218,7 +252,7 @@ impl<'a> QemuManager<'a> {
         node: &str,
         vmid: u64,
         command: &str,
-    ) -> ProxmoxResult<QemuAgentInfo> {
+    ) -> ProxmoxResult<serde_json::Value> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/agent/{command}");
         self.client.get(&path).await
     }
@@ -228,7 +262,7 @@ impl<'a> QemuManager<'a> {
         &self,
         node: &str,
         vmid: u64,
-    ) -> ProxmoxResult<serde_json::Value> {
+    ) -> ProxmoxResult<QemuAgentInfo> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/agent/network-get-interfaces");
         self.client.get(&path).await
     }
@@ -238,7 +272,7 @@ impl<'a> QemuManager<'a> {
         &self,
         node: &str,
         vmid: u64,
-    ) -> ProxmoxResult<serde_json::Value> {
+    ) -> ProxmoxResult<QemuAgentInfo> {
         let path = format!("/api2/json/nodes/{node}/qemu/{vmid}/agent/get-osinfo");
         self.client.get(&path).await
     }

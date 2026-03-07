@@ -910,6 +910,35 @@ impl WmiTransport {
         }
         Ok(props)
     }
+
+    /// Execute an arbitrary command on the remote host via Win32_Process.Create.
+    ///
+    /// Returns the output of the command invocation (return value and process id).
+    pub async fn exec_command(&mut self, command: &str) -> Result<String, String> {
+        let mut params = HashMap::new();
+        params.insert("CommandLine".to_string(), command.to_string());
+
+        let result = self
+            .invoke_method("Win32_Process", "Create", None, &params)
+            .await?;
+
+        let return_value = result
+            .get("ReturnValue")
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(1);
+
+        if return_value != 0 {
+            return Err(format!(
+                "Command execution failed with return code {}",
+                return_value
+            ));
+        }
+
+        Ok(result
+            .get("ProcessId")
+            .cloned()
+            .unwrap_or_default())
+    }
 }
 
 // ─── XML Utility Functions ───────────────────────────────────────────

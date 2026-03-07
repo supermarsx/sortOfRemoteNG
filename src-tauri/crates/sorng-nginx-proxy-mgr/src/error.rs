@@ -42,8 +42,17 @@ impl NpmError {
     pub fn new(kind: NpmErrorKind, msg: impl Into<String>) -> Self {
         Self { kind, message: msg.into() }
     }
-    pub fn not_connected() -> Self {
-        Self::new(NpmErrorKind::NotConnected, "Not connected to Nginx Proxy Manager")
+    pub fn not_connected(msg: impl Into<String>) -> Self {
+        Self::new(NpmErrorKind::NotConnected, msg)
+    }
+    pub fn connection(msg: impl Into<String>) -> Self {
+        Self::new(NpmErrorKind::ConnectionFailed, msg)
+    }
+    pub fn auth(msg: impl Into<String>) -> Self {
+        Self::new(NpmErrorKind::AuthenticationFailed, msg)
+    }
+    pub fn parse(msg: impl Into<String>) -> Self {
+        Self::new(NpmErrorKind::ParseError, msg)
     }
     pub fn proxy_host_not_found(id: u64) -> Self {
         Self::new(NpmErrorKind::ProxyHostNotFound, format!("Proxy host not found: {id}"))

@@ -39,6 +39,7 @@ impl<'a> VirtualMediaManager<'a> {
                 write_protected: m.get("WriteProtected").and_then(|v| v.as_bool()).unwrap_or(true),
                 transfer_method: m.get("TransferMethod").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 transfer_protocol_type: m.get("TransferProtocolType").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                connected_via: m.get("ConnectedVia").and_then(|v| v.as_str()).map(|s| s.to_string()),
             })
             .collect())
     }
@@ -150,6 +151,7 @@ impl<'a> VirtualMediaManager<'a> {
             write_protected: m.get("WriteProtected").and_then(|v| v.as_bool()).unwrap_or(true),
             transfer_method: m.get("TransferMethod").and_then(|v| v.as_str()).map(|s| s.to_string()),
             transfer_protocol_type: m.get("TransferProtocolType").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            connected_via: m.get("ConnectedVia").and_then(|v| v.as_str()).map(|s| s.to_string()),
         })
     }
 }

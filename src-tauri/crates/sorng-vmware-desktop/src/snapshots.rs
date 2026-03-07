@@ -10,15 +10,15 @@ pub async fn list_snapshots(vmrun: &VmRun, vmx_path: &str) -> VmwResult<Vec<Snap
     let mut snapshots = Vec::new();
     for (i, name) in raw.iter().enumerate() {
         snapshots.push(SnapshotInfo {
-            id: format!("snap-{i}"),
             name: name.clone(),
+            display_name: Some(name.clone()),
             description: None,
-            created: None,
+            created_at: None,
             parent: None,
             children: vec![],
             is_current: false,
-            memory_included: false,
-            disk_size_mb: None,
+            has_memory: Some(false),
+            size: None,
         });
     }
 
@@ -62,15 +62,15 @@ pub async fn list_snapshots(vmrun: &VmRun, vmx_path: &str) -> VmwResult<Vec<Snap
                 let is_curr = current_uid.as_deref() == Some(&uid);
 
                 snapshots.push(SnapshotInfo {
-                    id: uid,
-                    name,
+                    name: uid.clone(),
+                    display_name: Some(name),
                     description: desc,
-                    created: created_str,
+                    created_at: created_str,
                     parent,
                     children: vec![],
                     is_current: is_curr,
-                    memory_included: has_memory,
-                    disk_size_mb: None,
+                    has_memory: Some(has_memory),
+                    size: None,
                 });
             }
 
@@ -82,8 +82,8 @@ pub async fn list_snapshots(vmrun: &VmRun, vmx_path: &str) -> VmwResult<Vec<Snap
                 .collect();
             for (idx, parent_uid) in parents {
                 if let Some(ref pu) = parent_uid {
-                    if let Some(pi) = snapshots.iter().position(|s| &s.id == pu) {
-                        let child_id = snapshots[idx].id.clone();
+                    if let Some(pi) = snapshots.iter().position(|s| &s.name == pu) {
+                        let child_id = snapshots[idx].name.clone();
                         snapshots[pi].children.push(child_id);
                     }
                 }
@@ -100,17 +100,17 @@ pub async fn get_snapshot_tree(vmrun: &VmRun, vmx_path: &str) -> VmwResult<Snaps
     let roots: Vec<String> = snapshots
         .iter()
         .filter(|s| s.parent.is_none())
-        .map(|s| s.id.clone())
+        .map(|s| s.name.clone())
         .collect();
     let current = snapshots
         .iter()
         .find(|s| s.is_current)
-        .map(|s| s.id.clone());
+        .map(|s| s.name.clone());
     Ok(SnapshotTree {
+        vm_name: vmx_path.to_string(),
         vmx_path: vmx_path.to_string(),
-        snapshots,
-        root_ids: roots,
         current_snapshot: current,
+        snapshots,
     })
 }
 

@@ -42,6 +42,10 @@ impl<'a> BiosManager<'a> {
                     possible_values: None,
                     display_name: None,
                     description: None,
+                    value: Some(v.clone()),
+                    allowed_values: None,
+                    lower_bound: None,
+                    upper_bound: None,
                 })
                 .collect());
         }
@@ -66,6 +70,10 @@ impl<'a> BiosManager<'a> {
                         .map(|s| s.split(',').map(|p| p.trim().to_string()).collect()),
                     display_name: get("AttributeDisplayName"),
                     description: get("Description"),
+                    value: None,
+                    allowed_values: None,
+                    lower_bound: v.properties.get("LowerBound").and_then(|val| val.as_i64()),
+                    upper_bound: v.properties.get("UpperBound").and_then(|val| val.as_i64()),
                 });
             }
 
@@ -160,6 +168,10 @@ impl<'a> BiosManager<'a> {
                 possible_values: None,
                 display_name: None,
                 description: None,
+                value: Some(v.clone()),
+                allowed_values: None,
+                lower_bound: None,
+                upper_bound: None,
             })
             .collect())
     }
@@ -207,6 +219,8 @@ impl<'a> BiosManager<'a> {
                         enabled: m.get("BootOptionEnabled").and_then(|v| v.as_bool()),
                         display_name: m.get("DisplayName").and_then(|v| v.as_str()).map(|s| s.to_string()),
                         uefi_device_path: m.get("UefiDevicePath").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        boot_option_reference: m.get("BootOptionReference").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        index: None,
                     });
                 }
             }
@@ -218,6 +232,8 @@ impl<'a> BiosManager<'a> {
             boot_source_override_enabled,
             boot_mode,
             boot_sources,
+            boot_source_override_mode: None,
+            uefi_target_boot_source_override: None,
         })
     }
 

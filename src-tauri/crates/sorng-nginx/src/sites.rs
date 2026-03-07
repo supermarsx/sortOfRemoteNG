@@ -33,7 +33,7 @@ impl SiteManager {
         let content = generate_site_config(req);
         let path = format!("{}/{}", client.sites_available_dir(), req.name);
         client.write_remote_file(&path, &content).await?;
-        if req.enabled.unwrap_or(true) {
+        if req.enable.unwrap_or(true) {
             let src = format!("{}/{}", client.sites_available_dir(), req.name);
             let dst = format!("{}/{}", client.sites_enabled_dir(), req.name);
             client.create_symlink(&src, &dst).await?;
@@ -42,19 +42,8 @@ impl SiteManager {
     }
 
     pub async fn update(client: &NginxClient, name: &str, req: &UpdateSiteRequest) -> NginxResult<NginxSite> {
-        if let Some(ref content) = req.raw_content {
-            let path = format!("{}/{}", client.sites_available_dir(), name);
-            client.write_remote_file(&path, content).await?;
-        }
-        if let Some(enabled) = req.enabled {
-            let link = format!("{}/{}", client.sites_enabled_dir(), name);
-            if enabled {
-                let src = format!("{}/{}", client.sites_available_dir(), name);
-                client.create_symlink(&src, &link).await?;
-            } else {
-                client.remove_file(&link).await?;
-            }
-        }
+        let path = format!("{}/{}", client.sites_available_dir(), name);
+        client.write_remote_file(&path, &req.content).await?;
         Self::get(client, name).await
     }
 
@@ -91,7 +80,7 @@ fn parse_site(filename: &str, raw: &str, enabled: bool) -> NginxSite {
         if trimmed.starts_with("listen ") {
             let val = trimmed.trim_start_matches("listen ").trim_end_matches(';').trim().to_string();
             let ssl = val.contains("ssl");
-            listen.push(ListenDirective { address: val, ssl, http2: false });
+            listen.push(ListenDirective { address: Some(val), ssl, http2: false, port: 80, default_server: false, ipv6only: false });
         }
     }
     NginxSite {
@@ -100,22 +89,24 @@ fn parse_site(filename: &str, raw: &str, enabled: bool) -> NginxSite {
         enabled,
         server_names,
         listen_directives: listen,
+        root: None,
+        index: None,
         locations: vec![],
         ssl: None,
-        raw_content: Some(raw.to_string()),
+        upstream_ref: None,
+        raw_content: raw.to_string(),
     }
 }
 
 fn generate_site_config(req: &CreateSiteRequest) -> String {
     let mut out = String::new();
     out.push_str("server {\n");
-    for l in &req.listen_directives {
-        out.push_str(&format!("    listen {};\n", l.address));
-    }
+    let port = req.listen_port.unwrap_or(80);
+    out.push_str(&format!("    listen {};\n", port));
     if !req.server_names.is_empty() {
         out.push_str(&format!("    server_name {};\n", req.server_names.join(" ")));
     }
-    for loc in req.locations.as_deref().unwrap_or(&[]) {
+    for loc in &req.locations {
         out.push_str(&format!("    location {} {{\n", loc.path));
         if let Some(ref pp) = loc.proxy_pass {
             out.push_str(&format!("        proxy_pass {};\n", pp));

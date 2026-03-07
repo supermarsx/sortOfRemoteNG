@@ -27,7 +27,7 @@ impl<'a> TaskManager<'a> {
         if let Some(id) = vmid { params.push(("vmid", id.to_string())); }
         if let Some(t) = type_filter { params.push(("typefilter", t.to_string())); }
         if let Some(s) = status_filter { params.push(("statusfilter", s.to_string())); }
-        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let path = format!("/api2/json/nodes/{node}/tasks");
         if borrowed.is_empty() {
             self.client.get(&path).await
@@ -56,7 +56,7 @@ impl<'a> TaskManager<'a> {
         let mut params: Vec<(&str, String)> = Vec::new();
         if let Some(s) = start { params.push(("start", s.to_string())); }
         if let Some(l) = limit { params.push(("limit", l.to_string())); }
-        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         if borrowed.is_empty() {
             self.client.get(&path).await
         } else {

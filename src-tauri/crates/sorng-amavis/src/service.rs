@@ -104,7 +104,7 @@ impl AmavisService {
         name: &str,
         content: &str,
     ) -> AmavisResult<()> {
-        AmavisConfigManager::create_snippet(self.client(id)?, name, content).await
+        AmavisConfigManager::create_snippet(self.client(id)?, name, content).await.map(|_| ())
     }
 
     pub async fn update_snippet(
@@ -113,7 +113,7 @@ impl AmavisService {
         name: &str,
         content: &str,
     ) -> AmavisResult<()> {
-        AmavisConfigManager::update_snippet(self.client(id)?, name, content).await
+        AmavisConfigManager::update_snippet(self.client(id)?, name, content).await.map(|_| ())
     }
 
     pub async fn delete_snippet(&self, id: &str, name: &str) -> AmavisResult<()> {

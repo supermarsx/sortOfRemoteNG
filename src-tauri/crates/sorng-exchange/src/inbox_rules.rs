@@ -3,7 +3,7 @@
 //! Manage per-mailbox inbox rules: list, create, update, remove, enable/disable.
 
 use crate::client::ExchangeClient;
-use crate::auth::{wrap_ps_json, ps_param_opt, ps_param_bool, ps_param_list};
+use crate::auth::{ps_param_opt, ps_param_bool, ps_param_list};
 use crate::types::*;
 
 /// List inbox rules for a mailbox.
@@ -11,16 +11,15 @@ pub async fn ps_list_inbox_rules(
     client: &ExchangeClient,
     mailbox: &str,
 ) -> ExchangeResult<Vec<InboxRule>> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-InboxRule -Mailbox '{mailbox}' | Select-Object RuleIdentity,Name,Priority,Enabled,\
          Description,From,SubjectContainsWords,BodyContainsWords,\
          SubjectOrBodyContainsWords,FromAddressContainsWords,HasAttachment,\
          FlaggedForAction,MessageTypeMatches,\
          MoveToFolder,CopyToFolder,DeleteMessage,ForwardTo,RedirectTo,\
          MarkAsRead,MarkImportance,StopProcessingRules"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    );
+    client.run_ps_json(&cmd).await
 }
 
 /// Get a specific inbox rule.
@@ -29,12 +28,10 @@ pub async fn ps_get_inbox_rule(
     mailbox: &str,
     rule_id: &str,
 ) -> ExchangeResult<InboxRule> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-InboxRule -Mailbox '{mailbox}' -Identity '{rule_id}'"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    );
+    client.run_ps_json(&cmd).await
 }
 
 /// Create a new inbox rule.
@@ -46,18 +43,23 @@ pub async fn ps_create_inbox_rule(
         "New-InboxRule -Mailbox '{}' -Name '{}'",
         req.mailbox, req.name
     );
-    cmd += &ps_param_list("-From", req.from.as_deref());
-    cmd += &ps_param_list("-SubjectContainsWords", req.subject_contains_words.as_deref());
-    cmd += &ps_param_bool("-HasAttachment", req.has_attachment);
-    cmd += &ps_param_opt("-MoveToFolder", req.move_to_folder.as_deref());
-    cmd += &ps_param_bool("-DeleteMessage", req.delete_message);
-    cmd += &ps_param_list("-ForwardTo", req.forward_to.as_deref());
-    cmd += &ps_param_bool("-MarkAsRead", req.mark_as_read);
-    cmd += &ps_param_bool("-StopProcessingRules", req.stop_processing_rules);
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    cmd += &ps_param_list("From", &req.from);
+    cmd += &ps_param_list("SubjectContainsWords", &req.subject_contains_words);
+    if let Some(v) = req.has_attachment {
+        cmd += &ps_param_bool("HasAttachment", v);
+    }
+    cmd += &ps_param_opt("MoveToFolder", req.move_to_folder.as_deref());
+    if let Some(v) = req.delete_message {
+        cmd += &ps_param_bool("DeleteMessage", v);
+    }
+    cmd += &ps_param_list("ForwardTo", &req.forward_to);
+    if let Some(v) = req.mark_as_read {
+        cmd += &ps_param_bool("MarkAsRead", v);
+    }
+    if let Some(v) = req.stop_processing_rules {
+        cmd += &ps_param_bool("StopProcessingRules", v);
+    }
+    client.run_ps_json(&cmd).await
 }
 
 /// Update an existing inbox rule.

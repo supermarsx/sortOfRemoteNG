@@ -76,7 +76,7 @@ impl PackagesManager {
     /// Check if a specific package is running.
     pub async fn is_running(client: &SynoClient, id: &str) -> SynologyResult<bool> {
         match Self::get_package(client, id).await {
-            Ok(pkg) => Ok(pkg.status == Some("running".to_string())),
+            Ok(pkg) => Ok(pkg.status == "running"),
             Err(_) => Ok(false),
         }
     }

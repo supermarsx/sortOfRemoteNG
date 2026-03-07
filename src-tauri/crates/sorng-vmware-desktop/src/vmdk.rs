@@ -29,14 +29,12 @@ pub fn get_vmdk_info(path: &str) -> VmwResult<VmdkInfo> {
 
     let mut info = VmdkInfo {
         path: path.to_string(),
-        size_mb: 0,
+        capacity_mb: 0,
         disk_type: String::new(),
-        adapter_type: None,
-        hardware_version: None,
-        parent_file: None,
+        adapter_type: String::new(),
+        parent_vmdk: None,
         extents: vec![],
-        cid: None,
-        parent_cid: None,
+        size_on_disk_mb: None,
     };
 
     for line in content.lines() {
@@ -49,15 +47,9 @@ pub fn get_vmdk_info(path: &str) -> VmwResult<VmdkInfo> {
         if let Some(val) = trimmed.strip_prefix("createType=") {
             info.disk_type = val.trim_matches('"').to_string();
         } else if let Some(val) = trimmed.strip_prefix("ddb.adapterType = ") {
-            info.adapter_type = Some(val.trim_matches('"').to_string());
-        } else if let Some(val) = trimmed.strip_prefix("ddb.virtualHWVersion = ") {
-            info.hardware_version = Some(val.trim_matches('"').to_string());
+            info.adapter_type = val.trim_matches('"').to_string();
         } else if let Some(val) = trimmed.strip_prefix("parentFileNameHint=") {
-            info.parent_file = Some(val.trim_matches('"').to_string());
-        } else if let Some(val) = trimmed.strip_prefix("CID=") {
-            info.cid = Some(val.to_string());
-        } else if let Some(val) = trimmed.strip_prefix("parentCID=") {
-            info.parent_cid = Some(val.to_string());
+            info.parent_vmdk = Some(val.trim_matches('"').to_string());
         }
 
         // Extent lines: RW 83886080 SPARSE "disk-s001.vmdk"
@@ -65,14 +57,14 @@ pub fn get_vmdk_info(path: &str) -> VmwResult<VmdkInfo> {
             let parts: Vec<&str> = trimmed.splitn(4, ' ').collect();
             if parts.len() >= 4 {
                 let sectors: u64 = parts[1].parse().unwrap_or(0);
-                info.size_mb += sectors / 2048; // 512 bytes/sector -> MB
+                info.capacity_mb += sectors / 2048; // 512 bytes/sector -> MB
                 let extent_type = parts[2].to_string();
                 let filename = parts[3].trim_matches('"').to_string();
                 info.extents.push(VmdkExtent {
                     access: parts[0].to_string(),
                     size_sectors: sectors,
                     extent_type,
-                    filename,
+                    file_name: filename,
                 });
             }
         }
@@ -103,7 +95,7 @@ pub async fn convert_vmdk(
     disk_type: &str,
     dest: Option<&str>,
 ) -> VmwResult<()> {
-    vmrun.convert_disk(source, disk_type, dest).await
+    vmrun.convert_disk(source, dest.unwrap_or(source), disk_type).await
 }
 
 /// Rename/move a VMDK.
@@ -125,20 +117,24 @@ pub async fn add_disk_to_vm(
     }
 
     let controller = req.controller_type.as_deref().unwrap_or("scsi");
-    let bus = req.bus_number.unwrap_or(0);
-    let unit = req.unit_number.unwrap_or_else(|| {
-        // Find next available unit
-        let vmx_data = crate::vmx::parse_vmx(&req.vmx_path).ok();
-        if let Some(ref vmx) = vmx_data {
-            for u in 0..16 {
-                let key = format!("{controller}{bus}:{u}.present");
+
+    // Find next available bus:unit
+    let vmx_data = crate::vmx::parse_vmx(&req.vmx_path).ok();
+    let (bus, unit) = if let Some(ref vmx) = vmx_data {
+        let mut found = (0u32, 1u32);
+        'outer: for b in 0..4u32 {
+            for u in 0..16u32 {
+                let key = format!("{controller}{b}:{u}.present");
                 if vmx.settings.get(&key).is_none() {
-                    return u;
+                    found = (b, u);
+                    break 'outer;
                 }
             }
         }
-        1
-    });
+        found
+    } else {
+        (0, 1)
+    };
 
     let prefix = format!("{controller}{bus}:{unit}");
     let mut updates = std::collections::HashMap::new();
@@ -153,10 +149,11 @@ pub async fn add_disk_to_vm(
     }
 
     updates.insert(format!("{prefix}.present"), "TRUE".to_string());
-    updates.insert(format!("{prefix}.filename"), req.vmdk_path.clone());
+    let disk_file = req.file_name.unwrap_or_else(|| format!("{}.vmdk", req.vmx_path.replace(".vmx", "")));
+    updates.insert(format!("{prefix}.filename"), disk_file);
     updates.insert(
         format!("{prefix}.mode"),
-        req.mode.clone().unwrap_or_else(|| "persistent".to_string()),
+        req.disk_type.unwrap_or_else(|| "persistent".to_string()),
     );
 
     crate::vmx::update_vmx_keys(&req.vmx_path, &updates)?;

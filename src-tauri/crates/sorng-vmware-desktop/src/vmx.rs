@@ -260,7 +260,7 @@ fn parse_nics(s: &HashMap<String, String>) -> Vec<VmNic> {
     nics
 }
 
-fn parse_disks(s: &HashMap<String, String>) -> Vec<VmDisk> {
+pub fn parse_disks(s: &HashMap<String, String>) -> Vec<VmDisk> {
     let mut disks = Vec::new();
     let controllers = ["scsi", "sata", "nvme", "ide"];
     for ctrl in &controllers {
@@ -324,7 +324,7 @@ fn parse_cdroms(s: &HashMap<String, String>) -> Vec<VmCdrom> {
     cdroms
 }
 
-fn parse_shared_folders(s: &HashMap<String, String>) -> Vec<SharedFolder> {
+pub fn parse_shared_folders(s: &HashMap<String, String>) -> Vec<SharedFolder> {
     let mut folders = Vec::new();
     let max = s
         .get("sharedfolder.maxnum")

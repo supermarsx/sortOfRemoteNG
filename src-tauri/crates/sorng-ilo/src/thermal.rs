@@ -24,13 +24,17 @@ impl<'a> ThermalManager<'a> {
                 .map(|arr| arr.iter().filter_map(|t| {
                     let name = t.get("Name").and_then(|v| v.as_str())?;
                     Some(BmcTemperatureSensor {
+                        id: t.get("MemberId").or_else(|| t.get("Name")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         name: name.to_string(),
                         reading_celsius: t.get("ReadingCelsius").and_then(|v| v.as_f64()),
                         upper_threshold_critical: t.get("UpperThresholdCritical").and_then(|v| v.as_f64()),
                         upper_threshold_fatal: t.get("UpperThresholdFatal").and_then(|v| v.as_f64()),
-                        status: t.get("Status").and_then(|s| s.get("Health"))
-                            .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
-                        location: t.get("PhysicalContext")
+                        lower_threshold_critical: t.get("LowerThresholdCritical").and_then(|v| v.as_f64()),
+                        status: component_health(
+                            t.get("Status").and_then(|s| s.get("Health"))
+                                .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                        ),
+                        physical_context: t.get("PhysicalContext")
                             .and_then(|v| v.as_str()).map(|s| s.to_string()),
                     })
                 }).collect())
@@ -40,14 +44,20 @@ impl<'a> ThermalManager<'a> {
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().filter_map(|f| {
                     let name = f.get("Name").and_then(|v| v.as_str())?;
+                    let units = f.get("ReadingUnits")
+                        .and_then(|v| v.as_str()).unwrap_or("Percent");
+                    let reading = f.get("Reading").and_then(|v| v.as_f64());
                     Some(BmcFan {
+                        id: f.get("MemberId").or_else(|| f.get("Name")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         name: name.to_string(),
-                        reading: f.get("Reading").and_then(|v| v.as_f64()),
-                        reading_units: f.get("ReadingUnits")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Percent").to_string(),
-                        status: f.get("Status").and_then(|s| s.get("Health"))
-                            .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                        reading_rpm: if units == "RPM" { reading.map(|r| r as u32) } else { None },
+                        reading_percent: if units != "RPM" { reading.map(|r| r as u32) } else { None },
+                        status: component_health(
+                            f.get("Status").and_then(|s| s.get("Health"))
+                                .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                        ),
+                        physical_context: f.get("PhysicalContext")
+                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
                     })
                 }).collect())
                 .unwrap_or_default();
@@ -75,12 +85,14 @@ impl<'a> ThermalManager<'a> {
                     let status = t.get("STATUS").and_then(|v| v.as_str()).unwrap_or("Unknown");
 
                     temperatures.push(BmcTemperatureSensor {
+                        id: label.to_string(),
                         name: label.to_string(),
                         reading_celsius: reading,
                         upper_threshold_critical: caution,
                         upper_threshold_fatal: critical,
-                        status: status.to_string(),
-                        location: t.get("LOCATION").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        lower_threshold_critical: None,
+                        status: component_health(status),
+                        physical_context: t.get("LOCATION").and_then(|v| v.as_str()).map(|s| s.to_string()),
                     });
                 }
             }
@@ -96,10 +108,12 @@ impl<'a> ThermalManager<'a> {
                         .and_then(|v| v.as_str()).unwrap_or("Percent");
 
                     fans.push(BmcFan {
+                        id: label.to_string(),
                         name: label.to_string(),
-                        reading: speed,
-                        reading_units: unit.to_string(),
-                        status: status.to_string(),
+                        reading_rpm: if unit == "RPM" { speed.map(|s| s as u32) } else { None },
+                        reading_percent: if unit != "RPM" { speed.map(|s| s as u32) } else { None },
+                        status: component_health(status),
+                        physical_context: None,
                     });
                 }
             }
@@ -130,13 +144,13 @@ impl<'a> ThermalManager<'a> {
                     cpu_max = Some(cpu_max.map_or(reading, |cur: f64| cur.max(reading)));
                 }
             }
-            if t.status == "Critical" || t.status == "Warning" {
+            if t.status.health.as_deref() == Some("Critical") || t.status.health.as_deref() == Some("Warning") {
                 alerts += 1;
             }
         }
 
         for f in &data.fans {
-            if let Some(reading) = f.reading {
+            if let Some(reading) = f.reading_percent.map(|r| r as f64).or(f.reading_rpm.map(|r| r as f64)) {
                 fan_min = Some(fan_min.map_or(reading, |cur: f64| cur.min(reading)));
                 fan_max = Some(fan_max.map_or(reading, |cur: f64| cur.max(reading)));
             }

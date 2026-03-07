@@ -6,8 +6,7 @@
 
 use crate::error::{SmcError, SmcResult};
 use crate::types::*;
-use sorng_bmc_common::redfish::RedfishClient;
-use sorng_bmc_common::types::*;
+use sorng_bmc_common::redfish::{RedfishClient, RedfishConfig};
 
 /// Redfish client specialised for Supermicro BMCs (X11+).
 pub struct SmcRedfishClient {
@@ -17,9 +16,23 @@ pub struct SmcRedfishClient {
 
 impl SmcRedfishClient {
     /// Create a new Supermicro Redfish client.
-    pub fn new(host: &str, port: u16, use_ssl: bool, verify_cert: bool) -> SmcResult<Self> {
-        let inner = RedfishClient::new(host, port, use_ssl, verify_cert)
-            .map_err(SmcError::from)?;
+    pub fn new(
+        host: &str,
+        port: u16,
+        use_ssl: bool,
+        verify_cert: bool,
+        username: &str,
+        password: &str,
+    ) -> SmcResult<Self> {
+        let config = RedfishConfig {
+            host: host.to_string(),
+            port,
+            username: username.to_string(),
+            password: password.to_string(),
+            insecure: !verify_cert,
+            timeout_secs: 30,
+        };
+        let inner = RedfishClient::new(&config).map_err(SmcError::from)?;
         Ok(Self {
             inner,
             platform: SmcPlatform::Unknown,
@@ -27,11 +40,11 @@ impl SmcRedfishClient {
     }
 
     /// Authenticate and detect the platform generation.
-    pub async fn login(&mut self, username: &str, password: &str) -> SmcResult<()> {
-        self.inner.login(username, password).await.map_err(SmcError::from)?;
+    pub async fn login(&mut self) -> SmcResult<()> {
+        self.inner.login(true).await.map_err(SmcError::from)?;
 
         // Detect platform generation from Manager resource
-        if let Ok(mgr) = self.inner.get_json("/redfish/v1/Managers/1").await {
+        if let Ok(mgr) = self.get_json("/redfish/v1/Managers/1").await {
             self.platform = detect_platform_from_manager(&mgr);
         }
 
@@ -59,10 +72,38 @@ impl SmcRedfishClient {
         self.inner.check_session().await.map_err(SmcError::from)
     }
 
+    // ── Wrapped HTTP helpers ────────────────────────────────────────
+
+    async fn get_json(&self, path: &str) -> SmcResult<serde_json::Value> {
+        self.inner
+            .get::<serde_json::Value>(path)
+            .await
+            .map_err(SmcError::from)
+    }
+
+    async fn post_json(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> SmcResult<serde_json::Value> {
+        self.inner
+            .post_json::<_, serde_json::Value>(path, body)
+            .await
+            .map_err(SmcError::from)
+    }
+
+    async fn patch_json(&self, path: &str, body: &serde_json::Value) -> SmcResult<()> {
+        self.inner.patch_json(path, body).await.map_err(SmcError::from)
+    }
+
+    async fn delete(&self, path: &str) -> SmcResult<()> {
+        self.inner.delete(path).await.map_err(SmcError::from)
+    }
+
     // ── System info ─────────────────────────────────────────────────
 
     pub async fn get_system_info(&self) -> SmcResult<SystemInfo> {
-        let sys = self.inner.get_json("/redfish/v1/Systems/1").await.map_err(SmcError::from)?;
+        let sys = self.get_json("/redfish/v1/Systems/1").await?;
 
         Ok(SystemInfo {
             manufacturer: json_str(&sys, "Manufacturer").unwrap_or_else(|| "Supermicro".into()),
@@ -94,7 +135,7 @@ impl SmcRedfishClient {
 
     /// Get BMC controller information.
     pub async fn get_bmc_info(&self) -> SmcResult<SmcBmcInfo> {
-        let mgr = self.inner.get_json("/redfish/v1/Managers/1").await.map_err(SmcError::from)?;
+        let mgr = self.get_json("/redfish/v1/Managers/1").await?;
 
         Ok(SmcBmcInfo {
             platform: self.platform.clone(),
@@ -120,30 +161,29 @@ impl SmcRedfishClient {
     // ── Power management ────────────────────────────────────────────
 
     pub async fn get_power_state(&self) -> SmcResult<String> {
-        let sys = self.inner.get_json("/redfish/v1/Systems/1").await.map_err(SmcError::from)?;
+        let sys = self.get_json("/redfish/v1/Systems/1").await?;
         Ok(json_str(&sys, "PowerState").unwrap_or_else(|| "Unknown".into()))
     }
 
     pub async fn power_action(&self, action: &PowerAction) -> SmcResult<()> {
         let reset_type = match action {
             PowerAction::On => "On",
-            PowerAction::Off => "ForceOff",
+            PowerAction::ForceOff => "ForceOff",
             PowerAction::GracefulShutdown => "GracefulShutdown",
-            PowerAction::Reset => "ForceRestart",
-            PowerAction::Cycle => "PowerCycle",
+            PowerAction::ForceRestart => "ForceRestart",
+            PowerAction::PowerCycle => "PowerCycle",
             PowerAction::Nmi => "Nmi",
+            PowerAction::GracefulRestart => "GracefulRestart",
+            PowerAction::PushPowerButton => "PushPowerButton",
         };
 
         let body = serde_json::json!({ "ResetType": reset_type });
-        self.inner
-            .post_json("/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", &body)
-            .await
-            .map_err(SmcError::from)?;
+        let _: serde_json::Value = self.post_json("/redfish/v1/Systems/1/Actions/ComputerSystem.Reset", &body).await?;
         Ok(())
     }
 
     pub async fn get_power_metrics(&self) -> SmcResult<PowerMetrics> {
-        let pwr = self.inner.get_json("/redfish/v1/Chassis/1/Power").await.map_err(SmcError::from)?;
+        let pwr = self.get_json("/redfish/v1/Chassis/1/Power").await?;
 
         let mut psus = Vec::new();
         if let Some(supplies) = pwr.get("PowerSupplies").and_then(|v| v.as_array()) {
@@ -196,7 +236,7 @@ impl SmcRedfishClient {
     // ── Thermal ─────────────────────────────────────────────────────
 
     pub async fn get_thermal_data(&self) -> SmcResult<ThermalData> {
-        let th = self.inner.get_json("/redfish/v1/Chassis/1/Thermal").await.map_err(SmcError::from)?;
+        let th = self.get_json("/redfish/v1/Chassis/1/Thermal").await?;
 
         let mut temps = Vec::new();
         if let Some(arr) = th.get("Temperatures").and_then(|v| v.as_array()) {
@@ -258,13 +298,13 @@ impl SmcRedfishClient {
     // ── Hardware inventory ───────────────────────────────────────
 
     pub async fn get_processors(&self) -> SmcResult<Vec<ProcessorInfo>> {
-        let col = self.inner.get_json("/redfish/v1/Systems/1/Processors").await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/Systems/1/Processors").await?;
         let mut procs = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                    if let Ok(cpu) = self.inner.get_json(uri).await {
+                    if let Ok(cpu) = self.get_json(uri).await {
                         procs.push(ProcessorInfo {
                             name: json_str(&cpu, "Name").unwrap_or_default(),
                             manufacturer: json_str(&cpu, "Manufacturer"),
@@ -291,13 +331,13 @@ impl SmcRedfishClient {
     }
 
     pub async fn get_memory(&self) -> SmcResult<Vec<MemoryInfo>> {
-        let col = self.inner.get_json("/redfish/v1/Systems/1/Memory").await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/Systems/1/Memory").await?;
         let mut dimms = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                    if let Ok(mem) = self.inner.get_json(uri).await {
+                    if let Ok(mem) = self.get_json(uri).await {
                         dimms.push(MemoryInfo {
                             name: json_str(&mem, "Name").unwrap_or_default(),
                             capacity_mib: mem.get("CapacityMiB").and_then(|v| v.as_u64()).map(|v| v as u32),
@@ -328,13 +368,13 @@ impl SmcRedfishClient {
     // ── Storage ─────────────────────────────────────────────────────
 
     pub async fn get_storage_controllers(&self) -> SmcResult<Vec<StorageController>> {
-        let col = self.inner.get_json("/redfish/v1/Systems/1/Storage").await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/Systems/1/Storage").await?;
         let mut ctrls = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                    if let Ok(stor) = self.inner.get_json(uri).await {
+                    if let Ok(stor) = self.get_json(uri).await {
                         if let Some(controllers) = stor.get("StorageControllers").and_then(|v| v.as_array()) {
                             for ctrl in controllers {
                                 ctrls.push(StorageController {
@@ -367,18 +407,18 @@ impl SmcRedfishClient {
     }
 
     pub async fn get_virtual_disks(&self) -> SmcResult<Vec<VirtualDisk>> {
-        let col = self.inner.get_json("/redfish/v1/Systems/1/Storage").await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/Systems/1/Storage").await?;
         let mut vols = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
                     let vol_uri = format!("{}/Volumes", uri);
-                    if let Ok(vol_col) = self.inner.get_json(&vol_uri).await {
+                    if let Ok(vol_col) = self.get_json(&vol_uri).await {
                         if let Some(vol_members) = vol_col.get("Members").and_then(|v| v.as_array()) {
                             for vm in vol_members {
                                 if let Some(vu) = vm.get("@odata.id").and_then(|v| v.as_str()) {
-                                    if let Ok(vol) = self.inner.get_json(vu).await {
+                                    if let Ok(vol) = self.get_json(vu).await {
                                         vols.push(VirtualDisk {
                                             name: json_str(&vol, "Name").unwrap_or_default(),
                                             raid_level: json_str(&vol, "RAIDType"),
@@ -405,17 +445,17 @@ impl SmcRedfishClient {
     }
 
     pub async fn get_physical_disks(&self) -> SmcResult<Vec<PhysicalDisk>> {
-        let col = self.inner.get_json("/redfish/v1/Systems/1/Storage").await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/Systems/1/Storage").await?;
         let mut disks = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                    if let Ok(stor) = self.inner.get_json(uri).await {
+                    if let Ok(stor) = self.get_json(uri).await {
                         if let Some(drives) = stor.get("Drives").and_then(|v| v.as_array()) {
                             for d in drives {
                                 if let Some(du) = d.get("@odata.id").and_then(|v| v.as_str()) {
-                                    if let Ok(drv) = self.inner.get_json(du).await {
+                                    if let Ok(drv) = self.get_json(du).await {
                                         disks.push(PhysicalDisk {
                                             name: json_str(&drv, "Name").unwrap_or_default(),
                                             manufacturer: json_str(&drv, "Manufacturer"),
@@ -456,14 +496,14 @@ impl SmcRedfishClient {
     // ── Network ─────────────────────────────────────────────────────
 
     pub async fn get_network_adapters(&self) -> SmcResult<Vec<NetworkAdapter>> {
-        let col = self.inner.get_json("/redfish/v1/Systems/1/EthernetInterfaces")
-            .await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/Systems/1/EthernetInterfaces")
+            .await?;
         let mut adapters = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                    if let Ok(nic) = self.inner.get_json(uri).await {
+                    if let Ok(nic) = self.get_json(uri).await {
                         adapters.push(NetworkAdapter {
                             name: json_str(&nic, "Name").unwrap_or_default(),
                             mac_address: json_str(&nic, "MACAddress"),
@@ -496,14 +536,14 @@ impl SmcRedfishClient {
 
     /// Get BMC network configuration.
     pub async fn get_bmc_network(&self) -> SmcResult<Vec<NetworkAdapter>> {
-        let col = self.inner.get_json("/redfish/v1/Managers/1/EthernetInterfaces")
-            .await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/Managers/1/EthernetInterfaces")
+            .await?;
         let mut adapters = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                    if let Ok(eth) = self.inner.get_json(uri).await {
+                    if let Ok(eth) = self.get_json(uri).await {
                         adapters.push(NetworkAdapter {
                             name: json_str(&eth, "Name").unwrap_or_default(),
                             mac_address: json_str(&eth, "MACAddress"),
@@ -537,14 +577,14 @@ impl SmcRedfishClient {
     // ── Firmware inventory ──────────────────────────────────────────
 
     pub async fn get_firmware_inventory(&self) -> SmcResult<Vec<FirmwareInfo>> {
-        let col = self.inner.get_json("/redfish/v1/UpdateService/FirmwareInventory")
-            .await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/UpdateService/FirmwareInventory")
+            .await?;
         let mut items = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                    if let Ok(fw) = self.inner.get_json(uri).await {
+                    if let Ok(fw) = self.get_json(uri).await {
                         items.push(FirmwareInfo {
                             name: json_str(&fw, "Name").unwrap_or_default(),
                             version: json_str(&fw, "Version").unwrap_or_default(),
@@ -567,14 +607,14 @@ impl SmcRedfishClient {
     // ── Virtual media ───────────────────────────────────────────────
 
     pub async fn get_virtual_media_status(&self) -> SmcResult<Vec<VirtualMediaStatus>> {
-        let col = self.inner.get_json("/redfish/v1/Managers/1/VirtualMedia")
-            .await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/Managers/1/VirtualMedia")
+            .await?;
         let mut items = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                    if let Ok(vm) = self.inner.get_json(uri).await {
+                    if let Ok(vm) = self.get_json(uri).await {
                         items.push(VirtualMediaStatus {
                             name: json_str(&vm, "Name").unwrap_or_default(),
                             media_types: vm.get("MediaTypes")
@@ -601,22 +641,22 @@ impl SmcRedfishClient {
             "Inserted": true,
             "WriteProtected": true
         });
-        self.inner.post_json(&uri, &body).await.map_err(SmcError::from)?;
+        let _: serde_json::Value = self.post_json(&uri, &body).await?;
         Ok(())
     }
 
     pub async fn eject_virtual_media(&self, slot: &str) -> SmcResult<()> {
         let uri = format!("/redfish/v1/Managers/1/VirtualMedia/{}/Actions/VirtualMedia.EjectMedia", slot);
         let body = serde_json::json!({});
-        self.inner.post_json(&uri, &body).await.map_err(SmcError::from)?;
+        let _: serde_json::Value = self.post_json(&uri, &body).await?;
         Ok(())
     }
 
     // ── Event log ───────────────────────────────────────────────────
 
     pub async fn get_event_log(&self) -> SmcResult<Vec<EventLogEntry>> {
-        let col = self.inner.get_json("/redfish/v1/Managers/1/LogServices/Log1/Entries")
-            .await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/Managers/1/LogServices/Log1/Entries")
+            .await?;
         let mut entries = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
@@ -643,7 +683,7 @@ impl SmcRedfishClient {
     /// Get audit log entries.
     pub async fn get_audit_log(&self) -> SmcResult<Vec<EventLogEntry>> {
         // Supermicro stores audit logs separately; try the standard path first
-        let result = self.inner.get_json("/redfish/v1/Managers/1/LogServices/AuditLog/Entries").await;
+        let result = self.get_json("/redfish/v1/Managers/1/LogServices/AuditLog/Entries").await;
         match result {
             Ok(col) => {
                 let mut entries = Vec::new();
@@ -668,24 +708,21 @@ impl SmcRedfishClient {
 
     pub async fn clear_event_log(&self) -> SmcResult<()> {
         let body = serde_json::json!({});
-        self.inner
-            .post_json("/redfish/v1/Managers/1/LogServices/Log1/Actions/LogService.ClearLog", &body)
-            .await
-            .map_err(SmcError::from)?;
+        let _: serde_json::Value = self.post_json("/redfish/v1/Managers/1/LogServices/Log1/Actions/LogService.ClearLog", &body).await?;
         Ok(())
     }
 
     // ── User management ─────────────────────────────────────────────
 
     pub async fn get_users(&self) -> SmcResult<Vec<UserAccount>> {
-        let col = self.inner.get_json("/redfish/v1/AccountService/Accounts")
-            .await.map_err(SmcError::from)?;
+        let col = self.get_json("/redfish/v1/AccountService/Accounts")
+            .await?;
         let mut users = Vec::new();
 
         if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
             for member in members {
                 if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                    if let Ok(acct) = self.inner.get_json(uri).await {
+                    if let Ok(acct) = self.get_json(uri).await {
                         let name = json_str(&acct, "UserName").unwrap_or_default();
                         if name.is_empty() {
                             continue; // Skip empty slots
@@ -713,30 +750,27 @@ impl SmcRedfishClient {
             "RoleId": role,
             "Enabled": true
         });
-        self.inner
-            .post_json("/redfish/v1/AccountService/Accounts", &body)
-            .await
-            .map_err(SmcError::from)?;
+        let _: serde_json::Value = self.post_json("/redfish/v1/AccountService/Accounts", &body).await?;
         Ok(())
     }
 
     pub async fn update_password(&self, user_id: &str, new_password: &str) -> SmcResult<()> {
         let uri = format!("/redfish/v1/AccountService/Accounts/{}", user_id);
         let body = serde_json::json!({ "Password": new_password });
-        self.inner.patch_json(&uri, &body).await.map_err(SmcError::from)?;
+        self.patch_json(&uri, &body).await?;
         Ok(())
     }
 
     pub async fn delete_user(&self, user_id: &str) -> SmcResult<()> {
         let uri = format!("/redfish/v1/AccountService/Accounts/{}", user_id);
-        self.inner.delete(&uri).await.map_err(SmcError::from)?;
+        self.delete(&uri).await?;
         Ok(())
     }
 
     // ── BIOS management ─────────────────────────────────────────────
 
     pub async fn get_bios_attributes(&self) -> SmcResult<Vec<BiosAttribute>> {
-        let bios = self.inner.get_json("/redfish/v1/Systems/1/Bios").await.map_err(SmcError::from)?;
+        let bios = self.get_json("/redfish/v1/Systems/1/Bios").await?;
         let mut attrs = Vec::new();
 
         if let Some(attributes) = bios.get("Attributes").and_then(|v| v.as_object()) {
@@ -759,12 +793,12 @@ impl SmcRedfishClient {
     pub async fn set_bios_attributes(&self, attributes: &serde_json::Value) -> SmcResult<()> {
         let uri = "/redfish/v1/Systems/1/Bios/Settings";
         let body = serde_json::json!({ "Attributes": attributes });
-        self.inner.patch_json(uri, &body).await.map_err(SmcError::from)?;
+        self.patch_json(uri, &body).await?;
         Ok(())
     }
 
     pub async fn get_boot_config(&self) -> SmcResult<BootConfig> {
-        let sys = self.inner.get_json("/redfish/v1/Systems/1").await.map_err(SmcError::from)?;
+        let sys = self.get_json("/redfish/v1/Systems/1").await?;
         let boot = sys.get("Boot").unwrap_or(&serde_json::Value::Null);
 
         let mut boot_order = Vec::new();
@@ -808,7 +842,7 @@ impl SmcRedfishClient {
             );
         }
         let body = serde_json::json!({ "Boot": boot });
-        self.inner.patch_json("/redfish/v1/Systems/1", &body).await.map_err(SmcError::from)?;
+        self.patch_json("/redfish/v1/Systems/1", &body).await?;
         Ok(())
     }
 
@@ -817,10 +851,7 @@ impl SmcRedfishClient {
     pub async fn get_certificate(&self) -> SmcResult<SmcCertificate> {
         // Supermicro typically uses /redfish/v1/Managers/1/NetworkProtocol/HTTPS/Certificates/1
         // or /redfish/v1/CertificateService/CertificateLocations
-        let cert = self.inner
-            .get_json("/redfish/v1/Managers/1/NetworkProtocol/HTTPS/Certificates/1")
-            .await
-            .map_err(SmcError::from)?;
+        let cert = self.get_json("/redfish/v1/Managers/1/NetworkProtocol/HTTPS/Certificates/1").await?;
 
         Ok(SmcCertificate {
             subject: json_str(&cert, "Subject").unwrap_or_default(),
@@ -848,10 +879,7 @@ impl SmcRedfishClient {
                 "@odata.id": "/redfish/v1/Managers/1/NetworkProtocol/HTTPS/Certificates"
             }
         });
-        let resp = self.inner
-            .post_json("/redfish/v1/CertificateService/Actions/CertificateService.GenerateCSR", &body)
-            .await
-            .map_err(SmcError::from)?;
+        let resp = self.post_json("/redfish/v1/CertificateService/Actions/CertificateService.GenerateCSR", &body).await?;
 
         json_str(&resp, "CSRString")
             .ok_or_else(|| SmcError::certificate("CSR generation returned no CSR string"))
@@ -861,13 +889,13 @@ impl SmcRedfishClient {
 
     pub async fn set_indicator_led(&self, state: &str) -> SmcResult<()> {
         let body = serde_json::json!({ "IndicatorLED": state });
-        self.inner.patch_json("/redfish/v1/Systems/1", &body).await.map_err(SmcError::from)?;
+        self.patch_json("/redfish/v1/Systems/1", &body).await?;
         Ok(())
     }
 
     pub async fn set_asset_tag(&self, tag: &str) -> SmcResult<()> {
         let body = serde_json::json!({ "AssetTag": tag });
-        self.inner.patch_json("/redfish/v1/Systems/1", &body).await.map_err(SmcError::from)?;
+        self.patch_json("/redfish/v1/Systems/1", &body).await?;
         Ok(())
     }
 
@@ -875,9 +903,7 @@ impl SmcRedfishClient {
 
     pub async fn get_license(&self) -> SmcResult<Vec<SmcLicense>> {
         // Supermicro uses Oem.Supermicro.LicenseManager or /redfish/v1/Managers/1/Oem/Supermicro/Licenses
-        let result = self.inner
-            .get_json("/redfish/v1/Managers/1/Oem/Supermicro/Licenses")
-            .await;
+        let result = self.get_json("/redfish/v1/Managers/1/Oem/Supermicro/Licenses").await;
 
         match result {
             Ok(col) => {
@@ -885,7 +911,7 @@ impl SmcRedfishClient {
                 if let Some(members) = col.get("Members").and_then(|v| v.as_array()) {
                     for member in members {
                         if let Some(uri) = member.get("@odata.id").and_then(|v| v.as_str()) {
-                            if let Ok(lic) = self.inner.get_json(uri).await {
+                            if let Ok(lic) = self.get_json(uri).await {
                                 let tier_str = json_str(&lic, "LicenseType").unwrap_or_default();
                                 let tier = match tier_str.as_str() {
                                     "SFT-OOB-LIC" => SmcLicenseTier::OutOfBand,
@@ -915,17 +941,14 @@ impl SmcRedfishClient {
         let body = serde_json::json!({
             "ProductKey": product_key
         });
-        self.inner
-            .post_json("/redfish/v1/Managers/1/Oem/Supermicro/Licenses", &body)
-            .await
-            .map_err(SmcError::from)?;
+        let _: serde_json::Value = self.post_json("/redfish/v1/Managers/1/Oem/Supermicro/Licenses", &body).await?;
         Ok(())
     }
 
     // ── Health rollup ───────────────────────────────────────────────
 
     pub async fn get_health_rollup(&self) -> SmcResult<HealthRollup> {
-        let sys = self.inner.get_json("/redfish/v1/Systems/1").await.map_err(SmcError::from)?;
+        let sys = self.get_json("/redfish/v1/Systems/1").await?;
 
         let overall = sys.get("Status")
             .and_then(|s| s.get("HealthRollup"))
@@ -961,7 +984,7 @@ impl SmcRedfishClient {
         }
 
         // Chassis health
-        if let Ok(chassis) = self.inner.get_json("/redfish/v1/Chassis/1").await {
+        if let Ok(chassis) = self.get_json("/redfish/v1/Chassis/1").await {
             if let Some(cs) = chassis.get("Status") {
                 components.push(ComponentHealth {
                     name: "Chassis".into(),
@@ -975,7 +998,7 @@ impl SmcRedfishClient {
         }
 
         // Manager/BMC health
-        if let Ok(mgr) = self.inner.get_json("/redfish/v1/Managers/1").await {
+        if let Ok(mgr) = self.get_json("/redfish/v1/Managers/1").await {
             if let Some(ms) = mgr.get("Status") {
                 components.push(ComponentHealth {
                     name: "BMC".into(),
@@ -995,7 +1018,7 @@ impl SmcRedfishClient {
     // ── Security status ─────────────────────────────────────────────
 
     pub async fn get_security_status(&self) -> SmcResult<SmcSecurityStatus> {
-        let np = self.inner.get_json("/redfish/v1/Managers/1/NetworkProtocol")
+        let np = self.get_json("/redfish/v1/Managers/1/NetworkProtocol")
             .await
             .unwrap_or_else(|_| serde_json::json!({}));
 
@@ -1051,7 +1074,7 @@ impl SmcRedfishClient {
     // ── Console / iKVM ──────────────────────────────────────────────
 
     pub async fn get_console_info(&self) -> SmcResult<SmcConsoleInfo> {
-        let mgr = self.inner.get_json("/redfish/v1/Managers/1").await.map_err(SmcError::from)?;
+        let mgr = self.get_json("/redfish/v1/Managers/1").await?;
 
         let console_type = if self.platform.supports_html5_ikvm() {
             SmcConsoleType::Html5Ikvm
@@ -1098,10 +1121,7 @@ impl SmcRedfishClient {
 
     pub async fn reset_bmc(&self) -> SmcResult<()> {
         let body = serde_json::json!({ "ResetType": "GracefulRestart" });
-        self.inner
-            .post_json("/redfish/v1/Managers/1/Actions/Manager.Reset", &body)
-            .await
-            .map_err(SmcError::from)?;
+        let _: serde_json::Value = self.post_json("/redfish/v1/Managers/1/Actions/Manager.Reset", &body).await?;
         Ok(())
     }
 
@@ -1110,9 +1130,7 @@ impl SmcRedfishClient {
     /// Get Node Manager power policies via OEM Redfish extension.
     pub async fn get_node_manager_policies(&self) -> SmcResult<Vec<NodeManagerPolicy>> {
         // Supermicro exposes Node Manager via Oem.Supermicro.NodeManager
-        let result = self.inner
-            .get_json("/redfish/v1/Managers/1/Oem/Supermicro/NodeManager/Policies")
-            .await;
+        let result = self.get_json("/redfish/v1/Managers/1/Oem/Supermicro/NodeManager/Policies").await;
 
         match result {
             Ok(col) => {
@@ -1154,7 +1172,7 @@ impl SmcRedfishClient {
             "/redfish/v1/Managers/1/Oem/Supermicro/NodeManager/Statistics/{}",
             domain_str
         );
-        let stats = self.inner.get_json(&uri).await.map_err(SmcError::from)?;
+        let stats = self.get_json(&uri).await?;
 
         Ok(NodeManagerStats {
             domain: domain.clone(),

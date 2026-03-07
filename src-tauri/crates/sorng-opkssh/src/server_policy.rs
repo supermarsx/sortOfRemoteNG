@@ -8,7 +8,7 @@ use log::{debug, info};
 
 /// Build a shell script to read the server's opkssh configuration.
 pub fn build_read_config_script() -> String {
-    r#"echo "===OPKSSH_CONFIG_BEGIN==="
+    r##"echo "===OPKSSH_CONFIG_BEGIN==="
 echo "===VERSION_BEGIN==="
 if command -v opkssh >/dev/null 2>&1; then
     opkssh --version 2>&1 || echo "unknown"
@@ -46,7 +46,7 @@ else
 fi
 echo "===SSHD_CONFIG_END==="
 echo "===OPKSSH_CONFIG_END==="
-"#
+"##
     .to_string()
 }
 

@@ -86,11 +86,27 @@ impl ProxmoxService {
     }
 
     pub fn get_config(&self) -> Option<ProxmoxConfigSafe> {
-        self.config.as_ref().map(|c| ProxmoxConfigSafe {
-            host: c.host.clone(),
-            port: c.port,
-            username: c.username.clone(),
-            insecure: c.insecure,
+        self.config.as_ref().map(|c| {
+            let (auth_method, username, token_id) = match &c.auth {
+                ProxmoxAuthMethod::Password { username, .. } => (
+                    "password".to_string(),
+                    Some(username.clone()),
+                    None,
+                ),
+                ProxmoxAuthMethod::ApiToken { token_id, .. } => (
+                    "apitoken".to_string(),
+                    None,
+                    Some(token_id.clone()),
+                ),
+            };
+            ProxmoxConfigSafe {
+                host: c.host.clone(),
+                port: c.port,
+                auth_method,
+                username,
+                token_id,
+                insecure: c.insecure,
+            }
         })
     }
 
@@ -178,7 +194,7 @@ impl ProxmoxService {
 
     pub async fn create_qemu_vm(&self, node: &str, params: &QemuCreateParams) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        QemuManager::new(c).create_vm(node, params).await
+        QemuManager::new(c).create_vm(node, params).await.map(Some)
     }
 
     pub async fn delete_qemu_vm(&self, node: &str, vmid: u64, purge: bool, destroy_unreferenced: bool) -> ProxmoxResult<Option<String>> {
@@ -228,17 +244,17 @@ impl ProxmoxService {
 
     pub async fn resize_qemu_disk(&self, node: &str, vmid: u64, params: &DiskResizeParams) -> ProxmoxResult<()> {
         let c = self.require_client()?;
-        QemuManager::new(c).resize_disk(node, vmid, params).await
+        QemuManager::new(c).resize_disk_params(node, vmid, params).await
     }
 
     pub async fn clone_qemu_vm(&self, node: &str, vmid: u64, params: &QemuCloneParams) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        QemuManager::new(c).clone_vm(node, vmid, params).await
+        QemuManager::new(c).clone_vm(node, vmid, params).await.map(Some)
     }
 
     pub async fn migrate_qemu_vm(&self, node: &str, vmid: u64, params: &QemuMigrateParams) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        QemuManager::new(c).migrate_vm(node, vmid, params).await
+        QemuManager::new(c).migrate_vm(node, vmid, params).await.map(Some)
     }
 
     pub async fn convert_qemu_to_template(&self, node: &str, vmid: u64) -> ProxmoxResult<()> {
@@ -285,7 +301,7 @@ impl ProxmoxService {
 
     pub async fn create_lxc_container(&self, node: &str, params: &LxcCreateParams) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        LxcManager::new(c).create_container(node, params).await
+        LxcManager::new(c).create_container(node, params).await.map(Some)
     }
 
     pub async fn delete_lxc_container(&self, node: &str, vmid: u64, purge: bool, force: bool) -> ProxmoxResult<Option<String>> {
@@ -315,12 +331,12 @@ impl ProxmoxService {
 
     pub async fn clone_lxc_container(&self, node: &str, vmid: u64, params: &LxcCloneParams) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        LxcManager::new(c).clone_container(node, vmid, params).await
+        LxcManager::new(c).clone_container(node, vmid, params).await.map(Some)
     }
 
     pub async fn migrate_lxc_container(&self, node: &str, vmid: u64, params: &LxcMigrateParams) -> ProxmoxResult<Option<String>> {
         let c = self.require_client()?;
-        LxcManager::new(c).migrate_container(node, vmid, params).await
+        LxcManager::new(c).migrate_container(node, vmid, params).await.map(Some)
     }
 
     // ── Storage ─────────────────────────────────────────────────────

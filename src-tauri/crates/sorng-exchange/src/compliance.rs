@@ -112,11 +112,11 @@ pub async fn ps_enable_litigation_hold(
     );
     cmd.push_str(&ps_param_opt(
         "LitigationHoldDuration",
-        &duration.map(String::from),
+        duration,
     ));
     cmd.push_str(&ps_param_opt(
         "LitigationHoldOwner",
-        &owner.map(String::from),
+        owner,
     ));
     client.run_ps(&cmd).await
 }

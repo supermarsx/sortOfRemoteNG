@@ -18,32 +18,47 @@ impl ApacheStatusManager {
 }
 
 fn parse_server_status(raw: &str) -> ApacheServerStatus {
-    let mut status = ApacheServerStatus::default();
+    let mut total_accesses = 0u64;
+    let mut total_kbytes = 0u64;
+    let mut cpu_load = None;
+    let mut uptime = 0u64;
+    let mut requests_per_sec = 0.0f64;
+    let mut bytes_per_sec = 0.0f64;
+    let mut bytes_per_request = 0.0f64;
+    let mut busy_workers = 0u32;
+    let mut idle_workers = 0u32;
+    let mut scoreboard = String::new();
+
     for line in raw.lines() {
         let parts: Vec<&str> = line.splitn(2, ':').collect();
         if parts.len() != 2 { continue; }
         let key = parts[0].trim();
         let val = parts[1].trim();
         match key {
-            "Total Accesses" => status.total_accesses = val.parse().ok(),
-            "Total kBytes" => status.total_kbytes = val.parse().ok(),
-            "Uptime" => status.uptime = val.parse().ok(),
-            "ReqPerSec" => status.req_per_sec = val.parse().ok(),
-            "BytesPerSec" => status.bytes_per_sec = val.parse().ok(),
-            "BytesPerReq" => status.bytes_per_req = val.parse().ok(),
-            "BusyWorkers" => status.busy_workers = val.parse().ok(),
-            "IdleWorkers" => status.idle_workers = val.parse().ok(),
-            "ConnsTotal" => status.conns_total = val.parse().ok(),
-            "ConnsAsyncWriting" => status.conns_async_writing = val.parse().ok(),
-            "ConnsAsyncKeepAlive" => status.conns_async_keep_alive = val.parse().ok(),
-            "ConnsAsyncClosing" => status.conns_async_closing = val.parse().ok(),
-            "ServerVersion" => status.server_version = Some(val.to_string()),
-            "ServerMPM" => status.server_mpm = Some(val.to_string()),
-            "Load1" => status.load1 = val.parse().ok(),
-            "Load5" => status.load5 = val.parse().ok(),
-            "Load15" => status.load15 = val.parse().ok(),
+            "Total Accesses" => total_accesses = val.parse().unwrap_or(0),
+            "Total kBytes" => total_kbytes = val.parse().unwrap_or(0),
+            "CPULoad" => cpu_load = val.parse().ok(),
+            "Uptime" => uptime = val.parse().unwrap_or(0),
+            "ReqPerSec" => requests_per_sec = val.parse().unwrap_or(0.0),
+            "BytesPerSec" => bytes_per_sec = val.parse().unwrap_or(0.0),
+            "BytesPerReq" => bytes_per_request = val.parse().unwrap_or(0.0),
+            "BusyWorkers" => busy_workers = val.parse().unwrap_or(0),
+            "IdleWorkers" => idle_workers = val.parse().unwrap_or(0),
+            "Scoreboard" => scoreboard = val.to_string(),
             _ => {}
         }
     }
-    status
+    ApacheServerStatus {
+        total_accesses,
+        total_kbytes,
+        cpu_load,
+        uptime,
+        requests_per_sec,
+        bytes_per_sec,
+        bytes_per_request,
+        busy_workers,
+        idle_workers,
+        scoreboard,
+        workers: vec![],
+    }
 }

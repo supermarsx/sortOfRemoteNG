@@ -19,12 +19,17 @@ use crate::capabilities::build_initialize_result;
 use crate::logging::McpLogBuffer;
 use crate::protocol::{self, MethodCategory};
 use crate::session::SessionManager;
-use crate::transport::{McpHttpRequest, McpHttpResponse, HttpMethod};
+use crate::transport::{McpHttpRequest, McpHttpResponse, HttpMethod, TransportConfig};
 use crate::types::*;
 
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+
+/// Serialize a JSON-RPC response or error to a serde_json::Value.
+fn rpc_json(v: impl serde::Serialize) -> Value {
+    serde_json::to_value(v).unwrap_or_default()
+}
 
 /// Result of processing a single MCP request.
 pub struct RequestOutcome {
@@ -46,17 +51,18 @@ pub fn handle_request(
     req: &McpHttpRequest,
     config: &McpServerConfig,
     sessions: &mut SessionManager,
-    auth: &AuthManager,
+    auth: &mut AuthManager,
     log_buffer: &mut McpLogBuffer,
 ) -> RequestOutcome {
-    let mut notifications = Vec::new();
+    let notifications = Vec::new();
     let mut events = Vec::new();
-    let new_session_id: Option<String>;
+    let _new_session_id: Option<String>;
 
     // ── OPTIONS (CORS preflight) ─────────────────────────────────
     if req.method == HttpMethod::Options {
+        let transport_config = TransportConfig::from(config);
         return RequestOutcome {
-            response: crate::transport::handle_options(config),
+            response: crate::transport::handle_options(&transport_config, req.headers.get("origin").map(|s| s.as_str())),
             notifications,
             new_session_id: None,
             events,
@@ -66,7 +72,7 @@ pub fn handle_request(
     // ── GET /health ──────────────────────────────────────────────
     if req.method == HttpMethod::Get && req.path.as_deref() == Some("/health") {
         return RequestOutcome {
-            response: crate::transport::handle_health(config),
+            response: crate::transport::handle_health(),
             notifications,
             new_session_id: None,
             events,
@@ -82,11 +88,12 @@ pub fn handle_request(
                 events.push(McpEvent {
                     id: uuid::Uuid::new_v4().to_string(),
                     event_type: McpEventType::AuthFailed,
-                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    timestamp: chrono::Utc::now(),
+                    session_id: None,
                     details: json!({ "reason": reason }),
                 });
                 return RequestOutcome {
-                    response: McpHttpResponse::unauthorized(&reason),
+                    response: McpHttpResponse::unauthorized(),
                     notifications,
                     new_session_id: None,
                     events,
@@ -94,7 +101,7 @@ pub fn handle_request(
             }
             AuthResult::Locked => {
                 return RequestOutcome {
-                    response: McpHttpResponse::too_many_requests("Account locked due to too many failed attempts"),
+                    response: McpHttpResponse::too_many_requests(),
                     notifications,
                     new_session_id: None,
                     events,
@@ -105,9 +112,10 @@ pub fn handle_request(
 
     // ── Origin validation ────────────────────────────────────────
     if let Some(origin) = req.headers.get("origin") {
-        if !crate::transport::validate_origin(origin, config) {
+        let transport_config = TransportConfig::from(config);
+        if !crate::transport::validate_origin(Some(origin.as_str()), &transport_config) {
             return RequestOutcome {
-                response: McpHttpResponse::unauthorized("Origin not allowed"),
+                response: McpHttpResponse::unauthorized(),
                 notifications,
                 new_session_id: None,
                 events,
@@ -124,7 +132,8 @@ pub fn handle_request(
             events.push(McpEvent {
                 id: uuid::Uuid::new_v4().to_string(),
                 event_type: McpEventType::SessionEnded,
-                timestamp: chrono::Utc::now().to_rfc3339(),
+                timestamp: chrono::Utc::now(),
+                session_id: Some(sid.clone()),
                 details: json!({ "session_id": sid }),
             });
         }
@@ -144,7 +153,7 @@ pub fn handle_request(
         if let Some(ref sid) = session_id {
             if !sessions.is_valid(sid) {
                 return RequestOutcome {
-                    response: McpHttpResponse::not_found("Invalid or expired session"),
+                    response: McpHttpResponse::not_found(),
                     notifications,
                     new_session_id: None,
                     events,
@@ -155,6 +164,7 @@ pub fn handle_request(
         return RequestOutcome {
             response: McpHttpResponse {
                 status: 200,
+                content_type: "text/event-stream".to_string(),
                 headers: {
                     let mut h = HashMap::new();
                     h.insert("content-type".to_string(), "text/event-stream".to_string());
@@ -198,12 +208,13 @@ pub fn handle_request(
         Err(e) => {
             return RequestOutcome {
                 response: McpHttpResponse::json(
-                    &protocol::build_error(
+                    400,
+                    &rpc_json(protocol::build_error(
                         Value::Null,
                         error_codes::PARSE_ERROR,
                         &format!("Parse error: {}", e),
                         None,
-                    ),
+                    )),
                 ),
                 notifications,
                 new_session_id: None,
@@ -214,16 +225,16 @@ pub fn handle_request(
 
     // Resolve session from header
     let session_id = req.headers.get("mcp-session-id").cloned();
-    new_session_id = None; // Will be set below if Initialize
+    _new_session_id = None; // Will be set below if Initialize
 
     // Process each message
-    let mut responses = Vec::new();
+    let mut responses: Vec<Value> = Vec::new();
     let mut created_session: Option<String> = None;
 
     for msg in &messages {
         if protocol::is_notification(msg) {
             // Notifications have no response
-            let method = msg.method.as_deref().unwrap_or("");
+            let method = msg.method.as_str();
             debug!("MCP notification: {}", method);
 
             match protocol::classify_method(method) {
@@ -245,52 +256,51 @@ pub fn handle_request(
         }
 
         let id = msg.id.clone().unwrap_or(Value::Null);
-        let method = msg.method.as_deref().unwrap_or("");
+        let method = msg.method.as_str();
         let category = protocol::classify_method(method);
 
-        let response = match category {
+        let response: Value = match category {
             MethodCategory::Initialize => {
-                // Create session
-                match sessions.create_session() {
-                    Some(session) => {
-                        let sid = session.id.clone();
-                        created_session = Some(sid.clone());
+                // Parse client info from params
+                let (client_info, capabilities, protocol_version) = if let Some(params) = &msg.params {
+                    if let Ok(init_params) = serde_json::from_value::<InitializeParams>(params.clone()) {
+                        (Some(init_params.client_info), init_params.capabilities, init_params.protocol_version)
+                    } else {
+                        (None, ClientCapabilities::default(), MCP_PROTOCOL_VERSION.to_string())
+                    }
+                } else {
+                    (None, ClientCapabilities::default(), MCP_PROTOCOL_VERSION.to_string())
+                };
 
-                        // Parse client info from params
-                        if let Some(params) = &msg.params {
-                            if let Ok(init_params) = serde_json::from_value::<InitializeParams>(params.clone()) {
-                                if let Some(s) = sessions.get_session_mut(&sid) {
-                                    s.client_info = Some(init_params.client_info);
-                                    s.client_capabilities = init_params.capabilities;
-                                    s.protocol_version = init_params.protocol_version;
-                                }
-                            }
-                        }
+                match sessions.create_session(client_info, capabilities, protocol_version) {
+                    Ok(sid) => {
+                        created_session = Some(sid.clone());
 
                         info!("MCP session initialized: {}", sid);
                         events.push(McpEvent {
                             id: uuid::Uuid::new_v4().to_string(),
                             event_type: McpEventType::SessionStarted,
-                            timestamp: chrono::Utc::now().to_rfc3339(),
+                            timestamp: chrono::Utc::now(),
+                            session_id: Some(sid.clone()),
                             details: json!({ "session_id": sid }),
                         });
 
                         let result = build_initialize_result(config);
-                        protocol::build_response(id, serde_json::to_value(result).unwrap_or_default())
+                        rpc_json(protocol::build_response(id, serde_json::to_value(result).unwrap_or_default()))
                     }
-                    None => {
-                        protocol::build_error(
+                    Err(e) => {
+                        rpc_json(protocol::build_error(
                             id,
                             error_codes::INTERNAL_ERROR,
-                            "Maximum sessions reached",
+                            &e,
                             None,
-                        )
+                        ))
                     }
                 }
             }
 
             MethodCategory::Ping => {
-                protocol::build_response(id, json!({}))
+                rpc_json(protocol::build_response(id, json!({})))
             }
 
             MethodCategory::ToolsList => {
@@ -298,9 +308,9 @@ pub fn handle_request(
                 let filtered: Vec<&McpTool> = if config.enabled_tools.is_empty() {
                     tools.iter().collect()
                 } else {
-                    tools.iter().filter(|t| crate::capabilities::is_tool_enabled(&t.name, config)).collect()
+                    tools.iter().filter(|t| crate::capabilities::is_tool_enabled(config, &t.name)).collect()
                 };
-                protocol::build_response(id, json!({ "tools": filtered }))
+                rpc_json(protocol::build_response(id, json!({ "tools": filtered })))
             }
 
             MethodCategory::ToolsCall => {
@@ -315,7 +325,8 @@ pub fn handle_request(
                 events.push(McpEvent {
                     id: uuid::Uuid::new_v4().to_string(),
                     event_type: McpEventType::ToolCalled,
-                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    timestamp: chrono::Utc::now(),
+                    session_id: session_id.clone(),
                     details: json!({ "tool": tool_name, "request_id": &id }),
                 });
 
@@ -328,14 +339,14 @@ pub fn handle_request(
 
                 // The actual tool execution is handled by the service layer
                 // which has access to app state. Return a deferred placeholder.
-                protocol::build_response(id, json!({
+                rpc_json(protocol::build_response(id, json!({
                     "content": [{
                         "type": "text",
                         "text": format!("Tool '{}' execution is handled by the application layer. This response is a placeholder for the MCP server module.", tool_name)
                     }],
                     "isError": false,
                     "_deferred": true
-                }))
+                })))
             }
 
             MethodCategory::ResourcesList => {
@@ -343,14 +354,14 @@ pub fn handle_request(
                 let filtered: Vec<&McpResource> = if config.enabled_resources.is_empty() {
                     resources.iter().collect()
                 } else {
-                    resources.iter().filter(|r| crate::capabilities::is_resource_enabled(&r.uri, config)).collect()
+                    resources.iter().filter(|r| crate::capabilities::is_resource_enabled(config, &r.uri)).collect()
                 };
-                protocol::build_response(id, json!({ "resources": filtered }))
+                rpc_json(protocol::build_response(id, json!({ "resources": filtered })))
             }
 
             MethodCategory::ResourcesTemplatesList => {
                 let templates = crate::resources::get_all_resource_templates();
-                protocol::build_response(id, json!({ "resourceTemplates": templates }))
+                rpc_json(protocol::build_response(id, json!({ "resourceTemplates": templates })))
             }
 
             MethodCategory::ResourcesRead => {
@@ -362,29 +373,30 @@ pub fn handle_request(
                     .unwrap_or("");
 
                 if crate::resources::match_resource_uri(uri).is_none() {
-                    protocol::build_error(
+                    rpc_json(protocol::build_error(
                         id,
                         error_codes::RESOURCE_NOT_FOUND,
                         &format!("Resource not found: {}", uri),
                         None,
-                    )
+                    ))
                 } else {
                     events.push(McpEvent {
                         id: uuid::Uuid::new_v4().to_string(),
                         event_type: McpEventType::ResourceRead,
-                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        timestamp: chrono::Utc::now(),
+                        session_id: session_id.clone(),
                         details: json!({ "uri": uri }),
                     });
 
                     // Placeholder — actual data comes from service layer
-                    protocol::build_response(id, json!({
+                    rpc_json(protocol::build_response(id, json!({
                         "contents": [{
                             "uri": uri,
                             "mimeType": "application/json",
                             "text": "{}"
                         }],
                         "_deferred": true
-                    }))
+                    })))
                 }
             }
 
@@ -397,9 +409,9 @@ pub fn handle_request(
 
                 if let Some(ref sid) = session_id.as_ref().or(created_session.as_ref()) {
                     sessions.add_subscription(sid, uri);
-                    protocol::build_response(id, json!({}))
+                    rpc_json(protocol::build_response(id, json!({})))
                 } else {
-                    protocol::build_error(id, error_codes::INVALID_REQUEST, "No active session", None)
+                    rpc_json(protocol::build_error(id, error_codes::INVALID_REQUEST, "No active session", None))
                 }
             }
 
@@ -412,9 +424,9 @@ pub fn handle_request(
 
                 if let Some(ref sid) = session_id.as_ref().or(created_session.as_ref()) {
                     sessions.remove_subscription(sid, uri);
-                    protocol::build_response(id, json!({}))
+                    rpc_json(protocol::build_response(id, json!({})))
                 } else {
-                    protocol::build_error(id, error_codes::INVALID_REQUEST, "No active session", None)
+                    rpc_json(protocol::build_error(id, error_codes::INVALID_REQUEST, "No active session", None))
                 }
             }
 
@@ -423,9 +435,9 @@ pub fn handle_request(
                 let filtered: Vec<&McpPrompt> = if config.enabled_prompts.is_empty() {
                     prompts.iter().collect()
                 } else {
-                    prompts.iter().filter(|p| crate::capabilities::is_prompt_enabled(&p.name, config)).collect()
+                    prompts.iter().filter(|p| crate::capabilities::is_prompt_enabled(config, &p.name)).collect()
                 };
-                protocol::build_response(id, json!({ "prompts": filtered }))
+                rpc_json(protocol::build_response(id, json!({ "prompts": filtered })))
             }
 
             MethodCategory::PromptsGet => {
@@ -439,20 +451,20 @@ pub fn handle_request(
                         Some(messages) => {
                             let description = crate::prompts::get_prompt(name)
                                 .and_then(|p| p.description);
-                            protocol::build_response(id, json!({
+                            rpc_json(protocol::build_response(id, json!({
                                 "description": description,
                                 "messages": messages
-                            }))
+                            })))
                         }
-                        None => protocol::build_error(
+                        None => rpc_json(protocol::build_error(
                             id,
                             error_codes::INVALID_PARAMS,
                             &format!("Unknown prompt or missing required arguments: {}", name),
                             None,
-                        ),
+                        )),
                     }
                 } else {
-                    protocol::build_error(id, error_codes::INVALID_PARAMS, "Missing params", None)
+                    rpc_json(protocol::build_error(id, error_codes::INVALID_PARAMS, "Missing params", None))
                 }
             }
 
@@ -464,27 +476,27 @@ pub fn handle_request(
                         if let Some(ref sid) = session_id.as_ref().or(created_session.as_ref()) {
                             sessions.set_log_level(sid, level_params.level);
                         }
-                        protocol::build_response(id, json!({}))
+                        rpc_json(protocol::build_response(id, json!({})))
                     } else {
-                        protocol::build_error(id, error_codes::INVALID_PARAMS, "Invalid log level", None)
+                        rpc_json(protocol::build_error(id, error_codes::INVALID_PARAMS, "Invalid log level", None))
                     }
                 } else {
-                    protocol::build_error(id, error_codes::INVALID_PARAMS, "Missing params", None)
+                    rpc_json(protocol::build_error(id, error_codes::INVALID_PARAMS, "Missing params", None))
                 }
             }
 
             MethodCategory::Unknown(method_name) => {
                 warn!("Unknown MCP method: {}", method_name);
-                protocol::build_error(
+                rpc_json(protocol::build_error(
                     id,
                     error_codes::METHOD_NOT_FOUND,
                     &format!("Method not found: {}", method_name),
                     None,
-                )
+                ))
             }
 
             _ => {
-                protocol::build_error(id, error_codes::METHOD_NOT_FOUND, "Method not supported", None)
+                rpc_json(protocol::build_error(id, error_codes::METHOD_NOT_FOUND, "Method not supported", None))
             }
         };
 
@@ -500,15 +512,16 @@ pub fn handle_request(
     let http_response = if responses.is_empty() {
         McpHttpResponse::accepted()
     } else if responses.len() == 1 {
-        McpHttpResponse::json(&responses[0])
+        McpHttpResponse::json(200, &responses[0])
     } else {
-        McpHttpResponse::json(&Value::Array(responses))
+        McpHttpResponse::json(200, &Value::Array(responses))
     };
 
     // Apply CORS and session headers
-    let mut response = crate::transport::with_cors(http_response, config);
+    let transport_config = TransportConfig::from(config);
+    let mut response = http_response.with_cors(&transport_config, None);
     if let Some(ref sid) = created_session {
-        response = crate::transport::with_session_id(response, sid);
+        response = response.with_session_id(sid);
     }
 
     RequestOutcome {
@@ -559,11 +572,11 @@ mod tests {
             path: Some("/mcp".to_string()),
         };
         let config = test_config();
-        let mut sessions = SessionManager::new(&config);
-        let auth = AuthManager::new(&config);
-        let mut log_buf = McpLogBuffer::new();
+        let mut sessions = SessionManager::new(config.max_sessions, config.session_timeout_secs);
+        let mut auth = AuthManager::new(config.api_key.clone(), config.require_auth);
+        let mut log_buf = McpLogBuffer::new(config.log_level);
 
-        let outcome = handle_request(&req, &config, &mut sessions, &auth, &mut log_buf);
+        let outcome = handle_request(&req, &config, &mut sessions, &mut auth, &mut log_buf);
         assert_eq!(outcome.response.status, 204);
     }
 
@@ -576,11 +589,11 @@ mod tests {
             path: Some("/health".to_string()),
         };
         let config = test_config();
-        let mut sessions = SessionManager::new(&config);
-        let auth = AuthManager::new(&config);
-        let mut log_buf = McpLogBuffer::new();
+        let mut sessions = SessionManager::new(config.max_sessions, config.session_timeout_secs);
+        let mut auth = AuthManager::new(config.api_key.clone(), config.require_auth);
+        let mut log_buf = McpLogBuffer::new(config.log_level);
 
-        let outcome = handle_request(&req, &config, &mut sessions, &auth, &mut log_buf);
+        let outcome = handle_request(&req, &config, &mut sessions, &mut auth, &mut log_buf);
         assert_eq!(outcome.response.status, 200);
     }
 
@@ -602,11 +615,11 @@ mod tests {
 
         let req = make_post(&body);
         let config = test_config();
-        let mut sessions = SessionManager::new(&config);
-        let auth = AuthManager::new(&config);
-        let mut log_buf = McpLogBuffer::new();
+        let mut sessions = SessionManager::new(config.max_sessions, config.session_timeout_secs);
+        let mut auth = AuthManager::new(config.api_key.clone(), config.require_auth);
+        let mut log_buf = McpLogBuffer::new(config.log_level);
 
-        let outcome = handle_request(&req, &config, &mut sessions, &auth, &mut log_buf);
+        let outcome = handle_request(&req, &config, &mut sessions, &mut auth, &mut log_buf);
         assert_eq!(outcome.response.status, 200);
         assert!(outcome.new_session_id.is_some());
 
@@ -624,11 +637,11 @@ mod tests {
 
         let req = make_post(&body);
         let config = test_config();
-        let mut sessions = SessionManager::new(&config);
-        let auth = AuthManager::new(&config);
-        let mut log_buf = McpLogBuffer::new();
+        let mut sessions = SessionManager::new(config.max_sessions, config.session_timeout_secs);
+        let mut auth = AuthManager::new(config.api_key.clone(), config.require_auth);
+        let mut log_buf = McpLogBuffer::new(config.log_level);
 
-        let outcome = handle_request(&req, &config, &mut sessions, &auth, &mut log_buf);
+        let outcome = handle_request(&req, &config, &mut sessions, &mut auth, &mut log_buf);
         assert_eq!(outcome.response.status, 200);
     }
 
@@ -642,11 +655,11 @@ mod tests {
 
         let req = make_post(&body);
         let config = test_config();
-        let mut sessions = SessionManager::new(&config);
-        let auth = AuthManager::new(&config);
-        let mut log_buf = McpLogBuffer::new();
+        let mut sessions = SessionManager::new(config.max_sessions, config.session_timeout_secs);
+        let mut auth = AuthManager::new(config.api_key.clone(), config.require_auth);
+        let mut log_buf = McpLogBuffer::new(config.log_level);
 
-        let outcome = handle_request(&req, &config, &mut sessions, &auth, &mut log_buf);
+        let outcome = handle_request(&req, &config, &mut sessions, &mut auth, &mut log_buf);
         assert_eq!(outcome.response.status, 200);
         let body_str = outcome.response.body.unwrap();
         assert!(body_str.contains("tools"));
@@ -667,25 +680,24 @@ mod tests {
             api_key: "test-key-12345".to_string(),
             ..McpServerConfig::default()
         };
-        let mut sessions = SessionManager::new(&config);
-        let auth = AuthManager::new(&config);
-        let mut log_buf = McpLogBuffer::new();
+        let mut sessions = SessionManager::new(config.max_sessions, config.session_timeout_secs);
+        let mut auth = AuthManager::new(config.api_key.clone(), config.require_auth);
+        let mut log_buf = McpLogBuffer::new(config.log_level);
 
         // Without auth header → denied
-        let outcome = handle_request(&req, &config, &mut sessions, &auth, &mut log_buf);
+        let outcome = handle_request(&req, &config, &mut sessions, &mut auth, &mut log_buf);
         assert_eq!(outcome.response.status, 401);
     }
 
     #[test]
     fn test_handle_delete_session() {
         let config = test_config();
-        let mut sessions = SessionManager::new(&config);
-        let auth = AuthManager::new(&config);
-        let mut log_buf = McpLogBuffer::new();
+        let mut sessions = SessionManager::new(config.max_sessions, config.session_timeout_secs);
+        let mut auth = AuthManager::new(config.api_key.clone(), config.require_auth);
+        let mut log_buf = McpLogBuffer::new(config.log_level);
 
         // Create a session first
-        let session = sessions.create_session().unwrap();
-        let sid = session.id.clone();
+        let sid = sessions.create_session(None, ClientCapabilities::default(), MCP_PROTOCOL_VERSION.to_string()).unwrap();
 
         let mut headers = HashMap::new();
         headers.insert("mcp-session-id".to_string(), sid.clone());
@@ -697,7 +709,7 @@ mod tests {
             path: Some("/mcp".to_string()),
         };
 
-        let outcome = handle_request(&req, &config, &mut sessions, &auth, &mut log_buf);
+        let outcome = handle_request(&req, &config, &mut sessions, &mut auth, &mut log_buf);
         assert_eq!(outcome.response.status, 202);
         assert!(sessions.get_session(&sid).is_none());
     }

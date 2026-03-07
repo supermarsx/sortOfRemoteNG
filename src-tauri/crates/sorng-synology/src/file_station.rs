@@ -166,9 +166,12 @@ impl FileStationManager {
         file_path: &str,
     ) -> SynologyResult<Vec<u8>> {
         let v = client.best_version("SYNO.FileStation.Download", 2).unwrap_or(1);
-        let url = client.resolve_url("SYNO.FileStation.Download", v, "download")?;
-        let full_url = format!("{}&path={}&mode=download", url, urlencoding::encode(file_path));
-        client.raw_download(&full_url).await
+        client.raw_download(
+            "SYNO.FileStation.Download",
+            v,
+            "download",
+            &[("path", file_path), ("mode", "download")],
+        ).await
     }
 
     /// Create a folder.

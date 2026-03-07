@@ -27,13 +27,18 @@ impl LxdService {
         // Verify connectivity by fetching server info
         let info = crate::server::get_server(&c).await?;
         let summary = LxdConnectionSummary {
-            url: config.url.clone(),
+            connected: true,
+            server_url: config.url.clone(),
             project: config.project.clone(),
+            api_version: info.api_version.clone(),
+            server_name: info.environment.as_ref().and_then(|e| e.server_name.clone()),
             server_version: info
                 .environment
                 .as_ref()
                 .and_then(|e| e.server_version.clone()),
-            api_extensions: info.api_extensions.clone(),
+            auth_type: info.auth.clone(),
+            auth_user_name: info.auth_user_name.clone(),
+            cluster_enabled: info.environment.as_ref().and_then(|e| e.server_clustered),
         };
         *self.client.lock().await = Some(c);
         Ok(summary)
@@ -52,7 +57,7 @@ impl LxdService {
         let guard = self.client.lock().await;
         let c = guard
             .as_ref()
-            .ok_or_else(|| LxdError::connection("not connected to an LXD server".into()))?;
+            .ok_or_else(|| LxdError::connection("not connected to an LXD server"))?;
         Ok(LxdClient {
             http: c.http.clone(),
             config: c.config.clone(),

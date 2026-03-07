@@ -43,8 +43,17 @@ impl HaproxyError {
     pub fn new(kind: HaproxyErrorKind, msg: impl Into<String>) -> Self {
         Self { kind, message: msg.into() }
     }
-    pub fn not_connected() -> Self {
-        Self::new(HaproxyErrorKind::NotConnected, "Not connected to HAProxy instance")
+    pub fn not_connected(msg: impl Into<String>) -> Self {
+        Self::new(HaproxyErrorKind::NotConnected, msg)
+    }
+    pub fn connection(msg: impl Into<String>) -> Self {
+        Self::new(HaproxyErrorKind::ConnectionFailed, msg)
+    }
+    pub fn parse(msg: impl Into<String>) -> Self {
+        Self::new(HaproxyErrorKind::ParseError, msg)
+    }
+    pub fn reload(msg: impl Into<String>) -> Self {
+        Self::new(HaproxyErrorKind::ReloadFailed, msg)
     }
     pub fn frontend_not_found(name: &str) -> Self {
         Self::new(HaproxyErrorKind::FrontendNotFound, format!("Frontend not found: {name}"))

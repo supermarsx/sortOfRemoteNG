@@ -14,27 +14,24 @@ impl HardwareManager {
             return client.api_call("SYNO.Core.Hardware.Info", v, "get", &[]).await;
         }
         // Fallback: build HardwareInfo from DSM.Info
-        let info: DsmInfo = client
+        let _info: DsmInfo = client
             .api_call("SYNO.DSM.Info", client.best_version("SYNO.DSM.Info", 2).unwrap_or(1), "getinfo", &[])
             .await?;
         Ok(HardwareInfo {
-            model: info.model,
-            ram_size: info.ram.unwrap_or(0),
-            serial: info.serial.unwrap_or_default(),
-            cpu_family: String::new(),
-            cpu_series: String::new(),
-            cpu_vendor: String::new(),
-            cpu_clock_speed: 0,
-            cpu_cores: 0,
-            fans: vec![],
+            fan_speed: None,
+            fan_speeds: vec![],
             temperatures: vec![],
+            ups: None,
+            beep_enabled: None,
+            led_brightness: None,
+            power_schedule: None,
         })
     }
 
     /// Get fan information.
     pub async fn get_fans(client: &SynoClient) -> SynologyResult<Vec<FanInfo>> {
         let hw = Self::get_info(client).await?;
-        Ok(hw.fans)
+        Ok(hw.fan_speeds)
     }
 
     /// Get temperature sensors.

@@ -43,8 +43,20 @@ impl NginxError {
     pub fn new(kind: NginxErrorKind, msg: impl Into<String>) -> Self {
         Self { kind, message: msg.into() }
     }
-    pub fn not_connected() -> Self {
-        Self::new(NginxErrorKind::NotConnected, "Not connected to Nginx host")
+    pub fn not_connected(msg: impl Into<String>) -> Self {
+        Self::new(NginxErrorKind::NotConnected, msg)
+    }
+    pub fn connection(msg: impl Into<String>) -> Self {
+        Self::new(NginxErrorKind::ConnectionFailed, msg)
+    }
+    pub fn parse(msg: impl Into<String>) -> Self {
+        Self::new(NginxErrorKind::ParseError, msg)
+    }
+    pub fn reload(msg: impl Into<String>) -> Self {
+        Self::new(NginxErrorKind::ReloadFailed, msg)
+    }
+    pub fn process(msg: impl Into<String>) -> Self {
+        Self::new(NginxErrorKind::ProcessError, msg)
     }
     pub fn site_not_found(name: &str) -> Self {
         Self::new(NginxErrorKind::SiteNotFound, format!("Site not found: {name}"))

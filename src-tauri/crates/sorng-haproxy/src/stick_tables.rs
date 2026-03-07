@@ -3,6 +3,7 @@
 use crate::client::HaproxyClient;
 use crate::error::HaproxyResult;
 use crate::types::*;
+use std::collections::HashMap;
 
 pub struct StickTableManager;
 
@@ -33,9 +34,10 @@ fn parse_tables(raw: &str) -> Vec<StickTable> {
         let name = parts.first()
             .map(|p| p.trim_start_matches("# table: ").trim().to_string())
             .unwrap_or_default();
-        let size = parts.iter().find_map(|p| p.trim().strip_prefix("size:")).and_then(|s| s.trim().parse().ok());
-        let used = parts.iter().find_map(|p| p.trim().strip_prefix("used:")).and_then(|s| s.trim().parse().ok());
-        Some(StickTable { name, table_type: None, size, used, entries: vec![] })
+        let table_type = parts.iter().find_map(|p| p.trim().strip_prefix("type:")).map(|s| s.trim().to_string()).unwrap_or_default();
+        let size = parts.iter().find_map(|p| p.trim().strip_prefix("size:")).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+        let used = parts.iter().find_map(|p| p.trim().strip_prefix("used:")).and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+        Some(StickTable { name, table_type, size, used, data_types: vec![], entries: vec![] })
     }).collect()
 }
 
@@ -46,9 +48,13 @@ fn parse_table_entries(raw: &str) -> Vec<StickTableEntry> {
         if parts.len() < 2 { return None; }
         Some(StickTableEntry {
             key: parts[0].to_string(),
-            data: parts.get(1).map(|s| s.to_string()),
-            expire: None,
-            use_count: None,
+            use_count: 0,
+            expiry_ms: None,
+            data: parts.get(1).map(|s| {
+                let mut map = HashMap::new();
+                map.insert("raw".to_string(), serde_json::Value::String(s.to_string()));
+                map
+            }).unwrap_or_default(),
         })
     }).collect()
 }

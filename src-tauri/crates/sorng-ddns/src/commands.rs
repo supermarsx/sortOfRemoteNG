@@ -346,7 +346,7 @@ pub async fn ddns_clear_audit(
 pub async fn ddns_export_profiles(
     state: State<'_, DdnsServiceState>,
 ) -> Result<DdnsExportData, String> {
-    let svc = state.lock().await;
+    let mut svc = state.lock().await;
     Ok(svc.export_data())
 }
 

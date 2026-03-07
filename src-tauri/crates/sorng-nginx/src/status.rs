@@ -20,11 +20,12 @@ impl StatusManager {
         let stub = client.stub_status().await.ok();
         let config_ok = client.test_config().await.map(|r| r.success).unwrap_or(false);
         Ok(NginxHealthCheck {
-            running: proc.running,
+            running: proc.process_type != "inactive",
+            pid: Some(proc.pid),
+            worker_count: 0,
             config_valid: config_ok,
-            active_connections: stub.as_ref().map(|s| s.active_connections),
-            accepts_per_sec: None,
-            requests_per_sec: None,
+            uptime_secs: proc.uptime_secs,
+            status: stub,
         })
     }
 }

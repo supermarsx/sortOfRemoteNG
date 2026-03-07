@@ -17,11 +17,10 @@ impl<'a> VirtualMediaManager<'a> {
     /// Get virtual media status.
     pub async fn get_status(&self) -> IloResult<Vec<BmcVirtualMedia>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let items: serde_json::Value = rf.get_virtual_media().await?;
+            let items: Vec<serde_json::Value> = rf.get_virtual_media().await?;
             let mut result = Vec::new();
 
-            if let Some(members) = items.as_array() {
-                for vm in members {
+            for vm in &items {
                     result.push(BmcVirtualMedia {
                         id: vm.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         media_types: vm.get("MediaTypes")
@@ -36,7 +35,6 @@ impl<'a> VirtualMediaManager<'a> {
                         connected_via: vm.get("ConnectedVia")
                             .and_then(|v| v.as_str()).map(|s| s.to_string()),
                     });
-                }
             }
             return Ok(result);
         }

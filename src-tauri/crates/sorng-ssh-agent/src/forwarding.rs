@@ -5,7 +5,7 @@
 //! which keys are exposed through each forwarding hop.
 
 use crate::types::*;
-use log::{debug, info, warn};
+use log::info;
 use std::collections::HashMap;
 
 /// Manages agent forwarding sessions and policies.
@@ -17,7 +17,7 @@ pub struct ForwardingManager {
     /// Whether forwarding is globally enabled.
     enabled: bool,
     /// Default key filter mode.
-    default_filter_mode: KeyFilterMode,
+    _default_filter_mode: KeyFilterMode,
     /// Hosts for which forwarding is allowed (empty = all).
     allowed_hosts: Vec<String>,
     /// Hosts for which forwarding is denied.
@@ -71,7 +71,7 @@ impl ForwardingManager {
             sessions: HashMap::new(),
             max_depth,
             enabled,
-            default_filter_mode: KeyFilterMode::AllKeys,
+            _default_filter_mode: KeyFilterMode::AllKeys,
             allowed_hosts: Vec::new(),
             denied_hosts: Vec::new(),
         }

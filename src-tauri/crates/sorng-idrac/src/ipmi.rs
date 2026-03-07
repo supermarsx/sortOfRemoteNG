@@ -116,6 +116,7 @@ impl IpmiClient {
             front_panel_lockout: (misc & 0x02) != 0,
             drive_fault: (misc & 0x04) != 0,
             cooling_fault: (misc & 0x08) != 0,
+            fault: (current_power & 0x08) != 0 || (misc & 0x04) != 0 || (misc & 0x08) != 0,
         })
     }
 

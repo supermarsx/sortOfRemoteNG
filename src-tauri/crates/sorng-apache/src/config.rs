@@ -10,12 +10,19 @@ impl ApacheConfigManager {
     pub async fn get_main_config(client: &ApacheClient) -> ApacheResult<ApacheMainConfig> {
         let raw = client.read_remote_file(client.config_path()).await?;
         Ok(ApacheMainConfig {
-            path: client.config_path().to_string(),
-            raw_content: raw,
             server_root: None,
+            listen: vec![],
             server_admin: None,
-            timeout: None,
+            server_name: None,
+            document_root: None,
+            error_log: None,
+            log_level: None,
             keep_alive: None,
+            keep_alive_timeout: None,
+            max_keep_alive_requests: None,
+            timeout: None,
+            include_files: vec![],
+            raw_content: raw,
         })
     }
 

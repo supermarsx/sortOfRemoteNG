@@ -174,7 +174,7 @@ pub fn wrap_ps_json(command: &str) -> String {
 }
 
 /// Build a PowerShell expression for setting parameters from an optional value.
-pub fn ps_param_opt(name: &str, value: &Option<String>) -> String {
+pub fn ps_param_opt(name: &str, value: Option<&str>) -> String {
     match value {
         Some(v) => format!(" -{name} '{}'", v.replace('\'', "''")),
         None => String::new(),

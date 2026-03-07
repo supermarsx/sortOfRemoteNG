@@ -1,5 +1,4 @@
 // ─── Exchange Integration – public folders ───────────────────────────────────
-use crate::auth::*;
 use crate::client::ExchangeClient;
 use crate::types::*;
 

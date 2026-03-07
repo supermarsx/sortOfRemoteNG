@@ -44,7 +44,21 @@ fn parse_ssl_config(content: &str) -> Option<SslConfig> {
         }
     }
     if cert.is_some() || key.is_some() {
-        Some(SslConfig { certificate: cert, certificate_key: key, protocols, ciphers, trusted_certificate: None, client_certificate: None, verify_client: None })
+        Some(SslConfig {
+            certificate: cert.unwrap_or_default(),
+            certificate_key: key.unwrap_or_default(),
+            protocols: protocols.map(|p| p.split_whitespace().map(String::from).collect()),
+            ciphers,
+            prefer_server_ciphers: None,
+            session_cache: None,
+            session_timeout: None,
+            stapling: None,
+            stapling_verify: None,
+            trusted_certificate: None,
+            dhparam: None,
+            hsts: None,
+            hsts_max_age: None,
+        })
     } else {
         None
     }
@@ -53,9 +67,9 @@ fn parse_ssl_config(content: &str) -> Option<SslConfig> {
 fn inject_ssl_directives(content: &str, ssl: &SslConfig) -> String {
     let mut lines: Vec<String> = content.lines().map(String::from).collect();
     let directives = vec![
-        ssl.certificate.as_ref().map(|v| format!("    ssl_certificate {};", v)),
-        ssl.certificate_key.as_ref().map(|v| format!("    ssl_certificate_key {};", v)),
-        ssl.protocols.as_ref().map(|v| format!("    ssl_protocols {};", v)),
+        Some(format!("    ssl_certificate {};", ssl.certificate)),
+        Some(format!("    ssl_certificate_key {};", ssl.certificate_key)),
+        ssl.protocols.as_ref().map(|v| format!("    ssl_protocols {};", v.join(" "))),
         ssl.ciphers.as_ref().map(|v| format!("    ssl_ciphers {};", v)),
     ];
     // Remove existing SSL directives

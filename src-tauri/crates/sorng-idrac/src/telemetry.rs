@@ -52,8 +52,7 @@ impl<'a> TelemetryManager<'a> {
                     a.iter()
                         .map(|m| TelemetryDataPoint {
                             timestamp: m.get("Timestamp").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            value: m.get("MetricValue").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),
-                            metric_id: m.get("MetricId").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                            value: m.get("MetricValue").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),                            label: None,                            metric_id: m.get("MetricId").and_then(|v| v.as_str()).map(|s| s.to_string()),
                         })
                         .collect()
                 })
@@ -121,6 +120,7 @@ impl<'a> TelemetryManager<'a> {
                 reading.map(|r| TelemetryDataPoint {
                     timestamp: Some(chrono::Utc::now().to_rfc3339()),
                     value: Some(r),
+                    label: None,
                     metric_id: name,
                 })
             })
@@ -134,6 +134,7 @@ impl<'a> TelemetryManager<'a> {
                 reading.map(|r| TelemetryDataPoint {
                     timestamp: Some(chrono::Utc::now().to_rfc3339()),
                     value: Some(r),
+                    label: None,
                     metric_id: name,
                 })
             })
@@ -151,6 +152,7 @@ impl<'a> TelemetryManager<'a> {
                         .map(|m| TelemetryDataPoint {
                             timestamp: m.get("Timestamp").and_then(|v| v.as_str()).map(|s| s.to_string()),
                             value: m.get("MetricValue").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),
+                            label: None,
                             metric_id: m.get("MetricId").and_then(|v| v.as_str()).map(|s| s.to_string()),
                         })
                         .collect()
@@ -212,6 +214,7 @@ impl<'a> TelemetryManager<'a> {
             .map(|m| TelemetryDataPoint {
                 timestamp: m.get("Timestamp").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 value: m.get("MetricValue").and_then(|v| v.as_str()).and_then(|s| s.parse().ok()),
+                label: None,
                 metric_id: m.get("MetricId").and_then(|v| v.as_str()).map(|s| s.to_string()),
             })
             .collect())

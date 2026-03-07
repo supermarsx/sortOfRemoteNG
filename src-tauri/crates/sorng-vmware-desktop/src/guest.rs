@@ -19,16 +19,15 @@ pub async fn exec_in_guest(
             guest_user,
             guest_pass,
             &req.program,
-            &req.arguments,
-            req.wait.unwrap_or(true),
-            req.interactive.unwrap_or(false),
+            req.arguments.as_deref(),
+            req.no_wait,
+            req.interactive,
         )
         .await?;
     Ok(GuestExecResult {
-        exit_code: 0,
+        exit_code: Some(0),
         stdout: Some(output.clone()),
         stderr: None,
-        duration_ms: None,
     })
 }
 
@@ -47,13 +46,13 @@ pub async fn run_script_in_guest(
             guest_pass,
             &req.interpreter,
             &req.script_text,
+            req.no_wait,
         )
         .await?;
     Ok(GuestExecResult {
-        exit_code: 0,
+        exit_code: Some(0),
         stdout: Some(output),
         stderr: None,
-        duration_ms: None,
     })
 }
 
@@ -188,9 +187,9 @@ pub async fn list_processes_in_guest(
         .list_processes_in_guest(vmx_path, guest_user, guest_pass)
         .await?;
     let mut procs = Vec::new();
-    for line in lines {
+    for line in lines.lines() {
         // vmrun returns: pid=XXX, owner=YYY, cmd=ZZZ
-        let mut pid = 0u32;
+        let mut pid: u64 = 0;
         let mut owner = String::new();
         let mut cmd = String::new();
         for part in line.split(", ") {
@@ -206,9 +205,8 @@ pub async fn list_processes_in_guest(
             pid,
             name: cmd.clone(),
             owner: if owner.is_empty() { None } else { Some(owner) },
-            command_line: Some(cmd),
-            memory_kb: None,
-            cpu_percent: None,
+            command: Some(cmd),
+            start_time: None,
         });
     }
     Ok(procs)
@@ -279,11 +277,11 @@ pub async fn list_env_vars(
 
     let output = if is_windows {
         vmrun
-            .run_script_in_guest(vmx_path, guest_user, guest_pass, "cmd.exe", "set")
+            .run_script_in_guest(vmx_path, guest_user, guest_pass, "cmd.exe", "set", false)
             .await?
     } else {
         vmrun
-            .run_script_in_guest(vmx_path, guest_user, guest_pass, "/bin/sh", "env")
+            .run_script_in_guest(vmx_path, guest_user, guest_pass, "/bin/sh", "env", false)
             .await?
     };
 
@@ -311,8 +309,7 @@ pub async fn get_tools_status(vmrun: &VmRun, vmx_path: &str) -> VmwResult<ToolsS
         installed: !lower.contains("not installed"),
         running: lower.contains("running"),
         version: None,
-        upgrade_available: lower.contains("update"),
-        status_text: state,
+        upgrade_status: if lower.contains("update") { Some("update_available".to_string()) } else { None },
     })
 }
 

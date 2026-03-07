@@ -63,11 +63,12 @@ pub async fn batch_power(
         let result = match action {
             PowerAction::Start => vmrun.start(path, false).await,
             PowerAction::Stop => vmrun.stop(path, false).await,
-            PowerAction::HardStop => vmrun.stop(path, true).await,
             PowerAction::Reset => vmrun.reset(path, false).await,
             PowerAction::Suspend => vmrun.suspend(path, false).await,
             PowerAction::Pause => vmrun.pause(path).await,
             PowerAction::Unpause => vmrun.unpause(path).await,
+            PowerAction::Shutdown => vmrun.stop(path, false).await,
+            PowerAction::Reboot => vmrun.reset(path, false).await,
         };
         match result {
             Ok(_) => successes.push(path.clone()),
@@ -79,7 +80,7 @@ pub async fn batch_power(
     }
 
     Ok(BatchPowerResult {
-        successes,
-        failures,
+        succeeded: successes,
+        failed: failures,
     })
 }

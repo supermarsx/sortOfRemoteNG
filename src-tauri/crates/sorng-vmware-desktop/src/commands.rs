@@ -26,8 +26,8 @@ pub async fn vmwd_connect(
         vmrest_port,
         vmrest_username,
         vmrest_password,
-        auto_start_vmrest,
-        timeout_secs,
+        auto_start_vmrest: auto_start_vmrest.unwrap_or(false),
+        timeout_secs: timeout_secs.unwrap_or(60),
     };
     let mut svc = state.lock().await;
     svc.connect(config).await.map_err(|e| e.to_string())
@@ -102,13 +102,17 @@ pub async fn vmwd_create_vm(
         name,
         guest_os,
         num_cpus,
+        cores_per_socket: None,
         memory_mb,
         disk_size_mb,
         disk_type,
         iso_path,
         network_type,
         firmware,
+        hardware_version: None,
         target_dir,
+        auto_install: None,
+        annotation: None,
     };
     let svc = state.lock().await;
     svc.create_vm(req).await.map_err(|e| e.to_string())
@@ -380,10 +384,11 @@ pub async fn vmwd_create_snapshot(
     quiesce_filesystem: Option<bool>,
 ) -> Result<(), String> {
     let req = CreateSnapshotRequest {
+        vmx_path: vmx_path.clone(),
         name,
         description,
-        capture_memory,
-        quiesce_filesystem,
+        capture_memory: capture_memory.unwrap_or(true),
+        quiesce_filesystem: quiesce_filesystem.unwrap_or(false),
     };
     let svc = state.lock().await;
     svc.create_snapshot(&vmx_path, req)
@@ -442,11 +447,13 @@ pub async fn vmwd_exec_in_guest(
     interactive: Option<bool>,
 ) -> Result<GuestExecResult, String> {
     let req = GuestExecRequest {
+        vmx_path: vmx_path.clone(),
+        guest_user: guest_user.clone(),
+        guest_password: guest_pass.clone(),
         program,
-        arguments,
-        wait,
-        interactive,
-        working_dir: None,
+        arguments: if arguments.is_empty() { None } else { Some(arguments.join(" ")) },
+        no_wait: !wait.unwrap_or(true),
+        interactive: interactive.unwrap_or(false),
     };
     let svc = state.lock().await;
     svc.exec_in_guest(&vmx_path, &guest_user, &guest_pass, req)
@@ -464,8 +471,12 @@ pub async fn vmwd_run_script_in_guest(
     script_text: String,
 ) -> Result<GuestExecResult, String> {
     let req = GuestScriptRequest {
+        vmx_path: vmx_path.clone(),
+        guest_user: guest_user.clone(),
+        guest_password: guest_pass.clone(),
         interpreter,
         script_text,
+        no_wait: false,
     };
     let svc = state.lock().await;
     svc.run_script_in_guest(&vmx_path, &guest_user, &guest_pass, req)
@@ -750,9 +761,11 @@ pub async fn vmwd_add_shared_folder(
     writable: Option<bool>,
 ) -> Result<(), String> {
     let req = SharedFolderRequest {
+        vmx_path: vmx_path.clone(),
         name,
         host_path,
         writable,
+        enabled: Some(true),
     };
     let svc = state.lock().await;
     svc.add_shared_folder(&vmx_path, req)
@@ -817,7 +830,9 @@ pub async fn vmwd_create_network(
         name,
         network_type,
         subnet,
-        mask,
+        subnet_mask: mask,
+        dhcp_enabled: None,
+        nat_enabled: None,
     };
     let svc = state.lock().await;
     svc.create_network(req).await.map_err(|e| e.to_string())
@@ -868,6 +883,7 @@ pub async fn vmwd_set_port_forward(
     description: Option<String>,
 ) -> Result<(), String> {
     let req = AddPortForwardRequest {
+        network: network.clone(),
         protocol,
         host_port,
         guest_ip,
@@ -1010,11 +1026,10 @@ pub async fn vmwd_add_disk_to_vm(
 ) -> Result<(), String> {
     let req = AddDiskRequest {
         vmx_path,
-        vmdk_path,
+        size_mb: 0,
+        disk_type: mode,
         controller_type,
-        bus_number,
-        unit_number,
-        mode,
+        file_name: Some(vmdk_path),
     };
     let svc = state.lock().await;
     svc.add_disk_to_vm(req).await.map_err(|e| e.to_string())
@@ -1054,8 +1069,9 @@ pub async fn vmwd_import_ovf(
 ) -> Result<String, String> {
     let req = OvfImportRequest {
         source_path,
-        dest_dir,
+        target_dir: Some(dest_dir),
         name,
+        accept_eula: false,
     };
     let svc = state.lock().await;
     svc.import_ovf(req).await.map_err(|e| e.to_string())
@@ -1070,8 +1086,9 @@ pub async fn vmwd_export_ovf(
 ) -> Result<(), String> {
     let req = OvfExportRequest {
         vmx_path,
-        dest_path,
+        target_path: dest_path,
         format,
+        include_isos: false,
     };
     let svc = state.lock().await;
     svc.export_ovf(req).await.map_err(|e| e.to_string())

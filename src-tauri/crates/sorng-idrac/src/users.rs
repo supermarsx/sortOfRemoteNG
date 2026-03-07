@@ -37,6 +37,9 @@ impl<'a> UserManager<'a> {
                 ipmi_lan_privilege: u.pointer("/Oem/Dell/DellAccount/IpmiLanPrivilege").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 ipmi_serial_privilege: u.pointer("/Oem/Dell/DellAccount/IpmiSerialPrivilege").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 snmp_v3_enabled: u.pointer("/Oem/Dell/DellAccount/SNMPv3Enable").and_then(|v| v.as_bool()),
+                ipmi_privilege: None,
+                snmp_v3_auth: None,
+                snmp_v3_privacy: None,
             })
             .collect())
     }
@@ -60,7 +63,7 @@ impl<'a> UserManager<'a> {
 
         let url = format!(
             "/redfish/v1/Managers/iDRAC.Embedded.1/Accounts/{}",
-            params.slot_id
+            params.slot_id.as_deref().unwrap_or("1")
         );
 
         rf.patch_json(&url, &serde_json::Value::Object(body)).await
@@ -148,6 +151,8 @@ impl<'a> UserManager<'a> {
             group_attribute: get_attr("LDAP.1#GroupAttribute"),
             use_ssl: get_attr("LDAP.1#SSLPort").is_some(),
             certificate_validation_enabled: get_attr("LDAP.1#CertValidationEnable").map(|s| s == "Enabled").unwrap_or(false),
+            certificate_validation: get_attr("LDAP.1#CertValidationEnable").map(|s| s == "Enabled"),
+            server_address: get_attr("LDAP.1#Server"),
         })
     }
 
@@ -203,6 +208,9 @@ impl<'a> UserManager<'a> {
             global_catalog3: get_attr("ActiveDirectory.1#GlobalCatalog3"),
             schema_type: get_attr("ActiveDirectory.1#Schema"),
             certificate_validation_enabled: get_attr("ActiveDirectory.1#CertValidationEnable").map(|s| s == "Enabled").unwrap_or(false),
+            certificate_validation: get_attr("ActiveDirectory.1#CertValidationEnable").map(|s| s == "Enabled"),
+            domain_controller_addresses: Vec::new(),
+            global_catalog_addresses: Vec::new(),
         })
     }
 

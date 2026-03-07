@@ -6,7 +6,6 @@
 //! agent message handler.
 
 use crate::protocol;
-use crate::types::*;
 use log::{debug, error, info, warn};
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
@@ -225,7 +224,7 @@ pub async fn start_unix_listener(
 }
 
 /// Generate a unique socket path for the agent.
-pub fn generate_socket_path(base_dir: &str) -> String {
+pub fn generate_socket_path(_base_dir: &str) -> String {
     let id = uuid::Uuid::new_v4().to_string();
     #[cfg(unix)]
     {

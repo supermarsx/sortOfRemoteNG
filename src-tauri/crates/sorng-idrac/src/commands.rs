@@ -23,8 +23,8 @@ pub async fn idrac_connect(
     ipmi_port: Option<u16>,
 ) -> Result<String, String> {
     let auth = match auth_method.as_deref() {
-        Some("session") => IdracAuthMethod::Session,
-        _ => IdracAuthMethod::Basic,
+        Some("session") => IdracAuthMethod::Session { username: username.clone(), password: password.clone() },
+        _ => IdracAuthMethod::Basic { username: username.clone(), password: password.clone() },
     };
     let proto = match protocol.as_deref() {
         Some("redfish") => Some(IdracProtocol::Redfish),
@@ -35,13 +35,11 @@ pub async fn idrac_connect(
     let config = IdracConfig {
         host,
         port: port.unwrap_or(443),
-        username,
-        password,
-        auth_method: auth,
-        protocol: proto,
+        auth,
         insecure: insecure.unwrap_or(true),
         timeout_secs: timeout_secs.unwrap_or(30),
-        ipmi_port: ipmi_port.unwrap_or(623),
+        force_protocol: proto,
+        ..Default::default()
     };
     let mut svc = state.lock().await;
     svc.connect(config).await.map_err(|e| e.to_string())
@@ -235,6 +233,7 @@ pub async fn idrac_create_virtual_disk(
         name,
         stripe_size_bytes,
         capacity_bytes,
+        ..Default::default()
     };
     let svc = state.lock().await;
     svc.create_virtual_disk(params).await.map_err(|e| e.to_string())
@@ -325,6 +324,7 @@ pub async fn idrac_update_firmware(
         image_uri,
         targets,
         transfer_protocol,
+        ..Default::default()
     };
     let svc = state.lock().await;
     svc.update_firmware(params).await.map_err(|e| e.to_string())
@@ -375,6 +375,7 @@ pub async fn idrac_export_scp(
         format,
         export_use,
         include_in_export,
+        ..Default::default()
     };
     let svc = state.lock().await;
     svc.export_scp(params).await.map_err(|e| e.to_string())
@@ -393,6 +394,7 @@ pub async fn idrac_import_scp(
         target,
         shutdown_type,
         host_power_state,
+        ..Default::default()
     };
     let svc = state.lock().await;
     svc.import_scp(params).await.map_err(|e| e.to_string())
@@ -438,6 +440,7 @@ pub async fn idrac_mount_virtual_media(
         username,
         password,
         transfer_protocol,
+        ..Default::default()
     };
     let svc = state.lock().await;
     svc.mount_virtual_media(params).await.map_err(|e| e.to_string())
@@ -531,11 +534,12 @@ pub async fn idrac_create_or_update_user(
     enabled: Option<bool>,
 ) -> Result<(), String> {
     let params = IdracUserParams {
-        slot_id,
+        slot_id: Some(slot_id),
         user_name,
         password,
         role_id,
         enabled,
+        ..Default::default()
     };
     let svc = state.lock().await;
     svc.create_or_update_user(params).await.map_err(|e| e.to_string())
@@ -641,14 +645,15 @@ pub async fn idrac_generate_csr(
 ) -> Result<String, String> {
     let params = CsrParams {
         common_name,
-        organization,
-        country,
-        state: state_name,
-        city,
+        organization: Some(organization),
+        country: Some(country),
+        state: Some(state_name),
+        city: Some(city),
         organizational_unit,
         alternative_names,
         key_algorithm,
         key_bit_length,
+        ..Default::default()
     };
     let svc = state.lock().await;
     svc.generate_csr(params).await.map_err(|e| e.to_string())

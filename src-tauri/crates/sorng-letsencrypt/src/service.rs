@@ -495,10 +495,13 @@ impl LetsEncryptService {
             .get_certificate(cert_id)
             .ok_or_else(|| format!("Certificate not found: {}", cert_id))?;
 
+        let primary_domain = cert.primary_domain.clone();
+        let domains = cert.domains.clone();
+
         log::info!(
             "[LetsEncrypt] Revoking certificate {} ({})",
             cert_id,
-            cert.primary_domain
+            primary_domain
         );
 
         // In production: load the certificate DER and send revocation request
@@ -510,7 +513,7 @@ impl LetsEncryptService {
 
         self.emit_event(LetsEncryptEvent::CertificateRevoked {
             certificate_id: cert_id.to_string(),
-            domains: cert.domains.clone(),
+            domains,
         });
 
         Ok(())

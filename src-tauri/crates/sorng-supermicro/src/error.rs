@@ -47,7 +47,7 @@ pub enum SmcErrorKind {
 impl fmt::Display for SmcErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Bmc(k) => write!(f, "BMC: {k}"),
+            Self::Bmc(k) => write!(f, "BMC: {k:?}"),
             Self::LegacyWebError => write!(f, "Legacy web API error"),
             Self::LicenseError => write!(f, "License error"),
             Self::SecurityError => write!(f, "Security error"),
@@ -162,7 +162,7 @@ impl From<BmcError> for SmcError {
         Self {
             kind: SmcErrorKind::Bmc(e.kind),
             message: e.message,
-            source_url: e.source_url,
+            source_url: None,
         }
     }
 }

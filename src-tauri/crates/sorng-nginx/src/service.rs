@@ -105,7 +105,7 @@ impl NginxService {
         UpstreamManager::create(self.client(id)?, &req).await
     }
 
-    pub async fn update_upstream(&self, id: &str, name: &str, req: CreateUpstreamRequest) -> NginxResult<NginxUpstream> {
+    pub async fn update_upstream(&self, id: &str, name: &str, req: UpdateUpstreamRequest) -> NginxResult<NginxUpstream> {
         UpstreamManager::update(self.client(id)?, name, &req).await
     }
 

@@ -44,8 +44,20 @@ impl ApacheError {
     pub fn new(kind: ApacheErrorKind, msg: impl Into<String>) -> Self {
         Self { kind, message: msg.into() }
     }
-    pub fn not_connected() -> Self {
-        Self::new(ApacheErrorKind::NotConnected, "Not connected to Apache host")
+    pub fn not_connected(msg: impl Into<String>) -> Self {
+        Self::new(ApacheErrorKind::NotConnected, msg)
+    }
+    pub fn connection(msg: impl Into<String>) -> Self {
+        Self::new(ApacheErrorKind::ConnectionFailed, msg)
+    }
+    pub fn parse(msg: impl Into<String>) -> Self {
+        Self::new(ApacheErrorKind::ParseError, msg)
+    }
+    pub fn reload(msg: impl Into<String>) -> Self {
+        Self::new(ApacheErrorKind::ReloadFailed, msg)
+    }
+    pub fn process(msg: impl Into<String>) -> Self {
+        Self::new(ApacheErrorKind::ProcessError, msg)
     }
     pub fn vhost_not_found(name: &str) -> Self {
         Self::new(ApacheErrorKind::VhostNotFound, format!("VirtualHost not found: {name}"))

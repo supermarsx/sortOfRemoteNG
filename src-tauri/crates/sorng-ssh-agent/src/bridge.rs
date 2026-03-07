@@ -6,9 +6,7 @@
 //! and merges its keys with the built-in agent.
 
 use crate::protocol::{self, AgentMessage, ProtocolIdentity};
-use crate::types::*;
-use log::{debug, error, info, warn};
-use std::collections::HashMap;
+use log::{info, warn};
 
 #[cfg(unix)]
 use std::path::PathBuf;
@@ -24,7 +22,7 @@ pub struct SystemAgentBridge {
     /// Last time the cache was refreshed.
     last_refresh: Option<chrono::DateTime<chrono::Utc>>,
     /// Whether to auto-discover the system agent path.
-    auto_discover: bool,
+    _auto_discover: bool,
     /// Cache TTL in seconds.
     cache_ttl: u64,
 }
@@ -43,7 +41,7 @@ impl SystemAgentBridge {
             socket_path,
             cached_identities: Vec::new(),
             last_refresh: None,
-            auto_discover,
+            _auto_discover: auto_discover,
             cache_ttl,
         }
     }
@@ -55,7 +53,7 @@ impl SystemAgentBridge {
             socket_path: path.to_string(),
             cached_identities: Vec::new(),
             last_refresh: None,
-            auto_discover: false,
+            _auto_discover: false,
             cache_ttl,
         }
     }

@@ -14,7 +14,8 @@ impl PowerManager {
             return rf.get_power_state().await;
         }
         if let Some(ref ipmi) = client.ipmi {
-            return ipmi.get_power_state().map_err(crate::error::SmcError::from);
+            let status = ipmi.get_chassis_status().await.map_err(crate::error::SmcError::from)?;
+            return Ok(if status.power_on { "On".into() } else { "Off".into() });
         }
         Err(crate::error::SmcError::power("No protocol available for power state"))
     }
@@ -28,7 +29,8 @@ impl PowerManager {
             return web.power_action(action).await;
         }
         if let Some(ref ipmi) = client.ipmi {
-            return ipmi.power_action(action).map_err(crate::error::SmcError::from);
+            ipmi.chassis_control(action.to_ipmi()).await.map_err(crate::error::SmcError::from)?;
+            return Ok(());
         }
         Err(crate::error::SmcError::power("No protocol available for power action"))
     }

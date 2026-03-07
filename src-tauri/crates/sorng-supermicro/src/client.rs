@@ -35,9 +35,11 @@ impl SmcClient {
                 self.config.port,
                 self.config.use_ssl,
                 self.config.verify_cert,
+                &self.config.username,
+                &self.config.password,
             ) {
                 Ok(mut rf) => {
-                    match rf.login(&self.config.username, &self.config.password).await {
+                    match rf.login().await {
                         Ok(()) => {
                             // Update platform from auto-detection
                             if self.config.platform == SmcPlatform::Unknown {
@@ -84,24 +86,20 @@ impl SmcClient {
 
         // Fallback to IPMI
         if self.config.platform.supports_ipmi() || self.config.platform == SmcPlatform::Unknown {
-            match IpmiClient::new(
+            let ipmi = IpmiClient::new(
                 &self.config.host,
+                Some(623),
                 &self.config.username,
                 &self.config.password,
-            ) {
-                Ok(ipmi) => {
-                    log::info!("Connected to Supermicro BMC via IPMI");
-                    self.ipmi = Some(ipmi);
-                    return Ok(());
-                }
-                Err(e) => {
-                    log::debug!("IPMI connection failed: {e}");
-                }
-            }
+                self.config.timeout_secs,
+            );
+            log::info!("Connected to Supermicro BMC via IPMI");
+            self.ipmi = Some(ipmi);
+            return Ok(());
         }
 
         Err(SmcError::new(
-            crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::ConnectionFailed),
+            crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::ConnectionError),
             format!(
                 "Failed to connect to Supermicro BMC at {}:{} via any protocol",
                 self.config.host, self.config.port
@@ -146,7 +144,7 @@ impl SmcClient {
     pub(crate) fn require_redfish(&self) -> SmcResult<&SmcRedfishClient> {
         self.redfish.as_ref().ok_or_else(|| {
             SmcError::new(
-                crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::ProtocolNotSupported),
+                crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol),
                 "Redfish not available — platform may not support it or not connected",
             )
         })
@@ -156,7 +154,7 @@ impl SmcClient {
     pub(crate) fn require_legacy_web(&self) -> SmcResult<&LegacyWebClient> {
         self.legacy_web.as_ref().ok_or_else(|| {
             SmcError::new(
-                crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::ProtocolNotSupported),
+                crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol),
                 "Legacy web API not available — platform may not support it or not connected",
             )
         })
@@ -167,7 +165,7 @@ impl SmcClient {
     pub(crate) fn require_ipmi(&self) -> SmcResult<&IpmiClient> {
         self.ipmi.as_ref().ok_or_else(|| {
             SmcError::new(
-                crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::ProtocolNotSupported),
+                crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol),
                 "IPMI not available — not connected via IPMI",
             )
         })

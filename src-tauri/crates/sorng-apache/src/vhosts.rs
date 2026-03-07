@@ -34,25 +34,15 @@ impl VhostManager {
         let filename = if req.name.ends_with(".conf") { req.name.clone() } else { format!("{}.conf", req.name) };
         let path = format!("{}/{}", client.sites_available_dir(), filename);
         client.write_remote_file(&path, &content).await?;
-        if req.enabled.unwrap_or(true) {
+        if req.enable.unwrap_or(true) {
             client.enable_site(&req.name).await?;
         }
         Self::get(client, &filename).await
     }
 
     pub async fn update(client: &ApacheClient, name: &str, req: &UpdateVhostRequest) -> ApacheResult<ApacheVhost> {
-        if let Some(ref content) = req.raw_content {
-            let path = format!("{}/{}", client.sites_available_dir(), name);
-            client.write_remote_file(&path, content).await?;
-        }
-        if let Some(enabled) = req.enabled {
-            let site = name.trim_end_matches(".conf");
-            if enabled {
-                client.enable_site(site).await?;
-            } else {
-                client.disable_site(site).await?;
-            }
-        }
+        let path = format!("{}/{}", client.sites_available_dir(), name);
+        client.write_remote_file(&path, &req.content).await?;
         Self::get(client, name).await
     }
 
@@ -98,23 +88,26 @@ fn parse_vhost(filename: &str, raw: &str, enabled: bool) -> ApacheVhost {
         enabled,
         server_name,
         server_aliases,
-        listen,
         document_root,
+        listen_address: listen,
+        listen_port: 80,
+        ssl_enabled: false,
+        ssl_certificate: None,
+        ssl_certificate_key: None,
         proxy_pass_rules: vec![],
         directory_blocks: vec![],
         location_blocks: vec![],
         rewrite_rules: vec![],
-        ssl: None,
-        raw_content: Some(raw.to_string()),
+        custom_log: None,
+        error_log: None,
+        raw_content: raw.to_string(),
     }
 }
 
 fn generate_vhost_config(req: &CreateVhostRequest) -> String {
-    let listen = req.listen.as_deref().unwrap_or("*:80");
-    let mut out = format!("<VirtualHost {}>\n", listen);
-    if let Some(ref sn) = req.server_name {
-        out.push_str(&format!("    ServerName {}\n", sn));
-    }
+    let port = req.listen_port.unwrap_or(80);
+    let mut out = format!("<VirtualHost *:{}>\n", port);
+    out.push_str(&format!("    ServerName {}\n", req.server_name));
     for alias in req.server_aliases.as_deref().unwrap_or(&[]) {
         out.push_str(&format!("    ServerAlias {}\n", alias));
     }
@@ -122,8 +115,8 @@ fn generate_vhost_config(req: &CreateVhostRequest) -> String {
         out.push_str(&format!("    DocumentRoot {}\n", dr));
     }
     for pp in req.proxy_pass_rules.as_deref().unwrap_or(&[]) {
-        out.push_str(&format!("    ProxyPass {} {}\n", pp.path, pp.url));
-        out.push_str(&format!("    ProxyPassReverse {} {}\n", pp.path, pp.url));
+        out.push_str(&format!("    ProxyPass {} {}\n", pp.path, pp.target));
+        out.push_str(&format!("    ProxyPassReverse {} {}\n", pp.path, pp.target));
     }
     out.push_str("</VirtualHost>\n");
     out

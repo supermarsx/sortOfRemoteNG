@@ -3,7 +3,7 @@
 //! Enable, disable, and expand archive mailboxes.  Also retrieve archive statistics.
 
 use crate::client::ExchangeClient;
-use crate::auth::{wrap_ps_json, ps_param_opt};
+use crate::auth::ps_param_opt;
 use crate::types::*;
 
 /// Get archive mailbox information for a given identity.
@@ -11,14 +11,12 @@ pub async fn ps_get_archive_info(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<ArchiveMailboxInfo> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-Mailbox -Identity '{identity}' | Select-Object Identity,ArchiveState,ArchiveName,\
          ArchiveDatabase,ArchiveGuid,ArchiveQuota,ArchiveWarningQuota,\
          AutoExpandingArchiveEnabled"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    );
+    client.run_ps_json(&cmd).await
 }
 
 /// Enable the archive mailbox.
@@ -28,7 +26,7 @@ pub async fn ps_enable_archive(
     database: Option<&str>,
 ) -> ExchangeResult<String> {
     let mut cmd = format!("Enable-Mailbox -Identity '{identity}' -Archive");
-    cmd += &ps_param_opt("-ArchiveDatabase", database);
+    cmd += &ps_param_opt("ArchiveDatabase", database);
     client.run_ps(&cmd).await
 }
 
@@ -76,11 +74,9 @@ pub async fn ps_get_archive_statistics(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<ArchiveStatistics> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-MailboxStatistics -Identity '{identity}' -Archive | \
          Select-Object DisplayName,TotalItemSize,ItemCount,TotalDeletedItemSize,DeletedItemCount"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    );
+    client.run_ps_json(&cmd).await
 }

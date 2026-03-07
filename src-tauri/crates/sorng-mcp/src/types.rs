@@ -7,8 +7,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+
 
 // ── MCP Protocol Version ────────────────────────────────────────────
 
@@ -57,6 +56,12 @@ pub struct JsonRpcErrorData {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
+}
+
+impl std::fmt::Display for JsonRpcErrorData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}] {}", self.code, self.message)
+    }
 }
 
 /// A JSON-RPC 2.0 notification (no id).
@@ -264,6 +269,8 @@ pub struct McpResource {
     pub mime_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Value>,
 }
 
 /// An MCP resource template.
@@ -276,6 +283,8 @@ pub struct McpResourceTemplate {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<serde_json::Value>,
 }
 
 /// Resource content (text or binary).
@@ -309,7 +318,8 @@ pub struct ResourceSubscribeParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpPrompt {
     pub name: String,
-    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arguments: Option<Vec<PromptArgument>>,
 }
@@ -318,7 +328,8 @@ pub struct McpPrompt {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PromptArgument {
     pub name: String,
-    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub required: Option<bool>,
 }
@@ -560,10 +571,11 @@ pub struct McpSession {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpEvent {
+    pub id: String,
     pub event_type: McpEventType,
     pub timestamp: DateTime<Utc>,
     pub session_id: Option<String>,
-    pub details: String,
+    pub details: serde_json::Value,
 }
 
 /// Types of MCP events.
@@ -574,11 +586,15 @@ pub enum McpEventType {
     ServerStopped,
     SessionCreated,
     SessionClosed,
+    SessionStarted,
+    SessionEnded,
     ToolCalled,
     ResourceRead,
     PromptUsed,
+    AuthFailed,
     AuthFailure,
     RateLimited,
+    ConfigChanged,
     Error,
 }
 
@@ -587,11 +603,15 @@ pub enum McpEventType {
 #[serde(rename_all = "camelCase")]
 pub struct ToolCallLog {
     pub id: String,
-    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     pub tool_name: String,
     pub arguments: serde_json::Value,
     pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<serde_json::Value>,
     pub duration_ms: u64,
     pub timestamp: DateTime<Utc>,
 }

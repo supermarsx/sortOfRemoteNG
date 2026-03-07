@@ -24,18 +24,20 @@ impl<'a> StorageManager<'a> {
             // Standard Redfish Storage
             let collection = rf.get_storage_collection().await?;
             let mut controllers = Vec::new();
-            if let Some(members) = collection.as_array() {
-                for m in members {
+            for m in &collection {
                     controllers.push(BmcStorageController {
                         id: m.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         name: m.get("Name").and_then(|v| v.as_str()).unwrap_or("Storage").to_string(),
+                        manufacturer: m.pointer("/StorageControllers/0/Manufacturer")
+                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
                         model: m.get("Model").and_then(|v| v.as_str()).map(|s| s.to_string()),
                         firmware_version: m.pointer("/StorageControllers/0/FirmwareVersion")
                             .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        status: m.get("Status").and_then(|s| s.get("Health"))
-                            .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                        status: component_health(
+                            m.get("Status").and_then(|s| s.get("Health"))
+                                .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                        ),
                     });
-                }
             }
             return Ok(controllers);
         }
@@ -51,13 +53,16 @@ impl<'a> StorageManager<'a> {
                     id: c.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     name: c.get("Name").and_then(|v| v.as_str())
                         .unwrap_or("Smart Array").to_string(),
+                    manufacturer: Some("HPE".to_string()),
                     model: c.get("Model").and_then(|v| v.as_str()).map(|s| s.to_string()),
                     firmware_version: c.get("FirmwareVersion")
                         .and_then(|v| v.get("Current"))
                         .and_then(|v| v.get("VersionString"))
                         .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    status: c.get("Status").and_then(|s| s.get("Health"))
-                        .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                    status: component_health(
+                        c.get("Status").and_then(|s| s.get("Health"))
+                            .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                    ),
                 });
             }
         }
@@ -74,8 +79,7 @@ impl<'a> StorageManager<'a> {
             // Standard Redfish Volumes
             let storage = rf.get_storage_collection().await?;
             let mut disks = Vec::new();
-            if let Some(members) = storage.as_array() {
-                for s in members {
+            for s in &storage {
                     if let Some(volumes) = s.get("Volumes").and_then(|v| v.as_array()) {
                         for vol in volumes {
                             disks.push(BmcVirtualDisk {
@@ -83,13 +87,14 @@ impl<'a> StorageManager<'a> {
                                 name: vol.get("Name").and_then(|v| v.as_str()).unwrap_or("Volume").to_string(),
                                 raid_level: vol.get("RAIDType")
                                     .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                                size_bytes: vol.get("CapacityBytes").and_then(|v| v.as_u64()),
-                                status: vol.get("Status").and_then(|s| s.get("Health"))
-                                    .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                                capacity_bytes: vol.get("CapacityBytes").and_then(|v| v.as_u64()),
+                                status: component_health(
+                                    vol.get("Status").and_then(|s| s.get("Health"))
+                                        .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                                ),
                             });
                         }
                     }
-                }
             }
             return Ok(disks);
         }
@@ -110,11 +115,13 @@ impl<'a> StorageManager<'a> {
                                 .and_then(|v| v.as_str()).unwrap_or("LogicalDrive").to_string(),
                             raid_level: ld.get("Raid")
                                 .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            size_bytes: ld.get("CapacityMiB")
+                            capacity_bytes: ld.get("CapacityMiB")
                                 .and_then(|v| v.as_u64())
                                 .map(|v| v * 1024 * 1024),
-                            status: ld.get("Status").and_then(|s| s.get("Health"))
-                                .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                            status: component_health(
+                                ld.get("Status").and_then(|s| s.get("Health"))
+                                    .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                            ),
                         });
                     }
                 }
@@ -132,8 +139,7 @@ impl<'a> StorageManager<'a> {
             // Standard Redfish Drives
             let storage = rf.get_storage_collection().await?;
             let mut drives = Vec::new();
-            if let Some(members) = storage.as_array() {
-                for s in members {
+            for s in &storage {
                     if let Some(drv_arr) = s.get("Drives").and_then(|v| v.as_array()) {
                         for d in drv_arr {
                             drives.push(BmcPhysicalDisk {
@@ -150,12 +156,13 @@ impl<'a> StorageManager<'a> {
                                     .and_then(|v| v.as_str()).map(|s| s.to_string()),
                                 protocol: d.get("Protocol")
                                     .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                                status: d.get("Status").and_then(|s| s.get("Health"))
-                                    .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                                status: component_health(
+                                    d.get("Status").and_then(|s| s.get("Health"))
+                                        .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                                ),
                             });
                         }
                     }
-                }
             }
             return Ok(drives);
         }
@@ -186,8 +193,10 @@ impl<'a> StorageManager<'a> {
                                 .and_then(|v| v.as_str()).map(|s| s.to_string()),
                             protocol: pd.get("InterfaceType")
                                 .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                            status: pd.get("Status").and_then(|s| s.get("Health"))
-                                .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                            status: component_health(
+                                pd.get("Status").and_then(|s| s.get("Health"))
+                                    .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                            ),
                         });
                     }
                 }

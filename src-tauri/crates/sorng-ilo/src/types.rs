@@ -10,6 +10,14 @@ pub use sorng_bmc_common::types::*;
 pub use sorng_bmc_common::power::PowerAction;
 pub use sorng_bmc_common::redfish::RedfishSession;
 
+/// Helper to build a ComponentHealth from a simple status string.
+pub fn component_health(status: &str) -> ComponentHealth {
+    ComponentHealth {
+        health: Some(status.to_string()),
+        state: Some("Enabled".to_string()),
+    }
+}
+
 // ── iLO generations ─────────────────────────────────────────────────
 
 /// iLO hardware generation.
@@ -190,12 +198,11 @@ pub enum IloLicenseTier {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IloLicense {
-    pub key: Option<String>,
     pub tier: IloLicenseTier,
-    pub name: String,
+    pub key: Option<String>,
+    pub license_string: Option<String>,
+    pub expiration: Option<String>,
     pub install_date: Option<String>,
-    pub expiration_date: Option<String>,
-    pub seats: Option<u32>,
 }
 
 // ── Federation ──────────────────────────────────────────────────────
@@ -213,13 +220,12 @@ pub struct IloFederationGroup {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IloFederationPeer {
-    pub hostname: String,
+    pub name: String,
     pub ip_address: String,
+    pub group: String,
     pub ilo_generation: Option<String>,
-    pub server_model: Option<String>,
-    pub group_name: String,
-    pub uid_status: Option<String>,
-    pub power_state: Option<String>,
+    pub firmware_version: Option<String>,
+    pub server_name: Option<String>,
 }
 
 // ── Security ────────────────────────────────────────────────────────
@@ -229,17 +235,12 @@ pub struct IloFederationPeer {
 #[serde(rename_all = "camelCase")]
 pub struct IloSecurityStatus {
     pub overall_status: String,
-    pub encryption_mode: Option<String>,
-    pub fips_mode: bool,
-    pub require_login_for_ipmi: bool,
-    pub minimum_password_length: u32,
-    pub enforce_aes: bool,
-    pub login_banner_enabled: bool,
-    pub login_banner_text: Option<String>,
-    pub secure_boot_status: Option<String>,
-    pub tpm_status: Option<String>,
-    pub last_firmware_scan: Option<String>,
-    pub risk_items: Vec<SecurityRiskItem>,
+    pub risk_count: u32,
+    pub risks: Vec<SecurityRiskItem>,
+    pub tls_version: Option<String>,
+    pub ipmi_over_lan_enabled: Option<bool>,
+    pub ssh_enabled: Option<bool>,
+    pub default_password: Option<bool>,
 }
 
 /// Security risk item from the iLO security dashboard.
@@ -248,9 +249,8 @@ pub struct IloSecurityStatus {
 pub struct SecurityRiskItem {
     pub name: String,
     pub severity: String,
-    pub description: String,
-    pub remediation: Option<String>,
-    pub status: String,
+    pub description: Option<String>,
+    pub recommended_action: Option<String>,
 }
 
 // ── Virtual Console ─────────────────────────────────────────────────
@@ -273,26 +273,18 @@ pub enum ConsoleType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IloConsoleInfo {
-    pub enabled: bool,
-    pub console_types: Vec<ConsoleType>,
-    pub active_sessions: u32,
-    pub max_sessions: u32,
+    pub available_types: Vec<ConsoleType>,
     pub html5_url: Option<String>,
-    pub vnc_enabled: bool,
-    pub vnc_port: Option<u16>,
-    pub hotkey_config: Option<HotkeyConfig>,
+    pub java_url: Option<String>,
+    pub hotkeys: Vec<HotkeyConfig>,
 }
 
 /// Remote console hotkey configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HotkeyConfig {
-    pub ctrl_t: Option<String>,
-    pub ctrl_u: Option<String>,
-    pub ctrl_v: Option<String>,
-    pub ctrl_w: Option<String>,
-    pub ctrl_x: Option<String>,
-    pub ctrl_y: Option<String>,
+    pub name: String,
+    pub key_sequence: String,
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────
@@ -301,27 +293,23 @@ pub struct HotkeyConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IloDashboard {
-    pub system: Option<BmcSystemInfo>,
+    pub system_info: Option<BmcSystemInfo>,
     pub ilo_info: Option<IloInfo>,
     pub health: Option<BmcHealthRollup>,
     pub power_state: Option<String>,
-    pub power_metrics: Option<BmcPowerMetrics>,
+    pub power_consumption_watts: Option<f64>,
     pub thermal_summary: Option<ThermalSummary>,
-    pub license: Option<IloLicense>,
-    pub active_alerts: u32,
-    pub firmware_version: Option<String>,
 }
 
 /// Thermal summary (aggregated).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThermalSummary {
-    pub inlet_temp_celsius: Option<f64>,
-    pub exhaust_temp_celsius: Option<f64>,
-    pub fan_count: u32,
-    pub fans_ok: u32,
-    pub sensor_count: u32,
-    pub sensors_ok: u32,
+    pub ambient_temp_celsius: Option<f64>,
+    pub cpu_temp_max_celsius: Option<f64>,
+    pub fan_speed_min_percent: Option<f64>,
+    pub fan_speed_max_percent: Option<f64>,
+    pub thermal_alerts: u32,
 }
 
 // ── BIOS / Boot ─────────────────────────────────────────────────────
@@ -331,21 +319,18 @@ pub struct ThermalSummary {
 #[serde(rename_all = "camelCase")]
 pub struct BiosAttribute {
     pub name: String,
-    pub display_name: Option<String>,
-    pub current_value: serde_json::Value,
+    pub value: serde_json::Value,
     pub read_only: bool,
-    pub attribute_type: String,
-    pub allowed_values: Option<Vec<serde_json::Value>>,
 }
 
 /// Boot order configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BootConfig {
-    pub boot_mode: String,
-    pub boot_order: Vec<String>,
-    pub boot_sources: Vec<BootSource>,
-    pub pending_boot_mode: Option<String>,
+    pub boot_order: Vec<BootSource>,
+    pub boot_override_target: Option<String>,
+    pub boot_override_enabled: Option<String>,
+    pub uefi_boot_mode: Option<String>,
 }
 
 /// Boot source entry.
@@ -355,7 +340,7 @@ pub struct BootSource {
     pub id: String,
     pub name: String,
     pub enabled: bool,
-    pub boot_option_reference: Option<String>,
+    pub position: u32,
 }
 
 // ── Certificate ─────────────────────────────────────────────────────
@@ -364,15 +349,12 @@ pub struct BootSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IloCertificate {
-    pub id: String,
-    pub subject: String,
     pub issuer: String,
+    pub subject: String,
     pub valid_from: String,
     pub valid_to: String,
-    pub serial_number: String,
+    pub serial_number: Option<String>,
     pub fingerprint: Option<String>,
-    pub certificate_type: String,
-    pub key_usage: Option<Vec<String>>,
 }
 
 /// CSR generation parameters.

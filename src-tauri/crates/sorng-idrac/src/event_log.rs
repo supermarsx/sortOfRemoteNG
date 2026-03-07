@@ -41,6 +41,7 @@ impl<'a> EventLogManager<'a> {
                     message_args: e.get("MessageArgs").and_then(|v| v.as_array())
                         .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
                         .unwrap_or_default(),
+                    component: e.pointer("/Oem/Dell/FQDD").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 })
                 .collect());
         }
@@ -62,6 +63,7 @@ impl<'a> EventLogManager<'a> {
                         sensor_type: get("SensorType"),
                         sensor_number: v.properties.get("SensorNumber").and_then(|val| val.as_u64()).map(|n| n as u32),
                         message_args: Vec::new(),
+                        component: get("FQDD"),
                     }
                 })
                 .collect();
@@ -83,12 +85,14 @@ impl<'a> EventLogManager<'a> {
                 severity: None,
                 message: Some(format!(
                     "SEL entries: {}, free space: {} bytes",
-                    info.0, info.1
+                    info.get("entries").and_then(|v| v.as_u64()).unwrap_or(0),
+                    info.get("free_bytes").and_then(|v| v.as_u64()).unwrap_or(0)
                 )),
                 message_id: None,
                 sensor_type: None,
                 sensor_number: None,
                 message_args: Vec::new(),
+                component: None,
             }]);
         }
 
@@ -120,6 +124,8 @@ impl<'a> EventLogManager<'a> {
                     message_args: e.get("MessageArgs").and_then(|v| v.as_array())
                         .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
                         .unwrap_or_default(),
+                    comment: None,
+                    sequence: e.get("Id").and_then(|v| v.as_str()).and_then(|s| s.parse::<u64>().ok()),
                 })
                 .collect());
         }
@@ -140,6 +146,8 @@ impl<'a> EventLogManager<'a> {
                         category: get("Category"),
                         component: get("FQDD"),
                         message_args: Vec::new(),
+                        comment: get("Comment"),
+                        sequence: v.properties.get("RecordID").and_then(|val| val.as_u64()),
                     }
                 })
                 .collect();
@@ -190,10 +198,10 @@ impl<'a> EventLogManager<'a> {
         }
 
         if let Ok(ipmi) = self.client.require_ipmi() {
-            let (entries, free_bytes) = ipmi.get_sel_info().await?;
+            let sel_info = ipmi.get_sel_info().await?;
             return Ok(serde_json::json!({
-                "entries": entries,
-                "freeBytes": free_bytes,
+                "entries": sel_info.get("entries"),
+                "freeBytes": sel_info.get("free_bytes"),
             }));
         }
 

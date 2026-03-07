@@ -19,11 +19,16 @@ impl<'a> LifecycleManager<'a> {
     pub async fn list_jobs(&self) -> IdracResult<Vec<LifecycleJob>> {
         if let Ok(rf) = self.client.require_redfish() {
             // Dell OEM jobs endpoint
-            let col: serde_json::Value = rf
+            let col: serde_json::Value = match rf
                 .get("/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/Jobs?$expand=*($levels=1)")
                 .await
-                .or_else(|_| rf.get("/redfish/v1/TaskService/Tasks?$expand=*($levels=1)"))
-                .map_err(|_| IdracError::not_found("Jobs endpoint not available"))?;
+            {
+                Ok(v) => v,
+                Err(_) => rf
+                    .get("/redfish/v1/TaskService/Tasks?$expand=*($levels=1)")
+                    .await
+                    .map_err(|_| IdracError::not_found("Jobs endpoint not available"))?,
+            };
 
             let members = col.get("Members").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
@@ -73,11 +78,16 @@ impl<'a> LifecycleManager<'a> {
     /// Get a specific job by ID.
     pub async fn get_job(&self, job_id: &str) -> IdracResult<LifecycleJob> {
         if let Ok(rf) = self.client.require_redfish() {
-            let j: serde_json::Value = rf
+            let j: serde_json::Value = match rf
                 .get(&format!("/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/Jobs/{}", job_id))
                 .await
-                .or_else(|_| rf.get(&format!("/redfish/v1/TaskService/Tasks/{}", job_id)))
-                .map_err(|_| IdracError::not_found(format!("Job not found: {}", job_id)))?;
+            {
+                Ok(v) => v,
+                Err(_) => rf
+                    .get(&format!("/redfish/v1/TaskService/Tasks/{}", job_id))
+                    .await
+                    .map_err(|_| IdracError::not_found(format!("Job not found: {}", job_id)))?,
+            };
 
             return Ok(LifecycleJob {
                 id: j.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
@@ -206,7 +216,7 @@ impl<'a> LifecycleManager<'a> {
 
             let status = result
                 .get("LCStatus")
-                .and_then(|v| v.as_str())
+                .map(|v| v.as_str())
                 .unwrap_or("Unknown");
 
             return Ok(status.to_string());

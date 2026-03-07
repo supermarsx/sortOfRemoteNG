@@ -40,8 +40,8 @@ fn parse_map_list(raw: &str) -> Vec<HaproxyMap> {
         if parts.len() >= 2 {
             Some(HaproxyMap {
                 id: parts[0].trim_start_matches('#').to_string(),
-                description: parts[1..].join(" "),
-                entry_count: None,
+                description: Some(parts[1..].join(" ")),
+                entries: vec![],
             })
         } else {
             None
@@ -53,7 +53,7 @@ fn parse_map_entries(raw: &str) -> Vec<MapEntry> {
     raw.lines().filter_map(|line| {
         let parts: Vec<&str> = line.splitn(3, ' ').collect();
         if parts.len() >= 3 {
-            Some(MapEntry { id: parts[0].to_string(), key: parts[1].to_string(), value: parts[2].to_string() })
+            Some(MapEntry { id: parts[0].parse().unwrap_or(0), key: parts[1].to_string(), value: parts[2].to_string() })
         } else {
             None
         }

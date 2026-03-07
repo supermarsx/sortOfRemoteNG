@@ -65,9 +65,7 @@ impl<'a> PowerManager<'a> {
 
         // IPMI fallback
         if let Ok(ipmi) = self.client.require_ipmi() {
-            let cmd = action.to_ipmi().ok_or_else(|| {
-                IloError::unsupported("Unsupported power action via IPMI")
-            })?;
+            let cmd = action.to_ipmi();
             ipmi.chassis_control(cmd).await?;
             return Ok(());
         }
@@ -92,27 +90,36 @@ impl<'a> PowerManager<'a> {
             let avg_watts = pwr.pointer("/PowerControl/0/PowerMetrics/AverageConsumedWatts")
                 .and_then(|v| v.as_f64());
 
-            let supplies = pwr.get("PowerSupplies")
+            let supplies: Vec<_> = pwr.get("PowerSupplies")
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().map(|ps| BmcPowerSupply {
+                    id: ps.get("MemberId").or_else(|| ps.get("Name")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     name: ps.get("Name").and_then(|v| v.as_str()).unwrap_or("PSU").to_string(),
                     model: ps.get("Model").and_then(|v| v.as_str()).map(|s| s.to_string()),
                     serial_number: ps.get("SerialNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
                     firmware_version: ps.get("FirmwareVersion").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    status: ps.get("Status").and_then(|s| s.get("Health"))
-                        .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                    status: component_health(
+                        ps.get("Status").and_then(|s| s.get("Health"))
+                            .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                    ),
                     capacity_watts: ps.get("PowerCapacityWatts").and_then(|v| v.as_f64()),
                     input_voltage: ps.get("LineInputVoltage").and_then(|v| v.as_f64()),
                     output_watts: ps.get("LastPowerOutputWatts").and_then(|v| v.as_f64()),
+                    manufacturer: ps.get("Manufacturer").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    part_number: ps.get("PartNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    efficiency_rating: None,
                 }).collect())
                 .unwrap_or_default();
+
+            let _ = supplies; // power supplies tracked separately
 
             return Ok(BmcPowerMetrics {
                 current_watts,
                 min_watts,
                 max_watts,
-                avg_watts,
-                power_supplies: supplies,
+                average_watts: avg_watts,
+                power_cap_watts: pwr.pointer("/PowerControl/0/PowerLimit/LimitInWatts").and_then(|v| v.as_f64()),
+                power_cap_enabled: pwr.pointer("/PowerControl/0/PowerLimit/LimitInWatts").is_some(),
             });
         }
 
@@ -126,10 +133,11 @@ impl<'a> PowerManager<'a> {
                 current_watts: current,
                 min_watts: None,
                 max_watts: None,
-                avg_watts: data.get("AVERAGE_POWER_READING")
+                average_watts: data.get("AVERAGE_POWER_READING")
                     .and_then(|v| v.as_str())
                     .and_then(|s| s.parse::<f64>().ok()),
-                power_supplies: Vec::new(),
+                power_cap_watts: None,
+                power_cap_enabled: false,
             });
         }
 

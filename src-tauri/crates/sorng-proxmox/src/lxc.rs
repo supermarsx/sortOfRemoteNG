@@ -40,6 +40,26 @@ impl<'a> LxcManager<'a> {
         self.client.post_form::<String>(&path, &borrowed).await
     }
 
+    /// Start a container (alias).
+    pub async fn start_container(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
+        self.start(node, vmid).await
+    }
+
+    /// Stop a container (alias).
+    pub async fn stop_container(&self, node: &str, vmid: u64) -> ProxmoxResult<Option<String>> {
+        self.stop(node, vmid).await
+    }
+
+    /// Shutdown a container (alias).
+    pub async fn shutdown_container(&self, node: &str, vmid: u64, force_stop: bool, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+        self.shutdown(node, vmid, force_stop, timeout).await
+    }
+
+    /// Reboot a container (alias).
+    pub async fn reboot_container(&self, node: &str, vmid: u64, timeout: Option<u64>) -> ProxmoxResult<Option<String>> {
+        self.reboot(node, vmid, timeout).await
+    }
+
     /// Delete an LXC container.
     pub async fn delete_container(&self, node: &str, vmid: u64, purge: bool, force: bool) -> ProxmoxResult<Option<String>> {
         let mut path = format!("/api2/json/nodes/{node}/lxc/{vmid}");
@@ -70,7 +90,7 @@ impl<'a> LxcManager<'a> {
         let mut params: Vec<(&str, String)> = Vec::new();
         if force_stop { params.push(("forceStop", "1".to_string())); }
         if let Some(t) = timeout { params.push(("timeout", t.to_string())); }
-        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         if borrowed.is_empty() {
             self.client.post_empty(&path).await
         } else {
@@ -177,7 +197,7 @@ impl<'a> LxcManager<'a> {
 }
 
 /// Flatten a JSON value into form params.
-fn json_to_form_params(value: &serde_json::Value) -> Vec<(String, String)> {
+pub fn json_to_form_params(value: &serde_json::Value) -> Vec<(String, String)> {
     let mut params = Vec::new();
     if let serde_json::Value::Object(map) = value {
         for (key, val) in map {

@@ -22,21 +22,24 @@ impl<'a> HardwareManager<'a> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("/redfish/v1/Systems/1/Processors");
 
-            let collection = rf.inner.get_collection_expanded(procs_link).await?;
+            let collection: Vec<serde_json::Value> = rf.inner.get_collection_expanded(procs_link).await?;
             let mut processors = Vec::new();
 
-            for member in collection {
+            for member in &collection {
                 processors.push(BmcProcessor {
                     id: member.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    socket: member.get("Socket").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     manufacturer: member.get("Manufacturer")
                         .and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     model: member.get("Model")
                         .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
                     max_speed_mhz: member.get("MaxSpeedMHz").and_then(|v| v.as_u64()).map(|v| v as u32),
-                    total_cores: member.get("TotalCores").and_then(|v| v.as_u64()).map(|v| v as u32),
-                    total_threads: member.get("TotalThreads").and_then(|v| v.as_u64()).map(|v| v as u32),
-                    status: member.get("Status").and_then(|s| s.get("Health"))
-                        .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                    total_cores: member.get("TotalCores").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                    total_threads: member.get("TotalThreads").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                    status: component_health(
+                        member.get("Status").and_then(|s| s.get("Health"))
+                            .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                    ),
                 });
             }
             return Ok(processors);
@@ -62,13 +65,15 @@ impl<'a> HardwareManager<'a> {
 
                     processors.push(BmcProcessor {
                         id: format!("{}", i + 1),
+                        socket: format!("CPU {}", i + 1),
                         manufacturer: "".to_string(),
                         model: name.to_string(),
                         max_speed_mhz: speed,
-                        total_cores: cores,
-                        total_threads: threads,
-                        status: p.get("STATUS").and_then(|v| v.as_str())
-                            .unwrap_or("Unknown").to_string(),
+                        total_cores: cores.unwrap_or(0),
+                        total_threads: threads.unwrap_or(0),
+                        status: component_health(
+                            p.get("STATUS").and_then(|v| v.as_str()).unwrap_or("Unknown")
+                        ),
                     });
                 }
             }
@@ -86,10 +91,10 @@ impl<'a> HardwareManager<'a> {
                 .and_then(|v| v.as_str())
                 .unwrap_or("/redfish/v1/Systems/1/Memory");
 
-            let collection = rf.inner.get_collection_expanded(mem_link).await?;
+            let collection: Vec<serde_json::Value> = rf.inner.get_collection_expanded(mem_link).await?;
             let mut dimms = Vec::new();
 
-            for member in collection {
+            for member in &collection {
                 if member.get("Status").and_then(|s| s.get("State"))
                     .and_then(|v| v.as_str()) == Some("Absent") {
                     continue;
@@ -98,13 +103,17 @@ impl<'a> HardwareManager<'a> {
                     id: member.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     name: member.get("Name").and_then(|v| v.as_str()).unwrap_or("DIMM").to_string(),
                     manufacturer: member.get("Manufacturer")
-                        .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    capacity_mib: member.get("CapacityMiB").and_then(|v| v.as_u64()).map(|v| v as u32),
+                        .and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    capacity_mib: member.get("CapacityMiB").and_then(|v| v.as_u64()).unwrap_or(0),
                     speed_mhz: member.get("OperatingSpeedMhz").and_then(|v| v.as_u64()).map(|v| v as u32),
                     memory_type: member.get("MemoryDeviceType")
-                        .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    status: member.get("Status").and_then(|s| s.get("Health"))
-                        .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                        .and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    device_locator: member.get("DeviceLocator")
+                        .and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    status: component_health(
+                        member.get("Status").and_then(|s| s.get("Health"))
+                            .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                    ),
                 });
             }
             return Ok(dimms);
@@ -131,13 +140,14 @@ impl<'a> HardwareManager<'a> {
                         id: format!("{}", i + 1),
                         name: m.get("LABEL").and_then(|v| v.as_str())
                             .unwrap_or("DIMM").to_string(),
-                        manufacturer: None,
-                        capacity_mib: size,
+                        manufacturer: "".to_string(),
+                        capacity_mib: size.map(|s| s as u64).unwrap_or(0),
                         speed_mhz: m.get("SPEED")
                             .and_then(|v| v.as_str())
                             .and_then(|s| s.replace("MHz", "").trim().parse::<u32>().ok()),
-                        memory_type: m.get("TYPE").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                        status: status.to_string(),
+                        memory_type: m.get("TYPE").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        device_locator: m.get("LABEL").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        status: component_health(status),
                     });
                 }
             }

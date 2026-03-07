@@ -39,7 +39,7 @@ impl<'a> StorageManager<'a> {
         let mut params: Vec<(&str, String)> = Vec::new();
         if let Some(ct) = content_type { params.push(("content", ct.to_string())); }
         if let Some(id) = vmid { params.push(("vmid", id.to_string())); }
-        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let borrowed: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
         let path = format!("/api2/json/nodes/{node}/storage/{storage}/content");
         if borrowed.is_empty() {
             self.client.get(&path).await

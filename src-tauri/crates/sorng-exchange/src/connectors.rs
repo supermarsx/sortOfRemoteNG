@@ -1,5 +1,4 @@
 // ─── Exchange Integration – send / receive connectors ────────────────────────
-use crate::auth::*;
 use crate::client::ExchangeClient;
 use crate::types::*;
 

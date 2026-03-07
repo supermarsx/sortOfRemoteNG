@@ -8,7 +8,14 @@ use tokio::sync::Mutex;
 
 use crate::client::TraefikClient;
 use crate::error::{TraefikError, TraefikResult};
-use crate::types::*;
+use crate::types::{
+    TraefikConnectionConfig, TraefikConnectionSummary,
+    TraefikRouter, TraefikTcpRouter, TraefikUdpRouter,
+    TraefikService as TraefikSvcType, TraefikTcpService, TraefikUdpService,
+    TraefikMiddleware, TraefikTcpMiddleware,
+    TraefikEntryPoint, TraefikTlsCertificate, TraefikOverview, TraefikRawConfig,
+    TraefikVersion,
+};
 
 use crate::routers::RouterManager;
 use crate::services::ServiceManager;
@@ -86,11 +93,11 @@ impl TraefikService {
 
     // ── Services ─────────────────────────────────────────────────
 
-    pub async fn list_http_services(&self, id: &str) -> TraefikResult<Vec<TraefikService>> {
+    pub async fn list_http_services(&self, id: &str) -> TraefikResult<Vec<TraefikSvcType>> {
         ServiceManager::list_http(self.client(id)?).await
     }
 
-    pub async fn get_http_service(&self, id: &str, name: &str) -> TraefikResult<TraefikService> {
+    pub async fn get_http_service(&self, id: &str, name: &str) -> TraefikResult<TraefikSvcType> {
         ServiceManager::get_http(self.client(id)?, name).await
     }
 

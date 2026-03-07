@@ -17,8 +17,8 @@ impl<'a> EventLogManager<'a> {
     /// Get IML (Integrated Management Log) entries.
     pub async fn get_iml(&self) -> IloResult<Vec<BmcEventLogEntry>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let entries: serde_json::Value = rf.get_iml_entries().await?;
-            return self.parse_redfish_log(&entries);
+            let entries: Vec<serde_json::Value> = rf.get_iml_entries().await?;
+            return self.parse_redfish_log(&serde_json::Value::Array(entries));
         }
 
         if let Ok(ribcl) = self.client.require_ribcl() {
@@ -32,8 +32,8 @@ impl<'a> EventLogManager<'a> {
     /// Get iLO Event Log entries.
     pub async fn get_ilo_event_log(&self) -> IloResult<Vec<BmcEventLogEntry>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let entries: serde_json::Value = rf.get_ilo_event_log().await?;
-            return self.parse_redfish_log(&entries);
+            let entries: Vec<serde_json::Value> = rf.get_ilo_event_log().await?;
+            return self.parse_redfish_log(&serde_json::Value::Array(entries));
         }
 
         if let Ok(ribcl) = self.client.require_ribcl() {
@@ -51,7 +51,7 @@ impl<'a> EventLogManager<'a> {
             for entry in members {
                 entries.push(BmcEventLogEntry {
                     id: entry.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                    timestamp: entry.get("Created")
+                    created: entry.get("Created")
                         .or_else(|| entry.get("EventTimestamp"))
                         .and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     severity: entry.get("Severity")
@@ -61,7 +61,7 @@ impl<'a> EventLogManager<'a> {
                         .and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     message_id: entry.get("MessageId")
                         .and_then(|v| v.as_str()).map(|s| s.to_string()),
-                    category: entry.pointer("/Oem/Hpe/Class")
+                    entry_type: entry.pointer("/Oem/Hpe/Class")
                         .or_else(|| entry.pointer("/Oem/Hp/Class"))
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string()),
@@ -94,11 +94,11 @@ impl<'a> EventLogManager<'a> {
 
                 entries.push(BmcEventLogEntry {
                     id: format!("{}", i + 1),
-                    timestamp,
+                    created: timestamp,
                     severity: severity.to_string(),
                     message,
                     message_id: None,
-                    category: entry.get("CLASS").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    entry_type: entry.get("CLASS").and_then(|v| v.as_str()).map(|s| s.to_string()),
                 });
             }
         }

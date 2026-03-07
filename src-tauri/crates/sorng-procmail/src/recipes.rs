@@ -113,7 +113,8 @@ impl RecipeManager {
             &r.action,
             r.enabled,
         );
-        let r = &mut recipes[recipes.iter().position(|r| r.id == id).unwrap()];
+        let idx = recipes.iter().position(|r| r.id == id).unwrap();
+        let r = &mut recipes[idx];
         r.raw = raw;
 
         let updated = r.clone();

@@ -30,6 +30,7 @@ pub fn get_all_resources() -> Vec<McpResource> {
             name: "Connections".to_string(),
             description: Some("All connections in the current collection with name, protocol, hostname, port, and status.".to_string()),
             mime_type: Some("application/json".to_string()),
+            size: None,
             annotations: None,
         },
         McpResource {
@@ -37,6 +38,7 @@ pub fn get_all_resources() -> Vec<McpResource> {
             name: "Active Sessions".to_string(),
             description: Some("Currently active SSH, RDP, VNC, and other sessions with connection duration and metadata.".to_string()),
             mime_type: Some("application/json".to_string()),
+            size: None,
             annotations: None,
         },
         McpResource {
@@ -44,6 +46,7 @@ pub fn get_all_resources() -> Vec<McpResource> {
             name: "Application Settings".to_string(),
             description: Some("Current application settings. Sensitive fields are redacted.".to_string()),
             mime_type: Some("application/json".to_string()),
+            size: None,
             annotations: None,
         },
         McpResource {
@@ -51,6 +54,7 @@ pub fn get_all_resources() -> Vec<McpResource> {
             name: "Action Log".to_string(),
             description: Some("Recent application action log entries sorted by timestamp.".to_string()),
             mime_type: Some("application/json".to_string()),
+            size: None,
             annotations: None,
         },
         McpResource {
@@ -58,6 +62,7 @@ pub fn get_all_resources() -> Vec<McpResource> {
             name: "System Diagnostics".to_string(),
             description: Some("Application health: memory usage, connection stats, uptime, errors, and feature status.".to_string()),
             mime_type: Some("application/json".to_string()),
+            size: None,
             annotations: None,
         },
         McpResource {
@@ -65,6 +70,7 @@ pub fn get_all_resources() -> Vec<McpResource> {
             name: "Saved Scripts".to_string(),
             description: Some("Saved script commands for batch execution across servers.".to_string()),
             mime_type: Some("application/json".to_string()),
+            size: None,
             annotations: None,
         },
         McpResource {
@@ -72,6 +78,7 @@ pub fn get_all_resources() -> Vec<McpResource> {
             name: "Connection Groups".to_string(),
             description: Some("Connection folder/group hierarchy with nested structure.".to_string()),
             mime_type: Some("application/json".to_string()),
+            size: None,
             annotations: None,
         },
     ]

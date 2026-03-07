@@ -104,11 +104,13 @@ impl NginxClient {
                 success: o.exit_code == 0,
                 output: o.stdout,
                 errors: if o.exit_code != 0 { vec![o.stderr] } else { vec![] },
+                warnings: vec![],
             }),
             Err(_) => Ok(ConfigTestResult {
                 success: false,
                 output: String::new(),
                 errors: vec!["Failed to execute nginx -t".into()],
+                warnings: vec![],
             }),
         }
     }
@@ -159,9 +161,13 @@ impl NginxClient {
             .map(|l| l.replace("configure arguments:", "").trim().to_string());
         Ok(NginxInfo {
             version,
-            config_path: self.config_path().to_string(),
-            config_args,
+            compiler: None,
+            configure_arguments: config_args.map(|a| vec![a]).unwrap_or_default(),
             modules: vec![],
+            prefix: None,
+            config_path: self.config_path().to_string(),
+            pid_path: None,
+            error_log: None,
         })
     }
 
@@ -171,10 +177,13 @@ impl NginxClient {
         let pid_out = self.exec_ssh("cat /run/nginx.pid 2>/dev/null || echo 0").await;
         let pid = pid_out.ok().and_then(|o| o.stdout.trim().parse().ok()).unwrap_or(0);
         Ok(NginxProcess {
-            running: active,
             pid,
-            uptime: None,
-            worker_count: None,
+            ppid: None,
+            process_type: if active { "master".into() } else { "inactive".into() },
+            cpu_percent: None,
+            memory_rss: None,
+            connections: None,
+            uptime_secs: None,
         })
     }
 
@@ -182,7 +191,7 @@ impl NginxClient {
 
     pub async fn stub_status(&self) -> NginxResult<NginxStubStatus> {
         let url = self.status_url()
-            .ok_or_else(|| NginxError::not_connected("No status_url configured".into()))?;
+            .ok_or_else(|| NginxError::not_connected("No status_url configured"))?;
 
         debug!("NGX stub_status GET {url}");
         let resp = self.http.get(url).send().await

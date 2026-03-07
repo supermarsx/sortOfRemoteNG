@@ -4,7 +4,6 @@
 //! block, allow, and remove devices.
 
 use crate::client::ExchangeClient;
-use crate::auth::wrap_ps_json;
 use crate::types::*;
 
 /// List mobile devices for a mailbox.
@@ -12,13 +11,12 @@ pub async fn ps_list_mobile_devices(
     client: &ExchangeClient,
     mailbox: &str,
 ) -> ExchangeResult<Vec<MobileDevice>> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-MobileDevice -Mailbox '{mailbox}' | Select-Object Identity,DeviceId,\
          FriendlyName,DeviceModel,DeviceType,DeviceOS,DeviceUserAgent,\
          DeviceAccessState,FirstSyncTime,LastSyncAttemptTime,LastSuccessSync,ClientType"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    );
+    client.run_ps_json(&cmd).await
 }
 
 /// Get mobile device statistics.
@@ -26,13 +24,11 @@ pub async fn ps_get_mobile_device_statistics(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<MobileDeviceStatistics> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-MobileDeviceStatistics -Identity '{identity}' | Select-Object Identity,DeviceId,\
          Status,LastSyncAttemptTime,LastSuccessSync,NumberOfFoldersSynced"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    );
+    client.run_ps_json(&cmd).await
 }
 
 /// Initiate a remote wipe on a mobile device.
@@ -89,11 +85,10 @@ pub async fn ps_list_all_mobile_devices(
     result_size: Option<i32>,
 ) -> ExchangeResult<Vec<MobileDevice>> {
     let limit = result_size.unwrap_or(500);
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-MobileDevice -ResultSize {limit} | Select-Object Identity,DeviceId,\
          FriendlyName,DeviceModel,DeviceType,DeviceOS,DeviceUserAgent,\
          DeviceAccessState,FirstSyncTime,LastSyncAttemptTime,LastSuccessSync,ClientType"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    );
+    client.run_ps_json(&cmd).await
 }

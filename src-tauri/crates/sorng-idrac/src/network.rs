@@ -189,6 +189,11 @@ impl<'a> NetworkManager<'a> {
                 auto_negotiation: iface.get("AutoNeg").and_then(|v| v.as_bool()),
                 vlan_id: iface.get("VLAN").and_then(|v| v.get("VLANId")).and_then(|v| v.as_u64()).map(|n| n as u32),
                 vlan_enabled: iface.get("VLAN").and_then(|v| v.get("VLANEnable")).and_then(|v| v.as_bool()),
+                vlan_enable: iface.get("VLAN").and_then(|v| v.get("VLANEnable")).and_then(|v| v.as_bool()),
+                ipv4_source: None,
+                ipv6_source: None,
+                nic_selection: None,
+                speed_duplex: None,
             });
         }
 

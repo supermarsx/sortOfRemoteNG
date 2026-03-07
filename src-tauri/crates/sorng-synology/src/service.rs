@@ -60,6 +60,8 @@ impl SynologyService {
             port: c.port,
             username: c.username.clone(),
             use_https: c.use_https,
+            dsm_version: self.client.as_ref().and_then(|cl| cl.dsm_version.clone()),
+            model: self.client.as_ref().and_then(|cl| cl.model.clone()),
         })
     }
 

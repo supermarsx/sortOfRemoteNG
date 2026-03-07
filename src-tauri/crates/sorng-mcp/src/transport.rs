@@ -12,14 +12,9 @@
 //! optional API key authentication.
 
 use crate::types::*;
-use crate::protocol;
-use crate::session::SessionManager;
-use crate::auth::AuthManager;
 
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{Mutex, broadcast};
 use chrono::Utc;
 
 /// SSE event for streaming.
@@ -75,6 +70,7 @@ impl From<&McpServerConfig> for TransportConfig {
 #[derive(Debug, Clone)]
 pub struct McpHttpRequest {
     pub method: HttpMethod,
+    pub path: Option<String>,
     pub body: Option<String>,
     pub headers: HashMap<String, String>,
 }
@@ -94,7 +90,7 @@ pub struct McpHttpResponse {
     pub status: u16,
     pub content_type: String,
     pub headers: HashMap<String, String>,
-    pub body: String,
+    pub body: Option<String>,
 }
 
 impl McpHttpResponse {
@@ -103,7 +99,7 @@ impl McpHttpResponse {
             status,
             content_type: "application/json".to_string(),
             headers: HashMap::new(),
-            body: serde_json::to_string(body).unwrap_or_default(),
+            body: Some(serde_json::to_string(body).unwrap_or_default()),
         }
     }
 
@@ -112,7 +108,7 @@ impl McpHttpResponse {
             status: 202,
             content_type: "text/plain".to_string(),
             headers: HashMap::new(),
-            body: String::new(),
+            body: None,
         }
     }
 
@@ -121,7 +117,7 @@ impl McpHttpResponse {
             status: 405,
             content_type: "text/plain".to_string(),
             headers: HashMap::new(),
-            body: "Method Not Allowed".to_string(),
+            body: Some("Method Not Allowed".to_string()),
         }
     }
 
@@ -130,7 +126,7 @@ impl McpHttpResponse {
             status: 404,
             content_type: "text/plain".to_string(),
             headers: HashMap::new(),
-            body: "Not Found".to_string(),
+            body: Some("Not Found".to_string()),
         }
     }
 
@@ -139,12 +135,12 @@ impl McpHttpResponse {
             status: 400,
             content_type: "application/json".to_string(),
             headers: HashMap::new(),
-            body: serde_json::to_string(&serde_json::json!({
+            body: Some(serde_json::to_string(&serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": null,
                 "error": { "code": -32600, "message": msg }
             }))
-            .unwrap_or_default(),
+            .unwrap_or_default()),
         }
     }
 
@@ -153,7 +149,7 @@ impl McpHttpResponse {
             status: 401,
             content_type: "text/plain".to_string(),
             headers: HashMap::new(),
-            body: "Unauthorized".to_string(),
+            body: Some("Unauthorized".to_string()),
         }
     }
 
@@ -162,7 +158,7 @@ impl McpHttpResponse {
             status: 429,
             content_type: "text/plain".to_string(),
             headers: HashMap::new(),
-            body: "Too Many Requests".to_string(),
+            body: Some("Too Many Requests".to_string()),
         }
     }
 
@@ -227,7 +223,7 @@ pub fn handle_options(config: &TransportConfig, origin: Option<&str>) -> McpHttp
         status: 204,
         content_type: String::new(),
         headers: HashMap::new(),
-        body: String::new(),
+        body: None,
     }
     .with_cors(config, origin)
 }
@@ -276,7 +272,7 @@ mod tests {
         let resp = McpHttpResponse::json(200, &serde_json::json!({"ok": true}));
         assert_eq!(resp.status, 200);
         assert_eq!(resp.content_type, "application/json");
-        assert!(resp.body.contains("\"ok\":true"));
+        assert!(resp.body.as_deref().unwrap().contains("\"ok\":true"));
     }
 
     #[test]

@@ -16,7 +16,7 @@ impl SystemManager {
             return web.get_system_info().await;
         }
         Err(crate::error::SmcError::new(
-            crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::ProtocolNotSupported),
+            crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol),
             "No protocol available for system info",
         ))
     }
@@ -30,7 +30,7 @@ impl SystemManager {
             return web.get_bmc_info().await;
         }
         Err(crate::error::SmcError::new(
-            crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::ProtocolNotSupported),
+            crate::error::SmcErrorKind::Bmc(sorng_bmc_common::error::BmcErrorKind::UnsupportedProtocol),
             "No protocol available for BMC info",
         ))
     }

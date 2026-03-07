@@ -39,8 +39,8 @@ impl TraefikError {
     pub fn new(kind: TraefikErrorKind, msg: impl Into<String>) -> Self {
         Self { kind, message: msg.into() }
     }
-    pub fn not_connected() -> Self {
-        Self::new(TraefikErrorKind::NotConnected, "Not connected to Traefik instance")
+    pub fn not_connected(msg: impl Into<String>) -> Self {
+        Self::new(TraefikErrorKind::NotConnected, msg)
     }
     pub fn router_not_found(name: &str) -> Self {
         Self::new(TraefikErrorKind::RouterNotFound, format!("Router not found: {name}"))
@@ -50,6 +50,12 @@ impl TraefikError {
     }
     pub fn http(e: impl fmt::Display) -> Self {
         Self::new(TraefikErrorKind::HttpError, e.to_string())
+    }
+    pub fn connection(msg: impl Into<String>) -> Self {
+        Self::new(TraefikErrorKind::ConnectionFailed, msg)
+    }
+    pub fn parse(msg: impl Into<String>) -> Self {
+        Self::new(TraefikErrorKind::ParseError, msg)
     }
 }
 

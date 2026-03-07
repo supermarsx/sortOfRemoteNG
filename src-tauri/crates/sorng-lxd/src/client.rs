@@ -5,7 +5,7 @@
 //! All requests target `/1.0` endpoints. Project scoping is handled via `?project=` query param.
 
 use crate::types::*;
-use log::{debug, warn};
+use log::debug;
 use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -26,8 +26,7 @@ impl LxdClient {
         if let (Some(cert_pem), Some(key_pem)) =
             (&config.client_cert_pem, &config.client_key_pem)
         {
-            let combined = format!("{}\n{}", cert_pem, key_pem);
-            let ident = reqwest::Identity::from_pem(combined.as_bytes())
+            let ident = reqwest::Identity::from_pkcs8_pem(cert_pem.as_bytes(), key_pem.as_bytes())
                 .map_err(|e| LxdError::auth(format!("invalid client cert/key: {e}")))?;
             builder = builder.identity(ident);
         }
@@ -81,7 +80,7 @@ impl LxdClient {
 
     // ─── Typed REST helpers ──────────────────────────────────────────────
 
-    pub async fn get<T: DeserializeOwned>(&self, path: &str) -> LxdResult<T> {
+    pub async fn get<T: DeserializeOwned + Default>(&self, path: &str) -> LxdResult<T> {
         let url = self.url_with_project(path);
         debug!("LXD GET {url}");
 
@@ -159,7 +158,7 @@ impl LxdClient {
         Ok(sync.metadata)
     }
 
-    pub async fn post_sync<B: Serialize, T: DeserializeOwned>(
+    pub async fn post_sync<B: Serialize, T: DeserializeOwned + Default>(
         &self,
         path: &str,
         body: &B,
@@ -301,7 +300,7 @@ impl LxdClient {
             .map_err(|e| LxdError::api(format!("json parse error: {e}")))
     }
 
-    async fn handle_sync_response<T: DeserializeOwned>(
+    async fn handle_sync_response<T: DeserializeOwned + Default>(
         &self,
         resp: reqwest::Response,
     ) -> LxdResult<T> {

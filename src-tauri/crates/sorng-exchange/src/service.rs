@@ -931,16 +931,15 @@ impl ExchangeService {
 
     pub async fn convert_mailbox(
         &mut self,
-        identity: &str,
-        target_type: &str,
-    ) -> ExchangeResult<String> {
+        req: &ConvertMailboxRequest,
+    ) -> ExchangeResult<Mailbox> {
         self.ensure_auth().await?;
-        shared_mailbox::ps_convert_mailbox(self.client()?, identity, target_type).await
+        shared_mailbox::ps_convert_mailbox(self.client()?, req).await
     }
 
-    pub async fn list_shared_mailboxes(&mut self) -> ExchangeResult<Vec<Mailbox>> {
+    pub async fn list_shared_mailboxes(&mut self, result_size: Option<i32>) -> ExchangeResult<Vec<Mailbox>> {
         self.ensure_auth().await?;
-        shared_mailbox::ps_list_shared_mailboxes(self.client()?).await
+        shared_mailbox::ps_list_shared_mailboxes(self.client()?, result_size).await
     }
 
     pub async fn list_room_mailboxes(&mut self) -> ExchangeResult<Vec<Mailbox>> {
@@ -1007,7 +1006,7 @@ impl ExchangeService {
         shared_mailbox::ps_remove_send_on_behalf(self.client()?, mailbox, trustee).await
     }
 
-    pub async fn list_room_lists(&mut self) -> ExchangeResult<Vec<serde_json::Value>> {
+    pub async fn list_room_lists(&mut self) -> ExchangeResult<Vec<DistributionGroup>> {
         self.ensure_auth().await?;
         shared_mailbox::ps_list_room_lists(self.client()?).await
     }
@@ -1024,9 +1023,9 @@ impl ExchangeService {
         archive::ps_get_archive_info(self.client()?, identity).await
     }
 
-    pub async fn enable_archive(&mut self, identity: &str) -> ExchangeResult<String> {
+    pub async fn enable_archive(&mut self, identity: &str, database: Option<&str>) -> ExchangeResult<String> {
         self.ensure_auth().await?;
-        archive::ps_enable_archive(self.client()?, identity).await
+        archive::ps_enable_archive(self.client()?, identity, database).await
     }
 
     pub async fn disable_archive(&mut self, identity: &str) -> ExchangeResult<String> {
@@ -1046,14 +1045,14 @@ impl ExchangeService {
         &mut self,
         identity: &str,
         quota: &str,
-        warning_quota: Option<String>,
+        warning_quota: &str,
     ) -> ExchangeResult<String> {
         self.ensure_auth().await?;
         archive::ps_set_archive_quota(
             self.client()?,
             identity,
             quota,
-            warning_quota.as_deref(),
+            warning_quota,
         )
         .await
     }
@@ -1106,9 +1105,9 @@ impl ExchangeService {
         mobile_devices::ps_remove_mobile_device(self.client()?, identity).await
     }
 
-    pub async fn list_all_mobile_devices(&mut self) -> ExchangeResult<Vec<MobileDevice>> {
+    pub async fn list_all_mobile_devices(&mut self, result_size: Option<i32>) -> ExchangeResult<Vec<MobileDevice>> {
         self.ensure_auth().await?;
-        mobile_devices::ps_list_all_mobile_devices(self.client()?).await
+        mobile_devices::ps_list_all_mobile_devices(self.client()?, result_size).await
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1356,6 +1355,8 @@ impl ExchangeService {
         mailbox: &str,
         start_date: Option<String>,
         end_date: Option<String>,
+        log_on_types: Option<String>,
+        result_size: Option<i32>,
     ) -> ExchangeResult<Vec<MailboxAuditLogEntry>> {
         self.ensure_auth().await?;
         rbac_audit::ps_search_mailbox_audit_log(
@@ -1363,6 +1364,8 @@ impl ExchangeService {
             mailbox,
             start_date.as_deref(),
             end_date.as_deref(),
+            log_on_types.as_deref(),
+            result_size,
         )
         .await
     }
@@ -1461,12 +1464,12 @@ impl ExchangeService {
         file_path: &str,
         password: Option<String>,
         server: Option<String>,
-    ) -> ExchangeResult<String> {
+    ) -> ExchangeResult<ExchangeCertificate> {
         self.ensure_auth().await?;
         certificates::ps_import_certificate(
             self.client()?,
             file_path,
-            password.as_deref(),
+            &password.unwrap_or_default(),
             server.as_deref(),
         )
         .await

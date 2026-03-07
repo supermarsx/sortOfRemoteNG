@@ -8,8 +8,8 @@ pub struct ApacheLogManager;
 
 impl ApacheLogManager {
     pub async fn query_access_log(client: &ApacheClient, query: &LogQuery) -> ApacheResult<Vec<ApacheAccessLogEntry>> {
-        let path = query.file.as_deref().unwrap_or("/var/log/apache2/access.log");
-        let limit = query.limit.unwrap_or(100);
+        let path = query.path.as_deref().unwrap_or("/var/log/apache2/access.log");
+        let limit = query.lines.unwrap_or(100);
         let cmd = format!("tail -n {} '{}'", limit, path.replace('\'', "'\\''"));
         let out = client.exec_ssh(&cmd).await?;
         let entries = out.stdout.lines().filter_map(parse_access_line).collect();
@@ -17,8 +17,8 @@ impl ApacheLogManager {
     }
 
     pub async fn query_error_log(client: &ApacheClient, query: &LogQuery) -> ApacheResult<Vec<ApacheErrorLogEntry>> {
-        let path = query.file.as_deref().unwrap_or("/var/log/apache2/error.log");
-        let limit = query.limit.unwrap_or(100);
+        let path = query.path.as_deref().unwrap_or("/var/log/apache2/error.log");
+        let limit = query.lines.unwrap_or(100);
         let cmd = format!("tail -n {} '{}'", limit, path.replace('\'', "'\\''"));
         let out = client.exec_ssh(&cmd).await?;
         let entries = out.stdout.lines().filter_map(parse_error_line).collect();
@@ -34,12 +34,13 @@ impl ApacheLogManager {
 fn parse_access_line(line: &str) -> Option<ApacheAccessLogEntry> {
     if line.is_empty() { return None; }
     Some(ApacheAccessLogEntry {
-        raw: line.to_string(),
-        remote_addr: line.split_whitespace().next().map(String::from),
-        time: None,
-        request: None,
-        status: None,
-        body_bytes: None,
+        remote_host: line.split_whitespace().next().unwrap_or("").to_string(),
+        identity: None,
+        user: None,
+        timestamp: String::new(),
+        request: line.to_string(),
+        status: 0,
+        bytes: 0,
         referer: None,
         user_agent: None,
     })
@@ -48,11 +49,12 @@ fn parse_access_line(line: &str) -> Option<ApacheAccessLogEntry> {
 fn parse_error_line(line: &str) -> Option<ApacheErrorLogEntry> {
     if line.is_empty() { return None; }
     Some(ApacheErrorLogEntry {
-        raw: line.to_string(),
-        time: None,
-        level: None,
+        timestamp: String::new(),
         module: None,
-        message: Some(line.to_string()),
+        level: String::new(),
+        pid: None,
+        tid: None,
         client: None,
+        message: line.to_string(),
     })
 }

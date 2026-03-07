@@ -17,11 +17,10 @@ impl<'a> NetworkManager<'a> {
     /// Get server network adapters.
     pub async fn get_network_adapters(&self) -> IloResult<Vec<BmcNetworkAdapter>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let adapters: serde_json::Value = rf.get_network_adapters().await?;
+            let adapters: Vec<serde_json::Value> = rf.get_network_adapters().await?;
             let mut result = Vec::new();
 
-            if let Some(members) = adapters.as_array() {
-                for nic in members {
+            for nic in &adapters {
                     result.push(BmcNetworkAdapter {
                         id: nic.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         name: nic.get("Name").and_then(|v| v.as_str()).unwrap_or("NIC").to_string(),
@@ -33,10 +32,11 @@ impl<'a> NetworkManager<'a> {
                             .and_then(|v| v.as_str())
                             .or_else(|| nic.get("MACAddress").and_then(|v| v.as_str()))
                             .map(|s| s.to_string()),
-                        status: nic.get("Status").and_then(|s| s.get("Health"))
-                            .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+                        status: component_health(
+                            nic.get("Status").and_then(|s| s.get("Health"))
+                                .and_then(|v| v.as_str()).unwrap_or("Unknown")
+                        ),
                     });
-                }
             }
             return Ok(result);
         }
@@ -62,7 +62,7 @@ impl<'a> NetworkManager<'a> {
                         model: nic.get("PORT_DESCRIPTION")
                             .and_then(|v| v.as_str()).map(|s| s.to_string()),
                         mac_address: mac,
-                        status: status.to_string(),
+                        status: component_health(status),
                     });
                 }
             }
@@ -75,7 +75,8 @@ impl<'a> NetworkManager<'a> {
     /// Get iLO dedicated network interface info.
     pub async fn get_ilo_network(&self) -> IloResult<serde_json::Value> {
         if let Ok(rf) = self.client.require_redfish() {
-            return rf.get_ilo_ethernet().await.map_err(Into::into);
+            let ifaces = rf.get_ilo_ethernet().await?;
+            return Ok(serde_json::Value::Array(ifaces));
         }
 
         if let Ok(ribcl) = self.client.require_ribcl() {

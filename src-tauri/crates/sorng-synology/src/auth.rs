@@ -4,7 +4,7 @@ use crate::client::SynoClient;
 use crate::error::{SynologyError, SynologyResult};
 use crate::types::*;
 
-use std::collections::HashMap;
+
 
 /// Handles all authentication flows for Synology DSM.
 pub struct AuthManager;

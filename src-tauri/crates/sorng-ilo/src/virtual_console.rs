@@ -16,7 +16,7 @@ impl<'a> VirtualConsoleManager<'a> {
 
     /// Get available console types and launch info.
     pub async fn get_console_info(&self) -> IloResult<IloConsoleInfo> {
-        let gen = self.client.generation();
+        let gen = self.client.generation;
         let host = &self.client.config.host;
 
         if let Ok(rf) = self.client.require_redfish() {
@@ -136,7 +136,7 @@ impl<'a> VirtualConsoleManager<'a> {
 
     /// Get an HTML5 console launch URL with session token.
     pub async fn get_html5_launch_url(&self) -> IloResult<String> {
-        let gen = self.client.generation();
+        let gen = self.client.generation;
         if !gen.supports_html5_console() {
             return Err(IloError::console(format!(
                 "HTML5 console not supported on {:?}", gen
@@ -147,7 +147,7 @@ impl<'a> VirtualConsoleManager<'a> {
 
         // For Redfish-capable iLOs, we can get a session token for SSO
         if let Ok(rf) = self.client.require_redfish() {
-            if let Some(token) = rf.inner.session_token() {
+            if let Some(token) = rf.inner.session().map(|s| s.token.clone()) {
                 return Ok(format!(
                     "https://{}/html/irc.html?sessionKey={}",
                     host, token

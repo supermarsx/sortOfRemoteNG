@@ -44,6 +44,7 @@ impl<'a> HardwareManager<'a> {
                         state: p.pointer("/Status/State").and_then(|v| v.as_str()).map(|s| s.to_string()),
                     },
                     microcode: p.get("ProcessorId").and_then(|pi| pi.get("MicrocodeInfo")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    current_speed_mhz: p.get("OperatingSpeedMHz").and_then(|v| v.as_u64()),
                 })
                 .collect());
         }
@@ -73,6 +74,7 @@ impl<'a> HardwareManager<'a> {
                             state: None,
                         },
                         microcode: get("Microcode"),
+                        current_speed_mhz: v.properties.get("CurrentClockSpeed").and_then(|val| val.as_u64()),
                     }
                 })
                 .collect());

@@ -101,9 +101,10 @@ impl RedfishClient {
             return Err(IdracError::auth("Invalid credentials"));
         }
         if !resp.status().is_success() {
+            let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
             return Err(IdracError::api(
-                resp.status().as_u16(),
+                status.as_u16(),
                 format!("Service root check failed: {body}"),
             ));
         }

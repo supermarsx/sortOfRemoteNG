@@ -83,7 +83,7 @@ impl<'a> SecurityManager<'a> {
     /// Set minimum TLS version.
     pub async fn set_min_tls_version(&self, version: &str) -> IloResult<()> {
         let rf = self.client.require_redfish()?;
-        let gen = self.client.generation();
+        let gen = self.client.generation;
 
         let path = if matches!(gen, IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7) {
             "/redfish/v1/Managers/1/SecurityService/HttpsCert"

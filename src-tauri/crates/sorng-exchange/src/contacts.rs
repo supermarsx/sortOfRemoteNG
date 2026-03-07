@@ -4,7 +4,7 @@
 //! MailUser (AD-enabled with external email).
 
 use crate::client::ExchangeClient;
-use crate::auth::{wrap_ps_json, ps_param_opt};
+use crate::auth::ps_param_opt;
 use crate::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -16,27 +16,24 @@ pub async fn ps_list_mail_contacts(
     result_size: Option<i32>,
 ) -> ExchangeResult<Vec<MailContact>> {
     let limit = result_size.unwrap_or(1000);
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-MailContact -ResultSize {limit} | Select-Object Identity,DisplayName,Alias,\
          ExternalEmailAddress,PrimarySmtpAddress,EmailAddresses,OrganizationalUnit,\
          HiddenFromAddressListsEnabled,FirstName,LastName,WhenCreated"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    );
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_get_mail_contact(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<MailContact> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-MailContact -Identity '{identity}' | Select-Object Identity,DisplayName,Alias,\
          ExternalEmailAddress,PrimarySmtpAddress,EmailAddresses,OrganizationalUnit,\
          HiddenFromAddressListsEnabled,FirstName,LastName,WhenCreated"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    );
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_create_mail_contact(
@@ -47,13 +44,10 @@ pub async fn ps_create_mail_contact(
         "New-MailContact -Name '{}' -Alias '{}' -ExternalEmailAddress '{}'",
         req.display_name, req.alias, req.external_email_address
     );
-    cmd += &ps_param_opt("-FirstName", req.first_name.as_deref());
-    cmd += &ps_param_opt("-LastName", req.last_name.as_deref());
-    cmd += &ps_param_opt("-OrganizationalUnit", req.organizational_unit.as_deref());
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    cmd += &ps_param_opt("FirstName", req.first_name.as_deref());
+    cmd += &ps_param_opt("LastName", req.last_name.as_deref());
+    cmd += &ps_param_opt("OrganizationalUnit", req.organizational_unit.as_deref());
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_update_mail_contact(
@@ -94,27 +88,24 @@ pub async fn ps_list_mail_users(
     result_size: Option<i32>,
 ) -> ExchangeResult<Vec<MailUser>> {
     let limit = result_size.unwrap_or(1000);
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-MailUser -ResultSize {limit} | Select-Object Identity,DisplayName,Alias,\
          ExternalEmailAddress,UserPrincipalName,PrimarySmtpAddress,EmailAddresses,\
          IsValid,WhenCreated"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    );
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_get_mail_user(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<MailUser> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-MailUser -Identity '{identity}' | Select-Object Identity,DisplayName,Alias,\
          ExternalEmailAddress,UserPrincipalName,PrimarySmtpAddress,EmailAddresses,\
          IsValid,WhenCreated"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    );
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_create_mail_user(
@@ -127,12 +118,9 @@ pub async fn ps_create_mail_user(
         req.display_name, req.alias, req.external_email_address,
         req.user_principal_name, req.password
     );
-    cmd += &ps_param_opt("-FirstName", req.first_name.as_deref());
-    cmd += &ps_param_opt("-LastName", req.last_name.as_deref());
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    cmd += &ps_param_opt("FirstName", req.first_name.as_deref());
+    cmd += &ps_param_opt("LastName", req.last_name.as_deref());
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_remove_mail_user(

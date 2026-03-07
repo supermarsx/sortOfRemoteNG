@@ -125,7 +125,8 @@ impl LegacyRestClient {
         let data = self.get("/api/dataset/sys_info").await?;
         let items = data.get("items").and_then(|v| v.as_array());
 
-        let sys = items.and_then(|arr| arr.first()).unwrap_or(&serde_json::json!({}));
+        let default = serde_json::json!({});
+        let sys = items.and_then(|arr| arr.first()).unwrap_or(&default);
 
         Ok(BmcSystemInfo {
             id: "1".to_string(),
@@ -153,7 +154,8 @@ impl LegacyRestClient {
     pub async fn get_controller_info(&self) -> LenovoResult<XccInfo> {
         let data = self.get("/api/dataset/imm_info").await?;
         let items = data.get("items").and_then(|v| v.as_array());
-        let imm = items.and_then(|arr| arr.first()).unwrap_or(&serde_json::json!({}));
+        let default = serde_json::json!({});
+        let imm = items.and_then(|arr| arr.first()).unwrap_or(&default);
 
         Ok(XccInfo {
             generation: XccGeneration::Imm2,
@@ -203,7 +205,7 @@ impl LegacyRestClient {
                     severity: e.get("severity").and_then(|v| v.as_str()).unwrap_or("OK").to_string(),
                     message: e.get("msg").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                     message_id: None,
-                    entry_type: "IMM2".to_string(),
+                    entry_type: Some("IMM2".to_string()),
                 });
             }
         }

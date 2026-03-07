@@ -1425,17 +1425,17 @@ pub async fn exchange_remove_mail_user(
 #[tauri::command]
 pub async fn exchange_convert_mailbox(
     state: State<'_, ExchangeServiceState>,
-    identity: String,
-    target_type: String,
-) -> Result<String, String> {
-    state.lock().await.convert_mailbox(&identity, &target_type).await.map_err(err_str)
+    req: ConvertMailboxRequest,
+) -> Result<Mailbox, String> {
+    state.lock().await.convert_mailbox(&req).await.map_err(err_str)
 }
 
 #[tauri::command]
 pub async fn exchange_list_shared_mailboxes(
     state: State<'_, ExchangeServiceState>,
+    result_size: Option<i32>,
 ) -> Result<Vec<Mailbox>, String> {
-    state.lock().await.list_shared_mailboxes().await.map_err(err_str)
+    state.lock().await.list_shared_mailboxes(result_size).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -1509,7 +1509,7 @@ pub async fn exchange_remove_send_on_behalf(
 #[tauri::command]
 pub async fn exchange_list_room_lists(
     state: State<'_, ExchangeServiceState>,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<DistributionGroup>, String> {
     state.lock().await.list_room_lists().await.map_err(err_str)
 }
 
@@ -1529,8 +1529,9 @@ pub async fn exchange_get_archive_info(
 pub async fn exchange_enable_archive(
     state: State<'_, ExchangeServiceState>,
     identity: String,
+    database: Option<String>,
 ) -> Result<String, String> {
-    state.lock().await.enable_archive(&identity).await.map_err(err_str)
+    state.lock().await.enable_archive(&identity, database.as_deref()).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -1554,9 +1555,9 @@ pub async fn exchange_set_archive_quota(
     state: State<'_, ExchangeServiceState>,
     identity: String,
     quota: String,
-    warning_quota: Option<String>,
+    warning_quota: String,
 ) -> Result<String, String> {
-    state.lock().await.set_archive_quota(&identity, &quota, warning_quota).await.map_err(err_str)
+    state.lock().await.set_archive_quota(&identity, &quota, &warning_quota).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -1622,8 +1623,9 @@ pub async fn exchange_remove_mobile_device(
 #[tauri::command]
 pub async fn exchange_list_all_mobile_devices(
     state: State<'_, ExchangeServiceState>,
+    result_size: Option<i32>,
 ) -> Result<Vec<MobileDevice>, String> {
-    state.lock().await.list_all_mobile_devices().await.map_err(err_str)
+    state.lock().await.list_all_mobile_devices(result_size).await.map_err(err_str)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1892,8 +1894,10 @@ pub async fn exchange_search_mailbox_audit_log(
     mailbox: String,
     start_date: Option<String>,
     end_date: Option<String>,
+    log_on_types: Option<String>,
+    result_size: Option<i32>,
 ) -> Result<Vec<MailboxAuditLogEntry>, String> {
-    state.lock().await.search_mailbox_audit_log(&mailbox, start_date, end_date).await.map_err(err_str)
+    state.lock().await.search_mailbox_audit_log(&mailbox, start_date, end_date, log_on_types, result_size).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -1993,7 +1997,7 @@ pub async fn exchange_import_certificate(
     file_path: String,
     password: Option<String>,
     server: Option<String>,
-) -> Result<String, String> {
+) -> Result<ExchangeCertificate, String> {
     state.lock().await.import_certificate(&file_path, password, server).await.map_err(err_str)
 }
 

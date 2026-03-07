@@ -90,17 +90,23 @@ impl SurveillanceManager {
         recording_id: &str,
     ) -> SynologyResult<Vec<u8>> {
         let v = client.best_version("SYNO.SurveillanceStation.Recording", 6).unwrap_or(1);
-        let url = client.resolve_url("SYNO.SurveillanceStation.Recording", v, "Download")?;
-        let full_url = format!("{}&id={}", url, recording_id);
-        client.raw_download(&full_url).await
+        client.raw_download(
+            "SYNO.SurveillanceStation.Recording",
+            v,
+            "Download",
+            &[("id", recording_id)],
+        ).await
     }
 
     /// Get a snapshot from a camera.
     pub async fn get_snapshot(client: &SynoClient, cam_id: &str) -> SynologyResult<Vec<u8>> {
         let v = client.best_version("SYNO.SurveillanceStation.Camera", 9).unwrap_or(1);
-        let url = client.resolve_url("SYNO.SurveillanceStation.Camera", v, "GetSnapshot")?;
-        let full_url = format!("{}&cameraId={}", url, cam_id);
-        client.raw_download(&full_url).await
+        client.raw_download(
+            "SYNO.SurveillanceStation.Camera",
+            v,
+            "GetSnapshot",
+            &[("cameraId", cam_id)],
+        ).await
     }
 
     /// Get live view streaming URL for a camera.

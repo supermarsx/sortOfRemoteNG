@@ -38,8 +38,14 @@ impl CaddyError {
     pub fn new(kind: CaddyErrorKind, msg: impl Into<String>) -> Self {
         Self { kind, message: msg.into() }
     }
-    pub fn not_connected() -> Self {
-        Self::new(CaddyErrorKind::NotConnected, "Not connected to Caddy instance")
+    pub fn not_connected(msg: impl Into<String>) -> Self {
+        Self::new(CaddyErrorKind::NotConnected, msg)
+    }
+    pub fn connection(msg: impl Into<String>) -> Self {
+        Self::new(CaddyErrorKind::ConnectionFailed, msg)
+    }
+    pub fn parse(msg: impl Into<String>) -> Self {
+        Self::new(CaddyErrorKind::ParseError, msg)
     }
     pub fn route_not_found(id: &str) -> Self {
         Self::new(CaddyErrorKind::RouteNotFound, format!("Route not found: {id}"))

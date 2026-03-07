@@ -4,26 +4,28 @@
 use crate::error::{VmwError, VmwErrorKind, VmwResult};
 use crate::types::*;
 use crate::vmrest::VmRestClient;
+use serde_json::Value;
 
 /// List all virtual networks.
 pub async fn list_networks(rest: &VmRestClient) -> VmwResult<Vec<VirtualNetwork>> {
     let rn = rest.list_networks().await?;
     let mut networks = Vec::new();
-    for n in rn {
+    for n in rn.vmnets.unwrap_or_default() {
+        let name = n.name.clone().unwrap_or_default();
         networks.push(VirtualNetwork {
-            name: n.name.clone(),
+            name: name.clone(),
             network_type: n.net_type.clone().unwrap_or_default(),
             subnet: n.subnet.clone(),
-            mask: n.mask.clone(),
-            dhcp_enabled: n.dhcp.map(|v| v.to_lowercase() == "true" || v == "1"),
+            subnet_mask: n.mask.clone(),
+            dhcp_enabled: n.dhcp.as_ref().map(|v: &String| v.to_lowercase() == "true" || v == "1"),
             nat_enabled: Some(
                 n.net_type
                     .as_deref()
-                    .map(|t| t.to_lowercase().contains("nat"))
+                    .map(|t: &str| t.to_lowercase().contains("nat"))
                     .unwrap_or(false),
             ),
-            host_adapter: None,
-            vnet_name: Some(n.name.clone()),
+            host_only_adapter: None,
+            mtu: None,
         });
     }
     Ok(networks)
@@ -42,8 +44,13 @@ pub async fn create_network(
     rest: &VmRestClient,
     req: CreateNetworkRequest,
 ) -> VmwResult<VirtualNetwork> {
-    rest.create_network(&req.name, &req.network_type, req.subnet.as_deref(), req.mask.as_deref())
-        .await?;
+    let body = serde_json::json!({
+        "name": req.name,
+        "type": req.network_type,
+        "subnet": req.subnet,
+        "mask": req.subnet_mask,
+    });
+    rest.create_network(&body).await?;
     get_network(rest, &req.name).await
 }
 
@@ -55,7 +62,12 @@ pub async fn update_network(
     subnet: Option<&str>,
     mask: Option<&str>,
 ) -> VmwResult<VirtualNetwork> {
-    rest.update_network(name, network_type, subnet, mask).await?;
+    let body = serde_json::json!({
+        "type": network_type,
+        "subnet": subnet,
+        "mask": mask,
+    });
+    rest.update_network(name, &body).await?;
     get_network(rest, name).await
 }
 
@@ -70,15 +82,19 @@ pub async fn list_port_forwards(
     rest: &VmRestClient,
     network: &str,
 ) -> VmwResult<Vec<NatPortForward>> {
-    let pf = rest.list_port_forwards(network).await?;
-    Ok(pf
+    let pf: Value = rest.list_port_forwards(network).await?;
+    let arr = pf.as_array().cloned().unwrap_or_default();
+    Ok(arr
         .into_iter()
-        .map(|p| NatPortForward {
-            protocol: p.protocol.unwrap_or_default(),
-            host_port: p.port.unwrap_or(0),
-            guest_ip: p.guest_ip.clone().unwrap_or_default(),
-            guest_port: p.guest_port.unwrap_or(0),
-            description: p.desc.clone(),
+        .filter_map(|p| {
+            Some(NatPortForward {
+                network: network.to_string(),
+                protocol: p.get("protocol")?.as_str()?.to_string(),
+                host_port: p.get("port")?.as_u64()? as u16,
+                guest_ip: p.get("guest_ip")?.as_str()?.to_string(),
+                guest_port: p.get("guest_port")?.as_u64()? as u16,
+                description: p.get("desc").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            })
         })
         .collect())
 }
@@ -89,15 +105,13 @@ pub async fn set_port_forward(
     network: &str,
     req: AddPortForwardRequest,
 ) -> VmwResult<()> {
-    rest.set_port_forward(
-        network,
-        &req.protocol,
-        req.host_port,
-        &req.guest_ip,
-        req.guest_port,
-        req.description.as_deref(),
-    )
-    .await?;
+    let body = serde_json::json!({
+        "guestIp": req.guest_ip,
+        "guestPort": req.guest_port,
+        "desc": req.description,
+    });
+    rest.set_port_forward(network, &req.protocol, req.host_port, &body)
+        .await?;
     Ok(())
 }
 
@@ -118,17 +132,21 @@ pub async fn get_dhcp_leases(
     rest: &VmRestClient,
     network: &str,
 ) -> VmwResult<Vec<DhcpLease>> {
-    let mappings = rest.get_mac_to_ip(network).await?;
+    let mappings: Value = rest.get_mac_to_ip(network).await?;
     let mut leases = Vec::new();
-    for m in mappings {
-        if let (Some(mac), Some(ip)) = (m.mac, m.ip) {
-            leases.push(DhcpLease {
-                mac_address: mac,
-                ip_address: ip,
-                hostname: None,
-                lease_start: None,
-                lease_end: None,
-            });
+    if let Some(arr) = mappings.as_array() {
+        for m in arr {
+            if let (Some(mac), Some(ip)) = (
+                m.get("mac").and_then(|v| v.as_str()),
+                m.get("ip").and_then(|v| v.as_str()),
+            ) {
+                leases.push(DhcpLease {
+                    mac_address: mac.to_string(),
+                    ip_address: ip.to_string(),
+                    hostname: None,
+                    expires: None,
+                });
+            }
         }
     }
     Ok(leases)

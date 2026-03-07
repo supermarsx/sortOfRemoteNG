@@ -7,7 +7,6 @@
 use crate::types::*;
 use log::{debug, info, warn};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
 
 /// In-memory key store with constraint tracking.
 pub struct KeyStore {

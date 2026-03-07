@@ -19,11 +19,16 @@ impl<'a> CertificateManager<'a> {
         let rf = self.client.require_redfish()?;
 
         // Dell iDRAC certificate store
-        let col: serde_json::Value = rf
+        let col: serde_json::Value = match rf
             .get("/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol/HTTPS/Certificates?$expand=*($levels=1)")
             .await
-            .or_else(|_| rf.get("/redfish/v1/CertificateService/CertificateLocations"))
-            .unwrap_or_default();
+        {
+            Ok(v) => v,
+            Err(_) => rf
+                .get("/redfish/v1/CertificateService/CertificateLocations")
+                .await
+                .unwrap_or_default(),
+        };
 
         let members = col.get("Members").and_then(|v| v.as_array()).cloned()
             .or_else(|| col.get("Links").and_then(|l| l.get("Certificates")).and_then(|v| v.as_array()).cloned())
@@ -56,10 +61,12 @@ impl<'a> CertificateManager<'a> {
             valid_from: c.get("ValidNotBefore").and_then(|v| v.as_str()).map(|s| s.to_string()),
             valid_to: c.get("ValidNotAfter").and_then(|v| v.as_str()).map(|s| s.to_string()),
             serial_number: c.get("SerialNumber").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            thumbprint: None,
             fingerprint: c.get("Fingerprint").and_then(|v| v.as_str()).map(|s| s.to_string()),
             key_usage: c.get("KeyUsage").and_then(|v| v.as_array())
                 .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
                 .unwrap_or_default(),
+            signature_algorithm: None,
             certificate_type: c.get("CertificateType").and_then(|v| v.as_str()).map(|s| s.to_string()),
             certificate_string: c.get("CertificateString").and_then(|v| v.as_str()).map(|s| s.to_string()),
         }
@@ -107,7 +114,7 @@ impl<'a> CertificateManager<'a> {
             "CertificateType": cert_type,
         });
 
-        rf.post_json::<serde_json::Value>(
+        rf.post_json::<serde_json::Value, serde_json::Value>(
             "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol/HTTPS/Certificates",
             &body,
         )
@@ -139,7 +146,7 @@ impl<'a> CertificateManager<'a> {
             }
         });
 
-        rf.post_json::<serde_json::Value>(
+        rf.post_json::<serde_json::Value, serde_json::Value>(
             "/redfish/v1/CertificateService/Actions/CertificateService.ReplaceCertificate",
             &body,
         )

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Top-level response from every DSM API call.
 #[derive(Debug, Deserialize)]
+#[serde(bound(deserialize = "T: Deserialize<'de>"))]
 pub struct SynoResponse<T> {
     pub success: bool,
     #[serde(default)]
@@ -529,6 +530,8 @@ pub struct CreateUserParams {
     pub description: Option<String>,
     pub email: Option<String>,
     pub send_notification: Option<bool>,
+    pub expired: Option<String>,
+    pub cannot_change_password: bool,
 }
 
 // ── Packages ────────────────────────────────────────────────────────
@@ -980,15 +983,9 @@ pub struct NotificationConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SynologyDashboard {
-    pub dsm_info: Option<DsmInfo>,
+    pub system_info: Option<DsmInfo>,
     pub utilization: Option<SystemUtilization>,
-    pub volumes: Vec<VolumeInfo>,
-    pub disk_count: u32,
-    pub package_count: u32,
-    pub share_count: u32,
-    pub user_count: u32,
-    pub container_count: Option<u32>,
-    pub vm_count: Option<u32>,
-    pub camera_count: Option<u32>,
-    pub recent_logs: Vec<LogEntry>,
+    pub storage: Option<StorageOverview>,
+    pub network: Option<NetworkOverview>,
+    pub hardware: Option<HardwareInfo>,
 }

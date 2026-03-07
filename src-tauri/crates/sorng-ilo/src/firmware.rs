@@ -17,20 +17,21 @@ impl<'a> FirmwareManager<'a> {
     /// Get firmware inventory.
     pub async fn get_firmware_inventory(&self) -> IloResult<Vec<BmcFirmwareItem>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let items: serde_json::Value = rf.get_firmware_inventory().await?;
+            let items: Vec<serde_json::Value> = rf.get_firmware_inventory().await?;
             let mut firmware = Vec::new();
 
-            if let Some(members) = items.as_array() {
-                for fw in members {
+            for fw in &items {
                     firmware.push(BmcFirmwareItem {
                         id: fw.get("Id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                         name: fw.get("Name").and_then(|v| v.as_str()).unwrap_or("Firmware").to_string(),
                         version: fw.get("Version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                        updateable: fw.get("Updateable").and_then(|v| v.as_bool()),
-                        status: fw.get("Status").and_then(|s| s.get("Health"))
-                            .and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        updateable: fw.get("Updateable").and_then(|v| v.as_bool()).unwrap_or(false),
+                        component_type: fw.get("Description").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        status: component_health(
+                            fw.get("Status").and_then(|s| s.get("Health"))
+                                .and_then(|v| v.as_str()).unwrap_or("OK")
+                        ),
                     });
-                }
             }
             return Ok(firmware);
         }
@@ -45,8 +46,9 @@ impl<'a> FirmwareManager<'a> {
                     id: "ilo-fw".to_string(),
                     name: "iLO Firmware".to_string(),
                     version: ver.to_string(),
-                    updateable: Some(true),
-                    status: Some("OK".to_string()),
+                    updateable: true,
+                    component_type: Some("BMC".to_string()),
+                    status: component_health("OK"),
                 });
             }
 
@@ -57,8 +59,9 @@ impl<'a> FirmwareManager<'a> {
                     id: "system-rom".to_string(),
                     name: "System ROM".to_string(),
                     version: rom.to_string(),
-                    updateable: Some(true),
-                    status: Some("OK".to_string()),
+                    updateable: true,
+                    component_type: Some("BIOS".to_string()),
+                    status: component_health("OK"),
                 });
             }
 
@@ -67,8 +70,9 @@ impl<'a> FirmwareManager<'a> {
                     id: "backup-rom".to_string(),
                     name: "Backup System ROM".to_string(),
                     version: backup.to_string(),
-                    updateable: Some(false),
-                    status: Some("OK".to_string()),
+                    updateable: false,
+                    component_type: Some("BIOS".to_string()),
+                    status: component_health("OK"),
                 });
             }
 

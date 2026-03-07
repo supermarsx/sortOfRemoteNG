@@ -30,7 +30,7 @@ impl<'a> CertificateManager<'a> {
             "CertificateType": "PEM",
         });
         rf.inner
-            .post_json(
+            .post_json::<_, serde_json::Value>(
                 "/redfish/v1/Managers/1/NetworkProtocol/HTTPS/Certificates",
                 &body,
             )

@@ -45,10 +45,10 @@ pub async fn ps_create_mailbox(
         req.primary_smtp_address.replace('\'', "''"),
         mb_type,
     );
-    cmd.push_str(&ps_param_opt("FirstName", &req.first_name));
-    cmd.push_str(&ps_param_opt("LastName", &req.last_name));
-    cmd.push_str(&ps_param_opt("OrganizationalUnit", &req.organizational_unit));
-    cmd.push_str(&ps_param_opt("Database", &req.database));
+    cmd.push_str(&ps_param_opt("FirstName", req.first_name.as_deref()));
+    cmd.push_str(&ps_param_opt("LastName", req.last_name.as_deref()));
+    cmd.push_str(&ps_param_opt("OrganizationalUnit", req.organizational_unit.as_deref()));
+    cmd.push_str(&ps_param_opt("Database", req.database.as_deref()));
     if let Some(ref pwd) = req.password {
         cmd.push_str(&format!(
             " -Password (ConvertTo-SecureString '{}' -AsPlainText -Force)",
@@ -95,19 +95,19 @@ pub async fn ps_update_mailbox(
     req: &UpdateMailboxRequest,
 ) -> ExchangeResult<String> {
     let mut cmd = format!("Set-Mailbox -Identity '{}'", req.identity.replace('\'', "''"));
-    cmd.push_str(&ps_param_opt("DisplayName", &req.display_name));
-    cmd.push_str(&ps_param_opt("Alias", &req.alias));
-    cmd.push_str(&ps_param_opt("PrimarySmtpAddress", &req.primary_smtp_address));
-    cmd.push_str(&ps_param_opt("MaxSendSize", &req.max_send_size));
-    cmd.push_str(&ps_param_opt("MaxReceiveSize", &req.max_receive_size));
+    cmd.push_str(&ps_param_opt("DisplayName", req.display_name.as_deref()));
+    cmd.push_str(&ps_param_opt("Alias", req.alias.as_deref()));
+    cmd.push_str(&ps_param_opt("PrimarySmtpAddress", req.primary_smtp_address.as_deref()));
+    cmd.push_str(&ps_param_opt("MaxSendSize", req.max_send_size.as_deref()));
+    cmd.push_str(&ps_param_opt("MaxReceiveSize", req.max_receive_size.as_deref()));
 
     if let Some(ref q) = req.quota {
-        cmd.push_str(&ps_param_opt("ProhibitSendQuota", &q.prohibit_send_quota));
+        cmd.push_str(&ps_param_opt("ProhibitSendQuota", q.prohibit_send_quota.as_deref()));
         cmd.push_str(&ps_param_opt(
             "ProhibitSendReceiveQuota",
-            &q.prohibit_send_receive_quota,
+            q.prohibit_send_receive_quota.as_deref(),
         ));
-        cmd.push_str(&ps_param_opt("IssueWarningQuota", &q.issue_warning_quota));
+        cmd.push_str(&ps_param_opt("IssueWarningQuota", q.issue_warning_quota.as_deref()));
         cmd.push_str(&ps_param_bool(
             "UseDatabaseQuotaDefaults",
             q.use_database_quota_defaults,
@@ -115,8 +115,8 @@ pub async fn ps_update_mailbox(
     }
 
     if let Some(ref fwd) = req.forwarding {
-        cmd.push_str(&ps_param_opt("ForwardingAddress", &fwd.forwarding_address));
-        cmd.push_str(&ps_param_opt("ForwardingSmtpAddress", &fwd.forwarding_smtp_address));
+        cmd.push_str(&ps_param_opt("ForwardingAddress", fwd.forwarding_address.as_deref()));
+        cmd.push_str(&ps_param_opt("ForwardingSmtpAddress", fwd.forwarding_smtp_address.as_deref()));
         cmd.push_str(&ps_param_bool(
             "DeliverToMailboxAndForward",
             fwd.deliver_to_mailbox_and_forward,
@@ -219,8 +219,8 @@ pub async fn ps_set_ooo(
         "Set-MailboxAutoReplyConfiguration -Identity '{}' -AutoReplyState {state}",
         settings.identity.replace('\'', "''")
     );
-    cmd.push_str(&ps_param_opt("InternalMessage", &settings.internal_message));
-    cmd.push_str(&ps_param_opt("ExternalMessage", &settings.external_message));
+    cmd.push_str(&ps_param_opt("InternalMessage", settings.internal_message.as_deref()));
+    cmd.push_str(&ps_param_opt("ExternalMessage", settings.external_message.as_deref()));
     // Scheduled times handled if present
     if let Some(ref start) = settings.start_time {
         cmd.push_str(&format!(" -StartTime '{}'", start.format("%m/%d/%Y %H:%M:%S")));

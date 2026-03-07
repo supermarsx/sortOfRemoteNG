@@ -3,7 +3,6 @@
 use crate::client::IloClient;
 use crate::error::{IloError, IloResult};
 use crate::types::*;
-use sorng_bmc_common::health::{rollup_health, is_healthy};
 
 /// Health assessment operations.
 pub struct HealthManager<'a> {
@@ -24,80 +23,44 @@ impl<'a> HealthManager<'a> {
                 .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
 
             let proc_health = sys.pointer("/ProcessorSummary/Status/Health")
-                .and_then(|v| v.as_str()).map(|s| s.to_string());
+                .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
 
             let memory_health = sys.pointer("/MemorySummary/Status/Health")
-                .and_then(|v| v.as_str()).map(|s| s.to_string());
-
-            // Get chassis for power/thermal health
-            let chassis: serde_json::Value = rf.get_chassis().await?;
-            let thermal_health = chassis.pointer("/Oem/Hpe/SystemMaintenanceSwitches/Thermal")
-                .and_then(|v| v.as_str())
-                .or_else(|| chassis.get("Status").and_then(|s| s.get("Health")).and_then(|v| v.as_str()))
-                .map(|s| s.to_string());
-
-            let statuses: Vec<&str> = [
-                Some(system_health.as_str()),
-                proc_health.as_deref(),
-                memory_health.as_deref(),
-                thermal_health.as_deref(),
-            ]
-            .iter()
-            .filter_map(|s| *s)
-            .collect();
-
-            let overall = rollup_health(&statuses);
-
-            let components = vec![
-                ComponentHealth {
-                    name: "System".to_string(),
-                    status: system_health.clone(),
-                },
-                ComponentHealth {
-                    name: "Processors".to_string(),
-                    status: proc_health.unwrap_or_else(|| "Unknown".to_string()),
-                },
-                ComponentHealth {
-                    name: "Memory".to_string(),
-                    status: memory_health.unwrap_or_else(|| "Unknown".to_string()),
-                },
-                ComponentHealth {
-                    name: "Thermal".to_string(),
-                    status: thermal_health.unwrap_or_else(|| "Unknown".to_string()),
-                },
-            ];
+                .and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
 
             return Ok(BmcHealthRollup {
-                overall_health: overall.to_string(),
-                is_healthy: is_healthy(&overall),
-                components,
+                overall: system_health,
+                processors: proc_health,
+                memory: memory_health,
+                storage: "Unknown".to_string(),
+                fans: "Unknown".to_string(),
+                temperatures: "Unknown".to_string(),
+                power_supplies: "Unknown".to_string(),
+                network: "Unknown".to_string(),
             });
         }
 
         if let Ok(ribcl) = self.client.require_ribcl() {
             let health = ribcl.get_embedded_health().await?;
-            let mut components = Vec::new();
 
-            // Parse RIBCL health categories
-            for section in &["FANS", "TEMPERATURE", "VRM", "POWER_SUPPLY", "PROCESSOR", "MEMORY", "NIC", "STORAGE"] {
-                if let Some(data) = health.get(*section) {
-                    let status = data.get("STATUS")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("OK");
-                    components.push(ComponentHealth {
-                        name: section.to_string(),
-                        status: status.to_string(),
-                    });
-                }
-            }
+            let get_status = |section: &str| -> String {
+                health.get(section)
+                    .and_then(|d| d.get("STATUS"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string()
+            };
 
-            let statuses: Vec<&str> = components.iter().map(|c| c.status.as_str()).collect();
-            let overall = rollup_health(&statuses);
-
+            let overall = get_status("FANS"); // Use first available as overall
             return Ok(BmcHealthRollup {
-                overall_health: overall.to_string(),
-                is_healthy: is_healthy(&overall),
-                components,
+                overall,
+                processors: get_status("PROCESSOR"),
+                memory: get_status("MEMORY"),
+                storage: get_status("STORAGE"),
+                fans: get_status("FANS"),
+                temperatures: get_status("TEMPERATURE"),
+                power_supplies: get_status("POWER_SUPPLY"),
+                network: get_status("NIC"),
             });
         }
 

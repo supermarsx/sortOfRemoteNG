@@ -26,7 +26,7 @@ impl<'a> RacadmManager<'a> {
 
         // Try Dell OEM RACADM endpoint
         match rf
-            .post_json::<serde_json::Value>(
+            .post_json::<serde_json::Value, serde_json::Value>(
                 "/redfish/v1/Dell/Managers/iDRAC.Embedded.1/DellManager/Actions/DellManager.ExecuteRACCommand",
                 &body,
             )
@@ -49,6 +49,7 @@ impl<'a> RacadmManager<'a> {
                     command: command.to_string(),
                     output,
                     return_code,
+                    success: return_code == 0,
                     error: if return_code != 0 {
                         result.get("StatusMessage").and_then(|v| v.as_str()).map(|s| s.to_string())
                     } else {
@@ -108,6 +109,7 @@ impl<'a> RacadmManager<'a> {
             command: format!("get {}", attribute),
             output: format!("{} = {}", attribute, value),
             return_code: 0,
+            success: true,
             error: None,
         })
     }
@@ -127,6 +129,7 @@ impl<'a> RacadmManager<'a> {
             command: format!("set {} {}", attribute, value),
             output: "Object value modified successfully".to_string(),
             return_code: 0,
+            success: true,
             error: None,
         })
     }
@@ -144,6 +147,7 @@ impl<'a> RacadmManager<'a> {
             command: "racreset".to_string(),
             output: "RAC reset operation initiated successfully".to_string(),
             return_code: 0,
+            success: true,
             error: None,
         })
     }
@@ -151,7 +155,8 @@ impl<'a> RacadmManager<'a> {
     async fn racadm_serveraction(&self, action: &str) -> IdracResult<RacadmResult> {
         let rf = self.client.require_redfish()?;
 
-        let reset_type = match action.to_lowercase().as_str() {
+        let lowered = action.to_lowercase();
+        let reset_type = match lowered.as_str() {
             "powerup" => "On",
             "powerdown" => "ForceOff",
             "powercycle" => "PowerCycle",
@@ -170,6 +175,7 @@ impl<'a> RacadmManager<'a> {
             command: format!("serveraction {}", action),
             output: format!("Server action {} initiated successfully", action),
             return_code: 0,
+            success: true,
             error: None,
         })
     }
@@ -199,6 +205,7 @@ impl<'a> RacadmManager<'a> {
             command: "getsysinfo".to_string(),
             output,
             return_code: 0,
+            success: true,
             error: None,
         })
     }
@@ -206,11 +213,16 @@ impl<'a> RacadmManager<'a> {
     async fn racadm_jobqueue_view(&self) -> IdracResult<RacadmResult> {
         let rf = self.client.require_redfish()?;
 
-        let col: serde_json::Value = rf
+        let col: serde_json::Value = match rf
             .get("/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/Jobs")
             .await
-            .or_else(|_| rf.get("/redfish/v1/TaskService/Tasks"))
-            .unwrap_or_default();
+        {
+            Ok(v) => v,
+            Err(_) => rf
+                .get("/redfish/v1/TaskService/Tasks")
+                .await
+                .unwrap_or_default(),
+        };
 
         let count = col
             .get("Members@odata.count")
@@ -221,6 +233,7 @@ impl<'a> RacadmManager<'a> {
             command: "jobqueue view".to_string(),
             output: format!("Job queue contains {} jobs", count),
             return_code: 0,
+            success: true,
             error: None,
         })
     }
@@ -238,6 +251,7 @@ impl<'a> RacadmManager<'a> {
             command: "clrsel".to_string(),
             output: "SEL records cleared successfully".to_string(),
             return_code: 0,
+            success: true,
             error: None,
         })
     }

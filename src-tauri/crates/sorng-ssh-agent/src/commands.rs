@@ -3,7 +3,6 @@
 //! All `#[tauri::command]` handlers for the SSH agent subsystem.
 //! Registered in the main Tauri `generate_handler![]` macro.
 
-use crate::service::SshAgentService;
 use crate::types::*;
 use tauri::State;
 

@@ -76,7 +76,7 @@ impl<'a> LicenseManager<'a> {
     /// Activate a license key.
     pub async fn activate_license(&self, key: &str) -> IloResult<()> {
         if let Ok(rf) = self.client.require_redfish() {
-            let gen = self.client.generation();
+            let gen = self.client.generation;
             let path = if matches!(gen, IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7) {
                 "/redfish/v1/Managers/1/LicenseService/1"
             } else {
@@ -84,7 +84,7 @@ impl<'a> LicenseManager<'a> {
             };
 
             let body = serde_json::json!({ "LicenseKey": key });
-            rf.inner.post_json(path, &body).await?;
+            rf.inner.post_json::<_, ()>(path, &body).await?;
             return Ok(());
         }
 

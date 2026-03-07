@@ -17,11 +17,10 @@ impl<'a> FederationManager<'a> {
     /// Get federation groups this iLO belongs to.
     pub async fn get_groups(&self) -> IloResult<Vec<IloFederationGroup>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let data: serde_json::Value = rf.get_federation_groups().await?;
+            let members: Vec<serde_json::Value> = rf.get_federation_groups().await?;
             let mut groups = Vec::new();
 
-            if let Some(members) = data.get("Members").and_then(|v| v.as_array()) {
-                for group in members {
+            for group in &members {
                     groups.push(IloFederationGroup {
                         name: group.get("Name")
                             .and_then(|v| v.as_str()).unwrap_or("").to_string(),
@@ -34,7 +33,6 @@ impl<'a> FederationManager<'a> {
                                 .collect())
                             .unwrap_or_default(),
                     });
-                }
             }
             return Ok(groups);
         }
@@ -65,11 +63,10 @@ impl<'a> FederationManager<'a> {
     /// Get discovered federation peers.
     pub async fn get_peers(&self) -> IloResult<Vec<IloFederationPeer>> {
         if let Ok(rf) = self.client.require_redfish() {
-            let data: serde_json::Value = rf.get_federation_peers().await?;
+            let members: Vec<serde_json::Value> = rf.get_federation_peers().await?;
             let mut peers = Vec::new();
 
-            if let Some(members) = data.get("Members").and_then(|v| v.as_array()) {
-                for peer in members {
+            for peer in &members {
                     peers.push(IloFederationPeer {
                         name: peer.get("ManagerIPAddress")
                             .or_else(|| peer.get("Name"))
@@ -85,7 +82,6 @@ impl<'a> FederationManager<'a> {
                         server_name: peer.get("ServerName")
                             .and_then(|v| v.as_str()).map(|s| s.to_string()),
                     });
-                }
             }
             return Ok(peers);
         }
@@ -103,7 +99,7 @@ impl<'a> FederationManager<'a> {
     /// Add a federation group.
     pub async fn add_group(&self, name: &str, key: &str) -> IloResult<()> {
         let rf = self.client.require_redfish()?;
-        let gen = self.client.generation();
+        let gen = self.client.generation;
 
         let path = if matches!(gen, IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7) {
             "/redfish/v1/Managers/1/FederationGroups"
@@ -116,7 +112,7 @@ impl<'a> FederationManager<'a> {
             "Key": key,
         });
 
-        rf.inner.post_json(path, &body).await?;
+        rf.inner.post_json::<_, ()>(path, &body).await?;
         Ok(())
     }
 

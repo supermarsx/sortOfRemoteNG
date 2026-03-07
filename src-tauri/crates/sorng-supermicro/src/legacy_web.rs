@@ -230,11 +230,13 @@ impl LegacyWebClient {
     pub async fn power_action(&self, action: &PowerAction) -> SmcResult<()> {
         let op = match action {
             PowerAction::On => "POWER_ON",
-            PowerAction::Off => "POWER_OFF",
+            PowerAction::ForceOff => "POWER_OFF",
             PowerAction::GracefulShutdown => "POWER_SOFT_OFF",
-            PowerAction::Reset => "POWER_RESET",
-            PowerAction::Cycle => "POWER_CYCLE",
+            PowerAction::ForceRestart => "POWER_RESET",
+            PowerAction::PowerCycle => "POWER_CYCLE",
             PowerAction::Nmi => "POWER_NMI",
+            PowerAction::GracefulRestart => "POWER_RESET",
+            PowerAction::PushPowerButton => "POWER_ON",
         };
 
         self.post_form("/cgi/ipmi.cgi", &[("op", op)]).await?;

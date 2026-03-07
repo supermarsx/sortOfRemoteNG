@@ -20,7 +20,6 @@ impl ApacheSslManager {
 }
 
 fn parse_ssl_config(content: &str) -> Option<ApacheSslConfig> {
-    let mut engine = None;
     let mut cert = None;
     let mut key = None;
     let mut chain = None;
@@ -29,7 +28,6 @@ fn parse_ssl_config(content: &str) -> Option<ApacheSslConfig> {
 
     for line in content.lines() {
         let t = line.trim();
-        if t.starts_with("SSLEngine ") { engine = Some(t.split_whitespace().nth(1).unwrap_or("").to_string()); }
         if t.starts_with("SSLCertificateFile ") { cert = Some(t.split_whitespace().nth(1).unwrap_or("").to_string()); }
         if t.starts_with("SSLCertificateKeyFile ") { key = Some(t.split_whitespace().nth(1).unwrap_or("").to_string()); }
         if t.starts_with("SSLCertificateChainFile ") { chain = Some(t.split_whitespace().nth(1).unwrap_or("").to_string()); }
@@ -37,8 +35,19 @@ fn parse_ssl_config(content: &str) -> Option<ApacheSslConfig> {
         if t.starts_with("SSLCipherSuite ") { cipher_suite = Some(t.trim_start_matches("SSLCipherSuite ").to_string()); }
     }
 
-    if cert.is_some() || engine.is_some() {
-        Some(ApacheSslConfig { engine, certificate_file: cert, certificate_key_file: key, certificate_chain_file: chain, protocol, cipher_suite })
+    if cert.is_some() || key.is_some() {
+        Some(ApacheSslConfig {
+            certificate_file: cert.unwrap_or_default(),
+            certificate_key_file: key.unwrap_or_default(),
+            certificate_chain_file: chain,
+            ca_certificate_file: None,
+            protocols: protocol.map(|p| vec![p]),
+            cipher_suite,
+            honor_cipher_order: None,
+            hsts: None,
+            hsts_max_age: None,
+            stapling: None,
+        })
     } else {
         None
     }

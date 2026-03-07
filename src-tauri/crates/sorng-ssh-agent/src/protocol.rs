@@ -4,9 +4,6 @@
 //! draft-miller-ssh-agent. Handles encoding and decoding of all
 //! agent message types for both requests and responses.
 
-use crate::types::*;
-use serde::{Deserialize, Serialize};
-
 // ── Protocol Constants ──────────────────────────────────────────────
 
 /// Protocol message type constants (draft-miller-ssh-agent §7).

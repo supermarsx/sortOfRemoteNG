@@ -407,6 +407,7 @@ pub async fn syn_create_user(
         password,
         description,
         email,
+        send_notification: None,
         expired: None,
         cannot_change_password: false,
     };

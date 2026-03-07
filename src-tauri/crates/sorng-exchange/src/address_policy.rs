@@ -1,5 +1,4 @@
 // ─── Exchange Integration – address policies, domains, address lists ─────────
-use crate::auth::*;
 use crate::client::ExchangeClient;
 use crate::types::*;
 

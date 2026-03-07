@@ -46,11 +46,11 @@ pub async fn ps_create_transport_rule(
     if let Some(true) = req.has_attachment {
         cmd.push_str(" -AttachmentHasExecutableContent $true");
     }
-    cmd.push_str(&ps_param_opt("PrependSubject", &req.prepend_subject));
+    cmd.push_str(&ps_param_opt("PrependSubject", req.prepend_subject.as_deref()));
     cmd.push_str(&ps_param_list("RedirectMessageTo", &req.redirect_message_to));
     cmd.push_str(&ps_param_opt(
         "RejectMessageReasonText",
-        &req.reject_message_reason,
+        req.reject_message_reason.as_deref(),
     ));
     client.run_ps_json(&cmd).await
 }

@@ -22,17 +22,22 @@ pub async fn proxmox_connect(
     timeout_secs: Option<u64>,
 ) -> Result<String, String> {
     let auth = if let (Some(tid), Some(sec)) = (token_id, token_secret) {
-        ProxmoxAuthMethod::ApiToken { token_id: tid, token_secret: sec }
+        ProxmoxAuthMethod::ApiToken { token_id: tid, secret: sec }
     } else {
-        ProxmoxAuthMethod::Password { password: password.unwrap_or_default() }
+        ProxmoxAuthMethod::Password {
+            username: username.clone(),
+            password: password.unwrap_or_default(),
+            realm: "pam".into(),
+            otp: None,
+        }
     };
     let config = ProxmoxConfig {
         host,
         port: port.unwrap_or(8006),
-        username,
         auth,
         insecure: insecure.unwrap_or(true),
         timeout_secs: timeout_secs.unwrap_or(30),
+        fingerprint: None,
     };
     let mut svc = state.lock().await;
     svc.connect(config).await.map_err(|e| e.to_string())

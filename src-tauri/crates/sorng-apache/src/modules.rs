@@ -39,6 +39,6 @@ fn parse_modules(output: &str) -> Vec<ApacheModule> {
         if parts.len() < 2 { return None; }
         let name = parts[0].to_string();
         let module_type = if t.ends_with("(static)") { ModuleType::Static } else { ModuleType::Shared };
-        Some(ApacheModule { name, module_type, filename: None })
+        Some(ApacheModule { name, module_type, filename: None, enabled: true, description: None })
     }).collect()
 }

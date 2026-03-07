@@ -8,12 +8,11 @@ use crate::agent::BuiltinAgent;
 use crate::audit::AuditLogger;
 use crate::bridge::SystemAgentBridge;
 use crate::forwarding::ForwardingManager;
-use crate::protocol::AgentMessage;
 use crate::types::*;
-use log::{error, info, warn};
+use log::{info, warn};
+use sha2::Digest;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::broadcast;
 
 /// The main SSH agent service.
 pub struct SshAgentService {
@@ -201,7 +200,7 @@ impl SshAgentService {
                         "SHA256:{}",
                         base64::Engine::encode(
                             &base64::engine::general_purpose::STANDARD_NO_PAD,
-                            sha2::Digest::digest(&sha2::Sha256::new_with_prefix(&id.key_blob)),
+                            sha2::Sha256::digest(&id.key_blob),
                         )
                     );
                     keys.push(AgentKey {
@@ -373,8 +372,7 @@ impl SshAgentService {
         log::info!("Loading PKCS#11 provider: {}", provider_path);
         self.audit.log_event(&AgentEvent::Pkcs11Event {
             provider: provider_path.to_string(),
-            loaded: true,
-            key_count: 0,
+            event: "provider_loaded".to_string(),
         });
         if !std::path::Path::new(provider_path).exists() {
             return Err(format!(
@@ -405,8 +403,7 @@ impl SshAgentService {
         log::info!("Unloading PKCS#11 provider: {}", provider_path);
         self.audit.log_event(&AgentEvent::Pkcs11Event {
             provider: provider_path.to_string(),
-            loaded: false,
-            key_count: 0,
+            event: "provider_unloaded".to_string(),
         });
         self.config.pkcs11_providers.retain(|p| p != provider_path);
         // Remove keys that came from this provider
@@ -464,8 +461,7 @@ impl SshAgentService {
         log::info!("Adding smart card keys from provider: {}", provider);
         self.audit.log_event(&AgentEvent::Pkcs11Event {
             provider: provider.to_string(),
-            loaded: true,
-            key_count: 0,
+            event: "smartcard_add".to_string(),
         });
         let _ = pin; // Would be used to authenticate to the token
         // In production, this would enumerate keys from the smart card via PKCS#11
@@ -477,8 +473,7 @@ impl SshAgentService {
         log::info!("Removing smart card keys from provider: {}", provider);
         self.audit.log_event(&AgentEvent::Pkcs11Event {
             provider: provider.to_string(),
-            loaded: false,
-            key_count: 0,
+            event: "smartcard_remove".to_string(),
         });
         let count = self
             .agent
@@ -521,11 +516,7 @@ impl SshAgentService {
         );
         self.audit.log_event(&AgentEvent::KeyAdded {
             key_id: "pending".into(),
-            algorithm: KeyAlgorithm::SkEd25519,
-            comment: format!("sk:{}:{}", provider, app),
-            source: KeySource::SecurityKey {
-                device: provider.to_string(),
-            },
+            fingerprint: String::new(),
         });
         let _ = (user, pin_required, touch_required, verify_required);
         // In production: invoke ssh-keygen -t ed25519-sk or ecdsa-sk
@@ -550,7 +541,7 @@ impl SshAgentService {
             approved
         );
         self.audit.log_event(&AgentEvent::ConfirmationResponse {
-            key_id: request_id.to_string(),
+            request_id: request_id.to_string(),
             approved,
         });
         self.agent.resolve_confirmation(request_id, approved)
@@ -593,7 +584,7 @@ impl SshAgentService {
                 // Encode the public key blob as PEM
                 let b64 = base64::Engine::encode(
                     &base64::engine::general_purpose::STANDARD,
-                    key.public_key_blob.as_bytes(),
+                    key.public_key_blob.as_slice(),
                 );
                 Ok(format!(
                     "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----",

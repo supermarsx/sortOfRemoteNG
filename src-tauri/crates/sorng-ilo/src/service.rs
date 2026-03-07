@@ -61,7 +61,7 @@ impl IloService {
     pub async fn connect(&mut self, config: IloConfig) -> IloResult<String> {
         let mut client = IloClient::new(&config)?;
         client.connect().await?;
-        let gen = client.generation();
+        let gen = client.generation;
         let msg = format!("Connected to {:?} at {}", gen, config.host);
         self.config = Some(config);
         self.client = Some(client);

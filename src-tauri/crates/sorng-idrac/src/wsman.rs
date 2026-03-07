@@ -24,6 +24,8 @@ pub mod dcim_classes {
     pub const POWER_SUPPLY_VIEW: &str = "DCIM_PowerSupplyView";
     pub const FAN_VIEW: &str = "DCIM_FanView";
     pub const SENSOR_VIEW: &str = "DCIM_NumericSensorView";
+    pub const NUMERIC_SENSOR_VIEW: &str = "DCIM_NumericSensorView";
+    pub const PCIE_DEVICE_VIEW: &str = "DCIM_PCIDeviceView";
     pub const BIOS_ENUMERATION: &str = "DCIM_BIOSEnumeration";
     pub const BIOS_STRING: &str = "DCIM_BIOSString";
     pub const BIOS_INTEGER: &str = "DCIM_BIOSInteger";
@@ -34,6 +36,7 @@ pub mod dcim_classes {
     pub const IDRAC_CARD_ENUMERATION: &str = "DCIM_iDRACCardEnumeration";
     pub const SOFTWARE_IDENTITY: &str = "DCIM_SoftwareIdentity";
     pub const SELLOG_ENTRY: &str = "DCIM_SELLogEntry";
+    pub const SEL_LOG_ENTRY: &str = "DCIM_SELLogEntry";
     pub const LC_LOG_ENTRY: &str = "DCIM_LCLogEntry";
     pub const SYSTEM_ENUMERATION: &str = "DCIM_SystemEnumeration";
     pub const OS_DEPLOYMENT_SERVICE: &str = "DCIM_OSDeploymentService";

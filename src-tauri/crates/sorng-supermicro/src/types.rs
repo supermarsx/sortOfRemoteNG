@@ -429,3 +429,254 @@ pub struct SecurityRiskItem {
     pub message: String,
     pub remediation: Option<String>,
 }
+
+// ── Supermicro-specific data types ──────────────────────────────────
+// These mirror Redfish responses with Supermicro-specific field sets.
+// They intentionally shadow the `Bmc*` types from bmc-common because
+// the field names / optionality differ per vendor.
+
+/// Server system information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemInfo {
+    pub manufacturer: String,
+    pub model: String,
+    pub serial_number: Option<String>,
+    pub sku: Option<String>,
+    pub bios_version: Option<String>,
+    pub hostname: Option<String>,
+    pub power_state: Option<String>,
+    pub indicator_led: Option<String>,
+    pub asset_tag: Option<String>,
+    pub uuid: Option<String>,
+    pub service_tag: Option<String>,
+    pub os_name: Option<String>,
+    pub os_version: Option<String>,
+    pub total_memory_gib: Option<f64>,
+    pub processor_count: Option<u32>,
+    pub processor_model: Option<String>,
+}
+
+/// Power supply unit information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PsuInfo {
+    pub name: String,
+    pub model: Option<String>,
+    pub serial_number: Option<String>,
+    pub firmware_version: Option<String>,
+    pub status: String,
+    pub capacity_watts: Option<f64>,
+    pub output_watts: Option<f64>,
+    pub input_voltage: Option<f64>,
+    pub efficiency_percent: Option<f64>,
+    pub redundancy: Option<String>,
+}
+
+/// Power consumption metrics.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PowerMetrics {
+    pub total_consumed_watts: Option<f64>,
+    pub average_consumed_watts: Option<f64>,
+    pub max_consumed_watts: Option<f64>,
+    pub min_consumed_watts: Option<f64>,
+    pub power_cap_watts: Option<f64>,
+    pub power_cap_enabled: bool,
+    pub power_supplies: Vec<PsuInfo>,
+}
+
+/// Temperature sensor reading.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemperatureReading {
+    pub name: String,
+    pub reading_celsius: Option<f64>,
+    pub upper_warning: Option<f64>,
+    pub upper_critical: Option<f64>,
+    pub upper_fatal: Option<f64>,
+    pub lower_warning: Option<f64>,
+    pub lower_critical: Option<f64>,
+    pub status: String,
+    pub location: Option<String>,
+}
+
+/// Fan reading.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FanReading {
+    pub name: String,
+    pub reading_rpm: Option<u32>,
+    pub reading_percent: Option<f64>,
+    pub status: String,
+    pub location: Option<String>,
+    pub redundancy: Option<String>,
+}
+
+/// Combined thermal data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThermalData {
+    pub temperatures: Vec<TemperatureReading>,
+    pub fans: Vec<FanReading>,
+}
+
+/// CPU / processor information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessorInfo {
+    pub name: String,
+    pub manufacturer: Option<String>,
+    pub model: Option<String>,
+    pub architecture: Option<String>,
+    pub core_count: Option<u32>,
+    pub thread_count: Option<u32>,
+    pub max_speed_mhz: Option<u32>,
+    pub current_speed_mhz: Option<u32>,
+    pub status: String,
+    pub socket: Option<String>,
+    pub cache_size_kb: Option<u32>,
+}
+
+/// Memory DIMM information.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryInfo {
+    pub name: String,
+    pub capacity_mib: Option<u32>,
+    pub speed_mhz: Option<u32>,
+    pub manufacturer: Option<String>,
+    pub part_number: Option<String>,
+    pub serial_number: Option<String>,
+    pub memory_type: Option<String>,
+    pub status: String,
+    pub slot: Option<String>,
+    pub rank: Option<u32>,
+    pub ecc: Option<bool>,
+}
+
+/// Storage controller.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageController {
+    pub name: String,
+    pub manufacturer: Option<String>,
+    pub model: Option<String>,
+    pub firmware_version: Option<String>,
+    pub status: String,
+    pub speed_gbps: Option<f64>,
+    pub supported_raid: Option<Vec<String>>,
+    pub cache_size_mb: Option<u32>,
+}
+
+/// Virtual / logical disk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VirtualDisk {
+    pub name: String,
+    pub raid_level: Option<String>,
+    pub capacity_bytes: Option<u64>,
+    pub status: String,
+    pub stripe_size_kb: Option<u32>,
+    pub read_policy: Option<String>,
+    pub write_policy: Option<String>,
+}
+
+/// Physical disk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PhysicalDisk {
+    pub name: String,
+    pub manufacturer: Option<String>,
+    pub model: Option<String>,
+    pub serial_number: Option<String>,
+    pub capacity_bytes: Option<u64>,
+    pub media_type: Option<String>,
+    pub protocol: Option<String>,
+    pub rotation_speed_rpm: Option<u32>,
+    pub status: String,
+    pub firmware_version: Option<String>,
+    pub slot: Option<u32>,
+    pub predicted_life_left_percent: Option<f64>,
+}
+
+/// Network adapter.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkAdapter {
+    pub name: String,
+    pub mac_address: Option<String>,
+    pub link_status: Option<String>,
+    pub speed_mbps: Option<u32>,
+    pub ipv4_addresses: Option<Vec<String>>,
+    pub ipv6_addresses: Option<Vec<String>>,
+    pub status: String,
+    pub firmware_version: Option<String>,
+}
+
+/// Firmware inventory item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FirmwareInfo {
+    pub name: String,
+    pub version: String,
+    pub updateable: bool,
+    pub component: Option<String>,
+    pub install_date: Option<String>,
+    pub status: Option<String>,
+}
+
+/// Virtual media device status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VirtualMediaStatus {
+    pub name: String,
+    pub media_types: Vec<String>,
+    pub inserted: bool,
+    pub image: Option<String>,
+    pub write_protected: Option<bool>,
+    pub connected_via: Option<String>,
+}
+
+/// Event log entry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventLogEntry {
+    pub id: String,
+    pub timestamp: String,
+    pub severity: String,
+    pub message: String,
+    pub message_id: Option<String>,
+    pub source: Option<String>,
+    pub category: Option<String>,
+}
+
+/// User account.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserAccount {
+    pub id: String,
+    pub username: String,
+    pub role: String,
+    pub enabled: bool,
+    pub locked: bool,
+    pub description: Option<String>,
+}
+
+/// Health component status (Supermicro-specific; shadows bmc-common `ComponentHealth`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentHealth {
+    pub name: String,
+    pub status: String,
+    pub component_type: String,
+    pub details: Option<String>,
+}
+
+/// Overall health rollup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthRollup {
+    pub overall_status: String,
+    pub components: Vec<ComponentHealth>,
+}

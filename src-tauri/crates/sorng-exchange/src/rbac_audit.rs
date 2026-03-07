@@ -4,7 +4,7 @@
 //! searching.
 
 use crate::client::ExchangeClient;
-use crate::auth::{wrap_ps_json, ps_param_opt, ps_param_list};
+use crate::auth::{ps_param_opt, ps_param_list};
 use crate::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -14,23 +14,18 @@ use crate::types::*;
 pub async fn ps_list_role_groups(
     client: &ExchangeClient,
 ) -> ExchangeResult<Vec<RoleGroup>> {
-    let script = wrap_ps_json(
-        "Get-RoleGroup | Select-Object Name,Description,Members,Roles,ManagedBy"
-    );
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    let cmd = "Get-RoleGroup | Select-Object Name,Description,Members,Roles,ManagedBy";
+    client.run_ps_json(cmd).await
 }
 
 pub async fn ps_get_role_group(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<RoleGroup> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-RoleGroup -Identity '{identity}' | Select-Object Name,Description,Members,Roles,ManagedBy"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    );
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_add_role_group_member(
@@ -64,24 +59,19 @@ pub async fn ps_remove_role_group_member(
 pub async fn ps_list_management_roles(
     client: &ExchangeClient,
 ) -> ExchangeResult<Vec<ManagementRole>> {
-    let script = wrap_ps_json(
-        "Get-ManagementRole | Select-Object Name,RoleType,Parent,IsRootRole,Description"
-    );
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    let cmd = "Get-ManagementRole | Select-Object Name,RoleType,Parent,IsRootRole,Description";
+    client.run_ps_json(cmd).await
 }
 
 pub async fn ps_get_management_role(
     client: &ExchangeClient,
     identity: &str,
 ) -> ExchangeResult<ManagementRole> {
-    let script = wrap_ps_json(&format!(
+    let cmd = format!(
         "Get-ManagementRole -Identity '{identity}' | \
          Select-Object Name,RoleType,Parent,IsRootRole,Description"
-    ));
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+    );
+    client.run_ps_json(&cmd).await
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -102,9 +92,7 @@ pub async fn ps_list_role_assignments(
     }
     cmd += " | Select-Object Name,Role,RoleAssignee,RoleAssigneeType,Enabled,\
              CustomRecipientWriteScope,RecipientReadScope";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -116,30 +104,24 @@ pub async fn ps_search_admin_audit_log(
     req: &AdminAuditLogSearchRequest,
 ) -> ExchangeResult<Vec<AdminAuditLogEntry>> {
     let mut cmd = String::from("Search-AdminAuditLog");
-    cmd += &ps_param_list("-Cmdlets", req.cmdlets.as_deref());
-    cmd += &ps_param_list("-ObjectIds", req.object_ids.as_deref());
-    cmd += &ps_param_list("-UserIds", req.user_ids.as_deref());
-    cmd += &ps_param_opt("-StartDate", req.start_date.as_deref());
-    cmd += &ps_param_opt("-EndDate", req.end_date.as_deref());
+    cmd += &ps_param_list("Cmdlets", &req.cmdlets);
+    cmd += &ps_param_list("ObjectIds", &req.object_ids);
+    cmd += &ps_param_list("UserIds", &req.user_ids);
+    cmd += &ps_param_opt("StartDate", req.start_date.as_deref());
+    cmd += &ps_param_opt("EndDate", req.end_date.as_deref());
     cmd += &format!(" -ResultSize {}", req.result_size);
     cmd += " | Select-Object CmdletName,ObjectModified,Caller,Succeeded,RunDate,CmdletParameters";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 /// Get the admin audit log configuration.
 pub async fn ps_get_admin_audit_log_config(
     client: &ExchangeClient,
 ) -> ExchangeResult<serde_json::Value> {
-    let script = wrap_ps_json(
-        "Get-AdminAuditLogConfig | Select-Object AdminAuditLogEnabled,\
+    let cmd = "Get-AdminAuditLogConfig | Select-Object AdminAuditLogEnabled,\
          AdminAuditLogCmdlets,AdminAuditLogParameters,LogLevel,\
-         AdminAuditLogAgeLimit,TestCmdletLoggingEnabled"
-    );
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+         AdminAuditLogAgeLimit,TestCmdletLoggingEnabled";
+    client.run_ps_json(cmd).await
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -155,17 +137,15 @@ pub async fn ps_search_mailbox_audit_log(
     result_size: Option<i32>,
 ) -> ExchangeResult<Vec<MailboxAuditLogEntry>> {
     let mut cmd = format!("Search-MailboxAuditLog -Identity '{identity}'");
-    cmd += &ps_param_opt("-StartDate", start_date);
-    cmd += &ps_param_opt("-EndDate", end_date);
-    cmd += &ps_param_opt("-LogonTypes", log_on_types);
+    cmd += &ps_param_opt("StartDate", start_date);
+    cmd += &ps_param_opt("EndDate", end_date);
+    cmd += &ps_param_opt("LogonTypes", log_on_types);
     if let Some(sz) = result_size {
         cmd += &format!(" -ResultSize {sz}");
     }
     cmd += " -ShowDetails | Select-Object Operation,MailboxOwnerUPN,LogonUserDisplayName,\
              LogonType,ItemSubject,FolderPathName,LastAccessed";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 /// Enable mailbox audit logging on a mailbox.

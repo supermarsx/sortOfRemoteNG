@@ -68,14 +68,14 @@ impl<'a> CertificateManager<'a> {
             });
 
             // HP iLO OEM CSR generation endpoint
-            let gen = self.client.generation();
+            let gen = self.client.generation;
             let path = if matches!(gen, IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7) {
                 "/redfish/v1/Managers/1/SecurityService/HttpsCert/Actions/HpeHttpsCert.GenerateCSR"
             } else {
                 "/redfish/v1/Managers/1/SecurityService/HttpsCert"
             };
 
-            let response = rf.inner.post_json(path, &body).await?;
+            let response = rf.inner.post_json::<_, serde_json::Value>(path, &body).await?;
 
             // CSR is async on iLO — may need to poll
             if let Some(csr) = response.get("CSR").and_then(|v| v.as_str()) {
@@ -86,9 +86,15 @@ impl<'a> CertificateManager<'a> {
         }
 
         if let Ok(ribcl) = self.client.require_ribcl() {
-            let csr = ribcl.generate_csr(params).await?;
-            return Ok(csr.get("CSR").and_then(|v| v.as_str())
-                .unwrap_or("CSR generation in progress").to_string());
+            let csr = ribcl.generate_csr(
+                &params.common_name,
+                &params.organization,
+                params.organizational_unit.as_deref().unwrap_or(""),
+                params.city.as_deref().unwrap_or(""),
+                params.state.as_deref().unwrap_or(""),
+                &params.country,
+            ).await?;
+            return Ok(csr);
         }
 
         Err(IloError::unsupported("No protocol available for CSR generation"))
@@ -97,7 +103,7 @@ impl<'a> CertificateManager<'a> {
     /// Import a signed certificate.
     pub async fn import_certificate(&self, cert_pem: &str) -> IloResult<()> {
         let rf = self.client.require_redfish()?;
-        let gen = self.client.generation();
+        let gen = self.client.generation;
 
         let path = if matches!(gen, IloGeneration::Ilo5 | IloGeneration::Ilo6 | IloGeneration::Ilo7) {
             "/redfish/v1/Managers/1/SecurityService/HttpsCert/Actions/HpeHttpsCert.ImportCertificate"
@@ -106,7 +112,7 @@ impl<'a> CertificateManager<'a> {
         };
 
         let body = serde_json::json!({ "Certificate": cert_pem });
-        rf.inner.post_json(path, &body).await?;
+        rf.inner.post_json::<_, ()>(path, &body).await?;
 
         Ok(())
     }

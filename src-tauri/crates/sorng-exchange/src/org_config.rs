@@ -4,7 +4,7 @@
 //! virtual directories.  Also retrieve and update organization-level configuration.
 
 use crate::client::ExchangeClient;
-use crate::auth::{wrap_ps_json, ps_param_opt};
+use crate::auth::ps_param_opt;
 use crate::types::*;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -16,12 +16,10 @@ pub async fn ps_list_owa_virtual_directories(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<VirtualDirectory>> {
     let mut cmd = String::from("Get-OwaVirtualDirectory");
-    cmd += &ps_param_opt("-Server", server);
+    cmd += &ps_param_opt("Server", server);
     cmd += " | Select-Object Identity,Server,Name,InternalUrl,ExternalUrl,\
              InternalAuthenticationMethods,ExternalAuthenticationMethods";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_list_ecp_virtual_directories(
@@ -29,12 +27,10 @@ pub async fn ps_list_ecp_virtual_directories(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<VirtualDirectory>> {
     let mut cmd = String::from("Get-EcpVirtualDirectory");
-    cmd += &ps_param_opt("-Server", server);
+    cmd += &ps_param_opt("Server", server);
     cmd += " | Select-Object Identity,Server,Name,InternalUrl,ExternalUrl,\
              InternalAuthenticationMethods,ExternalAuthenticationMethods";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_list_activesync_virtual_directories(
@@ -42,12 +38,10 @@ pub async fn ps_list_activesync_virtual_directories(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<VirtualDirectory>> {
     let mut cmd = String::from("Get-ActiveSyncVirtualDirectory");
-    cmd += &ps_param_opt("-Server", server);
+    cmd += &ps_param_opt("Server", server);
     cmd += " | Select-Object Identity,Server,Name,InternalUrl,ExternalUrl,\
              InternalAuthenticationMethods,ExternalAuthenticationMethods";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_list_ews_virtual_directories(
@@ -55,12 +49,10 @@ pub async fn ps_list_ews_virtual_directories(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<VirtualDirectory>> {
     let mut cmd = String::from("Get-WebServicesVirtualDirectory");
-    cmd += &ps_param_opt("-Server", server);
+    cmd += &ps_param_opt("Server", server);
     cmd += " | Select-Object Identity,Server,Name,InternalUrl,ExternalUrl,\
              InternalAuthenticationMethods,ExternalAuthenticationMethods";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_list_mapi_virtual_directories(
@@ -68,12 +60,10 @@ pub async fn ps_list_mapi_virtual_directories(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<VirtualDirectory>> {
     let mut cmd = String::from("Get-MapiVirtualDirectory");
-    cmd += &ps_param_opt("-Server", server);
+    cmd += &ps_param_opt("Server", server);
     cmd += " | Select-Object Identity,Server,Name,InternalUrl,ExternalUrl,\
              InternalAuthenticationMethods,ExternalAuthenticationMethods";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_list_autodiscover_virtual_directories(
@@ -81,12 +71,10 @@ pub async fn ps_list_autodiscover_virtual_directories(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<VirtualDirectory>> {
     let mut cmd = String::from("Get-AutodiscoverVirtualDirectory");
-    cmd += &ps_param_opt("-Server", server);
+    cmd += &ps_param_opt("Server", server);
     cmd += " | Select-Object Identity,Server,Name,InternalUrl,ExternalUrl,\
              InternalAuthenticationMethods,ExternalAuthenticationMethods";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_list_powershell_virtual_directories(
@@ -94,12 +82,10 @@ pub async fn ps_list_powershell_virtual_directories(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<VirtualDirectory>> {
     let mut cmd = String::from("Get-PowerShellVirtualDirectory");
-    cmd += &ps_param_opt("-Server", server);
+    cmd += &ps_param_opt("Server", server);
     cmd += " | Select-Object Identity,Server,Name,InternalUrl,ExternalUrl,\
              InternalAuthenticationMethods,ExternalAuthenticationMethods";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 pub async fn ps_list_oab_virtual_directories(
@@ -107,11 +93,9 @@ pub async fn ps_list_oab_virtual_directories(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<VirtualDirectory>> {
     let mut cmd = String::from("Get-OabVirtualDirectory");
-    cmd += &ps_param_opt("-Server", server);
+    cmd += &ps_param_opt("Server", server);
     cmd += " | Select-Object Identity,Server,Name,InternalUrl,ExternalUrl";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 /// Set virtual directory URLs (generic – caller must use the correct Set-* cmdlet name).
@@ -134,8 +118,8 @@ pub async fn ps_set_virtual_directory_urls(
         VirtualDirectoryType::OutlookAnywhere => "Set-OutlookAnywhere",
     };
     let mut cmd = format!("{cmdlet} -Identity '{identity}'");
-    cmd += &ps_param_opt("-InternalUrl", internal_url);
-    cmd += &ps_param_opt("-ExternalUrl", external_url);
+    cmd += &ps_param_opt("InternalUrl", internal_url);
+    cmd += &ps_param_opt("ExternalUrl", external_url);
     client.run_ps(&cmd).await
 }
 
@@ -148,13 +132,11 @@ pub async fn ps_list_outlook_anywhere(
     server: Option<&str>,
 ) -> ExchangeResult<Vec<VirtualDirectory>> {
     let mut cmd = String::from("Get-OutlookAnywhere");
-    cmd += &ps_param_opt("-Server", server);
+    cmd += &ps_param_opt("Server", server);
     cmd += " | Select-Object Identity,Server,Name,InternalHostname,ExternalHostname,\
              InternalClientAuthenticationMethod,ExternalClientAuthenticationMethod,\
              SSLOffloading";
-    let script = wrap_ps_json(&cmd);
-    let out = client.run_ps_json(&script).await?;
-    Ok(serde_json::from_str(&out).unwrap_or_default())
+    client.run_ps_json(&cmd).await
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -164,19 +146,15 @@ pub async fn ps_list_outlook_anywhere(
 pub async fn ps_get_organization_config(
     client: &ExchangeClient,
 ) -> ExchangeResult<OrganizationConfig> {
-    let script = wrap_ps_json(
-        "Get-OrganizationConfig | Select-Object Name,Guid,IsDehydrated,\
+    let cmd = "Get-OrganizationConfig | Select-Object Name,Guid,IsDehydrated,\
          DefaultPublicFolderAgeLimit,DefaultPublicFolderDeletedItemRetention,\
          DefaultPublicFolderIssueWarningQuota,DefaultPublicFolderProhibitPostQuota,\
          DefaultPublicFolderMaxItemSize,MailTipsAllTipsEnabled,\
          MailTipsGroupMetricsEnabled,MailTipsLargeAudienceThreshold,\
          MailTipsExternalRecipientsTipsEnabled,ReadTrackingEnabled,\
          DistributionGroupDefaultOU,LeanPopoutEnabled,PublicFoldersEnabled,\
-         MaxSendSize,MaxReceiveSize"
-    );
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+         MaxSendSize,MaxReceiveSize";
+    client.run_ps_json(cmd).await
 }
 
 pub async fn ps_set_organization_config(
@@ -205,16 +183,12 @@ pub async fn ps_set_organization_config(
 pub async fn ps_get_transport_config(
     client: &ExchangeClient,
 ) -> ExchangeResult<TransportConfig> {
-    let script = wrap_ps_json(
-        "Get-TransportConfig | Select-Object MaxSendSize,MaxReceiveSize,\
+    let cmd = "Get-TransportConfig | Select-Object MaxSendSize,MaxReceiveSize,\
          ExternalPostmasterAddress,InternalSMTPServers,\
          TLSReceiveDomainSecureList,TLSSendDomainSecureList,\
          GenerateCopyOfDSRFor,JournalArchivingEnabled,\
-         ShadowRedundancyEnabled,SafetyNetHoldTime"
-    );
-    let out = client.run_ps_json(&script).await?;
-    serde_json::from_str(&out)
-        .map_err(|e| ExchangeError::powershell(format!("parse error: {e}")))
+         ShadowRedundancyEnabled,SafetyNetHoldTime";
+    client.run_ps_json(cmd).await
 }
 
 pub async fn ps_set_transport_config(

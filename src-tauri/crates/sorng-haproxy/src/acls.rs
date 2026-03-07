@@ -36,8 +36,8 @@ fn parse_acl_list(raw: &str) -> Vec<HaproxyAcl> {
         if parts.len() >= 2 {
             Some(HaproxyAcl {
                 id: parts[0].trim_start_matches('#').to_string(),
-                description: parts[1..].join(" "),
-                entry_count: None,
+                description: Some(parts[1..].join(" ")),
+                entries: vec![],
             })
         } else {
             None
@@ -49,7 +49,7 @@ fn parse_acl_entries(raw: &str) -> Vec<AclEntry> {
     raw.lines().filter_map(|line| {
         let parts: Vec<&str> = line.splitn(2, ' ').collect();
         if parts.len() >= 2 {
-            Some(AclEntry { id: parts[0].to_string(), value: parts[1].to_string() })
+            Some(AclEntry { id: parts[0].parse().unwrap_or(0), value: parts[1].to_string() })
         } else {
             None
         }
