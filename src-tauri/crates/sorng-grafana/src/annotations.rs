@@ -1,131 +1,127 @@
-//! Annotation management for Grafana.
+// ── sorng-grafana/src/annotations.rs ─────────────────────────────────────────
+//! Annotation management via Grafana REST API.
 
 use crate::client::GrafanaClient;
 use crate::error::GrafanaResult;
 use crate::types::*;
 
-pub struct AnnotationManager<'a> {
-    client: &'a GrafanaClient,
-}
+pub struct AnnotationManager;
 
-impl<'a> AnnotationManager<'a> {
-    pub fn new(client: &'a GrafanaClient) -> Self {
-        Self { client }
-    }
-
-    /// List annotations with optional filters.
+impl AnnotationManager {
+    /// List annotations.  GET /api/annotations
     pub async fn list(
-        &self,
-        from: Option<i64>,
-        to: Option<i64>,
-        dashboard_id: Option<i64>,
-        panel_id: Option<i64>,
-        tags: Option<Vec<String>>,
-        limit: Option<i64>,
-    ) -> GrafanaResult<Vec<GrafanaAnnotation>> {
-        let mut params: Vec<(String, String)> = Vec::new();
+        client: &GrafanaClient,
+        from: Option<u64>,
+        to: Option<u64>,
+        dashboard_id: Option<u64>,
+        panel_id: Option<u64>,
+        tags: Option<&[String]>,
+        limit: Option<u64>,
+    ) -> GrafanaResult<Vec<Annotation>> {
+        let mut params = Vec::new();
         if let Some(f) = from {
-            params.push(("from".into(), f.to_string()));
+            params.push(format!("from={f}"));
         }
         if let Some(t) = to {
-            params.push(("to".into(), t.to_string()));
+            params.push(format!("to={t}"));
         }
         if let Some(d) = dashboard_id {
-            params.push(("dashboardId".into(), d.to_string()));
+            params.push(format!("dashboardId={d}"));
         }
         if let Some(p) = panel_id {
-            params.push(("panelId".into(), p.to_string()));
+            params.push(format!("panelId={p}"));
         }
-        if let Some(ref tag_list) = tags {
-            for t in tag_list {
-                params.push(("tags".into(), t.clone()));
+        if let Some(tag_list) = tags {
+            for tag in tag_list {
+                params.push(format!("tags={tag}"));
             }
         }
         if let Some(l) = limit {
-            params.push(("limit".into(), l.to_string()));
+            params.push(format!("limit={l}"));
         }
-
-        if params.is_empty() {
-            self.client.api_get("/annotations").await
+        let qs = if params.is_empty() {
+            String::new()
         } else {
-            self.client.api_get_with_query("/annotations", &params).await
+            format!("?{}", params.join("&"))
+        };
+        client.api_get(&format!("annotations{qs}")).await
+    }
+
+    /// Get annotation by ID.  GET /api/annotations/:id
+    pub async fn get(
+        client: &GrafanaClient,
+        id: u64,
+    ) -> GrafanaResult<Annotation> {
+        client.api_get(&format!("annotations/{id}")).await
+    }
+
+    /// Create an annotation.  POST /api/annotations
+    pub async fn create(
+        client: &GrafanaClient,
+        request: &CreateAnnotationRequest,
+    ) -> GrafanaResult<Annotation> {
+        client.api_post("annotations", request).await
+    }
+
+    /// Update an annotation (full replace).  PUT /api/annotations/:id
+    pub async fn update(
+        client: &GrafanaClient,
+        id: u64,
+        text: &str,
+        tags: Option<&[String]>,
+    ) -> GrafanaResult<serde_json::Value> {
+        let mut body = serde_json::json!({ "text": text });
+        if let Some(t) = tags {
+            body["tags"] = serde_json::json!(t);
         }
+        client.api_put(&format!("annotations/{id}"), &body).await
     }
 
-    /// Create a new annotation.
-    pub async fn create(&self, req: CreateAnnotationRequest) -> GrafanaResult<serde_json::Value> {
-        self.client.api_post("/annotations", &req).await
-    }
-
-    /// Update an existing annotation.
-    pub async fn update(&self, annotation_id: i64, req: UpdateAnnotationRequest) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_put(&format!("/annotations/{}", annotation_id), &req)
+    /// Partially update an annotation.  PATCH /api/annotations/:id
+    pub async fn patch(
+        client: &GrafanaClient,
+        id: u64,
+        text: Option<&str>,
+        tags: Option<&[String]>,
+    ) -> GrafanaResult<serde_json::Value> {
+        let mut body = serde_json::json!({});
+        if let Some(t) = text {
+            body["text"] = serde_json::json!(t);
+        }
+        if let Some(t) = tags {
+            body["tags"] = serde_json::json!(t);
+        }
+        client
+            .api_patch(&format!("annotations/{id}"), &body)
             .await
     }
 
-    /// Delete an annotation by ID.
-    pub async fn delete(&self, annotation_id: i64) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_delete(&format!("/annotations/{}", annotation_id))
-            .await
+    /// Delete an annotation.  DELETE /api/annotations/:id
+    pub async fn delete(
+        client: &GrafanaClient,
+        id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
+        client.api_delete(&format!("annotations/{id}")).await
     }
 
-    /// Get a single annotation by ID.
-    pub async fn get_by_id(&self, annotation_id: i64) -> GrafanaResult<GrafanaAnnotation> {
-        self.client
-            .api_get(&format!("/annotations/{}", annotation_id))
-            .await
-    }
-
-    /// Create a Graphite-style annotation.
+    /// Create a Graphite-style event annotation.  POST /api/annotations/graphite
     pub async fn create_graphite(
-        &self,
+        client: &GrafanaClient,
         what: &str,
-        tags: Vec<String>,
-        when: Option<i64>,
+        tags: Option<&[String]>,
+        when: Option<u64>,
         data: Option<&str>,
     ) -> GrafanaResult<serde_json::Value> {
-        let mut body = serde_json::json!({
-            "what": what,
-            "tags": tags
-        });
+        let mut body = serde_json::json!({ "what": what });
+        if let Some(t) = tags {
+            body["tags"] = serde_json::json!(t);
+        }
         if let Some(w) = when {
             body["when"] = serde_json::json!(w);
         }
         if let Some(d) = data {
             body["data"] = serde_json::json!(d);
         }
-        self.client
-            .api_post("/annotations/graphite", &body)
-            .await
-    }
-
-    /// List annotation tags.
-    pub async fn list_tags(&self) -> GrafanaResult<serde_json::Value> {
-        self.client.api_get("/annotations/tags").await
-    }
-
-    /// Delete annotation by ID (alias).
-    pub async fn delete_by_id(&self, annotation_id: i64) -> GrafanaResult<serde_json::Value> {
-        self.delete(annotation_id).await
-    }
-
-    /// Mass delete annotations matching criteria.
-    pub async fn mass_delete(
-        &self,
-        dashboard_id: Option<i64>,
-        panel_id: Option<i64>,
-    ) -> GrafanaResult<serde_json::Value> {
-        let mut body = serde_json::json!({});
-        if let Some(d) = dashboard_id {
-            body["dashboardId"] = serde_json::json!(d);
-        }
-        if let Some(p) = panel_id {
-            body["panelId"] = serde_json::json!(p);
-        }
-        self.client
-            .api_post("/annotations/mass-delete", &body)
-            .await
+        client.api_post("annotations/graphite", &body).await
     }
 }

@@ -1,56 +1,63 @@
-//! Shared types for Grafana management.
+// ── sorng-grafana/src/types.rs ───────────────────────────────────────────────
+//! Grafana API data structures.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Connection
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── Connection ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GrafanaConnectionConfig {
     pub host: String,
     pub port: Option<u16>,
-    pub scheme: Option<String>,
+    pub use_tls: Option<bool>,
+    pub accept_invalid_certs: Option<bool>,
     pub api_key: Option<String>,
     pub username: Option<String>,
     pub password: Option<String>,
-    pub org_id: Option<i64>,
-    pub tls_verify: Option<bool>,
+    pub org_id: Option<u64>,
     pub timeout_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GrafanaConnectionSummary {
     pub host: String,
-    pub version: Option<String>,
-    pub edition: Option<String>,
-    pub database_type: Option<String>,
-    pub license_status: Option<String>,
-    pub org_name: Option<String>,
+    pub version: String,
+    pub org_name: String,
+    pub user_count: u64,
+    pub dashboard_count: u64,
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Dashboards
-// ═══════════════════════════════════════════════════════════════════════════════
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthResponse {
+    pub commit: Option<String>,
+    pub database: Option<String>,
+    pub version: Option<String>,
+}
+
+// ── Dashboards ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GrafanaDashboard {
-    pub id: Option<i64>,
+pub struct Dashboard {
+    pub id: Option<u64>,
     pub uid: Option<String>,
-    pub title: String,
-    pub slug: Option<String>,
+    pub title: Option<String>,
     pub url: Option<String>,
+    pub slug: Option<String>,
     #[serde(rename = "type")]
-    pub type_: Option<String>,
-    pub tags: Vec<String>,
+    pub type_field: Option<String>,
+    pub tags: Option<Vec<String>>,
+    #[serde(rename = "isStarred")]
     pub is_starred: Option<bool>,
-    pub folder_id: Option<i64>,
+    pub uri: Option<String>,
+    #[serde(rename = "folderId")]
+    pub folder_id: Option<u64>,
+    #[serde(rename = "folderUid")]
     pub folder_uid: Option<String>,
+    #[serde(rename = "folderTitle")]
     pub folder_title: Option<String>,
-    pub sort_meta: Option<i64>,
-    pub provisioned: Option<bool>,
-    pub provisioned_external_id: Option<String>,
+    #[serde(rename = "folderUrl")]
+    pub folder_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,201 +67,169 @@ pub struct DashboardDetail {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct DashboardMeta {
     #[serde(rename = "type")]
-    pub type_: Option<String>,
+    pub type_field: Option<String>,
+    #[serde(rename = "canSave")]
     pub can_save: Option<bool>,
+    #[serde(rename = "canEdit")]
     pub can_edit: Option<bool>,
+    #[serde(rename = "canAdmin")]
     pub can_admin: Option<bool>,
+    #[serde(rename = "canStar")]
     pub can_star: Option<bool>,
+    #[serde(rename = "canDelete")]
     pub can_delete: Option<bool>,
     pub slug: Option<String>,
     pub url: Option<String>,
     pub expires: Option<String>,
     pub created: Option<String>,
     pub updated: Option<String>,
+    #[serde(rename = "updatedBy")]
     pub updated_by: Option<String>,
+    #[serde(rename = "createdBy")]
     pub created_by: Option<String>,
-    pub version: Option<i64>,
+    pub version: Option<u64>,
+    #[serde(rename = "hasAcl")]
     pub has_acl: Option<bool>,
+    #[serde(rename = "isFolder")]
     pub is_folder: Option<bool>,
-    pub folder_id: Option<i64>,
-    pub folder_uid: Option<String>,
-    pub folder_title: Option<String>,
-    pub folder_url: Option<String>,
     pub provisioned: Option<bool>,
+    #[serde(rename = "provisionedExternalId")]
     pub provisioned_external_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateDashboardRequest {
-    pub dashboard: serde_json::Value,
-    pub folder_uid: Option<String>,
-    pub message: Option<String>,
-    pub overwrite: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardVersion {
-    pub id: Option<i64>,
-    pub dashboard_id: Option<i64>,
-    pub parent_version: Option<i64>,
-    pub restored_from: Option<i64>,
-    pub version: Option<i64>,
+    pub id: Option<u64>,
+    #[serde(rename = "dashboardId")]
+    pub dashboard_id: Option<u64>,
+    #[serde(rename = "parentVersion")]
+    pub parent_version: Option<u64>,
+    #[serde(rename = "restoredFrom")]
+    pub restored_from: Option<u64>,
+    pub version: Option<u64>,
     pub created: Option<String>,
+    #[serde(rename = "createdBy")]
     pub created_by: Option<String>,
     pub message: Option<String>,
     pub data: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DashboardPermission {
-    pub dashboard_id: Option<i64>,
-    pub role: Option<String>,
-    pub permission: Option<i64>,
-    pub team_id: Option<i64>,
-    pub user_id: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchDashboardRequest {
-    pub query: Option<String>,
-    pub tag: Option<Vec<String>>,
-    #[serde(rename = "type")]
-    pub type_: Option<String>,
-    pub dashboard_ids: Option<Vec<i64>>,
-    pub folder_ids: Option<Vec<i64>>,
-    pub starred: Option<bool>,
-    pub limit: Option<i64>,
-    pub page: Option<i64>,
-    pub sort: Option<String>,
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Datasources
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GrafanaDatasource {
-    pub id: Option<i64>,
-    pub uid: Option<String>,
-    pub org_id: Option<i64>,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub type_: String,
-    pub type_logo_url: Option<String>,
-    pub access: Option<String>,
-    pub url: Option<String>,
-    pub user: Option<String>,
-    pub database: Option<String>,
-    pub basic_auth: Option<bool>,
-    pub basic_auth_user: Option<String>,
-    pub with_credentials: Option<bool>,
-    pub is_default: Option<bool>,
-    pub json_data: Option<serde_json::Value>,
-    pub secure_json_fields: Option<HashMap<String, bool>>,
-    pub version: Option<i64>,
-    pub read_only: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateDatasourceRequest {
-    pub name: String,
-    #[serde(rename = "type")]
-    pub type_: String,
-    pub url: Option<String>,
-    pub access: Option<String>,
-    pub database: Option<String>,
-    pub user: Option<String>,
-    pub password: Option<String>,
-    pub basic_auth: Option<bool>,
-    pub basic_auth_user: Option<String>,
-    pub basic_auth_password: Option<String>,
-    pub with_credentials: Option<bool>,
-    pub is_default: Option<bool>,
-    pub json_data: Option<serde_json::Value>,
-    pub secure_json_data: Option<HashMap<String, String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateDatasourceRequest {
-    pub name: Option<String>,
-    #[serde(rename = "type")]
-    pub type_: Option<String>,
-    pub url: Option<String>,
-    pub access: Option<String>,
-    pub database: Option<String>,
-    pub user: Option<String>,
-    pub password: Option<String>,
-    pub basic_auth: Option<bool>,
-    pub basic_auth_user: Option<String>,
-    pub basic_auth_password: Option<String>,
-    pub with_credentials: Option<bool>,
-    pub is_default: Option<bool>,
-    pub json_data: Option<serde_json::Value>,
-    pub secure_json_data: Option<HashMap<String, String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DatasourceHealth {
-    pub status: Option<String>,
+pub struct SaveDashboardRequest {
+    pub dashboard: serde_json::Value,
+    #[serde(rename = "folderUid", skip_serializing_if = "Option::is_none")]
+    pub folder_uid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-    pub duration_ms: Option<f64>,
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Folders
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GrafanaFolder {
-    pub id: Option<i64>,
-    pub uid: Option<String>,
-    pub title: String,
-    pub url: Option<String>,
-    pub has_acl: Option<bool>,
-    pub can_save: Option<bool>,
-    pub can_edit: Option<bool>,
-    pub can_admin: Option<bool>,
-    pub can_delete: Option<bool>,
-    pub created: Option<String>,
-    pub updated: Option<String>,
-    pub created_by: Option<String>,
-    pub updated_by: Option<String>,
-    pub version: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateFolderRequest {
-    pub uid: Option<String>,
-    pub title: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateFolderRequest {
-    pub title: Option<String>,
-    pub version: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub overwrite: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FolderPermission {
-    pub role: Option<String>,
-    pub permission: Option<i64>,
-    pub team_id: Option<i64>,
-    pub user_id: Option<i64>,
+pub struct SaveDashboardResponse {
+    pub id: Option<u64>,
+    pub uid: Option<String>,
+    pub url: Option<String>,
+    pub status: Option<String>,
+    pub version: Option<u64>,
+    pub slug: Option<String>,
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Organizations
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── Datasources ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GrafanaOrg {
-    pub id: Option<i64>,
+pub struct Datasource {
+    pub id: Option<u64>,
+    pub uid: Option<String>,
+    #[serde(rename = "orgId")]
+    pub org_id: Option<u64>,
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub type_field: Option<String>,
+    #[serde(rename = "typeLogoUrl")]
+    pub type_logo_url: Option<String>,
+    pub access: Option<String>,
+    pub url: Option<String>,
+    pub password: Option<String>,
+    pub user: Option<String>,
+    pub database: Option<String>,
+    #[serde(rename = "basicAuth")]
+    pub basic_auth: Option<bool>,
+    #[serde(rename = "basicAuthUser")]
+    pub basic_auth_user: Option<String>,
+    #[serde(rename = "withCredentials")]
+    pub with_credentials: Option<bool>,
+    #[serde(rename = "isDefault")]
+    pub is_default: Option<bool>,
+    #[serde(rename = "jsonData")]
+    pub json_data: Option<serde_json::Value>,
+    #[serde(rename = "secureJsonFields")]
+    pub secure_json_fields: Option<HashMap<String, bool>>,
+    pub version: Option<u64>,
+    #[serde(rename = "readOnly")]
+    pub read_only: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatasourceCreateRequest {
     pub name: String,
+    #[serde(rename = "type")]
+    pub type_field: String,
+    pub url: Option<String>,
+    pub access: Option<String>,
+    #[serde(rename = "basicAuth", skip_serializing_if = "Option::is_none")]
+    pub basic_auth: Option<bool>,
+    #[serde(rename = "basicAuthUser", skip_serializing_if = "Option::is_none")]
+    pub basic_auth_user: Option<String>,
+    #[serde(rename = "basicAuthPassword", skip_serializing_if = "Option::is_none")]
+    pub basic_auth_password: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+    #[serde(rename = "jsonData", skip_serializing_if = "Option::is_none")]
+    pub json_data: Option<serde_json::Value>,
+    #[serde(rename = "isDefault", skip_serializing_if = "Option::is_none")]
+    pub is_default: Option<bool>,
+}
+
+// ── Folders ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Folder {
+    pub id: Option<u64>,
+    pub uid: Option<String>,
+    pub title: Option<String>,
+    pub url: Option<String>,
+    #[serde(rename = "hasAcl")]
+    pub has_acl: Option<bool>,
+    #[serde(rename = "canSave")]
+    pub can_save: Option<bool>,
+    #[serde(rename = "canEdit")]
+    pub can_edit: Option<bool>,
+    #[serde(rename = "canAdmin")]
+    pub can_admin: Option<bool>,
+    #[serde(rename = "canDelete")]
+    pub can_delete: Option<bool>,
+    pub created: Option<String>,
+    pub updated: Option<String>,
+    #[serde(rename = "createdBy")]
+    pub created_by: Option<String>,
+    #[serde(rename = "updatedBy")]
+    pub updated_by: Option<String>,
+    pub version: Option<u64>,
+}
+
+// ── Organizations ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Organization {
+    pub id: Option<u64>,
+    pub name: Option<String>,
     pub address: Option<OrgAddress>,
 }
 
@@ -263,360 +238,247 @@ pub struct OrgAddress {
     pub address1: Option<String>,
     pub address2: Option<String>,
     pub city: Option<String>,
+    #[serde(rename = "zipCode")]
     pub zip_code: Option<String>,
     pub state: Option<String>,
     pub country: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateOrgRequest {
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateOrgRequest {
-    pub name: Option<String>,
-    pub address: Option<OrgAddress>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrgUser {
-    pub org_id: Option<i64>,
-    pub user_id: Option<i64>,
-    pub login: Option<String>,
-    pub email: Option<String>,
-    pub role: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum OrgRole {
-    Admin,
-    Editor,
-    Viewer,
-}
-
-impl std::fmt::Display for OrgRole {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OrgRole::Admin => write!(f, "Admin"),
-            OrgRole::Editor => write!(f, "Editor"),
-            OrgRole::Viewer => write!(f, "Viewer"),
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Users
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── Users ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GrafanaUser {
-    pub id: Option<i64>,
-    pub login: Option<String>,
+    pub id: Option<u64>,
     pub email: Option<String>,
-    pub name: Option<String>,
-    pub is_admin: Option<bool>,
-    pub is_disabled: Option<bool>,
-    pub auth_labels: Option<Vec<String>>,
-    pub is_external: Option<bool>,
-    pub last_seen_at: Option<String>,
-    pub last_seen_at_age: Option<String>,
-    pub created: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateUserRequest {
-    pub name: Option<String>,
-    pub login: String,
-    pub email: Option<String>,
-    pub password: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateUserRequest {
     pub name: Option<String>,
     pub login: Option<String>,
-    pub email: Option<String>,
     pub theme: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserOrg {
-    pub org_id: Option<i64>,
-    pub name: Option<String>,
-    pub role: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GlobalUser {
-    pub id: Option<i64>,
-    pub login: Option<String>,
-    pub email: Option<String>,
-    pub name: Option<String>,
-    pub is_admin: Option<bool>,
+    #[serde(rename = "orgId")]
+    pub org_id: Option<u64>,
+    #[serde(rename = "isGrafanaAdmin")]
+    pub is_grafana_admin: Option<bool>,
+    #[serde(rename = "isDisabled")]
     pub is_disabled: Option<bool>,
-    pub created: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChangePasswordRequest {
-    pub old_password: String,
-    pub new_password: String,
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Teams
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GrafanaTeam {
-    pub id: Option<i64>,
-    pub org_id: Option<i64>,
-    pub name: String,
-    pub email: Option<String>,
+    #[serde(rename = "isExternal")]
+    pub is_external: Option<bool>,
+    #[serde(rename = "authLabels")]
+    pub auth_labels: Option<Vec<String>>,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: Option<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: Option<String>,
+    #[serde(rename = "avatarUrl")]
     pub avatar_url: Option<String>,
-    pub member_count: Option<i64>,
-    pub permission: Option<i64>,
 }
 
+// ── Teams ────────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateTeamRequest {
-    pub name: String,
+pub struct Team {
+    pub id: Option<u64>,
+    #[serde(rename = "orgId")]
+    pub org_id: Option<u64>,
+    pub name: Option<String>,
     pub email: Option<String>,
-    pub org_id: Option<i64>,
+    #[serde(rename = "avatarUrl")]
+    pub avatar_url: Option<String>,
+    #[serde(rename = "memberCount")]
+    pub member_count: Option<u64>,
+    pub permission: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamMember {
-    pub org_id: Option<i64>,
-    pub team_id: Option<i64>,
-    pub user_id: Option<i64>,
+    #[serde(rename = "orgId")]
+    pub org_id: Option<u64>,
+    #[serde(rename = "teamId")]
+    pub team_id: Option<u64>,
+    #[serde(rename = "userId")]
+    pub user_id: Option<u64>,
+    #[serde(rename = "authModule")]
     pub auth_module: Option<String>,
     pub email: Option<String>,
+    pub name: Option<String>,
     pub login: Option<String>,
+    #[serde(rename = "avatarUrl")]
     pub avatar_url: Option<String>,
     pub labels: Option<Vec<String>>,
-    pub permission: Option<i64>,
+    pub permission: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AddTeamMemberRequest {
-    pub user_id: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TeamPreferences {
-    pub theme: Option<String>,
-    pub home_dashboard_id: Option<i64>,
-    pub timezone: Option<String>,
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Alerting
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── Alerts ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AlertRule {
-    pub id: Option<i64>,
+    pub id: Option<u64>,
     pub uid: Option<String>,
+    #[serde(rename = "orgID")]
+    pub org_id: Option<u64>,
+    #[serde(rename = "folderUID")]
+    pub folder_uid: Option<String>,
+    #[serde(rename = "ruleGroup")]
+    pub rule_group: Option<String>,
     pub title: Option<String>,
     pub condition: Option<String>,
-    pub data: Option<Vec<serde_json::Value>>,
+    pub data: Option<serde_json::Value>,
     pub updated: Option<String>,
-    pub interval_secs: Option<i64>,
-    pub version: Option<i64>,
-    pub namespace_uid: Option<String>,
-    pub namespace_id: Option<i64>,
-    pub rule_group: Option<String>,
+    #[serde(rename = "noDataState")]
     pub no_data_state: Option<String>,
+    #[serde(rename = "execErrState")]
     pub exec_err_state: Option<String>,
+    #[serde(rename = "for")]
     pub for_duration: Option<String>,
     pub annotations: Option<HashMap<String, String>>,
     pub labels: Option<HashMap<String, String>>,
+    #[serde(rename = "isPaused")]
     pub is_paused: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AlertRuleGroup {
-    pub name: Option<String>,
-    pub interval: Option<i64>,
-    pub rules: Vec<AlertRule>,
-    pub folder_uid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateAlertRuleRequest {
-    pub title: String,
-    pub condition: String,
-    pub data: Vec<serde_json::Value>,
-    pub folder_uid: String,
-    pub rule_group: String,
-    pub no_data_state: Option<String>,
-    pub exec_err_state: Option<String>,
-    pub for_duration: Option<String>,
-    pub annotations: Option<HashMap<String, String>>,
-    pub labels: Option<HashMap<String, String>>,
-    pub is_paused: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ContactPoint {
+pub struct AlertNotification {
+    pub id: Option<u64>,
     pub uid: Option<String>,
-    pub name: String,
+    pub name: Option<String>,
     #[serde(rename = "type")]
-    pub type_: String,
-    pub settings: serde_json::Value,
+    pub type_field: Option<String>,
+    #[serde(rename = "isDefault")]
+    pub is_default: Option<bool>,
+    #[serde(rename = "sendReminder")]
+    pub send_reminder: Option<bool>,
+    #[serde(rename = "disableResolveMessage")]
     pub disable_resolve_message: Option<bool>,
-    pub provisioned: Option<bool>,
+    pub frequency: Option<String>,
+    pub settings: Option<serde_json::Value>,
+    pub created: Option<String>,
+    pub updated: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotificationPolicy {
-    pub receiver: Option<String>,
-    pub group_by: Option<Vec<String>>,
-    pub group_wait: Option<String>,
-    pub group_interval: Option<String>,
-    pub repeat_interval: Option<String>,
-    pub matchers: Option<Vec<serde_json::Value>>,
-    pub routes: Option<Vec<NotificationPolicy>>,
-    pub mute_time_intervals: Option<Vec<String>>,
-    #[serde(rename = "continue")]
-    pub continue_flag: Option<bool>,
-}
+// ── Annotations ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MuteTimeInterval {
-    pub name: String,
-    pub time_intervals: Vec<TimeInterval>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimeInterval {
-    pub times: Option<Vec<serde_json::Value>>,
-    pub weekdays: Option<Vec<String>>,
-    pub days_of_month: Option<Vec<String>>,
-    pub months: Option<Vec<String>>,
-    pub years: Option<Vec<String>>,
-    pub location: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AlertInstance {
-    pub labels: Option<HashMap<String, String>>,
-    pub annotations: Option<HashMap<String, String>>,
-    pub state: Option<String>,
-    pub state_reason: Option<String>,
-    pub active_at: Option<String>,
-    pub value: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AlertStateHistory {
-    pub values: Option<Vec<serde_json::Value>>,
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Annotations
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GrafanaAnnotation {
-    pub id: Option<i64>,
-    pub alert_id: Option<i64>,
+pub struct Annotation {
+    pub id: Option<u64>,
+    #[serde(rename = "alertId")]
+    pub alert_id: Option<u64>,
+    #[serde(rename = "alertName")]
     pub alert_name: Option<String>,
-    pub dashboard_id: Option<i64>,
+    #[serde(rename = "dashboardId")]
+    pub dashboard_id: Option<u64>,
+    #[serde(rename = "dashboardUID")]
     pub dashboard_uid: Option<String>,
-    pub panel_id: Option<i64>,
-    pub user_id: Option<i64>,
-    pub user_login: Option<String>,
+    #[serde(rename = "panelId")]
+    pub panel_id: Option<u64>,
+    #[serde(rename = "userId")]
+    pub user_id: Option<u64>,
+    #[serde(rename = "userName")]
+    pub user_name: Option<String>,
+    #[serde(rename = "newState")]
     pub new_state: Option<String>,
+    #[serde(rename = "prevState")]
     pub prev_state: Option<String>,
-    pub created: Option<i64>,
-    pub updated: Option<i64>,
-    pub time: Option<i64>,
-    pub time_end: Option<i64>,
+    pub created: Option<u64>,
+    pub updated: Option<u64>,
+    pub time: Option<u64>,
+    #[serde(rename = "timeEnd")]
+    pub time_end: Option<u64>,
     pub text: Option<String>,
     pub tags: Option<Vec<String>>,
-    pub data: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateAnnotationRequest {
+    #[serde(rename = "dashboardUID", skip_serializing_if = "Option::is_none")]
     pub dashboard_uid: Option<String>,
-    pub panel_id: Option<i64>,
-    pub time: Option<i64>,
-    pub time_end: Option<i64>,
+    #[serde(rename = "panelId", skip_serializing_if = "Option::is_none")]
+    pub panel_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time: Option<u64>,
+    #[serde(rename = "timeEnd", skip_serializing_if = "Option::is_none")]
+    pub time_end: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateAnnotationRequest {
-    pub time: Option<i64>,
-    pub time_end: Option<i64>,
-    pub tags: Option<Vec<String>>,
-    pub text: Option<String>,
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Plugins
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── Playlists ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GrafanaPlugin {
-    pub id: Option<String>,
+pub struct Playlist {
+    pub id: Option<u64>,
     pub name: Option<String>,
+    pub interval: Option<String>,
+    pub items: Option<Vec<PlaylistItem>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaylistItem {
     #[serde(rename = "type")]
-    pub type_: Option<String>,
-    pub info: Option<PluginInfo>,
-    pub enabled: Option<bool>,
-    pub pinned: Option<bool>,
-    pub signature: Option<String>,
-    pub module: Option<String>,
-    pub base_url: Option<String>,
-    pub has_update: Option<bool>,
-    pub latest_version: Option<String>,
-    pub default_nav_url: Option<String>,
-    pub state: Option<String>,
+    pub type_field: Option<String>,
+    pub value: Option<String>,
+    pub order: Option<u64>,
+    pub title: Option<String>,
 }
 
+// ── Snapshots ────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginInfo {
-    pub author: Option<serde_json::Value>,
-    pub description: Option<String>,
-    pub version: Option<String>,
-    pub links: Option<Vec<serde_json::Value>>,
-    pub logos: Option<serde_json::Value>,
+pub struct Snapshot {
+    pub id: Option<u64>,
+    pub name: Option<String>,
+    pub key: Option<String>,
+    #[serde(rename = "orgId")]
+    pub org_id: Option<u64>,
+    #[serde(rename = "userId")]
+    pub user_id: Option<u64>,
+    pub external: Option<bool>,
+    #[serde(rename = "externalUrl")]
+    pub external_url: Option<String>,
+    pub dashboard: Option<serde_json::Value>,
+    pub expires: Option<String>,
+    pub created: Option<String>,
     pub updated: Option<String>,
-    pub screenshots: Option<Vec<serde_json::Value>>,
+    pub url: Option<String>,
+    #[serde(rename = "deleteUrl")]
+    pub delete_url: Option<String>,
+}
+
+// ── Panels / Plugins ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PanelPlugin {
+    pub id: Option<String>,
+    #[serde(rename = "type")]
+    pub type_field: Option<String>,
+    pub name: Option<String>,
+    pub info: Option<PanelPluginInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginSetting {
-    pub enabled: Option<bool>,
-    pub pinned: Option<bool>,
-    pub json_data: Option<serde_json::Value>,
-    pub secure_json_data: Option<HashMap<String, String>>,
+pub struct PanelPluginInfo {
+    pub description: Option<String>,
+    pub author: Option<serde_json::Value>,
+    pub version: Option<String>,
+    pub logos: Option<serde_json::Value>,
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Preferences
-// ═══════════════════════════════════════════════════════════════════════════════
+// ── Search ───────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserPreferences {
-    pub theme: Option<String>,
-    pub home_dashboard_id: Option<i64>,
-    pub timezone: Option<String>,
-    pub week_start: Option<String>,
-    pub locale: Option<String>,
-    pub query_history: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrgPreferences {
-    pub theme: Option<String>,
-    pub home_dashboard_id: Option<i64>,
-    pub timezone: Option<String>,
-    pub week_start: Option<String>,
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SearchQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<Vec<String>>,
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub type_field: Option<String>,
+    #[serde(rename = "dashboardIds", skip_serializing_if = "Option::is_none")]
+    pub dashboard_ids: Option<Vec<u64>>,
+    #[serde(rename = "folderIds", skip_serializing_if = "Option::is_none")]
+    pub folder_ids: Option<Vec<u64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub starred: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<u64>,
 }

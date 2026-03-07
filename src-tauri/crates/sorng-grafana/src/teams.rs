@@ -1,111 +1,119 @@
-//! Team management for Grafana.
+// ── sorng-grafana/src/teams.rs ───────────────────────────────────────────────
+//! Team management via Grafana REST API.
 
 use crate::client::GrafanaClient;
-use crate::error::{GrafanaError, GrafanaResult};
+use crate::error::GrafanaResult;
 use crate::types::*;
 
-pub struct TeamManager<'a> {
-    client: &'a GrafanaClient,
-}
+pub struct TeamManager;
 
-impl<'a> TeamManager<'a> {
-    pub fn new(client: &'a GrafanaClient) -> Self {
-        Self { client }
-    }
-
-    /// List all teams with optional search.
-    pub async fn list(&self, query: Option<&str>, page: Option<i64>, per_page: Option<i64>) -> GrafanaResult<Vec<GrafanaTeam>> {
-        let mut params: Vec<(String, String)> = Vec::new();
-        if let Some(q) = query {
-            params.push(("query".into(), q.to_string()));
-        }
-        if let Some(p) = page {
-            params.push(("page".into(), p.to_string()));
-        }
-        if let Some(pp) = per_page {
-            params.push(("perpage".into(), pp.to_string()));
-        }
+impl TeamManager {
+    /// List / search teams.  GET /api/teams/search?name=:query
+    pub async fn list(
+        client: &GrafanaClient,
+        query: Option<&str>,
+    ) -> GrafanaResult<Vec<Team>> {
+        let path = match query {
+            Some(q) => format!("teams/search?name={q}"),
+            None => "teams/search".to_string(),
+        };
         #[derive(serde::Deserialize)]
-        struct TeamsResponse {
-            teams: Vec<GrafanaTeam>,
+        struct Wrapper {
+            teams: Vec<Team>,
         }
-        if params.is_empty() {
-            let resp: TeamsResponse = self.client.api_get("/teams/search").await?;
-            Ok(resp.teams)
-        } else {
-            let resp: TeamsResponse = self.client.api_get_with_query("/teams/search", &params).await?;
-            Ok(resp.teams)
-        }
+        let w: Wrapper = client.api_get(&path).await?;
+        Ok(w.teams)
     }
 
-    /// Get a team by ID.
-    pub async fn get(&self, team_id: i64) -> GrafanaResult<GrafanaTeam> {
-        self.client
-            .api_get(&format!("/teams/{}", team_id))
-            .await
-            .map_err(|e| match e.kind {
-                crate::error::GrafanaErrorKind::ApiError if e.message.contains("404") => {
-                    GrafanaError::team_not_found(format!("Team {} not found", team_id))
-                }
-                _ => e,
-            })
+    /// Get team by ID.  GET /api/teams/:id
+    pub async fn get(client: &GrafanaClient, id: u64) -> GrafanaResult<Team> {
+        client.api_get(&format!("teams/{id}")).await
     }
 
-    /// Create a new team.
-    pub async fn create(&self, req: CreateTeamRequest) -> GrafanaResult<serde_json::Value> {
-        self.client.api_post("/teams", &req).await
-    }
-
-    /// Update a team.
-    pub async fn update(&self, team_id: i64, req: CreateTeamRequest) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_put(&format!("/teams/{}", team_id), &req)
-            .await
-    }
-
-    /// Delete a team.
-    pub async fn delete(&self, team_id: i64) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_delete(&format!("/teams/{}", team_id))
-            .await
-    }
-
-    /// List members of a team.
-    pub async fn list_members(&self, team_id: i64) -> GrafanaResult<Vec<TeamMember>> {
-        self.client
-            .api_get(&format!("/teams/{}/members", team_id))
-            .await
-    }
-
-    /// Add a member to a team.
-    pub async fn add_member(&self, team_id: i64, req: AddTeamMemberRequest) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_post(&format!("/teams/{}/members", team_id), &req)
-            .await
-    }
-
-    /// Remove a member from a team.
-    pub async fn remove_member(&self, team_id: i64, user_id: i64) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_delete(&format!("/teams/{}/members/{}", team_id, user_id))
-            .await
-    }
-
-    /// Get team preferences.
-    pub async fn get_preferences(&self, team_id: i64) -> GrafanaResult<TeamPreferences> {
-        self.client
-            .api_get(&format!("/teams/{}/preferences", team_id))
-            .await
-    }
-
-    /// Update team preferences.
-    pub async fn update_preferences(
-        &self,
-        team_id: i64,
-        prefs: TeamPreferences,
+    /// Create a team.  POST /api/teams
+    pub async fn create(
+        client: &GrafanaClient,
+        name: &str,
+        email: Option<&str>,
     ) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_put(&format!("/teams/{}/preferences", team_id), &prefs)
+        let mut body = serde_json::json!({ "name": name });
+        if let Some(e) = email {
+            body["email"] = serde_json::json!(e);
+        }
+        client.api_post("teams", &body).await
+    }
+
+    /// Update a team.  PUT /api/teams/:id
+    pub async fn update(
+        client: &GrafanaClient,
+        id: u64,
+        name: &str,
+        email: Option<&str>,
+    ) -> GrafanaResult<serde_json::Value> {
+        let mut body = serde_json::json!({ "name": name });
+        if let Some(e) = email {
+            body["email"] = serde_json::json!(e);
+        }
+        client.api_put(&format!("teams/{id}"), &body).await
+    }
+
+    /// Delete a team.  DELETE /api/teams/:id
+    pub async fn delete(
+        client: &GrafanaClient,
+        id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
+        client.api_delete(&format!("teams/{id}")).await
+    }
+
+    /// List team members.  GET /api/teams/:id/members
+    pub async fn list_members(
+        client: &GrafanaClient,
+        id: u64,
+    ) -> GrafanaResult<Vec<TeamMember>> {
+        client.api_get(&format!("teams/{id}/members")).await
+    }
+
+    /// Add team member.  POST /api/teams/:id/members
+    pub async fn add_member(
+        client: &GrafanaClient,
+        id: u64,
+        user_id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
+        let body = serde_json::json!({ "userId": user_id });
+        client
+            .api_post(&format!("teams/{id}/members"), &body)
+            .await
+    }
+
+    /// Remove team member.  DELETE /api/teams/:id/members/:userId
+    pub async fn remove_member(
+        client: &GrafanaClient,
+        id: u64,
+        user_id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
+        client
+            .api_delete(&format!("teams/{id}/members/{user_id}"))
+            .await
+    }
+
+    /// Get team preferences.  GET /api/teams/:id/preferences
+    pub async fn get_preferences(
+        client: &GrafanaClient,
+        id: u64,
+    ) -> GrafanaResult<serde_json::Value> {
+        client
+            .api_get(&format!("teams/{id}/preferences"))
+            .await
+    }
+
+    /// Update team preferences.  PUT /api/teams/:id/preferences
+    pub async fn update_preferences(
+        client: &GrafanaClient,
+        id: u64,
+        prefs: &serde_json::Value,
+    ) -> GrafanaResult<serde_json::Value> {
+        client
+            .api_put(&format!("teams/{id}/preferences"), prefs)
             .await
     }
 }

@@ -1,192 +1,165 @@
-//! Dashboard management for Grafana.
+// ── sorng-grafana/src/dashboards.rs ──────────────────────────────────────────
+//! Dashboard management via Grafana REST API.
 
 use crate::client::GrafanaClient;
-use crate::error::{GrafanaError, GrafanaResult};
+use crate::error::GrafanaResult;
 use crate::types::*;
 
-pub struct DashboardManager<'a> {
-    client: &'a GrafanaClient,
-}
+pub struct DashboardManager;
 
-impl<'a> DashboardManager<'a> {
-    pub fn new(client: &'a GrafanaClient) -> Self {
-        Self { client }
-    }
-
-    /// Search dashboards with optional filters.
-    pub async fn search(&self, req: Option<SearchDashboardRequest>) -> GrafanaResult<Vec<GrafanaDashboard>> {
-        match req {
-            Some(params) => {
-                let mut query: Vec<(String, String)> = Vec::new();
-                if let Some(ref q) = params.query {
-                    query.push(("query".into(), q.clone()));
-                }
-                if let Some(ref tags) = params.tag {
-                    for t in tags {
-                        query.push(("tag".into(), t.clone()));
-                    }
-                }
-                if let Some(ref t) = params.type_ {
-                    query.push(("type".into(), t.clone()));
-                }
-                if let Some(ref ids) = params.dashboard_ids {
-                    for id in ids {
-                        query.push(("dashboardIds".into(), id.to_string()));
-                    }
-                }
-                if let Some(ref ids) = params.folder_ids {
-                    for id in ids {
-                        query.push(("folderIds".into(), id.to_string()));
-                    }
-                }
-                if let Some(starred) = params.starred {
-                    query.push(("starred".into(), starred.to_string()));
-                }
-                if let Some(limit) = params.limit {
-                    query.push(("limit".into(), limit.to_string()));
-                }
-                if let Some(page) = params.page {
-                    query.push(("page".into(), page.to_string()));
-                }
-                if let Some(ref sort) = params.sort {
-                    query.push(("sort".into(), sort.clone()));
-                }
-                self.client.api_get_with_query("/search", &query).await
-            }
-            None => self.client.api_get("/search").await,
+impl DashboardManager {
+    /// Search dashboards and folders.  GET /api/search
+    pub async fn search(
+        client: &GrafanaClient,
+        query: &SearchQuery,
+    ) -> GrafanaResult<Vec<Dashboard>> {
+        let mut params = Vec::new();
+        if let Some(ref q) = query.query {
+            params.push(format!("query={q}"));
         }
+        if let Some(ref tags) = query.tag {
+            for t in tags {
+                params.push(format!("tag={t}"));
+            }
+        }
+        if let Some(ref t) = query.type_field {
+            params.push(format!("type={t}"));
+        }
+        if let Some(starred) = query.starred {
+            params.push(format!("starred={starred}"));
+        }
+        if let Some(limit) = query.limit {
+            params.push(format!("limit={limit}"));
+        }
+        if let Some(page) = query.page {
+            params.push(format!("page={page}"));
+        }
+        if let Some(ref ids) = query.folder_ids {
+            for id in ids {
+                params.push(format!("folderIds={id}"));
+            }
+        }
+        if let Some(ref ids) = query.dashboard_ids {
+            for id in ids {
+                params.push(format!("dashboardIds={id}"));
+            }
+        }
+        let qs = if params.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", params.join("&"))
+        };
+        client.api_get(&format!("search{qs}")).await
     }
 
-    /// Get a dashboard by its UID.
-    pub async fn get_by_uid(&self, uid: &str) -> GrafanaResult<DashboardDetail> {
-        self.client
-            .api_get(&format!("/dashboards/uid/{}", uid))
+    /// Get dashboard by UID.  GET /api/dashboards/uid/:uid
+    pub async fn get_by_uid(
+        client: &GrafanaClient,
+        uid: &str,
+    ) -> GrafanaResult<DashboardDetail> {
+        client.api_get(&format!("dashboards/uid/{uid}")).await
+    }
+
+    /// Create or update a dashboard.  POST /api/dashboards/db
+    pub async fn save(
+        client: &GrafanaClient,
+        request: &SaveDashboardRequest,
+    ) -> GrafanaResult<SaveDashboardResponse> {
+        client.api_post("dashboards/db", request).await
+    }
+
+    /// Delete dashboard by UID.  DELETE /api/dashboards/uid/:uid
+    pub async fn delete_by_uid(
+        client: &GrafanaClient,
+        uid: &str,
+    ) -> GrafanaResult<serde_json::Value> {
+        client.api_delete(&format!("dashboards/uid/{uid}")).await
+    }
+
+    /// Get home dashboard.  GET /api/dashboards/home
+    pub async fn get_home(client: &GrafanaClient) -> GrafanaResult<DashboardDetail> {
+        client.api_get("dashboards/home").await
+    }
+
+    /// List dashboard versions.  GET /api/dashboards/id/:id/versions
+    pub async fn list_versions(
+        client: &GrafanaClient,
+        dashboard_id: u64,
+    ) -> GrafanaResult<Vec<DashboardVersion>> {
+        client
+            .api_get(&format!("dashboards/id/{dashboard_id}/versions"))
             .await
-            .map_err(|e| match e.kind {
-                crate::error::GrafanaErrorKind::ApiError if e.message.contains("404") => {
-                    GrafanaError::dashboard_not_found(format!("Dashboard '{}' not found", uid))
-                }
-                _ => e,
-            })
     }
 
-    /// Create or update a dashboard.
-    pub async fn create(&self, req: CreateDashboardRequest) -> GrafanaResult<serde_json::Value> {
-        self.client.api_post("/dashboards/db", &req).await
-    }
-
-    /// Update a dashboard (same endpoint as create with overwrite).
-    pub async fn update(&self, req: CreateDashboardRequest) -> GrafanaResult<serde_json::Value> {
-        let mut r = req;
-        r.overwrite = Some(true);
-        self.client.api_post("/dashboards/db", &r).await
-    }
-
-    /// Delete a dashboard by UID.
-    pub async fn delete(&self, uid: &str) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_delete(&format!("/dashboards/uid/{}", uid))
+    /// Get a specific dashboard version.  GET /api/dashboards/id/:id/versions/:version
+    pub async fn get_version(
+        client: &GrafanaClient,
+        dashboard_id: u64,
+        version: u64,
+    ) -> GrafanaResult<DashboardVersion> {
+        client
+            .api_get(&format!(
+                "dashboards/id/{dashboard_id}/versions/{version}"
+            ))
             .await
     }
 
-    /// Get version history for a dashboard.
-    pub async fn get_versions(&self, dashboard_id: i64) -> GrafanaResult<Vec<DashboardVersion>> {
-        self.client
-            .api_get(&format!("/dashboards/id/{}/versions", dashboard_id))
-            .await
-    }
-
-    /// Get a specific version of a dashboard.
-    pub async fn get_version(&self, dashboard_id: i64, version: i64) -> GrafanaResult<DashboardVersion> {
-        self.client
-            .api_get(&format!("/dashboards/id/{}/versions/{}", dashboard_id, version))
-            .await
-    }
-
-    /// Restore a dashboard to a previous version.
-    pub async fn restore_version(&self, dashboard_id: i64, version: i64) -> GrafanaResult<serde_json::Value> {
+    /// Restore a dashboard to a previous version.  POST /api/dashboards/id/:id/restore
+    pub async fn restore_version(
+        client: &GrafanaClient,
+        dashboard_id: u64,
+        version: u64,
+    ) -> GrafanaResult<serde_json::Value> {
         let body = serde_json::json!({ "version": version });
-        self.client
-            .api_post(&format!("/dashboards/id/{}/restore", dashboard_id), &body)
+        client
+            .api_post(&format!("dashboards/id/{dashboard_id}/restore"), &body)
             .await
     }
 
-    /// Get permissions for a dashboard.
-    pub async fn get_permissions(&self, dashboard_id: i64) -> GrafanaResult<Vec<DashboardPermission>> {
-        self.client
-            .api_get(&format!("/dashboards/id/{}/permissions", dashboard_id))
+    /// Get dashboard permissions.  GET /api/dashboards/uid/:uid/permissions
+    pub async fn get_permissions(
+        client: &GrafanaClient,
+        dashboard_uid: &str,
+    ) -> GrafanaResult<serde_json::Value> {
+        client
+            .api_get(&format!("dashboards/uid/{dashboard_uid}/permissions"))
             .await
     }
 
-    /// Update permissions for a dashboard.
+    /// Update dashboard permissions.  POST /api/dashboards/uid/:uid/permissions
     pub async fn update_permissions(
-        &self,
-        dashboard_id: i64,
-        permissions: Vec<DashboardPermission>,
+        client: &GrafanaClient,
+        dashboard_uid: &str,
+        permissions: &serde_json::Value,
     ) -> GrafanaResult<serde_json::Value> {
-        let body = serde_json::json!({ "items": permissions });
-        self.client
-            .api_post(&format!("/dashboards/id/{}/permissions", dashboard_id), &body)
+        client
+            .api_post(
+                &format!("dashboards/uid/{dashboard_uid}/permissions"),
+                permissions,
+            )
             .await
     }
 
-    /// Star a dashboard for the current user.
-    pub async fn star(&self, dashboard_id: i64) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_post(&format!("/user/stars/dashboard/{}", dashboard_id), &serde_json::json!({}))
-            .await
-    }
-
-    /// Unstar a dashboard for the current user.
-    pub async fn unstar(&self, dashboard_id: i64) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_delete(&format!("/user/stars/dashboard/{}", dashboard_id))
-            .await
-    }
-
-    /// Get the home dashboard.
-    pub async fn get_home(&self) -> GrafanaResult<DashboardDetail> {
-        self.client.api_get("/dashboards/home").await
-    }
-
-    /// Set the home dashboard for the org.
-    pub async fn set_home(&self, dashboard_id: i64) -> GrafanaResult<serde_json::Value> {
-        let body = serde_json::json!({ "homeDashboardId": dashboard_id });
-        self.client.api_put("/org/preferences", &body).await
-    }
-
-    /// Import a dashboard from JSON.
-    pub async fn import(&self, dashboard_json: serde_json::Value) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_post("/dashboards/import", &dashboard_json)
-            .await
-    }
-
-    /// Export a dashboard by UID (returns full JSON model).
-    pub async fn export(&self, uid: &str) -> GrafanaResult<serde_json::Value> {
-        let detail: DashboardDetail = self.get_by_uid(uid).await?;
-        Ok(detail.dashboard)
-    }
-
-    /// Get all tags used by dashboards.
-    pub async fn get_tags(&self) -> GrafanaResult<Vec<serde_json::Value>> {
-        self.client.api_get("/dashboards/tags").await
-    }
-
-    /// Calculate diff between two dashboard versions.
+    /// Calculate diff between two dashboard versions.  POST /api/dashboards/calculate-diff
     pub async fn calculate_diff(
-        &self,
-        base_dashboard_id: i64,
-        base_version: i64,
-        new_dashboard_id: i64,
-        new_version: i64,
-        diff_type: Option<String>,
+        client: &GrafanaClient,
+        base: &serde_json::Value,
+        new: &serde_json::Value,
     ) -> GrafanaResult<serde_json::Value> {
-        let body = serde_json::json!({
-            "base": { "dashboardId": base_dashboard_id, "version": base_version },
-            "new": { "dashboardId": new_dashboard_id, "version": new_version },
-            "diffType": diff_type.unwrap_or_else(|| "json".to_string())
-        });
-        self.client.api_post("/dashboards/calculate-diff", &body).await
+        let body = serde_json::json!({ "base": base, "new": new, "diffType": "json" });
+        client.api_post("dashboards/calculate-diff", &body).await
+    }
+
+    /// Get all dashboard tags.  GET /api/dashboards/tags
+    pub async fn get_tags(
+        client: &GrafanaClient,
+    ) -> GrafanaResult<Vec<(String, u64)>> {
+        #[derive(serde::Deserialize)]
+        struct TagItem {
+            term: String,
+            count: u64,
+        }
+        let items: Vec<TagItem> = client.api_get("dashboards/tags").await?;
+        Ok(items.into_iter().map(|t| (t.term, t.count)).collect())
     }
 }

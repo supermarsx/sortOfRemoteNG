@@ -1,71 +1,79 @@
-//! Folder management for Grafana.
+// ── sorng-grafana/src/folders.rs ─────────────────────────────────────────────
+//! Folder management via Grafana REST API.
 
 use crate::client::GrafanaClient;
-use crate::error::{GrafanaError, GrafanaResult};
+use crate::error::GrafanaResult;
 use crate::types::*;
 
-pub struct FolderManager<'a> {
-    client: &'a GrafanaClient,
-}
+pub struct FolderManager;
 
-impl<'a> FolderManager<'a> {
-    pub fn new(client: &'a GrafanaClient) -> Self {
-        Self { client }
+impl FolderManager {
+    /// List all folders.  GET /api/folders
+    pub async fn list(client: &GrafanaClient) -> GrafanaResult<Vec<Folder>> {
+        client.api_get("folders").await
     }
 
-    /// List all folders.
-    pub async fn list(&self) -> GrafanaResult<Vec<GrafanaFolder>> {
-        self.client.api_get("/folders").await
-    }
-
-    /// Get a folder by UID.
-    pub async fn get_by_uid(&self, uid: &str) -> GrafanaResult<GrafanaFolder> {
-        self.client
-            .api_get(&format!("/folders/{}", uid))
-            .await
-            .map_err(|e| match e.kind {
-                crate::error::GrafanaErrorKind::ApiError if e.message.contains("404") => {
-                    GrafanaError::folder_not_found(format!("Folder '{}' not found", uid))
-                }
-                _ => e,
-            })
-    }
-
-    /// Create a new folder.
-    pub async fn create(&self, req: CreateFolderRequest) -> GrafanaResult<GrafanaFolder> {
-        self.client.api_post("/folders", &req).await
-    }
-
-    /// Update a folder by UID.
-    pub async fn update(&self, uid: &str, req: UpdateFolderRequest) -> GrafanaResult<GrafanaFolder> {
-        self.client
-            .api_put(&format!("/folders/{}", uid), &req)
-            .await
-    }
-
-    /// Delete a folder by UID.
-    pub async fn delete(&self, uid: &str) -> GrafanaResult<serde_json::Value> {
-        self.client
-            .api_delete(&format!("/folders/{}", uid))
-            .await
-    }
-
-    /// Get permissions for a folder.
-    pub async fn get_permissions(&self, uid: &str) -> GrafanaResult<Vec<FolderPermission>> {
-        self.client
-            .api_get(&format!("/folders/{}/permissions", uid))
-            .await
-    }
-
-    /// Update permissions for a folder.
-    pub async fn update_permissions(
-        &self,
+    /// Get folder by UID.  GET /api/folders/:uid
+    pub async fn get_by_uid(
+        client: &GrafanaClient,
         uid: &str,
-        permissions: Vec<FolderPermission>,
+    ) -> GrafanaResult<Folder> {
+        client.api_get(&format!("folders/{uid}")).await
+    }
+
+    /// Create a folder.  POST /api/folders
+    pub async fn create(
+        client: &GrafanaClient,
+        uid: Option<&str>,
+        title: &str,
+    ) -> GrafanaResult<Folder> {
+        let mut body = serde_json::json!({ "title": title });
+        if let Some(u) = uid {
+            body["uid"] = serde_json::Value::String(u.to_string());
+        }
+        client.api_post("folders", &body).await
+    }
+
+    /// Update a folder.  PUT /api/folders/:uid
+    pub async fn update(
+        client: &GrafanaClient,
+        uid: &str,
+        title: &str,
+        version: Option<u64>,
+    ) -> GrafanaResult<Folder> {
+        let mut body = serde_json::json!({ "title": title });
+        if let Some(v) = version {
+            body["version"] = serde_json::json!(v);
+        }
+        client.api_put(&format!("folders/{uid}"), &body).await
+    }
+
+    /// Delete folder by UID.  DELETE /api/folders/:uid
+    pub async fn delete_by_uid(
+        client: &GrafanaClient,
+        uid: &str,
     ) -> GrafanaResult<serde_json::Value> {
-        let body = serde_json::json!({ "items": permissions });
-        self.client
-            .api_post(&format!("/folders/{}/permissions", uid), &body)
+        client.api_delete(&format!("folders/{uid}")).await
+    }
+
+    /// Get folder permissions.  GET /api/folders/:uid/permissions
+    pub async fn get_permissions(
+        client: &GrafanaClient,
+        uid: &str,
+    ) -> GrafanaResult<serde_json::Value> {
+        client
+            .api_get(&format!("folders/{uid}/permissions"))
+            .await
+    }
+
+    /// Update folder permissions.  POST /api/folders/:uid/permissions
+    pub async fn update_permissions(
+        client: &GrafanaClient,
+        uid: &str,
+        permissions: &serde_json::Value,
+    ) -> GrafanaResult<serde_json::Value> {
+        client
+            .api_post(&format!("folders/{uid}/permissions"), permissions)
             .await
     }
 }

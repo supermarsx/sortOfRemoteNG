@@ -1,3 +1,4 @@
+// ── sorng-grafana/src/error.rs ───────────────────────────────────────────────
 //! Crate-local error types for Grafana operations.
 
 use std::fmt;
@@ -9,7 +10,6 @@ pub enum GrafanaErrorKind {
     AlreadyConnected,
     ConnectionFailed,
     AuthenticationFailed,
-    ApiError,
     DashboardNotFound,
     DatasourceNotFound,
     FolderNotFound,
@@ -17,10 +17,15 @@ pub enum GrafanaErrorKind {
     UserNotFound,
     TeamNotFound,
     AlertNotFound,
-    PluginNotFound,
+    AnnotationNotFound,
+    PlaylistNotFound,
+    SnapshotNotFound,
+    PanelNotFound,
     PermissionDenied,
-    ConflictError,
-    ValidationError,
+    Conflict,
+    InvalidRequest,
+    ApiError,
+    HttpError,
     ParseError,
     Timeout,
     InternalError,
@@ -44,80 +49,68 @@ impl GrafanaError {
     pub fn new(kind: GrafanaErrorKind, msg: impl Into<String>) -> Self {
         Self { kind, message: msg.into() }
     }
-    pub fn not_connected() -> Self {
-        Self::new(GrafanaErrorKind::NotConnected, "Not connected to Grafana")
+    pub fn not_connected(msg: impl Into<String>) -> Self {
+        Self::new(GrafanaErrorKind::NotConnected, msg)
     }
-    pub fn already_connected() -> Self {
-        Self::new(GrafanaErrorKind::AlreadyConnected, "Already connected to Grafana")
-    }
-    pub fn connection_failed(msg: impl Into<String>) -> Self {
+    pub fn connection(msg: impl Into<String>) -> Self {
         Self::new(GrafanaErrorKind::ConnectionFailed, msg)
     }
-    pub fn auth_failed(msg: impl Into<String>) -> Self {
+    pub fn auth(msg: impl Into<String>) -> Self {
         Self::new(GrafanaErrorKind::AuthenticationFailed, msg)
-    }
-    pub fn api_error(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::ApiError, msg)
-    }
-    pub fn dashboard_not_found(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::DashboardNotFound, msg)
-    }
-    pub fn datasource_not_found(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::DatasourceNotFound, msg)
-    }
-    pub fn folder_not_found(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::FolderNotFound, msg)
-    }
-    pub fn org_not_found(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::OrgNotFound, msg)
-    }
-    pub fn user_not_found(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::UserNotFound, msg)
-    }
-    pub fn team_not_found(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::TeamNotFound, msg)
-    }
-    pub fn alert_not_found(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::AlertNotFound, msg)
-    }
-    pub fn plugin_not_found(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::PluginNotFound, msg)
     }
     pub fn permission_denied(msg: impl Into<String>) -> Self {
         Self::new(GrafanaErrorKind::PermissionDenied, msg)
     }
     pub fn conflict(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::ConflictError, msg)
+        Self::new(GrafanaErrorKind::Conflict, msg)
     }
-    pub fn validation(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::ValidationError, msg)
+    pub fn api(msg: impl Into<String>) -> Self {
+        Self::new(GrafanaErrorKind::ApiError, msg)
     }
-    pub fn parse_error(msg: impl Into<String>) -> Self {
+    pub fn http(msg: impl Into<String>) -> Self {
+        Self::new(GrafanaErrorKind::HttpError, msg)
+    }
+    pub fn parse(msg: impl Into<String>) -> Self {
         Self::new(GrafanaErrorKind::ParseError, msg)
     }
-    pub fn timeout(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::Timeout, msg)
+    pub fn invalid_request(msg: impl Into<String>) -> Self {
+        Self::new(GrafanaErrorKind::InvalidRequest, msg)
     }
-    pub fn internal(msg: impl Into<String>) -> Self {
-        Self::new(GrafanaErrorKind::InternalError, msg)
+    pub fn not_found(kind: GrafanaErrorKind, name: &str) -> Self {
+        Self::new(kind, format!("Not found: {name}"))
     }
-}
-
-impl From<reqwest::Error> for GrafanaError {
-    fn from(e: reqwest::Error) -> Self {
-        if e.is_timeout() {
-            Self::timeout(e.to_string())
-        } else if e.is_connect() {
-            Self::connection_failed(e.to_string())
-        } else {
-            Self::api_error(e.to_string())
-        }
+    pub fn dashboard_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::DashboardNotFound, name)
     }
-}
-
-impl From<serde_json::Error> for GrafanaError {
-    fn from(e: serde_json::Error) -> Self {
-        Self::parse_error(e.to_string())
+    pub fn datasource_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::DatasourceNotFound, name)
+    }
+    pub fn folder_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::FolderNotFound, name)
+    }
+    pub fn org_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::OrgNotFound, name)
+    }
+    pub fn user_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::UserNotFound, name)
+    }
+    pub fn team_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::TeamNotFound, name)
+    }
+    pub fn alert_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::AlertNotFound, name)
+    }
+    pub fn annotation_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::AnnotationNotFound, name)
+    }
+    pub fn playlist_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::PlaylistNotFound, name)
+    }
+    pub fn snapshot_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::SnapshotNotFound, name)
+    }
+    pub fn panel_not_found(name: &str) -> Self {
+        Self::not_found(GrafanaErrorKind::PanelNotFound, name)
     }
 }
 

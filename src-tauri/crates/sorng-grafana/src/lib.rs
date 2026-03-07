@@ -1,16 +1,18 @@
-// ── sorng-grafana – Grafana observability platform management ───────────────
+// ── sorng-grafana – Grafana dashboard/alerting platform REST API client ──────
+
 pub mod types;
 pub mod error;
 pub mod client;
 pub mod dashboards;
 pub mod datasources;
 pub mod folders;
-pub mod organizations;
+pub mod orgs;
 pub mod users;
 pub mod teams;
-pub mod alerting;
+pub mod alerts;
 pub mod annotations;
-pub mod plugins;
-pub mod preferences;
+pub mod playlists;
+pub mod snapshots;
+pub mod panels;
 pub mod service;
 pub mod commands;
