@@ -1,0 +1,19 @@
+[package]
+name = "sorng-cron"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Cron, at, and anacron job management for SortOfRemoteNG — crontab editing per user, system cron.d management, at/batch job scheduling, anacron configuration, cron expression validation/preview, environment variables, and job execution history."
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tauri = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
