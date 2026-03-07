@@ -17,6 +17,8 @@ export interface ModalProps {
   panelClassName?: string;
   contentClassName?: string;
   dataTestId?: string;
+  /** Size hint (mapped to max-width). */
+  size?: string;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -29,6 +31,7 @@ export const Modal: React.FC<ModalProps> = ({
   panelClassName,
   contentClassName,
   dataTestId,
+  size: _size,
 }) => {
   useEffect(() => {
     if (!isOpen || !onClose || !closeOnEscape) return;
@@ -77,13 +80,14 @@ export const Modal: React.FC<ModalProps> = ({
   );
 };
 
-interface ModalHeaderProps {
-  title: React.ReactNode;
+export interface ModalHeaderProps {
+  title?: React.ReactNode;
   onClose?: () => void;
   className?: string;
   titleClassName?: string;
   actions?: React.ReactNode;
   showCloseButton?: boolean;
+  children?: React.ReactNode;
 }
 
 export const ModalHeader: React.FC<ModalHeaderProps> = ({

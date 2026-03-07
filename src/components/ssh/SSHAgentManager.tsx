@@ -288,7 +288,7 @@ const KeysTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (mgr.keys.length === 0) {
     return (
       <EmptyState
-        icon={<Key className="w-8 h-8" />}
+        icon={Key}
         title={t("sshAgent.keys.empty", "No Keys Loaded")}
         description={t("sshAgent.keys.emptyDesc", "The agent has no keys loaded. Add keys or connect to the system agent.")}
       />
@@ -464,7 +464,7 @@ const ForwardingTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
   if (mgr.forwardingSessions.length === 0) {
     return (
       <EmptyState
-        icon={<ArrowRightLeft className="w-8 h-8" />}
+        icon={ArrowRightLeft}
         title={t("sshAgent.forwarding.empty", "No Active Forwarding")}
         description={t("sshAgent.forwarding.emptyDesc", "Agent forwarding sessions will appear here when active SSH connections use forwarding.")}
       />
@@ -709,7 +709,7 @@ const AuditTab: React.FC<{ mgr: Mgr }> = ({ mgr }) => {
 
       {mgr.auditLog.length === 0 ? (
         <EmptyState
-          icon={<FileText className="w-8 h-8" />}
+          icon={FileText}
           title={t("sshAgent.audit.empty", "No Audit Entries")}
           description={t("sshAgent.audit.emptyDesc", "Audit entries will appear here as agent operations occur.")}
         />
