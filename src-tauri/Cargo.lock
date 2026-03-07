@@ -205,6 +205,7 @@ dependencies = [
  "sorng-bootloader",
  "sorng-budibase",
  "sorng-caddy",
+ "sorng-cicd",
  "sorng-clamav",
  "sorng-cloud",
  "sorng-collaboration",
@@ -271,6 +272,7 @@ dependencies = [
  "sorng-opendkim",
  "sorng-openvpn",
  "sorng-opkssh",
+ "sorng-oracle-cloud",
  "sorng-os-detect",
  "sorng-osticket",
  "sorng-p2p",
@@ -9416,6 +9418,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sorng-cicd"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
 name = "sorng-clamav"
 version = "0.1.0"
 dependencies = [
@@ -10534,6 +10550,20 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "log 0.4.29",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tokio 1.48.0",
+ "uuid",
+]
+
+[[package]]
+name = "sorng-oracle-cloud"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "log 0.4.29",
+ "reqwest 0.11.27",
  "serde",
  "serde_json",
  "tauri",

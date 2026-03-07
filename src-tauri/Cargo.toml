@@ -148,6 +148,8 @@ members = [
   "crates/sorng-port-knock",
   "crates/sorng-about",
   "crates/sorng-mac",
+  "crates/sorng-cicd",
+  "crates/sorng-oracle-cloud",
 ]
 
 [workspace.dependencies]
@@ -334,6 +336,8 @@ sorng-php = { path = "crates/sorng-php" }
 sorng-port-knock = { path = "crates/sorng-port-knock" }
 sorng-about = { path = "crates/sorng-about" }
 sorng-mac = { path = "crates/sorng-mac" }
+sorng-cicd = { path = "crates/sorng-cicd" }
+sorng-oracle-cloud = { path = "crates/sorng-oracle-cloud" }
 
 # ── Shared / app-level dependencies ──────────────────────────────────
 serde_json = "1.0"
