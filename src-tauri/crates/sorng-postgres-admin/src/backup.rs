@@ -1,173 +1,173 @@
-// ── sorng-postgres-admin – backup management ─────────────────────────────────
-//! pg_dump, pg_restore, pg_basebackup, and PITR operations.
+// ── sorng-postgres-admin/src/backup.rs ────────────────────────────────────────
+//! PostgreSQL backup and restore via pg_dump, pg_dumpall, pg_basebackup, pg_restore.
 
-use crate::client::{shell_escape, PgAdminClient};
-use crate::error::PgAdminResult;
-use crate::types::*;
+use crate::client::{shell_escape, PgClient};
+use crate::error::PgResult;
+use crate::types::{PgBackupConfig, PgBackupResult};
 
 pub struct BackupManager;
 
 impl BackupManager {
-    /// Create a pg_dump backup.
-    pub async fn create_dump(client: &PgAdminClient, req: &PgBackupRequest) -> PgAdminResult<BackupResult> {
-        let fmt_flag = match req.format {
-            PgDumpFormat::Custom => "-Fc",
-            PgDumpFormat::Directory => "-Fd",
-            PgDumpFormat::Tar => "-Ft",
-            PgDumpFormat::Plain => "-Fp",
-        };
+    /// Run pg_dump for a single database.
+    pub async fn pg_dump(client: &PgClient, config: &PgBackupConfig) -> PgResult<PgBackupResult> {
+        let db = config.databases.first()
+            .map(|s| s.as_str())
+            .unwrap_or(client.config.pg_database.as_deref().unwrap_or("postgres"));
 
-        let mut cmd = format!(
-            "pg_dump -U {} -d {} {} -f {}",
-            client.pg_user(),
-            shell_escape(&req.database),
-            fmt_flag,
-            shell_escape(&req.output_path)
-        );
+        let mut cmd = format!("{}{}", client.pgpassword_prefix(), client.pg_dump_bin());
+        cmd.push_str(&format!(" {}", client.pg_dump_conn_args(db)));
 
-        if let Some(ref schema) = req.schema {
-            cmd.push_str(&format!(" -n {}", shell_escape(schema)));
+        match config.format.as_str() {
+            "custom" => cmd.push_str(" -Fc"),
+            "directory" => cmd.push_str(" -Fd"),
+            "tar" => cmd.push_str(" -Ft"),
+            _ => cmd.push_str(" -Fp"),
         }
-        if let Some(ref tables) = req.tables {
-            for t in tables {
-                cmd.push_str(&format!(" -t {}", shell_escape(t)));
-            }
+
+        if let Some(level) = config.compress_level {
+            cmd.push_str(&format!(" -Z {}", level));
         }
-        if let Some(compress) = req.compress {
-            cmd.push_str(&format!(" -Z {}", compress));
-        }
-        if let Some(jobs) = req.jobs {
+        if let Some(jobs) = config.jobs {
             cmd.push_str(&format!(" -j {}", jobs));
         }
-        if let Some(ref opts) = req.custom_options {
-            for opt in opts {
-                cmd.push_str(&format!(" {}", opt));
+        if config.verbose {
+            cmd.push_str(" -v");
+        }
+        cmd.push_str(&format!(" -f {}", shell_escape(&config.output_path)));
+
+        let start = std::time::Instant::now();
+        client.exec_ssh(&cmd).await?;
+        let duration = start.elapsed().as_secs_f64();
+
+        let size = Self::get_backup_size(client, &config.output_path).await.unwrap_or(0);
+
+        Ok(PgBackupResult {
+            path: config.output_path.clone(),
+            size_bytes: size,
+            duration_secs: duration,
+            databases: vec![db.to_string()],
+            format: config.format.clone(),
+        })
+    }
+
+    /// Restore a database from a backup file.
+    pub async fn pg_restore(
+        client: &PgClient,
+        db: &str,
+        path: &str,
+        format: Option<&str>,
+    ) -> PgResult<()> {
+        let mut cmd = format!("{}{}", client.pgpassword_prefix(), client.pg_restore_bin());
+        cmd.push_str(&format!(" -U {}", shell_escape(
+            client.config.pg_user.as_deref().unwrap_or("postgres")
+        )));
+        cmd.push_str(&format!(" -h {}", shell_escape(
+            client.config.pg_host.as_deref().unwrap_or("127.0.0.1")
+        )));
+        cmd.push_str(&format!(" -p {}", client.config.pg_port.unwrap_or(5432)));
+        cmd.push_str(&format!(" -d {}", shell_escape(db)));
+
+        if let Some(f) = format {
+            match f {
+                "custom" => cmd.push_str(" -Fc"),
+                "directory" => cmd.push_str(" -Fd"),
+                "tar" => cmd.push_str(" -Ft"),
+                _ => {}
             }
         }
 
-        let out = client.exec_ssh(&cmd).await?;
-        let size = client.exec_ssh(&format!(
-            "stat -c%s {} 2>/dev/null || echo 0",
-            shell_escape(&req.output_path)
-        )).await.ok().and_then(|o| o.stdout.trim().parse().ok());
+        cmd.push_str(&format!(" {}", shell_escape(path)));
+        client.exec_ssh(&cmd).await?;
+        Ok(())
+    }
 
-        Ok(BackupResult {
-            success: out.exit_code == 0,
-            output_path: req.output_path.clone(),
+    /// Dump all databases and globals using pg_dumpall.
+    pub async fn pg_dumpall(client: &PgClient, path: &str) -> PgResult<PgBackupResult> {
+        let mut cmd = format!("{}pg_dumpall", client.pgpassword_prefix());
+        cmd.push_str(&format!(" -U {}", shell_escape(
+            client.config.pg_user.as_deref().unwrap_or("postgres")
+        )));
+        cmd.push_str(&format!(" -h {}", shell_escape(
+            client.config.pg_host.as_deref().unwrap_or("127.0.0.1")
+        )));
+        cmd.push_str(&format!(" -p {}", client.config.pg_port.unwrap_or(5432)));
+        cmd.push_str(&format!(" -f {}", shell_escape(path)));
+
+        let start = std::time::Instant::now();
+        client.exec_ssh(&cmd).await?;
+        let duration = start.elapsed().as_secs_f64();
+        let size = Self::get_backup_size(client, path).await.unwrap_or(0);
+
+        Ok(PgBackupResult {
+            path: path.to_string(),
             size_bytes: size,
-            duration_secs: None,
-            message: if out.exit_code == 0 {
-                "Backup completed successfully".to_string()
-            } else {
-                format!("Backup failed: {}", out.stderr)
-            },
+            duration_secs: duration,
+            databases: vec!["__all__".to_string()],
+            format: "plain".to_string(),
         })
     }
 
-    /// Restore from a pg_dump backup.
-    pub async fn restore_dump(client: &PgAdminClient, req: &PgRestoreRequest) -> PgAdminResult<BackupResult> {
-        let is_plain = matches!(req.format, PgDumpFormat::Plain);
+    /// Run pg_basebackup for a physical backup.
+    pub async fn pg_basebackup(
+        client: &PgClient,
+        path: &str,
+        format: Option<&str>,
+        checkpoint: Option<&str>,
+    ) -> PgResult<PgBackupResult> {
+        let mut cmd = format!("{}{}", client.pgpassword_prefix(), client.pg_basebackup_bin());
+        cmd.push_str(&format!(" -U {}", shell_escape(
+            client.config.pg_user.as_deref().unwrap_or("postgres")
+        )));
+        cmd.push_str(&format!(" -h {}", shell_escape(
+            client.config.pg_host.as_deref().unwrap_or("127.0.0.1")
+        )));
+        cmd.push_str(&format!(" -p {}", client.config.pg_port.unwrap_or(5432)));
+        cmd.push_str(&format!(" -D {}", shell_escape(path)));
 
-        let cmd = if is_plain {
-            format!(
-                "psql -U {} -d {} -f {}",
-                client.pg_user(),
-                shell_escape(&req.database),
-                shell_escape(&req.input_path),
-            )
-        } else {
-            let mut c = format!(
-                "pg_restore -U {} -d {}",
-                client.pg_user(),
-                shell_escape(&req.database),
-            );
-            if req.clean.unwrap_or(false) { c.push_str(" --clean"); }
-            if req.create.unwrap_or(false) { c.push_str(" --create"); }
-            if req.no_owner.unwrap_or(false) { c.push_str(" --no-owner"); }
-            if req.no_privileges.unwrap_or(false) { c.push_str(" --no-privileges"); }
-            if let Some(jobs) = req.jobs { c.push_str(&format!(" -j {}", jobs)); }
-            c.push_str(&format!(" {}", shell_escape(&req.input_path)));
-            c
-        };
+        match format {
+            Some("tar") => cmd.push_str(" -Ft"),
+            _ => cmd.push_str(" -Fp"),
+        }
 
-        let out = client.exec_ssh(&cmd).await?;
-        Ok(BackupResult {
-            success: out.exit_code == 0,
-            output_path: req.input_path.clone(),
-            size_bytes: None,
-            duration_secs: None,
-            message: if out.exit_code == 0 {
-                "Restore completed successfully".to_string()
-            } else {
-                format!("Restore failed: {}", out.stderr)
-            },
-        })
-    }
+        match checkpoint {
+            Some("fast") => cmd.push_str(" --checkpoint=fast"),
+            _ => cmd.push_str(" --checkpoint=spread"),
+        }
 
-    /// Create a pg_basebackup.
-    pub async fn create_basebackup(client: &PgAdminClient, req: &PgBasebackupRequest) -> PgAdminResult<BackupResult> {
-        let mut cmd = format!(
-            "pg_basebackup -U {} -D {}",
-            client.pg_user(),
-            shell_escape(&req.output_dir)
-        );
+        cmd.push_str(" -Xs"); // stream WAL during backup
 
-        if let Some(ref fmt) = req.format { cmd.push_str(&format!(" -F{}", fmt)); }
-        if let Some(ref cp) = req.checkpoint { cmd.push_str(&format!(" --checkpoint={}", cp)); }
-        if let Some(ref wal) = req.wal_method { cmd.push_str(&format!(" --wal-method={}", wal)); }
-        if let Some(ref comp) = req.compress { cmd.push_str(&format!(" -Z {}", comp)); }
-        if let Some(ref label) = req.label { cmd.push_str(&format!(" -l {}", shell_escape(label))); }
-        if req.progress.unwrap_or(false) { cmd.push_str(" -P"); }
+        let start = std::time::Instant::now();
+        client.exec_ssh(&cmd).await?;
+        let duration = start.elapsed().as_secs_f64();
+        let size = Self::get_backup_size(client, path).await.unwrap_or(0);
 
-        let out = client.exec_ssh(&cmd).await?;
-        Ok(BackupResult {
-            success: out.exit_code == 0,
-            output_path: req.output_dir.clone(),
-            size_bytes: None,
-            duration_secs: None,
-            message: if out.exit_code == 0 {
-                "Base backup completed successfully".to_string()
-            } else {
-                format!("Base backup failed: {}", out.stderr)
-            },
+        Ok(PgBackupResult {
+            path: path.to_string(),
+            size_bytes: size,
+            duration_secs: duration,
+            databases: vec!["__basebackup__".to_string()],
+            format: format.unwrap_or("plain").to_string(),
         })
     }
 
     /// List backup files in a directory.
-    pub async fn list_backup_files(client: &PgAdminClient, dir: &str) -> PgAdminResult<Vec<String>> {
-        let out = client.exec_ssh(&format!(
-            "ls -1 {} 2>/dev/null || echo ''",
-            shell_escape(dir)
-        )).await?;
-        Ok(out.stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    pub async fn list_backup_files(client: &PgClient, dir: &str) -> PgResult<Vec<String>> {
+        let cmd = format!("ls -1 {} 2>/dev/null || true", shell_escape(dir));
+        let out = client.exec_ssh(&cmd).await?;
+        Ok(out.stdout.lines().filter(|l| !l.is_empty()).map(|l| l.to_string()).collect())
     }
 
-    /// Get PITR (Point-in-Time Recovery) information.
-    pub async fn get_pitr_info(client: &PgAdminClient) -> PgAdminResult<PitrInfo> {
-        let wal_level = client.exec_psql("SELECT setting FROM pg_settings WHERE name = 'wal_level';").await?;
-        let archive_mode = client.exec_psql("SELECT setting FROM pg_settings WHERE name = 'archive_mode';").await?;
-        let archive_cmd = client.exec_psql("SELECT setting FROM pg_settings WHERE name = 'archive_command';").await.ok();
-        let restore_cmd = client.exec_psql("SELECT setting FROM pg_settings WHERE name = 'restore_command';").await.ok();
-
-        Ok(PitrInfo {
-            wal_level: wal_level.trim().to_string(),
-            archive_mode: archive_mode.trim().to_string(),
-            archive_command: archive_cmd.map(|s| s.trim().to_string()),
-            restore_command: restore_cmd.map(|s| s.trim().to_string()),
-            recovery_target_time: None,
-            recovery_target_lsn: None,
-            recovery_target_name: None,
-            min_recovery_end_lsn: None,
-        })
+    /// Verify a backup file exists and is non-empty.
+    pub async fn verify_backup(client: &PgClient, path: &str) -> PgResult<bool> {
+        let cmd = format!("test -s {} && echo yes || echo no", shell_escape(path));
+        let out = client.exec_ssh(&cmd).await?;
+        Ok(out.stdout.trim() == "yes")
     }
 
-    /// Get WAL archive status.
-    pub async fn get_wal_archive_status(client: &PgAdminClient) -> PgAdminResult<String> {
-        let raw = client.exec_psql(
-            "SELECT archived_count, last_archived_wal, last_archived_time::text, \
-             failed_count, last_failed_wal, last_failed_time::text, stats_reset::text \
-             FROM pg_stat_archiver;"
-        ).await?;
-        Ok(raw.trim().to_string())
+    /// Get backup file or directory size in bytes.
+    pub async fn get_backup_size(client: &PgClient, path: &str) -> PgResult<u64> {
+        let cmd = format!("du -sb {} 2>/dev/null | cut -f1", shell_escape(path));
+        let out = client.exec_ssh(&cmd).await?;
+        Ok(out.stdout.trim().parse().unwrap_or(0))
     }
 }

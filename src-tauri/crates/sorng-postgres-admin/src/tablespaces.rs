@@ -1,106 +1,107 @@
-// ── sorng-postgres-admin – tablespace management ─────────────────────────────
-//! CRUD for PostgreSQL tablespaces.
+// ── sorng-postgres-admin/src/tablespaces.rs ───────────────────────────────────
+//! PostgreSQL tablespace management.
 
-use crate::client::PgAdminClient;
-use crate::error::{PgAdminError, PgAdminResult};
-use crate::types::*;
+use crate::client::PgClient;
+use crate::error::PgResult;
+use crate::types::PgTablespace;
 
 pub struct TablespaceManager;
 
 impl TablespaceManager {
     /// List all tablespaces.
-    pub async fn list(client: &PgAdminClient) -> PgAdminResult<Vec<PgTablespace>> {
-        let raw = client.exec_psql(
-            "SELECT t.spcname, pg_catalog.pg_get_userbyid(t.spcowner), \
-             pg_tablespace_location(t.oid), pg_tablespace_size(t.oid), \
-             t.spcacl::text, t.spcoptions::text \
-             FROM pg_tablespace t ORDER BY t.spcname;"
-        ).await?;
-
-        let mut tablespaces = Vec::new();
-        for line in raw.lines() {
-            let line = line.trim();
-            if line.is_empty() { continue; }
-            let c: Vec<&str> = line.splitn(6, '|').collect();
-            if c.len() < 6 { continue; }
-            tablespaces.push(PgTablespace {
-                spcname: c[0].trim().to_string(),
-                spcowner: c[1].trim().to_string(),
-                spclocation: c[2].trim().to_string(),
-                size_bytes: c[3].trim().parse().unwrap_or(0),
-                spcacl: non_empty(c[4]),
-                spcoptions: non_empty(c[5]).map(|s| {
-                    s.trim_start_matches('{').trim_end_matches('}')
-                        .split(',').map(|o| o.trim().to_string())
-                        .filter(|o| !o.is_empty()).collect()
-                }),
-            });
-        }
-        Ok(tablespaces)
-    }
-
-    /// Create a tablespace.
-    pub async fn create(client: &PgAdminClient, req: &CreateTablespaceRequest) -> PgAdminResult<PgTablespace> {
-        let mut sql = format!(
-            "CREATE TABLESPACE \"{}\" LOCATION '{}'",
-            req.name, req.location.replace('\'', "''")
-        );
-        if let Some(ref owner) = req.owner {
-            sql = format!(
-                "CREATE TABLESPACE \"{}\" OWNER \"{}\" LOCATION '{}'",
-                req.name, owner, req.location.replace('\'', "''")
-            );
-        }
-        if let Some(ref opts) = req.options {
-            if !opts.is_empty() {
-                sql.push_str(&format!(" WITH ({})", opts.join(", ")));
+    pub async fn list(client: &PgClient) -> PgResult<Vec<PgTablespace>> {
+        let sql = r#"
+            SELECT t.spcname, r.rolname,
+                   COALESCE(pg_tablespace_location(t.oid), ''),
+                   pg_tablespace_size(t.oid),
+                   COALESCE(array_to_string(t.spcoptions, ','), '')
+            FROM pg_tablespace t
+            JOIN pg_roles r ON r.oid = t.spcowner
+            ORDER BY t.spcname
+        "#;
+        let out = client.exec_sql(sql).await?;
+        let mut tbs = Vec::new();
+        for line in out.lines().filter(|l| !l.is_empty()) {
+            let cols: Vec<&str> = line.splitn(5, '|').collect();
+            if cols.len() >= 5 {
+                tbs.push(PgTablespace {
+                    name: cols[0].to_string(),
+                    owner: cols[1].to_string(),
+                    location: cols[2].to_string(),
+                    size_bytes: cols[3].trim().parse().unwrap_or(0),
+                    options: if cols[4].is_empty() { None } else { Some(cols[4].to_string()) },
+                });
             }
         }
-        sql.push(';');
+        Ok(tbs)
+    }
 
-        client.exec_psql(&sql).await?;
-        Self::list(client).await?
-            .into_iter()
-            .find(|t| t.spcname == req.name)
-            .ok_or_else(|| PgAdminError::tablespace_not_found(&req.name))
+    /// Get a single tablespace by name.
+    pub async fn get(client: &PgClient, name: &str) -> PgResult<PgTablespace> {
+        let tbs = Self::list(client).await?;
+        tbs.into_iter()
+            .find(|t| t.name == name)
+            .ok_or_else(|| crate::error::PgError::tablespace_not_found(name))
+    }
+
+    /// Create a new tablespace.
+    pub async fn create(
+        client: &PgClient,
+        name: &str,
+        location: &str,
+        owner: Option<&str>,
+    ) -> PgResult<()> {
+        let mut sql = format!("CREATE TABLESPACE \"{}\" LOCATION '{}'", name, location.replace('\'', "''"));
+        if let Some(o) = owner {
+            sql = format!("CREATE TABLESPACE \"{}\" OWNER \"{}\" LOCATION '{}'", name, o, location.replace('\'', "''"));
+        }
+        client.exec_sql(&sql).await?;
+        Ok(())
     }
 
     /// Drop a tablespace.
-    pub async fn drop(client: &PgAdminClient, name: &str) -> PgAdminResult<()> {
-        client.exec_psql(&format!("DROP TABLESPACE \"{}\";", name)).await?;
+    pub async fn drop(client: &PgClient, name: &str) -> PgResult<()> {
+        client.exec_sql(&format!("DROP TABLESPACE \"{}\"", name)).await?;
         Ok(())
     }
 
-    /// Get the size of a tablespace.
-    pub async fn get_size(client: &PgAdminClient, name: &str) -> PgAdminResult<i64> {
-        let raw = client.exec_psql(&format!(
-            "SELECT pg_tablespace_size('{}');",
-            name.replace('\'', "''")
-        )).await?;
-        raw.trim().parse().map_err(|_| PgAdminError::parse("Failed to parse tablespace size"))
-    }
-
-    /// Alter tablespace owner.
-    pub async fn alter_owner(client: &PgAdminClient, name: &str, new_owner: &str) -> PgAdminResult<()> {
-        client.exec_psql(&format!(
-            "ALTER TABLESPACE \"{}\" OWNER TO \"{}\";", name, new_owner
+    /// Rename a tablespace.
+    pub async fn rename(client: &PgClient, old_name: &str, new_name: &str) -> PgResult<()> {
+        client.exec_sql(&format!(
+            "ALTER TABLESPACE \"{}\" RENAME TO \"{}\"", old_name, new_name
         )).await?;
         Ok(())
     }
 
-    /// Get objects in a tablespace.
-    pub async fn get_objects_in(client: &PgAdminClient, name: &str) -> PgAdminResult<Vec<String>> {
-        let raw = client.exec_psql(&format!(
-            "SELECT c.relname FROM pg_class c \
-             JOIN pg_tablespace t ON c.reltablespace = t.oid \
-             WHERE t.spcname = '{}' ORDER BY c.relname;",
-            name.replace('\'', "''")
+    /// Change tablespace owner.
+    pub async fn alter_owner(client: &PgClient, name: &str, owner: &str) -> PgResult<()> {
+        client.exec_sql(&format!(
+            "ALTER TABLESPACE \"{}\" OWNER TO \"{}\"", name, owner
         )).await?;
-        Ok(raw.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        Ok(())
     }
-}
 
-fn non_empty(s: &str) -> Option<String> {
-    let s = s.trim();
-    if s.is_empty() { None } else { Some(s.to_string()) }
+    /// Get tablespace size in bytes.
+    pub async fn get_size(client: &PgClient, name: &str) -> PgResult<u64> {
+        let sql = format!(
+            "SELECT pg_tablespace_size('{}')::text",
+            name.replace('\'', "''")
+        );
+        let out = client.exec_sql(&sql).await?;
+        Ok(out.trim().parse().unwrap_or(0))
+    }
+
+    /// List objects (databases/tables) in a tablespace.
+    pub async fn list_objects(client: &PgClient, name: &str) -> PgResult<Vec<String>> {
+        let sql = format!(
+            r#"SELECT c.relname
+               FROM pg_class c
+               JOIN pg_tablespace t ON t.oid = c.reltablespace
+               WHERE t.spcname = '{}'
+               ORDER BY c.relname"#,
+            name.replace('\'', "''")
+        );
+        let out = client.exec_sql(&sql).await?;
+        Ok(out.lines().filter(|l| !l.is_empty()).map(|l| l.to_string()).collect())
+    }
 }

@@ -11,4 +11,3 @@ tauri = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-reqwest = { workspace = true }

@@ -1,139 +1,111 @@
-// ── sorng-postgres-admin – extension management ──────────────────────────────
-//! Install, uninstall, update, and query PostgreSQL extensions.
+// ── sorng-postgres-admin/src/extensions.rs ────────────────────────────────────
+//! PostgreSQL extension management – list, install, update, uninstall.
 
-use crate::client::PgAdminClient;
-use crate::error::{PgAdminError, PgAdminResult};
-use crate::types::*;
+use crate::client::PgClient;
+use crate::error::PgResult;
+use crate::types::PgExtension;
 
 pub struct ExtensionManager;
 
 impl ExtensionManager {
-    /// List installed extensions.
-    pub async fn list_installed(client: &PgAdminClient, db: &str) -> PgAdminResult<Vec<PgExtension>> {
-        let raw = client.exec_psql_db(db,
-            "SELECT e.extname, a.default_version, e.extversion, n.nspname, e.extrelocatable, \
-             a.comment, obj_description(e.oid, 'pg_extension') \
-             FROM pg_extension e \
-             JOIN pg_available_extensions a ON a.name = e.extname \
-             JOIN pg_namespace n ON n.oid = e.extnamespace \
-             ORDER BY e.extname;"
-        ).await?;
-
-        let mut exts = Vec::new();
-        for line in raw.lines() {
-            let line = line.trim();
-            if line.is_empty() { continue; }
-            let c: Vec<&str> = line.splitn(7, '|').collect();
-            if c.len() < 7 { continue; }
-            exts.push(PgExtension {
-                name: c[0].trim().to_string(),
-                default_version: non_empty(c[1]),
-                installed_version: non_empty(c[2]),
-                schema: non_empty(c[3]),
-                relocatable: c[4].trim() == "t",
-                description: non_empty(c[5]),
-                comment: non_empty(c[6]),
-            });
-        }
-        Ok(exts)
+    /// List all available extensions (from pg_available_extensions).
+    pub async fn list_available(client: &PgClient) -> PgResult<Vec<PgExtension>> {
+        let sql = r#"
+            SELECT name, default_version,
+                   COALESCE(installed_version, ''),
+                   '', false::text, COALESCE(comment, '')
+            FROM pg_available_extensions
+            ORDER BY name
+        "#;
+        let out = client.exec_sql(sql).await?;
+        parse_extensions(&out)
     }
 
-    /// List available extensions (installable).
-    pub async fn list_available(client: &PgAdminClient, db: &str) -> PgAdminResult<Vec<AvailableExtension>> {
-        let raw = client.exec_psql_db(db,
-            "SELECT name, default_version, installed_version, comment \
-             FROM pg_available_extensions ORDER BY name;"
-        ).await?;
-
-        let mut exts = Vec::new();
-        for line in raw.lines() {
-            let line = line.trim();
-            if line.is_empty() { continue; }
-            let c: Vec<&str> = line.splitn(4, '|').collect();
-            if c.len() < 4 { continue; }
-            exts.push(AvailableExtension {
-                name: c[0].trim().to_string(),
-                default_version: c[1].trim().to_string(),
-                installed_version: non_empty(c[2]),
-                comment: non_empty(c[3]),
-            });
-        }
-        Ok(exts)
+    /// List installed extensions in a specific database.
+    pub async fn list_installed(client: &PgClient, db: &str) -> PgResult<Vec<PgExtension>> {
+        let sql = r#"
+            SELECT e.extname, a.default_version,
+                   e.extversion,
+                   COALESCE(n.nspname, ''),
+                   e.extrelocatable::text,
+                   COALESCE(
+                     (SELECT description FROM pg_description d
+                      WHERE d.objoid = e.oid AND d.classoid = 'pg_extension'::regclass), '')
+            FROM pg_extension e
+            JOIN pg_available_extensions a ON a.name = e.extname
+            LEFT JOIN pg_namespace n ON n.oid = e.extnamespace
+            ORDER BY e.extname
+        "#;
+        let out = client.exec_sql_db(db, sql).await?;
+        parse_extensions(&out)
     }
 
-    /// Install (CREATE EXTENSION) an extension.
-    pub async fn install(client: &PgAdminClient, db: &str, req: &CreateExtensionRequest) -> PgAdminResult<PgExtension> {
-        let mut sql = format!("CREATE EXTENSION IF NOT EXISTS \"{}\"", req.name);
-        if let Some(ref schema) = req.schema {
-            sql.push_str(&format!(" SCHEMA \"{}\"", schema));
+    /// Install an extension in a database.
+    pub async fn install(
+        client: &PgClient,
+        db: &str,
+        name: &str,
+        schema: Option<&str>,
+    ) -> PgResult<()> {
+        let mut sql = format!("CREATE EXTENSION IF NOT EXISTS \"{}\"", name);
+        if let Some(s) = schema {
+            sql.push_str(&format!(" SCHEMA \"{}\"", s));
         }
-        if let Some(ref ver) = req.version {
-            sql.push_str(&format!(" VERSION '{}'", ver));
-        }
-        if req.cascade.unwrap_or(false) {
-            sql.push_str(" CASCADE");
-        }
-        sql.push(';');
-
-        client.exec_psql_db(db, &sql).await?;
-
-        Self::list_installed(client, db).await?
-            .into_iter()
-            .find(|e| e.name == req.name)
-            .ok_or_else(|| PgAdminError::extension_not_found(&req.name))
-    }
-
-    /// Uninstall (DROP EXTENSION) an extension.
-    pub async fn uninstall(client: &PgAdminClient, db: &str, name: &str, cascade: bool) -> PgAdminResult<()> {
-        let cascade_str = if cascade { " CASCADE" } else { "" };
-        client.exec_psql_db(db, &format!("DROP EXTENSION IF EXISTS \"{}\"{};", name, cascade_str)).await?;
+        client.exec_sql_db(db, &sql).await?;
         Ok(())
     }
 
-    /// Alter an extension (update version, change schema).
-    pub async fn alter(client: &PgAdminClient, db: &str, name: &str, req: &AlterExtensionRequest) -> PgAdminResult<PgExtension> {
-        if let Some(ref schema) = req.schema {
-            client.exec_psql_db(db, &format!("ALTER EXTENSION \"{}\" SET SCHEMA \"{}\";", name, schema)).await?;
-        }
-        if let Some(ref ver) = req.version {
-            client.exec_psql_db(db, &format!("ALTER EXTENSION \"{}\" UPDATE TO '{}';", name, ver)).await?;
-        }
-
-        Self::list_installed(client, db).await?
-            .into_iter()
-            .find(|e| e.name == name)
-            .ok_or_else(|| PgAdminError::extension_not_found(name))
+    /// Uninstall an extension from a database.
+    pub async fn uninstall(
+        client: &PgClient,
+        db: &str,
+        name: &str,
+        cascade: bool,
+    ) -> PgResult<()> {
+        let mut sql = format!("DROP EXTENSION IF EXISTS \"{}\"", name);
+        if cascade { sql.push_str(" CASCADE"); }
+        client.exec_sql_db(db, &sql).await?;
+        Ok(())
     }
 
-    /// Get the installed version of an extension.
-    pub async fn get_version(client: &PgAdminClient, db: &str, name: &str) -> PgAdminResult<String> {
-        let raw = client.exec_psql_db(db, &format!(
-            "SELECT extversion FROM pg_extension WHERE extname = '{}';",
-            name.replace('\'', "''")
-        )).await?;
-        let ver = raw.trim();
-        if ver.is_empty() {
-            return Err(PgAdminError::extension_not_found(name));
+    /// Update an extension to a specific version (or latest).
+    pub async fn update(
+        client: &PgClient,
+        db: &str,
+        name: &str,
+        version: Option<&str>,
+    ) -> PgResult<()> {
+        let mut sql = format!("ALTER EXTENSION \"{}\" UPDATE", name);
+        if let Some(v) = version {
+            sql.push_str(&format!(" TO '{}'", v.replace('\'', "''")));
         }
-        Ok(ver.to_string())
+        client.exec_sql_db(db, &sql).await?;
+        Ok(())
     }
 
-    /// Update an extension to a new version.
-    pub async fn update(client: &PgAdminClient, db: &str, name: &str, version: Option<&str>) -> PgAdminResult<PgExtension> {
-        let sql = match version {
-            Some(ver) => format!("ALTER EXTENSION \"{}\" UPDATE TO '{}';", name, ver),
-            None => format!("ALTER EXTENSION \"{}\" UPDATE;", name),
-        };
-        client.exec_psql_db(db, &sql).await?;
-
-        Self::list_installed(client, db).await?
-            .into_iter()
+    /// Get details of a specific extension in a database.
+    pub async fn get(client: &PgClient, db: &str, name: &str) -> PgResult<PgExtension> {
+        let installed = Self::list_installed(client, db).await?;
+        installed.into_iter()
             .find(|e| e.name == name)
-            .ok_or_else(|| PgAdminError::extension_not_found(name))
+            .ok_or_else(|| crate::error::PgError::extension_not_found(name))
     }
 }
 
-fn non_empty(s: &str) -> Option<String> {
-    let s = s.trim();
-    if s.is_empty() { None } else { Some(s.to_string()) }
+fn parse_extensions(output: &str) -> PgResult<Vec<PgExtension>> {
+    let mut exts = Vec::new();
+    for line in output.lines().filter(|l| !l.is_empty()) {
+        let cols: Vec<&str> = line.splitn(6, '|').collect();
+        if cols.len() >= 6 {
+            exts.push(PgExtension {
+                name: cols[0].to_string(),
+                default_version: if cols[1].is_empty() { None } else { Some(cols[1].to_string()) },
+                installed_version: if cols[2].is_empty() { None } else { Some(cols[2].to_string()) },
+                schema: if cols[3].is_empty() { None } else { Some(cols[3].to_string()) },
+                relocatable: cols[4] == "t",
+                comment: if cols[5].is_empty() { None } else { Some(cols[5].to_string()) },
+            });
+        }
+    }
+    Ok(exts)
 }
