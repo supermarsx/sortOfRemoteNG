@@ -213,6 +213,7 @@ export interface FileAdditional {
   size?: number;
   time?: FileTime;
   type_field?: string;
+  type?: string;
   perm?: FilePerm;
   owner?: FileOwner;
   real_path?: string;
