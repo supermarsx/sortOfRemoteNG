@@ -1,0 +1,19 @@
+[package]
+name = "sorng-kernel"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77.2"
+description = "Kernel module and sysctl management for SortOfRemoteNG — kernel module loading/unloading, module parameters, sysctl configuration, kernel feature detection, kernel compilation options, /proc and /sys exploration, power management, and security settings."
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tauri = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
