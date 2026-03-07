@@ -1,0 +1,19 @@
+// ── sorng-pfsense – pfSense/OPNsense firewall appliance management ──────────
+pub mod types;
+pub mod error;
+pub mod client;
+pub mod interfaces;
+pub mod firewall;
+pub mod nat;
+pub mod dhcp;
+pub mod dns;
+pub mod vpn;
+pub mod routing;
+pub mod certificates;
+pub mod users;
+pub mod diagnostics;
+pub mod packages;
+pub mod backup;
+pub mod status;
+pub mod service;
+pub mod commands;
