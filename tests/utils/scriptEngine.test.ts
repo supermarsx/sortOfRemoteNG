@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, Mock } from "vitest";
+// @ts-expect-error - no type declarations for jsdom
 import { JSDOM } from "jsdom";
 import { ScriptEngine, ScriptExecutionContext } from "../../src/utils/recording/scriptEngine";
 import { SettingsManager } from "../../src/utils/settings/settingsManager";
@@ -32,7 +33,7 @@ beforeEach(async () => {
       if (args.code.includes("setSetting('colorScheme', 'purple')")) {
         // Actually call setSetting for this test
         const engine = ScriptEngine.getInstance();
-        await engine.setSetting('colorScheme', 'purple');
+        await (engine as any).setSetting('colorScheme', 'purple');
         return { success: true, result: undefined };
       }
       if (args.code.includes("throw new Error")) {

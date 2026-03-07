@@ -250,7 +250,7 @@ describe("WebTerminal", () => {
 
   describe("Terminal Input Handling", () => {
     it.skip("should execute commands when Enter is pressed", async () => {
-      let onDataCallback: (data: string) => void;
+      let onDataCallback!: (data: string) => void;
       mockTerminal.onData = vi.fn().mockImplementation((callback) => {
         onDataCallback = callback;
         return { dispose: vi.fn() };

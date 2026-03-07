@@ -14,7 +14,7 @@ vi.mock("react-i18next", () => ({
   initReactI18next: { type: "3rdParty", init: vi.fn() },
 }));
 
-const mockSettings: GlobalSettings = {
+const mockSettings = {
   language: "en",
   theme: "dark",
   colorScheme: "blue",
@@ -83,6 +83,7 @@ const mockSettings: GlobalSettings = {
     maxConcurrent: 50,
     maxPortConcurrent: 100,
     customPorts: {},
+    probeStrategies: {},
     cacheTTL: 300000,
     hostnameTtl: 300000,
     macTtl: 300000,
@@ -90,10 +91,18 @@ const mockSettings: GlobalSettings = {
   restApi: {
     enabled: false,
     port: 8080,
+    useRandomPort: false,
     authentication: false,
     apiKey: "",
     corsEnabled: true,
     rateLimiting: true,
+    startOnLaunch: false,
+    allowRemoteConnections: false,
+    sslEnabled: false,
+    sslMode: "self-signed" as const,
+    maxRequestsPerMinute: 60,
+    maxThreads: 4,
+    requestTimeout: 30000,
   },
   wolEnabled: false,
   wolPort: 9,

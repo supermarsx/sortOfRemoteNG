@@ -106,7 +106,7 @@ describe("ConnectionEditor subcomponents", () => {
   it("uses centralized input classes in CloudProviderOptions", () => {
     const { container } = render(
       <CloudProviderOptions
-        formData={{ ...baseData, protocol: "gcp", cloudProvider: {} }}
+        formData={{ ...baseData, protocol: "gcp", cloudProvider: { provider: "gcp" as const } }}
         setFormData={() => {}}
       />,
     );

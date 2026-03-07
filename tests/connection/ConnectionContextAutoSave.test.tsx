@@ -59,7 +59,7 @@ describe('ConnectionProvider auto-save', () => {
     let stored = await IndexedDbService.getItem<StorageData>(
       `mremote-collection-${collectionId}`
     );
-    expect(stored.connections).toHaveLength(1);
+    expect(stored!.connections).toHaveLength(1);
 
     await act(async () => {
       result.current.dispatch({ type: 'SET_CONNECTIONS', payload: [] });
@@ -70,6 +70,6 @@ describe('ConnectionProvider auto-save', () => {
     stored = await IndexedDbService.getItem<StorageData>(
       `mremote-collection-${collectionId}`
     );
-    expect(stored.connections).toEqual([]);
+    expect(stored!.connections).toEqual([]);
   });
 });

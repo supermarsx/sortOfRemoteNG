@@ -99,11 +99,11 @@ const mockConnection = {
 const mockSession: ConnectionSession = {
   id: "test-rdp-session",
   connectionId: "test-connection",
+  name: "Test RDP Session",
   protocol: "rdp",
   hostname: "192.168.1.100",
-  username: "testuser",
-  password: "testpass",
   status: "connecting",
+  startTime: new Date(),
 };
 
 /** Simulate the backend emitting a status event */
@@ -158,7 +158,7 @@ describe("RDPClient", () => {
       putImageData: vi.fn(),
       font: "",
       textAlign: "",
-    }));
+    })) as any;
   });
 
   describe("RDP Connection", () => {

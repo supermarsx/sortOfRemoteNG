@@ -153,7 +153,7 @@ describe('NetworkScanner helper methods', () => {
     const progress: number[] = [];
     await testScanner.scanNetwork(config, (p: number) => progress.push(p));
     expect(testScanner.scanHost).toHaveBeenCalledTimes(2);
-    expect(progress.at(-1)).toBe(100);
+    expect(progress[progress.length - 1]).toBe(100);
   });
 
   it('scanNetwork processes IPv6 ranges', async () => {
@@ -178,7 +178,7 @@ describe('NetworkScanner helper methods', () => {
     const progress: number[] = [];
     await testScanner.scanNetwork(config, (p: number) => progress.push(p));
     expect(testScanner.scanHost).toHaveBeenCalledTimes(4);
-    expect(progress.at(-1)).toBe(100);
+    expect(progress[progress.length - 1]).toBe(100);
   });
 
   it('scanPort resolves false on invalid hostname without rejection', async () => {

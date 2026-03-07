@@ -33,7 +33,7 @@ describe('CollectionManager remove password', () => {
     const storedAfter = await IndexedDbService.getItem<StorageData>(
       `mremote-collection-${collectionId}`
     );
-    expect(storedAfter.connections).toBeTruthy();
+    expect(storedAfter!.connections).toBeTruthy();
 
     const meta = (await IndexedDbService.getItem<ConnectionCollection[]>(
       'mremote-collections'

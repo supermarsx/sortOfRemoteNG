@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WakeOnLanService } from "../../src/utils/network/wakeOnLan";
 
 beforeEach(async () => {
+  // @ts-expect-error - no type declarations for jsdom
   const { JSDOM } = await import("jsdom");
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     url: "http://localhost",

@@ -28,8 +28,8 @@ describe("CollectionManager", () => {
     const col = await manager.createCollection("Test");
     const stored = await IndexedDbService.getItem<any[]>("mremote-collections");
     expect(stored).toHaveLength(1);
-    expect(stored[0].id).toBe(col.id);
-    expect(stored[0].name).toBe("Test");
+    expect(stored![0].id).toBe(col.id);
+    expect(stored![0].name).toBe("Test");
   });
 
   it("loads collection data", async () => {
@@ -52,8 +52,8 @@ describe("CollectionManager", () => {
     await manager.updateCollection(updated);
 
     const stored = await IndexedDbService.getItem<any[]>("mremote-collections");
-    expect(stored[0].name).toBe("Updated");
-    expect(stored[0].description).toBe("changed");
+    expect(stored![0].name).toBe("Updated");
+    expect(stored![0].description).toBe("changed");
   });
 
   it("updates currentCollection when editing selected collection", async () => {

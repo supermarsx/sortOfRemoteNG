@@ -77,8 +77,8 @@ describe('CollectionSelector editing', () => {
 
     await waitFor(async () => {
       const stored = await IndexedDbService.getItem<ConnectionCollection[]>('mremote-collections');
-      expect(stored[0].name).toBe('Renamed');
-      expect(stored[0].description).toBe('updated');
+      expect(stored![0].name).toBe('Renamed');
+      expect(stored![0].description).toBe('updated');
     });
   });
 });

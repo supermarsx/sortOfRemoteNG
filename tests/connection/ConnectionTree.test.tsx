@@ -41,6 +41,7 @@ function InitConnections({ connections }: { connections: Connection[] }) {
       onConnect={() => {}}
       onEdit={() => {}}
       onDelete={() => {}}
+      onDisconnect={() => {}}
     />
   );
 }

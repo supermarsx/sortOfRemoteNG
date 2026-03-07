@@ -111,6 +111,9 @@ describe("AppDialogs", () => {
         showInternalProxyManager={false}
         showWol={false}
         showBulkSSH={false}
+        showServerStats={false}
+        showOpkssh={false}
+        showMcpServer={false}
         showScriptManager={false}
         showMacroManager={false}
         showRecordingManager={false}
@@ -129,6 +132,9 @@ describe("AppDialogs", () => {
         setShowInternalProxyManager={() => {}}
         setShowWol={() => {}}
         setShowBulkSSH={() => {}}
+        setShowServerStats={() => {}}
+        setShowOpkssh={() => {}}
+        setShowMcpServer={() => {}}
         setShowScriptManager={() => {}}
         setShowMacroManager={() => {}}
         setShowRecordingManager={() => {}}

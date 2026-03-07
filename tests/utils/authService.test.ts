@@ -14,7 +14,7 @@ async function createStore(): Promise<string> {
 
 describe('AuthService', () => {
   let storePath: string;
-  let service: AuthService;
+  let service: InstanceType<typeof AuthService>;
 
   beforeAll(async () => {
     process.env.USER_STORE_SECRET = 'test-secret';

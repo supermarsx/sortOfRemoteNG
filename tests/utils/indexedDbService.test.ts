@@ -31,6 +31,7 @@ describe('IndexedDbService', () => {
   });
 
   it('migrates data from localStorage on init', async () => {
+    // @ts-expect-error - no type declarations for jsdom
     const { JSDOM } = await import('jsdom');
     const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost' });
     (global as any).window = dom.window;

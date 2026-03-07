@@ -198,27 +198,28 @@ const mockLogs: McpLogEntry[] = [
 
 const mockEvents: McpEvent[] = [
   {
+    id: "evt-1",
     event_type: "ServerStarted",
     timestamp: new Date().toISOString(),
-    details: "Server started on port 3100",
-    session_id: null,
+    details: { message: "Server started on port 3100" },
   },
   {
+    id: "evt-2",
     event_type: "ToolCalled",
     timestamp: new Date().toISOString(),
-    details: "list_connections called",
-    session_id: "session-abc-123",
+    details: { message: "list_connections called", session_id: "session-abc-123" },
   },
 ];
 
 const mockToolCallLogs: McpToolCallLog[] = [
   {
+    id: "log-1",
     tool_name: "list_connections",
     session_id: "session-abc-123",
     timestamp: new Date().toISOString(),
     duration_ms: 12,
     success: true,
-    error: null,
+    params: {},
   },
 ];
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+// @ts-expect-error - no type declarations for jsdom
 import { JSDOM } from 'jsdom';
 import { ThemeManager } from '../../src/utils/settings/themeManager';
 import { IndexedDbService } from '../../src/utils/storage/indexedDbService';

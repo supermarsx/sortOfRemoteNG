@@ -38,7 +38,7 @@ function createMockCtx(): MockCtx {
     fillRect: vi.fn(),
     strokeRect: vi.fn(),
     fillText: vi.fn(),
-    putImageData: vi.fn(),
+    putImageData: vi.fn() as unknown as CanvasRenderingContext2D['putImageData'],
     createLinearGradient: vi.fn(() => gradient),
     fillStyle: '',
     strokeStyle: '',

@@ -32,6 +32,7 @@ const mockConnection: Connection = {
   port: 22,
   createdAt: new Date(),
   updatedAt: new Date(),
+  isGroup: false,
 };
 
 describe('ConnectionDiagnostics', () => {

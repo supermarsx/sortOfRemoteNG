@@ -45,6 +45,9 @@ const mockProps = {
   onEditConnection: vi.fn(),
   onDeleteConnection: vi.fn(),
   onConnect: vi.fn(),
+  onDisconnect: vi.fn(),
+  onDiagnostics: vi.fn(),
+  onSessionDetach: vi.fn(),
   onShowPasswordDialog: vi.fn(),
   enableConnectionReorder: true,
 };
