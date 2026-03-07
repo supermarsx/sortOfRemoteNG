@@ -1,108 +1,143 @@
 // ── sorng-mysql-admin – database management ──────────────────────────────────
+//! MySQL/MariaDB database-level operations via SSH.
 
-use crate::client::MysqlAdminClient;
-use crate::error::{MysqlAdminError, MysqlAdminResult};
+use crate::client::MysqlClient;
+use crate::error::{MysqlError, MysqlResult};
 use crate::types::*;
 
 pub struct DatabaseManager;
 
 impl DatabaseManager {
-    pub async fn list(client: &MysqlAdminClient) -> MysqlAdminResult<Vec<MysqlDatabase>> {
-        let out = client.exec_mysql(
-            "SELECT s.SCHEMA_NAME, s.DEFAULT_CHARACTER_SET_NAME, s.DEFAULT_COLLATION_NAME, \
-             COUNT(t.TABLE_NAME), IFNULL(SUM(t.DATA_LENGTH),0), IFNULL(SUM(t.INDEX_LENGTH),0) \
-             FROM information_schema.SCHEMATA s \
-             LEFT JOIN information_schema.TABLES t ON s.SCHEMA_NAME = t.TABLE_SCHEMA \
-             GROUP BY s.SCHEMA_NAME, s.DEFAULT_CHARACTER_SET_NAME, s.DEFAULT_COLLATION_NAME"
-        ).await?;
-        let dbs = out.lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| {
-                let c: Vec<&str> = l.split('\t').collect();
-                MysqlDatabase {
-                    name: c.first().map(|s| s.to_string()).unwrap_or_default(),
-                    charset: c.get(1).map(|s| s.to_string()),
-                    collation: c.get(2).map(|s| s.to_string()),
-                    tables_count: c.get(3).and_then(|s| s.parse().ok()),
-                    size_bytes: c.get(4).and_then(|s| s.parse().ok()),
-                    index_size_bytes: c.get(5).and_then(|s| s.parse().ok()),
-                }
-            })
-            .collect();
-        Ok(dbs)
+    /// List all databases with metadata.
+    pub async fn list(client: &MysqlClient) -> MysqlResult<Vec<MysqlDatabase>> {
+        let sql = "SELECT s.SCHEMA_NAME, s.DEFAULT_CHARACTER_SET_NAME, \
+                   s.DEFAULT_COLLATION_NAME, \
+                   IFNULL(SUM(t.DATA_LENGTH + t.INDEX_LENGTH), 0) AS size_bytes, \
+                   COUNT(t.TABLE_NAME) AS tables_count \
+                   FROM information_schema.SCHEMATA s \
+                   LEFT JOIN information_schema.TABLES t \
+                   ON s.SCHEMA_NAME = t.TABLE_SCHEMA \
+                   GROUP BY s.SCHEMA_NAME, s.DEFAULT_CHARACTER_SET_NAME, s.DEFAULT_COLLATION_NAME \
+                   ORDER BY s.SCHEMA_NAME";
+        let out = client.exec_sql(sql).await?;
+        let mut databases = Vec::new();
+        for line in out.lines() {
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() >= 5 {
+                databases.push(MysqlDatabase {
+                    name: cols[0].to_string(),
+                    character_set: cols[1].to_string(),
+                    collation: cols[2].to_string(),
+                    size_bytes: cols[3].parse().unwrap_or(0),
+                    tables_count: cols[4].parse().unwrap_or(0),
+                });
+            }
+        }
+        Ok(databases)
     }
 
-    pub async fn get(client: &MysqlAdminClient, name: &str) -> MysqlAdminResult<MysqlDatabase> {
-        let out = client.exec_mysql(&format!(
-            "SELECT s.SCHEMA_NAME, s.DEFAULT_CHARACTER_SET_NAME, s.DEFAULT_COLLATION_NAME, \
-             COUNT(t.TABLE_NAME), IFNULL(SUM(t.DATA_LENGTH),0), IFNULL(SUM(t.INDEX_LENGTH),0) \
+    /// Get a single database by name.
+    pub async fn get(client: &MysqlClient, name: &str) -> MysqlResult<MysqlDatabase> {
+        let sql = format!(
+            "SELECT s.SCHEMA_NAME, s.DEFAULT_CHARACTER_SET_NAME, \
+             s.DEFAULT_COLLATION_NAME, \
+             IFNULL(SUM(t.DATA_LENGTH + t.INDEX_LENGTH), 0), \
+             COUNT(t.TABLE_NAME) \
              FROM information_schema.SCHEMATA s \
-             LEFT JOIN information_schema.TABLES t ON s.SCHEMA_NAME = t.TABLE_SCHEMA \
-             WHERE s.SCHEMA_NAME='{}' \
-             GROUP BY s.SCHEMA_NAME, s.DEFAULT_CHARACTER_SET_NAME, s.DEFAULT_COLLATION_NAME", name
-        )).await?;
-        let line = out.lines().find(|l| !l.is_empty())
-            .ok_or_else(|| MysqlAdminError::database_not_found(name))?;
-        let c: Vec<&str> = line.split('\t').collect();
+             LEFT JOIN information_schema.TABLES t \
+             ON s.SCHEMA_NAME = t.TABLE_SCHEMA \
+             WHERE s.SCHEMA_NAME = '{}' \
+             GROUP BY s.SCHEMA_NAME",
+            sql_escape(name)
+        );
+        let out = client.exec_sql(&sql).await?;
+        let line = out.lines().next()
+            .ok_or_else(|| MysqlError::database_not_found(name))?;
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 5 {
+            return Err(MysqlError::parse("unexpected column count for database query"));
+        }
         Ok(MysqlDatabase {
-            name: c.first().map(|s| s.to_string()).unwrap_or_default(),
-            charset: c.get(1).map(|s| s.to_string()),
-            collation: c.get(2).map(|s| s.to_string()),
-            tables_count: c.get(3).and_then(|s| s.parse().ok()),
-            size_bytes: c.get(4).and_then(|s| s.parse().ok()),
-            index_size_bytes: c.get(5).and_then(|s| s.parse().ok()),
+            name: cols[0].to_string(),
+            character_set: cols[1].to_string(),
+            collation: cols[2].to_string(),
+            size_bytes: cols[3].parse().unwrap_or(0),
+            tables_count: cols[4].parse().unwrap_or(0),
         })
     }
 
-    pub async fn create(client: &MysqlAdminClient, req: &CreateDatabaseRequest) -> MysqlAdminResult<()> {
-        let mut sql = format!("CREATE DATABASE `{}`", req.name);
-        if let Some(ref cs) = req.charset {
+    /// Create a new database.
+    pub async fn create(
+        client: &MysqlClient,
+        name: &str,
+        charset: Option<&str>,
+        collation: Option<&str>,
+    ) -> MysqlResult<()> {
+        let mut sql = format!("CREATE DATABASE `{}`", sql_escape(name));
+        if let Some(cs) = charset {
             sql.push_str(&format!(" CHARACTER SET {}", cs));
         }
-        if let Some(ref co) = req.collation {
+        if let Some(co) = collation {
             sql.push_str(&format!(" COLLATE {}", co));
         }
-        client.exec_mysql(&sql).await?;
+        client.exec_sql(&sql).await?;
         Ok(())
     }
 
-    pub async fn drop(client: &MysqlAdminClient, name: &str) -> MysqlAdminResult<()> {
-        client.exec_mysql(&format!("DROP DATABASE `{}`", name)).await?;
+    /// Drop a database.
+    pub async fn drop(client: &MysqlClient, name: &str) -> MysqlResult<()> {
+        let sql = format!("DROP DATABASE `{}`", sql_escape(name));
+        client.exec_sql(&sql).await?;
         Ok(())
     }
 
-    pub async fn get_size(client: &MysqlAdminClient, name: &str) -> MysqlAdminResult<u64> {
-        let out = client.exec_mysql(&format!(
-            "SELECT IFNULL(SUM(data_length + index_length),0) FROM information_schema.TABLES WHERE table_schema='{}'", name
-        )).await?;
-        Ok(out.trim().parse::<u64>().unwrap_or(0))
+    /// Get the total size of a database in bytes.
+    pub async fn get_size(client: &MysqlClient, name: &str) -> MysqlResult<u64> {
+        let sql = format!(
+            "SELECT IFNULL(SUM(DATA_LENGTH + INDEX_LENGTH), 0) \
+             FROM information_schema.TABLES WHERE TABLE_SCHEMA = '{}'",
+            sql_escape(name)
+        );
+        let out = client.exec_sql(&sql).await?;
+        Ok(out.trim().parse().unwrap_or(0))
     }
 
-    pub async fn list_tables(client: &MysqlAdminClient, name: &str) -> MysqlAdminResult<Vec<String>> {
-        let out = client.exec_mysql_db(name, "SHOW TABLES").await?;
-        Ok(out.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+    /// Get the character set of a database.
+    pub async fn get_charset(client: &MysqlClient, name: &str) -> MysqlResult<String> {
+        let sql = format!(
+            "SELECT DEFAULT_CHARACTER_SET_NAME FROM information_schema.SCHEMATA \
+             WHERE SCHEMA_NAME = '{}'",
+            sql_escape(name)
+        );
+        let out = client.exec_sql(&sql).await?;
+        let cs = out.trim();
+        if cs.is_empty() {
+            return Err(MysqlError::database_not_found(name));
+        }
+        Ok(cs.to_string())
     }
 
-    pub async fn get_charset(client: &MysqlAdminClient, name: &str) -> MysqlAdminResult<String> {
-        let out = client.exec_mysql(&format!(
-            "SELECT DEFAULT_CHARACTER_SET_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='{}'", name
-        )).await?;
-        let charset = out.trim().to_string();
-        if charset.is_empty() {
-            return Err(MysqlAdminError::database_not_found(name));
-        }
-        Ok(charset)
-    }
-
-    pub async fn alter_charset(client: &MysqlAdminClient, name: &str, req: &AlterDatabaseRequest) -> MysqlAdminResult<()> {
-        let mut sql = format!("ALTER DATABASE `{}`", name);
-        if let Some(ref cs) = req.charset {
-            sql.push_str(&format!(" CHARACTER SET {}", cs));
-        }
-        if let Some(ref co) = req.collation {
-            sql.push_str(&format!(" COLLATE {}", co));
-        }
-        client.exec_mysql(&sql).await?;
+    /// Alter the default character set and collation of a database.
+    pub async fn alter_charset(
+        client: &MysqlClient,
+        name: &str,
+        charset: &str,
+        collation: &str,
+    ) -> MysqlResult<()> {
+        let sql = format!(
+            "ALTER DATABASE `{}` CHARACTER SET {} COLLATE {}",
+            sql_escape(name), charset, collation
+        );
+        client.exec_sql(&sql).await?;
         Ok(())
     }
+
+    /// List tables in a database (delegates to `TableManager::list`).
+    pub async fn list_tables(client: &MysqlClient, db: &str) -> MysqlResult<Vec<MysqlTable>> {
+        crate::tables::TableManager::list(client, db).await
+    }
+}
+
+fn sql_escape(s: &str) -> String {
+    s.replace('\'', "\\'").replace('`', "``")
 }

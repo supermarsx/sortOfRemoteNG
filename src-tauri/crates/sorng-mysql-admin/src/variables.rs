@@ -1,85 +1,122 @@
 // ── sorng-mysql-admin – variable management ──────────────────────────────────
+//! MySQL global/session variable and status inspection/control via SSH.
 
-use crate::client::MysqlAdminClient;
-use crate::error::{MysqlAdminError, MysqlAdminResult};
+use crate::client::MysqlClient;
+use crate::error::{MysqlError, MysqlResult};
 use crate::types::*;
 
 pub struct VariableManager;
 
 impl VariableManager {
-    pub async fn list_global(client: &MysqlAdminClient) -> MysqlAdminResult<Vec<MysqlVariable>> {
-        let out = client.exec_mysql("SHOW GLOBAL VARIABLES").await?;
-        Ok(parse_variables(&out, Some(VariableScope::Global)))
+    /// List all global variables.
+    pub async fn list_global(client: &MysqlClient) -> MysqlResult<Vec<MysqlVariable>> {
+        let out = client.exec_sql("SHOW GLOBAL VARIABLES").await?;
+        Ok(parse_variable_output(&out, true, false))
     }
 
-    pub async fn list_session(client: &MysqlAdminClient) -> MysqlAdminResult<Vec<MysqlVariable>> {
-        let out = client.exec_mysql("SHOW SESSION VARIABLES").await?;
-        Ok(parse_variables(&out, Some(VariableScope::Session)))
+    /// List all session variables.
+    pub async fn list_session(client: &MysqlClient) -> MysqlResult<Vec<MysqlVariable>> {
+        let out = client.exec_sql("SHOW SESSION VARIABLES").await?;
+        Ok(parse_variable_output(&out, false, true))
     }
 
-    pub async fn get(client: &MysqlAdminClient, name: &str) -> MysqlAdminResult<MysqlVariable> {
-        let out = client.exec_mysql(&format!("SHOW GLOBAL VARIABLES LIKE '{}'", name)).await?;
-        let line = out.lines().find(|l| !l.is_empty())
-            .ok_or_else(|| MysqlAdminError::config(format!("Variable '{}' not found", name)))?;
-        let c: Vec<&str> = line.split('\t').collect();
+    /// Get a specific global variable.
+    pub async fn get_global(client: &MysqlClient, name: &str) -> MysqlResult<MysqlVariable> {
+        let sql = format!("SHOW GLOBAL VARIABLES LIKE '{}'", sql_escape(name));
+        let out = client.exec_sql(&sql).await?;
+        let line = out.lines().next()
+            .ok_or_else(|| MysqlError::variable_not_found(name))?;
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 2 {
+            return Err(MysqlError::parse("unexpected variable output format"));
+        }
         Ok(MysqlVariable {
-            name: c.first().map(|s| s.to_string()).unwrap_or_default(),
-            value: c.get(1).map(|s| s.to_string()).unwrap_or_default(),
-            is_dynamic: None,
-            scope: Some(VariableScope::Global),
+            name: cols[0].to_string(),
+            value: cols[1].to_string(),
+            is_global: true,
+            is_session: false,
         })
     }
 
-    pub async fn set(client: &MysqlAdminClient, req: &SetVariableRequest) -> MysqlAdminResult<()> {
-        let scope_str = match req.scope {
-            Some(VariableScope::Session) => "SESSION",
-            _ => "GLOBAL",
-        };
-        client.exec_mysql(&format!("SET {} {} = {}", scope_str, req.name, req.value)).await?;
+    /// Get a specific session variable.
+    pub async fn get_session(client: &MysqlClient, name: &str) -> MysqlResult<MysqlVariable> {
+        let sql = format!("SHOW SESSION VARIABLES LIKE '{}'", sql_escape(name));
+        let out = client.exec_sql(&sql).await?;
+        let line = out.lines().next()
+            .ok_or_else(|| MysqlError::variable_not_found(name))?;
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 2 {
+            return Err(MysqlError::parse("unexpected variable output format"));
+        }
+        Ok(MysqlVariable {
+            name: cols[0].to_string(),
+            value: cols[1].to_string(),
+            is_global: false,
+            is_session: true,
+        })
+    }
+
+    /// Set a global variable value.
+    pub async fn set_global(client: &MysqlClient, name: &str, value: &str) -> MysqlResult<()> {
+        let sql = format!("SET GLOBAL {} = '{}'", name, sql_escape(value));
+        client.exec_sql(&sql).await?;
         Ok(())
     }
 
-    pub async fn list_dynamic(client: &MysqlAdminClient) -> MysqlAdminResult<Vec<MysqlVariable>> {
-        let out = client.exec_mysql(
-            "SELECT VARIABLE_NAME, VARIABLE_VALUE FROM performance_schema.global_variables"
-        ).await?;
-        let vars = out.lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| {
-                let c: Vec<&str> = l.split('\t').collect();
-                MysqlVariable {
-                    name: c.first().map(|s| s.to_string()).unwrap_or_default(),
-                    value: c.get(1).map(|s| s.to_string()).unwrap_or_default(),
-                    is_dynamic: Some(true),
-                    scope: Some(VariableScope::Global),
-                }
-            })
-            .collect();
-        Ok(vars)
-    }
-
-    pub async fn reset_to_default(client: &MysqlAdminClient, name: &str) -> MysqlAdminResult<()> {
-        client.exec_mysql(&format!("SET GLOBAL {} = DEFAULT", name)).await?;
+    /// Set a session variable value.
+    pub async fn set_session(client: &MysqlClient, name: &str, value: &str) -> MysqlResult<()> {
+        let sql = format!("SET SESSION {} = '{}'", name, sql_escape(value));
+        client.exec_sql(&sql).await?;
         Ok(())
     }
 
-    pub async fn persist_variable(client: &MysqlAdminClient, name: &str, value: &str) -> MysqlAdminResult<()> {
-        client.exec_mysql(&format!("SET PERSIST {} = {}", name, value)).await?;
-        Ok(())
+    /// List all global status counters.
+    pub async fn list_status(client: &MysqlClient) -> MysqlResult<Vec<MysqlVariable>> {
+        let out = client.exec_sql("SHOW GLOBAL STATUS").await?;
+        Ok(parse_variable_output(&out, true, false))
+    }
+
+    /// Get a specific global status counter.
+    pub async fn get_status(client: &MysqlClient, name: &str) -> MysqlResult<MysqlVariable> {
+        let sql = format!("SHOW GLOBAL STATUS LIKE '{}'", sql_escape(name));
+        let out = client.exec_sql(&sql).await?;
+        let line = out.lines().next()
+            .ok_or_else(|| MysqlError::variable_not_found(name))?;
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 2 {
+            return Err(MysqlError::parse("unexpected status output format"));
+        }
+        Ok(MysqlVariable {
+            name: cols[0].to_string(),
+            value: cols[1].to_string(),
+            is_global: true,
+            is_session: false,
+        })
+    }
+
+    /// Get the MySQL server version string.
+    pub async fn get_server_info(client: &MysqlClient) -> MysqlResult<String> {
+        let out = client.exec_sql("SELECT VERSION()").await?;
+        Ok(out.trim().to_string())
     }
 }
 
-fn parse_variables(output: &str, scope: Option<VariableScope>) -> Vec<MysqlVariable> {
-    output.lines()
-        .filter(|l| !l.is_empty())
-        .map(|l| {
-            let c: Vec<&str> = l.split('\t').collect();
-            MysqlVariable {
-                name: c.first().map(|s| s.to_string()).unwrap_or_default(),
-                value: c.get(1).map(|s| s.to_string()).unwrap_or_default(),
-                is_dynamic: None,
-                scope: scope.clone(),
-            }
-        })
-        .collect()
+fn parse_variable_output(output: &str, is_global: bool, is_session: bool) -> Vec<MysqlVariable> {
+    let mut vars = Vec::new();
+    for line in output.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() >= 2 {
+            vars.push(MysqlVariable {
+                name: cols[0].to_string(),
+                value: cols[1].to_string(),
+                is_global,
+                is_session,
+            });
+        }
+    }
+    vars
+}
+
+fn sql_escape(s: &str) -> String {
+    s.replace('\'', "\\'")
 }

@@ -1,173 +1,222 @@
 // ── sorng-mysql-admin – user management ──────────────────────────────────────
+//! MySQL user and privilege administration via SSH.
 
-use crate::client::MysqlAdminClient;
-use crate::error::{MysqlAdminError, MysqlAdminResult};
+use crate::client::MysqlClient;
+use crate::error::{MysqlError, MysqlResult};
 use crate::types::*;
 
 pub struct UserManager;
 
 impl UserManager {
-    pub async fn list(client: &MysqlAdminClient) -> MysqlAdminResult<Vec<MysqlUser>> {
-        let out = client.exec_mysql(
-            "SELECT User, Host, plugin, authentication_string, ssl_type, \
-             max_connections, max_user_connections, account_locked, password_expired, password_lifetime \
-             FROM mysql.user"
-        ).await?;
+    /// List all MySQL users.
+    pub async fn list(client: &MysqlClient) -> MysqlResult<Vec<MysqlUser>> {
+        let sql = "SELECT User, Host, plugin, \
+                   IF(account_locked='Y',1,0), \
+                   IF(password_expired='Y',1,0), \
+                   max_connections, ssl_type \
+                   FROM mysql.user ORDER BY User, Host";
+        let out = client.exec_sql(sql).await?;
         let mut users = Vec::new();
-        for line in out.lines().filter(|l| !l.is_empty()) {
-            let c: Vec<&str> = line.split('\t').collect();
-            if c.len() >= 2 {
+        for line in out.lines() {
+            let cols: Vec<&str> = line.split('\t').collect();
+            if cols.len() >= 7 {
                 users.push(MysqlUser {
-                    user: c[0].to_string(),
-                    host: c[1].to_string(),
-                    plugin: c.get(2).map(|s| s.to_string()),
-                    authentication_string: c.get(3).map(|s| s.to_string()),
-                    ssl_type: c.get(4).filter(|s| !s.is_empty()).map(|s| s.to_string()),
-                    max_connections: c.get(5).and_then(|s| s.parse().ok()),
-                    max_user_connections: c.get(6).and_then(|s| s.parse().ok()),
-                    account_locked: c.get(7).map(|s| s == "Y"),
-                    password_expired: c.get(8).map(|s| s == "Y"),
-                    password_lifetime: c.get(9).and_then(|s| s.parse().ok()),
+                    user: cols[0].to_string(),
+                    host: cols[1].to_string(),
+                    plugin: cols[2].to_string(),
+                    account_locked: cols[3] == "1",
+                    password_expired: cols[4] == "1",
+                    max_connections: cols[5].parse().unwrap_or(0),
+                    ssl_type: cols[6].to_string(),
                 });
             }
         }
         Ok(users)
     }
 
-    pub async fn get(client: &MysqlAdminClient, user: &str, host: &str) -> MysqlAdminResult<MysqlUser> {
-        let out = client.exec_mysql(&format!(
-            "SELECT User, Host, plugin, authentication_string, ssl_type, \
-             max_connections, max_user_connections, account_locked, password_expired, password_lifetime \
-             FROM mysql.user WHERE User='{}' AND Host='{}'", user, host
-        )).await?;
-        let line = out.lines().find(|l| !l.is_empty())
-            .ok_or_else(|| MysqlAdminError::user_not_found(user))?;
-        let c: Vec<&str> = line.split('\t').collect();
+    /// Get a specific user.
+    pub async fn get(client: &MysqlClient, user: &str, host: &str) -> MysqlResult<MysqlUser> {
+        let sql = format!(
+            "SELECT User, Host, plugin, \
+             IF(account_locked='Y',1,0), \
+             IF(password_expired='Y',1,0), \
+             max_connections, ssl_type \
+             FROM mysql.user WHERE User='{}' AND Host='{}'",
+            sql_escape(user),
+            sql_escape(host)
+        );
+        let out = client.exec_sql(&sql).await?;
+        let line = out.lines().next()
+            .ok_or_else(|| MysqlError::user_not_found(user, host))?;
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 7 {
+            return Err(MysqlError::parse("unexpected column count for user query"));
+        }
         Ok(MysqlUser {
-            user: c.first().map(|s| s.to_string()).unwrap_or_default(),
-            host: c.get(1).map(|s| s.to_string()).unwrap_or_default(),
-            plugin: c.get(2).map(|s| s.to_string()),
-            authentication_string: c.get(3).map(|s| s.to_string()),
-            ssl_type: c.get(4).filter(|s| !s.is_empty()).map(|s| s.to_string()),
-            max_connections: c.get(5).and_then(|s| s.parse().ok()),
-            max_user_connections: c.get(6).and_then(|s| s.parse().ok()),
-            account_locked: c.get(7).map(|s| s == "Y"),
-            password_expired: c.get(8).map(|s| s == "Y"),
-            password_lifetime: c.get(9).and_then(|s| s.parse().ok()),
+            user: cols[0].to_string(),
+            host: cols[1].to_string(),
+            plugin: cols[2].to_string(),
+            account_locked: cols[3] == "1",
+            password_expired: cols[4] == "1",
+            max_connections: cols[5].parse().unwrap_or(0),
+            ssl_type: cols[6].to_string(),
         })
     }
 
-    pub async fn create(client: &MysqlAdminClient, req: &CreateUserRequest) -> MysqlAdminResult<()> {
-        let mut sql = format!("CREATE USER '{}'@'{}' IDENTIFIED", req.user, req.host);
-        if let Some(ref plugin) = req.plugin {
-            sql.push_str(&format!(" WITH {} BY '{}'", plugin, req.password));
-        } else {
-            sql.push_str(&format!(" BY '{}'", req.password));
-        }
-        if let Some(mc) = req.max_connections {
-            sql.push_str(&format!(" WITH MAX_CONNECTIONS_PER_HOUR {}", mc));
-        }
-        if let Some(muc) = req.max_user_connections {
-            sql.push_str(&format!(" MAX_USER_CONNECTIONS {}", muc));
-        }
-        client.exec_mysql(&sql).await?;
+    /// Create a new MySQL user.
+    pub async fn create(
+        client: &MysqlClient,
+        user: &str,
+        host: &str,
+        password: &str,
+        plugin: Option<&str>,
+    ) -> MysqlResult<()> {
+        let auth = match plugin {
+            Some(p) => format!(
+                "CREATE USER '{}'@'{}' IDENTIFIED WITH {} BY '{}'",
+                sql_escape(user), sql_escape(host), p, sql_escape(password)
+            ),
+            None => format!(
+                "CREATE USER '{}'@'{}' IDENTIFIED BY '{}'",
+                sql_escape(user), sql_escape(host), sql_escape(password)
+            ),
+        };
+        client.exec_sql(&auth).await?;
         Ok(())
     }
 
-    pub async fn alter(client: &MysqlAdminClient, user: &str, host: &str, req: &AlterUserRequest) -> MysqlAdminResult<()> {
-        let mut parts = Vec::new();
-        if let Some(ref pw) = req.password {
-            parts.push(format!("IDENTIFIED BY '{}'", pw));
-        }
-        if let Some(locked) = req.account_locked {
-            parts.push(if locked { "ACCOUNT LOCK".to_string() } else { "ACCOUNT UNLOCK".to_string() });
-        }
-        if let Some(expired) = req.password_expired {
-            if expired {
-                parts.push("PASSWORD EXPIRE".to_string());
+    /// Drop a MySQL user.
+    pub async fn drop(client: &MysqlClient, user: &str, host: &str) -> MysqlResult<()> {
+        let sql = format!("DROP USER '{}'@'{}'", sql_escape(user), sql_escape(host));
+        client.exec_sql(&sql).await?;
+        Ok(())
+    }
+
+    /// Rename a MySQL user.
+    pub async fn rename(
+        client: &MysqlClient,
+        old_user: &str,
+        old_host: &str,
+        new_user: &str,
+        new_host: &str,
+    ) -> MysqlResult<()> {
+        let sql = format!(
+            "RENAME USER '{}'@'{}' TO '{}'@'{}'",
+            sql_escape(old_user), sql_escape(old_host),
+            sql_escape(new_user), sql_escape(new_host)
+        );
+        client.exec_sql(&sql).await?;
+        Ok(())
+    }
+
+    /// Set a user's password.
+    pub async fn set_password(
+        client: &MysqlClient,
+        user: &str,
+        host: &str,
+        password: &str,
+    ) -> MysqlResult<()> {
+        let sql = format!(
+            "ALTER USER '{}'@'{}' IDENTIFIED BY '{}'",
+            sql_escape(user), sql_escape(host), sql_escape(password)
+        );
+        client.exec_sql(&sql).await?;
+        Ok(())
+    }
+
+    /// Lock a user account.
+    pub async fn lock(client: &MysqlClient, user: &str, host: &str) -> MysqlResult<()> {
+        let sql = format!(
+            "ALTER USER '{}'@'{}' ACCOUNT LOCK",
+            sql_escape(user), sql_escape(host)
+        );
+        client.exec_sql(&sql).await?;
+        Ok(())
+    }
+
+    /// Unlock a user account.
+    pub async fn unlock(client: &MysqlClient, user: &str, host: &str) -> MysqlResult<()> {
+        let sql = format!(
+            "ALTER USER '{}'@'{}' ACCOUNT UNLOCK",
+            sql_escape(user), sql_escape(host)
+        );
+        client.exec_sql(&sql).await?;
+        Ok(())
+    }
+
+    /// List grants for a specific user.
+    pub async fn list_grants(
+        client: &MysqlClient,
+        user: &str,
+        host: &str,
+    ) -> MysqlResult<Vec<MysqlGrant>> {
+        let sql = format!("SHOW GRANTS FOR '{}'@'{}'", sql_escape(user), sql_escape(host));
+        let out = client.exec_sql(&sql).await?;
+        let mut grants = Vec::new();
+        for line in out.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
             }
+            // Parse GRANT statements into structured data
+            grants.push(MysqlGrant {
+                user: user.to_string(),
+                host: host.to_string(),
+                privilege: trimmed.to_string(),
+                database: "*".to_string(),
+                table_name: "*".to_string(),
+                is_grantable: trimmed.contains("WITH GRANT OPTION"),
+            });
         }
-        if let Some(mc) = req.max_connections {
-            parts.push(format!("WITH MAX_CONNECTIONS_PER_HOUR {}", mc));
-        }
-        if !parts.is_empty() {
-            let sql = format!("ALTER USER '{}'@'{}' {}", user, host, parts.join(" "));
-            client.exec_mysql(&sql).await?;
-        }
-        Ok(())
-    }
-
-    pub async fn drop(client: &MysqlAdminClient, user: &str, host: &str) -> MysqlAdminResult<()> {
-        client.exec_mysql(&format!("DROP USER '{}'@'{}'", user, host)).await?;
-        Ok(())
-    }
-
-    pub async fn list_grants(client: &MysqlAdminClient, user: &str, host: &str) -> MysqlAdminResult<Vec<MysqlGrant>> {
-        let out = client.exec_mysql(&format!("SHOW GRANTS FOR '{}'@'{}'", user, host)).await?;
-        let grants = out.lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| {
-                let line = l.to_string();
-                let is_grantable = line.contains("WITH GRANT OPTION");
-                MysqlGrant {
-                    privilege: line.clone(),
-                    database: None,
-                    table_name: None,
-                    column_name: None,
-                    is_grantable,
-                }
-            })
-            .collect();
         Ok(grants)
     }
 
-    pub async fn grant(client: &MysqlAdminClient, req: &GrantRequest) -> MysqlAdminResult<()> {
-        let privs = req.privileges.join(", ");
-        let target = match (&req.database, &req.table_name) {
-            (Some(db), Some(tbl)) => format!("`{}`.`{}`", db, tbl),
-            (Some(db), None) => format!("`{}`.*", db),
-            _ => "*.*".to_string(),
-        };
-        let mut sql = format!("GRANT {} ON {} TO '{}'@'{}'", privs, target, req.user, req.host);
-        if req.with_grant_option == Some(true) {
-            sql.push_str(" WITH GRANT OPTION");
-        }
-        client.exec_mysql(&sql).await?;
+    /// Grant a privilege.
+    pub async fn grant(
+        client: &MysqlClient,
+        privilege: &str,
+        database: &str,
+        table: &str,
+        user: &str,
+        host: &str,
+        with_grant: bool,
+    ) -> MysqlResult<()> {
+        let grant_option = if with_grant { " WITH GRANT OPTION" } else { "" };
+        let sql = format!(
+            "GRANT {} ON {}.{} TO '{}'@'{}'{}",
+            privilege, database, table,
+            sql_escape(user), sql_escape(host), grant_option
+        );
+        client.exec_sql(&sql).await?;
         Ok(())
     }
 
-    pub async fn revoke(client: &MysqlAdminClient, req: &RevokeRequest) -> MysqlAdminResult<()> {
-        let privs = req.privileges.join(", ");
-        let target = match (&req.database, &req.table_name) {
-            (Some(db), Some(tbl)) => format!("`{}`.`{}`", db, tbl),
-            (Some(db), None) => format!("`{}`.*", db),
-            _ => "*.*".to_string(),
-        };
-        client.exec_mysql(&format!(
-            "REVOKE {} ON {} FROM '{}'@'{}'", privs, target, req.user, req.host
-        )).await?;
+    /// Revoke a privilege.
+    pub async fn revoke(
+        client: &MysqlClient,
+        privilege: &str,
+        database: &str,
+        table: &str,
+        user: &str,
+        host: &str,
+    ) -> MysqlResult<()> {
+        let sql = format!(
+            "REVOKE {} ON {}.{} FROM '{}'@'{}'",
+            privilege, database, table,
+            sql_escape(user), sql_escape(host)
+        );
+        client.exec_sql(&sql).await?;
         Ok(())
     }
 
-    pub async fn flush_privileges(client: &MysqlAdminClient) -> MysqlAdminResult<()> {
-        client.exec_mysql("FLUSH PRIVILEGES").await?;
+    /// Flush privileges.
+    pub async fn flush_privileges(client: &MysqlClient) -> MysqlResult<()> {
+        client.exec_sql("FLUSH PRIVILEGES").await?;
         Ok(())
     }
+}
 
-    pub async fn set_password(client: &MysqlAdminClient, user: &str, host: &str, password: &str) -> MysqlAdminResult<()> {
-        client.exec_mysql(&format!(
-            "ALTER USER '{}'@'{}' IDENTIFIED BY '{}'", user, host, password
-        )).await?;
-        Ok(())
-    }
-
-    pub async fn lock_account(client: &MysqlAdminClient, user: &str, host: &str) -> MysqlAdminResult<()> {
-        client.exec_mysql(&format!("ALTER USER '{}'@'{}' ACCOUNT LOCK", user, host)).await?;
-        Ok(())
-    }
-
-    pub async fn unlock_account(client: &MysqlAdminClient, user: &str, host: &str) -> MysqlAdminResult<()> {
-        client.exec_mysql(&format!("ALTER USER '{}'@'{}' ACCOUNT UNLOCK", user, host)).await?;
-        Ok(())
-    }
+/// Escape single quotes in SQL string values.
+fn sql_escape(s: &str) -> String {
+    s.replace('\'', "\\'").replace('\\', "\\\\")
 }
