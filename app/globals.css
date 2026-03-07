@@ -1,7 +1,3 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 @import './styles/theme-variables.css';
 @import './styles/app-shell.css';
 @import './styles/scrollbar.css';
@@ -9,3 +5,7 @@
 @import './styles/tooltip-editor.css';
 @import './styles/tailwind-overrides.css';
 @import './styles/animations.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
