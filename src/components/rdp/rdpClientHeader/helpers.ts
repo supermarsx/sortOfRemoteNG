@@ -1,5 +1,6 @@
 import React from "react";
 import type { TOTPConfig } from "../../../types/settings/settings";
+import type { useRDPClientHeader } from "../../../hooks/rdp/useRDPClientHeader";
 
 export interface RDPClientHeaderProps {
   sessionName: string;
@@ -67,7 +68,7 @@ export const SEND_KEY_OPTIONS = [
   { id: "print-screen", label: "Print Screen" },
 ] as const;
 
-export type Mgr = RDPClientHeaderProps;
+export type Mgr = ReturnType<typeof useRDPClientHeader>;
 
 /* ------------------------------------------------------------------ */
 /*  Sub-components                                                     */
