@@ -1,8 +1,8 @@
-// ── sorng-netbox – NetBox REST API HTTP client ──────────────────────────────
-//! HTTP client wrapping the NetBox REST API (`/api/...`).
+// ── sorng-netbox/src/client.rs ───────────────────────────────────────────────
+//! HTTP client for NetBox REST API.
 
 use crate::error::{NetboxError, NetboxResult};
-use crate::types::{NetboxConnectionConfig, NetboxListResponse};
+use crate::types::*;
 use log::debug;
 use reqwest::Client as HttpClient;
 use serde::de::DeserializeOwned;
@@ -15,140 +15,210 @@ pub struct NetboxClient {
 
 impl NetboxClient {
     pub fn new(config: NetboxConnectionConfig) -> NetboxResult<Self> {
+        let accept_invalid = config.accept_invalid_certs.unwrap_or(false);
         let http = HttpClient::builder()
-            .timeout(Duration::from_secs(config.timeout_secs))
-            .danger_accept_invalid_certs(!config.tls_verify)
+            .timeout(Duration::from_secs(config.timeout_secs.unwrap_or(30)))
+            .danger_accept_invalid_certs(accept_invalid)
             .build()
             .map_err(|e| NetboxError::connection(format!("http client build: {e}")))?;
         Ok(Self { config, http })
     }
 
-    pub fn api_url(&self, path: &str) -> String {
-        format!(
-            "{}://{}:{}/api{}",
-            self.config.scheme, self.config.host, self.config.port, path
-        )
+    // ── URL builders ─────────────────────────────────────────────────
+
+    fn scheme(&self) -> &str {
+        if self.config.use_tls.unwrap_or(true) { "https" } else { "http" }
     }
 
-    fn auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    fn base_url(&self) -> String {
+        let port = self.config.port.unwrap_or(if self.config.use_tls.unwrap_or(true) { 443 } else { 80 });
+        let host = &self.config.host;
+        if (self.config.use_tls.unwrap_or(true) && port == 443)
+            || (!self.config.use_tls.unwrap_or(true) && port == 80)
+        {
+            format!("{}://{}", self.scheme(), host)
+        } else {
+            format!("{}://{}:{}", self.scheme(), host, port)
+        }
+    }
+
+    fn api_url(&self, path: &str) -> String {
+        let base = self.base_url();
+        let trimmed = path.trim_start_matches('/');
+        if trimmed.ends_with('/') {
+            format!("{}/api/{}", base, trimmed)
+        } else {
+            format!("{}/api/{}/", base, trimmed)
+        }
+    }
+
+    fn apply_auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         req.header("Authorization", format!("Token {}", self.config.api_token))
             .header("Accept", "application/json")
-    }
-
-    pub async fn api_get(&self, endpoint: &str) -> NetboxResult<String> {
-        let url = self.api_url(endpoint);
-        debug!("NETBOX GET {url}");
-        let resp = self
-            .auth(self.http.get(&url))
-            .send()
-            .await
-            .map_err(|e| NetboxError::connection(format!("GET {url}: {e}")))?;
-        self.handle_response(resp).await
-    }
-
-    /// Paginated list – fetches all pages and returns the full results vec.
-    pub async fn api_get_list<T: DeserializeOwned>(
-        &self,
-        endpoint: &str,
-    ) -> NetboxResult<Vec<T>> {
-        let mut results: Vec<T> = Vec::new();
-        let mut url = Some(self.api_url(endpoint));
-
-        while let Some(u) = url {
-            debug!("NETBOX GET (list) {u}");
-            let resp = self
-                .auth(self.http.get(&u))
-                .send()
-                .await
-                .map_err(|e| NetboxError::connection(format!("GET {u}: {e}")))?;
-            let body = self.handle_response(resp).await?;
-            let page: NetboxListResponse<T> = serde_json::from_str(&body)
-                .map_err(|e| NetboxError::parse(format!("list parse: {e}")))?;
-            results.extend(page.results);
-            url = page.next;
-        }
-        Ok(results)
-    }
-
-    pub async fn api_post(&self, endpoint: &str, body: &str) -> NetboxResult<String> {
-        let url = self.api_url(endpoint);
-        debug!("NETBOX POST {url}");
-        let resp = self
-            .auth(self.http.post(&url))
             .header("Content-Type", "application/json")
-            .body(body.to_owned())
-            .send()
-            .await
-            .map_err(|e| NetboxError::connection(format!("POST {url}: {e}")))?;
-        self.handle_response(resp).await
     }
 
-    pub async fn api_put(&self, endpoint: &str, body: &str) -> NetboxResult<String> {
-        let url = self.api_url(endpoint);
-        debug!("NETBOX PUT {url}");
-        let resp = self
-            .auth(self.http.put(&url))
-            .header("Content-Type", "application/json")
-            .body(body.to_owned())
-            .send()
-            .await
-            .map_err(|e| NetboxError::connection(format!("PUT {url}: {e}")))?;
-        self.handle_response(resp).await
-    }
-
-    pub async fn api_patch(&self, endpoint: &str, body: &str) -> NetboxResult<String> {
-        let url = self.api_url(endpoint);
-        debug!("NETBOX PATCH {url}");
-        let resp = self
-            .auth(self.http.patch(&url))
-            .header("Content-Type", "application/json")
-            .body(body.to_owned())
-            .send()
-            .await
-            .map_err(|e| NetboxError::connection(format!("PATCH {url}: {e}")))?;
-        self.handle_response(resp).await
-    }
-
-    pub async fn api_delete(&self, endpoint: &str) -> NetboxResult<String> {
-        let url = self.api_url(endpoint);
-        debug!("NETBOX DELETE {url}");
-        let resp = self
-            .auth(self.http.delete(&url))
-            .send()
-            .await
-            .map_err(|e| NetboxError::connection(format!("DELETE {url}: {e}")))?;
-        let status = resp.status();
-        if status.as_u16() == 204 {
-            return Ok(String::new());
-        }
-        self.handle_response(resp).await
-    }
-
-    async fn handle_response(&self, resp: reqwest::Response) -> NetboxResult<String> {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        if status.is_success() {
-            Ok(body)
-        } else {
-            Err(self.map_status_error(status.as_u16(), &body))
-        }
-    }
+    // ── Status mapping ───────────────────────────────────────────────
 
     fn map_status_error(&self, status: u16, body: &str) -> NetboxError {
         match status {
-            401 => NetboxError::auth(format!("Authentication failed: {body}")),
-            403 => NetboxError::permission(format!("Permission denied: {body}")),
-            404 => NetboxError::not_found(format!("Not found: {body}")),
-            409 => NetboxError::conflict(format!("Conflict: {body}")),
-            429 => NetboxError::rate_limited(format!("Rate limited: {body}")),
-            400 => NetboxError::validation(format!("Validation error: {body}")),
-            408 => NetboxError::timeout(format!("Request timeout: {body}")),
-            _ => NetboxError::api(format!("HTTP {status}: {body}")),
+            401 => NetboxError::auth(format!("Authentication failed (HTTP 401): {body}")),
+            403 => NetboxError::permission_denied(format!("Access denied (HTTP 403): {body}")),
+            404 => NetboxError::api(format!("Not found (HTTP 404): {body}")),
+            409 => NetboxError::conflict(format!("Conflict (HTTP 409): {body}")),
+            400 => NetboxError::invalid_request(format!("Bad request (HTTP 400): {body}")),
+            _ => NetboxError::http(format!("HTTP {status}: {body}")),
         }
     }
 
-    /// Convenience: ping the API status endpoint.
-    pub async fn status(&self) -> NetboxResult<String> {
-        self.api_get("/status/").await
+    // ── Generic request helpers ──────────────────────────────────────
+
+    pub async fn api_get<T: DeserializeOwned>(&self, path: &str) -> NetboxResult<T> {
+        let url = self.api_url(path);
+        debug!("NETBOX GET {url}");
+        let resp = self.apply_auth(self.http.get(&url))
+            .send()
+            .await
+            .map_err(|e| NetboxError::http(format!("GET {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.json::<T>()
+            .await
+            .map_err(|e| NetboxError::parse(format!("GET {url} parse: {e}")))
+    }
+
+    pub async fn api_get_with_params<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<T> {
+        let url = self.api_url(path);
+        debug!("NETBOX GET {url} params={params:?}");
+        let resp = self.apply_auth(self.http.get(&url).query(params))
+            .send()
+            .await
+            .map_err(|e| NetboxError::http(format!("GET {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.json::<T>()
+            .await
+            .map_err(|e| NetboxError::parse(format!("GET {url} parse: {e}")))
+    }
+
+    pub async fn api_get_paginated<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        params: &[(&str, &str)],
+    ) -> NetboxResult<PaginatedResponse<T>> {
+        self.api_get_with_params(path, params).await
+    }
+
+    pub async fn api_post<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> NetboxResult<T> {
+        let url = self.api_url(path);
+        debug!("NETBOX POST {url}");
+        let resp = self.apply_auth(self.http.post(&url).json(body))
+            .send()
+            .await
+            .map_err(|e| NetboxError::http(format!("POST {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.json::<T>()
+            .await
+            .map_err(|e| NetboxError::parse(format!("POST {url} parse: {e}")))
+    }
+
+    pub async fn api_put<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> NetboxResult<T> {
+        let url = self.api_url(path);
+        debug!("NETBOX PUT {url}");
+        let resp = self.apply_auth(self.http.put(&url).json(body))
+            .send()
+            .await
+            .map_err(|e| NetboxError::http(format!("PUT {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.json::<T>()
+            .await
+            .map_err(|e| NetboxError::parse(format!("PUT {url} parse: {e}")))
+    }
+
+    pub async fn api_patch<B: serde::Serialize, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> NetboxResult<T> {
+        let url = self.api_url(path);
+        debug!("NETBOX PATCH {url}");
+        let resp = self.apply_auth(self.http.patch(&url).json(body))
+            .send()
+            .await
+            .map_err(|e| NetboxError::http(format!("PATCH {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        resp.json::<T>()
+            .await
+            .map_err(|e| NetboxError::parse(format!("PATCH {url} parse: {e}")))
+    }
+
+    pub async fn api_delete(&self, path: &str) -> NetboxResult<()> {
+        let url = self.api_url(path);
+        debug!("NETBOX DELETE {url}");
+        let resp = self.apply_auth(self.http.delete(&url))
+            .send()
+            .await
+            .map_err(|e| NetboxError::http(format!("DELETE {url}: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(self.map_status_error(status.as_u16(), &body));
+        }
+        Ok(())
+    }
+
+    // ── Connection verification ──────────────────────────────────────
+
+    pub async fn ping(&self) -> NetboxResult<NetboxConnectionSummary> {
+        let status: serde_json::Value = self.api_get("status").await?;
+        let version = status
+            .get("netbox-version")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        let sites: PaginatedResponse<serde_json::Value> =
+            self.api_get_paginated("dcim/sites", &[("limit", "1")]).await?;
+        let devices: PaginatedResponse<serde_json::Value> =
+            self.api_get_paginated("dcim/devices", &[("limit", "1")]).await?;
+        let prefixes: PaginatedResponse<serde_json::Value> =
+            self.api_get_paginated("ipam/prefixes", &[("limit", "1")]).await?;
+
+        Ok(NetboxConnectionSummary {
+            host: self.config.host.clone(),
+            version,
+            site_count: Some(sites.count),
+            device_count: Some(devices.count),
+            prefix_count: Some(prefixes.count),
+        })
     }
 }
